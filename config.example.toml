@@ -1,0 +1,103 @@
+# Copy to ~/.mage/config.toml and edit.
+# A workspace `.mage/config.toml` may set [lsp] only.
+# Do not put secrets in the git repo.
+#
+# Completions seats: base_url + model, optional [endpoint.NAME.body].
+# Native seats set wire = "anthropic" or wire = "gemini".
+
+default = "glm"
+
+# Interface preferences. The settings modal (ctrl+o or /settings) writes
+# these; edit them here if you prefer.
+# theme = "space"        # "space" or "fantasy" accent palette
+# splash = true          # boot into the splash cover, or straight to chat
+# reasoning = true       # show streamed reasoning in the transcript
+# tools = "compact"      # "compact" keeps a tool's last line; "full" keeps twelve
+# bus = true             # let incoming mail start a turn after MAGE_BUS joins
+#
+# Language server for diagnostics/definition/rename (types and lint it reports).
+# Workspace `.mage/config.toml` wins. If unset, the first popular binary
+# on PATH for this tree (rust-analyzer, gopls, biome then tsserver, ruff
+# then pyright). Override with:
+# [lsp]
+# command = ["vscode-eslint-language-server", "--stdio"]
+
+[endpoint.glm]
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+model = "glm-5.3"
+# api_key = "…"   # or ZAI_CODING_API_KEY
+# context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
+
+[endpoint.glm-intl]
+base_url = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+
+[endpoint.qwen]
+# llama-server on this machine. Override base_url for a remote server.
+base_url = "http://127.0.0.1:8081/v1"
+model = "qwen3.8-27b-ud"
+api_key = "local"
+
+# Same server, tuned for the implementer seat. `body` is merged into every
+# request as sent, so any server-specific field works (vLLM, llama.cpp).
+[endpoint.qwen-impl]
+base_url = "http://127.0.0.1:8081/v1"
+model = "qwen3.8-27b-ud"
+api_key = "local"
+[endpoint.qwen-impl.body]
+temperature = 0.6
+top_p = 0.95
+top_k = 20
+chat_template_kwargs = { reasoning_effort = "low" }
+# Environment for every run_command on this seat: a plain toolchain, no
+# shims or caches the model would have to reverse-engineer.
+# [endpoint.qwen-impl.env]
+# PATH = "/Users/you/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
+# CARGO_TARGET_DIR = "target"
+
+[endpoint.kimi]
+base_url = "https://api.kimi.com/coding/v1"
+model = "k3"
+# api_key = "…"   # or KIMI_CODING_API_KEY / ~/.kimi-code/credentials/kimi-code.json
+
+[endpoint.grok]
+base_url = "https://api.x.ai/v1"
+model = "grok-4.6"
+# api_key = "…"   # or XAI_API_KEY
+
+# OAuth2 token, then the same chat/completions POST.
+# grant: client_credentials | refresh_token | device_code
+# `summon login NAME` runs RFC 8628 device flow when device_url is set.
+# [endpoint.azure]
+# base_url = "https://YOUR.openai.azure.com/openai/v1"
+# model = "gpt-4o"
+# [endpoint.azure.auth]
+# token_url = "https://login.microsoftonline.com/TENANT/oauth2/v2.0/token"
+# client_id = "…"
+# client_secret = "…"
+# scope = "https://cognitiveservices.azure.com/.default"
+#
+# Builtin `copilot`: `summon login copilot` then `summon copilot`.
+# Device token is exchanged at copilot_internal; overlay if GitHub moves URLs.
+# [endpoint.copilot]
+# base_url = "https://api.githubcopilot.com"
+# model = "gpt-4o"
+# [endpoint.copilot.auth]
+# token_url = "https://github.com/login/oauth/access_token"
+# device_url = "https://github.com/login/device/code"
+# client_id = "Iv1.b507a08c87ecfe98"
+# grant = "device_code"
+# scope = "read:user"
+# exchange_url = "https://api.github.com/copilot_internal/v2/token"
+
+# Native Anthropic / Gemini (not chat/completions).
+# [endpoint.anthropic]
+# wire = "anthropic"
+# [endpoint.gemini]
+# wire = "gemini"
+
+# Native web_search needs no API key.
+# [search]
+# count = 5
+# # allowed_domains = ["docs.rs", "doc.rust-lang.org"]
+# # excluded_domains = []

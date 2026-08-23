@@ -1,0 +1,17 @@
+# Copy to ~/.mage/policy.toml and/or <workspace>/.mage/policy.toml.
+# Project file overrides allow and write; deny lists are unioned.
+
+# When true, only `allow` commands run (also set by `summon --strict`).
+strict = false
+
+# Extra deny patterns (substring / prefix, case-insensitive).
+# Built-in denies always apply: force-push, curl|sh, sudo, mkfs, ...
+# Commands are also contained: rm, mv, cp, chmod, tee, redirects, and
+# `cd` may not name a path outside the workspace (absolute, ~, $VAR, or ..).
+# deny = ["npm publish"]
+
+# When non-empty (or strict = true), only these commands run.
+# allow = ["cargo", "git status", "git diff", "git add", "git commit"]
+
+# When non-empty, only these workspace-relative paths may be written.
+# write = ["src/**", "tests/**", "Cargo.toml"]

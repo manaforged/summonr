@@ -1,0 +1,287 @@
+//! Content-hash line anchors. Unchanged lines keep their hash after an insert.
+
+use crate::error::{Error, Result};
+
+const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
+
+/// Four-character FNV-1a tag of one line's exact bytes.
+#[must_use]
+pub fn line_hash(text: &str) -> String {
+    let mut hash = 0x811c_9dc5_u32;
+    for byte in text.as_bytes() {
+        hash ^= u32::from(*byte);
+        hash = hash.wrapping_mul(0x0100_0193);
+    }
+    let mut out = [b'0'; 4];
+    let mut rest = hash;
+    for slot in out.iter_mut().rev() {
+        let index = usize::try_from(rest & 31).unwrap_or(0);
+        *slot = ALPH.get(index).copied().unwrap_or(b'0');
+        rest >>= 5;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// Render file contents as `N:hash|text` lines.
+#[must_use]
+pub fn tagged_text(content: &str) -> String {
+    tagged_span(content, 0, usize::MAX)
+}
+
+/// Render a 0-based inclusive span. `last` is clamped to the last line.
+#[must_use]
+pub(crate) fn tagged_span(content: &str, first: usize, last: usize) -> String {
+    let total = content.lines().count();
+    if total == 0 {
+        return "lines 0-0/0".to_string();
+    }
+    let first = first.min(total.saturating_sub(1));
+    let last = last.min(total.saturating_sub(1)).max(first);
+    let mut out = format!("lines {}-{}/{}", first + 1, last + 1, total);
+    for (index, line) in content.lines().enumerate() {
+        if index < first {
+            continue;
+        }
+        if index > last {
+            break;
+        }
+        out.push('\n');
+        out.push_str(&(index + 1).to_string());
+        out.push(':');
+        out.push_str(&line_hash(line));
+        out.push('|');
+        out.push_str(line);
+    }
+    out
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Tag {
+    Line { number: usize, hash: String },
+    Hash(String),
+}
+
+fn parse_tag(tag: &str) -> Result<Tag> {
+    let tag = tag.trim();
+    let tag = tag.split_once('|').map_or(tag, |(anchor, _)| anchor.trim());
+    if tag.is_empty() {
+        return Err(Error::Tool("edit tag is empty".to_string()));
+    }
+    if let Some((left, right)) = tag.split_once(':')
+        && let Ok(number) = left.parse::<usize>()
+        && number > 0
+        && is_hash(right)
+    {
+        return Ok(Tag::Line {
+            number,
+            hash: right.to_string(),
+        });
+    }
+    if is_hash(tag) {
+        return Ok(Tag::Hash(tag.to_string()));
+    }
+    Err(Error::Tool(format!(
+        "stale or unknown tag `{tag}` — read the file again"
+    )))
+}
+
+fn is_hash(value: &str) -> bool {
+    (2..=8).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'v'))
+}
+
+/// Every 0-based line whose tag matches.
+fn hits(content: &str, parsed: &Tag) -> Vec<usize> {
+    content
+        .lines()
+        .enumerate()
+        .filter(|(index, line)| {
+            let hash = line_hash(line);
+            match parsed {
+                Tag::Line { number, hash: want } => index + 1 == *number && hash == *want,
+                Tag::Hash(want) => hash == *want,
+            }
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+/// The stale-tag error carries the current tags near where the model
+/// was looking, so the next edit needs no read_file.
+fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
+    let near = match parsed {
+        Tag::Line { number, .. } => Some(*number),
+        Tag::Hash(_) => None,
+    };
+    match near {
+        Some(number) if content.lines().count() > 0 => {
+            let first = number.saturating_sub(4).saturating_sub(1);
+            Error::Tool(format!(
+                "stale tag `{tag}` — that line changed. Current lines there:\n{}",
+                tagged_span(content, first, number + 3)
+            ))
+        }
+        _ => Error::Tool(format!(
+            "stale or unknown tag `{tag}` — the line changed; use a tag from the latest edit result or read_file"
+        )),
+    }
+}
+
+/// The ambiguity error lists each candidate as `N:hash|text` so the
+/// next call can pick one without a read.
+fn ambiguous(content: &str, tag: &str, found: &[usize]) -> Error {
+    let lines: Vec<&str> = content.lines().collect();
+    let options: Vec<String> = found
+        .iter()
+        .take(6)
+        .map(|index| {
+            let line = lines.get(*index).copied().unwrap_or("");
+            format!("{}:{}|{}", index + 1, line_hash(line), line)
+        })
+        .collect();
+    Error::Tool(format!(
+        "tag `{tag}` matches {} lines — use one of:\n{}",
+        found.len(),
+        options.join("\n")
+    ))
+}
+
+fn locate(content: &str, tag: &str) -> Result<usize> {
+    let parsed = parse_tag(tag)?;
+    let found = hits(content, &parsed);
+    match found.as_slice() {
+        [only] => Ok(*only),
+        [] => Err(stale(content, tag, &parsed)),
+        _ => Err(ambiguous(content, tag, &found)),
+    }
+}
+
+/// Resolve `tag..=end_tag`. When one side is ambiguous, the other side
+/// picks the nearest consistent candidate, so repeated lines such as `}`
+/// or `` work as range ends without an `N:` prefix.
+fn span(content: &str, tag: &str, end_tag: Option<&str>) -> Result<(usize, usize)> {
+    let end_tag = end_tag.filter(|end| !end.trim().is_empty());
+    let Some(end_tag) = end_tag else {
+        let start = locate(content, tag)?;
+        return Ok((start, start));
+    };
+    let start_tag = parse_tag(tag)?;
+    let end_parsed = parse_tag(end_tag)?;
+    let starts = hits(content, &start_tag);
+    let ends = hits(content, &end_parsed);
+    let (start, end) = match (starts.as_slice(), ends.as_slice()) {
+        ([], _) => return Err(stale(content, tag, &start_tag)),
+        (_, []) => return Err(stale(content, end_tag, &end_parsed)),
+        ([s], [e]) => (*s, *e),
+        ([s], many) => match many.iter().find(|e| **e >= *s) {
+            Some(e) => (*s, *e),
+            None => return Err(ambiguous(content, end_tag, many)),
+        },
+        (many, [e]) => match many.iter().rev().find(|s| **s <= *e) {
+            Some(s) => (*s, *e),
+            None => return Err(ambiguous(content, tag, many)),
+        },
+        (many, _) => return Err(ambiguous(content, tag, many)),
+    };
+    if end < start {
+        return Err(Error::Tool(
+            "end_tag is before tag — check the tags in the latest edit result".to_string(),
+        ));
+    }
+    Ok((start, end))
+}
+
+/// Resolve a hashline range without changing the file.
+pub(crate) fn resolve_span(
+    content: &str,
+    tag: &str,
+    end_tag: Option<&str>,
+) -> Result<(usize, usize)> {
+    span(content, tag, end_tag)
+}
+
+/// Replace `tag..=end_tag` with `new`. `new` may contain newlines.
+#[cfg(test)]
+pub(crate) fn apply_replace(
+    content: &str,
+    tag: &str,
+    end_tag: Option<&str>,
+    new: &str,
+) -> Result<String> {
+    let (start, end) = span(content, tag, end_tag)?;
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let inserted: Vec<String> = if new.is_empty() {
+        Vec::new()
+    } else {
+        new.lines().map(str::to_string).collect()
+    };
+    lines.splice(start..=end, inserted);
+    Ok(join_lines(&lines, content.ends_with('\n')))
+}
+
+/// Insert `text` after `tag`. `text` may contain newlines.
+#[cfg(test)]
+pub(crate) fn apply_insert(content: &str, tag: &str, text: &str) -> Result<String> {
+    if text.is_empty() {
+        return Err(Error::Tool("insert_after.text is empty".to_string()));
+    }
+    let index = locate(content, tag)?;
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    let extra: Vec<String> = text.lines().map(str::to_string).collect();
+    let at = index.saturating_add(1);
+    if at > lines.len() {
+        lines.extend(extra);
+    } else {
+        lines.splice(at..at, extra);
+    }
+    Ok(join_lines(&lines, content.ends_with('\n')))
+}
+
+/// Delete `tag..=end_tag`.
+#[cfg(test)]
+pub(crate) fn apply_delete(content: &str, tag: &str, end_tag: Option<&str>) -> Result<String> {
+    let (start, end) = span(content, tag, end_tag)?;
+    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
+    lines.drain(start..=end);
+    Ok(join_lines(&lines, content.ends_with('\n')))
+}
+
+/// 0-based first/last of the first differing run, for a compact post-edit view.
+#[must_use]
+pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
+    let old: Vec<&str> = before.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    if new.is_empty() {
+        return (0, 0);
+    }
+    let mut first = 0;
+    while first < old.len() && first < new.len() && old[first] == new[first] {
+        first += 1;
+    }
+    if first == new.len() {
+        return (new.len().saturating_sub(1), new.len().saturating_sub(1));
+    }
+    let mut old_back = old.len();
+    let mut new_back = new.len();
+    while old_back > first && new_back > first && old[old_back - 1] == new[new_back - 1] {
+        old_back -= 1;
+        new_back -= 1;
+    }
+    let last = new_back.saturating_sub(1).max(first);
+    (first, last)
+}
+
+#[cfg(test)]
+fn join_lines(lines: &[String], trailing_newline: bool) -> String {
+    let mut out = lines.join("\n");
+    if trailing_newline {
+        out.push('\n');
+    }
+    out
+}
+
+#[cfg(test)]
+#[path = "hashline_tests.rs"]
+mod tests;

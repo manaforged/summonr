@@ -1,0 +1,66 @@
+[package]
+name = "summoner"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+license = "MIT"
+authors = ["Thomas Gardiner"]
+description = "A small, provider-neutral agent harness"
+readme = "README.md"
+repository = "https://github.com/thomgardiner/summoner"
+homepage = "https://github.com/thomgardiner/summoner"
+publish = false
+
+[[bin]]
+name = "summon"
+path = "src/main.rs"
+
+[[bin]]
+name = "summoner"
+path = "src/main.rs"
+
+[dependencies]
+base64 = "0.22"
+futures = { version = "0.3", default-features = false, features = ["std"] }
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2"
+tempfile = "3"
+toml = "0.8"
+toml_edit = "0.22"
+unicode-width = "0.2"
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "time"] }
+reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls"] }
+genai = { version = "0.6.5", default-features = false, features = ["native-tls"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+rustix = { version = "1.1.4", default-features = false, features = ["fs", "std"] }
+crossterm = "0.28"
+sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a", default-features = false, features = ["tui"] }
+sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+
+[lints.rust]
+unsafe_code = "deny"
+unreachable_pub = "deny"
+
+[lints.clippy]
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+disallowed_methods = "deny"
+disallowed_types = "deny"
+disallowed_macros = "deny"
+rc_mutex = "deny"
+unused_result_ok = "deny"
+allow_attributes_without_reason = "deny"
+let_underscore_future = "deny"
+let_underscore_lock = "deny"
+let_underscore_must_use = "deny"
+map_err_ignore = "deny"
+assertions_on_result_states = "deny"
+unwrap_in_result = "deny"
+get_unwrap = "deny"
+ignore_without_reason = "deny"
+should_panic_without_expect = "deny"

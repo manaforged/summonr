@@ -1,5 +1,7 @@
 #[path = "main/cli.rs"]
 mod cli;
+#[path = "main/diagnostics.rs"]
+mod diagnostics;
 #[path = "main/modes.rs"]
 mod modes;
 #[path = "main/startup.rs"]

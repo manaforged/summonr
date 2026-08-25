@@ -40,3 +40,17 @@ fn continuation_prompt_uses_the_active_work() {
     assert_eq!(text, "[summon goal: continue the active Work]");
     assert!(text.starts_with("[summon goal:"));
 }
+
+#[test]
+fn judge_input_includes_harness_evidence() {
+    let input = judge_user(
+        "fix the crash",
+        "Done.",
+        "Turn receipt\n- Changed: `src/main.rs`\n- Verification: `cargo test` passed",
+    );
+
+    assert!(input.contains("Objective:\nfix the crash"));
+    assert!(input.contains("Harness evidence:\nTurn receipt"));
+    assert!(input.contains("`cargo test` passed"));
+    assert!(input.contains("Agent's latest response:\nDone."));
+}

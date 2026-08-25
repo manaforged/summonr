@@ -66,13 +66,48 @@ fn send_and_poll_with_cursor() {
     b.heartbeat("glm", &cwd, "idle");
     assert_eq!(a.send("b", "hello b").unwrap_or(0), 1);
     assert_eq!(a.send("all", "hi everyone").unwrap_or(0), 1);
-    let mail = b.poll();
+    let mail = b.poll().unwrap_or_else(|error| panic!("poll: {error}"));
     assert_eq!(mail.len(), 2);
     assert_eq!(mail[0].from, "a");
     assert_eq!(mail[0].text, "hello b");
-    assert!(b.poll().is_empty(), "cursor consumed the mail");
+    assert!(
+        b.poll().expect("poll again").is_empty(),
+        "cursor consumed the mail"
+    );
     // broadcast skips the sender
-    assert!(a.poll().is_empty());
+    assert!(a.poll().expect("poll a").is_empty());
+    drop(std::fs::remove_dir_all(&dir));
+}
+
+#[test]
+#[cfg(unix)]
+fn board_fold_failure_is_loud() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let (dir, cwd) = setup("fold");
+    let a = bus_at(&dir, "a");
+    // An oversized board folds back to disk during a read. A fold that
+    // cannot write fails the read; it never silently skips.
+    a.post(&cwd, "k", "v")
+        .unwrap_or_else(|error| panic!("post: {error}"));
+    let path = dir
+        .join("board")
+        .join(format!("{}.jsonl", slug(&cwd.display().to_string())));
+    let fat = format!(
+        "{}\n",
+        "{\"ts\":1,\"from\":\"a\",\"key\":\"k\",\"value\":\"v\"}\n".repeat(20_000)
+    );
+    std::fs::write(&path, &fat).unwrap_or_else(|error| panic!("write fat board: {error}"));
+    let mut perms = std::fs::metadata(&path)
+        .expect("board file must exist")
+        .permissions();
+    perms.set_mode(0o444);
+    std::fs::set_permissions(&path, perms.clone()).expect("board file must lock");
+    let error = a
+        .board(&cwd)
+        .expect_err("a blocked fold write must fail the read");
+    assert!(error.to_string().contains("I/O"), "io error: {error}");
+    perms.set_mode(0o644);
+    std::fs::set_permissions(&path, perms).expect("board file must unlock");
     drop(std::fs::remove_dir_all(&dir));
 }
 
@@ -87,7 +122,9 @@ fn board_last_write_wins() {
         .unwrap_or_else(|error| panic!("post decision: {error}"));
     b.post(&cwd, "claim:src/tui.rs", "b")
         .unwrap_or_else(|error| panic!("post second claim: {error}"));
-    let board = a.board(&cwd);
+    let board = a
+        .board(&cwd)
+        .unwrap_or_else(|error| panic!("board: {error}"));
     assert_eq!(board.len(), 2);
     let claim = board.iter().find(|(k, _, _)| k == "claim:src/tui.rs");
     assert_eq!(
@@ -111,7 +148,7 @@ fn hostile_ids_cannot_escape_the_bus_dir() {
     assert!(dir.join("inbox/..-..-etc-evil.jsonl").exists());
     // and the sanitized target is readable as a normal mailbox
     let mut evil = bus_at(&dir, "../../etc/evil");
-    assert_eq!(evil.poll().len(), 1);
+    assert_eq!(evil.poll().expect("poll evil").len(), 1);
     drop(std::fs::remove_dir_all(&dir));
 }
 
@@ -125,7 +162,7 @@ fn mail_truncates_and_oversized_inboxes_rotate() {
     let long = "x".repeat(MAIL_CHARS * 3);
     a.send("b", &long)
         .unwrap_or_else(|error| panic!("send long message: {error}"));
-    let mail = b.poll();
+    let mail = b.poll().unwrap_or_else(|error| panic!("poll: {error}"));
     assert_eq!(mail.len(), 1);
     assert_eq!(mail[0].text.chars().count(), MAIL_CHARS);
     // an oversized mailbox rotates and stays parseable
@@ -133,7 +170,7 @@ fn mail_truncates_and_oversized_inboxes_rotate() {
     let fat = format!("{}\n", "junk\n".repeat(120_000));
     std::fs::write(&path, &fat).unwrap_or_else(|error| panic!("write oversized inbox: {error}"));
     assert!(std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_FILE_BYTES as u64);
-    drop(b.poll());
+    drop(b.poll().expect("rotating poll"));
     let shrunk = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
     assert!(shrunk < MAX_FILE_BYTES as u64, "rotated below the cap");
     drop(std::fs::remove_dir_all(&dir));

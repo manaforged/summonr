@@ -76,7 +76,6 @@ fn input_fact(image: Vec<u8>, text: String) -> Fact {
                 }])
                 .expect("fixture image count must fit"),
             },
-            reserved_projection_bytes: 1_024,
         },
     }
 }

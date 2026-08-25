@@ -43,6 +43,8 @@ struct Worker {
     followups: VecDeque<UserInput>,
     /// The last completed turn, for callers that inspect it (goal mode).
     last_turn: Option<crate::Turn>,
+    /// The last reported bus failure, so a persistent fault reports once.
+    bus_error: Option<String>,
 }
 
 impl Worker {
@@ -71,6 +73,7 @@ impl Worker {
             deferred: VecDeque::new(),
             followups: VecDeque::new(),
             last_turn: None,
+            bus_error: None,
         }
     }
 
@@ -167,7 +170,22 @@ impl Worker {
             .filter(|agent| agent.id != self.loop_.session_id())
             .count();
         drop(self.ui.send(Msg::Peers(peers)));
-        let mail = self.loop_.bus_poll();
+        let mail = match self.loop_.bus_poll() {
+            Ok(mail) => {
+                if self.bus_error.take().is_some() {
+                    drop(self.ui.send(Msg::System("bus recovered".to_string())));
+                }
+                mail
+            }
+            Err(error) => {
+                let text = format!("bus poll failed: {error}");
+                if self.bus_error.as_ref() != Some(&text) {
+                    drop(self.ui.send(Msg::System(text.clone())));
+                    self.bus_error = Some(text);
+                }
+                Vec::new()
+            }
+        };
         if mail.is_empty() {
             return;
         }

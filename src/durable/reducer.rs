@@ -3,23 +3,18 @@ use std::result::Result as StdResult;
 
 use thiserror::Error;
 
-use super::context::{
-    ContextEntry, ContextEpoch, Directive, InputRoute, OperationClose, UserPayload,
-};
+use super::context::{ContextEntry, ContextEpoch, InputRoute, OperationClose, UserPayload};
 use super::effect::{
-    BudgetKind, DetachedClose, DetachedState, EffectError, MeterSettlement, ProcessRecord,
-    ProviderIntent, ProviderOutcome, ReconciliationResolution, ToolCall, ToolIntent, ToolResult,
+    BudgetKind, EffectError, MeterSettlement, ProviderIntent, ProviderOutcome, ToolCall,
+    ToolIntent, ToolResult,
 };
 use super::encoding::{Commit, EncodingError, FORMAT};
-use super::fact::{
-    CommandReceipt, CompletionCheck, FactData, FactKind, ForkAdoption, ForkOutcome,
-    MaterializationOutcome, PublicationFootprint,
-};
+use super::fact::{CommandReceipt, CompletionCheck, FactData, FactKind, MaterializationOutcome};
 use super::id::{
-    CheckId, CommandId, ContextEntryId, ContextEpochId, Digest, DirectiveId, EvidenceId, FactId,
-    ForkId, InputId, JobId, MaterializationId, MeterId, ObservationId, OperationId, PlanRevisionId,
-    ProviderAttemptId, RetryId, ScopedId, SessionId, ToolAttemptId, ToolBatchId, ToolCallId,
-    ToolResultId, WorkId, WorkspaceScopeId,
+    CheckId, CommandId, ContextEntryId, ContextEpochId, Digest, EvidenceId, FactId, ForkId,
+    InputId, MaterializationId, ObservationId, OperationId, PlanRevisionId, ProviderAttemptId,
+    ScopedId, SessionId, ToolAttemptId, ToolBatchId, ToolCallId, ToolResultId, WorkId,
+    WorkspaceScopeId,
 };
 use super::work::{PlanRevision, WorkError, WorkStage, WorkState};
 use super::workspace::{WorkspaceError, WorkspaceObservation, WorkspaceScope};
@@ -76,7 +71,6 @@ pub(crate) type Result<T> = StdResult<T, ReduceError>;
 pub(crate) enum InputState {
     Pending(InputRoute),
     Applied,
-    Cancelled,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -105,23 +99,6 @@ pub(crate) struct ToolState {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct DetachedJob {
-    pub(crate) attempt: ToolAttemptId,
-    pub(crate) work: Option<WorkId>,
-    pub(crate) process: ProcessRecord,
-    pub(crate) state: DetachedState,
-    pub(crate) contract_digest: Digest,
-    pub(crate) close: Option<DetachedClose>,
-    pub(crate) uncertain: bool,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct UncertainEffect {
-    pub(crate) work: Option<WorkId>,
-    pub(crate) contract_digest: Digest,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Materialization {
     pub(crate) plan: PlanRevisionId,
     pub(crate) digest: Digest,
@@ -134,14 +111,12 @@ pub(crate) struct OpenFork {
     pub(crate) child: SessionId,
     pub(crate) source_seq: u64,
     pub(crate) source_digest: Digest,
-    pub(crate) adoption: ForkAdoption,
     pub(crate) observation: ObservationId,
-    pub(crate) plan_footprint: Option<PublicationFootprint>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct MeterState {
-    pub(crate) settled: HashMap<MeterId, MeterSettlement>,
+    pub(crate) settled: Vec<MeterSettlement>,
     pub(crate) limits: HashMap<BudgetKind, Option<u64>>,
 }
 
@@ -162,7 +137,6 @@ pub(crate) struct SessionState {
     pub(crate) observations: HashMap<ObservationId, WorkspaceObservation>,
     pub(crate) inputs: HashMap<InputId, InputState>,
     pub(crate) input_payloads: HashMap<InputId, UserPayload>,
-    pub(crate) directives: HashMap<DirectiveId, Directive>,
     pub(crate) operation: Option<OpenOperation>,
     closed_operations: History<OperationId, OperationClose>,
     pub(crate) providers: HashMap<ProviderAttemptId, ProviderState>,
@@ -172,15 +146,12 @@ pub(crate) struct SessionState {
     pub(crate) batches: HashMap<ToolBatchId, Vec<ToolCallId>>,
     pub(crate) tool_attempts: HashMap<ToolAttemptId, ToolCallId>,
     pub(crate) tool_results: HashSet<ToolResultId>,
-    pub(crate) jobs: HashMap<JobId, DetachedJob>,
-    pub(crate) uncertain_effects: HashMap<ToolAttemptId, UncertainEffect>,
-    pub(crate) retry: Option<RetryId>,
     pub(crate) epochs: HashMap<ContextEpochId, ContextEpoch>,
     pub(crate) epoch_entries: HashMap<ContextEpochId, Vec<ContextEntryId>>,
     pub(crate) current_epoch: Option<ContextEpochId>,
     pub(crate) entries: HashMap<ContextEntryId, ContextEntry>,
     pub(crate) open_fork: Option<OpenFork>,
-    pub(crate) forks: HashMap<ForkId, ForkOutcome>,
+    pub(crate) forks: HashMap<ForkId, (Digest, ObservationId)>,
     pub(crate) meters: MeterState,
     next_local: u128,
 }
@@ -216,22 +187,6 @@ impl SessionState {
 
     pub(crate) fn maybe_closed(&self, id: OperationId) -> bool {
         self.closed_operations.might_contain(id)
-    }
-
-    pub(crate) fn attempt_work(&self, attempt: ToolAttemptId) -> Option<WorkId> {
-        self.tool_attempts
-            .get(&attempt)
-            .and_then(|call| self.tool_work(*call))
-    }
-
-    pub(crate) fn tool_work(&self, call: ToolCallId) -> Option<WorkId> {
-        let result = self.tools.get(&call)?.call.provider_result;
-        self.providers.values().find_map(|provider| {
-            let intent = match provider {
-                ProviderState::Started(intent) | ProviderState::Finished { intent, .. } => intent,
-            };
-            (intent.result == result).then_some(intent.work).flatten()
-        })
     }
 
     #[cfg(test)]
@@ -355,23 +310,22 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
             child,
             source_seq,
             source_digest,
-            adoption,
             observation,
-            plan_footprint,
         } => {
             state.open_fork = Some(OpenFork {
                 id: intent,
                 child,
                 source_seq,
                 source_digest,
-                adoption,
                 observation,
-                plan_footprint,
             });
         }
-        FactData::ForkCancelRequested { .. } => {}
-        FactData::ForkFinished { intent, outcome } => {
-            state.forks.insert(intent, outcome);
+        FactData::ForkFinished {
+            intent,
+            sealed_journal,
+            observation,
+        } => {
+            state.forks.insert(intent, (sealed_journal, observation));
             state.open_fork = None;
         }
         FactData::ForkedFrom { .. }
@@ -386,17 +340,8 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
             state.input_payloads.insert(input, payload);
             state.inputs.insert(input, InputState::Pending(route));
         }
-        FactData::InputRouted { input, route, .. } => {
-            state.inputs.insert(input, InputState::Pending(route));
-        }
         FactData::InputApplied { input, .. } => {
             state.inputs.insert(input, InputState::Applied);
-        }
-        FactData::InputCancelled { input, .. } => {
-            state.inputs.insert(input, InputState::Cancelled);
-        }
-        FactData::DirectiveChanged { directive } => {
-            state.directives.insert(directive.id, directive);
         }
         FactData::WorkSet { work } => {
             let work = *work;
@@ -480,73 +425,11 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
         FactData::ToolFinished { result } => {
             let id = result.id;
             let call = result.call;
-            let uncertainty = result
-                .outcome
-                .uncertain()
-                .then_some(result.attempt)
-                .flatten()
-                .and_then(|attempt| {
-                    state.tools.get(&call).map(|tool| {
-                        (
-                            attempt,
-                            UncertainEffect {
-                                work: state.tool_work(call),
-                                contract_digest: tool.call.effect_contract_digest,
-                            },
-                        )
-                    })
-                });
             state.tool_results.insert(id);
             if let Some(tool) = state.tools.get_mut(&call) {
                 tool.result = Some(result);
             }
-            if let Some((attempt, effect)) = uncertainty {
-                state.uncertain_effects.insert(attempt, effect);
-            }
         }
-        FactData::DetachedJobOpened {
-            job,
-            attempt,
-            process,
-            state: job_state,
-            contract_digest,
-        } => {
-            let work = state.attempt_work(attempt);
-            state.jobs.insert(
-                job,
-                DetachedJob {
-                    attempt,
-                    work,
-                    process,
-                    state: job_state,
-                    contract_digest,
-                    close: None,
-                    uncertain: job_state == DetachedState::Uncertain,
-                },
-            );
-        }
-        FactData::EffectObserved { observation, .. } => {
-            if observation.resolution == ReconciliationResolution::TerminalKnown {
-                state.uncertain_effects.remove(&observation.target);
-                if let Some(job) = state
-                    .jobs
-                    .values_mut()
-                    .find(|job| job.attempt == observation.target)
-                {
-                    job.uncertain = false;
-                }
-            }
-        }
-        FactData::DetachedJobClosed { job, outcome, .. } => {
-            if let Some(record) = state.jobs.get_mut(&job) {
-                record.close = Some(outcome);
-                if outcome == DetachedClose::AbandonedUnknown {
-                    record.uncertain = true;
-                }
-            }
-        }
-        FactData::RetryScheduled { retry } => state.retry = Some(retry.id),
-        FactData::RetryFinished { .. } => state.retry = None,
         FactData::ContextEpochOpened { epoch } => {
             let id = epoch.id;
             let entries = epoch.base.as_slice().to_vec();
@@ -561,10 +444,8 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
             state.epoch_entries.entry(epoch).or_default().push(id);
         }
         FactData::ConversationCleared { .. } => {}
-        FactData::MeterSettled {
-            meter, settlement, ..
-        } => {
-            state.meters.settled.insert(meter, settlement);
+        FactData::MeterSettled { settlement, .. } => {
+            state.meters.settled.push(settlement);
         }
     }
 }

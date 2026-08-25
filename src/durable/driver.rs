@@ -20,28 +20,24 @@ use super::context::{
     InputRoute, OperationClose, OperationOutcome, RequestHead, UserPayload,
 };
 use super::effect::{
-    ApprovalSource, BootIdentity, BudgetKind, DetachedState, Exposure, MeterKind, MeterSettlement,
-    NativeProcessScope, PolicyDecision, ProcessContainment, ProcessIdentity, ProcessRecord,
-    ProcessStart, ProviderFailureKind, ProviderIntent, ProviderMessage, ProviderOutcome,
-    ProviderPurpose, ReconciliationContract, ReplayPolicy, StopReason, ToolCall, ToolCancellation,
-    ToolIntent, ToolOutcome, ToolResult, Usage, WorkspaceFootprint,
+    BudgetKind, Exposure, MeterSettlement, ProviderFailureKind, ProviderIntent, ProviderMessage,
+    ProviderOutcome, ProviderPurpose, ToolCall, ToolCancellation, ToolIntent, ToolOutcome,
+    ToolResult, Usage,
 };
-use super::fact::{CommandReceipt, CommandStatus, CompletionCheck, ForkAdoption, ForkOutcome};
+use super::fact::{CommandReceipt, CommandStatus, CompletionCheck};
 use super::fact::{Fact, FactData, MeterOwner, OperationStageOutcome};
 use super::id::{Digest, OperationId, ProviderResultId, SessionId, ToolCallId};
 use super::journal::{JournalError, JournalWriter, Result as JournalResult};
 use super::observe::{ObserveError, Observer};
 use super::reducer::{InputState, ProviderState, SessionState};
 use super::work::{
-    AcceptanceCheck, Candidate, CloseReason, EvidenceRef, ItemDisposition, PlanRevision,
-    PlanSource, PlanStep, RequiredObservation, ReviewerHead, VerificationPolicy, WorkError,
-    WorkItem, WorkPolicy, WorkProjection, WorkRevision, WorkStage, WorkState, WorkStatus,
+    AcceptanceCheck, Candidate, EvidenceRef, ItemDisposition, PlanRevision, PlanSource, PlanStep,
+    RequiredObservation, VerificationPolicy, WorkError, WorkItem, WorkPolicy, WorkProjection,
+    WorkRevision, WorkStage, WorkState, WorkStatus,
 };
 use super::workspace::WorkspaceObservation;
-use super::workspace::{PathComponent, PathKey, PathPlatform, WorkspaceEffect, WorkspaceScope};
+use super::workspace::{PathComponent, PathKey, WorkspaceScope};
 use super::{effect, id, publish};
-
-const MAX_TEXT_BYTES: usize = 65_536;
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -263,15 +259,11 @@ impl SessionDriver {
                         text: entry.payload.clone(),
                         images: Items::new(encode_images(images)?)?,
                     },
-                    reserved_projection_bytes: 128,
                 },
             },
             Fact {
                 id: super::id::FactId::new(session, self.take()),
-                data: FactData::InputApplied {
-                    input,
-                    operation: Some(operation),
-                },
+                data: FactData::InputApplied { input, operation },
             },
             Fact {
                 id: super::id::FactId::new(session, self.take()),
@@ -301,7 +293,7 @@ impl SessionDriver {
                 id: super::id::FactId::new(session, self.take()),
                 data: FactData::InputApplied {
                     input: queued,
-                    operation: Some(operation),
+                    operation,
                 },
             });
             facts.push(Fact {
@@ -350,15 +342,11 @@ impl SessionDriver {
                         text: entry.payload.clone(),
                         images: Items::default(),
                     },
-                    reserved_projection_bytes: 128,
                 },
             },
             Fact {
                 id: super::id::FactId::new(session, self.take()),
-                data: FactData::InputApplied {
-                    input,
-                    operation: Some(operation),
-                },
+                data: FactData::InputApplied { input, operation },
             },
             Fact {
                 id: super::id::FactId::new(session, self.take()),
@@ -582,7 +570,6 @@ impl SessionDriver {
                         call: *call,
                         attempt: *attempt,
                         outcome,
-                        workspace: WorkspaceEffect::None,
                     },
                 },
             });
@@ -590,9 +577,7 @@ impl SessionDriver {
                 facts.push(Fact {
                     id: super::id::FactId::new(session, self.take()),
                     data: FactData::MeterSettled {
-                        meter: super::id::MeterId::new(session, self.take()),
                         owner: MeterOwner::Tool(*attempt),
-                        kind: MeterKind::Tool,
                         settlement: MeterSettlement::Known(Usage {
                             input_tokens: None,
                             output_tokens: None,
@@ -642,9 +627,6 @@ impl SessionDriver {
             plan: work.and_then(WorkState::selected_plan),
             candidate: work.and_then(|state| state.candidate().map(Candidate::id)),
             verdict: None,
-            usage_digest: Digest::hash(b"mage:usage-digest:v1", b"closed"),
-            inputs: Items::default(),
-            diagnostic: None,
         };
         let closed_id = super::id::FactId::new(session, self.take());
         let facts = vec![Fact {
@@ -726,11 +708,7 @@ impl SessionDriver {
     }
 
     /// Open a fork intent from the current clean prefix.
-    pub(crate) fn fork(
-        &mut self,
-        child: SessionId,
-        adoption: ForkAdoption,
-    ) -> Result<super::id::ForkId, DriverError> {
+    pub(crate) fn fork(&mut self, child: SessionId) -> Result<super::id::ForkId, DriverError> {
         let session = self.session();
         let intent = super::id::ForkId::new(session, self.take());
         let observation = self.observe_workspace()?;
@@ -757,9 +735,7 @@ impl SessionDriver {
                     child,
                     source_seq,
                     source_digest,
-                    adoption,
                     observation: observation_id,
-                    plan_footprint: None,
                 },
             },
         ];
@@ -811,7 +787,6 @@ impl SessionDriver {
                         source_seq: open.source_seq,
                         source_digest: open.source_digest,
                         intent,
-                        inherited_terminal_seq: open.source_seq,
                     },
                 },
                 Fact {
@@ -826,22 +801,14 @@ impl SessionDriver {
             None,
             vec![Fact {
                 id: super::id::FactId::new(child, 4),
-                data: FactData::ForkSnapshotSealed {
-                    intent,
-                    preceding,
-                    next_request: None,
-                    inherited_terminal_seq: open.source_seq,
-                },
+                data: FactData::ForkSnapshotSealed { intent, preceding },
             }],
         )?;
         let sealed_journal = child_writer.state().head().ok_or(DriverError::NoHead)?;
         drop(child_writer);
 
         let observation = self.observe_workspace()?;
-        let outcome = ForkOutcome::Published {
-            sealed_journal,
-            observation: observation.id(),
-        };
+        let observation_id = observation.id();
         let facts = vec![
             Fact {
                 id: super::id::FactId::new(parent, self.take()),
@@ -849,7 +816,11 @@ impl SessionDriver {
             },
             Fact {
                 id: super::id::FactId::new(parent, self.take()),
-                data: FactData::ForkFinished { intent, outcome },
+                data: FactData::ForkFinished {
+                    intent,
+                    sealed_journal,
+                    observation: observation_id,
+                },
             },
         ];
         self.append(None, facts)?;
@@ -1130,14 +1101,6 @@ impl SessionDriver {
     }
 }
 
-fn replay_for(name: &str) -> ReplayPolicy {
-    if matches!(name, "edit_file" | "write_file" | "run_command") {
-        ReplayPolicy::Never
-    } else {
-        ReplayPolicy::ReplaySafe
-    }
-}
-
 fn completion_digest(command: &str, passed: bool, output: &str) -> Digest {
     let mut bytes =
         Vec::with_capacity(command.len().saturating_add(output.len()).saturating_add(2));
@@ -1156,69 +1119,6 @@ fn path_text(path: &PathKey) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
-}
-
-fn running_process(job: super::id::JobId, output: &str) -> Option<ProcessRecord> {
-    let pid = output.lines().find_map(|line| {
-        line.strip_prefix("pid ")?
-            .split_whitespace()
-            .next()?
-            .parse::<u64>()
-            .ok()
-            .filter(|pid| *pid != 0)
-    })?;
-    Some(ProcessRecord::Running {
-        job,
-        identity: ProcessIdentity {
-            boot: BootIdentity(Digest::hash(b"mage:boot:v1", b"host")),
-            leader: pid,
-            started: ProcessStart(1),
-            native_scope: if cfg!(windows) {
-                NativeProcessScope::WindowsJob(Items::new(vec![pid as u16]).ok()?)
-            } else {
-                NativeProcessScope::PosixGroup(pid)
-            },
-        },
-    })
-}
-
-fn footprint_for(platform: PathPlatform, arguments: &str) -> WorkspaceFootprint {
-    let Some(path) = serde_json::from_str::<serde_json::Value>(arguments)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("path")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-    else {
-        return WorkspaceFootprint::None;
-    };
-    let Some(key) = path_key(platform, &path) else {
-        return WorkspaceFootprint::None;
-    };
-    Items::new(vec![key])
-        .ok()
-        .map(WorkspaceFootprint::Exact)
-        .unwrap_or(WorkspaceFootprint::None)
-}
-
-fn path_key(platform: PathPlatform, relative: &str) -> Option<PathKey> {
-    let mut components = Vec::new();
-    for part in relative.split(['/', '\\']) {
-        if part.is_empty() || part == "." {
-            continue;
-        }
-        if part == ".." {
-            return None;
-        }
-        let component = match platform {
-            PathPlatform::Unix => PathComponent::unix(part.as_bytes()).ok()?,
-            PathPlatform::Windows => PathComponent::windows(part.encode_utf16().collect()).ok()?,
-        };
-        components.push(component);
-    }
-    PathKey::new(platform, components).ok()
 }
 
 fn encode_images(images: &[Image]) -> Result<Vec<ImagePayload>, DriverError> {

@@ -3,16 +3,11 @@ use sigil_tui::Host;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
+use super::canvas::{BASE, CYAN, Cell, DIM, GRAY, GREEN, TEXT, rgb};
 use super::model::Model;
 use crate::tui::short_session;
 
 const SPACE: Rgba8 = rgb(8, 12, 28);
-const BASE: Rgba8 = rgb(12, 12, 20);
-const TEXT: Rgba8 = rgb(200, 200, 205);
-const GRAY: Rgba8 = rgb(160, 160, 160);
-const DIM: Rgba8 = rgb(90, 90, 90);
-const GREEN: Rgba8 = rgb(80, 200, 120);
-const CYAN: Rgba8 = rgb(90, 200, 220);
 const SCRIM: Rgba8 = rgb(10, 8, 20);
 const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 const STAR_MID: Rgba8 = rgb(120, 148, 200);
@@ -66,14 +61,6 @@ const NEAR_RIDGE: &[(f32, f32)] = &[
     (0.90, 0.66),
     (1.00, 0.70),
 ];
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Cell {
-    ch: char,
-    fg: Rgba8,
-    bg: Rgba8,
-    bold: bool,
-}
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, rows) = app.viewport.get();
@@ -334,6 +321,7 @@ fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgb
                     fg: color,
                     bg,
                     bold: false,
+                    italic: false,
                 },
             );
         }
@@ -344,7 +332,7 @@ fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgb
 fn clear(cells: &mut [Cell], cols: u16, x: u16, y: u16, width: u16, height: u16) {
     for row in y..y.saturating_add(height) {
         for col in x..x.saturating_add(width) {
-            set(cells, cols, col, row, blank());
+            set(cells, cols, col, row, Cell::blank());
         }
     }
 }
@@ -442,18 +430,10 @@ fn write(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgba8
                 fg: color,
                 bg: BASE,
                 bold: false,
+                italic: false,
             },
         );
         col = col.saturating_add(UnicodeWidthChar::width(ch).unwrap_or(0) as u16);
-    }
-}
-
-const fn blank() -> Cell {
-    Cell {
-        ch: ' ',
-        fg: TEXT,
-        bg: BASE,
-        bold: false,
     }
 }
 
@@ -507,7 +487,7 @@ fn scene_row(cells: &[Cell]) -> NodeBuilder {
 }
 
 fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
-    let mut cells = vec![blank(); usize::from(cols) * usize::from(rows)];
+    let mut cells = vec![Cell::blank(); usize::from(cols) * usize::from(rows)];
     let drift = (ticks / 150) as u16;
     for y in 0..rows {
         for x in 0..cols {
@@ -530,6 +510,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                     fg: if bright { STAR_BRIGHT } else { STAR_DIM },
                     bg: BASE,
                     bold: false,
+                    italic: false,
                 },
             );
         }
@@ -560,6 +541,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                     fg,
                     bg: BASE,
                     bold: false,
+                    italic: false,
                 },
             );
         }
@@ -606,6 +588,7 @@ fn fantasy(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                 fg: pixel(&pixels, cols, x, y * 2),
                 bg: pixel(&pixels, cols, x, y * 2 + 1),
                 bold: false,
+                italic: false,
             });
         }
     }
@@ -822,10 +805,6 @@ fn paint_pine(pixels: &mut [Rgba8], cols: u16, center: u16, base: u16, height: u
             put(pixels, cols, i32::from(center) + dx, y, CASTLE);
         }
     }
-}
-
-const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
-    Rgba8 { r, g, b, a: 255 }
 }
 
 fn hash(x: u16, y: u16) -> u32 {

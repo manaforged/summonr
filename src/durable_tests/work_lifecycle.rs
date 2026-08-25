@@ -30,7 +30,7 @@ fn work_moves_plan_execute_verify_complete_and_cannot_reopen() {
     let candidate = work::candidate(&plan, &policy, &base, &capture);
     work::enter_verify(&mut writer, &plan, &policy, capture, &candidate);
     work::open_operation(&mut writer, 9, 630, 631, 632, WorkStage::Verify);
-    work::start_review(&mut writer, &plan, &policy, &candidate);
+    work::start_review(&mut writer);
     writer
         .append(fixture::id(11), None, work::review_terminal())
         .expect_err("completed Verify review cannot omit its candidate close group");

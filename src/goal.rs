@@ -24,10 +24,11 @@ pub(crate) async fn decision<P: Provider>(
     loop_: &mut Loop<P>,
     objective: &str,
     reply: &str,
+    evidence: &str,
     usage: &mut crate::provider::Usage,
 ) -> crate::durable::driver::VerdictDecision {
     match loop_
-        .judge(JUDGE_SYSTEM, &judge_user(objective, reply))
+        .judge(JUDGE_SYSTEM, &judge_user(objective, reply, evidence))
         .await
     {
         Ok((reply, judge_usage)) => {
@@ -69,7 +70,7 @@ ask questions you can resolve yourself:\n\n{objective}\n"
     text
 }
 
-fn judge_user(objective: &str, reply: &str) -> String {
+fn judge_user(objective: &str, reply: &str, evidence: &str) -> String {
     let tail: String = reply
         .chars()
         .rev()
@@ -78,7 +79,9 @@ fn judge_user(objective: &str, reply: &str) -> String {
         .chars()
         .rev()
         .collect();
-    format!("Objective:\n{objective}\n\nAgent's latest response:\n{tail}")
+    format!(
+        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nAgent's latest response:\n{tail}"
+    )
 }
 
 struct Verdict {

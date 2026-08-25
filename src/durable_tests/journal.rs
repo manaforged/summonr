@@ -6,7 +6,7 @@ use super::fixture;
 use crate::durable::bound::{Items, Text};
 use crate::durable::context::{
     ContextEntry, ContextRole, ContextSource, InputOrigin, InputRoute, OperationClose,
-    OperationOutcome, RouteReason, UserPayload,
+    OperationOutcome, UserPayload,
 };
 use crate::durable::effect::BudgetKind;
 use crate::durable::encoding::Commit;
@@ -88,7 +88,6 @@ fn chain_rejects_changed_inserted_removed_and_reordered_lines() {
                         text: Text::new("queued").expect("fixture input must fit"),
                         images: Items::default(),
                     },
-                    reserved_projection_bytes: 128,
                 },
             }],
         )
@@ -96,30 +95,41 @@ fn chain_rejects_changed_inserted_removed_and_reordered_lines() {
     writer
         .append(
             fixture::id(3),
-            None,
+            Some(CommandReceipt {
+                id: fixture::id(31),
+                digest: fixture::digest("set token budget"),
+                status: CommandStatus::Accepted,
+                code: None,
+                result: Some(fixture::fact_id(4)),
+            }),
             vec![Fact {
                 id: fixture::fact_id(4),
-                data: FactData::InputRouted {
-                    input: fixture::id(30),
-                    route: InputRoute::Steer,
-                    reason: RouteReason::User,
+                data: FactData::BudgetChanged {
+                    kind: BudgetKind::SessionTokens,
+                    limit: Some(1_000),
                 },
             }],
         )
-        .expect("input route must append");
+        .expect("token budget must append");
     writer
         .append(
             fixture::id(4),
-            None,
+            Some(CommandReceipt {
+                id: fixture::id(32),
+                digest: fixture::digest("set live budget"),
+                status: CommandStatus::Accepted,
+                code: None,
+                result: Some(fixture::fact_id(5)),
+            }),
             vec![Fact {
                 id: fixture::fact_id(5),
-                data: FactData::InputCancelled {
-                    input: fixture::id(30),
-                    diagnostic: None,
+                data: FactData::BudgetChanged {
+                    kind: BudgetKind::SessionLiveMillis,
+                    limit: Some(60_000),
                 },
             }],
         )
-        .expect("input cancellation must append");
+        .expect("live budget must append");
     drop(writer);
 
     let original = fs::read_to_string(&path).expect("journal text must be readable");
@@ -198,7 +208,6 @@ fn partial_append_publishes_no_state_and_poisons_writer() {
                 text: Text::new("queued").expect("fixture input must fit"),
                 images: Items::default(),
             },
-            reserved_projection_bytes: 128,
         },
     }];
     writer
@@ -389,15 +398,11 @@ fn operation_start(index: u128, operation: OperationId) -> Vec<Fact> {
                     text: fixture::text("bounded operation"),
                     images: Items::default(),
                 },
-                reserved_projection_bytes: 128,
             },
         },
         Fact {
             id: fixture::fact_id(fact + 1),
-            data: FactData::InputApplied {
-                input,
-                operation: Some(operation),
-            },
+            data: FactData::InputApplied { input, operation },
         },
         Fact {
             id: fixture::fact_id(fact + 2),
@@ -428,9 +433,6 @@ fn operation_close(index: u128, operation: OperationId) -> Vec<Fact> {
                 plan: None,
                 candidate: None,
                 verdict: None,
-                usage_digest: fixture::digest(&format!("operation-usage-{index}")),
-                inputs: Items::default(),
-                diagnostic: None,
             },
             stage_outcome: OperationStageOutcome::Stayed,
         },

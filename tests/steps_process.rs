@@ -42,8 +42,9 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
     let mut second = RunningChild::spawn(&fixture, &args, "second")?;
     if let Err(error) = wait_for_file(&fixture.resumed_step_two, WAIT) {
         drop(second.kill());
+        let server_error = server.join().err();
         return Err(format!(
-            "{error}; restarted stderr: {}; restarted stdout: {}",
+            "{error}; server error: {server_error:?}; restarted stderr: {}; restarted stdout: {}",
             fs::read_to_string(fixture.stderr("second")).unwrap_or_default(),
             fs::read_to_string(fixture.stdout("second")).unwrap_or_default()
         )
@@ -319,6 +320,9 @@ fn serve(
             }
             Err(error) => return Err(format!("accept provider connection: {error}")),
         };
+        stream
+            .set_nonblocking(false)
+            .map_err(|error| format!("set stream blocking: {error}"))?;
         stream
             .set_read_timeout(Some(WAIT))
             .map_err(|error| format!("set stream timeout: {error}"))?;

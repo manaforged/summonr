@@ -35,7 +35,7 @@ impl Sandbox {
     pub(crate) fn discover(workspace: &Path, deny_network: bool) -> Result<Self> {
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         {
-            let _ = workspace;
+            let _ = (workspace, deny_network);
             Err(Error::Config(
                 "--sandbox is unsupported on this platform; use macOS Seatbelt or Linux bubblewrap"
                     .to_string(),

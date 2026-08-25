@@ -136,13 +136,6 @@ pub(super) async fn interactive(
             }
             break;
         }
-        if let Some(shell) = line.strip_prefix('!') {
-            match loop_.shell(shell.trim()).await {
-                Ok(output) => println!("{output}"),
-                Err(error) => eprintln!("summon: {error}"),
-            }
-            continue;
-        }
         let input = summoner::attach(workspace, line)?;
         drop(complete(&mut loop_, input, json).await?);
         if !json {
@@ -163,7 +156,7 @@ async fn command(loop_: &mut Loop<Client>, line: &str) -> Option<bool> {
             eprintln!("/exit  /session  /clear  /settings  /help");
             eprintln!("/plan  /plan accept  /plan reject  /auto");
             eprintln!("/goal <objective>  work toward it across turns (gates + judge)");
-            eprintln!("!command   @file prompt");
+            eprintln!("@file prompt");
             Some(true)
         }
         Some(summoner::SlashCommand::PlanAccept) => Some(accept(loop_)),

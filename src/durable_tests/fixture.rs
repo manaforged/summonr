@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::durable::bound::{Bytes, Items, Text};
 use crate::durable::context::{ContextEpoch, RequestHead};
+use crate::durable::effect::Exposure;
 use crate::durable::fact::{Fact, FactData};
 use crate::durable::id::{ContextEpochId, Digest, FactId, ScopedId, SessionId};
 use crate::durable::journal::JournalWriter;
@@ -27,6 +28,13 @@ pub(super) fn bytes<const N: usize>(value: &[u8]) -> Bytes<N> {
 
 pub(super) fn digest(label: &str) -> Digest {
     Digest::hash(b"mage:test:v1", label.as_bytes())
+}
+
+pub(super) fn exposure() -> Exposure {
+    Exposure {
+        max_input_tokens: 1_000,
+        max_output_tokens: 1_000,
+    }
 }
 
 pub(super) fn unix_path(components: &[&[u8]]) -> PathKey {
@@ -65,18 +73,8 @@ pub(super) fn scope() -> WorkspaceScope {
 
 pub(super) fn head() -> RequestHead {
     let mut head = RequestHead {
-        adapter: text("openai-compatible"),
-        request_format: 1,
-        endpoint: text("https://example.test/v1"),
         model: text("test-model"),
-        resource_version: None,
-        body_overlay: text("{}"),
         system: text("You are Mage."),
-        tool_schemas_digest: digest("tools"),
-        output_settings: text("{}"),
-        context_settings: text("{}"),
-        streaming: true,
-        serializer: text("serde-json-1"),
         digest: Digest::default(),
     };
     head.digest = head

@@ -7,6 +7,8 @@ use crate::durable::product::{self, Open};
 use crate::durable::work::{WorkStage, WorkStatus};
 use crate::provider::Role;
 
+use super::fixture;
+
 fn usage() -> Usage {
     Usage {
         input_tokens: Some(10),
@@ -30,8 +32,6 @@ fn open_spec(home: &std::path::Path, workspace: &std::path::Path) -> Open {
         workspace: workspace.to_path_buf(),
         model: "test-model".to_string(),
         system: "You are Mage.".to_string(),
-        endpoint: "https://example.test/v1".to_string(),
-        adapter: "openai-compatible".to_string(),
     }
 }
 
@@ -56,7 +56,7 @@ fn open_round_and_resume_continues() {
         .start_operation("build the cutover")
         .expect("operation must open");
     let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#)
+        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
         .expect("provider must start");
     driver
         .finish_provider(attempt, "done", "", usage())
@@ -70,7 +70,7 @@ fn open_round_and_resume_continues() {
         .start_operation("second turn")
         .expect("second operation must open");
     let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#)
+        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
         .expect("second provider must start");
     driver
         .finish_provider(attempt, "again", "", usage())
@@ -171,7 +171,7 @@ fn assert_verify_recovery(open_verify: bool) {
         .start_input("change the source", &[])
         .expect("Execute must open");
     let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#)
+        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
         .expect("provider must start");
     driver
         .finish_provider(attempt, "done", "", usage())

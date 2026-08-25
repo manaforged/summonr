@@ -2,21 +2,18 @@ use std::collections::HashSet;
 
 use super::work::{find_work, materialized};
 use super::{known_entry, unknown};
-use crate::durable::context::{ContextEpoch, ContextRole, ContextSource, OperationClose};
+use crate::durable::context::{ContextRole, ContextSource, OperationClose};
 use crate::durable::effect::{
-    DetachedClose, EffectObservation, ProcessRecord, ProviderIntent, ProviderOutcome,
-    ProviderPurpose, ReconciliationContract, ReconciliationEvidence, ReconciliationResolution,
-    StopReason, ToolCall, ToolIntent, ToolOutcome, ToolResult, WorkspaceFootprint, validate_calls,
+    ProviderIntent, ProviderOutcome, ProviderPurpose, ToolCall, ToolIntent, ToolResult,
+    validate_calls,
 };
 use crate::durable::encoding::Commit;
 use crate::durable::fact::{FactData, MeterOwner};
 use crate::durable::id::{
-    JobId, OperationId, ProviderAttemptId, ProviderResultId, ToolAttemptId, ToolCallId,
-    ToolResultId, WorkId,
+    OperationId, ProviderAttemptId, ProviderResultId, ToolCallId, ToolResultId, WorkId,
 };
 use crate::durable::reducer::{ProviderState, ReduceError, Result, SessionState};
 use crate::durable::work::{Candidate, PlanSource, WorkStage, WorkStatus};
-use crate::durable::workspace::{WorkspaceEffect, validate_paths};
 
 pub(super) fn operation_open(
     state: &SessionState,
@@ -76,14 +73,8 @@ pub(super) fn operation_close(
             matches!(&fact.data, FactData::ProviderFinished { attempt: id, .. } if *id == attempt)
         })
     });
-    let retry_finishes = state.retry.is_some_and(|retry| {
-        commit.facts.iter().any(
-            |fact| matches!(&fact.data, FactData::RetryFinished { retry: id, .. } if *id == retry),
-        )
-    });
     if open.id != close.id
         || (state.open_provider.is_some() && !provider_finishes)
-        || (state.retry.is_some() && !retry_finishes)
         || unresolved_tools(state, commit)
     {
         return Err(ReduceError::State(
@@ -118,15 +109,9 @@ pub(super) fn provider_start(
     let Some(operation) = &state.operation else {
         return Err(unknown("provider operation"));
     };
-    let closes_retry = state.retry.is_some_and(|retry| {
-        commit.facts.iter().any(
-            |fact| matches!(&fact.data, FactData::RetryFinished { retry: id, .. } if *id == retry),
-        )
-    });
     if operation.id != intent.operation
         || operation.aborting
         || state.open_provider.is_some()
-        || (state.retry.is_some() && !closes_retry)
         || unresolved_tools(state, commit)
         || state.providers.contains_key(&intent.attempt)
         || state.providers.values().any(|provider| match provider {
@@ -144,47 +129,10 @@ pub(super) fn provider_start(
         .epochs
         .get(&intent.epoch)
         .ok_or_else(|| unknown("provider context epoch"))?;
-    if !head_matches(intent, epoch) {
-        return Err(ReduceError::State(
-            "provider request identity does not match its frozen context epoch",
-        ));
-    }
-    if intent.work != operation.work
-        || intent.stage != operation.stage
-        || epoch.stage != operation.stage
-    {
+    if epoch.stage != operation.stage {
         return Err(ReduceError::State(
             "provider stage does not match its operation",
         ));
-    }
-    match operation.work {
-        Some(work_id) => {
-            let work = find_work(state, commit, work_id).ok_or_else(|| unknown("provider Work"))?;
-            if intent.plan != work.selected_plan()
-                || intent.candidate != work.candidate().map(Candidate::id)
-            {
-                return Err(ReduceError::State(
-                    "provider Plan or candidate does not match current Work",
-                ));
-            }
-            if intent.stage == Some(WorkStage::Verify)
-                && work.verification().is_none_or(|policy| {
-                    policy.reviewer.endpoint.as_str() != intent.endpoint.as_str()
-                        || policy.reviewer.model.as_str() != intent.model.as_str()
-                        || policy.reviewer.request_format != intent.request_format
-                })
-            {
-                return Err(ReduceError::State(
-                    "Verify provider does not match the selected review head",
-                ));
-            }
-        }
-        None if intent.plan.is_some() || intent.candidate.is_some() => {
-            return Err(ReduceError::State(
-                "provider without Work cannot name a Plan or candidate",
-            ));
-        }
-        None => {}
     }
     let latest = commit
         .facts
@@ -214,14 +162,6 @@ pub(super) fn provider_start(
     Ok(())
 }
 
-fn head_matches(intent: &ProviderIntent, epoch: &ContextEpoch) -> bool {
-    intent.adapter == epoch.head.adapter
-        && intent.endpoint == epoch.head.endpoint
-        && intent.model == epoch.head.model
-        && intent.resource_version == epoch.head.resource_version
-        && intent.request_format == epoch.head.request_format
-}
-
 pub(super) fn provider_finish(
     state: &SessionState,
     commit: &Commit,
@@ -237,12 +177,12 @@ pub(super) fn provider_finish(
             "provider result does not match its intent",
         ));
     }
-    if let ProviderOutcome::Completed {
-        message,
-        stop_reason,
-        ..
-    } = outcome
-    {
+    let operation = state
+        .operation
+        .as_ref()
+        .filter(|operation| operation.id == intent.operation)
+        .ok_or_else(|| unknown("provider operation"))?;
+    if let ProviderOutcome::Completed { message, .. } = outcome {
         if intent.purpose == ProviderPurpose::AgentRound {
             let assistant_entries = commit
                 .facts
@@ -293,10 +233,10 @@ pub(super) fn provider_finish(
         }
         validate_calls(&calls)?;
         if intent.purpose == ProviderPurpose::AgentRound
-            && intent.stage == Some(WorkStage::Verify)
-            && *stop_reason == StopReason::Complete
+            && operation.stage == Some(WorkStage::Verify)
+            && message.tool_calls.is_empty()
         {
-            let reviewed = intent.work.is_some_and(|work| {
+            let reviewed = operation.work.is_some_and(|work| {
                 commit.facts.iter().any(
                     |fact| matches!(&fact.data, FactData::WorkSet { work: value } if value.id() == work),
                 )
@@ -316,12 +256,12 @@ pub(super) fn provider_finish(
             }
         }
         if intent.purpose == ProviderPurpose::AgentRound
-            && intent.stage == Some(WorkStage::Plan)
-            && *stop_reason == StopReason::Complete
+            && operation.stage == Some(WorkStage::Plan)
+            && message.tool_calls.is_empty()
         {
             let plan = commit.facts.iter().find_map(|fact| match &fact.data {
                 FactData::PlanSet { plan }
-                    if intent.work == Some(plan.work())
+                    if operation.work == Some(plan.work())
                         && matches!(plan.source, PlanSource::Generated { provider } if provider == result) =>
                 {
                     Some(plan.id())
@@ -333,7 +273,7 @@ pub(super) fn provider_finish(
                     matches!(&fact.data, FactData::PlanMaterializationPlanned { plan: id, .. } if *id == plan)
                 })
             });
-            let work = intent.work.is_some_and(|work| {
+            let work = operation.work.is_some_and(|work| {
                 commit.facts.iter().any(
                     |fact| matches!(&fact.data, FactData::WorkSet { work: value } if value.id() == work),
                 )
@@ -378,34 +318,15 @@ pub(super) fn tool_start(state: &SessionState, intent: &ToolIntent) -> Result<()
             .operation
             .as_ref()
             .is_none_or(|operation| operation.aborting)
-        || tool.call.registration != intent.registration
-        || tool.call.effect_contract_digest != intent.reconciliation.digest()?
     {
         return Err(ReduceError::State(
             "tool intent does not match its planned call",
         ));
     }
-    if let Some(process) = &intent.process {
-        process.validate(process.containment())?;
-        if let ReconciliationContract::Process { job } = intent.reconciliation
-            && process.job() != job
-        {
-            return Err(ReduceError::State(
-                "process reconciliation job does not match",
-            ));
-        }
-    }
-    if let WorkspaceFootprint::Exact(paths) = &intent.footprint {
-        validate_paths(paths.as_slice())?;
-    }
     Ok(())
 }
 
-pub(super) fn tool_finish(
-    state: &SessionState,
-    commit: &Commit,
-    result: &ToolResult,
-) -> Result<()> {
+pub(super) fn tool_finish(state: &SessionState, result: &ToolResult) -> Result<()> {
     let Some(tool) = state.tools.get(&result.call) else {
         return Err(unknown("planned tool call"));
     };
@@ -417,104 +338,14 @@ pub(super) fn tool_finish(
             "tool call already has a result or result ID changed",
         ));
     }
-    result.workspace.validate()?;
     match (&tool.intent, result.outcome.needs_start()) {
-        (Some(intent), true) if result.attempt == Some(intent.attempt) => {
-            match (&intent.footprint, &result.workspace) {
-                (WorkspaceFootprint::None, WorkspaceEffect::None) => {}
-                (WorkspaceFootprint::None, _) => {
-                    return Err(ReduceError::State(
-                        "None workspace footprint cannot report a workspace change",
-                    ));
-                }
-                (WorkspaceFootprint::Exact(paths), WorkspaceEffect::Known { changes, .. }) => {
-                    if changes.paths().any(|path| !paths.as_slice().contains(path)) {
-                        return Err(ReduceError::State(
-                            "exact tool effect changed a path outside its footprint",
-                        ));
-                    }
-                }
-                (
-                    WorkspaceFootprint::Exact(_),
-                    WorkspaceEffect::None | WorkspaceEffect::Unknown { .. },
-                )
-                | (WorkspaceFootprint::Scope(_), _) => {}
-            }
-        }
-        (None, false)
-            if result.attempt.is_none() && matches!(result.workspace, WorkspaceEffect::None) => {}
+        (Some(intent), true) if result.attempt == Some(intent.attempt) => {}
+        (None, false) if result.attempt.is_none() => {}
         _ => {
             return Err(ReduceError::State(
                 "tool terminal start state is inconsistent",
             ));
         }
-    }
-    if let ToolOutcome::Completed { job: Some(job), .. } = result.outcome
-        && !commit.facts.iter().any(
-            |fact| matches!(&fact.data, FactData::DetachedJobOpened { job: id, .. } if *id == job),
-        )
-    {
-        return Err(ReduceError::State(
-            "background result does not open its job",
-        ));
-    }
-    Ok(())
-}
-
-pub(super) fn effect_observed(
-    state: &SessionState,
-    commit: &Commit,
-    observation: &EffectObservation,
-    observing_result: ToolResultId,
-) -> Result<()> {
-    let Some(call) = state.tool_attempts.get(&observation.target) else {
-        return Err(unknown("target tool attempt"));
-    };
-    let Some(intent) = state.tools.get(call).and_then(|tool| tool.intent.as_ref()) else {
-        return Err(unknown("target reconciliation contract"));
-    };
-    if intent.reconciliation.digest()? != observation.contract_digest {
-        return Err(ReduceError::State("reconciliation contract digest changed"));
-    }
-    match (&intent.reconciliation, &observation.basis) {
-        (
-            ReconciliationContract::External {
-                observer,
-                rule,
-                subject,
-            },
-            ReconciliationEvidence::External {
-                observer: observed,
-                rule: observed_rule,
-                subject: observed_subject,
-            },
-        ) if observer == observed && rule == observed_rule && subject == observed_subject => {}
-        (
-            ReconciliationContract::Process { job },
-            ReconciliationEvidence::Process {
-                job: observed,
-                record,
-            },
-        ) if job == observed && record.job() == *job => {
-            record.validate(record.containment())?;
-            if observation.resolution == ReconciliationResolution::TerminalKnown
-                && !matches!(record, ProcessRecord::Terminal { .. })
-            {
-                return Err(ReduceError::State(
-                    "terminal process reconciliation requires a terminal process record",
-                ));
-            }
-        }
-        _ => {
-            return Err(ReduceError::State(
-                "reconciliation observer, rule, or subject does not match",
-            ));
-        }
-    }
-    if !commit.facts.iter().any(|fact| {
-        matches!(&fact.data, FactData::ToolFinished { result } if result.id == observing_result)
-    }) {
-        return Err(unknown("observing tool result"));
     }
     Ok(())
 }
@@ -525,7 +356,6 @@ pub(super) fn meter_owner(state: &SessionState, owner: &MeterOwner) -> Result<()
             matches!(state.providers.get(id), Some(ProviderState::Started(_)))
         }
         MeterOwner::Tool(id) => state.tool_attempts.contains_key(id),
-        MeterOwner::Retry(id) => state.retry == Some(*id),
     };
     if !known {
         return Err(unknown("meter owner"));
@@ -611,78 +441,5 @@ fn unresolved_tools(state: &SessionState, commit: &Commit) -> bool {
             && !commit.facts.iter().any(|fact| {
                 matches!(&fact.data, FactData::ToolFinished { result } if result.call == tool.call.id)
             })
-    })
-}
-
-pub(super) fn work_blocked(state: &SessionState, commit: &Commit, work: WorkId) -> bool {
-    state
-        .jobs
-        .iter()
-        .any(|(id, job)| match close_here(commit, *id).or(job.close) {
-            None => true,
-            Some(DetachedClose::Terminal) => false,
-            Some(DetachedClose::AbandonedUnknown) => job.work == Some(work),
-        })
-        || commit
-            .facts
-            .iter()
-            .any(|fact| matches!(&fact.data, FactData::DetachedJobOpened { .. }))
-        || state
-            .uncertain_effects
-            .iter()
-            .any(|(attempt, effect)| effect.work == Some(work) && !resolved_here(commit, *attempt))
-        || commit.facts.iter().any(|fact| match &fact.data {
-            FactData::ToolFinished { result } if result.outcome.uncertain() => result
-                .attempt
-                .is_some_and(|attempt| state.attempt_work(attempt) == Some(work)),
-            _ => false,
-        })
-}
-
-pub(super) fn fork_blocked(state: &SessionState, commit: &Commit) -> bool {
-    state
-        .jobs
-        .iter()
-        .any(|(id, job)| match close_here(commit, *id).or(job.close) {
-            None => true,
-            Some(DetachedClose::Terminal) => false,
-            Some(DetachedClose::AbandonedUnknown) => owner_active(state, commit, job.work),
-        })
-        || commit
-            .facts
-            .iter()
-            .any(|fact| matches!(&fact.data, FactData::DetachedJobOpened { .. }))
-        || state.uncertain_effects.iter().any(|(attempt, effect)| {
-            !resolved_here(commit, *attempt) && owner_active(state, commit, effect.work)
-        })
-        || commit.facts.iter().any(|fact| match &fact.data {
-            FactData::ToolFinished { result } if result.outcome.uncertain() => result
-                .attempt
-                .is_some_and(|attempt| owner_active(state, commit, state.attempt_work(attempt))),
-            _ => false,
-        })
-}
-
-fn owner_active(state: &SessionState, commit: &Commit, work: Option<WorkId>) -> bool {
-    work.is_none_or(|id| find_work(state, commit, id).is_none_or(|work| !work.status().terminal()))
-}
-
-fn close_here(commit: &Commit, job: JobId) -> Option<DetachedClose> {
-    commit.facts.iter().find_map(|fact| match &fact.data {
-        FactData::DetachedJobClosed {
-            job: id, outcome, ..
-        } if *id == job => Some(*outcome),
-        _ => None,
-    })
-}
-
-fn resolved_here(commit: &Commit, attempt: ToolAttemptId) -> bool {
-    commit.facts.iter().any(|fact| {
-        matches!(
-            &fact.data,
-            FactData::EffectObserved { observation, .. }
-                if observation.target == attempt
-                    && observation.resolution == ReconciliationResolution::TerminalKnown
-        )
     })
 }

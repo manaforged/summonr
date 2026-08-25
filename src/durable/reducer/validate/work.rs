@@ -1,4 +1,3 @@
-use super::effect::work_blocked;
 use super::{find_observation, known_scope, unknown};
 use crate::durable::encoding::Commit;
 use crate::durable::fact::{CompletionCheck, FactData, MaterializationOutcome};
@@ -29,29 +28,12 @@ pub(super) fn validate_plan(
                 return Err(unknown("Plan provider result"));
             }
         }
-        PlanSource::Supplied { input } => {
-            let known = state.inputs.contains_key(&input)
-                || commit.facts.iter().any(|fact| {
-                    matches!(&fact.data, FactData::InputAccepted { input: id, .. } if *id == input)
-                });
-            if !known {
-                return Err(unknown("Plan input"));
-            }
-        }
-        PlanSource::Imported { .. } => {}
+        PlanSource::External => {}
     }
     if state.plans.contains_key(&plan.id()) {
         return Err(ReduceError::Duplicate {
             kind: "Plan revision",
         });
-    }
-    if let Some(parent) = plan.parent() {
-        let Some(parent_plan) = find_plan(state, commit, parent) else {
-            return Err(unknown("parent Plan"));
-        };
-        if parent_plan.work() != plan.work() {
-            return Err(ReduceError::State("Plan parent belongs to another Work"));
-        }
     }
     Ok(())
 }
@@ -83,9 +65,12 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
         if current.base().is_some() && work.base() != current.base() {
             return Err(ReduceError::State("Work Execute base is immutable"));
         }
-        if current.base().is_some() && !capture_shape(current.verification(), work.verification()) {
+        if current.base().is_some()
+            && current.verification().map(VerificationPolicy::scope)
+                != work.verification().map(VerificationPolicy::scope)
+        {
             return Err(ReduceError::State(
-                "workspace scope and artifact exclusions cannot change after base capture",
+                "workspace scope cannot change after base capture",
             ));
         }
         if let Some(open) = &state.operation
@@ -100,7 +85,7 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
             ));
         }
     } else {
-        creation(state, commit, work)?;
+        creation(work)?;
     }
     if let Some(plan) = work.selected_plan() {
         let revision = find_plan(state, commit, plan).ok_or_else(|| unknown("selected Plan"))?;
@@ -181,13 +166,6 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
             ));
         }
     }
-    if state.works.get(&work.id()).is_some_and(|current| {
-        effect_boundary(current, work) && work_blocked(state, commit, work.id())
-    }) {
-        return Err(ReduceError::State(
-            "open job or uncertain effect blocks this Work boundary",
-        ));
-    }
     Ok(())
 }
 
@@ -260,13 +238,7 @@ fn check_passed(
         })
 }
 
-fn effect_boundary(current: &WorkState, next: &WorkState) -> bool {
-    (current.base().is_none() && next.base().is_some())
-        || (current.candidate() != next.candidate() && next.candidate().is_some())
-        || matches!(next.status(), WorkStatus::Completed { .. })
-}
-
-fn creation(state: &SessionState, commit: &Commit, work: &WorkState) -> Result<()> {
+fn creation(work: &WorkState) -> Result<()> {
     if work.revision().get() != 1
         || !matches!(work.status(), WorkStatus::Active(WorkStage::Plan))
         || work.base().is_some()
@@ -276,25 +248,13 @@ fn creation(state: &SessionState, commit: &Commit, work: &WorkState) -> Result<(
             "new Work must start at revision 1 in Plan without a base or candidate",
         ));
     }
-    if let Some(predecessor) = work.predecessor {
-        let prior =
-            find_work(state, commit, predecessor).ok_or_else(|| unknown("predecessor Work"))?;
-        if predecessor == work.id() || !prior.status().terminal() {
-            return Err(ReduceError::State(
-                "successor Work requires a different terminal predecessor",
-            ));
-        }
-    }
     Ok(())
 }
 
 fn validate_revision(current: &WorkState, next: &WorkState, commit: &Commit) -> Result<()> {
-    if current.objective != next.objective
-        || current.policy != next.policy
-        || current.predecessor != next.predecessor
-    {
+    if current.objective != next.objective || current.policy != next.policy {
         return Err(ReduceError::State(
-            "Work objective, continuation policy, and predecessor are immutable",
+            "Work objective and continuation policy are immutable",
         ));
     }
     preserve_evidence(current, next)?;
@@ -336,17 +296,11 @@ fn preserve_items(current: &WorkState, next: &WorkState) -> Result<()> {
             ));
         }
         let disposition_regressed = match item.disposition {
-            ItemDisposition::Completed => !matches!(
-                candidate.disposition,
-                ItemDisposition::Completed | ItemDisposition::Retired
-            ),
-            ItemDisposition::Retired => !matches!(candidate.disposition, ItemDisposition::Retired),
+            ItemDisposition::Completed => candidate.disposition != ItemDisposition::Completed,
             _ => false,
         };
         if disposition_regressed {
-            return Err(ReduceError::State(
-                "completed and retired Work items cannot regress",
-            ));
+            return Err(ReduceError::State("completed Work items cannot regress"));
         }
     }
     Ok(())
@@ -438,14 +392,6 @@ fn same_observation(commit: &Commit, id: ObservationId) -> bool {
     })
 }
 
-fn capture_shape(current: Option<&VerificationPolicy>, next: Option<&VerificationPolicy>) -> bool {
-    match (current, next) {
-        (Some(current), Some(next)) => current.same_capture(next),
-        (None, None) => true,
-        _ => false,
-    }
-}
-
 fn legal_transition(current: &WorkStatus, next: &WorkStatus) -> bool {
     match (current, next) {
         (WorkStatus::Active(left), WorkStatus::Active(right)) => matches!(
@@ -460,14 +406,8 @@ fn legal_transition(current: &WorkStatus, next: &WorkStatus) -> bool {
                     WorkStage::Verify | WorkStage::Execute | WorkStage::Plan
                 )
         ),
-        (WorkStatus::Active(stage), WorkStatus::Paused { stage: next, .. })
-        | (WorkStatus::Paused { stage, .. }, WorkStatus::Active(next))
-        | (WorkStatus::Paused { stage, .. }, WorkStatus::Paused { stage: next, .. }) => {
-            stage == next
-        }
         (WorkStatus::Active(WorkStage::Verify), WorkStatus::Completed { .. })
-        | (WorkStatus::Active(_), WorkStatus::Abandoned { .. })
-        | (WorkStatus::Paused { .. }, WorkStatus::Abandoned { .. }) => true,
+        | (WorkStatus::Active(_), WorkStatus::Abandoned { .. }) => true,
         (WorkStatus::Completed { .. } | WorkStatus::Abandoned { .. }, _) => false,
         _ => false,
     }

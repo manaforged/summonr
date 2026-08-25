@@ -63,7 +63,7 @@ fn execute_base_must_use_the_selected_scope() {
     work::finish_materialization(&mut writer, &plan);
     let base = work::observation(506);
     let mut wrong_scope = work::policy();
-    wrong_scope.scope.id = fixture::id(699);
+    wrong_scope.scope = fixture::id(699);
     let (receipt, facts) = work::execute_group(&plan, &base, &wrong_scope);
     writer
         .append(fixture::id(4), Some(receipt), facts)
@@ -75,17 +75,6 @@ fn execute_base_must_use_the_selected_scope() {
     writer
         .append(fixture::id(4), Some(receipt), facts)
         .expect_err("Execute checks must match the selected Plan");
-}
-
-#[test]
-fn policy_scope_content_cannot_change_behind_the_same_id() {
-    let current = work::policy();
-    let mut changed = current.clone();
-    changed.scope.candidate_roots =
-        Items::new(vec![fixture::unix_path(&[b"src"])]).expect("fixture roots must fit");
-
-    assert_eq!(current.scope(), changed.scope());
-    assert!(!current.same_capture(&changed));
 }
 
 #[test]

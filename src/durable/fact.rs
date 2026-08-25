@@ -2,17 +2,15 @@ use serde::{Deserialize, Serialize};
 
 use super::bound::{Items, Text};
 use super::context::{
-    AbortReason, ContextEntry, ContextEpoch, Directive, InputOrigin, InputRoute, OperationClose,
-    RetryIntent, RetryOutcome, RouteReason, UserPayload,
+    AbortReason, ContextEntry, ContextEpoch, InputOrigin, InputRoute, OperationClose, UserPayload,
 };
 use super::effect::{
-    BudgetKind, DetachedClose, DetachedState, EffectObservation, MeterKind, MeterSettlement,
-    ProcessRecord, ProviderIntent, ProviderOutcome, ToolCall, ToolIntent, ToolResult,
+    BudgetKind, MeterSettlement, ProviderIntent, ProviderOutcome, ToolCall, ToolIntent, ToolResult,
 };
 use super::id::{
-    CheckId, CommandId, ContextEpochId, Digest, EvidenceId, FactId, ForkId, InputId, JobId,
-    MaterializationId, MeterId, ObservationId, OperationId, PlanRevisionId, ProviderAttemptId,
-    ProviderResultId, RetryId, SessionId, ToolAttemptId, ToolResultId, WorkId,
+    CheckId, CommandId, ContextEpochId, Digest, FactId, ForkId, InputId, MaterializationId,
+    ObservationId, OperationId, PlanRevisionId, ProviderAttemptId, ProviderResultId, SessionId,
+    ToolAttemptId, WorkId,
 };
 use super::work::{PlanRevision, WorkStage, WorkState};
 use super::workspace::{
@@ -97,26 +95,6 @@ impl MaterializationOutcome {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum ForkAdoption {
-    AdoptChild,
-    RemainOnParent,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "outcome", content = "data", rename_all = "snake_case")]
-pub(crate) enum ForkOutcome {
-    Published {
-        sealed_journal: Digest,
-        observation: ObservationId,
-    },
-    Cancelled,
-    Failed {
-        diagnostic: Text<MAX_DIAGNOSTIC_BYTES>,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
 pub(crate) enum OperationStageOutcome {
     Stayed,
     Advanced,
@@ -129,7 +107,6 @@ pub(crate) enum OperationStageOutcome {
 pub(crate) enum MeterOwner {
     Provider(ProviderAttemptId),
     Tool(ToolAttemptId),
-    Retry(RetryId),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -183,29 +160,22 @@ pub(crate) enum FactData {
         child: SessionId,
         source_seq: u64,
         source_digest: Digest,
-        adoption: ForkAdoption,
         observation: ObservationId,
-        plan_footprint: Option<PublicationFootprint>,
-    },
-    ForkCancelRequested {
-        intent: ForkId,
     },
     ForkFinished {
         intent: ForkId,
-        outcome: ForkOutcome,
+        sealed_journal: Digest,
+        observation: ObservationId,
     },
     ForkedFrom {
         source: SessionId,
         source_seq: u64,
         source_digest: Digest,
         intent: ForkId,
-        inherited_terminal_seq: u64,
     },
     ForkSnapshotSealed {
         intent: ForkId,
         preceding: Digest,
-        next_request: Option<Digest>,
-        inherited_terminal_seq: u64,
     },
     CommandRejected {
         code: Text<256>,
@@ -216,23 +186,10 @@ pub(crate) enum FactData {
         origin: InputOrigin,
         route: InputRoute,
         payload: UserPayload,
-        reserved_projection_bytes: u32,
-    },
-    InputRouted {
-        input: InputId,
-        route: InputRoute,
-        reason: RouteReason,
     },
     InputApplied {
         input: InputId,
-        operation: Option<OperationId>,
-    },
-    InputCancelled {
-        input: InputId,
-        diagnostic: Option<Text<MAX_DIAGNOSTIC_BYTES>>,
-    },
-    DirectiveChanged {
-        directive: Directive,
+        operation: OperationId,
     },
     WorkSet {
         work: Box<WorkState>,
@@ -278,29 +235,6 @@ pub(crate) enum FactData {
     ToolFinished {
         result: ToolResult,
     },
-    DetachedJobOpened {
-        job: JobId,
-        attempt: ToolAttemptId,
-        process: ProcessRecord,
-        state: DetachedState,
-        contract_digest: Digest,
-    },
-    EffectObserved {
-        observation: EffectObservation,
-        observing_result: ToolResultId,
-    },
-    DetachedJobClosed {
-        job: JobId,
-        outcome: DetachedClose,
-        evidence: Option<EvidenceId>,
-    },
-    RetryScheduled {
-        retry: RetryIntent,
-    },
-    RetryFinished {
-        retry: RetryId,
-        outcome: RetryOutcome,
-    },
     ContextEpochOpened {
         epoch: ContextEpoch,
     },
@@ -312,9 +246,7 @@ pub(crate) enum FactData {
         replacement_epoch: ContextEpochId,
     },
     MeterSettled {
-        meter: MeterId,
         owner: MeterOwner,
-        kind: MeterKind,
         settlement: MeterSettlement,
     },
 }
@@ -328,16 +260,12 @@ impl FactData {
             Self::PlanMaterializationPlanned { .. } => FactKind::PlanMaterializationPlanned,
             Self::PlanMaterializationFinished { .. } => FactKind::PlanMaterializationFinished,
             Self::ForkPlanned { .. } => FactKind::ForkPlanned,
-            Self::ForkCancelRequested { .. } => FactKind::ForkCancelRequested,
             Self::ForkFinished { .. } => FactKind::ForkFinished,
             Self::ForkedFrom { .. } => FactKind::ForkedFrom,
             Self::ForkSnapshotSealed { .. } => FactKind::ForkSnapshotSealed,
             Self::CommandRejected { .. } => FactKind::CommandRejected,
             Self::InputAccepted { .. } => FactKind::InputAccepted,
-            Self::InputRouted { .. } => FactKind::InputRouted,
             Self::InputApplied { .. } => FactKind::InputApplied,
-            Self::InputCancelled { .. } => FactKind::InputCancelled,
-            Self::DirectiveChanged { .. } => FactKind::DirectiveChanged,
             Self::WorkSet { .. } => FactKind::WorkSet,
             Self::WorkspaceObserved { .. } => FactKind::WorkspaceObserved,
             Self::OperationOpened { .. } => FactKind::OperationOpened,
@@ -349,11 +277,6 @@ impl FactData {
             Self::ToolCallPlanned { .. } => FactKind::ToolCallPlanned,
             Self::ToolStarted { .. } => FactKind::ToolStarted,
             Self::ToolFinished { .. } => FactKind::ToolFinished,
-            Self::DetachedJobOpened { .. } => FactKind::DetachedJobOpened,
-            Self::EffectObserved { .. } => FactKind::EffectObserved,
-            Self::DetachedJobClosed { .. } => FactKind::DetachedJobClosed,
-            Self::RetryScheduled { .. } => FactKind::RetryScheduled,
-            Self::RetryFinished { .. } => FactKind::RetryFinished,
             Self::ContextEpochOpened { .. } => FactKind::ContextEpochOpened,
             Self::ContextEntryAdded { .. } => FactKind::ContextEntryAdded,
             Self::ConversationCleared { .. } => FactKind::ConversationCleared,
@@ -371,16 +294,12 @@ pub(crate) enum FactKind {
     PlanMaterializationPlanned,
     PlanMaterializationFinished,
     ForkPlanned,
-    ForkCancelRequested,
     ForkFinished,
     ForkedFrom,
     ForkSnapshotSealed,
     CommandRejected,
     InputAccepted,
-    InputRouted,
     InputApplied,
-    InputCancelled,
-    DirectiveChanged,
     WorkSet,
     WorkspaceObserved,
     OperationOpened,
@@ -392,11 +311,6 @@ pub(crate) enum FactKind {
     ToolCallPlanned,
     ToolStarted,
     ToolFinished,
-    DetachedJobOpened,
-    EffectObserved,
-    DetachedJobClosed,
-    RetryScheduled,
-    RetryFinished,
     ContextEpochOpened,
     ContextEntryAdded,
     ConversationCleared,
@@ -404,23 +318,20 @@ pub(crate) enum FactKind {
 }
 
 impl FactKind {
-    pub(crate) const ALL: [Self; 36] = [
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 27] = [
         Self::SessionCreated,
         Self::BudgetChanged,
         Self::PlanSet,
         Self::PlanMaterializationPlanned,
         Self::PlanMaterializationFinished,
         Self::ForkPlanned,
-        Self::ForkCancelRequested,
         Self::ForkFinished,
         Self::ForkedFrom,
         Self::ForkSnapshotSealed,
         Self::CommandRejected,
         Self::InputAccepted,
-        Self::InputRouted,
         Self::InputApplied,
-        Self::InputCancelled,
-        Self::DirectiveChanged,
         Self::WorkSet,
         Self::WorkspaceObserved,
         Self::OperationOpened,
@@ -432,11 +343,6 @@ impl FactKind {
         Self::ToolCallPlanned,
         Self::ToolStarted,
         Self::ToolFinished,
-        Self::DetachedJobOpened,
-        Self::EffectObserved,
-        Self::DetachedJobClosed,
-        Self::RetryScheduled,
-        Self::RetryFinished,
         Self::ContextEpochOpened,
         Self::ContextEntryAdded,
         Self::ConversationCleared,

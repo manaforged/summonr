@@ -74,7 +74,6 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
             .map(|message| message.content.as_str()),
         Some("here is the plan")
     );
-    loop_.shell("echo hi").await.unwrap_err();
     let denied = loop_
         .execute_tool(&call("write_file", r#"{"path":"x.rs","content":"no"}"#))
         .await;
@@ -618,17 +617,27 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
                         },
                         ..AssistantMessage::default()
                     },
-                    _ => AssistantMessage {
-                        content: Some(
-                            r#"{"done":true,"reason":"the requested file exists"}"#.to_string(),
-                        ),
-                        usage: Usage {
-                            prompt_tokens: 4,
-                            completion_tokens: 1,
-                            ..Usage::default()
-                        },
-                        ..AssistantMessage::default()
-                    },
+                    _ => {
+                        let input = &request
+                            .messages
+                            .last()
+                            .expect("judge request must contain user evidence")
+                            .content;
+                        assert!(input.contains("Harness evidence:\nTurn receipt"));
+                        assert!(input.contains("Changed: `goal.txt`"));
+                        assert!(input.contains("Verification: `true` passed"));
+                        AssistantMessage {
+                            content: Some(
+                                r#"{"done":true,"reason":"the requested file exists"}"#.to_string(),
+                            ),
+                            usage: Usage {
+                                prompt_tokens: 4,
+                                completion_tokens: 1,
+                                ..Usage::default()
+                            },
+                            ..AssistantMessage::default()
+                        }
+                    }
                 })
             })
         }
@@ -854,6 +863,66 @@ async fn resumed_budget_uses_durable_usage_and_ceiling() -> Result<()> {
 }
 
 #[tokio::test]
+async fn failed_provider_consumes_durable_budget_before_retry() -> Result<()> {
+    struct Failing {
+        calls: std::sync::Arc<AtomicUsize>,
+    }
+    impl Provider for Failing {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            let calls = self.calls.clone();
+            Box::pin(async move {
+                calls.fetch_add(1, Ordering::SeqCst);
+                Err(Error::provider(
+                    ProviderFailureKind::Authentication,
+                    "denied",
+                ))
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let calls = std::sync::Arc::new(AtomicUsize::new(0));
+    let mut first = Loop::with_session(
+        Failing {
+            calls: calls.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_budget(Budget {
+        max_tokens: Some(1),
+        max_secs: None,
+    })?;
+    let path = first.session_path().to_path_buf();
+    let failed = first.turn("first").await?;
+    assert!(failed.aborted);
+    assert!(failed.text.contains("token limit"));
+    assert!(first.spent_tokens() > 1);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    drop(first);
+
+    let mut resumed = Loop::resume_path(
+        Failing {
+            calls: calls.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+        &path,
+    )?;
+    let turn = resumed.turn("second").await?;
+    assert!(turn.aborted);
+    assert!(turn.text.contains("token limit"));
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn resumed_time_budget_uses_durable_live_time() -> Result<()> {
     struct Slow {
         calls: std::sync::Arc<AtomicUsize>,
@@ -1023,10 +1092,8 @@ async fn set_plan_keeps_schema_and_enforces_policy() -> Result<()> {
     assert!(loop_.is_plan());
     let names = loop_.tool_names();
     assert_eq!(names, automatic);
-    loop_.shell("echo hi").await.unwrap_err();
     loop_.set_plan(false);
     assert!(loop_.tool_names().contains(&"write_file".to_string()));
-    loop_.shell("echo hi").await.unwrap();
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1100,6 +1167,19 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
     )));
     let log = std::fs::read_to_string(loop_.session_path())?;
     assert!(log.contains("auto one"));
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    let request_digests = state
+        .providers
+        .values()
+        .map(|provider| match provider {
+            crate::durable::reducer::ProviderState::Started(intent)
+            | crate::durable::reducer::ProviderState::Finished { intent, .. } => {
+                intent.request_digest
+            }
+        })
+        .collect::<std::collections::HashSet<_>>();
+    assert_eq!(request_digests.len(), 3, "each full request must differ");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

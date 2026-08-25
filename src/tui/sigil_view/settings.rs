@@ -2,9 +2,8 @@ use sigil::prelude::*;
 use unicode_width::UnicodeWidthStr;
 
 use super::app::App;
-use super::chat::{
-    BLACK, Cell, DIM, GRAY, RED, TEXT, YELLOW, accent, draft_view, ellipsize, row, write_at,
-};
+use super::canvas::{Cell, DIM, GRAY, TEXT};
+use super::chat::{BLACK, RED, YELLOW, accent, draft_view, ellipsize, row, write_at};
 
 pub(super) fn settings_layer(app: App) -> NodeBuilder {
     let (cols, rows) = app.viewport.get();

@@ -34,7 +34,7 @@ impl<P: Provider> Loop<P> {
         let text = bus_text(&args);
         let read_only = self.tools.is_read_only();
         if name == "inbox" {
-            return Ok(inbox(self.take_all_bus_mail()));
+            return Ok(inbox(self.take_all_bus_mail()?));
         }
         let Some(bus) = self.bus.as_mut() else {
             unreachable!();
@@ -55,29 +55,29 @@ impl<P: Provider> Loop<P> {
     }
 
     /// Observe new mail for display and retain it for the next provider round.
-    pub fn bus_poll(&mut self) -> Vec<crate::bus::Mail> {
+    pub fn bus_poll(&mut self) -> Result<Vec<crate::bus::Mail>> {
         let mail = match &mut self.bus {
-            Some(bus) => bus.poll(),
+            Some(bus) => bus.poll()?,
             None => Vec::new(),
         };
         self.mail.extend(mail.iter().cloned());
-        mail
+        Ok(mail)
     }
 
-    pub(super) fn take_bus_mail(&mut self, limit: usize) -> (Vec<crate::bus::Mail>, usize) {
+    pub(super) fn take_bus_mail(&mut self, limit: usize) -> Result<(Vec<crate::bus::Mail>, usize)> {
         if let Some(bus) = &mut self.bus {
-            self.mail.extend(bus.poll());
+            self.mail.extend(bus.poll()?);
         }
         let count = self.mail.len().min(limit);
         let mail = self.mail.drain(..count).collect();
-        (mail, self.mail.len())
+        Ok((mail, self.mail.len()))
     }
 
-    fn take_all_bus_mail(&mut self) -> Vec<crate::bus::Mail> {
+    fn take_all_bus_mail(&mut self) -> Result<Vec<crate::bus::Mail>> {
         if let Some(bus) = &mut self.bus {
-            self.mail.extend(bus.poll());
+            self.mail.extend(bus.poll()?);
         }
-        self.mail.drain(..).collect()
+        Ok(self.mail.drain(..).collect())
     }
 
     /// The live roster, for `/agents`.
@@ -205,7 +205,7 @@ fn board_get(bus: &crate::bus::Bus, workspace: &Path, args: &serde_json::Value) 
         .get("key")
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| Error::Tool("board get requires key".to_string()))?;
-    let hit = bus.board(workspace).into_iter().find(|(k, _, _)| k == key);
+    let hit = bus.board(workspace)?.into_iter().find(|(k, _, _)| k == key);
     Ok(match hit {
         Some((_, value, from)) => format!("{key} = {value} (from {from})"),
         None => format!("no post for {key}"),
@@ -213,7 +213,7 @@ fn board_get(bus: &crate::bus::Bus, workspace: &Path, args: &serde_json::Value) 
 }
 
 fn board_list(bus: &crate::bus::Bus, workspace: &Path) -> Result<String> {
-    let board = bus.board(workspace);
+    let board = bus.board(workspace)?;
     if board.is_empty() {
         return Ok("the board is empty".to_string());
     }
@@ -232,3 +232,7 @@ fn board_list(bus: &crate::bus::Bus, workspace: &Path) -> Result<String> {
     }
     Ok(out)
 }
+
+#[cfg(test)]
+#[path = "bus_tests.rs"]
+mod tests;

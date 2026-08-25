@@ -324,6 +324,46 @@ pub struct CompletionRequest {
 }
 
 impl CompletionRequest {
+    /// Canonical bytes for the provider effect recorded in the session journal.
+    pub(crate) fn durable_bytes(&self) -> serde_json::Result<Vec<u8>> {
+        #[derive(Serialize)]
+        struct DurableMessage<'a> {
+            role: Role,
+            content: &'a str,
+            images: &'a [Image],
+            tool_calls: &'a [ToolCall],
+            tool_call_id: Option<&'a str>,
+            reasoning: Option<&'a str>,
+        }
+
+        #[derive(Serialize)]
+        struct DurableRequest<'a> {
+            model: &'a str,
+            messages: Vec<DurableMessage<'a>>,
+            tools: &'a [ToolDefinition],
+            max_output_tokens: u32,
+        }
+
+        let messages = self
+            .messages
+            .iter()
+            .map(|message| DurableMessage {
+                role: message.role,
+                content: &message.content,
+                images: &message.images,
+                tool_calls: &message.tool_calls,
+                tool_call_id: message.tool_call_id.as_deref(),
+                reasoning: message.reasoning.as_deref(),
+            })
+            .collect();
+        serde_json::to_vec(&DurableRequest {
+            model: &self.model,
+            messages,
+            tools: &self.tools,
+            max_output_tokens: self.max_output_tokens,
+        })
+    }
+
     /// Stable identity of the request head that should survive appended turns.
     pub(crate) fn prefix_hash(&self) -> String {
         let system = self.messages.first().map(|message| &message.content);

@@ -252,32 +252,32 @@ impl Bus {
 
     /// Drain mail addressed to this session since the last poll. An
     /// oversized mailbox is rotated down to its newest lines first.
-    pub(crate) fn poll(&mut self) -> Vec<Mail> {
+    pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
         let path = self.inbox_path(&self.id.clone());
         let mut text = std::fs::read_to_string(&path).unwrap_or_default();
         if text.len() > MAX_FILE_BYTES {
             let keep: Vec<&str> = text.lines().collect();
             let keep_from = keep.len().saturating_sub(500);
             text = format!("{}\n", keep[keep_from..].join("\n"));
-            drop(std::fs::write(&path, &text));
+            std::fs::write(&path, &text)?;
             self.cursor = self.cursor.saturating_sub(keep_from);
         }
         let lines: Vec<&str> = text.lines().collect();
         if self.cursor >= lines.len() {
             self.cursor = lines.len();
-            return Vec::new();
+            return Ok(Vec::new());
         }
         let mail: Vec<Mail> = lines[self.cursor..]
             .iter()
             .filter_map(|line| serde_json::from_str::<Mail>(line).ok())
             .collect();
         self.cursor = lines.len();
-        mail
+        Ok(mail)
     }
 
     /// Read the workspace blackboard as folded key/value posts. An
     /// oversized board is folded back to disk as a side effect.
-    pub(crate) fn board(&self, cwd: &Path) -> Vec<(String, String, String)> {
+    pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {
         let path = self.board_path(cwd);
         let text = std::fs::read_to_string(&path).unwrap_or_default();
         let mut board: Vec<(String, String, String)> = Vec::new();
@@ -304,9 +304,9 @@ impl Bus {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            drop(std::fs::write(&path, format!("{folded}\n")));
+            std::fs::write(&path, format!("{folded}\n"))?;
         }
-        board
+        Ok(board)
     }
 
     /// Post to the workspace blackboard.

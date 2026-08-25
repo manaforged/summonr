@@ -49,7 +49,7 @@ fn handle_runs_an_operation_round_and_replays() {
         .start_operation("build the cutover")
         .expect("operation must open");
     let attempt = handle
-        .start_provider(br#"{"model":"test-model"}"#)
+        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
         .expect("provider must start");
     handle
         .finish_provider(attempt, "done", "", usage(10, 5, 100))
@@ -73,9 +73,7 @@ fn handle_resumes_and_opens_a_child() {
     handle.set_workspace(&workspace);
 
     let child = SessionId::from_u128(2);
-    handle
-        .fork(child, crate::durable::fact::ForkAdoption::AdoptChild)
-        .expect("fork must open");
+    handle.fork(child).expect("fork must open");
     drop(handle);
 
     let resumed = SessionDriver::resume(&path, fixture::session()).expect("handle must resume");
@@ -99,7 +97,7 @@ fn handle_projects_history_from_the_durable_journal() {
         .start_operation("read the spec")
         .expect("operation must open");
     let attempt = handle
-        .start_provider(br#"{"model":"test-model"}"#)
+        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
         .expect("provider must start");
     handle
         .finish_provider(attempt, "done", "", usage(10, 5, 100))

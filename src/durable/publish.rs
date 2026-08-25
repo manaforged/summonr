@@ -1,25 +1,20 @@
 //! Local create-only publication.
 //!
-//! This module materializes a Plan projection at its exact publication
-//! footprint. It opens each ancestor relative to the previous directory
-//! capability without following symlinks, creates a same-directory temporary
-//! file exclusively, writes and reads back the bytes, and publishes the
-//! destination name with a directory-relative hard link that never replaces an
-//! existing owner. Any change to a checked ancestor or a racing destination
-//! yields a typed result instead of an ambient-path overwrite.
-//!
-//! The POSIX adapter uses [`rustix`] directory-relative `openat` / `linkat`.
-//! The non-POSIX adapter returns a visible unsupported result; it never falls
-//! back to an ambient path operation.
+//! Materializes a Plan revision at its exact publication footprint: absent
+//! ancestor directories are created, and the destination name is never
+//! replaced — an existing identical destination is `matched`, a divergent one
+//! is a typed `conflict`. Publication refuses a symlinked ancestor instead of
+//! following it out of the workspace.
 
-use std::io::{Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use rustix::fs::{AtFlags, Mode, OFlags, linkat, mkdirat, open, openat, unlinkat};
+use cap_std::ambient_authority;
+use cap_std::fs::{Dir, OpenOptions};
 
 use super::bound::{Items, Text};
 use super::fact::{MaterializationOutcome, PublicationFootprint};
-use super::id::{Digest, MaterializationId, PlanRevisionId, SessionId, WorkId};
+use super::id::Digest;
+use super::id::{MaterializationId, PlanRevisionId, SessionId, WorkId};
 use super::work::{PlanRevision, plan_path};
 use super::workspace::{PathComponent, PathKey, PathPlatform};
 
@@ -35,172 +30,104 @@ pub(crate) fn publish(
     footprint: &PublicationFootprint,
     bytes: &[u8],
 ) -> MaterializationOutcome {
-    #[cfg(unix)]
-    {
-        publish_unix(root, footprint, bytes)
+    let root = match Dir::open_ambient_dir(root, ambient_authority()) {
+        Ok(root) => root,
+        Err(error) => return failed(format!("cannot open workspace: {error}")),
+    };
+    if let Some(name) = symlinked_ancestor(&root, footprint) {
+        return failed(format!("ancestor `{name}` is a symlink"));
     }
-    #[cfg(not(unix))]
+    let temporary = relative(&footprint.temporary);
+    let destination = relative(&footprint.destination);
+    if let Some(parent) = destination.parent()
+        && let Err(error) = root.create_dir_all(parent)
     {
-        let _ = (root, footprint, bytes);
-        failed("create-only publication is unsupported on this platform")
+        return failed(format!("cannot create ancestor directories: {error}"));
+    }
+    match root.read(&destination) {
+        Ok(existing) if existing == bytes => MaterializationOutcome::Matched,
+        Ok(existing) => MaterializationOutcome::Conflict {
+            observed: Digest::hash(b"mage:plan:v1", &existing),
+        },
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            write_fresh(&root, &temporary, &destination, bytes)
+        }
+        Err(error) => failed(format!("cannot inspect destination: {error}")),
     }
 }
 
-#[cfg(unix)]
-fn publish_unix(
-    root: &Path,
-    footprint: &PublicationFootprint,
+/// Write the temporary file and hard-link it into place. The link fails when
+/// another writer claimed the destination first, which classifies from the
+/// winner's bytes; the temporary never outlives the attempt.
+fn write_fresh(
+    root: &Dir,
+    temporary: &Path,
+    destination: &Path,
     bytes: &[u8],
 ) -> MaterializationOutcome {
-    let mut cap = match open(
-        root,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW,
-        Mode::from_bits_retain(0),
-    ) {
-        Ok(fd) => fd,
-        Err(error) => return failed(format!("cannot open workspace root: {error}")),
-    };
-    for ancestor in footprint.ancestors.iter() {
-        let name = component_bytes(ancestor.last().expect("ancestor has a name"));
-        match openat(
-            &cap,
-            name,
-            OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW,
-            Mode::from_bits_retain(0),
-        ) {
-            Ok(next) => cap = next,
-            Err(rustix::io::Errno::NOENT) => {
-                if let Err(error) = mkdirat(&cap, name, Mode::from_bits_retain(0o755)) {
-                    return failed(format!("cannot create ancestor directory: {error}"));
-                }
-                match openat(
-                    &cap,
-                    name,
-                    OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW,
-                    Mode::from_bits_retain(0),
-                ) {
-                    Ok(next) => cap = next,
-                    Err(error) => return failed(format!("cannot open created directory: {error}")),
-                }
-            }
-            Err(error) => return failed(format!("cannot open ancestor directory: {error}")),
+    use std::io::Write;
+    let mut options = OpenOptions::new();
+    options.write(true).create_new(true);
+    let written = root.open_with(temporary, &options).or_else(|error| {
+        if error.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(error);
         }
-    }
-    let temporary = component_bytes(footprint.temporary.last().expect("temporary has a name"));
-    let destination = component_bytes(
-        footprint
-            .destination
-            .last()
-            .expect("destination has a name"),
-    );
-
-    let temp_fd = match openat(
-        &cap,
-        temporary,
-        OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW,
-        Mode::from_bits_retain(0o644),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::EXIST) => {
-            // A leftover same-attempt temporary is derived state. Best-effort
-            // cleanup owns no state; recreate it exclusively.
-            ignore(unlinkat(&cap, temporary, AtFlags::empty()));
-            match openat(
-                &cap,
-                temporary,
-                OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW,
-                Mode::from_bits_retain(0o644),
-            ) {
-                Ok(fd) => fd,
-                Err(error) => return failed(format!("cannot create temporary file: {error}")),
-            }
+        // A leftover temporary from a crashed same-attempt write is
+        // derived state; recreate it exclusively.
+        root.remove_file(temporary)?;
+        root.open_with(temporary, &options)
+    });
+    let result = match &written {
+        Ok(file) => {
+            let mut file = file;
+            file.write_all(bytes).and_then(|_| file.sync_all())
         }
-        Err(error) => return failed(format!("cannot create temporary file: {error}")),
+        Err(error) => Err(std::io::Error::new(error.kind(), error.to_string())),
     };
-
-    let mut file = std::fs::File::from(temp_fd);
-    let write = file
-        .write_all(bytes)
-        .and_then(|_| file.sync_all())
-        .map_err(|error| error.to_string());
-    drop(file);
-    if let Err(error) = write {
-        ignore(unlinkat(&cap, temporary, AtFlags::empty()));
+    drop(written);
+    if let Err(error) = result {
+        drop(root.remove_file(temporary));
         return failed(format!("cannot write temporary file: {error}"));
     }
-    if !matches!(compare(&cap, temporary, bytes), TempStates::Match) {
-        ignore(unlinkat(&cap, temporary, AtFlags::empty()));
-        return failed("temporary bytes do not match the recorded Plan");
-    }
-
-    match linkat(&cap, temporary, &cap, destination, AtFlags::empty()) {
+    match root.hard_link(temporary, root, destination) {
         Ok(()) => {
-            ignore(unlinkat(&cap, temporary, AtFlags::empty()));
-            classify_destination(&cap, destination, bytes, true)
+            drop(root.remove_file(temporary));
+            MaterializationOutcome::Written
         }
-        Err(rustix::io::Errno::EXIST) => {
-            ignore(unlinkat(&cap, temporary, AtFlags::empty()));
-            classify_destination(&cap, destination, bytes, false)
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            drop(root.remove_file(temporary));
+            match root.read(destination) {
+                Ok(existing) if existing == bytes => MaterializationOutcome::Matched,
+                Ok(existing) => MaterializationOutcome::Conflict {
+                    observed: Digest::hash(b"mage:plan:v1", &existing),
+                },
+                Err(error) => failed(format!("cannot classify destination: {error}")),
+            }
         }
         Err(error) => {
-            ignore(unlinkat(&cap, temporary, AtFlags::empty()));
+            drop(root.remove_file(temporary));
             failed(format!("cannot publish destination: {error}"))
         }
     }
 }
 
-fn classify_destination(
-    cap: &rustix::fd::OwnedFd,
-    name: &[u8],
-    expected: &[u8],
-    published: bool,
-) -> MaterializationOutcome {
-    let states = compare(cap, name, expected);
-    match states {
-        TempStates::Match => {
-            if published {
-                MaterializationOutcome::Written
-            } else {
-                MaterializationOutcome::Matched
+/// The first footprint ancestor that exists as a symlink, if any.
+fn symlinked_ancestor(root: &Dir, footprint: &PublicationFootprint) -> Option<String> {
+    for ancestor in footprint.ancestors.iter() {
+        let walked = relative(ancestor);
+        match root.symlink_metadata(&walked) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                return walked
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned());
             }
-        }
-        TempStates::Conflict { observed } => MaterializationOutcome::Conflict { observed },
-        TempStates::ReadError | TempStates::Gone => {
-            failed("cannot classify destination after publication")
-        }
-    }
-}
-
-fn compare(cap: &rustix::fd::OwnedFd, name: &[u8], expected: &[u8]) -> TempStates {
-    let fd = match openat(
-        cap,
-        name,
-        OFlags::RDONLY | OFlags::NOFOLLOW,
-        Mode::from_bits_retain(0),
-    ) {
-        Ok(fd) => fd,
-        Err(rustix::io::Errno::NOENT) => return TempStates::Gone,
-        Err(_) => return TempStates::ReadError,
-    };
-    let bytes = read_all(fd);
-    if bytes == expected {
-        TempStates::Match
-    } else {
-        TempStates::Conflict {
-            observed: Digest::hash(b"mage:plan:v1", &bytes),
+            Ok(_) => {}
+            // Absent ancestors are created by publication itself.
+            Err(_) => return None,
         }
     }
+    None
 }
-
-fn read_all(fd: rustix::fd::OwnedFd) -> Vec<u8> {
-    let mut file = std::fs::File::from(fd);
-    let mut buf = Vec::new();
-    ignore(file.read_to_end(&mut buf));
-    buf
-}
-
-/// Consume an ignored fallible result. Best-effort cleanup owns no state.
-fn ignore<T>(_: T) {}
 
 /// Materialize one Plan revision at its qualified path.
 ///
@@ -283,17 +210,29 @@ fn failed(diagnostic: impl Into<String>) -> MaterializationOutcome {
     }
 }
 
-enum TempStates {
-    Match,
-    Conflict { observed: Digest },
-    Gone,
-    ReadError,
+fn relative(key: &PathKey) -> PathBuf {
+    let mut path = PathBuf::new();
+    for component in key.components() {
+        push_component(&mut path, component);
+    }
+    path
 }
 
 #[cfg(unix)]
-fn component_bytes(component: &PathComponent) -> &[u8] {
-    match component {
-        PathComponent::Unix(bytes) => bytes.as_slice(),
-        PathComponent::Windows(_) => unreachable!("Unix path has no Windows component"),
+fn push_component(path: &mut PathBuf, component: &PathComponent) {
+    use std::os::unix::ffi::OsStrExt as _;
+    if let PathComponent::Unix(bytes) = component {
+        path.push(std::ffi::OsStr::from_bytes(bytes.as_slice()));
+    }
+}
+
+#[cfg(test)]
+#[path = "publish_tests.rs"]
+mod tests;
+
+#[cfg(not(unix))]
+fn push_component(path: &mut PathBuf, component: &PathComponent) {
+    if let PathComponent::Windows(units) = component {
+        path.push(String::from_utf16_lossy(units.as_slice()));
     }
 }

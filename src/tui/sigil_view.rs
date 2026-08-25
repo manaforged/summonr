@@ -1,6 +1,7 @@
 //! Sigil presentation for Summoner's asynchronous agent worker.
 
 mod app;
+mod canvas;
 mod chat;
 mod host;
 mod model;

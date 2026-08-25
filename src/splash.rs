@@ -140,7 +140,7 @@ fn render(splash: &Splash, palette: &Palette) -> String {
     lines.extend(info.iter().map(|row| format!("  {row}")));
     lines.push(String::new());
     lines.push(format!(
-        "{}✦ /help · !command · @file · /exit{}",
+        "{}✦ /help · @file · /exit{}",
         palette.dim, palette.reset
     ));
     lines.join("\n")

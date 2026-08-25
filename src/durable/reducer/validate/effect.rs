@@ -292,7 +292,10 @@ pub(super) fn provider_finish(
             }
         }
         validate_calls(&calls)?;
-        if intent.stage == Some(WorkStage::Verify) && *stop_reason == StopReason::Complete {
+        if intent.purpose == ProviderPurpose::AgentRound
+            && intent.stage == Some(WorkStage::Verify)
+            && *stop_reason == StopReason::Complete
+        {
             let reviewed = intent.work.is_some_and(|work| {
                 commit.facts.iter().any(
                     |fact| matches!(&fact.data, FactData::WorkSet { work: value } if value.id() == work),
@@ -312,7 +315,10 @@ pub(super) fn provider_finish(
                 ));
             }
         }
-        if intent.stage == Some(WorkStage::Plan) && *stop_reason == StopReason::Complete {
+        if intent.purpose == ProviderPurpose::AgentRound
+            && intent.stage == Some(WorkStage::Plan)
+            && *stop_reason == StopReason::Complete
+        {
             let plan = commit.facts.iter().find_map(|fact| match &fact.data {
                 FactData::PlanSet { plan }
                     if intent.work == Some(plan.work())

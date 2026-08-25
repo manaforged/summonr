@@ -84,7 +84,9 @@ pub(crate) enum ContextRole {
 #[serde(tag = "source", content = "id", rename_all = "snake_case")]
 pub(crate) enum ContextSource {
     Input(InputId),
+    WorkPolicy(InputId),
     Provider(ProviderResultId),
+    Receipt(ProviderResultId),
     Tool(ToolResultId),
     Plan(PlanRevisionId),
     Work(WorkId),

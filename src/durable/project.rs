@@ -11,7 +11,7 @@ use crate::provider::{Image, Message, Role, ToolCall, ToolFunction, ToolKind};
 use crate::session::Replay;
 
 use super::context::{ContextEntry, ContextRole, ContextSource};
-use super::effect::ProviderOutcome;
+use super::effect::{MeterSettlement, ProviderOutcome};
 use super::reducer::{ProviderState, SessionState};
 
 /// Rebuild the provider conversation from a reduced durable state.
@@ -20,15 +20,19 @@ pub(crate) fn replay(state: &SessionState) -> Replay {
     if let Some(epoch) = state.current_epoch
         && let Some(entry_ids) = state.epoch_entries.get(&epoch)
     {
-        for id in entry_ids {
+        for (index, id) in entry_ids.iter().enumerate() {
             if let Some(entry) = state.entries.get(id) {
+                if hidden_entry(state, entry)
+                    || replaced_by_receipt(state, entry, &entry_ids[index + 1..])
+                {
+                    continue;
+                }
                 history.push(project_entry(state, entry));
             }
         }
     }
     Replay {
         history,
-        task: None,
         prompt: state
             .current_epoch
             .and_then(|id| state.epochs.get(&id))
@@ -38,8 +42,80 @@ pub(crate) fn replay(state: &SessionState) -> Replay {
             .and_then(|id| state.epochs.get(&id))
             .map(|epoch| epoch.head.model.as_str().to_string()),
         id: state.session.map(|id| id.to_string()).unwrap_or_default(),
-        spent_tokens: 0,
+        spent_tokens: state
+            .meters
+            .settled
+            .values()
+            .map(settled_tokens)
+            .fold(0, u64::saturating_add),
+        elapsed_millis: state
+            .meters
+            .settled
+            .values()
+            .map(settled_millis)
+            .fold(0, u64::saturating_add),
     }
+}
+
+fn settled_millis(settlement: &MeterSettlement) -> u64 {
+    match settlement {
+        MeterSettlement::Known(usage) => usage.live_millis.unwrap_or_default(),
+        MeterSettlement::Conservative(exposure) | MeterSettlement::Unknown(exposure) => {
+            exposure.max_live_millis
+        }
+    }
+}
+
+fn settled_tokens(settlement: &MeterSettlement) -> u64 {
+    match settlement {
+        MeterSettlement::Known(usage) => usage
+            .input_tokens
+            .unwrap_or_default()
+            .saturating_add(usage.output_tokens.unwrap_or_default()),
+        MeterSettlement::Conservative(exposure) | MeterSettlement::Unknown(exposure) => exposure
+            .max_input_tokens
+            .saturating_add(exposure.max_output_tokens),
+    }
+}
+
+fn hidden_entry(state: &SessionState, entry: &ContextEntry) -> bool {
+    match entry.source {
+        ContextSource::WorkPolicy(_) => state
+            .epochs
+            .get(&entry.epoch)
+            .is_some_and(|epoch| epoch.stage == Some(super::work::WorkStage::Verify)),
+        ContextSource::Work(_) | ContextSource::Plan(_) => true,
+        _ => false,
+    }
+}
+
+fn replaced_by_receipt(
+    state: &SessionState,
+    entry: &ContextEntry,
+    following: &[super::id::ContextEntryId],
+) -> bool {
+    if entry.role != ContextRole::Assistant {
+        return false;
+    }
+    let ContextSource::Provider(result) = entry.source else {
+        return false;
+    };
+    let terminal = matches!(
+        provider_outcome(state, result),
+        Some(ProviderOutcome::Completed { message, .. }) if message.tool_calls.is_empty()
+    );
+    terminal
+        && (following.iter().any(|id| {
+            state.entries.get(id).is_some_and(|candidate| {
+                candidate.role == ContextRole::Assistant
+                    && candidate.source == ContextSource::Receipt(result)
+            })
+        }) || following.first().is_some_and(|id| {
+            state.entries.get(id).is_some_and(|candidate| {
+                candidate.role == ContextRole::Assistant
+                    && candidate.source == ContextSource::HarnessControl
+            })
+        }))
 }
 
 /// Project one context entry into a provider [`Message`].
@@ -54,8 +130,9 @@ pub(crate) fn project_entry(state: &SessionState, entry: &ContextEntry) -> Messa
 
 fn project_user(state: &SessionState, entry: &ContextEntry) -> Message {
     let mut message = Message::user(entry.payload.as_str().to_string());
-    let ContextSource::Input(input) = entry.source else {
-        return message;
+    let input = match entry.source {
+        ContextSource::Input(id) | ContextSource::WorkPolicy(id) => id,
+        _ => return message,
     };
     let Some(payload) = state.input_payloads.get(&input) else {
         return message;
@@ -82,13 +159,14 @@ fn project_assistant(state: &SessionState, entry: &ContextEntry) -> Message {
         tool_call_id: None,
         reasoning: None,
     };
-    let ContextSource::Provider(result_id) = &entry.source else {
-        return message;
+    let result_id = match &entry.source {
+        ContextSource::Provider(id) | ContextSource::Receipt(id) => *id,
+        _ => return message,
     };
     let Some(ProviderOutcome::Completed {
         message: provider_message,
         ..
-    }) = provider_outcome(state, *result_id)
+    }) = provider_outcome(state, result_id)
     else {
         return message;
     };

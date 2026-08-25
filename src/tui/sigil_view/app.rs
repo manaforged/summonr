@@ -33,7 +33,6 @@ pub(super) struct App {
     pub(super) caret: Signal<usize>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
-    pub(super) task: Signal<String>,
     pub(super) settings: Signal<String>,
     pub(super) facts: Signal<String>,
     pub(super) settings_open: Signal<bool>,
@@ -73,7 +72,6 @@ impl App {
             caret: signal(0),
             header: signal(String::new()),
             status: signal(String::new()),
-            task: signal(String::new()),
             settings: signal(String::new()),
             facts: signal(String::new()),
             settings_open: signal(false),
@@ -139,7 +137,6 @@ impl App {
         self.transcript.set(transcript);
         self.header.set(header(&model, &self.info));
         self.status.set(status(&model, &self.info));
-        self.task.set(model.task_text());
         self.settings
             .set(settings_text(&model.snapshot, &model.prefs));
         self.facts.set(facts(&model, &self.info));

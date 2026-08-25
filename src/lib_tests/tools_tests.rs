@@ -711,40 +711,28 @@ async fn nonzero_command_emits_a_failed_tool_result() -> Result<()> {
                         }],
                         ..AssistantMessage::default()
                     }),
-                    1 => {
+                    _ => {
                         assert!(request.messages.last().is_some_and(|message| {
                             message.role == crate::provider::Role::Tool
                                 && message.content.starts_with("exit 3")
                         }));
                         Ok(AssistantMessage {
-                            tool_calls: vec![call("task_state", r#"{"action":"advance"}"#)],
+                            content: Some("handled".to_string()),
                             ..AssistantMessage::default()
                         })
                     }
-                    _ => Ok(AssistantMessage {
-                        content: Some("handled".to_string()),
-                        ..AssistantMessage::default()
-                    }),
                 }
             })
         }
     }
 
     let workspace = test_workspace()?;
-    let (task, _) = TaskState::transition(
-        None,
-        r#"{"action":"start","steps":["Run the failing command"]}"#,
-    )?;
     let mut loop_ = Loop::with_session(
         ExitThenText(AtomicUsize::new(0)),
         "test-model",
         &workspace,
         "test",
-    )?
-    .restore_replay(Replay {
-        task: Some(task),
-        ..Replay::default()
-    });
+    )?;
     let turn = loop_.turn("run it").await?;
     assert!(turn.events.iter().any(|event| matches!(
         event,

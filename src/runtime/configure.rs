@@ -30,7 +30,7 @@ impl<P: Provider> Loop<P> {
         Ok(loop_)
     }
 
-    /// Resume a format-2 journal, or import a v1 `sessions/` log once.
+    /// Resume a format-2 journal.
     pub fn resume_path(
         provider: P,
         model: impl Into<String>,
@@ -130,6 +130,7 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("MAGE_MODEL is empty".to_string()));
         }
         let system_prompt = system_prompt.into();
+        let (max_tokens, max_live_millis) = session.budget_limits();
         Ok(Self {
             provider,
             model,
@@ -137,13 +138,15 @@ impl<P: Provider> Loop<P> {
             plan: false,
             tools: ToolRegistry::with_policy_and_search(workspace, policy, search)?,
             schema: None,
-            task_enabled: true,
-            task: None,
             history: Vec::new(),
             session,
             max_rounds: DEFAULT_MAX_ROUNDS,
             verify: None,
-            budget: Budget::none(),
+            budget: Budget {
+                max_tokens,
+                max_secs: max_live_millis
+                    .map(|millis| millis.saturating_add(999).saturating_div(1_000)),
+            },
             spent_tokens: 0,
             context_sample: None,
             started: Instant::now(),
@@ -213,14 +216,6 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub fn with_plan(mut self) -> Self {
         self.set_plan(true);
-        self
-    }
-
-    /// Use an external step runner as the only task-completion authority.
-    #[must_use]
-    pub fn with_external_steps(mut self) -> Self {
-        self.task_enabled = false;
-        self.task = None;
         self
     }
 
@@ -310,10 +305,15 @@ impl<P: Provider> Loop<P> {
     }
 
     /// Set session budget ceilings.
-    #[must_use]
-    pub fn with_budget(mut self, budget: Budget) -> Self {
+    pub fn with_budget(mut self, budget: Budget) -> Result<Self> {
+        self.session
+            .set_budget(
+                budget.max_tokens,
+                budget.max_secs.map(|seconds| seconds.saturating_mul(1_000)),
+            )
+            .map_err(super::session_err)?;
         self.budget = budget;
-        self
+        Ok(self)
     }
 
     /// Messages stored after the last committed round.
@@ -346,6 +346,17 @@ impl<P: Provider> Loop<P> {
         self.session.id().to_string()
     }
 
+    /// Current harness-owned Work progress.
+    pub fn work_progress(&self) -> Result<crate::WorkProgress> {
+        self.session.work_progress().map_err(super::session_err)
+    }
+
+    pub fn abandon_work(&mut self, reason: &str) -> Result<()> {
+        self.session
+            .abandon_work(reason)
+            .map_err(super::session_err)
+    }
+
     /// Replace in-RAM history, used when resuming a log.
     #[must_use]
     pub fn restore(mut self, history: Vec<Message>) -> Self {
@@ -357,18 +368,8 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
         self.history = replay.history;
-        self.task = replay.task;
         self.spent_tokens = replay.spent_tokens;
-        self
-    }
-
-    /// Restore cumulative accounting after a process restart.
-    #[must_use]
-    pub fn restore_progress(mut self, spent_tokens: u64, elapsed_secs: u64) -> Self {
-        self.spent_tokens = spent_tokens;
-        self.started = std::time::Instant::now()
-            .checked_sub(std::time::Duration::from_secs(elapsed_secs))
-            .unwrap_or_else(std::time::Instant::now);
+        self.started = restored_start(replay.elapsed_millis);
         self
     }
 
@@ -408,7 +409,8 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn adopt(&mut self, session: SessionDriver, replay: crate::session::Replay) {
         self.session = session;
         self.history = replay.history;
-        self.task = replay.task;
+        self.spent_tokens = replay.spent_tokens;
+        self.started = restored_start(replay.elapsed_millis);
         self.bus = None;
         self.join_bus();
         self.schema = None;
@@ -438,9 +440,8 @@ impl<P: Provider> Loop<P> {
             .await
     }
 
-    /// One-shot auxiliary completion outside the session (the goal judge).
-    /// No tools, no history, no session log.
-    pub async fn aux(&mut self, system: &str, user: &str) -> Result<String> {
+    /// Run the Goal judge as a durable, metered provider effect.
+    pub(crate) async fn judge(&mut self, system: &str, user: &str) -> Result<(String, Usage)> {
         let request = CompletionRequest {
             model: self.model.clone(),
             messages: vec![
@@ -448,10 +449,41 @@ impl<P: Provider> Loop<P> {
                 Message::user(user.to_string()),
             ],
             tools: Vec::new(),
-            max_output_tokens: AUX_OUTPUT_TOKENS,
+            max_output_tokens: JUDGE_OUTPUT_TOKENS,
+            emit_deltas: false,
         };
-        let message = self.provider.complete(&request).await?;
-        Ok(message.content.unwrap_or_default())
+        let attempt = self
+            .session
+            .start_judge(request.prefix_hash().as_bytes())
+            .map_err(super::session_err)?;
+        let started = Instant::now();
+        match self.provider.complete(&request).await {
+            Ok(message) => {
+                let usage = message.usage.clone();
+                let text = message.content.unwrap_or_default();
+                let mut meter = super::meter(&usage);
+                meter.live_millis = Some(super::elapsed_millis(started));
+                self.session
+                    .finish_judge(attempt, &text, meter)
+                    .map_err(super::session_err)?;
+                self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
+                    usage.prompt_tokens.saturating_add(usage.completion_tokens),
+                ));
+                Ok((text, usage))
+            }
+            Err(error) => {
+                self.session
+                    .fail_provider(
+                        attempt,
+                        super::durable_failure(error.provider_failure()),
+                        &error.to_string(),
+                        super::elapsed_millis(started),
+                    )
+                    .map_err(super::session_err)?;
+                self.spent_tokens = self.session.replay().spent_tokens;
+                Err(error)
+            }
+        }
     }
 
     /// Names of the tools currently advertised to the provider.
@@ -469,17 +501,10 @@ impl<P: Provider> Loop<P> {
             .collect()
     }
 
-    /// Current model-owned task checklist, when one exists.
-    #[must_use]
-    pub fn task_state(&self) -> Option<&crate::task::TaskState> {
-        self.task.as_ref()
-    }
-
     /// Remove the current conversation while keeping the provider and tools.
     pub fn clear_history(&mut self) -> Result<()> {
         self.session.clear().map_err(super::session_err)?;
         self.history.clear();
-        self.task = None;
         Ok(())
     }
 
@@ -497,47 +522,74 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
-    /// Publish a Plan revision for the current Work.
-    pub fn select_plan(&mut self, markdown: &str) -> Result<()> {
-        if self.session.state().works.is_empty() {
-            self.session
-                .set_work(markdown)
-                .map_err(super::session_err)?;
-        }
+    /// Start or resume numbered-step Work with every check declared by its
+    /// plan and contract.
+    pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
         self.session
-            .select_plan(markdown)
+            .prepare_external_work(
+                markdown,
+                markdown,
+                crate::durable::work::WorkPolicy::Steps,
+                commands,
+            )
             .map_err(super::session_err)?;
         Ok(())
     }
 
-    /// Journal step or goal progress on the active Work.
-    pub fn persist_progress(&mut self, job: &crate::steps::JobState) -> Result<()> {
-        let snapshot =
-            serde_json::to_string(job).map_err(|error| Error::Config(error.to_string()))?;
-        if self.session.state().works.is_empty() {
-            let objective = job.goal.clone().unwrap_or_else(|| job.plan.clone());
-            self.session
-                .set_work(&objective)
-                .map_err(super::session_err)?;
-        }
-        self.session.progress(&snapshot).map_err(super::session_err)
+    /// Start or resume the durable Work owned by the standing-goal runner.
+    pub fn select_goal(
+        &mut self,
+        objective: &str,
+        commands: &[String],
+        max_turns: usize,
+    ) -> Result<()> {
+        let max_turns = u32::try_from(max_turns)
+            .map_err(|_error| Error::Config("goal turn limit is too large".to_string()))?;
+        self.session
+            .prepare_external_work(
+                objective,
+                objective,
+                crate::durable::work::WorkPolicy::Goal { max_turns },
+                commands,
+            )
+            .map_err(super::session_err)
     }
 
-    /// Restore step or goal progress from the journaled Work projection.
-    #[must_use]
-    pub fn restored_progress(&self) -> Option<crate::steps::JobState> {
-        let snapshot = self.session.progress_text()?;
-        if !snapshot.trim_start().starts_with('{') {
-            return None;
-        }
-        serde_json::from_str(snapshot).ok()
+    /// Accept the selected interactive Plan and enter Execute.
+    pub fn accept_plan(&mut self) -> Result<()> {
+        self.session.accept_plan().map_err(super::session_err)
     }
 
-    /// Read a job snapshot from a format-2 journal without taking the writer.
+    /// Whether a journal contains this workspace's active Steps Work.
     #[must_use]
-    pub fn job_at(path: &Path) -> Option<crate::steps::JobState> {
-        crate::durable::product::job_progress(path)
+    pub fn steps_at(path: &Path, workspace: &Path, markdown: &str) -> bool {
+        crate::durable::product::work_matches(
+            path,
+            workspace,
+            crate::durable::work::WorkPolicy::Steps,
+            markdown,
+        )
     }
+
+    /// Whether a journal contains this workspace's active Goal Work.
+    #[must_use]
+    pub fn goal_at(path: &Path, workspace: &Path, objective: &str, max_turns: usize) -> bool {
+        let Ok(max_turns) = u32::try_from(max_turns) else {
+            return false;
+        };
+        crate::durable::product::work_matches(
+            path,
+            workspace,
+            crate::durable::work::WorkPolicy::Goal { max_turns },
+            objective,
+        )
+    }
+}
+
+fn restored_start(elapsed_millis: u64) -> std::time::Instant {
+    std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_millis(elapsed_millis))
+        .unwrap_or_else(std::time::Instant::now)
 }
 
 fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
@@ -549,17 +601,8 @@ fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
         return crate::durable::product::resume(home, session, workspace)
             .map_err(super::session_err);
     }
-    if path.extension().and_then(|ext| ext.to_str()) == Some("jsonl")
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            == Some("sessions")
-    {
-        return crate::durable::product::import(home, path, workspace).map_err(super::session_err);
-    }
     Err(Error::Config(
-        "session path is neither format-2 nor a v1 sessions log".to_string(),
+        "session path is not a format-2 journal".to_string(),
     ))
 }
 

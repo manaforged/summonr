@@ -34,6 +34,7 @@ fn to_chat_lifts_system_and_tools() -> Result<()> {
             },
         }],
         max_output_tokens: 128,
+        emit_deltas: true,
     };
     let chat = to_chat(&request)?;
     assert_eq!(chat.system.as_deref(), Some("be brief"));

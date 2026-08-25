@@ -43,7 +43,7 @@ impl Client {
         };
         let chat = to_chat(request)?;
         let options = chat_options(&self.headers, request.max_output_tokens);
-        if self.on_delta.is_some() || self.on_reasoning.is_some() {
+        if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
             return self.stream_native(genai, target, chat, &options).await;
         }
         let response = genai

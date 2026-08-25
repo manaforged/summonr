@@ -1,7 +1,7 @@
 use crate::durable::context::{AbortReason, InputOrigin};
 use crate::durable::driver::{DriverError, SessionDriver};
 use crate::durable::effect::{ReplayPolicy, Usage};
-use crate::durable::fact::{ForkAdoption, LegacySource};
+use crate::durable::fact::ForkAdoption;
 use crate::durable::id::SessionId;
 use crate::durable::journal::inspect;
 use crate::durable::observe::workspace_identity_of;
@@ -175,53 +175,6 @@ fn fork_records_an_intent_and_publishes_the_sealed_child() {
     drop(child_driver);
 }
 
-fn legacy_source(length: u64) -> LegacySource {
-    LegacySource {
-        display_id: fixture::text("legacy-display-id"),
-        format: 1,
-        converter: 1,
-        log_length: length,
-        log_digest: fixture::digest("legacy"),
-        plan_length: None,
-        plan_digest: None,
-    }
-}
-
-#[test]
-fn open_legacy_anchors_the_source_and_accepts_a_divergence() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let workspace = directory.path().join("workspace");
-    std::fs::create_dir(&workspace).expect("workspace must be created");
-    std::fs::write(workspace.join("src.txt"), b"hello").expect("workspace file must be written");
-    let identity = workspace_identity_of(&workspace).expect("workspace identity must resolve");
-    let scope = WorkspaceScope::new(
-        fixture::id(10),
-        identity,
-        vec![PathKey::root(PathPlatform::Unix)],
-        Vec::new(),
-        Vec::new(),
-    )
-    .expect("scope must be valid");
-
-    let path = directory.path().join("legacy.jsonl");
-    let mut driver = SessionDriver::open_legacy(
-        &path,
-        fixture::session(),
-        &scope,
-        fixture::head(),
-        legacy_source(9),
-        &workspace,
-    )
-    .expect("legacy root must open");
-
-    driver
-        .accept_legacy(legacy_source(12))
-        .expect("legacy source must be accepted");
-
-    assert!(inspect(&path).is_ok(), "legacy history must replay");
-    drop(driver);
-}
-
 #[test]
 fn select_plan_requires_a_workspace() {
     let directory = tempfile::tempdir().expect("temporary directory must exist");
@@ -263,7 +216,7 @@ fn select_plan_writes_the_plan_file() {
     let work = driver
         .set_work("Implement durable execution")
         .expect("work must set");
-    let markdown = "# Plan\n\nImplement the plan.";
+    let markdown = "# Plan\n\n## Steps\n\n1. Implement the plan.";
 
     let revision = driver.select_plan(markdown).expect("plan must select");
 
@@ -960,31 +913,6 @@ fn peer_steer_applies_while_an_operation_is_open() {
     assert_eq!(replay.history[1].content, "from a peer");
     assert!(inspect(&path).is_ok(), "peer steer journal must replay");
     drop(driver);
-}
-
-#[test]
-fn progress_snapshot_survives_resume() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver.set_work("ship the cutover").expect("work must open");
-    driver
-        .progress(r#"{"next_step":2,"goal":"ship"}"#)
-        .expect("progress must journal");
-    drop(driver);
-
-    let resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    assert_eq!(
-        resumed.progress_text(),
-        Some(r#"{"next_step":2,"goal":"ship"}"#)
-    );
-    drop(resumed);
 }
 
 #[test]

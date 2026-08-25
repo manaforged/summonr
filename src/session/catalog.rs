@@ -1,9 +1,8 @@
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
-use super::{Record, SessionInfo, parse_record, sessions_dir};
+use super::SessionInfo;
 use crate::durable::journal;
+use crate::durable::observe::workspace_identity_of;
 use crate::durable::project;
 use crate::error::{Error, Result};
 use crate::provider::Role;
@@ -18,9 +17,32 @@ pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
             info.cwd
                 .as_deref()
                 .is_some_and(|cwd| want.iter().any(|root| root == cwd))
+                || format2_workspace_matches(&info.path, &want)
         })
         .collect();
     Ok(matches.pop().map(|info| info.path))
+}
+
+pub(super) fn format2_workspace_matches(path: &Path, roots: &[String]) -> bool {
+    let Some(session) = journal::parse_path(path) else {
+        return false;
+    };
+    let Ok(state) = journal::inspect(path) else {
+        return false;
+    };
+    if state.session() != Some(session) {
+        return false;
+    }
+    let Some(scope) = state
+        .default_scope
+        .and_then(|scope| state.scopes.get(&scope))
+    else {
+        return false;
+    };
+    roots.iter().any(|root| {
+        workspace_identity_of(Path::new(root))
+            .is_ok_and(|identity| identity.object() == scope.workspace().object())
+    })
 }
 
 fn roots(workspace: &Path) -> Vec<String> {
@@ -52,10 +74,6 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     if v2.is_file() {
         return Ok(v2);
     }
-    let exact = sessions_dir()?.join(format!("{id}.jsonl"));
-    if exact.is_file() {
-        return Ok(exact);
-    }
     let hits: Vec<PathBuf> = list()?
         .into_iter()
         .filter(|info| info.id == id || info.id.starts_with(id))
@@ -70,17 +88,14 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     }
 }
 
-/// All sessions under `$MAGE_HOME/sessions-v2` then `$MAGE_HOME/sessions`, oldest first.
+/// All format-2 sessions, oldest first.
 pub fn list() -> Result<Vec<SessionInfo>> {
-    let mut paths = Vec::new();
     let v2 = crate::prompt::mage_home()?.join("sessions-v2");
-    if v2.is_dir() {
-        paths.extend(jsonl_paths(&v2)?);
-    }
-    let dir = sessions_dir()?;
-    if dir.is_dir() {
-        paths.extend(jsonl_paths(&dir)?);
-    }
+    let mut paths = if v2.is_dir() {
+        jsonl_paths(&v2)?
+    } else {
+        Vec::new()
+    };
     paths.sort();
     Ok(paths.into_iter().map(info).collect())
 }
@@ -110,44 +125,6 @@ fn info(path: PathBuf) -> SessionInfo {
 }
 
 fn peek(path: &Path) -> (Option<String>, Option<String>, String) {
-    if journal::parse_path(path).is_some() {
-        return peek_format2(path);
-    }
-    let Ok(file) = File::open(path) else {
-        return (None, None, String::new());
-    };
-    let mut cwd = None;
-    let mut model = None;
-    let mut preview = String::new();
-    for line in BufReader::new(file)
-        .lines()
-        .map_while(std::result::Result::ok)
-    {
-        let Ok(record) = parse_record(&line) else {
-            continue;
-        };
-        match record {
-            Record::Header {
-                cwd: header_cwd,
-                model: header_model,
-                ..
-            } => {
-                cwd = Some(header_cwd);
-                model = Some(header_model);
-            }
-            Record::User { text, .. } if preview.is_empty() => {
-                preview = text.chars().take(72).collect();
-            }
-            _ => {}
-        }
-        if cwd.is_some() && !preview.is_empty() {
-            break;
-        }
-    }
-    (cwd, model, preview)
-}
-
-fn peek_format2(path: &Path) -> (Option<String>, Option<String>, String) {
     let Ok(state) = journal::inspect(path) else {
         return (None, None, String::new());
     };

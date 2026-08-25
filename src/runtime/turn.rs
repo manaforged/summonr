@@ -37,6 +37,9 @@ impl<P: Provider> Loop<P> {
         let (mail, overflow) = self.take_bus_mail(5);
         for mail in mail {
             let text = crate::bus::envelope(&mail.from, &mail.text);
+            self.session
+                .steer(&text, crate::durable::context::InputOrigin::Peer)
+                .map_err(super::session_err)?;
             messages.push(Message::user(text.clone()));
             injected = true;
             self.push_event(
@@ -78,6 +81,7 @@ impl<P: Provider> Loop<P> {
         String,
         usize,
         crate::durable::id::ProviderAttemptId,
+        u64,
     )> {
         let mut attempt = 0_u32;
         let mut overflowed = false;
@@ -90,14 +94,24 @@ impl<P: Provider> Loop<P> {
                 .session
                 .start_provider(prefix_hash.as_bytes())
                 .map_err(super::session_err)?;
+            let started = Instant::now();
             match self.provider.complete(&request).await {
-                Ok(message) => return Ok((message, prefix_hash, request_chars, durable_attempt)),
+                Ok(message) => {
+                    return Ok((
+                        message,
+                        prefix_hash,
+                        request_chars,
+                        durable_attempt,
+                        super::elapsed_millis(started),
+                    ));
+                }
                 Err(error) => {
                     self.session
                         .fail_provider(
                             durable_attempt,
-                            durable_failure(error.provider_failure()),
+                            super::durable_failure(error.provider_failure()),
                             &error.to_string(),
+                            super::elapsed_millis(started),
                         )
                         .map_err(super::session_err)?;
                     let text = error.to_string();
@@ -161,6 +175,7 @@ impl<P: Provider> Loop<P> {
             messages: messages.to_vec(),
             tools: tools.to_vec(),
             max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            emit_deltas: true,
         }
     }
 
@@ -193,15 +208,11 @@ impl<P: Provider> Loop<P> {
         if self.mail.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
         }
-        let harness = self.harness_note();
-        self.session
-            .start_operation(&harness)
-            .map_err(super::session_err)?;
-        self.history.push(Message::user(harness));
-        let mut messages = Vec::with_capacity(self.history.len() + 2);
-        messages.push(Message::system(self.system_prompt.clone()));
-        messages.extend(self.history.iter().cloned());
-        self.run_turn(messages, emit).await
+        self.turn_with(
+            "[summon control: respond to the pending peer mail in this Work]",
+            emit,
+        )
+        .await
     }
 
     async fn run_turn(
@@ -225,7 +236,7 @@ impl<P: Provider> Loop<P> {
                 abort_reason = Some(reason);
                 break;
             }
-            let (assistant, prefix_hash, request_chars, durable_attempt) = self
+            let (assistant, prefix_hash, request_chars, durable_attempt, live_millis) = self
                 .complete_retry(&mut messages, &tools, &mut events, &mut emit)
                 .await?;
             if assistant.usage.prompt_tokens > 0 {
@@ -233,7 +244,8 @@ impl<P: Provider> Loop<P> {
             }
             self.record_usage(&assistant, prefix_hash, &mut usage, &mut events, &mut emit)?;
             let stop_reason = assistant.stop_reason;
-            let meter = super::meter(&assistant.usage);
+            let mut meter = super::meter(&assistant.usage);
+            meter.live_millis = Some(live_millis);
             let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
             let message = assistant.into_message();
             let calls = message.tool_calls.clone();
@@ -265,16 +277,6 @@ impl<P: Provider> Loop<P> {
                 continue;
             }
             if calls.is_empty() {
-                if self.task_enabled
-                    && !self.plan
-                    && self.task.as_ref().is_some_and(|task| !task.is_complete())
-                {
-                    self.session
-                        .finish_provider(durable_attempt, &message.content, &reasoning, meter)
-                        .map_err(super::session_err)?;
-                    self.continue_incomplete_task(message, &mut messages, &mut events, &mut emit)?;
-                    continue;
-                }
                 return self
                     .finish_turn(
                         message,
@@ -318,11 +320,23 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        let harness = self.harness_note();
+        let commands = self.verify.as_deref().unwrap_or_default();
+        if self.plan {
+            self.session
+                .prepare_plan_work(&input.text, commands)
+                .map_err(super::session_err)?;
+        } else {
+            self.session
+                .prepare_turn_work(Some(input.text.as_str()), commands)
+                .map_err(super::session_err)?;
+        }
+        let harness = self.harness_note(self.work_progress()?.kind);
         input.text = crate::session::decorate(&harness, &input.text);
-        self.session
+        let queued = self
+            .session
             .start_input(&input.text, &input.images)
             .map_err(super::session_err)?;
+        self.history.extend(queued.into_iter().map(Message::user));
         self.history.push(Message::user(input.clone()));
         let mut messages = Vec::with_capacity(self.history.len() + 2);
         messages.push(Message::system(self.system_prompt.clone()));
@@ -335,19 +349,13 @@ impl<P: Provider> Loop<P> {
             .breach(self.spent_tokens, self.started.elapsed().as_secs())
     }
 
-    fn harness_note(&self) -> String {
+    fn harness_note(&self, kind: crate::WorkKind) -> String {
         let mut note =
             crate::prompt::harness_section(self.plan, self.verify.as_deref().unwrap_or_default());
-        if self.task_enabled && !self.plan {
-            note.push_str(
-                "\n\nHarness: before edit_file or write_file, start task_state in the same response. Advance each completed step.",
-            );
-        } else if self.plan {
-            note.push_str("\n\nHarness: task_state is suspended in plan mode.");
-        } else if !self.task_enabled {
-            note.push_str(
-                "\n\nHarness: the external step runner owns progress. Do not call task_state.",
-            );
+        if self.plan {
+            note.push_str("\n\nHarness: Work remains in Plan until you select and accept it.");
+        } else if kind != crate::WorkKind::Single {
+            note.push_str("\n\nHarness: the Steps or Goal runner owns this Work.");
         }
         note
     }
@@ -404,7 +412,7 @@ impl<P: Provider> Loop<P> {
         mut events: Vec<Event>,
         mut emit: impl FnMut(&Event),
         round: usize,
-        usage: Usage,
+        mut usage: Usage,
         attempt: crate::durable::id::ProviderAttemptId,
         reasoning: String,
         meter: crate::durable::effect::Usage,
@@ -420,73 +428,101 @@ impl<P: Provider> Loop<P> {
             if root.is_file() {
                 return Err(Error::Config("plan directory is not a folder".to_string()));
             }
-            if self.session.state().works.is_empty() {
-                self.session
-                    .set_work(&message.content)
-                    .map_err(super::session_err)?;
-            }
             self.session
-                .select_plan(&message.content)
+                .finish_plan(
+                    attempt,
+                    &message.content,
+                    &reasoning,
+                    meter,
+                    self.verify.as_deref().unwrap_or_default(),
+                )
                 .map_err(super::session_err)?;
+            self.commit(&messages);
+            let progress = self.work_progress()?;
+            self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+            let text = message.content;
+            self.push_event(
+                &mut events,
+                &mut emit,
+                Event::Assistant { text: text.clone() },
+            )?;
+            return Ok(Turn {
+                text,
+                events,
+                rounds: round,
+                usage,
+                verify: None,
+                aborted: false,
+            });
         }
         self.session
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
-        let event = Event::Assistant {
-            text: message.content.clone(),
-        };
-        self.push_event(&mut events, &mut emit, event)?;
+        let (text, verify, receipt) =
+            if self.session.operation_stage() == Some(crate::durable::work::WorkStage::Execute) {
+                let capture = self.session.enter_verify().map_err(super::session_err)?;
+                self.session
+                    .start_verification()
+                    .map_err(super::session_err)?;
+                let (mut checks, evidence) = self.run_verify(&mut events, &mut emit).await?;
+                let mut verdict = self
+                    .session
+                    .prepare_verdict(evidence, checks.iter().all(|check| check.passed))
+                    .map_err(super::session_err)?;
+                if let Some(output) = verdict.diagnostic.clone() {
+                    let outcome = Outcome {
+                        command: "workspace candidate unchanged".to_string(),
+                        passed: false,
+                        output,
+                    };
+                    self.push_event(
+                        &mut events,
+                        &mut emit,
+                        Event::Verify {
+                            command: outcome.command.clone(),
+                            passed: false,
+                        },
+                    )?;
+                    checks.push(outcome);
+                    verdict.passed = false;
+                }
+                let decision = if verdict.passed {
+                    if let Some(objective) =
+                        self.session.goal_objective().map_err(super::session_err)?
+                    {
+                        crate::goal::decision(self, &objective, &message.content, &mut usage).await
+                    } else {
+                        crate::durable::driver::VerdictDecision::Automatic
+                    }
+                } else {
+                    crate::durable::driver::VerdictDecision::Automatic
+                };
+                let text = crate::verify::receipt(&message.content, &capture.paths, &checks);
+                let receipt = crate::verify::summary(&capture.paths, &checks);
+                self.session
+                    .commit_verdict(verdict, decision, Some((&text, capture.provider)))
+                    .map_err(super::session_err)?;
+                (text, checks.last().cloned(), Some(receipt))
+            } else {
+                self.session.close_operation().map_err(super::session_err)?;
+                (message.content, None, None)
+            };
         self.commit(&messages);
-        self.session.close_operation().map_err(super::session_err)?;
+        let progress = self.work_progress()?;
+        self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+        if let Some(text) = receipt {
+            self.push_event(&mut events, &mut emit, Event::Receipt { text })?;
+        }
+        let event = Event::Assistant { text: text.clone() };
+        self.push_event(&mut events, &mut emit, event)?;
         Ok(Turn {
-            text: message.content,
+            text,
             events,
             rounds: round,
             usage,
-            verify: None,
+            verify,
             aborted: false,
         })
-    }
-
-    fn continue_incomplete_task(
-        &mut self,
-        message: Message,
-        messages: &mut Vec<Message>,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        self.push_event(
-            events,
-            emit,
-            Event::Assistant {
-                text: message.content,
-            },
-        )?;
-        let current = self
-            .task
-            .as_ref()
-            .and_then(crate::task::TaskState::current)
-            .unwrap_or("the current step")
-            .to_string();
-        let control = UserInput::from(format!(
-            "[summon control: the task checklist is incomplete. Continue with `{current}`, then call task_state advance. Do not give the final answer yet.]"
-        ));
-        self.session
-            .steer(
-                &control.text,
-                crate::durable::context::InputOrigin::HarnessControl,
-            )
-            .map_err(super::session_err)?;
-        messages.push(Message::user(control));
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("task incomplete — continuing with {current}"),
-            },
-        )?;
-        self.commit(messages);
-        Ok(())
     }
 
     async fn execute_calls(
@@ -511,68 +547,16 @@ impl<P: Provider> Loop<P> {
             self.session
                 .start_tool(planned, &call.function.arguments, &call.function.name)
                 .map_err(super::session_err)?;
-            let (output, next_task) = if call.function.name == "task_state" {
-                if !self.task_enabled || self.plan {
-                    (
-                        Err(Error::Denied(
-                            "task_state is unavailable in the current mode".to_string(),
-                        )),
-                        None,
-                    )
-                } else {
-                    match crate::task::TaskState::transition(
-                        self.task.as_ref(),
-                        &call.function.arguments,
-                    ) {
-                        Ok((task, text)) => (
-                            Ok(crate::tools::ToolOutput {
-                                text,
-                                success: true,
-                                mutated: false,
-                            }),
-                            Some(task),
-                        ),
-                        Err(error) => (Err(error), None),
-                    }
-                }
-            } else if self.task_enabled
-                && !self.plan
-                && crate::task::guards(&call.function.name)
-                && self
-                    .task
-                    .as_ref()
-                    .is_none_or(crate::task::TaskState::is_complete)
-            {
-                (
-                    Err(Error::Denied(format!(
-                        "start task_state before using {}",
-                        call.function.name
-                    ))),
-                    None,
-                )
-            } else if call.function.name == "agent" {
-                if self.plan {
-                    (
-                        Err(Error::Denied(
-                            "agent is unavailable in plan mode".to_string(),
-                        )),
-                        None,
-                    )
-                } else {
-                    (self.run_nested(&call.function.arguments).await, None)
-                }
-            } else if crate::bus::is_bus_tool(&call.function.name) {
-                (
-                    self.bus_execute(&call)
-                        .map(|text| crate::tools::ToolOutput {
-                            text,
-                            success: true,
-                            mutated: false,
-                        }),
-                    None,
-                )
+            let started = Instant::now();
+            let output = if crate::bus::is_bus_tool(&call.function.name) {
+                self.bus_execute(&call)
+                    .map(|text| crate::tools::ToolOutput {
+                        text,
+                        success: true,
+                        mutated: false,
+                    })
             } else {
-                (self.tools.execute_outcome(&call).await, None)
+                self.tools.execute_outcome(&call).await
             };
             let (success, mutated, text) = match output {
                 Ok(output) => (output.success, output.mutated, output.text),
@@ -585,10 +569,10 @@ impl<P: Provider> Loop<P> {
                     input_tokens: None,
                     output_tokens: None,
                     cached_input_tokens: None,
-                    live_millis: None,
+                    live_millis: Some(super::elapsed_millis(started)),
                 },
             ));
-            results.push((call.id, success, mutated, next_task, text));
+            results.push((call.id, success, mutated, text));
         }
         self.session
             .finish_tools(
@@ -598,22 +582,95 @@ impl<P: Provider> Loop<P> {
                     .collect::<Vec<_>>(),
             )
             .map_err(super::session_err)?;
-        for (id, success, mutated, next_task, text) in results {
+        for (id, success, mutated, text) in results {
             let event = Event::ToolResult {
                 id: id.clone(),
                 success,
                 mutated,
-                task: next_task.clone(),
                 output: text.clone(),
             };
             self.push_event(events, emit, event)?;
-            if success && let Some(task) = next_task {
-                self.task = Some(task);
-            }
             messages.push(Message::tool(id, text));
         }
         self.commit(messages);
         Ok(())
+    }
+
+    async fn run_verify(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Vec<Outcome>, Vec<crate::durable::work::EvidenceRef>)> {
+        let declared = self
+            .session
+            .completion_checks()
+            .map_err(super::session_err)?;
+        let mut checks = Vec::new();
+        let mut evidence = Vec::new();
+        for check in declared {
+            let command = check.command.as_str().to_string();
+            let outcome = match &check.required_observation {
+                Some(crate::durable::work::RequiredObservation::File(path)) => {
+                    match self.tools.exists(path.as_str()) {
+                        Ok(true) => Outcome {
+                            command,
+                            passed: true,
+                            output: format!("file `{}` exists", path.as_str()),
+                        },
+                        Ok(false) => Outcome {
+                            command,
+                            passed: false,
+                            output: format!("file `{}` does not exist", path.as_str()),
+                        },
+                        Err(error) => Outcome {
+                            command,
+                            passed: false,
+                            output: error.to_string(),
+                        },
+                    }
+                }
+                Some(crate::durable::work::RequiredObservation::StdoutContains(expected)) => {
+                    let result = self.tools.execute_outcome(&verify_call(&command)).await;
+                    let mut outcome = crate::verify::outcome(&command, &result);
+                    if outcome.passed && !outcome.output.contains(expected.as_str()) {
+                        outcome.passed = false;
+                        outcome.output.push_str(&format!(
+                            "\nexpected stdout to contain `{}`",
+                            expected.as_str()
+                        ));
+                    }
+                    outcome
+                }
+                None => {
+                    let result = self.tools.execute_outcome(&verify_call(&command)).await;
+                    crate::verify::outcome(&command, &result)
+                }
+            };
+            let finding = self
+                .session
+                .record_completion_check(
+                    crate::durable::fact::CompletionCheck::Declared(check.id),
+                    &outcome.command,
+                    outcome.passed,
+                    &outcome.output,
+                )
+                .map_err(super::session_err)?;
+            evidence.push(finding);
+            self.push_event(
+                events,
+                emit,
+                Event::Verify {
+                    command: outcome.command.clone(),
+                    passed: outcome.passed,
+                },
+            )?;
+            let passed = outcome.passed;
+            checks.push(outcome);
+            if !passed {
+                break;
+            }
+        }
+        Ok((checks, evidence))
     }
 
     fn abort_turn(
@@ -661,9 +718,6 @@ impl<P: Provider> Loop<P> {
             .into_iter()
             .filter(|message| message.role != Role::System)
             .collect();
-        if let Some(task) = crate::task::from_history(&self.history) {
-            self.task = Some(task);
-        }
     }
 
     pub(super) fn push_event(
@@ -678,23 +732,26 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-fn durable_failure(
-    failure: Option<&crate::error::ProviderFailure>,
-) -> crate::durable::effect::ProviderFailureKind {
-    use crate::durable::effect::ProviderFailureKind as Kind;
-    match failure.map(|failure| failure.kind) {
-        Some(ProviderFailureKind::Authentication) => Kind::Authentication,
-        Some(ProviderFailureKind::RateLimited) => Kind::RateLimit,
-        Some(ProviderFailureKind::ContextOverflow) => Kind::ContextOverflow,
-        Some(ProviderFailureKind::Transport | ProviderFailureKind::Server) => Kind::Transport,
-        _ => Kind::Other,
-    }
-}
-
 fn request_chars(messages: &[Message], tools: &[crate::provider::ToolDefinition]) -> usize {
     messages
         .iter()
         .map(super::compaction::message_chars)
         .sum::<usize>()
         + serde_json::to_string(tools).map_or(0, |schema| schema.len())
+}
+
+fn verify_call(command: &str) -> ToolCall {
+    ToolCall {
+        id: "completion-check".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({
+                "command": command,
+                "timeout_secs": 600,
+                "fresh": true
+            })
+            .to_string(),
+        },
+    }
 }

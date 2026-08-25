@@ -62,12 +62,14 @@ impl<P: Provider> Loop<P> {
             messages: request_messages,
             tools: tools.to_vec(),
             max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            emit_deltas: false,
         };
         let prefix_hash = request.prefix_hash();
         let attempt = self
             .session
             .start_summary(prefix_hash.as_bytes())
             .map_err(super::session_err)?;
+        let started = Instant::now();
         match self.provider.complete(&request).await {
             Ok(message)
                 if message.tool_calls.is_empty()
@@ -76,7 +78,8 @@ impl<P: Provider> Loop<P> {
                         .as_ref()
                         .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                let meter = super::meter(&message.usage);
+                let mut meter = super::meter(&message.usage);
+                meter.live_millis = Some(super::elapsed_millis(started));
                 let text = message.content.clone().unwrap_or_default();
                 self.session
                     .finish_provider(attempt, &text, "", meter)
@@ -89,6 +92,7 @@ impl<P: Provider> Loop<P> {
                         attempt,
                         crate::durable::effect::ProviderFailureKind::Other,
                         "compaction summary failed",
+                        super::elapsed_millis(started),
                     )
                     .map_err(super::session_err)?;
                 Ok(None)

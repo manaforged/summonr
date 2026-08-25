@@ -6,6 +6,7 @@ fn request(messages: Vec<Message>) -> CompletionRequest {
         messages,
         tools: Vec::new(),
         max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+        emit_deltas: true,
     }
 }
 

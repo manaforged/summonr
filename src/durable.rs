@@ -10,7 +10,6 @@
 
 pub(crate) mod bound;
 pub(crate) mod context;
-pub(crate) mod convert;
 pub(crate) mod driver;
 pub(crate) mod effect;
 pub(crate) mod encoding;

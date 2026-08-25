@@ -26,72 +26,51 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
     let markdown = std::fs::read_to_string(plan_path)
         .map_err(|error| summoner::Error::Config(format!("cannot read {plan_path}: {error}")))?;
     let steps = summoner::steps::parse(&markdown)?;
-    let contract = summoner::steps::contract(&markdown)?;
     let total = steps.len();
-    let restored = loop_.restored_progress();
-    let mut job = if let Some(state) = restored {
-        summoner::steps::Job::from_state(loop_.workspace().to_path_buf(), state)
-    } else {
-        summoner::steps::Job::open(
-            loop_.workspace(),
-            std::path::Path::new(plan_path),
-            loop_.session_id().as_str(),
-            loop_.budget().max_tokens,
-            loop_.budget().max_secs,
-            verify_key(&loop_).as_deref(),
-        )?
-    };
-    job.validate_steps(total)?;
-    if job.state().last_completed_step.is_none() && job.state().terminal.is_none() {
-        loop_.select_plan(&markdown)?;
-    }
-    loop_.persist_progress(job.state())?;
-    if let Some(terminal) = &job.state().terminal {
-        return Ok(terminal.exit_code());
-    }
-    let next = job.state().next_step;
-    for (ordinal, step) in steps.iter().enumerate() {
-        let ordinal = ordinal.saturating_add(1);
-        if ordinal < next {
-            continue;
-        }
-        if let Some(code) = run_step(&mut loop_, args, &mut job, step, total, plan_path).await? {
-            let terminal = if code == 3 {
-                summoner::steps::Terminal::Aborted {
-                    reason: "step execution aborted".to_string(),
-                }
-            } else {
-                summoner::steps::Terminal::Failed { code }
-            };
-            job.finish(terminal, loop_.spent_tokens(), loop_.elapsed_secs())?;
-            loop_.persist_progress(job.state())?;
+    let checks = loop_.verify_commands().to_vec();
+    loop_.select_steps(&markdown, &checks)?;
+    loop {
+        let progress = loop_.work_progress()?;
+        if let Some(code) = progress.exit_code() {
+            if !args.json {
+                println!();
+            }
             return Ok(code);
         }
-        job.complete_step(ordinal, loop_.spent_tokens(), loop_.elapsed_secs())?;
-        loop_.persist_progress(job.state())?;
+        let current = progress
+            .current
+            .ok_or_else(|| summoner::Error::Config("Steps Work has no active item".to_string()))?;
+        let step = steps.get(current.saturating_sub(1)).ok_or_else(|| {
+            summoner::Error::Config("Steps Work is outside the selected plan".to_string())
+        })?;
+        step_event(args.json, current, total, "start", None);
+        let turn = complete(
+            &mut loop_,
+            summoner::steps::prompt(step, total, plan_path).into(),
+            args.json,
+        )
+        .await?;
+        if turn.aborted {
+            loop_.abandon_work("step execution aborted")?;
+            return Ok(3);
+        }
+        let after = loop_.work_progress()?;
+        if let Some(check) = turn.verify.as_ref() {
+            step_event(
+                args.json,
+                current,
+                total,
+                if check.passed {
+                    "check passed"
+                } else {
+                    "check failed"
+                },
+                Some(&check.command),
+            );
+        } else if after.current != Some(current) || after.terminal() {
+            step_event(args.json, current, total, "done", None);
+        }
     }
-    if let Some(code) = check_contract(&mut loop_, args, &mut job, &contract, total).await? {
-        let terminal = if code == 3 {
-            summoner::steps::Terminal::Aborted {
-                reason: "step contract check aborted".to_string(),
-            }
-        } else {
-            summoner::steps::Terminal::Failed { code }
-        };
-        job.finish(terminal, loop_.spent_tokens(), loop_.elapsed_secs())?;
-        loop_.persist_progress(job.state())?;
-        return Ok(code);
-    }
-    job.finish(
-        summoner::steps::Terminal::Completed,
-        loop_.spent_tokens(),
-        loop_.elapsed_secs(),
-    )?;
-    loop_.persist_progress(job.state())?;
-    if !args.json {
-        println!();
-    }
-    Ok(0)
 }
 
 pub(super) async fn goal(
@@ -103,195 +82,37 @@ pub(super) async fn goal(
     let max_turns = args
         .max_turns
         .map_or(summoner::DEFAULT_MAX_TURNS, |value| value as usize);
-    let mut engine = if let Some(state) = loop_.restored_progress() {
-        summoner::GoalEngine::from_state(loop_.workspace(), objective, gates, max_turns, state)?
-    } else {
-        summoner::GoalEngine::open(
-            loop_.workspace(),
-            objective,
-            loop_.session_id().as_str(),
-            gates,
-            max_turns,
-            loop_.budget(),
-        )?
-    };
-    loop_.persist_progress(engine.snapshot())?;
-    if engine.exit_code().is_some() {
-        return Ok(engine.exit_code().unwrap_or(0));
-    }
-    let code = drive_goal(&mut loop_, &mut engine, args.json).await?;
-    loop_.persist_progress(engine.snapshot())?;
+    loop_.select_goal(objective, &gates, max_turns)?;
+    let code = drive_goal(&mut loop_, objective, &gates, args.json).await?;
     if !args.json {
         println!();
     }
     Ok(code)
 }
 
-/// The goal loop shared by `--goal` and `/goal`: the engine decides,
-/// the caller executes turns and renders notes.
+/// Run turns until the durable Work verdict becomes terminal.
 pub(super) async fn drive_goal(
     loop_: &mut Loop<Client>,
-    engine: &mut summoner::GoalEngine,
+    objective: &str,
+    gates: &[String],
     json: bool,
 ) -> Result<i32> {
-    while engine.exit_code().is_none() {
-        let Some(prompt) = engine.prompt()? else {
-            break;
-        };
-        for note in engine.take_notes() {
-            goal_note(json, &note);
-        }
-        let turn = complete(loop_, prompt.into(), json).await?;
-        engine.after_turn(loop_, &turn).await?;
-        for note in engine.take_notes() {
-            goal_note(json, &note);
-        }
-    }
-    for note in engine.take_notes() {
-        goal_note(json, &note);
-    }
-    Ok(engine.exit_code().unwrap_or(0))
-}
-
-fn goal_note(json: bool, note: &str) {
-    if json {
-        println!("{}", serde_json::json!({ "type": "goal", "note": note }));
-    } else {
-        eprintln!("\n{note}");
-    }
-}
-
-async fn run_step(
-    loop_: &mut Loop<Client>,
-    args: &Args,
-    job: &mut summoner::steps::Job,
-    step: &summoner::steps::Step,
-    total: usize,
-    path: &str,
-) -> Result<Option<i32>> {
-    step_event(args.json, step.index, total, "start", None);
-    let prompt = summoner::steps::prompt(step, total, path);
-    let turn = complete(loop_, prompt.into(), args.json).await?;
-    job.progress(loop_.spent_tokens(), loop_.elapsed_secs())?;
-    loop_.persist_progress(job.state())?;
-    let code = exit(&turn);
-    if code != 0 {
-        step_event(
-            args.json,
-            step.index,
-            total,
-            if code == 3 { "aborted" } else { "failed" },
-            None,
-        );
-        return Ok(Some(code));
-    }
-    if step.checks.is_empty() {
-        step_event(args.json, step.index, total, "done", None);
-        return Ok(None);
-    }
-    for check in &step.checks {
-        if let Some(code) = check_step(loop_, args, job, step.index, total, check).await? {
-            return Ok(Some(code));
-        }
-    }
-    Ok(None)
-}
-
-async fn check_step(
-    loop_: &mut Loop<Client>,
-    args: &Args,
-    job: &mut summoner::steps::Job,
-    index: usize,
-    total: usize,
-    check: &str,
-) -> Result<Option<i32>> {
-    for attempt in 0..3 {
-        let output = loop_
-            .shell(check)
-            .await
-            .unwrap_or_else(|error| format!("exit 1\n{error}"));
-        if summoner::steps::exit_code(&output) == Some(0) {
-            step_event(args.json, index, total, "check passed", Some(check));
-            return Ok(None);
-        }
-        step_event(args.json, index, total, "check failed", Some(check));
-        if attempt == 2 {
-            step_event(args.json, index, total, "gave up", Some(check));
-            if !args.json {
-                eprintln!("\n{output}");
-            }
-            return Ok(Some(2));
-        }
-        let prompt = summoner::steps::retry_prompt(check, &output);
-        let turn = complete(loop_, prompt.into(), args.json).await?;
-        job.progress(loop_.spent_tokens(), loop_.elapsed_secs())?;
-        loop_.persist_progress(job.state())?;
-        let code = exit(&turn);
-        if code != 0 {
-            return Ok(Some(code));
-        }
-    }
-    Ok(None)
-}
-
-async fn check_contract(
-    loop_: &mut Loop<Client>,
-    args: &Args,
-    job: &mut summoner::steps::Job,
-    contract: &summoner::steps::Contract,
-    total: usize,
-) -> Result<Option<i32>> {
-    if contract.items.is_empty() {
-        return Ok(None);
-    }
-    for attempt in 0..3 {
-        let mut missing = summoner::steps::missing(contract, loop_.workspace());
-        for item in &contract.items {
-            if let summoner::steps::Item::Stdout { command, expected } = item {
-                let output = loop_
-                    .shell(command)
-                    .await
-                    .unwrap_or_else(|error| format!("exit 1\n{error}"));
-                if let Some(item) = summoner::steps::stdout_item(command, expected, &output) {
-                    missing.push(item);
-                }
-            }
-        }
-        let passed = missing.is_empty();
-        step_event(
-            args.json,
-            total,
-            total,
-            if passed {
-                "contract met"
-            } else {
-                "contract not met"
-            },
-            Some(&format!("{} item(s)", contract.items.len())),
-        );
-        if passed {
-            return Ok(None);
-        }
-        if attempt == 2 {
-            if !args.json {
-                eprintln!("\n{}", missing.join("\n"));
-            }
-            return Ok(Some(2));
+    loop {
+        let progress = loop_.work_progress()?;
+        if let Some(code) = progress.exit_code() {
+            return Ok(code);
         }
         let turn = complete(
             loop_,
-            summoner::steps::contract_prompt(&missing).into(),
-            args.json,
+            summoner::goal_prompt(objective, gates, progress.rounds).into(),
+            json,
         )
         .await?;
-        job.progress(loop_.spent_tokens(), loop_.elapsed_secs())?;
-        loop_.persist_progress(job.state())?;
-        let code = exit(&turn);
-        if code != 0 {
-            return Ok(Some(code));
+        if turn.aborted {
+            loop_.abandon_work("goal execution aborted")?;
+            return Ok(3);
         }
     }
-    Ok(None)
 }
 
 pub(super) async fn interactive(
@@ -309,7 +130,7 @@ pub(super) async fn interactive(
         if line.is_empty() {
             continue;
         }
-        if let Some(keep_running) = command(&mut loop_, workspace, line).await {
+        if let Some(keep_running) = command(&mut loop_, line).await {
             if keep_running {
                 continue;
             }
@@ -331,7 +152,7 @@ pub(super) async fn interactive(
     Ok(0)
 }
 
-async fn command(loop_: &mut Loop<Client>, workspace: &Path, line: &str) -> Option<bool> {
+async fn command(loop_: &mut Loop<Client>, line: &str) -> Option<bool> {
     match summoner::parse_command(line) {
         Some(summoner::SlashCommand::Exit) => Some(false),
         Some(summoner::SlashCommand::Settings) => {
@@ -346,7 +167,7 @@ async fn command(loop_: &mut Loop<Client>, workspace: &Path, line: &str) -> Opti
             Some(true)
         }
         Some(summoner::SlashCommand::PlanAccept) => Some(accept(loop_)),
-        Some(summoner::SlashCommand::PlanReject) => Some(reject(workspace)),
+        Some(summoner::SlashCommand::PlanReject) => Some(reject(loop_)),
         Some(summoner::SlashCommand::Plan) => Some(toggle_plan(loop_)),
         Some(summoner::SlashCommand::Auto) => Some(auto(loop_)),
         Some(summoner::SlashCommand::Goal) => Some(repl_goal(loop_, line).await),
@@ -365,24 +186,11 @@ async fn repl_goal(loop_: &mut Loop<Client>, line: &str) -> bool {
         return true;
     }
     let gates = loop_.verify_commands().to_vec();
-    let engine = summoner::GoalEngine::open(
-        loop_.workspace(),
-        objective,
-        loop_.session_id().as_str(),
-        gates.clone(),
-        summoner::DEFAULT_MAX_TURNS,
-        loop_.budget(),
-    );
-    let mut engine = match engine {
-        Ok(engine) => engine,
-        Err(error) => {
-            eprintln!("summon: {error}");
-            return true;
-        }
-    };
-    loop_.set_verify(None);
-    let result = drive_goal(loop_, &mut engine, false).await;
-    loop_.set_verify((!gates.is_empty()).then_some(gates));
+    if let Err(error) = loop_.select_goal(objective, &gates, summoner::DEFAULT_MAX_TURNS) {
+        eprintln!("summon: {error}");
+        return true;
+    }
+    let result = drive_goal(loop_, objective, &gates, false).await;
     match result {
         Ok(0) => eprintln!("\ngoal achieved"),
         Ok(code) => eprintln!("\ngoal stopped (exit {code}) — resume with `summon --goal`"),
@@ -412,13 +220,22 @@ fn verify_key(loop_: &Loop<Client>) -> Option<String> {
 }
 
 fn accept(loop_: &mut Loop<Client>) -> bool {
+    if let Err(error) = loop_.accept_plan() {
+        eprintln!("summon: {error}");
+        return true;
+    }
     loop_.set_plan(false);
-    eprintln!("plan kept in the session journal — ask to implement it");
+    eprintln!("Plan accepted. Your next prompt executes in that Work.");
     true
 }
 
-fn reject(_workspace: &Path) -> bool {
-    eprintln!("plan rejected — session keeps the journaled revision");
+fn reject(loop_: &mut Loop<Client>) -> bool {
+    if let Err(error) = loop_.abandon_work("plan rejected by the user") {
+        eprintln!("summon: {error}");
+        return true;
+    }
+    loop_.set_plan(false);
+    eprintln!("plan rejected");
     true
 }
 
@@ -487,11 +304,10 @@ fn print_live(event: &Event) {
     match event {
         Event::ToolCall { name, .. } => eprintln!("\n→ {name}"),
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
-        Event::ToolResult {
-            task: Some(task), ..
-        } => eprintln!("\n{task}"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
+        Event::Work { progress } => eprintln!("\n{progress}"),
+        Event::Receipt { text } => println!("\n{text}"),
         Event::Aborted { reason } => eprintln!("\n{reason}"),
         _ => {}
     }

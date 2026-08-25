@@ -1,5 +1,4 @@
 use super::{Msg, Worker, set_mode};
-use crate::goal::Engine as GoalEngine;
 use crate::provider::UserInput;
 
 impl Worker {
@@ -75,13 +74,22 @@ impl Worker {
     }
 
     fn accept_plan(&mut self) -> bool {
+        if let Err(error) = self.loop_.accept_plan() {
+            self.fail(&error.to_string());
+            return true;
+        }
         set_mode(&mut self.loop_, &self.ui, false);
-        self.system("plan kept in the session journal — ask to implement it");
+        self.system("Plan accepted. Your next prompt executes in that Work.");
         true
     }
 
     fn reject_plan(&mut self) -> bool {
-        self.system("plan rejected — session keeps the journaled revision");
+        if let Err(error) = self.loop_.abandon_work("plan rejected by the user") {
+            self.fail(&error.to_string());
+            return true;
+        }
+        set_mode(&mut self.loop_, &self.ui, false);
+        self.system("plan rejected");
         true
     }
 
@@ -137,71 +145,41 @@ impl Worker {
         Some(true)
     }
 
-    /// `/goal <objective>`: run the shared goal engine inline. Each
-    /// iteration is an ordinary cancellable turn; Esc stops the loop.
+    /// `/goal <objective>`: run turns until Work records a terminal verdict.
     async fn goal(&mut self, objective: &str) -> bool {
         let gates = self.loop_.verify_commands().to_vec();
-        let engine = GoalEngine::open(
-            self.loop_.workspace(),
-            objective,
-            self.loop_.session_id().as_str(),
-            gates.clone(),
-            crate::goal::DEFAULT_MAX_TURNS,
-            self.loop_.budget(),
-        );
-        let mut engine = match engine {
-            Ok(engine) => engine,
-            Err(error) => {
-                self.fail(&error.to_string());
+        if let Err(error) = self
+            .loop_
+            .select_goal(objective, &gates, crate::DEFAULT_MAX_TURNS)
+        {
+            self.fail(&error.to_string());
+            return true;
+        }
+        let code = loop {
+            let progress = match self.loop_.work_progress() {
+                Ok(progress) => progress,
+                Err(error) => {
+                    self.fail(&error.to_string());
+                    return true;
+                }
+            };
+            if let Some(code) = progress.exit_code() {
+                break code;
+            }
+            let prompt = crate::goal::prompt(objective, &gates, progress.rounds);
+            if !self.turn(prompt.into()).await {
+                return false;
+            }
+            if self.last_turn.take().is_none() {
+                self.system("goal paused — cancelled by user");
                 return true;
             }
         };
-        self.loop_.set_verify(None);
-        let mut cancelled = false;
-        let mut failed = false;
-        while engine.exit_code().is_none() {
-            let prompt = match engine.prompt() {
-                Ok(Some(prompt)) => prompt,
-                Ok(None) => break,
-                Err(error) => {
-                    self.fail(&error.to_string());
-                    failed = true;
-                    break;
-                }
-            };
-            for note in engine.take_notes() {
-                self.system(&note);
-            }
-            if !self.turn(prompt.into()).await {
-                cancelled = true;
-                break;
-            }
-            let Some(turn) = self.last_turn.take() else {
-                self.system("goal paused — cancelled by user");
-                break;
-            };
-            if let Err(error) = engine.after_turn(&mut self.loop_, &turn).await {
-                self.fail(&error.to_string());
-                failed = true;
-                break;
-            }
-            for note in engine.take_notes() {
-                self.system(&note);
-            }
-        }
-        self.loop_.set_verify((!gates.is_empty()).then_some(gates));
-        if cancelled {
-            return false;
-        }
-        if failed {
-            return true;
-        }
-        match engine.exit_code() {
-            Some(0) => self.system("goal achieved"),
-            Some(code) => self.system(&format!(
+        match code {
+            0 => self.system("goal achieved"),
+            code => self.system(&format!(
                 "goal stopped (exit {code}) — resume with `summon --goal`"
             )),
-            None => {}
         }
         true
     }

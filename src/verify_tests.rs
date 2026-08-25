@@ -25,3 +25,33 @@ fn check_commands_read_workspace_toml() -> Result<()> {
     std::fs::remove_dir_all(&dir)?;
     Ok(())
 }
+
+#[test]
+fn receipt_leads_with_a_failed_check_and_names_the_changed_file() {
+    let text = receipt(
+        "done",
+        &["src/main.rs".to_string()],
+        &[Outcome {
+            command: "cargo test".to_string(),
+            passed: false,
+            output: "exit 101\nfailed".to_string(),
+        }],
+    );
+
+    assert!(text.starts_with("Verification failed."));
+    assert!(text.contains("`src/main.rs`"));
+    assert!(text.contains("`cargo test` failed"));
+    assert!(text.contains("    exit 101"));
+}
+
+#[test]
+fn receipt_records_an_unchanged_unverified_turn() {
+    assert_eq!(
+        receipt("  unchanged\n", &[], &[]),
+        "unchanged\n\nTurn receipt\n- Changed: none\n- Verification: not configured"
+    );
+    assert_eq!(
+        summary(&[], &[]),
+        "Turn receipt\n- Changed: none\n- Verification: not configured"
+    );
+}

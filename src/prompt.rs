@@ -68,7 +68,7 @@ pub fn harness_section(plan: bool, checks: &[String]) -> String {
             .collect::<Vec<_>>()
             .join(" then ");
         parts.push(format!(
-            "Harness: after a mutating turn, Summoner runs {list} as the completion check."
+            "Harness: before Work can complete, Summoner runs {list} as the completion check."
         ));
     }
     parts.join("\n\n")

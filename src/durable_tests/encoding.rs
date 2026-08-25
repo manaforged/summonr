@@ -20,7 +20,7 @@ fn identities_have_one_lowercase_portable_spelling() {
     assert_eq!(SessionId::from_str(&spelling), Ok(session));
     let alphabetic = SessionId::from_u128(0xab).path_component();
     SessionId::from_str(&alphabetic.to_uppercase()).expect_err("uppercase ID must fail");
-    SessionId::from_str("legacy-session").expect_err("legacy display ID must fail");
+    SessionId::from_str("text-session").expect_err("text display ID must fail");
 
     let work: WorkId = fixture::id(0xab);
     assert_eq!(work.path_component(), "000000000000000000000000000000ab");

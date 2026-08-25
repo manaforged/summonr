@@ -4,17 +4,21 @@
 //! [`WorkspaceObservation`]. It walks the tree without following symlinks,
 //! classifies every relative path against the recorded scope, hashes regular
 //! file bytes and symlink targets with domain-tagged digests, and enforces the
-//! entry and payload bounds of the candidate contract. It never returns a
-//! partial observation: an unsupported kind, unreadable entry, identity
-//! mismatch, or bound overrun fails the whole walk.
+//! entry bound of the candidate contract. It ignores special entries that
+//! cannot be durable workspace output. It never returns a partial observation:
+//! an unreadable entry, identity mismatch, or bound overrun fails the walk.
 //!
 //! [`workspace_identity_of`] is the single place that derives a
 //! [`WorkspaceIdentity`] from a real root, so the workspace I/O owner and the
 //! observer agree on identity.
 
+use std::collections::{HashMap, HashSet};
 use std::ffi::OsStr;
-use std::path::{Component, Path};
+use std::io::Read as _;
+use std::path::{Component, Path, PathBuf};
+use std::time::SystemTime;
 
+use sha2::{Digest as _, Sha256};
 use thiserror::Error;
 
 use super::bound::{Bytes, Items};
@@ -51,8 +55,7 @@ fn os_str_units(value: &OsStr) -> Vec<u16> {
     value.encode_wide().collect()
 }
 
-const MAX_ENTRIES: usize = 100_000;
-const MAX_PAYLOAD_BYTES: usize = 1_048_576;
+const MAX_ENTRIES: usize = 1_000_000;
 
 #[derive(Debug, Error)]
 pub(crate) enum ObserveError {
@@ -66,14 +69,61 @@ pub(crate) enum ObserveError {
     IdentityMismatch,
     #[error("path escapes the workspace root: {0}")]
     Escape(String),
-    #[error("unsupported filesystem entry kind")]
-    UnsupportedKind,
     #[error("entry is unreadable: {0}")]
     Unreadable(String),
     #[error("file changed while it was read")]
     ChangingTree,
     #[error("observation exceeds a configured bound")]
     Bound,
+}
+
+#[derive(Default)]
+pub(crate) struct Observer {
+    files: HashMap<PathBuf, CachedFile>,
+    #[cfg(test)]
+    reads: usize,
+}
+
+#[derive(Clone, Copy)]
+struct CachedFile {
+    fingerprint: Fingerprint,
+    content: Digest,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Fingerprint {
+    len: u64,
+    modified: Option<SystemTime>,
+    created: Option<SystemTime>,
+    #[cfg(unix)]
+    device: u64,
+    #[cfg(unix)]
+    inode: u64,
+    #[cfg(unix)]
+    change_secs: i64,
+    #[cfg(unix)]
+    change_nanos: i64,
+}
+
+impl Fingerprint {
+    fn of(metadata: &std::fs::Metadata) -> Self {
+        #[cfg(unix)]
+        use std::os::unix::fs::MetadataExt as _;
+
+        Self {
+            len: metadata.len(),
+            modified: metadata.modified().ok(),
+            created: metadata.created().ok(),
+            #[cfg(unix)]
+            device: metadata.dev(),
+            #[cfg(unix)]
+            inode: metadata.ino(),
+            #[cfg(unix)]
+            change_secs: metadata.ctime(),
+            #[cfg(unix)]
+            change_nanos: metadata.ctime_nsec(),
+        }
+    }
 }
 
 /// Derive the workspace identity of a real directory.
@@ -93,17 +143,36 @@ pub(crate) fn observe(
     scope: &WorkspaceScope,
     id: ObservationId,
 ) -> Result<WorkspaceObservation, ObserveError> {
-    if !path.is_dir() {
-        return Err(ObserveError::RootNotDirectory);
+    Observer::default().observe(path, scope, id)
+}
+
+impl Observer {
+    pub(crate) fn observe(
+        &mut self,
+        path: &Path,
+        scope: &WorkspaceScope,
+        id: ObservationId,
+    ) -> Result<WorkspaceObservation, ObserveError> {
+        if !path.is_dir() {
+            return Err(ObserveError::RootNotDirectory);
+        }
+        if scope.workspace().object() != workspace_object_digest(path)? {
+            return Err(ObserveError::IdentityMismatch);
+        }
+        let platform = scope.platform();
+        let mut entries = Vec::new();
+        let mut seen = HashSet::new();
+        walk(path, path, scope, &mut entries, self, &mut seen)?;
+        self.files.retain(|path, _entry| seen.contains(path));
+        entries.sort_by(|left, right| left.path().cmp(right.path()));
+        WorkspaceObservation::new(id, scope.id(), platform, entries)
+            .map_err(ObserveError::Workspace)
     }
-    if scope.workspace().object() != workspace_object_digest(path)? {
-        return Err(ObserveError::IdentityMismatch);
+
+    #[cfg(test)]
+    pub(crate) fn reads(&self) -> usize {
+        self.reads
     }
-    let platform = scope.platform();
-    let mut entries = Vec::new();
-    walk(path, path, scope, &mut entries)?;
-    entries.sort_by(|left, right| left.path().cmp(right.path()));
-    WorkspaceObservation::new(id, scope.id(), platform, entries).map_err(ObserveError::Workspace)
 }
 
 fn walk(
@@ -111,26 +180,28 @@ fn walk(
     directory: &Path,
     scope: &WorkspaceScope,
     entries: &mut Vec<ObservedEntry>,
+    observer: &mut Observer,
+    seen: &mut HashSet<PathBuf>,
 ) -> Result<(), ObserveError> {
     for entry in std::fs::read_dir(directory)? {
         let entry = entry?;
         let real = entry.path();
         let file_type = entry.file_type()?;
         let key = relative_key(root, &real)?;
-        match classify(&key, scope) {
+        let class = classify(&key, scope);
+        match class {
             Some(Class::Candidate) | Some(Class::ReservedEntry) => {
-                if entries.len() >= MAX_ENTRIES {
-                    return Err(ObserveError::Bound);
+                if let Some(kind) = observer.observe_kind(&real, &file_type, seen)? {
+                    if entries.len() >= MAX_ENTRIES {
+                        return Err(ObserveError::Bound);
+                    }
+                    entries.push(ObservedEntry::new(key.clone(), kind));
                 }
-                entries.push(ObservedEntry::new(
-                    key.clone(),
-                    observe_kind(&real, &file_type)?,
-                ));
             }
             Some(Class::Excluded) | None => {}
         }
-        if file_type.is_dir() {
-            walk(root, &real, scope, entries)?;
+        if file_type.is_dir() && class != Some(Class::Excluded) {
+            walk(root, &real, scope, entries, observer, seen)?;
         }
     }
     Ok(())
@@ -167,34 +238,80 @@ enum Class {
     Excluded,
 }
 
-fn observe_kind(real: &Path, file_type: &std::fs::FileType) -> Result<ObservedKind, ObserveError> {
-    if file_type.is_symlink() {
-        let target = std::fs::read_link(real)?;
-        let units = target_bytes(&target);
-        let digest = Digest::hash(b"mage:workspace-symlink:v1", &units);
-        return Ok(ObservedKind::Symlink { target: digest });
-    }
-    if file_type.is_dir() {
-        return Ok(ObservedKind::Directory);
-    }
-    if file_type.is_file() {
-        let before = metadata(real)?;
-        let bytes =
-            std::fs::read(real).map_err(|error| ObserveError::Unreadable(error.to_string()))?;
-        if bytes.len() > MAX_PAYLOAD_BYTES {
-            return Err(ObserveError::Bound);
+impl Observer {
+    fn observe_kind(
+        &mut self,
+        real: &Path,
+        file_type: &std::fs::FileType,
+        seen: &mut HashSet<PathBuf>,
+    ) -> Result<Option<ObservedKind>, ObserveError> {
+        if file_type.is_symlink() {
+            let target = std::fs::read_link(real)?;
+            let units = target_bytes(&target);
+            let digest = Digest::hash(b"mage:workspace-symlink:v1", &units);
+            return Ok(Some(ObservedKind::Symlink { target: digest }));
         }
-        let after = metadata(real)?;
-        if !same_file(&before, &after) {
-            return Err(ObserveError::ChangingTree);
+        if file_type.is_dir() {
+            return Ok(Some(ObservedKind::Directory));
         }
-        let content = Digest::hash(b"mage:workspace-file:v1", &bytes);
-        return Ok(ObservedKind::File {
-            content,
-            executable: is_executable(&before),
-        });
+        if file_type.is_file() {
+            let before = metadata(real)?;
+            let fingerprint = Fingerprint::of(&before);
+            seen.insert(real.to_path_buf());
+            let content = match self.files.get(real) {
+                Some(cached) if cached.fingerprint == fingerprint => cached.content,
+                _ => {
+                    #[cfg(test)]
+                    {
+                        self.reads = self.reads.saturating_add(1);
+                    }
+                    digest_file(real, before.len())?
+                }
+            };
+            let after = metadata(real)?;
+            let after_fingerprint = Fingerprint::of(&after);
+            if fingerprint != after_fingerprint {
+                return Err(ObserveError::ChangingTree);
+            }
+            self.files.insert(
+                real.to_path_buf(),
+                CachedFile {
+                    fingerprint: after_fingerprint,
+                    content,
+                },
+            );
+            return Ok(Some(ObservedKind::File {
+                content,
+                executable: is_executable(&before),
+            }));
+        }
+        Ok(None)
     }
-    Err(ObserveError::UnsupportedKind)
+}
+
+fn digest_file(path: &Path, len: u64) -> Result<Digest, ObserveError> {
+    const DOMAIN: &[u8] = b"mage:workspace-file:v1";
+    let mut file =
+        std::fs::File::open(path).map_err(|error| ObserveError::Unreadable(error.to_string()))?;
+    let mut hash = Sha256::new();
+    hash.update(
+        u64::try_from(DOMAIN.len())
+            .unwrap_or(u64::MAX)
+            .to_be_bytes(),
+    );
+    hash.update(DOMAIN);
+    hash.update(len.to_be_bytes());
+    let mut buffer = [0_u8; 64 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|error| ObserveError::Unreadable(error.to_string()))?;
+        if read == 0 {
+            break;
+        }
+        hash.update(&buffer[..read]);
+    }
+    Ok(Digest::from_bytes(hash.finalize().into()))
 }
 
 #[cfg(unix)]
@@ -216,17 +333,6 @@ fn metadata(path: &Path) -> std::io::Result<std::fs::Metadata> {
 #[cfg(not(unix))]
 fn metadata(path: &Path) -> std::io::Result<std::fs::Metadata> {
     std::fs::symlink_metadata(path)
-}
-
-#[cfg(unix)]
-fn same_file(before: &std::fs::Metadata, after: &std::fs::Metadata) -> bool {
-    use std::os::unix::fs::MetadataExt as _;
-    before.dev() == after.dev() && before.ino() == after.ino() && before.len() == after.len()
-}
-
-#[cfg(not(unix))]
-fn same_file(before: &std::fs::Metadata, after: &std::fs::Metadata) -> bool {
-    before.len() == after.len()
 }
 
 fn workspace_object_digest(path: &Path) -> Result<Digest, ObserveError> {

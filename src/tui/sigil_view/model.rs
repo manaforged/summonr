@@ -56,7 +56,6 @@ pub(super) struct Model {
     pub(super) model: String,
     pub(super) relay: Option<String>,
     pub(super) peers: usize,
-    pub(super) task: Option<crate::TaskState>,
 }
 
 impl Model {
@@ -85,7 +84,6 @@ impl Model {
             model: info.model.clone(),
             relay: info.relay.clone(),
             peers: 0,
-            task: info.task.clone(),
         }
     }
 
@@ -139,7 +137,6 @@ impl Model {
     fn clear(&mut self) {
         self.entries.clear();
         self.tools.clear();
-        self.task = None;
         self.entries
             .push(Entry::System("history cleared".to_string()));
     }
@@ -155,12 +152,8 @@ impl Model {
                 id,
                 success,
                 output,
-                task,
                 ..
             } => {
-                if task.is_some() {
-                    self.task = task;
-                }
                 self.finish_tool(&id, success, &output);
             }
             Event::Assistant { text } => self.finish_assistant(text),
@@ -169,6 +162,10 @@ impl Model {
             Event::Note { text } => self.entries.push(Entry::System(text)),
             Event::Verify { command, passed } => {
                 self.entries.push(Entry::Verify { command, passed });
+            }
+            Event::Receipt { .. } => {}
+            Event::Work { progress } => {
+                self.entries.push(Entry::System(progress.to_string()));
             }
             Event::Usage {
                 prompt_tokens,
@@ -255,13 +252,6 @@ impl Model {
             .map(entry_markdown)
             .collect::<Vec<_>>()
             .join("\n\n")
-    }
-
-    pub(super) fn task_text(&self) -> String {
-        self.task
-            .as_ref()
-            .map(|task| format!("Task\n{task}"))
-            .unwrap_or_default()
     }
 }
 

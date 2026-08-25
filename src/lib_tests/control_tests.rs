@@ -60,7 +60,6 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
     let mut loop_ = Loop::with_session(Planner, "test-model", &workspace, "test")?.with_plan();
     let names = loop_.tool_names();
     assert!(names.iter().any(|name| name == "write_file"));
-    assert!(names.iter().any(|name| name == "task_state"));
     let turn = loop_.turn("plan something").await?;
     assert_eq!(turn.text, "here is the plan");
     assert!(
@@ -80,6 +79,75 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
         .execute_tool(&call("write_file", r#"{"path":"x.rs","content":"no"}"#))
         .await;
     denied.unwrap_err();
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn accepted_plan_executes_inside_the_selected_work() -> Result<()> {
+    struct PlanThenWrite {
+        rounds: AtomicUsize,
+    }
+    impl Provider for PlanThenWrite {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                Ok(match round {
+                    0 => AssistantMessage {
+                        content: Some("# Plan\n\n1. Write x.txt".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                    1 => AssistantMessage {
+                        tool_calls: vec![call(
+                            "write_file",
+                            r#"{"path":"x.txt","content":"done\n"}"#,
+                        )],
+                        ..AssistantMessage::default()
+                    },
+                    _ => AssistantMessage {
+                        content: Some("implemented".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        PlanThenWrite {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_plan()
+    .with_verify(vec!["true".to_string()]);
+
+    drop(loop_.turn("plan the change").await?);
+    loop_.accept_plan()?;
+    loop_.set_plan(false);
+    let turn = loop_.turn("implement the accepted plan").await?;
+
+    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert!(turn.text.contains("Turn receipt"));
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    assert_eq!(state.works.len(), 1);
+    let work = state
+        .works
+        .values()
+        .next()
+        .expect("accepted Plan must own Work");
+    assert!(matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Completed { .. }
+    ));
+    assert!(work.candidate().is_some());
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -158,18 +226,7 @@ impl Provider for WriteThenText {
             let round = self.rounds.fetch_add(1, Ordering::SeqCst);
             Ok(match round {
                 0 => AssistantMessage {
-                    tool_calls: vec![call(
-                        "task_state",
-                        r#"{"action":"start","steps":["Write the plan"]}"#,
-                    )],
-                    ..AssistantMessage::default()
-                },
-                1 => AssistantMessage {
                     tool_calls: vec![call("write_file", r#"{"path":"plan.md","content":"a\n"}"#)],
-                    ..AssistantMessage::default()
-                },
-                2 => AssistantMessage {
-                    tool_calls: vec![call("task_state", r#"{"action":"advance"}"#)],
                     ..AssistantMessage::default()
                 },
                 _ => AssistantMessage {
@@ -182,7 +239,7 @@ impl Provider for WriteThenText {
 }
 
 #[tokio::test]
-async fn mutating_turn_does_not_run_a_turn_local_verify_gate() -> Result<()> {
+async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
     let workspace = test_workspace()?;
     std::fs::create_dir_all(workspace.join(".mage"))?;
     std::fs::write(workspace.join(".mage/check.toml"), "check = \"false\"")?;
@@ -195,13 +252,444 @@ async fn mutating_turn_does_not_run_a_turn_local_verify_gate() -> Result<()> {
         "test",
     )?
     .with_verify(vec!["false".to_string()]);
-    let turn = loop_.turn("write the plan").await?;
-    assert!(turn.verify.is_none());
+    let journal = loop_.session_path().to_path_buf();
+    let mut closed_before_assistant = false;
+    let turn = loop_
+        .turn_with("write the plan", |event| {
+            if matches!(event, Event::Assistant { .. }) {
+                closed_before_assistant = std::fs::read_to_string(&journal)
+                    .is_ok_and(|log| log.contains(r#""fact":"operation_closed""#));
+            }
+        })
+        .await?;
+    assert!(closed_before_assistant);
+    let verify = turn.verify.as_ref().expect("mutating turn must verify");
+    assert_eq!(verify.command, "false");
+    assert!(!verify.passed);
+    assert!(turn.events.iter().any(
+        |event| matches!(event, Event::Verify { command, passed: false } if command == "false")
+    ));
+    assert!(turn.text.contains("done"));
+    assert!(turn.text.contains("Verification"));
+    assert!(turn.text.contains("failed"));
+    assert!(turn.text.contains("plan.md"));
+    let replay = loop_.replay_session();
+    assert_eq!(
+        replay
+            .history
+            .last()
+            .map(|message| message.content.as_str()),
+        Some(turn.text.as_str())
+    );
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert!(log.contains(r#""fact":"completion_check_recorded""#));
+    assert!(log.contains(r#""passed":false"#));
+    assert!(log.contains(r#""outcome":"failed""#));
+    let execute_close = log
+        .lines()
+        .find(|line| {
+            line.contains(r#""fact":"operation_closed""#)
+                && line.contains(r#""stage_outcome":"advanced""#)
+        })
+        .expect("turn must close its operation");
+    assert!(!execute_close.contains(r#""provider":null"#));
+    let verdict_close = log
+        .lines()
+        .find(|line| {
+            line.contains(r#""fact":"operation_closed""#)
+                && line.contains(r#""stage_outcome":"returned""#)
+        })
+        .expect("verification must close its operation");
     assert!(
-        !turn
-            .events
+        verdict_close.contains(r#""source":"receipt""#),
+        "verdict and visible receipt must share one append: {verdict_close}"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn ordinary_turn_completes_durable_work() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        WriteThenText {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+
+    let turn = loop_.turn("write the plan").await?;
+
+    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    assert_eq!(state.works.len(), 1);
+    let work = state.works.values().next().expect("turn must create Work");
+    assert!(matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Completed { .. }
+    ));
+    assert!(work.candidate().is_some());
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()> {
+    struct ShellThenText {
+        rounds: AtomicUsize,
+        requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    }
+    impl Provider for ShellThenText {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                self.requests
+                    .lock()
+                    .map_err(|_error| Error::Tool("request capture is poisoned".to_string()))?
+                    .push(request.clone());
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                Ok(if round == 0 {
+                    AssistantMessage {
+                        tool_calls: vec![call(
+                            "run_command",
+                            r#"{"command":"printf shell > shell.txt"}"#,
+                        )],
+                        ..AssistantMessage::default()
+                    }
+                } else {
+                    AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..AssistantMessage::default()
+                    }
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = Loop::with_session(
+        ShellThenText {
+            rounds: AtomicUsize::new(0),
+            requests: requests.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["false".to_string()]);
+
+    let turn = loop_.turn("write through the shell").await?;
+
+    assert!(
+        turn.events
             .iter()
-            .any(|event| matches!(event, Event::Verify { .. }))
+            .any(|event| { matches!(event, Event::ToolResult { mutated: false, .. }) })
+    );
+    assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
+    assert!(turn.text.contains("shell.txt"));
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    let work = state
+        .works
+        .values()
+        .find(|work| !work.status().terminal())
+        .expect("failed Work must remain active");
+    assert_eq!(
+        work.status(),
+        &crate::durable::work::WorkStatus::Active(crate::durable::work::WorkStage::Execute)
+    );
+    assert!(work.candidate().is_none());
+
+    drop(loop_.turn("continue").await?);
+    let requests = requests
+        .lock()
+        .map_err(|_error| Error::Tool("request capture is poisoned".to_string()))?;
+    assert!(requests.last().is_some_and(|request| {
+        request
+            .messages
+            .iter()
+            .any(|message| message.content == "Repair the failed completion check.")
+    }));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn consecutive_ordinary_turns_complete_separate_work() -> Result<()> {
+    struct Done;
+    impl Provider for Done {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("done".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Done, "test-model", &workspace, "test")?;
+
+    drop(loop_.turn("first").await?);
+    drop(loop_.turn("second").await?);
+
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    assert_eq!(state.works.len(), 2);
+    assert!(state.works.values().all(|work| matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Completed { .. }
+    )));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        WriteThenText {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string(), "true".to_string()]);
+
+    let turn = loop_.turn("write the plan").await?;
+
+    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert_eq!(
+        turn.events
+            .iter()
+            .filter(|event| matches!(event, Event::Verify { passed: true, .. }))
+            .count(),
+        2
+    );
+    assert_eq!(turn.text.matches("`true` passed").count(), 2);
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert_eq!(
+        log.matches(r#""fact":"completion_check_recorded""#).count(),
+        2
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn unchanged_turn_runs_completion_checks_and_records_receipt() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        FakeProvider {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["false".to_string()]);
+
+    let turn = loop_.turn("read the note").await?;
+
+    assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
+    assert!(turn.text.contains("Turn receipt"));
+    assert!(turn.text.contains("Changed: none"));
+    assert!(turn.text.contains("`false` failed"));
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert!(log.contains(r#""fact":"completion_check_recorded""#));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn external_steps_turn_stays_attached_to_durable_work() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        WriteThenText {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    loop_.select_steps("## Steps\n\n1. Write the file", &["true".to_string()])?;
+
+    let turn = loop_.turn("implement step 1").await?;
+
+    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert!(turn.text.contains("Turn receipt"));
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    let work = state
+        .works
+        .values()
+        .next()
+        .expect("step mode must own Work");
+    assert!(matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Completed { .. }
+    ));
+    assert!(work.candidate().is_some());
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        FakeProvider {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["false".to_string()]);
+    loop_.select_steps("## Steps\n\n1. Fail the check", &["false".to_string()])?;
+
+    for attempt in 1..=3 {
+        let turn = loop_
+            .turn(&format!("implement step 1, attempt {attempt}"))
+            .await?;
+        assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
+    }
+
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    let work = state
+        .works
+        .values()
+        .next()
+        .expect("step mode must own Work");
+    assert!(matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Abandoned { .. }
+    ));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
+    struct GoalProvider {
+        rounds: AtomicUsize,
+    }
+    impl Provider for GoalProvider {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                assert_eq!(request.emit_deltas, round < 2);
+                Ok(match round {
+                    0 => AssistantMessage {
+                        tool_calls: vec![call(
+                            "write_file",
+                            r#"{"path":"goal.txt","content":"done\n"}"#,
+                        )],
+                        usage: Usage {
+                            prompt_tokens: 10,
+                            completion_tokens: 2,
+                            ..Usage::default()
+                        },
+                        ..AssistantMessage::default()
+                    },
+                    1 => AssistantMessage {
+                        content: Some("implemented and verified".to_string()),
+                        usage: Usage {
+                            prompt_tokens: 20,
+                            completion_tokens: 3,
+                            ..Usage::default()
+                        },
+                        ..AssistantMessage::default()
+                    },
+                    _ => AssistantMessage {
+                        content: Some(
+                            r#"{"done":true,"reason":"the requested file exists"}"#.to_string(),
+                        ),
+                        usage: Usage {
+                            prompt_tokens: 4,
+                            completion_tokens: 1,
+                            ..Usage::default()
+                        },
+                        ..AssistantMessage::default()
+                    },
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let objective = "create goal.txt";
+    let checks = vec!["true".to_string()];
+    let mut loop_ = Loop::with_session(
+        GoalProvider {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(checks.clone());
+    loop_.select_goal(objective, &checks, crate::DEFAULT_MAX_TURNS)?;
+    let turn = loop_
+        .turn(&crate::goal_prompt(objective, &checks, 0))
+        .await?;
+    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert_eq!(turn.usage.prompt_tokens, 34);
+    assert_eq!(turn.usage.completion_tokens, 6);
+    assert_eq!(loop_.spent_tokens(), 40);
+
+    let state = crate::durable::journal::inspect(loop_.session_path())
+        .map_err(|error| Error::Config(error.to_string()))?;
+    assert_eq!(
+        state
+            .providers
+            .values()
+            .filter(|provider| matches!(
+                provider,
+                crate::durable::reducer::ProviderState::Finished { intent, .. }
+                    if intent.purpose == crate::durable::effect::ProviderPurpose::GoalJudge
+            ))
+            .count(),
+        1,
+        "the Goal judge must be a durable provider effect"
+    );
+    let work = state
+        .works
+        .values()
+        .next()
+        .expect("goal mode must own Work");
+    assert!(matches!(
+        work.policy(),
+        crate::durable::work::WorkPolicy::Goal { .. }
+    ));
+    assert!(matches!(
+        work.status(),
+        crate::durable::work::WorkStatus::Completed { .. }
+    ));
+    assert!(
+        !loop_
+            .replay_session()
+            .history
+            .iter()
+            .any(|message| message.content.contains(r#"{"done":true"#)),
+        "judge JSON must not enter the user conversation"
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -232,15 +720,7 @@ async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Re
     }
 
     let workspace = test_workspace()?;
-    let (task, _) = TaskState::transition(
-        None,
-        r#"{"action":"start","steps":["Run the cancellable command"]}"#,
-    )?;
-    let mut loop_ =
-        Loop::with_session(SlowTool, "test-model", &workspace, "test")?.restore_replay(Replay {
-            task: Some(task),
-            ..Replay::default()
-        });
+    let mut loop_ = Loop::with_session(SlowTool, "test-model", &workspace, "test")?;
     let mut turn = Box::pin(loop_.turn("cancel me"));
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(100), &mut turn)
@@ -298,7 +778,7 @@ async fn token_budget_aborts_and_persists() -> Result<()> {
         Loop::with_session(Heavy, "test-model", &workspace, "test")?.with_budget(Budget {
             max_tokens: Some(1000),
             max_secs: None,
-        });
+        })?;
     let turn = loop_.turn("go").await?;
     assert!(turn.aborted);
     assert!(turn.text.contains("token limit"));
@@ -310,11 +790,11 @@ async fn token_budget_aborts_and_persists() -> Result<()> {
 }
 
 #[tokio::test]
-async fn restored_budget_does_not_start_from_zero() -> Result<()> {
-    struct ResumeProvider {
+async fn resumed_budget_uses_durable_usage_and_ceiling() -> Result<()> {
+    struct Counted {
         calls: std::sync::Arc<AtomicUsize>,
     }
-    impl Provider for ResumeProvider {
+    impl Provider for Counted {
         fn complete<'a>(
             &'a self,
             _request: &'a CompletionRequest,
@@ -323,15 +803,7 @@ async fn restored_budget_does_not_start_from_zero() -> Result<()> {
             Box::pin(async move {
                 calls.fetch_add(1, Ordering::SeqCst);
                 Ok(AssistantMessage {
-                    content: None,
-                    tool_calls: vec![ToolCall {
-                        id: "resume-call".to_string(),
-                        kind: ToolKind::Function,
-                        function: ToolFunction {
-                            name: "read_file".to_string(),
-                            arguments: r#"{"path":"note.txt"}"#.to_string(),
-                        },
-                    }],
+                    content: Some("done".to_string()),
                     usage: crate::provider::Usage {
                         prompt_tokens: 100,
                         completion_tokens: 0,
@@ -345,8 +817,8 @@ async fn restored_budget_does_not_start_from_zero() -> Result<()> {
     }
     let workspace = test_workspace()?;
     let calls = std::sync::Arc::new(AtomicUsize::new(0));
-    let mut loop_ = Loop::with_session(
-        ResumeProvider {
+    let mut first = Loop::with_session(
+        Counted {
             calls: calls.clone(),
         },
         "test-model",
@@ -354,24 +826,39 @@ async fn restored_budget_does_not_start_from_zero() -> Result<()> {
         "test",
     )?
     .with_budget(Budget {
-        max_tokens: Some(1_000),
+        max_tokens: Some(100),
         max_secs: None,
-    })
-    .restore_progress(1_000, 0);
-    let turn = loop_.turn("resume").await?;
+    })?;
+    let path = first.session_path().to_path_buf();
+    drop(first.turn("first").await?);
+    assert_eq!(first.spent_tokens(), 100);
+    drop(first);
+
+    let mut resumed = Loop::resume_path(
+        Counted {
+            calls: calls.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+        &path,
+    )?;
+    assert_eq!(resumed.spent_tokens(), 100);
+    assert_eq!(resumed.budget().max_tokens, Some(100));
+    let turn = resumed.turn("resume").await?;
     assert!(turn.aborted);
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(turn.text.contains("token limit"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
 
 #[tokio::test]
-async fn restored_time_budget_blocks_even_without_token_usage() -> Result<()> {
-    struct UnusedProvider {
+async fn resumed_time_budget_uses_durable_live_time() -> Result<()> {
+    struct Slow {
         calls: std::sync::Arc<AtomicUsize>,
     }
-    impl Provider for UnusedProvider {
+    impl Provider for Slow {
         fn complete<'a>(
             &'a self,
             _request: &'a CompletionRequest,
@@ -379,8 +866,9 @@ async fn restored_time_budget_blocks_even_without_token_usage() -> Result<()> {
             let calls = self.calls.clone();
             Box::pin(async move {
                 calls.fetch_add(1, Ordering::SeqCst);
+                tokio::time::sleep(std::time::Duration::from_millis(1_100)).await;
                 Ok(AssistantMessage {
-                    content: Some("unexpected".to_string()),
+                    content: Some("done".to_string()),
                     ..AssistantMessage::default()
                 })
             })
@@ -388,8 +876,8 @@ async fn restored_time_budget_blocks_even_without_token_usage() -> Result<()> {
     }
     let workspace = test_workspace()?;
     let calls = std::sync::Arc::new(AtomicUsize::new(0));
-    let mut loop_ = Loop::with_session(
-        UnusedProvider {
+    let mut first = Loop::with_session(
+        Slow {
             calls: calls.clone(),
         },
         "test-model",
@@ -399,11 +887,25 @@ async fn restored_time_budget_blocks_even_without_token_usage() -> Result<()> {
     .with_budget(Budget {
         max_tokens: None,
         max_secs: Some(1),
-    })
-    .restore_progress(0, 1);
-    let turn = loop_.turn("resume").await?;
+    })?;
+    let path = first.session_path().to_path_buf();
+    drop(first.turn("first").await?);
+    drop(first);
+
+    let mut resumed = Loop::resume_path(
+        Slow {
+            calls: calls.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+        &path,
+    )?;
+    assert_eq!(resumed.budget().max_secs, Some(1));
+    assert!(resumed.elapsed_secs() >= 1);
+    let turn = resumed.turn("resume").await?;
     assert!(turn.aborted);
-    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
     assert!(turn.text.contains("wall-clock limit"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -448,8 +950,8 @@ async fn consumed_budget_blocks_the_next_turn_before_provider_call() -> Result<(
     .with_budget(Budget {
         max_tokens: Some(100),
         max_secs: None,
-    });
-    assert_eq!(loop_.turn("first").await?.text, "done");
+    })?;
+    assert_work_receipt(&loop_.turn("first").await?, "done");
     assert_eq!(calls.load(Ordering::SeqCst), 1);
     let second = loop_.turn("second").await?;
     assert!(second.aborted);
@@ -563,11 +1065,12 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
         &workspace,
         "BASE\n\nSKILLS-SNAPSHOT",
     )?
-    .with_verify(vec!["cargo test".to_string()]);
+    .with_verify(vec!["true".to_string()]);
 
     let first = loop_.turn("auto one").await?;
     loop_.set_plan(true);
     loop_.turn("plan").await?;
+    loop_.accept_plan()?;
     loop_.set_plan(false);
     loop_.turn("auto two").await?;
 

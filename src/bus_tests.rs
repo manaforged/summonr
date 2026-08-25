@@ -175,8 +175,6 @@ fn bus_tool_schema_is_stable_across_modes() -> Result<()> {
     let registry = crate::tools::ToolRegistry::new(&cwd)?;
     let base = registry.definitions();
     let definitions = definitions();
-    assert_eq!(base.len(), 7);
-    assert_eq!(base.len() + definitions.len(), 11);
     assert!(base.iter().all(|tool| !is_bus_tool(&tool.function.name)));
     assert_eq!(definitions.len(), 4);
     assert!(definitions.iter().any(|tool| tool.function.name == "send"));

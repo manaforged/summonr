@@ -65,9 +65,6 @@ pub(super) fn validate(commit: &Commit) -> Result<()> {
             FactData::SessionCreated { scope, .. } => {
                 record(&mut seen, Entity::WorkspaceScope, scope.id)?
             }
-            FactData::LegacyToolUncertain { result, .. } => {
-                record(&mut seen, Entity::ToolResult, *result)?
-            }
             FactData::PlanSet { plan } => record(&mut seen, Entity::Plan, plan.id)?,
             FactData::PlanMaterializationPlanned { attempt, .. }
             | FactData::PlanMaterializationFinished { attempt, .. } => {
@@ -104,6 +101,7 @@ pub(super) fn validate(commit: &Commit) -> Result<()> {
             FactData::ProviderFinished { attempt, .. } => {
                 record(&mut seen, Entity::Provider, *attempt)?
             }
+            FactData::CompletionCheckRecorded { .. } => {}
             FactData::ToolCallPlanned { call } => {
                 record(&mut seen, Entity::ToolCall, call.id)?;
                 record(&mut seen, Entity::ToolResult, call.result)?;
@@ -130,9 +128,7 @@ pub(super) fn validate(commit: &Commit) -> Result<()> {
                 record(&mut seen, Entity::ContextEntry, entry.id)?
             }
             FactData::MeterSettled { meter, .. } => record(&mut seen, Entity::Meter, *meter)?,
-            FactData::LegacyImported { .. }
-            | FactData::LegacySourceAccepted { .. }
-            | FactData::BudgetChanged { .. }
+            FactData::BudgetChanged { .. }
             | FactData::ForkedFrom { .. }
             | FactData::CommandRejected { .. }
             | FactData::ConversationCleared { .. } => {}

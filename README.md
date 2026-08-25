@@ -66,11 +66,10 @@ summon --steps PLAN.md
 judge says stop. `--steps` hands the model one numbered item at a
 time. Both isolate in a git worktree (`<repo>-worktrees/<id>`) when
 you are in a repo. Exit 0 fast-forwards your branch and removes the
-tree. `--here` stays put. The `agent` tool runs one nested agent
-(depth 1) and returns its final text. `diagnostics` and `definition`
-talk to one language server (`definition` also lists references and
-applies rename). `grep` takes `glob`; an empty pattern lists matching
-files. Defaults pick the first popular binary on PATH for the tree
+tree. `--here` stays put. `diagnostics` and `definition` talk to one
+language server (`definition` also lists references and applies rename).
+`grep` takes `glob`; an empty pattern lists matching files. Defaults pick
+the first popular binary on PATH for the tree
 (Biome before tsserver on a Node repo, Ruff before pyright on Python).
 Set `[lsp] command` in `.mage/config.toml` to plug in anything else.
 

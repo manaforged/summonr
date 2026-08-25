@@ -35,8 +35,6 @@ pub enum Event {
         success: bool,
         #[serde(default)]
         mutated: bool,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        task: Option<crate::task::TaskState>,
         output: String,
     },
     Assistant {
@@ -70,6 +68,13 @@ pub enum Event {
     Verify {
         command: String,
         passed: bool,
+    },
+    /// Harness-owned end-of-turn change and verification summary.
+    Receipt {
+        text: String,
+    },
+    Work {
+        progress: crate::WorkProgress,
     },
 }
 
@@ -147,6 +152,10 @@ impl ToolRegistry {
 
     pub(crate) fn set_strict(&mut self) {
         self.policy.set_strict();
+    }
+
+    pub(crate) fn exists(&self, path: &str) -> Result<bool> {
+        Ok(self.lexical(path)?.exists())
     }
 
     pub(crate) fn enable_sandbox(&mut self, deny_network: bool) -> Result<()> {

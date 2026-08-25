@@ -319,6 +319,8 @@ pub struct CompletionRequest {
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
     pub max_output_tokens: u32,
+    /// Forward streamed text and reasoning to the interface.
+    pub emit_deltas: bool,
 }
 
 impl CompletionRequest {
@@ -690,7 +692,7 @@ impl Provider for Client {
             if let Some(kind) = Self::native_kind(self.wire) {
                 return self.complete_native(request, kind).await;
             }
-            if self.on_delta.is_some() || self.on_reasoning.is_some() {
+            if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
                 self.complete_stream(request).await
             } else {
                 self.complete_once(request).await

@@ -8,7 +8,7 @@ use summoner::{
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::cli::{self, Args};
-use super::modes;
+use super::{diagnostics, modes};
 
 type Ui = (
     Option<UnboundedSender<summoner::tui::Msg>>,
@@ -149,7 +149,22 @@ async fn run_login(args: &Args) -> Result<()> {
 }
 
 pub(super) async fn run() -> Result<i32> {
-    let args = cli::parse()?;
+    let log = diagnostics::Log::start();
+    let result = match cli::parse() {
+        Ok(args) => route(args, log.as_ref()).await,
+        Err(error) => Err(error),
+    };
+    let (code, error) = match &result {
+        Ok(code) => (*code, None),
+        Err(error) => (1, Some(error.to_string())),
+    };
+    if let Some(log) = log {
+        log.finish(code, error.as_deref());
+    }
+    result
+}
+
+async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.login {
         return run_login(&args).await.map(|()| 0);
     }
@@ -162,10 +177,10 @@ pub(super) async fn run() -> Result<i32> {
     if args.list_worktrees {
         return manage_worktrees(&args).map(|()| 0);
     }
-    launch(args).await
+    launch(args, log).await
 }
 
-async fn launch(args: Args) -> Result<i32> {
+async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree) = isolate(&args, &cwd)?;
     let endpoint = summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?;
@@ -178,22 +193,24 @@ async fn launch(args: Args) -> Result<i32> {
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let loop_ = build(&args, &endpoint, provider, &workspace, check)?;
+    if let Some(log) = log {
+        let session = loop_.session_id();
+        log.session(&session, loop_.session_path(), &workspace);
+    }
     let code = dispatch(loop_, &args, &endpoint, workspace, ui, goal_checks).await?;
-    if code == 0 {
-        if let Some(tree) = tree {
-            if let Err(error) = finish_worktree(&tree)
-                && !args.json
-            {
-                eprintln!("worktree kept {}: {error}", tree.path.display());
-            }
-        }
+    if code == 0
+        && let Some(tree) = tree
+        && let Err(error) = finish_worktree(&tree)
+        && !args.json
+    {
+        eprintln!("worktree kept {}: {error}", tree.path.display());
     }
     Ok(code)
 }
 
 fn route_checks(goal: bool, checks: Option<Vec<String>>) -> (Option<Vec<String>>, Vec<String>) {
     if goal {
-        (None, checks.unwrap_or_default())
+        (checks.clone(), checks.unwrap_or_default())
     } else {
         (checks, Vec::new())
     }
@@ -217,9 +234,6 @@ fn build(
             Loop::fork_path(provider, endpoint.model.clone(), workspace, prompt, &path)?
         }
     };
-    if let Some(job) = loop_.restored_progress() {
-        loop_ = loop_.restore_progress(job.spent_tokens, job.elapsed_secs);
-    }
     loop_.set_context_window(endpoint.context_window);
     loop_.set_env(endpoint.env.clone());
     configure(loop_, args, check)
@@ -230,9 +244,6 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    if args.steps.is_some() {
-        loop_ = loop_.with_external_steps();
-    }
     if args.sandbox {
         loop_ = loop_.with_sandbox(args.no_net)?;
     }
@@ -253,23 +264,7 @@ fn configure(
             "--max-turns only applies to --goal".to_string(),
         ));
     }
-    let budget = if let Some(job) = loop_.restored_progress() {
-        if args
-            .max_tokens
-            .is_some_and(|value| Some(value) != job.max_tokens)
-            || args
-                .max_secs
-                .is_some_and(|value| Some(value) != job.max_secs)
-        {
-            return Err(summoner::Error::Config(
-                "step job budget changed; resume with the original limits".to_string(),
-            ));
-        }
-        Some(Budget {
-            max_tokens: job.max_tokens.or(args.max_tokens),
-            max_secs: job.max_secs.or(args.max_secs),
-        })
-    } else if args.max_tokens.is_some() || args.max_secs.is_some() {
+    let budget = if args.max_tokens.is_some() || args.max_secs.is_some() {
         Some(Budget {
             max_tokens: args.max_tokens,
             max_secs: args.max_secs,
@@ -278,7 +273,7 @@ fn configure(
         None
     };
     if let Some(budget) = budget {
-        loop_ = loop_.with_budget(budget);
+        loop_ = loop_.with_budget(budget)?;
     }
     Ok(loop_)
 }
@@ -329,7 +324,6 @@ async fn dispatch(
             plan: args.plan,
             strict: args.strict,
             workspace: splash::short_path(&workspace),
-            task: loop_.task_state().cloned(),
         };
         let ui_tx =
             ui.0.ok_or_else(|| summoner::Error::Config("tui sender missing".to_string()))?;
@@ -400,19 +394,26 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
         let path = resolve_session(id)?;
         return Ok(SessionAction::Resume(path));
     }
-    if let Some(plan_path) = args.steps.as_deref()
-        && let Some(path) = last_for(workspace)?
-        && let Some(state) = Loop::<Client>::job_at(&path)
-        && plan_matches(&state, workspace, Path::new(plan_path))
-    {
-        return Ok(SessionAction::Resume(path));
+    if let Some(plan_path) = args.steps.as_deref() {
+        let markdown = std::fs::read_to_string(plan_path).map_err(|error| {
+            summoner::Error::Config(format!("cannot read {plan_path}: {error}"))
+        })?;
+        if let Some(path) = list_sessions()?.into_iter().rev().find_map(|info| {
+            Loop::<Client>::steps_at(&info.path, workspace, &markdown).then_some(info.path)
+        }) {
+            return Ok(SessionAction::Resume(path));
+        }
     }
-    if let Some(objective) = args.goal.as_deref()
-        && let Some(path) = last_for(workspace)?
-        && let Some(state) = Loop::<Client>::job_at(&path)
-        && state.goal.as_deref() == Some(objective)
-    {
-        return Ok(SessionAction::Resume(path));
+    if let Some(objective) = args.goal.as_deref() {
+        let max_turns = args
+            .max_turns
+            .map_or(summoner::DEFAULT_MAX_TURNS, |turns| turns as usize);
+        if let Some(path) = list_sessions()?.into_iter().rev().find_map(|info| {
+            Loop::<Client>::goal_at(&info.path, workspace, objective, max_turns)
+                .then_some(info.path)
+        }) {
+            return Ok(SessionAction::Resume(path));
+        }
     }
     if args.resume || args.fork {
         let path = last_for(workspace)?.ok_or_else(|| {
@@ -424,14 +425,4 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
         return Ok(SessionAction::Resume(path));
     }
     Ok(SessionAction::Create)
-}
-
-fn plan_matches(state: &summoner::steps::JobState, workspace: &Path, plan: &Path) -> bool {
-    let Ok(workspace) = workspace.canonicalize() else {
-        return false;
-    };
-    let Ok(plan) = plan.canonicalize() else {
-        return false;
-    };
-    state.workspace == workspace.display().to_string() && state.plan == plan.display().to_string()
 }

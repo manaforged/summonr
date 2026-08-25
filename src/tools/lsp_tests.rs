@@ -7,10 +7,7 @@ use super::*;
 
 fn reply_loop(reader: impl Read, mut writer: impl Write) {
     let mut reader = BufReader::new(reader);
-    loop {
-        let Ok(msg) = read_msg(&mut reader) else {
-            break;
-        };
+    while let Ok(msg) = read_msg(&mut reader) {
         if msg.get("method").and_then(Value::as_str) == Some("exit") {
             break;
         }

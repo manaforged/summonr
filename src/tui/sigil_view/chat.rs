@@ -3,6 +3,7 @@ use sigil_tui::Host;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
+use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
 use super::model::Model;
 use crate::tui::{Round, fmt_tokens, short_session};
 
@@ -12,12 +13,7 @@ mod transcript;
 #[path = "chat/image.rs"]
 pub(super) mod image;
 
-const BASE: Rgba8 = rgb(12, 12, 20);
-pub(super) const TEXT: Rgba8 = rgb(200, 200, 205);
-pub(super) const GRAY: Rgba8 = rgb(160, 160, 160);
-pub(super) const DIM: Rgba8 = rgb(90, 90, 90);
-const GREEN: Rgba8 = rgb(80, 200, 120);
-const CYAN: Rgba8 = rgb(90, 200, 220);
+pub(super) use canvas::{Cell, rgb};
 pub(super) const YELLOW: Rgba8 = rgb(220, 200, 90);
 pub(super) const RED: Rgba8 = rgb(220, 90, 90);
 pub(super) const BLACK: Rgba8 = rgb(0, 0, 0);
@@ -27,31 +23,6 @@ const CODE_COMMENT: Rgba8 = rgb(96, 148, 102);
 const CODE_STRING: Rgba8 = rgb(226, 178, 106);
 const SPARK: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 pub(super) const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
-    Rgba8 { r, g, b, a: 255 }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct Cell {
-    ch: char,
-    fg: Rgba8,
-    pub(super) bg: Rgba8,
-    bold: bool,
-    italic: bool,
-}
-
-impl Cell {
-    pub(super) const fn blank() -> Self {
-        Self {
-            ch: ' ',
-            fg: TEXT,
-            bg: BASE,
-            bold: false,
-            italic: false,
-        }
-    }
-}
 
 #[derive(Clone)]
 struct Span {

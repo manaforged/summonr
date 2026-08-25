@@ -17,10 +17,11 @@ path = "src/main.rs"
 
 [[bin]]
 name = "summoner"
-path = "src/main.rs"
+path = "src/summoner.rs"
 
 [dependencies]
 base64 = "0.22"
+cap-std = "4.0.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -35,11 +36,13 @@ tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls"] }
 genai = { version = "0.6.5", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
-rustix = { version = "1.1.4", default-features = false, features = ["fs", "std"] }
 crossterm = "0.28"
-sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a", default-features = false, features = ["tui"] }
-sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
-sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+sigil = { package = "sigil-ui", git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a", default-features = false, features = ["tui"] }
+sigil-hal = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+sigil-tui = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+
+[target.'cfg(windows)'.dependencies]
+winapi-util = "0.1"
 
 [lints.rust]
 unsafe_code = "deny"

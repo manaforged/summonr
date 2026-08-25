@@ -84,5 +84,7 @@ async fn killed_harness_leaves_an_open_run() -> std::io::Result<()> {
     );
     #[cfg(unix)]
     assert_eq!(status.signal(), Some(9));
+    #[cfg(not(unix))]
+    assert!(!status.success(), "killed Summoner exited successfully");
     Ok(())
 }

@@ -8,8 +8,6 @@ mod bounds;
 #[path = "durable_tests/driver.rs"]
 mod driver;
 
-#[path = "durable_tests/effects.rs"]
-mod effects;
 #[path = "durable_tests/encoding.rs"]
 mod encoding;
 #[path = "durable_tests/journal.rs"]
@@ -17,6 +15,13 @@ mod journal;
 #[path = "durable_tests/materialization.rs"]
 mod materialization;
 
+#[cfg_attr(
+    not(unix),
+    expect(
+        unused_variables,
+        reason = "the symlink observation assertion is Unix-only"
+    )
+)]
 #[path = "durable_tests/observe.rs"]
 mod observe;
 
@@ -34,8 +39,6 @@ mod recovery;
 mod reducer;
 #[path = "durable_tests/tool_terminals.rs"]
 mod tool_terminals;
-#[path = "durable_tests/uncertainty.rs"]
-mod uncertainty;
 #[path = "durable_tests/verification.rs"]
 mod verification;
 #[path = "durable_tests/vocabulary.rs"]

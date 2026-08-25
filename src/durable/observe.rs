@@ -138,6 +138,7 @@ pub(crate) fn workspace_identity_of(path: &Path) -> Result<WorkspaceIdentity, Ob
 }
 
 /// Observe a real workspace root against a recorded scope.
+#[cfg(test)]
 pub(crate) fn observe(
     path: &Path,
     scope: &WorkspaceScope,
@@ -345,11 +346,13 @@ fn workspace_object_digest(path: &Path) -> Result<Digest, ObserveError> {
         body.extend_from_slice(&metadata.ino().to_be_bytes());
         Ok(Digest::hash(b"mage:workspace-object:v1", &body))
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
-        use std::os::windows::fs::MetadataExt as _;
-        let metadata = std::fs::symlink_metadata(path)?;
-        let body = metadata.file_index().to_be_bytes();
+        let handle = winapi_util::Handle::from_path_any(path)?;
+        let metadata = winapi_util::file::information(&handle)?;
+        let mut body = Vec::new();
+        body.extend_from_slice(&metadata.volume_serial_number().to_be_bytes());
+        body.extend_from_slice(&metadata.file_index().to_be_bytes());
         Ok(Digest::hash(b"mage:workspace-object:v1", &body))
     }
 }
@@ -440,3 +443,7 @@ fn platform() -> PathPlatform {
         PathPlatform::Windows
     }
 }
+
+#[cfg(test)]
+#[path = "observe_tests.rs"]
+mod tests;

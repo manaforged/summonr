@@ -5,6 +5,12 @@ fn args(tokens: &[&str]) -> Args {
 }
 
 #[test]
+fn workspace_instructions_load_by_default() {
+    assert!(args(&[]).trust);
+    assert!(!args(&["--no-trust"]).trust);
+}
+
+#[test]
 fn first_token_named_endpoint_is_the_target() {
     let parsed = args(&["grok", "-p", "hello"]);
     assert_eq!(parsed.endpoint.as_deref(), Some("grok"));

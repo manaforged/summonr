@@ -152,16 +152,7 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
     }
     let prompt = usize::from(prompt_row(rows));
     let body_height = prompt.saturating_sub(1);
-    let mut transcript = transcript::entries(model, content_width, accent);
-    if !app.task.peek().is_empty() {
-        transcript.push(Vec::new());
-        transcript.extend(
-            app.task
-                .peek()
-                .lines()
-                .map(|line| vec![Span::styled(line, DIM)]),
-        );
-    }
+    let transcript = transcript::entries(model, content_width, accent);
     let visible = wrap(transcript, content_width);
     let max_start = visible.len().saturating_sub(body_height);
     let start = ((app.scroll_y.peek() / Host::CELL) as usize).min(max_start);

@@ -35,34 +35,6 @@ fn schema_loop(
 }
 
 #[tokio::test]
-async fn builder_flags_win_before_the_snap() -> Result<()> {
-    let workspace = test_workspace()?;
-    let requests = Arc::new(Mutex::new(Vec::new()));
-    let mut loop_ = schema_loop(&workspace, requests.clone())?.with_external_steps();
-    assert!(!loop_.tool_names().iter().any(|name| name == "task_state"));
-
-    loop_.turn("first").await?;
-    loop_.set_plan(true);
-    loop_.turn("second").await?;
-
-    let requests = captured(&requests)?;
-    assert_eq!(requests.len(), 2);
-    assert!(requests.iter().all(|request| {
-        !request
-            .tools
-            .iter()
-            .any(|tool| tool.function.name == "task_state")
-    }));
-    assert_eq!(
-        serde_json::to_vec(&requests[0].tools)?,
-        serde_json::to_vec(&requests[1].tools)?
-    );
-    assert_eq!(requests[0].prefix_hash(), requests[1].prefix_hash());
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn snapped_schema_survives_plan_toggle() -> Result<()> {
     let workspace = test_workspace()?;
     let requests = Arc::new(Mutex::new(Vec::new()));
@@ -71,6 +43,7 @@ async fn snapped_schema_survives_plan_toggle() -> Result<()> {
     loop_.turn("first").await?;
     loop_.set_plan(true);
     loop_.turn("second").await?;
+    loop_.accept_plan()?;
     loop_.set_plan(false);
     loop_.turn("third").await?;
 
@@ -91,51 +64,20 @@ async fn snapped_schema_survives_plan_toggle() -> Result<()> {
 }
 
 #[tokio::test]
-async fn snapped_schema_ignores_late_builder_changes() -> Result<()> {
+async fn fork_keeps_the_provider_schema() -> Result<()> {
     let workspace = test_workspace()?;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let mut loop_ = schema_loop(&workspace, requests.clone())?;
 
     loop_.turn("first").await?;
-    loop_ = loop_.with_external_steps();
-    assert!(loop_.tool_names().iter().any(|name| name == "task_state"));
+    drop(loop_.fork_live()?);
     loop_.turn("second").await?;
 
     let requests = captured(&requests)?;
     assert_eq!(requests.len(), 2);
     assert_eq!(
         serde_json::to_vec(&requests[0].tools)?,
-        serde_json::to_vec(&requests[1].tools)?,
-        "a session cannot change its advertised tool JSON"
-    );
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn adopt_clears_the_snap() -> Result<()> {
-    let workspace = test_workspace()?;
-    let requests = Arc::new(Mutex::new(Vec::new()));
-    let mut loop_ = schema_loop(&workspace, requests.clone())?;
-
-    loop_.turn("first").await?;
-    loop_ = loop_.with_external_steps();
-    drop(loop_.fork_live()?);
-    loop_.turn("second").await?;
-
-    let requests = captured(&requests)?;
-    assert_eq!(requests.len(), 2);
-    assert!(
-        requests[0]
-            .tools
-            .iter()
-            .any(|tool| tool.function.name == "task_state")
-    );
-    assert!(
-        !requests[1]
-            .tools
-            .iter()
-            .any(|tool| tool.function.name == "task_state")
+        serde_json::to_vec(&requests[1].tools)?
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -187,73 +129,6 @@ async fn resume_replays_tool_history() -> Result<()> {
 }
 
 #[tokio::test]
-async fn nested_agent_runs_a_child_complete() -> Result<()> {
-    struct Nested(AtomicUsize);
-    impl Provider for Nested {
-        fn complete<'a>(
-            &'a self,
-            request: &'a CompletionRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async move {
-                let round = self.0.fetch_add(1, Ordering::SeqCst);
-                if round == 0 {
-                    assert!(
-                        request
-                            .tools
-                            .iter()
-                            .any(|tool| tool.function.name == "agent")
-                    );
-                    return Ok(AssistantMessage {
-                        tool_calls: vec![ToolCall {
-                            id: "a1".to_string(),
-                            kind: ToolKind::Function,
-                            function: ToolFunction {
-                                name: "agent".to_string(),
-                                arguments: r#"{"prompt":"child work"}"#.to_string(),
-                            },
-                        }],
-                        ..AssistantMessage::default()
-                    });
-                }
-                if request
-                    .messages
-                    .iter()
-                    .any(|message| message.content.contains("nested agent"))
-                {
-                    assert!(
-                        !request
-                            .tools
-                            .iter()
-                            .any(|tool| tool.function.name == "agent")
-                    );
-                    return Ok(AssistantMessage {
-                        content: Some("child-ok".to_string()),
-                        ..AssistantMessage::default()
-                    });
-                }
-                Ok(AssistantMessage {
-                    content: Some("parent-ok".to_string()),
-                    ..AssistantMessage::default()
-                })
-            })
-        }
-    }
-
-    let workspace = test_workspace()?;
-    std::fs::write(workspace.join("note.txt"), "n")?;
-    let mut loop_ =
-        Loop::with_session(Nested(AtomicUsize::new(0)), "test-model", &workspace, "sys")?;
-    let turn = loop_.turn("delegate").await?;
-    assert_eq!(turn.text, "parent-ok");
-    assert!(turn.events.iter().any(|event| matches!(
-        event,
-        Event::ToolResult { output, .. } if output.contains("child-ok")
-    )));
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn clear_history_is_durable() -> Result<()> {
     struct Text;
     impl Provider for Text {
@@ -276,41 +151,6 @@ async fn clear_history_is_durable() -> Result<()> {
     loop_.clear_history()?;
     assert_eq!(loop_.history_len(), 0);
     assert!(loop_.replay_session().history.is_empty());
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn resume_path_imports_a_v1_session() -> Result<()> {
-    struct Text;
-    impl Provider for Text {
-        fn complete<'a>(
-            &'a self,
-            _request: &'a CompletionRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async {
-                Ok(AssistantMessage {
-                    content: Some("done".to_string()),
-                    ..AssistantMessage::default()
-                })
-            })
-        }
-    }
-    let workspace = test_workspace()?;
-    let v1 = workspace.join("sessions/legacy.jsonl");
-    std::fs::create_dir_all(v1.parent().expect("v1 parent"))?;
-    let mut log = crate::session::SessionLog::open(&v1)?;
-    log.append_user("hello from v1")?;
-    log.append_event(&Event::Assistant {
-        text: "old answer".to_string(),
-    })?;
-    drop(log);
-    let mut loop_ = Loop::resume_path(Text, "test-model", &workspace, "test", &v1)?;
-    let replayed = loop_.replay_session();
-    assert_eq!(replayed.history.len(), 2);
-    assert_eq!(replayed.history[0].content, "hello from v1");
-    let turn = loop_.turn("next").await?;
-    assert_eq!(turn.text, "done");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -368,7 +208,7 @@ async fn two_tool_round_journals_every_call() -> Result<()> {
         "test",
     )?;
     let turn = loop_.turn("read twice").await?;
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     let replayed = loop_.replay_session();
     let tools: Vec<_> = replayed
         .history
@@ -449,7 +289,7 @@ async fn steering_lands_before_the_next_round() -> Result<()> {
     )?;
     loop_.steer("actually use tabs");
     let turn = loop_.turn("read the note").await?;
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     let seen = seen.lock().map(|seen| seen.clone()).unwrap_or_default();
     assert!(
         seen.iter().any(|content| content == "actually use tabs"),
@@ -505,7 +345,7 @@ async fn transient_provider_error_retries_with_note() -> Result<()> {
     let turn = loop_
         .turn_with("hi", |event| live.push(event.clone()))
         .await?;
-    assert_eq!(turn.text, "recovered");
+    assert_work_receipt(&turn, "recovered");
     assert!(
         live.iter().any(|event| matches!(
             event,
@@ -531,7 +371,7 @@ async fn durable_events_commit_before_publish() -> Result<()> {
                 .unwrap_or_else(|error| panic!("read session: {error}"));
             let stored = match event {
                 Event::Assistant { text: body } | Event::ToolResult { output: body, .. } => {
-                    text.contains(body)
+                    serde_json::to_string(body).is_ok_and(|body| text.contains(&body))
                 }
                 Event::ToolCall { name, .. } => text.contains(name),
                 _ => true,
@@ -675,7 +515,7 @@ async fn overflow_compacts_tool_results_and_retries() -> Result<()> {
         "test",
     )?;
     let turn = loop_.turn("read the note").await?;
-    assert_eq!(turn.text, "fits now");
+    assert_work_receipt(&turn, "fits now");
     let bodies = bodies
         .lock()
         .map(|bodies| bodies.clone())
@@ -827,6 +667,10 @@ async fn one_turn_advertises_one_tool_schema() -> Result<()> {
     let lists = lists.lock().map(|lists| lists.clone()).unwrap_or_default();
     assert_eq!(lists.len(), 2, "tool then answer");
     assert_eq!(lists[0], lists[1], "both rounds ship the same tool schema");
+    assert!(
+        !lists[0].iter().any(|name| name == "agent"),
+        "the retired nested runtime must not be advertised"
+    );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -882,7 +726,7 @@ async fn auto_compact_summarizes_and_records() -> Result<()> {
     let turn = loop_
         .turn_with("u8", |event| live.push(event.clone()))
         .await?;
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     assert_eq!(turn.usage.prompt_tokens, 25);
     assert_eq!(turn.usage.completion_tokens, 5);
     assert_eq!(loop_.spent_tokens(), 30);
@@ -973,7 +817,7 @@ async fn compaction_budget_stops_before_the_followup_request() -> Result<()> {
     .with_budget(Budget {
         max_tokens: Some(100),
         max_secs: None,
-    });
+    })?;
     loop_.set_context_window(Some(16_386));
 
     let turn = loop_.turn("u8").await?;

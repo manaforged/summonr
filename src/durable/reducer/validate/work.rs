@@ -1,12 +1,12 @@
 use super::effect::work_blocked;
 use super::{find_observation, known_scope, unknown};
 use crate::durable::encoding::Commit;
-use crate::durable::fact::{FactData, MaterializationOutcome};
-use crate::durable::id::{ObservationId, PlanRevisionId, WorkId};
+use crate::durable::fact::{CompletionCheck, FactData, MaterializationOutcome};
+use crate::durable::id::{CheckId, ObservationId, OperationId, PlanRevisionId, WorkId};
 use crate::durable::reducer::{ProviderState, ReduceError, Result, SessionState};
 use crate::durable::work::{
-    ItemDisposition, PlanRevision, PlanSource, VerificationPolicy, WorkError, WorkStage, WorkState,
-    WorkStatus, plan_path as build_plan_path,
+    ItemDisposition, PlanRevision, PlanSource, VerificationPolicy, WorkError, WorkPolicy,
+    WorkStage, WorkState, WorkStatus, plan_path as build_plan_path,
 };
 use crate::durable::workspace::PathKey;
 
@@ -77,6 +77,9 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
             ));
         }
         validate_revision(current, work, commit)?;
+        if accepts_candidate(current, work) {
+            validate_checks(state, commit, current)?;
+        }
         if current.base().is_some() && work.base() != current.base() {
             return Err(ReduceError::State("Work Execute base is immutable"));
         }
@@ -145,7 +148,11 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
         if candidate.digest != candidate.calculated_digest(base.digest(), capture.digest())? {
             return Err(WorkError::CandidateDigest.into());
         }
-        if matches!(work.status(), WorkStatus::Completed { .. }) {
+        if state
+            .works
+            .get(&work.id())
+            .is_some_and(|current| accepts_candidate(current, work))
+        {
             let recheck = commit.facts.iter().find_map(|fact| match &fact.data {
                 FactData::WorkspaceObserved { observation }
                     if observation.scope() == candidate.scope =>
@@ -182,6 +189,75 @@ pub(super) fn validate_work(state: &SessionState, commit: &Commit, work: &WorkSt
         ));
     }
     Ok(())
+}
+
+fn accepts_candidate(current: &WorkState, next: &WorkState) -> bool {
+    current.status().stage() == Some(WorkStage::Verify)
+        && next.candidate().is_some()
+        && matches!(
+            next.status(),
+            WorkStatus::Completed { .. } | WorkStatus::Active(WorkStage::Execute)
+        )
+}
+
+fn validate_checks(state: &SessionState, commit: &Commit, work: &WorkState) -> Result<()> {
+    let operation = state
+        .operation
+        .as_ref()
+        .filter(|operation| {
+            operation.work == Some(work.id()) && operation.stage == Some(WorkStage::Verify)
+        })
+        .map(|operation| operation.id)
+        .ok_or(ReduceError::State(
+            "accepted candidate requires its open Verify operation",
+        ))?;
+    let plan = work
+        .selected_plan()
+        .and_then(|plan| state.plans.get(&plan))
+        .ok_or(ReduceError::State(
+            "accepted candidate requires its selected Plan",
+        ))?;
+    let checks: Vec<CheckId> = match work.policy() {
+        WorkPolicy::Steps => work
+            .active_item
+            .and_then(|item| plan.steps.iter().find(|step| step.id == item))
+            .map(|step| step.checks.as_slice().to_vec())
+            .ok_or(ReduceError::State(
+                "accepted Steps candidate requires its active Plan item",
+            ))?,
+        WorkPolicy::Single | WorkPolicy::Goal { .. } => {
+            plan.checks.iter().map(|check| check.id).collect()
+        }
+    };
+    if checks
+        .iter()
+        .any(|check| !check_passed(state, commit, operation, *check))
+    {
+        return Err(ReduceError::State(
+            "accepted candidate requires every active Work check to pass",
+        ));
+    }
+    Ok(())
+}
+
+fn check_passed(
+    state: &SessionState,
+    commit: &Commit,
+    operation: OperationId,
+    check: CheckId,
+) -> bool {
+    state.completion_checks.get(&(operation, check)) == Some(&true)
+        || commit.facts.iter().any(|fact| {
+            matches!(
+                &fact.data,
+                FactData::CompletionCheckRecorded {
+                    operation: recorded,
+                    check: CompletionCheck::Declared(id),
+                    passed: true,
+                    ..
+                } if *recorded == operation && *id == check
+            )
+        })
 }
 
 fn effect_boundary(current: &WorkState, next: &WorkState) -> bool {
@@ -392,13 +468,7 @@ fn legal_transition(current: &WorkStatus, next: &WorkStatus) -> bool {
         (WorkStatus::Active(WorkStage::Verify), WorkStatus::Completed { .. })
         | (WorkStatus::Active(_), WorkStatus::Abandoned { .. })
         | (WorkStatus::Paused { .. }, WorkStatus::Abandoned { .. }) => true,
-        (
-            WorkStatus::Completed { .. }
-            | WorkStatus::Abandoned { .. }
-            | WorkStatus::LegacyTerminal { .. },
-            _,
-        )
-        | (_, WorkStatus::LegacyTerminal { .. }) => false,
+        (WorkStatus::Completed { .. } | WorkStatus::Abandoned { .. }, _) => false,
         _ => false,
     }
 }

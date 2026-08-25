@@ -35,7 +35,6 @@ fn worker() -> (Worker, UnboundedSender<Cmd>, PathBuf) {
         plan: false,
         strict: false,
         workspace: workspace.display().to_string(),
-        task: None,
     };
     (Worker::new(loop_, rx, ui, info), tx, workspace)
 }

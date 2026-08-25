@@ -55,27 +55,7 @@ fn fact_data(fact: &FactData, session: SessionId) -> Result<()> {
             }
             workspace_scope(scope, session)?;
         }
-        FactData::LegacyImported {
-            plan,
-            observation,
-            uncertain_tools,
-            ..
-        } => {
-            optional(*plan, session, "imported Plan")?;
-            local(*observation, session, "import observation")?;
-            many(
-                uncertain_tools.iter().copied(),
-                session,
-                "imported tool result",
-            )?;
-        }
-        FactData::LegacySourceAccepted { .. } | FactData::BudgetChanged { .. } => {}
-        FactData::LegacyToolUncertain {
-            result, context, ..
-        } => {
-            local(*result, session, "legacy tool result")?;
-            local(*context, session, "legacy tool context")?;
-        }
+        FactData::BudgetChanged { .. } => {}
         FactData::PlanSet { plan } => plan_revision(plan, session)?,
         FactData::PlanMaterializationPlanned { attempt, plan, .. }
         | FactData::PlanMaterializationFinished { attempt, plan, .. } => {
@@ -172,6 +152,14 @@ fn fact_data(fact: &FactData, session: SessionId) -> Result<()> {
         } => {
             local(*attempt, session, "provider attempt")?;
             local(*result, session, "provider result")?;
+        }
+        FactData::CompletionCheckRecorded {
+            operation, check, ..
+        } => {
+            local(*operation, session, "completion check operation")?;
+            if let crate::durable::fact::CompletionCheck::Declared(check) = check {
+                local(*check, session, "completion check")?;
+            }
         }
         FactData::ToolCallPlanned { call } => {
             local(call.id, session, "tool call")?;
@@ -320,10 +308,7 @@ fn work_state(work: &WorkState, session: SessionId) -> Result<()> {
             local(*candidate, session, "completed candidate")?;
             local(*verdict, session, "completed verdict")?;
         }
-        WorkStatus::Active(_)
-        | WorkStatus::Paused { .. }
-        | WorkStatus::Abandoned { .. }
-        | WorkStatus::LegacyTerminal { .. } => {}
+        WorkStatus::Active(_) | WorkStatus::Paused { .. } | WorkStatus::Abandoned { .. } => {}
     }
     if let Some(candidate) = &work.candidate {
         local(candidate.id, session, "candidate")?;
@@ -351,6 +336,9 @@ fn work_state(work: &WorkState, session: SessionId) -> Result<()> {
         WorkProjection::Context(id) => local(id, session, "Work context")?,
         WorkProjection::Epoch(id) => local(id, session, "Work epoch")?,
         WorkProjection::Pending(id) => local(id, session, "Work batch")?,
+        WorkProjection::CompletionCheck(id) => {
+            local(id, session, "Work completion check")?;
+        }
         WorkProjection::Operation(id) => local(id, session, "Work operation")?,
         WorkProjection::Plan(id) => local(id, session, "Work Plan projection")?,
     }
@@ -389,8 +377,10 @@ fn workspace_effect(value: &WorkspaceEffect, session: SessionId) -> Result<()> {
 
 fn context_source(source: &ContextSource, session: SessionId) -> Result<()> {
     match source {
-        ContextSource::Input(id) => local(*id, session, "context input"),
-        ContextSource::Provider(id) | ContextSource::Summary(id) => {
+        ContextSource::Input(id) | ContextSource::WorkPolicy(id) => {
+            local(*id, session, "context input")
+        }
+        ContextSource::Provider(id) | ContextSource::Receipt(id) | ContextSource::Summary(id) => {
             local(*id, session, "context provider")
         }
         ContextSource::Tool(id) => local(*id, session, "context tool"),

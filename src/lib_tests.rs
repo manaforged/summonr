@@ -119,6 +119,16 @@ fn test_workspace() -> Result<PathBuf> {
     Ok(workspace)
 }
 
+fn assert_work_receipt(turn: &Turn, provider_text: &str) {
+    assert!(turn.text.starts_with(provider_text), "{}", turn.text);
+    assert!(turn.text.contains("Turn receipt"), "{}", turn.text);
+    assert!(
+        turn.events.iter().any(
+            |event| matches!(event, Event::Receipt { text } if text.starts_with("Turn receipt"))
+        )
+    );
+}
+
 fn sandbox_for_test(workspace: &std::path::Path) -> Result<Option<crate::tools::sandbox::Sandbox>> {
     sandbox_for_test_with(workspace, false)
 }
@@ -262,7 +272,7 @@ async fn output_limited_reasoning_continues_as_an_append_only_suffix() -> Result
         "test",
     )?;
     let turn = loop_.turn("work").await?;
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     assert_eq!(turn.rounds, 2);
     assert!(
         turn.events.iter().any(|event| {
@@ -298,7 +308,7 @@ async fn loop_sends_and_persists_image_input() -> Result<()> {
     };
 
     let turn = loop_.turn_with(input, |_| {}).await?;
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     let replayed = loop_.replay_session();
     assert_eq!(replayed.history[0].images.len(), 1);
 
@@ -375,7 +385,7 @@ async fn openai_provider_completes_a_tool_round() -> Result<()> {
     assert!(requests[0].contains("\"model\":\"test-model\""));
     assert!(requests[0].contains("read_file"));
     assert!(requests[0].contains("edit_file"));
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

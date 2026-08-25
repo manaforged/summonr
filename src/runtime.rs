@@ -14,8 +14,8 @@ use crate::verify::Outcome;
 
 const DEFAULT_MAX_ROUNDS: usize = 64;
 pub(crate) const DEFAULT_ROUND_OUTPUT_TOKENS: u32 = 8_192;
-/// Output ceiling for auxiliary calls (the goal judge).
-pub(crate) const AUX_OUTPUT_TOKENS: u32 = 512;
+/// Output ceiling for the Goal completion judge.
+pub(crate) const JUDGE_OUTPUT_TOKENS: u32 = 512;
 
 /// Session ceilings. Breach aborts the turn, persists it, and exits nonzero.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -72,8 +72,6 @@ pub struct Loop<P> {
     tools: ToolRegistry,
     /// Advertised tool JSON, filled once before the first provider call.
     schema: Option<Vec<ToolDefinition>>,
-    task_enabled: bool,
-    task: Option<crate::task::TaskState>,
     history: Vec<Message>,
     session: SessionDriver,
     max_rounds: usize,
@@ -98,7 +96,6 @@ pub struct Loop<P> {
 mod bus;
 mod compaction;
 mod configure;
-mod nested;
 mod turn;
 
 pub(super) fn session_err(error: impl std::fmt::Display) -> Error {
@@ -111,6 +108,25 @@ pub(super) fn meter(usage: &Usage) -> Meter {
         output_tokens: Some(u64::from(usage.completion_tokens)),
         cached_input_tokens: Some(u64::from(usage.cached_tokens)),
         live_millis: None,
+    }
+}
+
+pub(super) fn elapsed_millis(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+pub(super) fn durable_failure(
+    failure: Option<&crate::error::ProviderFailure>,
+) -> crate::durable::effect::ProviderFailureKind {
+    use crate::durable::effect::ProviderFailureKind as Kind;
+    match failure.map(|failure| failure.kind) {
+        Some(crate::ProviderFailureKind::Authentication) => Kind::Authentication,
+        Some(crate::ProviderFailureKind::RateLimited) => Kind::RateLimit,
+        Some(crate::ProviderFailureKind::ContextOverflow) => Kind::ContextOverflow,
+        Some(crate::ProviderFailureKind::Transport | crate::ProviderFailureKind::Server) => {
+            Kind::Transport
+        }
+        _ => Kind::Other,
     }
 }
 

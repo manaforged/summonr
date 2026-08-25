@@ -9,8 +9,8 @@ use crate::durable::effect::{
     ProviderPurpose, StopReason, Usage,
 };
 use crate::durable::fact::{
-    CommandReceipt, CommandStatus, Fact, FactData, MaterializationOutcome, MeterOwner,
-    OperationStageOutcome, PublicationFootprint,
+    CommandReceipt, CommandStatus, CompletionCheck, Fact, FactData, MaterializationOutcome,
+    MeterOwner, OperationStageOutcome, PublicationFootprint,
 };
 use crate::durable::id::{
     CandidateId, Digest, EvidenceId, MaterializationId, ObservationId, PlanRevisionId,
@@ -19,8 +19,8 @@ use crate::durable::id::{
 use crate::durable::journal::JournalWriter;
 use crate::durable::work::{
     AcceptanceCheck, Candidate, EvidenceRef, ItemDisposition, PlanRevision, PlanSource, PlanStep,
-    ReviewerHead, StageBudget, StageBudgets, VerificationPolicy, WorkItem, WorkPolicy,
-    WorkProjection, WorkRevision, WorkStage, WorkState, WorkStatus, plan_path,
+    RequiredObservation, ReviewerHead, VerificationPolicy, WorkItem, WorkPolicy, WorkProjection,
+    WorkRevision, WorkStage, WorkState, WorkStatus, plan_path,
 };
 use crate::durable::workspace::{
     ChangeManifest, PathComponent, PathKey, PathPlatform, WorkspaceObservation,
@@ -125,12 +125,15 @@ pub(super) fn plan_revision() -> PlanRevision {
             title: fixture::text("Implement"),
             detail: fixture::text("Build and verify the first slice."),
             dependencies: Items::default(),
+            checks: Items::new(vec![fixture::id(504)]).expect("fixture checks must fit"),
         }])
         .expect("fixture steps must fit"),
         checks: Items::new(vec![AcceptanceCheck {
             id: fixture::id(504),
             command: fixture::text("cargo nextest run -p mage durable"),
-            required_observation: Some(fixture::text("All changed paths are observed.")),
+            required_observation: Some(RequiredObservation::StdoutContains(fixture::text(
+                "All changed paths are observed.",
+            ))),
         }])
         .expect("fixture checks must fit"),
         risks: Items::default(),
@@ -535,16 +538,26 @@ pub(super) fn complete(
     facts.extend([
         Fact {
             id: fixture::fact_id(40),
-            data: FactData::WorkspaceObserved { observation },
+            data: FactData::CompletionCheckRecorded {
+                operation: fixture::id(631),
+                check: CompletionCheck::Declared(fixture::id(504)),
+                command: fixture::text("cargo nextest run -p mage durable"),
+                passed: true,
+                output: fixture::text("All changed paths are observed."),
+            },
         },
         Fact {
             id: fixture::fact_id(41),
+            data: FactData::WorkspaceObserved { observation },
+        },
+        Fact {
+            id: fixture::fact_id(42),
             data: FactData::WorkSet {
                 work: Box::new(completed.clone()),
             },
         },
         Fact {
-            id: fixture::fact_id(42),
+            id: fixture::fact_id(45),
             data: FactData::OperationClosed {
                 close: close(
                     631,
@@ -618,11 +631,17 @@ pub(super) fn work_state(
     projection_owner: WorkProjection,
     evidence: Items<EvidenceRef, 2_048>,
 ) -> WorkState {
+    let item = fixture::id(503);
     let disposition = if matches!(&status, WorkStatus::Completed { .. }) {
         ItemDisposition::Completed
     } else {
         ItemDisposition::Pending
     };
+    let active_item = matches!(
+        &status,
+        WorkStatus::Active(WorkStage::Execute | WorkStage::Verify)
+    )
+    .then_some(item);
     WorkState {
         id: fixture::id(500),
         revision: WorkRevision::new(revision).expect("fixture revision must be valid"),
@@ -631,13 +650,15 @@ pub(super) fn work_state(
         policy: WorkPolicy::Steps,
         selected_plan,
         items: Items::new(vec![WorkItem {
-            id: fixture::id(503),
+            id: item,
             disposition,
             title: fixture::text("Implement"),
             evidence: Items::default(),
+            attempts: 0,
+            rounds: 0,
         }])
         .expect("fixture items must fit"),
-        active_item: None,
+        active_item,
         constraints: Items::new(vec![fixture::text("Keep one state owner")])
             .expect("fixture constraints must fit"),
         acceptance_checks: Items::new(vec![fixture::id(504)]).expect("fixture checks must fit"),
@@ -646,7 +667,6 @@ pub(super) fn work_state(
         candidate,
         verification,
         evidence,
-        budgets: budgets(),
         predecessor: None,
         projection: fixture::text("Work projection"),
         projection_owner,
@@ -667,20 +687,6 @@ pub(super) fn policy() -> VerificationPolicy {
             token_limit: 2_000,
         },
         repair_limit: 2,
-    }
-}
-
-fn budgets() -> StageBudgets {
-    let budget = || StageBudget {
-        token_limit: Some(10_000),
-        live_millis_limit: Some(60_000),
-        token_reserve: 1_000,
-        live_millis_reserve: 1_000,
-    };
-    StageBudgets {
-        plan: budget(),
-        execute: budget(),
-        verify: budget(),
     }
 }
 

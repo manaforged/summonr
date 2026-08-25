@@ -5,12 +5,12 @@ use crate::durable::context::{
     OperationOutcome, UserPayload,
 };
 use crate::durable::effect::{
-    ApprovalSource, BootIdentity, DetachedClose, EffectObservation, Exposure, JobState, MeterKind,
-    MeterSettlement, NativeProcessScope, PolicyDecision, ProcessContainment, ProcessExit,
-    ProcessIdentity, ProcessRecord, ProcessStart, ProviderIntent, ProviderMessage, ProviderOutcome,
-    ProviderPurpose, ProviderToolCall, ReconciliationContract, ReconciliationEvidence,
-    ReconciliationResolution, ReplayPolicy, StopReason, ToolCall, ToolIntent, ToolOutcome,
-    ToolResult, Usage, WorkspaceFootprint,
+    ApprovalSource, BootIdentity, DetachedClose, DetachedState, EffectObservation, Exposure,
+    MeterKind, MeterSettlement, NativeProcessScope, PolicyDecision, ProcessContainment,
+    ProcessExit, ProcessIdentity, ProcessRecord, ProcessStart, ProviderIntent, ProviderMessage,
+    ProviderOutcome, ProviderPurpose, ProviderToolCall, ReconciliationContract,
+    ReconciliationEvidence, ReconciliationResolution, ReplayPolicy, StopReason, ToolCall,
+    ToolIntent, ToolOutcome, ToolResult, Usage, WorkspaceFootprint,
 };
 use crate::durable::fact::{
     CommandReceipt, CommandStatus, Fact, FactData, MeterOwner, OperationStageOutcome,
@@ -126,7 +126,7 @@ fn detached_process_stays_visible_until_typed_terminal_observation() {
                         job,
                         attempt: fixture::id(1407),
                         process: running,
-                        state: JobState::Running,
+                        state: DetachedState::Running,
                         contract_digest: contract.digest().expect("process contract must encode"),
                     },
                 },
@@ -380,7 +380,7 @@ fn uncertain_background_launch_opens_a_job_that_can_be_abandoned() {
                         job,
                         attempt: fixture::id(1607),
                         process,
-                        state: JobState::Uncertain,
+                        state: DetachedState::Uncertain,
                         contract_digest: contract.digest().expect("process contract must encode"),
                     },
                 },

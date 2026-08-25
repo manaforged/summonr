@@ -5,6 +5,9 @@
 //! state on reopen. It owns no platform filesystem or process detail; those
 //! belong to the publisher and the process supervisor.
 
+mod effects;
+mod lifecycle;
+
 use std::path::Path;
 
 use thiserror::Error;
@@ -17,26 +20,26 @@ use super::context::{
     InputRoute, OperationClose, OperationOutcome, RequestHead, UserPayload,
 };
 use super::effect::{
-    ApprovalSource, BootIdentity, Exposure, JobState as DetachedState, MeterKind, MeterSettlement,
+    ApprovalSource, BootIdentity, BudgetKind, DetachedState, Exposure, MeterKind, MeterSettlement,
     NativeProcessScope, PolicyDecision, ProcessContainment, ProcessIdentity, ProcessRecord,
     ProcessStart, ProviderFailureKind, ProviderIntent, ProviderMessage, ProviderOutcome,
     ProviderPurpose, ReconciliationContract, ReplayPolicy, StopReason, ToolCall, ToolCancellation,
     ToolIntent, ToolOutcome, ToolResult, Usage, WorkspaceFootprint,
 };
-use super::fact::{CommandReceipt, CommandStatus, ForkAdoption, ForkOutcome};
+use super::fact::{CommandReceipt, CommandStatus, CompletionCheck, ForkAdoption, ForkOutcome};
 use super::fact::{Fact, FactData, MeterOwner, OperationStageOutcome};
-use super::fact::{ImportedWorkStatus, LegacySource};
-use super::id::{Digest, OperationId, SessionId, ToolCallId};
+use super::id::{Digest, OperationId, ProviderResultId, SessionId, ToolCallId};
 use super::journal::{JournalError, JournalWriter, Result as JournalResult};
-use super::observe::{ObserveError, observe};
-use super::reducer::{ProviderState, SessionState};
+use super::observe::{ObserveError, Observer};
+use super::reducer::{InputState, ProviderState, SessionState};
 use super::work::{
-    AcceptanceCheck, ItemDisposition, PlanRevision, PlanSource, StageBudget, StageBudgets,
-    WorkError, WorkItem, WorkPolicy, WorkProjection, WorkRevision, WorkStage, WorkState,
-    WorkStatus,
+    AcceptanceCheck, Candidate, CloseReason, EvidenceRef, ItemDisposition, PlanRevision,
+    PlanSource, PlanStep, RequiredObservation, ReviewerHead, VerificationPolicy, WorkError,
+    WorkItem, WorkPolicy, WorkProjection, WorkRevision, WorkStage, WorkState, WorkStatus,
 };
 use super::workspace::WorkspaceObservation;
 use super::workspace::{PathComponent, PathKey, PathPlatform, WorkspaceEffect, WorkspaceScope};
+use super::{effect, id, publish};
 
 const MAX_TEXT_BYTES: usize = 65_536;
 
@@ -52,6 +55,8 @@ pub(crate) enum DriverError {
     Empty,
     #[error("no open operation for a provider round")]
     NoOperation,
+    #[error("operation has no completed provider round")]
+    NoProvider,
     #[error("no planned tool for this call")]
     NoTool,
     #[error(transparent)]
@@ -82,6 +87,26 @@ pub(crate) struct SessionDriver {
     writer: JournalWriter,
     next: u128,
     workspace: Option<std::path::PathBuf>,
+    observer: Observer,
+}
+
+pub(crate) struct WorkCapture {
+    pub(crate) paths: Vec<String>,
+    pub(crate) provider: ProviderResultId,
+}
+
+pub(crate) struct PreparedVerdict {
+    pub(crate) passed: bool,
+    pub(crate) diagnostic: Option<String>,
+    observation: WorkspaceObservation,
+    evidence: Vec<EvidenceRef>,
+    synthetic: Option<Fact>,
+}
+
+pub(crate) enum VerdictDecision {
+    Automatic,
+    GoalComplete(String),
+    GoalContinue(String),
 }
 
 impl SessionDriver {
@@ -122,146 +147,6 @@ impl SessionDriver {
         Ok(Self::bind(writer, None))
     }
 
-    /// Open a session journal from a validated legacy prefix.
-    pub(crate) fn open_legacy(
-        path: impl AsRef<Path>,
-        session: SessionId,
-        scope: &WorkspaceScope,
-        head: RequestHead,
-        source: LegacySource,
-        workspace: &Path,
-    ) -> Result<Self, DriverError> {
-        let mut writer = JournalWriter::create(path)?;
-        let epoch = super::id::ContextEpochId::new(session, 11);
-        let scope_owned = scope.clone();
-        let observation = observe(workspace, scope, super::id::ObservationId::new(session, 1))
-            .map_err(DriverError::Observe)?;
-        let observation_id = observation.id();
-        writer.append(
-            super::id::CommitId::new(session, 1),
-            None,
-            vec![
-                Fact {
-                    id: super::id::FactId::new(session, 1),
-                    data: FactData::SessionCreated {
-                        session,
-                        scope: scope_owned,
-                    },
-                },
-                Fact {
-                    id: super::id::FactId::new(session, 2),
-                    data: FactData::LegacyImported {
-                        source,
-                        plan: None,
-                        work: ImportedWorkStatus::None,
-                        observation: observation_id,
-                        uncertain_tools: Items::default(),
-                    },
-                },
-                Fact {
-                    id: super::id::FactId::new(session, 3),
-                    data: FactData::WorkspaceObserved { observation },
-                },
-                Fact {
-                    id: super::id::FactId::new(session, 4),
-                    data: FactData::ContextEpochOpened {
-                        epoch: ContextEpoch {
-                            id: epoch,
-                            head: head.clone(),
-                            stage: None,
-                            base: Items::default(),
-                        },
-                    },
-                },
-            ],
-        )?;
-        Ok(Self::bind(writer, Some(workspace.to_path_buf())))
-    }
-
-    /// Append one imported transcript entry against the current epoch.
-    pub(crate) fn import_entry(
-        &mut self,
-        role: ContextRole,
-        text: &str,
-    ) -> Result<(), DriverError> {
-        let session = self.session();
-        let epoch = self.epoch()?;
-        let mut entry = ContextEntry {
-            id: super::id::ContextEntryId::new(session, self.take()),
-            epoch,
-            role,
-            source: ContextSource::HarnessControl,
-            payload: Text::new(text)?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        let fact_id = super::id::FactId::new(session, self.take());
-        self.append(
-            None,
-            vec![Fact {
-                id: fact_id,
-                data: FactData::ContextEntryAdded { entry },
-            }],
-        )?;
-        Ok(())
-    }
-
-    /// Record one unmatched legacy tool call as uncertain.
-    pub(crate) fn import_uncertain(&mut self, provider_call: &str) -> Result<(), DriverError> {
-        let session = self.session();
-        let epoch = self.epoch()?;
-        let result = super::id::ToolResultId::new(session, self.take());
-        let mut entry = ContextEntry {
-            id: super::id::ContextEntryId::new(session, self.take()),
-            epoch,
-            role: ContextRole::Tool,
-            source: ContextSource::HarnessControl,
-            payload: Text::new("legacy tool result unavailable")?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        let context = entry.id;
-        let entry_fact = super::id::FactId::new(session, self.take());
-        let uncertain_fact = super::id::FactId::new(session, self.take());
-        self.append(
-            None,
-            vec![
-                Fact {
-                    id: entry_fact,
-                    data: FactData::ContextEntryAdded { entry },
-                },
-                Fact {
-                    id: uncertain_fact,
-                    data: FactData::LegacyToolUncertain {
-                        provider_call: Text::new(provider_call)?,
-                        result,
-                        context,
-                    },
-                },
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Accept a legacy source divergence and anchor this session's imports to it.
-    pub(crate) fn accept_legacy(&mut self, source: LegacySource) -> Result<(), DriverError> {
-        let session = self.session();
-        let accepted_fact = super::id::FactId::new(session, self.take());
-        let command = CommandReceipt {
-            id: super::id::CommandId::new(session, self.take()),
-            digest: Digest::hash(b"mage:command:accept-legacy", b"accept"),
-            status: CommandStatus::Accepted,
-            code: None,
-            result: Some(accepted_fact),
-        };
-        let facts = vec![Fact {
-            id: accepted_fact,
-            data: FactData::LegacySourceAccepted { source },
-        }];
-        self.append(Some(command), facts)?;
-        Ok(())
-    }
-
     /// Reopen an existing session journal.
     pub(crate) fn resume(path: impl AsRef<Path>, session: SessionId) -> JournalResult<Self> {
         let driver = Self::bind(JournalWriter::open(path)?, None);
@@ -277,44 +162,102 @@ impl SessionDriver {
         Ok(driver)
     }
 
-    /// Open one operation for a start-routed text input.
+    /// Open one detached operation for low-level durability tests.
+    #[cfg(test)]
     pub(crate) fn start_operation(&mut self, text: &str) -> Result<OperationId, DriverError> {
-        self.start_input(text, &[])
+        self.start_input_with(text, &[], InputOrigin::User, false)
+            .map(|(operation, _queued)| operation)
     }
 
-    /// Open one operation for start-routed text and images.
+    /// Open one user operation attached to the active Work.
     pub(crate) fn start_input(
         &mut self,
         text: &str,
         images: &[Image],
-    ) -> Result<OperationId, DriverError> {
+    ) -> Result<Vec<String>, DriverError> {
+        self.start_input_with(text, images, InputOrigin::User, true)
+            .map(|(_operation, queued)| queued)
+    }
+
+    /// Open the harness-owned Verify operation for the current candidate.
+    pub(crate) fn start_verification(&mut self) -> Result<OperationId, DriverError> {
+        self.start_input_with(
+            "[summon control: verify the captured workspace candidate]",
+            &[],
+            InputOrigin::WorkPolicy,
+            true,
+        )
+        .map(|(operation, _queued)| operation)
+    }
+
+    fn start_input_with(
+        &mut self,
+        text: &str,
+        images: &[Image],
+        origin: InputOrigin,
+        attach_work: bool,
+    ) -> Result<(OperationId, Vec<String>), DriverError> {
         if text.trim().is_empty() {
             return Err(DriverError::Empty);
         }
         if self.writer.state().operation.is_some() {
-            return self.reject(b"mage:command:start", text.as_bytes(), "busy");
+            return self
+                .reject(b"mage:command:start", text.as_bytes(), "busy")
+                .map(|operation| (operation, Vec::new()));
         }
         let session = self.session();
         let epoch = self.epoch()?;
         let input = super::id::InputId::new(session, self.take());
         let operation = super::id::OperationId::new(session, self.take());
+        let (work, stage) = if attach_work {
+            let work = self.work_state()?;
+            let stage = work.status().stage().ok_or(DriverError::NoWork)?;
+            (Some(work.id()), Some(stage))
+        } else {
+            (None, None)
+        };
+        let queued = if origin == InputOrigin::User && stage == Some(WorkStage::Execute) {
+            self.writer
+                .state()
+                .inputs
+                .iter()
+                .filter_map(|(id, state)| {
+                    if !matches!(state, InputState::Pending(InputRoute::Queue)) {
+                        return None;
+                    }
+                    self.writer
+                        .state()
+                        .input_payloads
+                        .get(id)
+                        .cloned()
+                        .map(|payload| (*id, payload))
+                })
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         let entry_id = super::id::ContextEntryId::new(session, self.take());
+        let source = if origin == InputOrigin::WorkPolicy {
+            ContextSource::WorkPolicy(input)
+        } else {
+            ContextSource::Input(input)
+        };
         let mut entry = ContextEntry {
             id: entry_id,
             epoch,
             role: ContextRole::User,
-            source: ContextSource::Input(input),
+            source,
             payload: Text::new(text)?,
             digest: Digest::default(),
         };
         entry.digest = entry.calculated_digest();
         let accepted_id = super::id::FactId::new(session, self.take());
-        let facts = vec![
+        let mut facts = vec![
             Fact {
                 id: accepted_id,
                 data: FactData::InputAccepted {
                     input,
-                    origin: InputOrigin::User,
+                    origin,
                     route: InputRoute::Start,
                     payload: UserPayload {
                         text: entry.payload.clone(),
@@ -335,18 +278,46 @@ impl SessionDriver {
                 data: FactData::OperationOpened {
                     operation,
                     input,
-                    work: None,
-                    stage: None,
+                    work,
+                    stage,
                 },
             },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            },
         ];
+        let queued_text = queued
+            .iter()
+            .map(|(_input, payload)| payload.text.as_str().to_string())
+            .collect();
+        for (queued, payload) in queued {
+            let mut queued_entry = ContextEntry {
+                id: super::id::ContextEntryId::new(session, self.take()),
+                epoch,
+                role: ContextRole::User,
+                source: ContextSource::WorkPolicy(queued),
+                payload: payload.text,
+                digest: Digest::default(),
+            };
+            queued_entry.digest = queued_entry.calculated_digest();
+            facts.push(Fact {
+                id: super::id::FactId::new(session, self.take()),
+                data: FactData::InputApplied {
+                    input: queued,
+                    operation: Some(operation),
+                },
+            });
+            facts.push(Fact {
+                id: super::id::FactId::new(session, self.take()),
+                data: FactData::ContextEntryAdded {
+                    entry: queued_entry,
+                },
+            });
+        }
+        facts.push(Fact {
+            id: super::id::FactId::new(session, self.take()),
+            data: FactData::ContextEntryAdded { entry },
+        });
         let command = self.accepted(b"mage:command:start", text.as_bytes(), accepted_id);
         self.append(Some(command), facts)?;
-        Ok(operation)
+        Ok((operation, queued_text))
     }
 
     /// Accept steer-routed text against the open operation.
@@ -408,7 +379,12 @@ impl SessionDriver {
         let epoch = ContextEpoch {
             id: super::id::ContextEpochId::new(session, self.take()),
             head,
-            stage: None,
+            stage: self
+                .writer
+                .state()
+                .operation
+                .as_ref()
+                .and_then(|operation| operation.stage),
             base: Items::new(base)?,
         };
         let mut entry = ContextEntry {
@@ -508,407 +484,6 @@ impl SessionDriver {
         )?)
     }
 
-    /// Record a provider attempt against the open operation.
-    pub(crate) fn start_provider(
-        &mut self,
-        request: &[u8],
-    ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        self.start_provider_as(request, ProviderPurpose::AgentRound)
-    }
-
-    /// Record a compaction-summary provider attempt.
-    pub(crate) fn start_summary(
-        &mut self,
-        request: &[u8],
-    ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        self.start_provider_as(request, ProviderPurpose::CompactionSummary)
-    }
-
-    fn start_provider_as(
-        &mut self,
-        request: &[u8],
-        purpose: ProviderPurpose,
-    ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        let session = self.session();
-        let operation = self.open_operation()?;
-        let epoch = self.epoch()?;
-        let through = self.through();
-        let head = self.request_head()?.clone();
-        let attempt = super::id::ProviderAttemptId::new(session, self.take());
-        let result = super::id::ProviderResultId::new(session, self.take());
-        let intent = ProviderIntent {
-            attempt,
-            result,
-            operation,
-            epoch,
-            purpose,
-            work: None,
-            plan: None,
-            stage: None,
-            candidate: None,
-            adapter: head.adapter,
-            endpoint: head.endpoint,
-            model: head.model,
-            resource_version: head.resource_version,
-            through,
-            request_bytes: u32::try_from(request.len()).unwrap_or(u32::MAX),
-            request_digest: Digest::hash(b"mage:provider-request:v1", request),
-            request_format: head.request_format,
-            deadline_unix_millis: 1_800_000_000_000,
-            exposure: Exposure {
-                max_input_tokens: 1_000,
-                max_output_tokens: 1_000,
-                max_live_millis: 30_000,
-            },
-        };
-        intent.validate()?;
-        let facts = vec![Fact {
-            id: super::id::FactId::new(session, self.take()),
-            data: FactData::ProviderStarted { intent },
-        }];
-        self.append(None, facts)?;
-        Ok(attempt)
-    }
-
-    /// Close a provider round with a completed outcome.
-    pub(crate) fn finish_provider(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        text: &str,
-        reasoning: &str,
-        usage: Usage,
-    ) -> Result<(), DriverError> {
-        let result = self.open_provider_result()?;
-        let outcome = ProviderOutcome::Completed {
-            message: ProviderMessage {
-                text: Text::new(text)?,
-                reasoning: Text::new(reasoning)?,
-                tool_calls: Items::default(),
-            },
-            stop_reason: StopReason::Complete,
-            reported_usage: usage.clone(),
-        };
-        let facts = self.provider_finish_facts(attempt, result, &[], text, outcome, usage)?;
-        self.append(None, facts)?;
-        Ok(())
-    }
-
-    /// Close a provider round and plan one tool obligation.
-    /// Returns the planned tool call id.
-    pub(crate) fn finish_provider_with_tool(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        text: &str,
-        reasoning: &str,
-        usage: Usage,
-        name: &str,
-        arguments: &str,
-    ) -> Result<ToolCallId, DriverError> {
-        self.finish_provider_with_tools(
-            attempt,
-            text,
-            reasoning,
-            usage,
-            &[(name, arguments, name)],
-        )?
-        .into_iter()
-        .next()
-        .ok_or(DriverError::NoTool)
-    }
-
-    /// Close a provider round and plan one tool batch in provider order.
-    pub(crate) fn finish_provider_with_tools(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        text: &str,
-        reasoning: &str,
-        usage: Usage,
-        tools: &[(&str, &str, &str)],
-    ) -> Result<Vec<ToolCallId>, DriverError> {
-        let session = self.session();
-        let result = self.open_provider_result()?;
-        let planned = self.plan_tools(session, result, tools)?;
-        let payloads = planned
-            .iter()
-            .zip(tools)
-            .map(|(tool, (name, arguments, _))| {
-                Ok(super::effect::ProviderToolCall {
-                    provider_id: tool.provider_id.clone(),
-                    name: Text::new(*name)?,
-                    arguments: Text::new(*arguments)?,
-                })
-            })
-            .collect::<Result<Vec<_>, BoundError>>()?;
-        let outcome = ProviderOutcome::Completed {
-            message: ProviderMessage {
-                text: Text::new(text)?,
-                reasoning: Text::new(reasoning)?,
-                tool_calls: Items::new(payloads)?,
-            },
-            stop_reason: StopReason::ToolCalls,
-            reported_usage: usage.clone(),
-        };
-        let facts = self.provider_finish_facts(attempt, result, &planned, text, outcome, usage)?;
-        self.append(None, facts)?;
-        Ok(planned.into_iter().map(|tool| tool.id).collect())
-    }
-
-    /// Close a provider attempt that did not complete.
-    pub(crate) fn fail_provider(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        kind: ProviderFailureKind,
-        diagnostic: &str,
-    ) -> Result<(), DriverError> {
-        let result = self.open_provider_result()?;
-        let usage = Usage {
-            input_tokens: None,
-            output_tokens: None,
-            cached_input_tokens: None,
-            live_millis: None,
-        };
-        let outcome = ProviderOutcome::Failed {
-            kind,
-            diagnostic: Text::new(diagnostic)?,
-            partial_usage: usage.clone(),
-        };
-        let facts = self.provider_finish_facts(attempt, result, &[], "", outcome, usage)?;
-        self.append(None, facts)?;
-        Ok(())
-    }
-
-    fn provider_finish_facts(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        result: super::id::ProviderResultId,
-        tools: &[ToolCall],
-        text: &str,
-        outcome: ProviderOutcome,
-        usage: Usage,
-    ) -> Result<Vec<Fact>, DriverError> {
-        let session = self.session();
-        let meter = super::id::MeterId::new(session, self.take());
-        let mut entry = ContextEntry {
-            id: super::id::ContextEntryId::new(session, self.take()),
-            epoch: self.epoch()?,
-            role: ContextRole::Assistant,
-            source: ContextSource::Provider(result),
-            payload: Text::new(text)?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        let mut facts = vec![
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ProviderFinished {
-                    attempt,
-                    result,
-                    outcome,
-                },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::MeterSettled {
-                    meter,
-                    owner: MeterOwner::Provider(attempt),
-                    kind: MeterKind::Provider,
-                    settlement: MeterSettlement::Known(usage),
-                },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            },
-        ];
-        facts.extend(tools.iter().cloned().map(|call| Fact {
-            id: super::id::FactId::new(session, self.take()),
-            data: FactData::ToolCallPlanned { call },
-        }));
-        Ok(facts)
-    }
-
-    fn plan_tools(
-        &mut self,
-        session: SessionId,
-        provider_result: super::id::ProviderResultId,
-        tools: &[(&str, &str, &str)],
-    ) -> Result<Vec<ToolCall>, DriverError> {
-        let batch = super::id::ToolBatchId::new(session, self.take());
-        let mut planned = Vec::new();
-        for (index, (_name, _arguments, provider_id)) in tools.iter().enumerate() {
-            let position =
-                u16::try_from(index).map_err(|_error| super::effect::EffectError::ToolOrder)?;
-            planned.push(ToolCall {
-                id: super::id::ToolCallId::new(session, self.take()),
-                batch,
-                result: super::id::ToolResultId::new(session, self.take()),
-                provider_result,
-                provider_id: Text::new(*provider_id)?,
-                position,
-                registration: super::id::ToolRegistrationVersion::new(session, self.take()),
-                schema_digest: Digest::hash(b"mage:tool-schema:v1", b"read"),
-                effect_contract_digest: ReconciliationContract::None.digest()?,
-            });
-        }
-        Ok(planned)
-    }
-
-    /// Record a tool start.
-    pub(crate) fn start_tool(
-        &mut self,
-        call: ToolCallId,
-        arguments: &str,
-        name: &str,
-    ) -> Result<(), DriverError> {
-        let session = self.session();
-        let registration = self
-            .writer
-            .state()
-            .tools
-            .get(&call)
-            .ok_or(DriverError::NoTool)?
-            .call
-            .registration;
-        let attempt = super::id::ToolAttemptId::new(session, self.take());
-        let platform = self
-            .scope()
-            .map(WorkspaceScope::platform)
-            .unwrap_or(PathPlatform::Unix);
-        let footprint = footprint_for(platform, arguments);
-        let process = (name == "run_command").then(|| ProcessRecord::Reserved {
-            job: super::id::JobId::new(session, self.take()),
-            containment: if cfg!(windows) {
-                ProcessContainment::WindowsJob
-            } else {
-                ProcessContainment::PosixGroup
-            },
-        });
-        let intent = ToolIntent {
-            attempt,
-            call,
-            registration,
-            normalized_arguments: Text::new(arguments)?,
-            decision: PolicyDecision::Allowed,
-            approval: ApprovalSource::Policy(Digest::hash(b"mage:policy:v1", b"default")),
-            replay: replay_for(name),
-            deadline_unix_millis: 1_800_000_000_000,
-            reservation: super::id::MeterId::new(session, self.take()),
-            footprint,
-            reconciliation: ReconciliationContract::None,
-            process,
-        };
-        let facts = vec![Fact {
-            id: super::id::FactId::new(session, self.take()),
-            data: FactData::ToolStarted { intent },
-        }];
-        self.append(None, facts)?;
-        Ok(())
-    }
-
-    /// Record a tool terminal result.
-    pub(crate) fn finish_tool(
-        &mut self,
-        call: ToolCallId,
-        output: &str,
-        usage: Usage,
-    ) -> Result<(), DriverError> {
-        self.finish_tools(&[(call, output, usage)])
-    }
-
-    /// Record every tool terminal in one batch, then project context in
-    /// provider-call order.
-    pub(crate) fn finish_tools(
-        &mut self,
-        results: &[(ToolCallId, &str, Usage)],
-    ) -> Result<(), DriverError> {
-        if results.is_empty() {
-            return Ok(());
-        }
-        let session = self.session();
-        let epoch = self.epoch()?;
-        let mut prepared = Vec::new();
-        for (call, output, usage) in results {
-            let tool = self
-                .writer
-                .state()
-                .tools
-                .get(call)
-                .ok_or(DriverError::NoTool)?;
-            let intent = tool.intent.as_ref().ok_or(DriverError::NoTool)?;
-            let attempt = intent.attempt;
-            let job = match intent.process.as_ref() {
-                Some(ProcessRecord::Reserved { job, .. }) => Some(*job),
-                _ => None,
-            };
-            prepared.push((
-                *call,
-                tool.call.result,
-                attempt,
-                *output,
-                usage.clone(),
-                job,
-            ));
-        }
-        let mut facts = Vec::new();
-        for (call, result, attempt, output, usage, reserved) in &prepared {
-            let process = reserved.and_then(|job| running_process(job, output));
-            let job = process.as_ref().map(ProcessRecord::job);
-            facts.push(Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ToolFinished {
-                    result: ToolResult {
-                        id: *result,
-                        call: *call,
-                        attempt: Some(*attempt),
-                        outcome: ToolOutcome::Completed {
-                            output: Text::new(*output)?,
-                            job,
-                        },
-                        workspace: WorkspaceEffect::None,
-                    },
-                },
-            });
-            facts.push(Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::MeterSettled {
-                    meter: super::id::MeterId::new(session, self.take()),
-                    owner: MeterOwner::Tool(*attempt),
-                    kind: MeterKind::Tool,
-                    settlement: MeterSettlement::Known(usage.clone()),
-                },
-            });
-            if let Some(process) = process {
-                facts.push(Fact {
-                    id: super::id::FactId::new(session, self.take()),
-                    data: FactData::DetachedJobOpened {
-                        job: process.job(),
-                        attempt: *attempt,
-                        process,
-                        state: DetachedState::Running,
-                        contract_digest: ReconciliationContract::None.digest()?,
-                    },
-                });
-            }
-        }
-        for (_call, result, _attempt, output, _usage, _reserved) in &prepared {
-            let mut entry = ContextEntry {
-                id: super::id::ContextEntryId::new(session, self.take()),
-                epoch,
-                role: ContextRole::Tool,
-                source: ContextSource::Tool(*result),
-                payload: Text::new(*output)?,
-                digest: Digest::default(),
-            };
-            entry.digest = entry.calculated_digest();
-            facts.push(Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            });
-        }
-        self.append(None, facts)?;
-        Ok(())
-    }
-
     /// Close the open operation.
     pub(crate) fn close_operation(&mut self) -> Result<(), DriverError> {
         self.close_with(OperationOutcome::Completed)
@@ -916,6 +491,11 @@ impl SessionDriver {
 
     /// Record abort intent, settle open effects, and close as cancelled.
     pub(crate) fn abort(&mut self, reason: AbortReason) -> Result<(), DriverError> {
+        self.prepare_abort(reason)?;
+        self.close_with(OperationOutcome::Cancelled)
+    }
+
+    fn prepare_abort(&mut self, reason: AbortReason) -> Result<(), DriverError> {
         let operation = self.open_operation()?;
         if !self
             .writer
@@ -939,7 +519,7 @@ impl SessionDriver {
             self.interrupt_open_provider("aborted")?;
         }
         self.cancel_open_tools()?;
-        self.close_with(OperationOutcome::Cancelled)
+        Ok(())
     }
 
     fn interrupt_open_provider(&mut self, diagnostic: &str) -> Result<(), DriverError> {
@@ -1045,14 +625,22 @@ impl SessionDriver {
     fn close_with(&mut self, outcome: OperationOutcome) -> Result<(), DriverError> {
         let session = self.session();
         let operation = self.open_operation()?;
+        let open = self
+            .writer
+            .state()
+            .operation
+            .as_ref()
+            .cloned()
+            .ok_or(DriverError::NoOperation)?;
+        let work = open.work.and_then(|id| self.writer.state().works.get(&id));
         let close = OperationClose {
             id: operation,
             outcome,
-            provider: None,
-            work: None,
-            work_status: None,
-            plan: None,
-            candidate: None,
+            provider: self.latest_provider(operation),
+            work: open.work,
+            work_status: work.map(|state| state.status().clone()),
+            plan: work.and_then(WorkState::selected_plan),
+            candidate: work.and_then(|state| state.candidate().map(Candidate::id)),
             verdict: None,
             usage_digest: Digest::hash(b"mage:usage-digest:v1", b"closed"),
             inputs: Items::default(),
@@ -1071,250 +659,59 @@ impl SessionDriver {
         Ok(())
     }
 
+    fn latest_provider(&self, operation: OperationId) -> Option<ProviderResultId> {
+        self.writer
+            .state()
+            .providers
+            .values()
+            .filter_map(|provider| {
+                let ProviderState::Finished { intent, .. } = provider else {
+                    return None;
+                };
+                (intent.operation == operation)
+                    .then_some((intent.attempt.local_u128(), intent.result))
+            })
+            .max_by_key(|(attempt, _result)| *attempt)
+            .map(|(_attempt, result)| result)
+    }
+
     /// Close an open operation left by a previous process.
     pub(crate) fn recover(&mut self) -> Result<(), DriverError> {
         if self.writer.state().operation.is_none() {
-            return Ok(());
+            let interrupted_verify = self
+                .writer
+                .state()
+                .works
+                .values()
+                .any(|work| matches!(work.status(), WorkStatus::Active(WorkStage::Verify)));
+            if !interrupted_verify {
+                return Ok(());
+            }
+            self.start_verification()?;
+        }
+        if self.operation_stage() == Some(WorkStage::Verify) {
+            self.prepare_abort(AbortReason::Shutdown)?;
+            let diagnostic = "process stopped before the verification verdict";
+            let evidence = self.record_completion_check(
+                CompletionCheck::Interrupted,
+                "interrupted verification",
+                false,
+                diagnostic,
+            )?;
+            let mut verdict = self.prepare_verdict(vec![evidence], false)?;
+            verdict.diagnostic.get_or_insert(diagnostic.to_string());
+            return self.commit_verdict(verdict, VerdictDecision::Automatic, None);
         }
         self.abort(AbortReason::Shutdown)
     }
 
-    /// Set the session Work in the Plan stage.
-    pub(crate) fn set_work(&mut self, objective: &str) -> Result<super::id::WorkId, DriverError> {
-        let session = self.session();
-        let epoch = self.epoch()?;
-        let work = super::id::WorkId::new(session, self.take());
-        let item = WorkItem {
-            id: super::id::WorkItemId::new(session, self.take()),
-            disposition: ItemDisposition::Pending,
-            title: Text::new("Objective")?,
-            evidence: Items::default(),
-        };
-        let budgets = StageBudgets {
-            plan: no_limit(),
-            execute: no_limit(),
-            verify: no_limit(),
-        };
-        let entry_id = super::id::ContextEntryId::new(session, self.take());
-        let mut entry = ContextEntry {
-            id: entry_id,
-            epoch,
-            role: ContextRole::System,
-            source: ContextSource::Work(work),
-            payload: Text::new(objective)?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        let state = WorkState {
-            id: work,
-            revision: WorkRevision::new(1)?,
-            objective: Text::new(objective)?,
-            status: WorkStatus::Active(WorkStage::Plan),
-            policy: WorkPolicy::Steps,
-            selected_plan: None,
-            items: Items::new(vec![item])?,
-            active_item: None,
-            constraints: Items::new(vec![Text::new("One state owner")?])?,
-            acceptance_checks: Items::new(vec![super::id::CheckId::new(session, self.take())])?,
-            scope: None,
-            base: None,
-            candidate: None,
-            verification: None,
-            evidence: Items::default(),
-            budgets,
-            predecessor: None,
-            projection: Text::new("Work projection")?,
-            projection_owner: WorkProjection::Context(entry_id),
-        };
-        state.validate()?;
-        let work_fact = super::id::FactId::new(session, self.take());
-        let facts = vec![
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            },
-            Fact {
-                id: work_fact,
-                data: FactData::WorkSet {
-                    work: Box::new(state),
-                },
-            },
-        ];
-        let command = self.accepted(b"mage:command:work", objective.as_bytes(), work_fact);
-        self.append(Some(command), facts)?;
-        Ok(work)
-    }
-
-    /// Store a progress snapshot on the active Work projection.
-    pub(crate) fn progress(&mut self, snapshot: &str) -> Result<(), DriverError> {
-        let mut state = self.work_state()?;
-        let session = self.session();
-        let epoch = self.epoch()?;
-        let entry_id = super::id::ContextEntryId::new(session, self.take());
-        let mut entry = ContextEntry {
-            id: entry_id,
-            epoch,
-            role: ContextRole::System,
-            source: ContextSource::Work(state.id()),
-            payload: Text::new(snapshot)?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        state.revision = WorkRevision::new(state.revision().get().saturating_add(1))?;
-        state.projection = Text::new(snapshot)?;
-        state.projection_owner = WorkProjection::Context(entry_id);
-        state.validate()?;
-        let work_fact = super::id::FactId::new(session, self.take());
-        let facts = vec![
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            },
-            Fact {
-                id: work_fact,
-                data: FactData::WorkSet {
-                    work: Box::new(state),
-                },
-            },
-        ];
-        let command = self.accepted(b"mage:command:progress", snapshot.as_bytes(), work_fact);
-        self.append(Some(command), facts)?;
-        Ok(())
-    }
-
-    /// Active Work progress snapshot, when one exists.
-    pub(crate) fn progress_text(&self) -> Option<&str> {
-        self.writer
-            .state()
-            .works
-            .values()
-            .find(|work| matches!(work.status, WorkStatus::Active(_)))
-            .map(|work| work.projection.as_str())
-    }
-
-    /// Select a supplied Plan revision for the current Work.
-    pub(crate) fn select_plan(
-        &mut self,
-        markdown: &str,
-    ) -> Result<super::id::PlanRevisionId, DriverError> {
-        let workspace = self.workspace.clone().ok_or(DriverError::NoWorkspace)?;
-        let platform = self.scope()?.platform();
-        let session = self.session();
-        let work = self.work_id()?;
-        let revision = super::id::PlanRevisionId::new(session, self.take());
-        let attempt = super::id::MaterializationId::new(session, self.take());
-        let mut state = self.work_state()?;
-        let check_ids = state.acceptance_checks.as_slice().to_vec();
-        let checks = check_ids
-            .into_iter()
-            .map(|id| {
-                Ok(AcceptanceCheck {
-                    id,
-                    command: Text::new("cargo check")?,
-                    required_observation: None,
-                })
-            })
-            .collect::<Result<Vec<_>, BoundError>>()?;
-        let mut plan = PlanRevision {
-            format: 1,
-            id: revision,
-            work,
-            parent: None,
-            source: PlanSource::Imported {
-                source: Digest::hash(b"mage:plan-source:v1", markdown.as_bytes()),
-                converter: 1,
-            },
-            objective: Text::new(markdown)?,
-            constraints: Items::default(),
-            steps: Items::default(),
-            checks: Items::new(checks)?,
-            risks: Items::default(),
-            assumptions: Items::default(),
-            non_goals: Items::default(),
-            markdown: Text::new(markdown)?,
-            digest: Digest::default(),
-        };
-        plan.digest = plan.calculated_digest()?;
-        let plan_digest = plan.digest();
-        state.revision = WorkRevision::new(state.revision().get().saturating_add(1))?;
-        state.selected_plan = Some(revision);
-        state.projection_owner = WorkProjection::Plan(revision);
-        state.validate()?;
-        let footprint = super::publish::footprint_for(platform, session, work, revision, attempt)
-            .map_err(|error| DriverError::Work(WorkError::Encoding(error)))?;
-        let plan_fact = super::id::FactId::new(session, self.take());
-        let facts = vec![
-            Fact {
-                id: plan_fact,
-                data: FactData::PlanSet { plan: plan.clone() },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::PlanMaterializationPlanned {
-                    attempt,
-                    plan: revision,
-                    digest: plan_digest,
-                    footprint,
-                },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::WorkSet {
-                    work: Box::new(state),
-                },
-            },
-        ];
-        let command = self.accepted(b"mage:command:plan", markdown.as_bytes(), plan_fact);
-        self.append(Some(command), facts)?;
-        let outcome = super::publish::materialize(&workspace, platform, session, &plan, attempt);
-        let published = outcome.usable();
-        let epoch = self.epoch()?;
-        let entry_id = super::id::ContextEntryId::new(session, self.take());
-        let mut entry = ContextEntry {
-            id: entry_id,
-            epoch,
-            role: ContextRole::System,
-            source: ContextSource::Plan(revision),
-            payload: Text::new(markdown)?,
-            digest: Digest::default(),
-        };
-        entry.digest = entry.calculated_digest();
-        let mut state = self.work_state()?;
-        state.revision = WorkRevision::new(state.revision().get().saturating_add(1))?;
-        state.projection_owner = WorkProjection::Context(entry_id);
-        state.validate()?;
-        let facts = vec![
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::PlanMaterializationFinished {
-                    attempt,
-                    plan: revision,
-                    outcome,
-                },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::WorkSet {
-                    work: Box::new(state),
-                },
-            },
-            Fact {
-                id: super::id::FactId::new(session, self.take()),
-                data: FactData::ContextEntryAdded { entry },
-            },
-        ];
-        self.append(None, facts)?;
-        if !published {
-            return Err(DriverError::Import(
-                "plan file was not published".to_string(),
-            ));
-        }
-        Ok(revision)
-    }
-
     /// Bind a real workspace root so the driver can observe it for forks.
     pub(crate) fn set_workspace(&mut self, path: impl AsRef<Path>) {
-        self.workspace = Some(path.as_ref().to_path_buf());
+        let path = path.as_ref().to_path_buf();
+        if self.workspace.as_ref() != Some(&path) {
+            self.observer = Observer::default();
+        }
+        self.workspace = Some(path);
     }
 
     /// Observe the bound workspace as a fresh [`WorkspaceObservation`].
@@ -1323,7 +720,9 @@ impl SessionDriver {
         let id = super::id::ObservationId::new(session, self.take());
         let workspace = self.workspace.clone().ok_or(DriverError::NoWorkspace)?;
         let scope = self.scope()?.clone();
-        observe(&workspace, &scope, id).map_err(DriverError::Observe)
+        self.observer
+            .observe(&workspace, &scope, id)
+            .map_err(DriverError::Observe)
     }
 
     /// Open a fork intent from the current clean prefix.
@@ -1462,6 +861,70 @@ impl SessionDriver {
         self.writer.state()
     }
 
+    /// Persist session budget ceilings in the journal.
+    pub(crate) fn set_budget(
+        &mut self,
+        tokens: Option<u64>,
+        live_millis: Option<u64>,
+    ) -> Result<(), DriverError> {
+        let requested = [
+            (BudgetKind::SessionTokens, tokens),
+            (BudgetKind::SessionLiveMillis, live_millis),
+        ];
+        let changed = requested
+            .into_iter()
+            .filter(|(kind, limit)| {
+                self.writer
+                    .state()
+                    .meters
+                    .limits
+                    .get(kind)
+                    .copied()
+                    .flatten()
+                    != *limit
+            })
+            .collect::<Vec<_>>();
+        if changed.is_empty() {
+            return Ok(());
+        }
+        let session = self.session();
+        let facts = changed
+            .into_iter()
+            .map(|(kind, limit)| Fact {
+                id: super::id::FactId::new(session, self.take()),
+                data: FactData::BudgetChanged { kind, limit },
+            })
+            .collect::<Vec<_>>();
+        let result = facts
+            .first()
+            .map(|fact| fact.id)
+            .ok_or(DriverError::NoWork)?;
+        let payload = format!("{tokens:?}:{live_millis:?}");
+        let command = self.accepted(b"mage:command:budget", payload.as_bytes(), result);
+        self.append(Some(command), facts)
+    }
+
+    pub(crate) fn budget_limits(&self) -> (Option<u64>, Option<u64>) {
+        let limit = |kind| {
+            self.writer
+                .state()
+                .meters
+                .limits
+                .get(&kind)
+                .copied()
+                .flatten()
+        };
+        (
+            limit(BudgetKind::SessionTokens),
+            limit(BudgetKind::SessionLiveMillis),
+        )
+    }
+
+    /// Stage owned by the currently open Work operation, if any.
+    pub(crate) fn operation_stage(&self) -> Option<WorkStage> {
+        self.writer.state().operation.as_ref()?.stage
+    }
+
     /// Project the reduced session into provider conversation history.
     pub(crate) fn replay(&self) -> crate::session::Replay {
         super::project::replay(self.writer.state())
@@ -1477,6 +940,7 @@ impl SessionDriver {
             next: writer.state().next_local().max(21),
             writer,
             workspace,
+            observer: Observer::default(),
         }
     }
 
@@ -1574,6 +1038,18 @@ impl SessionDriver {
             .and_then(|entries| entries.last().copied())
     }
 
+    fn current_entries(&self) -> Vec<super::id::ContextEntryId> {
+        let Some(epoch) = self.writer.state().current_epoch else {
+            return Vec::new();
+        };
+        self.writer
+            .state()
+            .epoch_entries
+            .get(&epoch)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     fn open_operation(&self) -> Result<OperationId, DriverError> {
         self.writer
             .state()
@@ -1611,7 +1087,15 @@ impl SessionDriver {
             .state()
             .works
             .values()
-            .find(|work| matches!(work.status, WorkStatus::Active(_)))
+            .filter(|work| !work.status().terminal())
+            .max_by_key(|work| work.id().local_u128())
+            .or_else(|| {
+                self.writer
+                    .state()
+                    .works
+                    .values()
+                    .max_by_key(|work| work.id().local_u128())
+            })
             .map(WorkState::id)
             .ok_or(DriverError::NoWork)
     }
@@ -1652,6 +1136,26 @@ fn replay_for(name: &str) -> ReplayPolicy {
     } else {
         ReplayPolicy::ReplaySafe
     }
+}
+
+fn completion_digest(command: &str, passed: bool, output: &str) -> Digest {
+    let mut bytes =
+        Vec::with_capacity(command.len().saturating_add(output.len()).saturating_add(2));
+    bytes.extend_from_slice(command.as_bytes());
+    bytes.push(u8::from(passed));
+    bytes.extend_from_slice(output.as_bytes());
+    Digest::hash(b"mage:completion-check:v1", &bytes)
+}
+
+fn path_text(path: &PathKey) -> String {
+    path.components()
+        .iter()
+        .map(|component| match component {
+            PathComponent::Unix(bytes) => String::from_utf8_lossy(bytes.as_slice()).into_owned(),
+            PathComponent::Windows(units) => String::from_utf16_lossy(units.as_slice()),
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn running_process(job: super::id::JobId, output: &str) -> Option<ProcessRecord> {
@@ -1728,13 +1232,4 @@ fn encode_images(images: &[Image]) -> Result<Vec<ImagePayload>, DriverError> {
         })
         .collect::<Result<Vec<_>, BoundError>>()
         .map_err(DriverError::from)
-}
-
-fn no_limit() -> StageBudget {
-    StageBudget {
-        token_limit: None,
-        live_millis_limit: None,
-        token_reserve: 0,
-        live_millis_reserve: 0,
-    }
 }

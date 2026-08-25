@@ -5,7 +5,7 @@ fn goal_owns_configured_checks() {
     let checks = vec!["cargo clippy".to_string(), "cargo test".to_string()];
     let (verify, goal) = route_checks(true, Some(checks.clone()));
 
-    assert!(verify.is_none());
+    assert_eq!(verify, Some(checks.clone()));
     assert_eq!(goal, checks);
 }
 

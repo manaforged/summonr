@@ -1,23 +1,23 @@
 use std::collections::HashSet;
 
 use super::{ReduceError, Result, SessionState};
-use crate::durable::context::{ContextSource, InputOrigin, InputRoute};
+use crate::durable::context::{ContextSource, InputOrigin, InputRoute, OperationOutcome};
 use crate::durable::effect::{
     DetachedClose, ReconciliationContract, ToolOutcome, ToolResult, WorkspaceFootprint,
 };
 use crate::durable::encoding::Commit;
-use crate::durable::fact::{CommandStatus, FactData, FactKind, ForkOutcome, MeterOwner};
+use crate::durable::fact::{
+    CommandStatus, CompletionCheck, FactData, FactKind, ForkOutcome, MeterOwner,
+    OperationStageOutcome,
+};
 use crate::durable::id::{ToolBatchId, ToolCallId};
-use crate::durable::work::{WorkProjection, WorkStage, WorkState};
+use crate::durable::work::{WorkPolicy, WorkProjection, WorkStage, WorkState};
 
 pub(super) fn validate(state: &SessionState, commit: &Commit) -> Result<()> {
     let facts = Facts { commit };
     if state.seq == 0 {
         root(&facts)?;
-    } else if facts.has(FactKind::SessionCreated)
-        || facts.has(FactKind::LegacyImported)
-        || facts.has(FactKind::ForkedFrom)
-    {
+    } else if facts.has(FactKind::SessionCreated) || facts.has(FactKind::ForkedFrom) {
         return Err(ReduceError::Group(
             "publication root fact appears after sequence 1",
         ));
@@ -29,6 +29,7 @@ pub(super) fn validate(state: &SessionState, commit: &Commit) -> Result<()> {
     work(state, &facts)?;
     operation(&facts)?;
     provider(&facts)?;
+    completion_checks(state, &facts)?;
     tools(state, &facts)?;
     retry(&facts)?;
     fork(&facts)?;
@@ -44,27 +45,8 @@ fn root(facts: &Facts<'_>) -> Result<()> {
             "session creation requires one SessionCreated and one ContextEpochOpened",
         ));
     }
-    let legacy = facts.has(FactKind::LegacyImported);
     let child = facts.has(FactKind::ForkedFrom);
-    if legacy && child {
-        return Err(ReduceError::Group(
-            "a root cannot be both imported and forked",
-        ));
-    }
-    let allowed = if legacy {
-        if facts.count(FactKind::WorkspaceObserved) != 1 {
-            return Err(ReduceError::Group(
-                "legacy root requires one complete workspace observation",
-            ));
-        }
-        [
-            FactKind::SessionCreated,
-            FactKind::LegacyImported,
-            FactKind::WorkspaceObserved,
-            FactKind::ContextEpochOpened,
-        ]
-        .as_slice()
-    } else if child {
+    let allowed = if child {
         [
             FactKind::SessionCreated,
             FactKind::ForkedFrom,
@@ -211,6 +193,13 @@ fn work(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
             WorkProjection::Pending(batch) => facts.commit.facts.iter().any(|fact| {
                 matches!(&fact.data, FactData::ToolFinished { result } if facts.batch_of(state, result.call) == Some(*batch))
             }),
+            WorkProjection::CompletionCheck(check) => {
+                state.facts.get(check) == Some(&FactKind::CompletionCheckRecorded)
+                    || facts.commit.facts.iter().any(|fact| {
+                        fact.id == *check
+                            && matches!(fact.data, FactData::CompletionCheckRecorded { .. })
+                    })
+            }
             WorkProjection::Operation(id) => facts.commit.facts.iter().any(|fact| {
                 matches!(&fact.data, FactData::OperationClosed { close, .. } if close.id == *id)
             }),
@@ -234,20 +223,51 @@ fn work(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
 }
 
 fn verify_return(state: &SessionState, facts: &Facts<'_>, work: &WorkState) -> Result<()> {
-    let WorkProjection::Pending(batch) = work.projection_owner() else {
-        return Err(ReduceError::Group(
-            "Verify failure must be owned by its terminal tool batch",
-        ));
+    if let WorkProjection::Operation(operation) = work.projection_owner() {
+        let close = facts.commit.facts.iter().any(|fact| {
+            matches!(
+                &fact.data,
+                FactData::OperationClosed {
+                    close,
+                    stage_outcome: OperationStageOutcome::Returned,
+                } if close.id == *operation
+                    && close.outcome == OperationOutcome::Completed
+                    && close.candidate == work.candidate().map(|candidate| candidate.id())
+            )
+        });
+        let epoch = facts.commit.facts.iter().any(|fact| {
+            matches!(&fact.data, FactData::ContextEpochOpened { epoch } if epoch.stage == Some(WorkStage::Execute))
+        });
+        if work.policy() == WorkPolicy::Single || work.candidate().is_none() || !close || !epoch {
+            return Err(ReduceError::Group(
+                "Verify continuation requires an external Work candidate, close, and Execute epoch",
+            ));
+        }
+        return Ok(());
+    }
+
+    let terminal_facts: HashSet<_> = match work.projection_owner() {
+        WorkProjection::Pending(batch) => facts
+            .commit
+            .facts
+            .iter()
+            .filter_map(|fact| {
+                matches!(&fact.data, FactData::ToolFinished { result } if facts.batch_of(state, result.call) == Some(*batch))
+                    .then_some(fact.id)
+            })
+            .collect(),
+        WorkProjection::CompletionCheck(check)
+            if state.facts.get(check) == Some(&FactKind::CompletionCheckRecorded)
+                || facts.commit.facts.iter().any(|fact| fact.id == *check) =>
+        {
+            HashSet::from([*check])
+        }
+        _ => {
+            return Err(ReduceError::Group(
+                "Verify failure must be owned by its terminal check",
+            ));
+        }
     };
-    let terminal_facts: HashSet<_> = facts
-        .commit
-        .facts
-        .iter()
-        .filter_map(|fact| {
-            matches!(&fact.data, FactData::ToolFinished { result } if facts.batch_of(state, result.call) == Some(*batch))
-                .then_some(fact.id)
-        })
-        .collect();
     let current = state
         .works
         .get(&work.id())
@@ -302,7 +322,14 @@ fn operation(facts: &Facts<'_>) -> Result<()> {
             matches!(&fact.data, FactData::InputApplied { input: id, operation: Some(owner) } if id == input && owner == operation)
         });
         let projected = facts.commit.facts.iter().any(|fact| {
-            matches!(&fact.data, FactData::ContextEntryAdded { entry } if entry.source == ContextSource::Input(*input))
+            matches!(
+                &fact.data,
+                FactData::ContextEntryAdded { entry }
+                    if matches!(
+                        entry.source,
+                        ContextSource::Input(id) | ContextSource::WorkPolicy(id) if id == *input
+                    )
+            )
         });
         if !accepted || !applied || !projected {
             return Err(ReduceError::Group(
@@ -346,6 +373,85 @@ fn provider(facts: &Facts<'_>) -> Result<()> {
             return Err(ReduceError::Group(
                 "ToolCallPlanned requires its completed provider result",
             ));
+        }
+    }
+    Ok(())
+}
+
+fn completion_checks(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
+    let mut seen = HashSet::new();
+    for recorded in facts.data(FactKind::CompletionCheckRecorded) {
+        let FactData::CompletionCheckRecorded {
+            operation,
+            check,
+            command,
+            passed,
+            ..
+        } = recorded
+        else {
+            continue;
+        };
+        let Some(open) = state
+            .operation
+            .as_ref()
+            .filter(|open| open.id == *operation && open.stage == Some(WorkStage::Verify))
+        else {
+            return Err(ReduceError::Group(
+                "completion check requires its open Verify operation",
+            ));
+        };
+        if state.open_provider.is_some() && !facts.has(FactKind::ProviderFinished) {
+            return Err(ReduceError::Group(
+                "completion check requires a finished provider round",
+            ));
+        }
+        match check {
+            CompletionCheck::Declared(check) => {
+                if !seen.insert(*check)
+                    || state.completion_checks.contains_key(&(*operation, *check))
+                {
+                    return Err(ReduceError::Group(
+                        "completion check can be recorded once per Verify operation",
+                    ));
+                }
+                let work =
+                    open.work
+                        .and_then(|work| state.works.get(&work))
+                        .ok_or(ReduceError::Group(
+                            "declared completion check requires Work",
+                        ))?;
+                let plan = work
+                    .selected_plan()
+                    .and_then(|plan| state.plans.get(&plan))
+                    .ok_or(ReduceError::Group(
+                        "declared completion check requires a selected Plan",
+                    ))?;
+                let declared = plan
+                    .checks
+                    .iter()
+                    .find(|candidate| candidate.id == *check)
+                    .ok_or(ReduceError::Group(
+                        "completion check is not declared by the selected Plan",
+                    ))?;
+                let active = match work.policy() {
+                    WorkPolicy::Steps => work
+                        .active_item
+                        .and_then(|item| plan.steps.iter().find(|step| step.id == item))
+                        .is_some_and(|step| step.checks.iter().any(|id| id == check)),
+                    WorkPolicy::Single | WorkPolicy::Goal { .. } => true,
+                };
+                if !active || declared.command.as_str() != command.as_str() {
+                    return Err(ReduceError::Group(
+                        "completion check does not match the active Work item",
+                    ));
+                }
+            }
+            CompletionCheck::CandidateStable | CompletionCheck::Interrupted if *passed => {
+                return Err(ReduceError::Group(
+                    "controller completion checks cannot pass Work",
+                ));
+            }
+            CompletionCheck::CandidateStable | CompletionCheck::Interrupted => {}
         }
     }
     Ok(())

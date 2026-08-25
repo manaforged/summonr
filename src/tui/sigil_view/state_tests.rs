@@ -59,7 +59,6 @@ fn tool_result_updates_the_existing_call() {
                 id: "call-1".to_string(),
                 success: true,
                 mutated: false,
-                task: None,
                 output: "first\nlast".to_string(),
             }),
         );

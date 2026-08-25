@@ -6,11 +6,11 @@ use super::context::{
     RetryIntent, RetryOutcome, RouteReason, UserPayload,
 };
 use super::effect::{
-    BudgetKind, DetachedClose, EffectObservation, JobState, MeterKind, MeterSettlement,
+    BudgetKind, DetachedClose, DetachedState, EffectObservation, MeterKind, MeterSettlement,
     ProcessRecord, ProviderIntent, ProviderOutcome, ToolCall, ToolIntent, ToolResult,
 };
 use super::id::{
-    CommandId, ContextEntryId, ContextEpochId, Digest, EvidenceId, FactId, ForkId, InputId, JobId,
+    CheckId, CommandId, ContextEpochId, Digest, EvidenceId, FactId, ForkId, InputId, JobId,
     MaterializationId, MeterId, ObservationId, OperationId, PlanRevisionId, ProviderAttemptId,
     ProviderResultId, RetryId, SessionId, ToolAttemptId, ToolResultId, WorkId,
 };
@@ -20,8 +20,8 @@ use super::workspace::{
 };
 
 const MAX_DIAGNOSTIC_BYTES: usize = 65_536;
+const MAX_COMPLETION_CHECK_BYTES: usize = 1_048_576;
 const MAX_PUBLICATION_PATHS: usize = 64;
-const MAX_IMPORT_TOOLS: usize = 512;
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -37,25 +37,6 @@ pub(crate) struct CommandReceipt {
     pub(crate) status: CommandStatus,
     pub(crate) code: Option<Text<256>>,
     pub(crate) result: Option<FactId>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct LegacySource {
-    pub(crate) display_id: Text<1_024>,
-    pub(crate) format: u16,
-    pub(crate) converter: u16,
-    pub(crate) log_length: u64,
-    pub(crate) log_digest: Digest,
-    pub(crate) plan_length: Option<u64>,
-    pub(crate) plan_digest: Option<Digest>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ImportedWorkStatus {
-    Nonterminal,
-    Terminal,
-    None,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -151,6 +132,14 @@ pub(crate) enum MeterOwner {
     Retry(RetryId),
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case", tag = "source", content = "id")]
+pub(crate) enum CompletionCheck {
+    Declared(CheckId),
+    CandidateStable,
+    Interrupted,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Fact {
     pub(crate) id: FactId,
@@ -170,21 +159,6 @@ pub(crate) enum FactData {
     SessionCreated {
         session: SessionId,
         scope: WorkspaceScope,
-    },
-    LegacyImported {
-        source: LegacySource,
-        plan: Option<PlanRevisionId>,
-        work: ImportedWorkStatus,
-        observation: ObservationId,
-        uncertain_tools: Items<ToolResultId, MAX_IMPORT_TOOLS>,
-    },
-    LegacySourceAccepted {
-        source: LegacySource,
-    },
-    LegacyToolUncertain {
-        provider_call: Text<1_024>,
-        result: ToolResultId,
-        context: ContextEntryId,
     },
     BudgetChanged {
         kind: BudgetKind,
@@ -288,6 +262,13 @@ pub(crate) enum FactData {
         result: ProviderResultId,
         outcome: ProviderOutcome,
     },
+    CompletionCheckRecorded {
+        operation: OperationId,
+        check: CompletionCheck,
+        command: Text<MAX_COMPLETION_CHECK_BYTES>,
+        passed: bool,
+        output: Text<MAX_COMPLETION_CHECK_BYTES>,
+    },
     ToolCallPlanned {
         call: ToolCall,
     },
@@ -301,7 +282,7 @@ pub(crate) enum FactData {
         job: JobId,
         attempt: ToolAttemptId,
         process: ProcessRecord,
-        state: JobState,
+        state: DetachedState,
         contract_digest: Digest,
     },
     EffectObserved {
@@ -342,9 +323,6 @@ impl FactData {
     pub(crate) fn kind(&self) -> FactKind {
         match self {
             Self::SessionCreated { .. } => FactKind::SessionCreated,
-            Self::LegacyImported { .. } => FactKind::LegacyImported,
-            Self::LegacySourceAccepted { .. } => FactKind::LegacySourceAccepted,
-            Self::LegacyToolUncertain { .. } => FactKind::LegacyToolUncertain,
             Self::BudgetChanged { .. } => FactKind::BudgetChanged,
             Self::PlanSet { .. } => FactKind::PlanSet,
             Self::PlanMaterializationPlanned { .. } => FactKind::PlanMaterializationPlanned,
@@ -367,6 +345,7 @@ impl FactData {
             Self::OperationClosed { .. } => FactKind::OperationClosed,
             Self::ProviderStarted { .. } => FactKind::ProviderStarted,
             Self::ProviderFinished { .. } => FactKind::ProviderFinished,
+            Self::CompletionCheckRecorded { .. } => FactKind::CompletionCheckRecorded,
             Self::ToolCallPlanned { .. } => FactKind::ToolCallPlanned,
             Self::ToolStarted { .. } => FactKind::ToolStarted,
             Self::ToolFinished { .. } => FactKind::ToolFinished,
@@ -387,9 +366,6 @@ impl FactData {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum FactKind {
     SessionCreated,
-    LegacyImported,
-    LegacySourceAccepted,
-    LegacyToolUncertain,
     BudgetChanged,
     PlanSet,
     PlanMaterializationPlanned,
@@ -412,6 +388,7 @@ pub(crate) enum FactKind {
     OperationClosed,
     ProviderStarted,
     ProviderFinished,
+    CompletionCheckRecorded,
     ToolCallPlanned,
     ToolStarted,
     ToolFinished,
@@ -427,11 +404,8 @@ pub(crate) enum FactKind {
 }
 
 impl FactKind {
-    pub(crate) const ALL: [Self; 38] = [
+    pub(crate) const ALL: [Self; 36] = [
         Self::SessionCreated,
-        Self::LegacyImported,
-        Self::LegacySourceAccepted,
-        Self::LegacyToolUncertain,
         Self::BudgetChanged,
         Self::PlanSet,
         Self::PlanMaterializationPlanned,
@@ -454,6 +428,7 @@ impl FactKind {
         Self::OperationClosed,
         Self::ProviderStarted,
         Self::ProviderFinished,
+        Self::CompletionCheckRecorded,
         Self::ToolCallPlanned,
         Self::ToolStarted,
         Self::ToolFinished,

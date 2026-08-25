@@ -13,8 +13,8 @@ const MAX_NATIVE_ROOT_BYTES: usize = 4_096;
 const MAX_ROOTS: usize = 64;
 const MAX_RESERVED_PATHS: usize = 128;
 const MAX_ARTIFACT_ROOTS: usize = 64;
-const MAX_OBSERVATION_ENTRIES: usize = 100_000;
-const MAX_CHANGE_ENTRIES: usize = 100_000;
+const MAX_OBSERVATION_ENTRIES: usize = 1_000_000;
+const MAX_CHANGE_ENTRIES: usize = 1_000_000;
 const MAX_RULES: usize = 128;
 const MAX_REASON_BYTES: usize = 16_384;
 

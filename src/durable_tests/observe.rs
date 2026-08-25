@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::durable::observe::{ObserveError, observe, workspace_identity_of};
+use crate::durable::observe::{ObserveError, Observer, observe, workspace_identity_of};
 use crate::durable::workspace::{
     ArtifactRoot, ObservedKind, PathComponent, PathKey, PathPlatform, ReservedCoverage,
     ReservedPath, WorkspaceScope,
@@ -127,6 +127,76 @@ fn reserved_subtree_excludes_descendants() {
 }
 
 #[test]
+fn reserved_subtree_is_not_traversed() {
+    let dir = tempfile::tempdir().expect("temporary directory must exist");
+    let root = dir.path();
+    std::fs::create_dir_all(root.join("target/cache")).expect("target must be created");
+    std::fs::write(root.join("target/cache/large.bin"), vec![0_u8; 1_048_577])
+        .expect("large ignored file must be written");
+    let scope = scope(
+        identity(root),
+        vec![reserved(&[b"target"], ReservedCoverage::Subtree)],
+        Vec::new(),
+    );
+
+    let observation = observe(root, &scope, fixture::id(32)).expect("observation must complete");
+
+    assert!(observation.entries.is_empty());
+}
+
+#[test]
+fn large_candidate_file_is_streamed() {
+    let (dir, scope) = setup();
+    let root = dir.path();
+    std::fs::write(root.join("large.bin"), vec![7_u8; 2 * 1_048_576])
+        .expect("large candidate file must be written");
+
+    let observation =
+        observe(root, &scope, fixture::id(33)).expect("large candidate file must be observed");
+
+    assert_eq!(observation.entries.len(), 1);
+    assert!(matches!(
+        observation
+            .entries
+            .iter()
+            .next()
+            .expect("large file entry must exist")
+            .kind(),
+        ObservedKind::File { .. }
+    ));
+}
+
+#[test]
+fn unchanged_files_reuse_verified_digests() {
+    let (dir, scope) = setup();
+    let root = dir.path();
+    std::fs::write(root.join("one.txt"), b"one").expect("first file must be written");
+    std::fs::write(root.join("two.txt"), b"two").expect("second file must be written");
+    let mut observer = Observer::default();
+
+    let first = observer
+        .observe(root, &scope, fixture::id(34))
+        .expect("first observation must complete");
+    assert_eq!(observer.reads(), 2);
+    let second = observer
+        .observe(root, &scope, fixture::id(35))
+        .expect("second observation must complete");
+    assert_eq!(
+        observer.reads(),
+        2,
+        "unchanged files must not be read again"
+    );
+    assert_eq!(first.digest(), second.digest());
+
+    std::fs::write(root.join("two.txt"), b"two changed").expect("second file must be changed");
+    let third = observer
+        .observe(root, &scope, fixture::id(36))
+        .expect("third observation must complete");
+    assert_eq!(observer.reads(), 3, "only the changed file must be read");
+    assert_ne!(second.digest(), third.digest());
+}
+
+#[test]
 fn reserved_entry_excludes_only_the_named_entry() {
     let dir = tempfile::tempdir().expect("temporary directory must exist");
     let root = dir.path();
@@ -247,7 +317,7 @@ fn observe_never_follows_a_symlink_target_outside_the_workspace() {
 
 #[cfg(unix)]
 #[test]
-fn a_fifo_is_an_unsupported_kind() {
+fn a_fifo_is_ignored() {
     let dir = tempfile::tempdir().expect("temporary directory must exist");
     let root = dir.path();
     let fifo = root.join("pipe");
@@ -261,8 +331,9 @@ fn a_fifo_is_an_unsupported_kind() {
     );
     let scope = scope(identity(root), Vec::new(), Vec::new());
 
-    let result = observe(root, &scope, fixture::id(70));
-    assert!(matches!(result, Err(ObserveError::UnsupportedKind)));
+    let observation = observe(root, &scope, fixture::id(70))
+        .expect("special entries outside the candidate model must be ignored");
+    assert!(observation.entries.is_empty());
 }
 
 fn path_bytes(entry: &crate::durable::workspace::ObservedEntry) -> Vec<&[u8]> {

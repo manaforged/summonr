@@ -32,7 +32,6 @@ fn info() -> Info {
         plan: false,
         strict: true,
         workspace: "~/src/mage".to_string(),
-        task: None,
     }
 }
 
@@ -157,8 +156,6 @@ fn slash_menu_keeps_compact_chat_composer_visible() {
     });
 }
 
-#[path = "sigil_view/app_tests.rs"]
-mod app_tests;
 #[path = "sigil_view/chat_tests.rs"]
 mod chat_tests;
 #[path = "sigil_view/scene_tests.rs"]

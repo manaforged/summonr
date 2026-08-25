@@ -12,8 +12,8 @@ use crate::durable::effect::{
     ProviderOutcome, ProviderPurpose, Usage,
 };
 use crate::durable::fact::{
-    CommandReceipt, CommandStatus, Fact, FactData, FactKind, ForkAdoption, ForkOutcome,
-    ImportedWorkStatus, LegacySource, MeterOwner, OperationStageOutcome,
+    CommandReceipt, CommandStatus, Fact, FactData, FactKind, ForkAdoption, ForkOutcome, MeterOwner,
+    OperationStageOutcome,
 };
 use crate::durable::id::{ContextEpochId, Digest, ForkId, ScopedId, SessionId};
 use crate::durable::journal::{JournalWriter, inspect};
@@ -361,99 +361,6 @@ fn published_fork_retains_its_recovery_intent_until_terminal() {
     assert_eq!(writer.state().forks.get(&fixture::id(1154)), Some(&outcome));
     assert_eq!(
         inspect(&path).expect("published fork must replay"),
-        *writer.state()
-    );
-}
-
-#[test]
-fn legacy_root_and_source_acceptance_replay_without_legacy_io() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("legacy.jsonl");
-    let mut writer = JournalWriter::create(&path).expect("journal must be created");
-    let observation = WorkspaceObservation::new(
-        fixture::id(1200),
-        fixture::scope().id(),
-        PathPlatform::Unix,
-        Vec::new(),
-    )
-    .expect("import observation must be valid");
-    let source = legacy_source(10);
-    writer
-        .append(
-            fixture::id(1),
-            None,
-            vec![
-                Fact {
-                    id: fixture::fact_id(1201),
-                    data: FactData::SessionCreated {
-                        session: fixture::session(),
-                        scope: fixture::scope(),
-                    },
-                },
-                Fact {
-                    id: fixture::fact_id(1202),
-                    data: FactData::LegacyImported {
-                        source: source.clone(),
-                        plan: None,
-                        work: ImportedWorkStatus::None,
-                        observation: observation.id(),
-                        uncertain_tools: Items::default(),
-                    },
-                },
-                Fact {
-                    id: fixture::fact_id(1203),
-                    data: FactData::WorkspaceObserved { observation },
-                },
-                Fact {
-                    id: fixture::fact_id(1204),
-                    data: FactData::ContextEpochOpened {
-                        epoch: fixture::epoch(),
-                    },
-                },
-            ],
-        )
-        .expect("legacy publication root must append");
-    writer
-        .append(
-            fixture::id(2),
-            None,
-            vec![
-                Fact {
-                    id: fixture::fact_id(1205),
-                    data: FactData::ContextEntryAdded {
-                        entry: entry(
-                            1206,
-                            fixture::epoch_id(),
-                            ContextSource::HarnessControl,
-                            "legacy tool result unavailable",
-                        ),
-                    },
-                },
-                Fact {
-                    id: fixture::fact_id(1207),
-                    data: FactData::LegacyToolUncertain {
-                        provider_call: fixture::text("legacy-call"),
-                        result: fixture::id(1208),
-                        context: fixture::id(1206),
-                    },
-                },
-            ],
-        )
-        .expect("legacy unmatched tool must close synthetically");
-    writer
-        .append(
-            fixture::id(3),
-            Some(accepted(1209, 1210, "accept-legacy")),
-            vec![Fact {
-                id: fixture::fact_id(1210),
-                data: FactData::LegacySourceAccepted {
-                    source: legacy_source(12),
-                },
-            }],
-        )
-        .expect("legacy source acceptance must append");
-    assert_eq!(
-        inspect(&path).expect("legacy history must replay"),
         *writer.state()
     );
 }
@@ -829,18 +736,6 @@ fn accepted(command: u128, result: u128, label: &str) -> CommandReceipt {
         status: CommandStatus::Accepted,
         code: None,
         result: Some(fixture::fact_id(result)),
-    }
-}
-
-fn legacy_source(length: u64) -> LegacySource {
-    LegacySource {
-        display_id: fixture::text("legacy-display-id"),
-        format: 1,
-        converter: 1,
-        log_length: length,
-        log_digest: fixture::digest(&format!("legacy-{length}")),
-        plan_length: None,
-        plan_digest: None,
     }
 }
 

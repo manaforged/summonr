@@ -39,9 +39,9 @@ In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
 
 Crash the process. Run the same command. Resume reads the journal
-and the job snapshot (`src/runtime/configure.rs` `persist_progress`
-/ `restored_progress`). If the plan text, workspace, or gate list
-changed, Summoner refuses to guess.
+and projects Work from its typed facts (`src/durable/project.rs`). If
+the plan text, workspace, or gate list changed, Summoner refuses to
+guess.
 
 That is the agentic loop this repo is built around: you name the job,
 the harness keeps it, the model edits, commands prove it, the journal
@@ -52,9 +52,9 @@ is the resume program.
 | Piece | File |
 |---|---|
 | Work, Plan, stages | `src/durable/work.rs` |
-| Only writer of the session | `src/durable/driver.rs` (`set_work`, `select_plan`, `progress`) |
+| Session writer | `src/durable/driver.rs` and `src/durable/driver/lifecycle.rs` |
 | Replay is live state | `src/durable/reducer.rs` |
-| Conversation that writes the journal | `src/runtime.rs` (`Loop`) |
+| Conversation that writes the journal | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
@@ -81,4 +81,3 @@ cwd unless you pass `--worktree`.
 
 - Not a new harness. Disk and env still say Mage (`~/.mage`, `MAGE_*`).
 - Not crates.io. Sigil is a git dependency. Version is `0.1.0` alpha.
-- `TaskState` in `src/task.rs` is a leftover checklist next to Work.

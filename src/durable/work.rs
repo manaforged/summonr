@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt::{Display, Formatter};
 
 use serde::{Deserialize, Serialize};
 use serde_json::to_vec;
@@ -61,8 +62,6 @@ pub(crate) enum WorkError {
     CandidateBinding,
     #[error("Work candidate manifest does not match its base and capture")]
     CandidateManifest,
-    #[error("stage budget reserve exceeds its configured limit")]
-    StageBudget,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -110,15 +109,6 @@ pub(crate) enum CloseReason {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "outcome", content = "detail", rename_all = "snake_case")]
-pub(crate) enum LegacyWorkOutcome {
-    Completed,
-    Failed,
-    Cancelled,
-    Unknown(Text<MAX_TEXT_BYTES>),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", content = "data", rename_all = "snake_case")]
 pub(crate) enum WorkStatus {
     Active(WorkStage),
@@ -133,16 +123,13 @@ pub(crate) enum WorkStatus {
     Abandoned {
         reason: CloseReason,
     },
-    LegacyTerminal {
-        outcome: LegacyWorkOutcome,
-    },
 }
 
 impl WorkStatus {
     pub(crate) fn stage(&self) -> Option<WorkStage> {
         match self {
             Self::Active(stage) | Self::Paused { stage, .. } => Some(*stage),
-            Self::Completed { .. } | Self::Abandoned { .. } | Self::LegacyTerminal { .. } => None,
+            Self::Completed { .. } | Self::Abandoned { .. } => None,
         }
     }
 
@@ -156,7 +143,94 @@ impl WorkStatus {
 pub(crate) enum WorkPolicy {
     Single,
     Steps,
+    Goal { max_turns: u32 },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkKind {
+    Single,
+    Steps,
     Goal,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkPhase {
+    Plan,
+    Execute,
+    Verify,
+    Completed,
+    Failed,
+}
+
+impl Display for WorkPhase {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::Plan => "planning",
+            Self::Execute => "running",
+            Self::Verify => "verifying",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+        })
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct WorkProgress {
+    pub kind: WorkKind,
+    pub phase: WorkPhase,
+    pub current: Option<usize>,
+    pub total: usize,
+    pub attempts: u16,
+    pub rounds: u32,
+    pub reason: Option<String>,
+}
+
+impl WorkProgress {
+    #[must_use]
+    pub fn terminal(&self) -> bool {
+        matches!(self.phase, WorkPhase::Completed | WorkPhase::Failed)
+    }
+
+    #[must_use]
+    pub fn exit_code(&self) -> Option<i32> {
+        match self.phase {
+            WorkPhase::Completed => Some(0),
+            WorkPhase::Failed
+                if self
+                    .reason
+                    .as_deref()
+                    .is_some_and(|reason| reason.contains("completion checks")) =>
+            {
+                Some(2)
+            }
+            WorkPhase::Failed => Some(3),
+            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify => None,
+        }
+    }
+}
+
+impl Display for WorkProgress {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
+        match (self.kind, self.current) {
+            (WorkKind::Steps, Some(current)) => {
+                write!(
+                    formatter,
+                    "Work step {current}/{} · {}",
+                    self.total, self.phase
+                )?;
+            }
+            (WorkKind::Goal, _) => {
+                write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
+            }
+            _ => write!(formatter, "Work · {}", self.phase)?,
+        }
+        if let Some(reason) = &self.reason {
+            write!(formatter, " · {reason}")?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -183,21 +257,10 @@ pub(crate) struct WorkItem {
     pub(crate) disposition: ItemDisposition,
     pub(crate) title: Text<MAX_TEXT_BYTES>,
     pub(crate) evidence: Items<EvidenceId, MAX_EVIDENCE>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct StageBudget {
-    pub(crate) token_limit: Option<u64>,
-    pub(crate) live_millis_limit: Option<u64>,
-    pub(crate) token_reserve: u64,
-    pub(crate) live_millis_reserve: u64,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct StageBudgets {
-    pub(crate) plan: StageBudget,
-    pub(crate) execute: StageBudget,
-    pub(crate) verify: StageBudget,
+    #[serde(default)]
+    pub(crate) attempts: u16,
+    #[serde(default)]
+    pub(crate) rounds: u32,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -214,13 +277,22 @@ pub(crate) struct PlanStep {
     pub(crate) title: Text<MAX_TEXT_BYTES>,
     pub(crate) detail: Text<MAX_TEXT_BYTES>,
     pub(crate) dependencies: Items<WorkItemId, MAX_DEPENDENCIES>,
+    #[serde(default)]
+    pub(crate) checks: Items<CheckId, MAX_CHECKS>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub(crate) enum RequiredObservation {
+    File(Text<MAX_TEXT_BYTES>),
+    StdoutContains(Text<MAX_TEXT_BYTES>),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct AcceptanceCheck {
     pub(crate) id: CheckId,
     pub(crate) command: Text<MAX_TEXT_BYTES>,
-    pub(crate) required_observation: Option<Text<MAX_TEXT_BYTES>>,
+    pub(crate) required_observation: Option<RequiredObservation>,
 }
 
 #[derive(Serialize)]
@@ -298,7 +370,13 @@ impl PlanRevision {
             return Err(WorkError::Dependency);
         }
         let checks: HashSet<_> = self.checks.iter().map(|check| check.id).collect();
-        if checks.len() != self.checks.len() {
+        if checks.len() != self.checks.len()
+            || self.steps.iter().any(|step| {
+                let selected: HashSet<_> = step.checks.iter().copied().collect();
+                selected.len() != step.checks.len()
+                    || selected.iter().any(|check| !checks.contains(check))
+            })
+        {
             return Err(WorkError::PlanIdentity);
         }
         if self.digest != self.calculated_digest()? {
@@ -418,6 +496,7 @@ pub(crate) enum WorkProjection {
     Context(ContextEntryId),
     Epoch(ContextEpochId),
     Pending(ToolBatchId),
+    CompletionCheck(FactId),
     Operation(OperationId),
     Plan(PlanRevisionId),
 }
@@ -439,7 +518,6 @@ pub(crate) struct WorkState {
     pub(crate) candidate: Option<Candidate>,
     pub(crate) verification: Option<VerificationPolicy>,
     pub(crate) evidence: Items<EvidenceRef, MAX_EVIDENCE>,
-    pub(crate) budgets: StageBudgets,
     pub(crate) predecessor: Option<WorkId>,
     pub(crate) projection: Text<MAX_PROJECTION_BYTES>,
     pub(crate) projection_owner: WorkProjection,
@@ -456,6 +534,10 @@ impl WorkState {
 
     pub(crate) fn status(&self) -> &WorkStatus {
         &self.status
+    }
+
+    pub(crate) fn policy(&self) -> WorkPolicy {
+        self.policy
     }
 
     pub(crate) fn selected_plan(&self) -> Option<PlanRevisionId> {
@@ -516,9 +598,6 @@ impl WorkState {
                 if self.selected_plan.is_none() || self.verification.is_none() {
                     return Err(WorkError::Selection);
                 }
-                if self.acceptance_checks.is_empty() {
-                    return Err(WorkError::Selection);
-                }
                 if self.scope.is_none() || self.base.is_none() {
                     return Err(WorkError::Base);
                 }
@@ -559,21 +638,6 @@ impl WorkState {
                 .any(|id| !evidence.contains(id))
         {
             return Err(WorkError::CandidateBinding);
-        }
-        for budget in [
-            &self.budgets.plan,
-            &self.budgets.execute,
-            &self.budgets.verify,
-        ] {
-            if budget
-                .token_limit
-                .is_some_and(|limit| budget.token_reserve > limit)
-                || budget
-                    .live_millis_limit
-                    .is_some_and(|limit| budget.live_millis_reserve > limit)
-            {
-                return Err(WorkError::StageBudget);
-            }
         }
         Ok(())
     }

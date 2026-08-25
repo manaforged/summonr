@@ -125,76 +125,8 @@ async fn web_fetch_rejects_ssrf() -> Result<()> {
     Ok(())
 }
 
-struct TaskProvider {
-    rounds: AtomicUsize,
-}
-
-impl Provider for TaskProvider {
-    fn complete<'a>(
-        &'a self,
-        request: &'a CompletionRequest,
-    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-        Box::pin(async move {
-            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
-            let response = match round {
-                0 => AssistantMessage {
-                    tool_calls: vec![call(
-                        "task_state",
-                        r#"{"action":"start","steps":["Implement", "Verify"]}"#,
-                    )],
-                    ..AssistantMessage::default()
-                },
-                1 => AssistantMessage {
-                    content: Some("done too early".to_string()),
-                    ..AssistantMessage::default()
-                },
-                2 => {
-                    assert!(request.messages.last().is_some_and(|message| {
-                        message.content.contains("task checklist is incomplete")
-                    }));
-                    AssistantMessage {
-                        tool_calls: vec![call("task_state", r#"{"action":"advance"}"#)],
-                        ..AssistantMessage::default()
-                    }
-                }
-                3 => AssistantMessage {
-                    tool_calls: vec![call("task_state", r#"{"action":"advance"}"#)],
-                    ..AssistantMessage::default()
-                },
-                _ => AssistantMessage {
-                    content: Some("actually done".to_string()),
-                    ..AssistantMessage::default()
-                },
-            };
-            Ok(response)
-        })
-    }
-}
-
 #[tokio::test]
-async fn active_task_blocks_a_premature_final_answer_and_replays() -> Result<()> {
-    let workspace = test_workspace()?;
-    let provider = TaskProvider {
-        rounds: AtomicUsize::new(0),
-    };
-    let mut loop_ = Loop::with_session(provider, "test-model", &workspace, "system")?;
-
-    let turn = loop_.turn("do both steps").await?;
-
-    assert_eq!(turn.text, "actually done");
-    assert_eq!(turn.rounds, 5);
-    assert!(turn.events.iter().any(|event| matches!(
-        event,
-        Event::Note { text } if text.contains("task incomplete")
-    )));
-    assert!(loop_.task_state().is_some_and(TaskState::is_complete));
-    assert!(loop_.task_state().is_some_and(TaskState::is_complete));
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn external_steps_are_the_only_task_authority() -> Result<()> {
+async fn external_steps_are_owned_by_work() -> Result<()> {
     struct Capture(Arc<Mutex<Option<CompletionRequest>>>);
     impl Provider for Capture {
         fn complete<'a>(
@@ -223,9 +155,11 @@ async fn external_steps_are_the_only_task_authority() -> Result<()> {
         "test-model",
         &workspace,
         "system",
-    )?
-    .with_external_steps();
-    assert!(!loop_.tool_names().iter().any(|name| name == "task_state"));
+    )?;
+    loop_.select_steps(
+        "## Steps\n\n1. Implement it\n2. Do not expose this step yet\n",
+        &[],
+    )?;
     loop_.turn("implement it").await?;
     let request = captured
         .lock()
@@ -235,55 +169,23 @@ async fn external_steps_are_the_only_task_authority() -> Result<()> {
     assert!(request.messages.last().is_some_and(|message| {
         message
             .content
-            .contains("external step runner owns progress")
+            .contains("Steps or Goal runner owns this Work")
     }));
     assert!(
         !request
             .messages
-            .first()
-            .is_some_and(|message| message.content.contains("task_state"))
+            .iter()
+            .any(|message| message.content.contains("Do not expose this step yet"))
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
 
-#[tokio::test]
-async fn plan_mode_suspends_an_active_execution_task() -> Result<()> {
-    let workspace = test_workspace()?;
-
-    let (task, _) = TaskState::transition(
-        None,
-        r#"{"action":"start","steps":["Implement", "Verify"]}"#,
-    )?;
-    let replay = Replay {
-        task: Some(task),
-        ..Replay::default()
-    };
-    let mut loop_ = Loop::with_session(
-        TaskProvider {
-            rounds: AtomicUsize::new(10),
-        },
-        "test-model",
-        &workspace,
-        "system",
-    )?
-    .restore_replay(replay)
-    .with_plan();
-
-    let turn = loop_.turn("write a plan").await?;
-
-    assert_eq!(turn.text, "actually done");
-    assert_eq!(turn.rounds, 1);
-    assert!(loop_.task_state().is_some_and(|task| !task.is_complete()));
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-struct GuardedTaskProvider {
+struct CommandProvider {
     rounds: AtomicUsize,
 }
 
-impl Provider for GuardedTaskProvider {
+impl Provider for CommandProvider {
     fn complete<'a>(
         &'a self,
         _request: &'a CompletionRequest,
@@ -305,11 +207,11 @@ impl Provider for GuardedTaskProvider {
 }
 
 #[tokio::test]
-async fn inspection_commands_do_not_require_task_progress() -> Result<()> {
+async fn commands_execute_inside_work() -> Result<()> {
     let workspace = test_workspace()?;
 
     let mut loop_ = Loop::with_session(
-        GuardedTaskProvider {
+        CommandProvider {
             rounds: AtomicUsize::new(0),
         },
         "test-model",
@@ -319,13 +221,8 @@ async fn inspection_commands_do_not_require_task_progress() -> Result<()> {
 
     let turn = loop_.turn("run it").await?;
 
-    assert_eq!(turn.text, "done");
+    assert_work_receipt(&turn, "done");
     assert_eq!(turn.rounds, 2);
-    assert!(!turn.events.iter().any(|event| matches!(
-        event,
-        Event::ToolResult { success: false, output, .. }
-            if output.contains("start task_state")
-    )));
     assert!(turn.events.iter().any(|event| matches!(
         event,
         Event::ToolResult { success: true, output, .. } if output.contains("guarded")

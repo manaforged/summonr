@@ -7,17 +7,17 @@ use super::context::{
     ContextEntry, ContextEpoch, Directive, InputRoute, OperationClose, UserPayload,
 };
 use super::effect::{
-    BudgetKind, DetachedClose, EffectError, JobState, MeterSettlement, ProcessRecord,
+    BudgetKind, DetachedClose, DetachedState, EffectError, MeterSettlement, ProcessRecord,
     ProviderIntent, ProviderOutcome, ReconciliationResolution, ToolCall, ToolIntent, ToolResult,
 };
 use super::encoding::{Commit, EncodingError, FORMAT};
 use super::fact::{
-    CommandReceipt, FactData, FactKind, ForkAdoption, ForkOutcome, LegacySource,
+    CommandReceipt, CompletionCheck, FactData, FactKind, ForkAdoption, ForkOutcome,
     MaterializationOutcome, PublicationFootprint,
 };
 use super::id::{
-    CommandId, ContextEntryId, ContextEpochId, Digest, DirectiveId, EvidenceId, FactId, ForkId,
-    InputId, JobId, MaterializationId, MeterId, ObservationId, OperationId, PlanRevisionId,
+    CheckId, CommandId, ContextEntryId, ContextEpochId, Digest, DirectiveId, EvidenceId, FactId,
+    ForkId, InputId, JobId, MaterializationId, MeterId, ObservationId, OperationId, PlanRevisionId,
     ProviderAttemptId, RetryId, ScopedId, SessionId, ToolAttemptId, ToolBatchId, ToolCallId,
     ToolResultId, WorkId, WorkspaceScopeId,
 };
@@ -109,7 +109,7 @@ pub(crate) struct DetachedJob {
     pub(crate) attempt: ToolAttemptId,
     pub(crate) work: Option<WorkId>,
     pub(crate) process: ProcessRecord,
-    pub(crate) state: JobState,
+    pub(crate) state: DetachedState,
     pub(crate) contract_digest: Digest,
     pub(crate) close: Option<DetachedClose>,
     pub(crate) uncertain: bool,
@@ -154,7 +154,6 @@ pub(crate) struct SessionState {
     receipts: History<CommandId, CommandReceipt>,
     pub(crate) default_scope: Option<WorkspaceScopeId>,
     pub(crate) scopes: HashMap<WorkspaceScopeId, WorkspaceScope>,
-    pub(crate) legacy: Option<LegacySource>,
     pub(crate) plans: HashMap<PlanRevisionId, PlanRevision>,
     pub(crate) materializations: HashMap<MaterializationId, Materialization>,
     pub(crate) open_materialization: Option<MaterializationId>,
@@ -168,6 +167,7 @@ pub(crate) struct SessionState {
     closed_operations: History<OperationId, OperationClose>,
     pub(crate) providers: HashMap<ProviderAttemptId, ProviderState>,
     pub(crate) open_provider: Option<ProviderAttemptId>,
+    pub(crate) completion_checks: HashMap<(OperationId, CheckId), bool>,
     pub(crate) tools: HashMap<ToolCallId, ToolState>,
     pub(crate) batches: HashMap<ToolBatchId, Vec<ToolCallId>>,
     pub(crate) tool_attempts: HashMap<ToolAttemptId, ToolCallId>,
@@ -320,12 +320,6 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
             state.default_scope = Some(scope.id());
             state.scopes.insert(scope.id(), scope);
         }
-        FactData::LegacyImported { source, .. } | FactData::LegacySourceAccepted { source } => {
-            state.legacy = Some(source)
-        }
-        FactData::LegacyToolUncertain { result, .. } => {
-            state.tool_results.insert(result);
-        }
         FactData::BudgetChanged { kind, limit } => {
             state.meters.limits.insert(kind, limit);
         }
@@ -454,6 +448,15 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
             }
             state.open_provider = None;
         }
+        FactData::CompletionCheckRecorded {
+            operation,
+            check: CompletionCheck::Declared(check),
+            passed,
+            ..
+        } => {
+            state.completion_checks.insert((operation, check), passed);
+        }
+        FactData::CompletionCheckRecorded { .. } => {}
         FactData::ToolCallPlanned { call } => {
             state.batches.entry(call.batch).or_default().push(call.id);
             let id = call.id;
@@ -518,7 +521,7 @@ fn apply_fact(state: &mut SessionState, fact: FactData) {
                     state: job_state,
                     contract_digest,
                     close: None,
-                    uncertain: job_state == JobState::Uncertain,
+                    uncertain: job_state == DetachedState::Uncertain,
                 },
             );
         }

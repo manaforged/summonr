@@ -39,6 +39,7 @@ pub(crate) enum EffectError {
 pub(crate) enum ProviderPurpose {
     AgentRound,
     CompactionSummary,
+    GoalJudge,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -391,7 +392,7 @@ pub(crate) struct ToolResult {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum JobState {
+pub(crate) enum DetachedState {
     Running,
     Uncertain,
 }

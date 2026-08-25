@@ -4,6 +4,7 @@ use crate::durable::effect::Usage;
 use crate::durable::id::SessionId;
 use crate::durable::journal;
 use crate::durable::product::{self, Open};
+use crate::durable::work::{WorkStage, WorkStatus};
 use crate::provider::Role;
 
 fn usage() -> Usage {
@@ -117,89 +118,81 @@ fn product_resume_recovers_an_open_operation() {
     drop(resumed);
 }
 
-fn write_v1(path: &std::path::Path, user: &str, assistant: &str) {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).expect("v1 parent must exist");
+#[test]
+fn product_resume_returns_interrupted_verify_to_execute() {
+    assert_verify_recovery(true);
+}
+
+#[test]
+fn product_resume_recovers_between_execute_close_and_verify_open() {
+    assert_verify_recovery(false);
+}
+
+#[test]
+fn root_gitignore_negation_preserves_unrelated_directory_inference() {
+    let (home, workspace) = workspace_home();
+    std::fs::write(
+        workspace.join(".gitignore"),
+        "/generated/\n!generated/keep/\n/target\n",
+    )
+    .expect("gitignore must be written");
+
+    let driver = product::open(&open_spec(home.path(), &workspace)).expect("open must succeed");
+    let scope = driver
+        .state()
+        .default_scope
+        .and_then(|id| driver.state().scopes.get(&id))
+        .expect("default scope must exist");
+
+    let names = scope
+        .reserved()
+        .iter()
+        .filter_map(|path| path.path().last())
+        .filter_map(|component| match component {
+            crate::durable::workspace::PathComponent::Unix(value) => {
+                std::str::from_utf8(value.as_slice()).ok()
+            }
+            crate::durable::workspace::PathComponent::Windows(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert!(names.contains(&"target"), "{names:?}");
+    assert!(!names.contains(&"generated"), "{names:?}");
+}
+
+fn assert_verify_recovery(open_verify: bool) {
+    let (home, workspace) = workspace_home();
+    let mut driver = product::open(&open_spec(home.path(), &workspace)).expect("open must succeed");
+    let path = driver.path().to_path_buf();
+    let session = journal::parse_path(&path).expect("journal path must parse");
+    driver
+        .prepare_turn_work(Some("change the source"), &[])
+        .expect("Work must prepare");
+    driver
+        .start_input("change the source", &[])
+        .expect("Execute must open");
+    let attempt = driver
+        .start_provider(br#"{"model":"test-model"}"#)
+        .expect("provider must start");
+    driver
+        .finish_provider(attempt, "done", "", usage())
+        .expect("provider must finish");
+    std::fs::write(workspace.join("src.txt"), b"changed").expect("source must change");
+    driver.enter_verify().expect("candidate must capture");
+    if open_verify {
+        driver
+            .start_verification()
+            .expect("Verify operation must open");
     }
-    let mut log = crate::session::SessionLog::open(path).expect("v1 log must open");
-    log.append_user(user).expect("v1 user must append");
-    log.append_event(&crate::tools::Event::Assistant {
-        text: assistant.to_string(),
-    })
-    .expect("v1 assistant must append");
-}
-
-#[test]
-fn import_replays_v1_history_and_is_idempotent() {
-    let (home, workspace) = workspace_home();
-    let v1 = home.path().join("sessions/legacy-one.jsonl");
-    write_v1(&v1, "hello from v1", "imported answer");
-    let before = std::fs::read(&v1).expect("v1 bytes before import");
-
-    let driver = product::import(home.path(), &v1, &workspace).expect("import must succeed");
-    let replay = driver.replay();
-    assert_eq!(replay.history.len(), 2);
-    assert_eq!(replay.history[0].role, Role::User);
-    assert_eq!(replay.history[0].content, "hello from v1");
-    assert_eq!(replay.history[1].role, Role::Assistant);
-    assert_eq!(replay.history[1].content, "imported answer");
-    let first = driver.path().to_path_buf();
     drop(driver);
 
-    let again = product::import(home.path(), &v1, &workspace).expect("second import must resume");
-    assert_eq!(again.path(), first.as_path(), "second import must reuse v2");
-    drop(again);
-
-    let after = std::fs::read(&v1).expect("v1 bytes after import");
-    assert_eq!(before, after, "import must not append to v1");
-}
-
-#[test]
-fn import_converts_a_present_plan() {
-    let (home, workspace) = workspace_home();
-    let v1 = home.path().join("sessions/legacy-plan.jsonl");
-    write_v1(&v1, "continue the plan", "ok");
-    crate::plan::write(&workspace, "# Plan\n\n1. import\n").expect("plan must write");
-
-    let driver =
-        product::import(home.path(), &v1, &workspace).expect("import with plan must succeed");
-    assert!(
-        driver.state().plans.len() == 1,
-        "imported plan must be one revision"
-    );
-    drop(driver);
-}
-
-#[test]
-fn import_records_unmatched_legacy_tools() {
-    let (home, workspace) = workspace_home();
-    let v1 = home.path().join("sessions/legacy-open-tool.jsonl");
-    if let Some(parent) = v1.parent() {
-        std::fs::create_dir_all(parent).expect("v1 parent must exist");
-    }
-    let mut log = crate::session::SessionLog::open(&v1).expect("v1 log must open");
-    log.append_user("read it").expect("v1 user must append");
-    log.append_event(&crate::tools::Event::ToolCall {
-        id: "orphan".to_string(),
-        name: "read_file".to_string(),
-        arguments: r#"{"path":"note.txt"}"#.to_string(),
-    })
-    .expect("open tool call must append");
-    let driver = product::import(home.path(), &v1, &workspace).expect("import must succeed");
-    let log = std::fs::read_to_string(driver.path()).expect("v2 journal must exist");
-    assert!(
-        log.contains("legacy_tool_uncertain"),
-        "unmatched v1 tool must be uncertain: {log}"
-    );
-    drop(driver);
-}
-
-#[test]
-fn import_blocks_a_malformed_plan() {
-    let (home, workspace) = workspace_home();
-    let v1 = home.path().join("sessions/legacy-bad-plan.jsonl");
-    write_v1(&v1, "hello", "ok");
-    std::fs::create_dir_all(workspace.join(".mage/plan.md")).expect("plan path is a directory");
-    let error = product::import(home.path(), &v1, &workspace);
-    assert!(error.is_err(), "malformed plan must block import");
+    let resumed = product::resume(home.path(), session, &workspace).expect("resume must recover");
+    let work = resumed
+        .state()
+        .works
+        .values()
+        .find(|work| !work.status().terminal())
+        .expect("Work must remain active");
+    assert_eq!(work.status(), &WorkStatus::Active(WorkStage::Execute));
+    assert!(work.candidate().is_none());
+    assert!(resumed.state().operation.is_none());
 }

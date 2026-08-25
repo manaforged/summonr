@@ -116,7 +116,6 @@ pub struct Info {
     pub plan: bool,
     pub strict: bool,
     pub workspace: String,
-    pub task: Option<crate::TaskState>,
 }
 
 #[must_use]

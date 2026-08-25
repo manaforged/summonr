@@ -9,21 +9,9 @@ impl<P: Provider> Loop<P> {
     /// Registry tools plus the bus tools when this session is on the bus.
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {
         let mut definitions = self.tools.definitions();
-        if self.task_enabled {
-            for definition in &mut definitions {
-                if crate::task::guards(&definition.function.name) {
-                    definition.function.description = format!(
-                        "Requires an active task_state checklist. {}",
-                        definition.function.description
-                    );
-                }
-            }
-            definitions.push(crate::task::definition());
-        }
         if self.bus.is_some() {
             definitions.extend(crate::bus::definitions());
         }
-        definitions.push(nested::definition());
         definitions
     }
 

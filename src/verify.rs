@@ -13,6 +13,7 @@ use std::path::Path;
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
+use crate::tools::ToolOutput;
 
 /// Verdict of one verify run.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -56,6 +57,83 @@ pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
         )));
     }
     Ok(Some(commands))
+}
+
+/// Convert the command executor result into a completion-check verdict.
+#[must_use]
+pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Error>) -> Outcome {
+    match result {
+        Ok(output) => Outcome {
+            command: command.to_string(),
+            passed: output.success,
+            output: output.text.clone(),
+        },
+        Err(error) => Outcome {
+            command: command.to_string(),
+            passed: false,
+            output: error.to_string(),
+        },
+    }
+}
+
+/// Append controller-owned mutation and verification facts to provider prose.
+#[must_use]
+pub(crate) fn receipt(model: &str, changes: &[String], checks: &[Outcome]) -> String {
+    let failed = checks.iter().find(|check| !check.passed);
+    let mut text = String::new();
+    if failed.is_some() {
+        text.push_str("Verification failed.\n\n");
+    }
+    text.push_str(model.trim());
+    text.push_str("\n\n");
+    text.push_str(&summary(changes, checks));
+    text
+}
+
+/// Format the harness-owned part of a turn without repeating model prose.
+#[must_use]
+pub(crate) fn summary(changes: &[String], checks: &[Outcome]) -> String {
+    let failed = checks.iter().find(|check| !check.passed);
+    let mut text = String::from("Turn receipt\n- Changed: ");
+    if changes.is_empty() {
+        text.push_str("none");
+    } else {
+        text.push_str(
+            &changes
+                .iter()
+                .map(|change| code(change))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
+    if checks.is_empty() {
+        text.push_str("\n- Verification: not configured");
+    } else {
+        for check in checks {
+            text.push_str("\n- Verification: ");
+            text.push_str(&code(&check.command));
+            text.push(' ');
+            text.push_str(if check.passed { "passed" } else { "failed" });
+        }
+    }
+    if let Some(check) = failed
+        && !check.output.trim().is_empty()
+    {
+        text.push_str("\n\nCheck output\n");
+        for line in check.output.trim().lines() {
+            text.push_str("    ");
+            text.push_str(line);
+            text.push('\n');
+        }
+        while text.ends_with('\n') {
+            text.pop();
+        }
+    }
+    text
+}
+
+fn code(text: &str) -> String {
+    format!("`{}`", text.replace('`', "\\`"))
 }
 
 #[cfg(test)]

@@ -88,25 +88,6 @@ fn validate_fact(state: &SessionState, commit: &Commit, fact: &FactData) -> Resu
             }
             scope.validate()?;
         }
-        FactData::LegacyImported { observation, .. } => {
-            if !same_observation(commit, *observation) {
-                return Err(unknown("legacy import observation"));
-            }
-        }
-        FactData::LegacySourceAccepted { .. } => {
-            if state.legacy.is_none() || commit.command.is_none() {
-                return Err(ReduceError::State(
-                    "legacy source acceptance requires import provenance and a command",
-                ));
-            }
-        }
-        FactData::LegacyToolUncertain {
-            result, context, ..
-        } => {
-            if state.tool_results.contains(result) || !known_entry(state, commit, *context) {
-                return Err(ReduceError::State("invalid legacy tool uncertainty"));
-            }
-        }
         FactData::BudgetChanged { .. } => {
             if commit.command.is_none() {
                 return Err(ReduceError::State(
@@ -287,6 +268,7 @@ fn validate_fact(state: &SessionState, commit: &Commit, fact: &FactData) -> Resu
             result,
             outcome,
         } => provider_finish(state, commit, *attempt, *result, outcome)?,
+        FactData::CompletionCheckRecorded { .. } => {}
         FactData::ToolCallPlanned { call } => tool_plan(state, commit, call)?,
         FactData::ToolStarted { intent } => tool_start(state, intent)?,
         FactData::ToolFinished { result } => tool_finish(state, commit, result)?,
@@ -532,11 +514,11 @@ fn same_epoch(commit: &Commit, id: ContextEpochId) -> bool {
 
 fn known_source(state: &SessionState, commit: &Commit, source: &ContextSource) -> bool {
     match source {
-        ContextSource::Input(id) => {
+        ContextSource::Input(id) | ContextSource::WorkPolicy(id) => {
             state.inputs.contains_key(id)
                 || commit.facts.iter().any(|fact| matches!(&fact.data, FactData::InputAccepted { input, .. } if input == id))
         }
-        ContextSource::Provider(id) | ContextSource::Summary(id) => {
+        ContextSource::Provider(id) | ContextSource::Receipt(id) | ContextSource::Summary(id) => {
             state.providers.values().any(|provider| match provider {
                 ProviderState::Started(intent) | ProviderState::Finished { intent, .. } => {
                     intent.result == *id

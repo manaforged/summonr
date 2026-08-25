@@ -8,21 +8,15 @@ use crate::durable::id::ScopedId;
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Entity {
     ContextEntry,
-    Directive,
-    EffectObservation,
     Epoch,
     Fork,
     Input,
-    InputDisposition,
-    InputRoute,
-    Job,
+    InputApplication,
     Materialization,
-    Meter,
     Observation,
     Operation,
     Plan,
     Provider,
-    Retry,
     ToolAttempt,
     ToolCall,
     ToolResult,
@@ -34,21 +28,15 @@ impl Entity {
     fn label(self) -> &'static str {
         match self {
             Self::ContextEntry => "context entry",
-            Self::Directive => "directive mutation",
-            Self::EffectObservation => "effect observation target",
             Self::Epoch => "context epoch",
             Self::Fork => "fork mutation",
             Self::Input => "accepted input",
-            Self::InputDisposition => "input disposition",
-            Self::InputRoute => "input route mutation",
-            Self::Job => "detached job mutation",
+            Self::InputApplication => "input application",
             Self::Materialization => "Plan materialization mutation",
-            Self::Meter => "meter settlement",
             Self::Observation => "workspace observation",
             Self::Operation => "operation mutation",
             Self::Plan => "Plan revision",
             Self::Provider => "provider mutation",
-            Self::Retry => "retry mutation",
             Self::ToolAttempt => "tool attempt mutation",
             Self::ToolCall => "tool call",
             Self::ToolResult => "tool result",
@@ -71,18 +59,13 @@ pub(super) fn validate(commit: &Commit) -> Result<()> {
                 record(&mut seen, Entity::Materialization, *attempt)?
             }
             FactData::ForkPlanned { intent, .. }
-            | FactData::ForkCancelRequested { intent }
             | FactData::ForkFinished { intent, .. }
             | FactData::ForkSnapshotSealed { intent, .. } => {
                 record(&mut seen, Entity::Fork, *intent)?
             }
             FactData::InputAccepted { input, .. } => record(&mut seen, Entity::Input, *input)?,
-            FactData::InputRouted { input, .. } => record(&mut seen, Entity::InputRoute, *input)?,
-            FactData::InputApplied { input, .. } | FactData::InputCancelled { input, .. } => {
-                record(&mut seen, Entity::InputDisposition, *input)?
-            }
-            FactData::DirectiveChanged { directive } => {
-                record(&mut seen, Entity::Directive, directive.id)?
+            FactData::InputApplied { input, .. } => {
+                record(&mut seen, Entity::InputApplication, *input)?
             }
             FactData::WorkSet { work } => record(&mut seen, Entity::Work, work.id)?,
             FactData::WorkspaceObserved { observation } => {
@@ -115,20 +98,12 @@ pub(super) fn validate(commit: &Commit) -> Result<()> {
                     record(&mut seen, Entity::ToolAttempt, attempt)?;
                 }
             }
-            FactData::DetachedJobOpened { job, .. } | FactData::DetachedJobClosed { job, .. } => {
-                record(&mut seen, Entity::Job, *job)?
-            }
-            FactData::EffectObserved { observation, .. } => {
-                record(&mut seen, Entity::EffectObservation, observation.target)?;
-            }
-            FactData::RetryScheduled { retry } => record(&mut seen, Entity::Retry, retry.id)?,
-            FactData::RetryFinished { retry, .. } => record(&mut seen, Entity::Retry, *retry)?,
             FactData::ContextEpochOpened { epoch } => record(&mut seen, Entity::Epoch, epoch.id)?,
             FactData::ContextEntryAdded { entry } => {
                 record(&mut seen, Entity::ContextEntry, entry.id)?
             }
-            FactData::MeterSettled { meter, .. } => record(&mut seen, Entity::Meter, *meter)?,
             FactData::BudgetChanged { .. }
+            | FactData::MeterSettled { .. }
             | FactData::ForkedFrom { .. }
             | FactData::CommandRejected { .. }
             | FactData::ConversationCleared { .. } => {}

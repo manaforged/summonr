@@ -20,8 +20,6 @@ pub(crate) struct Open {
     pub workspace: PathBuf,
     pub model: String,
     pub system: String,
-    pub endpoint: String,
-    pub adapter: String,
 }
 
 /// Open a new format-2 session journal and bind the workspace root.
@@ -177,18 +175,8 @@ fn new_session() -> SessionId {
 
 fn request_head(spec: &Open) -> Result<RequestHead, DriverError> {
     let mut head = RequestHead {
-        adapter: Text::new(spec.adapter.as_str())?,
-        request_format: 1,
-        endpoint: Text::new(spec.endpoint.as_str())?,
         model: Text::new(spec.model.as_str())?,
-        resource_version: None,
-        body_overlay: Text::new("{}")?,
         system: Text::new(spec.system.as_str())?,
-        tool_schemas_digest: Digest::hash(b"mage:tool-schema:v1", b""),
-        output_settings: Text::new("{}")?,
-        context_settings: Text::new("{}")?,
-        streaming: true,
-        serializer: Text::new("serde-json-1")?,
         digest: Digest::default(),
     };
     head.digest = head.calculated_digest()?;

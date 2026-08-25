@@ -8,15 +8,6 @@ impl Worker {
             if let Some(keep_running) = self.command(line).await {
                 return keep_running;
             }
-            if let Some(shell) = line.strip_prefix('!') {
-                let output = self
-                    .loop_
-                    .shell(shell)
-                    .await
-                    .unwrap_or_else(|error| format!("summon: {error}"));
-                self.system(&output);
-                return true;
-            }
         }
         self.turn(input).await
     }

@@ -5,8 +5,8 @@ use crate::durable::context::{
     OperationClose, OperationOutcome, UserPayload,
 };
 use crate::durable::effect::{
-    Exposure, MeterKind, MeterSettlement, ProviderIntent, ProviderMessage, ProviderOutcome,
-    ProviderPurpose, StopReason, Usage,
+    Exposure, MeterSettlement, ProviderIntent, ProviderMessage, ProviderOutcome, ProviderPurpose,
+    Usage,
 };
 use crate::durable::fact::{
     CommandReceipt, CommandStatus, CompletionCheck, Fact, FactData, MaterializationOutcome,
@@ -19,8 +19,8 @@ use crate::durable::id::{
 use crate::durable::journal::JournalWriter;
 use crate::durable::work::{
     AcceptanceCheck, Candidate, EvidenceRef, ItemDisposition, PlanRevision, PlanSource, PlanStep,
-    RequiredObservation, ReviewerHead, VerificationPolicy, WorkItem, WorkPolicy, WorkProjection,
-    WorkRevision, WorkStage, WorkState, WorkStatus, plan_path,
+    RequiredObservation, VerificationPolicy, WorkItem, WorkPolicy, WorkProjection, WorkRevision,
+    WorkStage, WorkState, WorkStatus, plan_path,
 };
 use crate::durable::workspace::{
     ChangeManifest, PathComponent, PathKey, PathPlatform, WorkspaceObservation,
@@ -41,24 +41,13 @@ pub(super) fn start_plan_provider(writer: &mut JournalWriter) {
                         operation: fixture::id(802),
                         epoch: fixture::id(800),
                         purpose: ProviderPurpose::AgentRound,
-                        work: Some(fixture::id(500)),
-                        plan: None,
-                        stage: Some(WorkStage::Plan),
-                        candidate: None,
-                        adapter: fixture::text("openai-compatible"),
-                        endpoint: fixture::text("https://example.test/v1"),
-                        model: fixture::text("test-model"),
-                        resource_version: None,
                         through: Some(fixture::id(803)),
                         request_bytes: u32::try_from(request.len())
                             .expect("fixture request length must fit"),
                         request_digest: Digest::hash(b"mage:provider-request:v1", request),
-                        request_format: 1,
-                        deadline_unix_millis: 1_800_000_000_000,
                         exposure: Exposure {
                             max_input_tokens: 2_000,
                             max_output_tokens: 2_000,
-                            max_live_millis: 30_000,
                         },
                     },
                 },
@@ -86,7 +75,6 @@ pub(super) fn plan_provider_terminal() -> Vec<Fact> {
                         reasoning: fixture::text("The steps cover the objective."),
                         tool_calls: Items::default(),
                     },
-                    stop_reason: StopReason::Complete,
                     reported_usage: usage(),
                 },
             },
@@ -94,9 +82,7 @@ pub(super) fn plan_provider_terminal() -> Vec<Fact> {
         Fact {
             id: fixture::fact_id(831),
             data: FactData::MeterSettled {
-                meter: fixture::id(823),
                 owner: MeterOwner::Provider(fixture::id(819)),
-                kind: MeterKind::Provider,
                 settlement: MeterSettlement::Known(usage()),
             },
         },
@@ -109,22 +95,12 @@ pub(super) fn plan_provider_terminal() -> Vec<Fact> {
 
 pub(super) fn plan_revision() -> PlanRevision {
     let mut plan = PlanRevision {
-        format: 1,
         id: fixture::id(501),
         work: fixture::id(500),
-        parent: None,
-        source: PlanSource::Imported {
-            source: fixture::digest("supplied-plan"),
-            converter: 1,
-        },
-        objective: fixture::text("Implement durable execution"),
-        constraints: Items::new(vec![fixture::text("Keep one state owner")])
-            .expect("fixture constraints must fit"),
+        source: PlanSource::External,
         steps: Items::new(vec![PlanStep {
             id: fixture::id(503),
             title: fixture::text("Implement"),
-            detail: fixture::text("Build and verify the first slice."),
-            dependencies: Items::default(),
             checks: Items::new(vec![fixture::id(504)]).expect("fixture checks must fit"),
         }])
         .expect("fixture steps must fit"),
@@ -136,9 +112,6 @@ pub(super) fn plan_revision() -> PlanRevision {
             ))),
         }])
         .expect("fixture checks must fit"),
-        risks: Items::default(),
-        assumptions: Items::default(),
-        non_goals: Items::default(),
         markdown: fixture::text("# Plan\n\n1. Implement.\n2. Verify.\n"),
         digest: Digest::default(),
     };
@@ -320,7 +293,6 @@ pub(super) fn execute_group(
                         text: fixture::text("Continue with Execute."),
                         images: Items::default(),
                     },
-                    reserved_projection_bytes: 128,
                 },
             },
         ],
@@ -352,14 +324,13 @@ pub(super) fn open_operation(
                             text: fixture::text("Continue."),
                             images: Items::default(),
                         },
-                        reserved_projection_bytes: 128,
                     },
                 },
                 Fact {
                     id: fixture::fact_id(entry + 2),
                     data: FactData::InputApplied {
                         input: input_id,
-                        operation: Some(operation_id),
+                        operation: operation_id,
                     },
                 },
                 Fact {
@@ -404,13 +375,7 @@ pub(super) fn verify_facts(
     capture: WorkspaceObservation,
     candidate: &Candidate,
 ) -> Vec<Fact> {
-    let mut head = fixture::head();
-    head.endpoint = policy.reviewer.endpoint.clone();
-    head.model = policy.reviewer.model.clone();
-    head.request_format = policy.reviewer.request_format;
-    head.digest = head
-        .calculated_digest()
-        .expect("Verify request head must encode");
+    let head = fixture::head();
     let epoch = ContextEpoch {
         id: fixture::id(620),
         head,
@@ -460,12 +425,7 @@ pub(super) fn verify_facts(
     ]
 }
 
-pub(super) fn start_review(
-    writer: &mut JournalWriter,
-    plan: &PlanRevision,
-    policy: &VerificationPolicy,
-    candidate: &Candidate,
-) {
+pub(super) fn start_review(writer: &mut JournalWriter) {
     let request = br#"{"model":"review-model","messages":[]}"#;
     writer
         .append(
@@ -480,24 +440,13 @@ pub(super) fn start_review(
                         operation: fixture::id(631),
                         epoch: fixture::id(620),
                         purpose: ProviderPurpose::AgentRound,
-                        work: Some(plan.work()),
-                        plan: Some(plan.id()),
-                        stage: Some(WorkStage::Verify),
-                        candidate: Some(candidate.id()),
-                        adapter: fixture::text("openai-compatible"),
-                        endpoint: policy.reviewer.endpoint.clone(),
-                        model: policy.reviewer.model.clone(),
-                        resource_version: None,
                         through: Some(fixture::id(632)),
                         request_bytes: u32::try_from(request.len())
                             .expect("fixture request length must fit"),
                         request_digest: Digest::hash(b"mage:provider-request:v1", request),
-                        request_format: policy.reviewer.request_format,
-                        deadline_unix_millis: 1_800_000_000_000,
                         exposure: Exposure {
                             max_input_tokens: 2_000,
                             max_output_tokens: 2_000,
-                            max_live_millis: 30_000,
                         },
                     },
                 },
@@ -595,7 +544,6 @@ pub(super) fn review_terminal() -> Vec<Fact> {
                         reasoning: fixture::text("The candidate matches the Plan."),
                         tool_calls: Items::default(),
                     },
-                    stop_reason: StopReason::Complete,
                     reported_usage: usage(),
                 },
             },
@@ -603,9 +551,7 @@ pub(super) fn review_terminal() -> Vec<Fact> {
         Fact {
             id: fixture::fact_id(43),
             data: FactData::MeterSettled {
-                meter: fixture::id(635),
                 owner: MeterOwner::Provider(fixture::id(633)),
-                kind: MeterKind::Provider,
                 settlement: MeterSettlement::Known(usage()),
             },
         },
@@ -659,16 +605,12 @@ pub(super) fn work_state(
         }])
         .expect("fixture items must fit"),
         active_item,
-        constraints: Items::new(vec![fixture::text("Keep one state owner")])
-            .expect("fixture constraints must fit"),
         acceptance_checks: Items::new(vec![fixture::id(504)]).expect("fixture checks must fit"),
         scope,
         base,
         candidate,
         verification,
         evidence,
-        predecessor: None,
-        projection: fixture::text("Work projection"),
         projection_owner,
     }
 }
@@ -676,16 +618,8 @@ pub(super) fn work_state(
 pub(super) fn policy() -> VerificationPolicy {
     VerificationPolicy {
         id: fixture::id(505),
-        scope: fixture::scope(),
+        scope: fixture::scope().id(),
         checks: Items::new(vec![fixture::id(504)]).expect("fixture checks must fit"),
-        artifacts: Items::default(),
-        coverage_rules: Items::default(),
-        reviewer: ReviewerHead {
-            endpoint: fixture::text("https://example.test/v1"),
-            model: fixture::text("review-model"),
-            request_format: 1,
-            token_limit: 2_000,
-        },
         repair_limit: 2,
     }
 }
@@ -760,9 +694,6 @@ pub(super) fn close(
         plan: Some(fixture::id(501)),
         candidate,
         verdict,
-        usage_digest: fixture::digest("work-usage"),
-        inputs: Items::default(),
-        diagnostic: None,
     }
 }
 

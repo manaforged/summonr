@@ -34,7 +34,7 @@ impl<P: Provider> Loop<P> {
                 injected = true;
             }
         }
-        let (mail, overflow) = self.take_bus_mail(5);
+        let (mail, overflow) = self.take_bus_mail(5)?;
         for mail in mail {
             let text = crate::bus::envelope(&mail.from, &mail.text);
             self.session
@@ -76,13 +76,15 @@ impl<P: Provider> Loop<P> {
         tools: &[crate::provider::ToolDefinition],
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<(
-        AssistantMessage,
-        String,
-        usize,
-        crate::durable::id::ProviderAttemptId,
-        u64,
-    )> {
+    ) -> Result<
+        Option<(
+            AssistantMessage,
+            String,
+            usize,
+            crate::durable::id::ProviderAttemptId,
+            u64,
+        )>,
+    > {
         let mut attempt = 0_u32;
         let mut overflowed = false;
         let mut wait = 2_u64;
@@ -90,20 +92,23 @@ impl<P: Provider> Loop<P> {
             let request = self.completion_request(messages, tools);
             let prefix_hash = request.prefix_hash();
             let request_chars = request_chars(messages, tools);
+            let durable = request.durable_bytes().map_err(|error| {
+                Error::Config(format!("cannot encode provider request: {error}"))
+            })?;
             let durable_attempt = self
                 .session
-                .start_provider(prefix_hash.as_bytes())
+                .start_provider(&durable, super::exposure(&request, &durable))
                 .map_err(super::session_err)?;
             let started = Instant::now();
             match self.provider.complete(&request).await {
                 Ok(message) => {
-                    return Ok((
+                    return Ok(Some((
                         message,
                         prefix_hash,
                         request_chars,
                         durable_attempt,
                         super::elapsed_millis(started),
-                    ));
+                    )));
                 }
                 Err(error) => {
                     self.session
@@ -114,6 +119,10 @@ impl<P: Provider> Loop<P> {
                             super::elapsed_millis(started),
                         )
                         .map_err(super::session_err)?;
+                    self.spent_tokens = self.session.replay().spent_tokens;
+                    if self.round_abort().is_some() {
+                        return Ok(None);
+                    }
                     let text = error.to_string();
                     let failure = error.provider_failure();
                     if !overflowed
@@ -236,9 +245,13 @@ impl<P: Provider> Loop<P> {
                 abort_reason = Some(reason);
                 break;
             }
-            let (assistant, prefix_hash, request_chars, durable_attempt, live_millis) = self
+            let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
                 .complete_retry(&mut messages, &tools, &mut events, &mut emit)
-                .await?;
+                .await?
+            else {
+                abort_reason = self.round_abort();
+                break;
+            };
             if assistant.usage.prompt_tokens > 0 {
                 self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
             }
@@ -458,55 +471,57 @@ impl<P: Provider> Loop<P> {
         self.session
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
-        let (text, verify, receipt) =
-            if self.session.operation_stage() == Some(crate::durable::work::WorkStage::Execute) {
-                let capture = self.session.enter_verify().map_err(super::session_err)?;
-                self.session
-                    .start_verification()
-                    .map_err(super::session_err)?;
-                let (mut checks, evidence) = self.run_verify(&mut events, &mut emit).await?;
-                let mut verdict = self
-                    .session
-                    .prepare_verdict(evidence, checks.iter().all(|check| check.passed))
-                    .map_err(super::session_err)?;
-                if let Some(output) = verdict.diagnostic.clone() {
-                    let outcome = Outcome {
-                        command: "workspace candidate unchanged".to_string(),
+        let (text, verify, receipt) = if self.session.operation_stage()
+            == Some(crate::durable::work::WorkStage::Execute)
+        {
+            let capture = self.session.enter_verify().map_err(super::session_err)?;
+            self.session
+                .start_verification()
+                .map_err(super::session_err)?;
+            let (mut checks, evidence) = self.run_verify(&mut events, &mut emit).await?;
+            let mut verdict = self
+                .session
+                .prepare_verdict(evidence, checks.iter().all(|check| check.passed))
+                .map_err(super::session_err)?;
+            if let Some(output) = verdict.diagnostic.clone() {
+                let outcome = Outcome {
+                    command: "workspace candidate unchanged".to_string(),
+                    passed: false,
+                    output,
+                };
+                self.push_event(
+                    &mut events,
+                    &mut emit,
+                    Event::Verify {
+                        command: outcome.command.clone(),
                         passed: false,
-                        output,
-                    };
-                    self.push_event(
-                        &mut events,
-                        &mut emit,
-                        Event::Verify {
-                            command: outcome.command.clone(),
-                            passed: false,
-                        },
-                    )?;
-                    checks.push(outcome);
-                    verdict.passed = false;
-                }
-                let decision = if verdict.passed {
-                    if let Some(objective) =
-                        self.session.goal_objective().map_err(super::session_err)?
-                    {
-                        crate::goal::decision(self, &objective, &message.content, &mut usage).await
-                    } else {
-                        crate::durable::driver::VerdictDecision::Automatic
-                    }
+                    },
+                )?;
+                checks.push(outcome);
+                verdict.passed = false;
+            }
+            let receipt = crate::verify::summary(&capture.paths, &checks);
+            let decision = if verdict.passed {
+                if let Some(objective) =
+                    self.session.goal_objective().map_err(super::session_err)?
+                {
+                    crate::goal::decision(self, &objective, &message.content, &receipt, &mut usage)
+                        .await
                 } else {
                     crate::durable::driver::VerdictDecision::Automatic
-                };
-                let text = crate::verify::receipt(&message.content, &capture.paths, &checks);
-                let receipt = crate::verify::summary(&capture.paths, &checks);
-                self.session
-                    .commit_verdict(verdict, decision, Some((&text, capture.provider)))
-                    .map_err(super::session_err)?;
-                (text, checks.last().cloned(), Some(receipt))
+                }
             } else {
-                self.session.close_operation().map_err(super::session_err)?;
-                (message.content, None, None)
+                crate::durable::driver::VerdictDecision::Automatic
             };
+            let text = crate::verify::receipt(&message.content, &capture.paths, &checks);
+            self.session
+                .commit_verdict(verdict, decision, Some((&text, capture.provider)))
+                .map_err(super::session_err)?;
+            (text, checks.last().cloned(), Some(receipt))
+        } else {
+            self.session.close_operation().map_err(super::session_err)?;
+            (message.content, None, None)
+        };
         self.commit(&messages);
         let progress = self.work_progress()?;
         self.push_event(&mut events, &mut emit, Event::Work { progress })?;
@@ -545,7 +560,7 @@ impl<P: Provider> Loop<P> {
         let mut results = Vec::new();
         for (planned, call) in planned.into_iter().zip(calls) {
             self.session
-                .start_tool(planned, &call.function.arguments, &call.function.name)
+                .start_tool(planned, &call.function.arguments)
                 .map_err(super::session_err)?;
             let started = Instant::now();
             let output = if crate::bus::is_bus_tool(&call.function.name) {
@@ -565,6 +580,7 @@ impl<P: Provider> Loop<P> {
             finished.push((
                 planned,
                 text.clone(),
+                success,
                 crate::durable::effect::Usage {
                     input_tokens: None,
                     output_tokens: None,
@@ -578,7 +594,7 @@ impl<P: Provider> Loop<P> {
             .finish_tools(
                 &finished
                     .iter()
-                    .map(|(id, text, usage)| (*id, text.as_str(), usage.clone()))
+                    .map(|(id, text, success, usage)| (*id, text.as_str(), *success, usage.clone()))
                     .collect::<Vec<_>>(),
             )
             .map_err(super::session_err)?;

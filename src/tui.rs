@@ -249,7 +249,7 @@ fn help_text() -> String {
      /settings open settings · /model pick a ready seat · /plan plan mode · /plan accept · /plan reject · /auto\n\
      /goal <objective> work toward it across turns (gates + judge)\n\
      /agents live bus sessions · /bus toggle auto-reply · /stats token chart\n\
-     @path attach text or an image · !command run a shell command\n\
+     @path attach text or an image\n\
      keys: enter send/steer · tab complete/queue · ctrl+j newline · shift+tab mode\n\
      pgup/pgdn or wheel scroll · ctrl+o settings · ctrl+g editor\n\
      settings: enter on model lists every ready seat\n\

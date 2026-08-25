@@ -1,35 +1,18 @@
 use super::{fixture, reducer};
 use crate::durable::context::{ContextEntry, ContextRole, ContextSource};
-use crate::durable::effect::{
-    MeterKind, MeterSettlement, ToolCancellation, ToolOutcome, ToolResult, Usage,
-};
+use crate::durable::effect::{MeterSettlement, ToolCancellation, ToolOutcome, ToolResult, Usage};
 use crate::durable::fact::{Fact, FactData, MeterOwner};
 use crate::durable::id::Digest;
 use crate::durable::journal::{JournalWriter, inspect};
-use crate::durable::workspace::WorkspaceEffect;
 
 #[test]
-fn prestart_tool_terminals_have_no_attempt_or_meter() {
-    let cases = [
-        (
-            "denied",
-            ToolOutcome::Denied {
-                diagnostic: fixture::text("policy denied the call"),
-            },
-        ),
-        (
-            "unavailable",
-            ToolOutcome::Unavailable {
-                diagnostic: fixture::text("recorded registration is unavailable"),
-            },
-        ),
-        (
-            "cancelled",
-            ToolOutcome::Cancelled {
-                state: ToolCancellation::Prestart,
-            },
-        ),
-    ];
+fn prestart_cancel_has_no_attempt_or_meter() {
+    let cases = [(
+        "cancelled",
+        ToolOutcome::Cancelled {
+            state: ToolCancellation::Prestart,
+        },
+    )];
     for (label, outcome) in cases {
         let directory = tempfile::tempdir().expect("temporary directory must exist");
         let path = directory.path().join(format!("{label}.jsonl"));
@@ -47,7 +30,6 @@ fn prestart_tool_terminals_have_no_attempt_or_meter() {
                                 call: fixture::id(300),
                                 attempt: None,
                                 outcome,
-                                workspace: WorkspaceEffect::None,
                             },
                         },
                     },
@@ -101,16 +83,13 @@ fn started_failure_and_stopped_cancel_settle_once() {
                                 call: fixture::id(300),
                                 attempt: Some(fixture::id(304)),
                                 outcome,
-                                workspace: WorkspaceEffect::None,
                             },
                         },
                     },
                     Fact {
                         id: fixture::fact_id(401),
                         data: FactData::MeterSettled {
-                            meter: fixture::id(305),
                             owner: MeterOwner::Tool(fixture::id(304)),
-                            kind: MeterKind::Tool,
                             settlement: MeterSettlement::Known(usage()),
                         },
                     },

@@ -5,17 +5,15 @@ use crate::durable::context::{
     OperationOutcome, UserPayload,
 };
 use crate::durable::effect::{
-    ApprovalSource, Exposure, MeterKind, MeterSettlement, PolicyDecision, ProviderIntent,
-    ProviderMessage, ProviderOutcome, ProviderPurpose, ProviderToolCall, ReconciliationContract,
-    ReplayPolicy, StopReason, ToolCall, ToolIntent, ToolOutcome, ToolResult, WorkspaceFootprint,
+    Exposure, MeterSettlement, ProviderIntent, ProviderMessage, ProviderOutcome, ProviderPurpose,
+    ProviderToolCall, ToolCall, ToolIntent, ToolOutcome, ToolResult,
 };
 use crate::durable::fact::{Fact, FactData, MeterOwner, OperationStageOutcome};
 use crate::durable::id::Digest;
 use crate::durable::journal::{JournalWriter, inspect};
 use crate::durable::work::{
-    Candidate, EvidenceRef, PlanRevision, VerificationPolicy, WorkProjection, WorkStage, WorkStatus,
+    EvidenceRef, PlanRevision, VerificationPolicy, WorkProjection, WorkStage, WorkStatus,
 };
-use crate::durable::workspace::WorkspaceEffect;
 
 #[test]
 fn failed_verify_check_returns_to_execute_as_one_durable_group() {
@@ -33,7 +31,7 @@ fn failed_verify_check_returns_to_execute_as_one_durable_group() {
     let candidate = work::candidate(&plan, &policy, &base, &capture);
     work::enter_verify(&mut writer, &plan, &policy, capture, &candidate);
     work::open_operation(&mut writer, 9, 630, 631, 632, WorkStage::Verify);
-    start_provider(&mut writer, &plan, &policy, &candidate);
+    start_provider(&mut writer);
     plan_check(&mut writer);
     start_check(&mut writer);
 
@@ -69,12 +67,7 @@ fn failed_verify_check_returns_to_execute_as_one_durable_group() {
     );
 }
 
-fn start_provider(
-    writer: &mut JournalWriter,
-    plan: &PlanRevision,
-    policy: &VerificationPolicy,
-    candidate: &Candidate,
-) {
+fn start_provider(writer: &mut JournalWriter) {
     let request = br#"{"model":"review-model","messages":[]}"#;
     writer
         .append(
@@ -89,24 +82,13 @@ fn start_provider(
                         operation: fixture::id(631),
                         epoch: fixture::id(620),
                         purpose: ProviderPurpose::AgentRound,
-                        work: Some(plan.work()),
-                        plan: Some(plan.id()),
-                        stage: Some(WorkStage::Verify),
-                        candidate: Some(candidate.id()),
-                        adapter: fixture::text("openai-compatible"),
-                        endpoint: policy.reviewer.endpoint.clone(),
-                        model: policy.reviewer.model.clone(),
-                        resource_version: None,
                         through: Some(fixture::id(632)),
                         request_bytes: u32::try_from(request.len())
                             .expect("fixture request length must fit"),
                         request_digest: Digest::hash(b"mage:provider-request:v1", request),
-                        request_format: policy.reviewer.request_format,
-                        deadline_unix_millis: 1_800_000_000_000,
                         exposure: Exposure {
                             max_input_tokens: 2_000,
                             max_output_tokens: 2_000,
-                            max_live_millis: 30_000,
                         },
                     },
                 },
@@ -116,7 +98,6 @@ fn start_provider(
 }
 
 fn plan_check(writer: &mut JournalWriter) {
-    let contract = ReconciliationContract::None;
     let mut assistant = work::context_entry(
         704,
         ContextSource::Provider(fixture::id(701)),
@@ -144,7 +125,6 @@ fn plan_check(writer: &mut JournalWriter) {
                                 }])
                                 .expect("fixture tool call must fit"),
                             },
-                            stop_reason: StopReason::ToolCalls,
                             reported_usage: work::usage(),
                         },
                     },
@@ -152,9 +132,7 @@ fn plan_check(writer: &mut JournalWriter) {
                 Fact {
                     id: fixture::fact_id(703),
                     data: FactData::MeterSettled {
-                        meter: fixture::id(702),
                         owner: MeterOwner::Provider(fixture::id(700)),
-                        kind: MeterKind::Provider,
                         settlement: MeterSettlement::Known(work::usage()),
                     },
                 },
@@ -172,11 +150,6 @@ fn plan_check(writer: &mut JournalWriter) {
                             provider_result: fixture::id(701),
                             provider_id: fixture::text("verify-check"),
                             position: 0,
-                            registration: fixture::id(713),
-                            schema_digest: fixture::digest("verify-command-schema"),
-                            effect_contract_digest: contract
-                                .digest()
-                                .expect("fixture contract must encode"),
                         },
                     },
                 },
@@ -196,16 +169,7 @@ fn start_check(writer: &mut JournalWriter) {
                     intent: ToolIntent {
                         attempt: fixture::id(714),
                         call: fixture::id(710),
-                        registration: fixture::id(713),
                         normalized_arguments: fixture::text(r#"{"command":"cargo nextest run"}"#),
-                        decision: PolicyDecision::Allowed,
-                        approval: ApprovalSource::Policy(fixture::digest("verify-policy")),
-                        replay: ReplayPolicy::Never,
-                        deadline_unix_millis: 1_800_000_000_000,
-                        reservation: fixture::id(715),
-                        footprint: WorkspaceFootprint::None,
-                        reconciliation: ReconciliationContract::None,
-                        process: None,
                     },
                 },
             }],
@@ -238,16 +202,13 @@ fn failed_group(plan: &PlanRevision, policy: &VerificationPolicy) -> Vec<Fact> {
                     outcome: ToolOutcome::Failed {
                         diagnostic: fixture::text("acceptance check failed"),
                     },
-                    workspace: WorkspaceEffect::None,
                 },
             },
         },
         Fact {
             id: fixture::fact_id(708),
             data: FactData::MeterSettled {
-                meter: fixture::id(715),
                 owner: MeterOwner::Tool(fixture::id(714)),
-                kind: MeterKind::Tool,
                 settlement: MeterSettlement::Known(work::usage()),
             },
         },
@@ -289,9 +250,6 @@ fn failed_group(plan: &PlanRevision, policy: &VerificationPolicy) -> Vec<Fact> {
                     plan: Some(plan.id()),
                     candidate: None,
                     verdict: Some(fixture::id(720)),
-                    usage_digest: fixture::digest("failed-verify-usage"),
-                    inputs: Items::default(),
-                    diagnostic: None,
                 },
                 stage_outcome: OperationStageOutcome::Returned,
             },
@@ -310,7 +268,6 @@ fn failed_group(plan: &PlanRevision, policy: &VerificationPolicy) -> Vec<Fact> {
                     text: fixture::text("Repair the failed check."),
                     images: Items::default(),
                 },
-                reserved_projection_bytes: 128,
             },
         },
     ]

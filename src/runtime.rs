@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use crate::durable::driver::SessionDriver;
-use crate::durable::effect::Usage as Meter;
+use crate::durable::effect::{Exposure, Usage as Meter};
 use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::provider::{
@@ -108,6 +108,13 @@ pub(super) fn meter(usage: &Usage) -> Meter {
         output_tokens: Some(u64::from(usage.completion_tokens)),
         cached_input_tokens: Some(u64::from(usage.cached_tokens)),
         live_millis: None,
+    }
+}
+
+pub(super) fn exposure(request: &CompletionRequest, bytes: &[u8]) -> Exposure {
+    Exposure {
+        max_input_tokens: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        max_output_tokens: u64::from(request.max_output_tokens),
     }
 }
 

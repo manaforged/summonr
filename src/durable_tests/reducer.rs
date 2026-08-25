@@ -5,15 +5,12 @@ use crate::durable::context::{
     OperationClose, OperationOutcome, UserPayload,
 };
 use crate::durable::effect::{
-    ApprovalSource, Exposure, MeterKind, MeterSettlement, PolicyDecision, ProviderIntent,
-    ProviderMessage, ProviderOutcome, ProviderPurpose, ProviderToolCall, ReconciliationContract,
-    ReplayPolicy, StopReason, ToolCall, ToolIntent, ToolOutcome, ToolResult, Usage,
-    WorkspaceFootprint,
+    Exposure, MeterSettlement, ProviderIntent, ProviderMessage, ProviderOutcome, ProviderPurpose,
+    ProviderToolCall, ToolCall, ToolIntent, ToolOutcome, ToolResult, Usage,
 };
 use crate::durable::fact::{Fact, FactData, MeterOwner, OperationStageOutcome};
 use crate::durable::id::Digest;
 use crate::durable::journal::{JournalWriter, inspect};
-use crate::durable::workspace::WorkspaceEffect;
 
 #[test]
 fn provider_and_started_tool_lifecycle_replays_at_every_prefix() {
@@ -57,36 +54,6 @@ fn provider_and_started_tool_lifecycle_replays_at_every_prefix() {
         *writer.state()
     );
     assert!(writer.state().operation.is_none());
-}
-
-#[test]
-fn provider_intent_must_match_the_frozen_epoch_head() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut writer = fixture::writer(&path);
-    start_operation(&mut writer);
-
-    let state = writer.state().clone();
-    let bytes = fs::read(&path).expect("journal bytes must be readable");
-    let mut intent = provider_intent();
-    intent.model = fixture::text("substituted-model");
-    writer
-        .append(
-            fixture::id(3),
-            None,
-            vec![Fact {
-                id: fixture::fact_id(7),
-                data: FactData::ProviderStarted { intent },
-            }],
-        )
-        .expect_err("provider model drift must be rejected before append");
-    assert_eq!(writer.state(), &state);
-    assert_eq!(
-        fs::read(&path).expect("journal bytes must be readable"),
-        bytes
-    );
-
-    start_provider(&mut writer);
 }
 
 #[test]
@@ -228,15 +195,11 @@ fn operation_facts_for(input: u128, operation: u128, entry: u128, fact: u128) ->
                     text: Text::new("hello").expect("fixture input must fit"),
                     images: Items::default(),
                 },
-                reserved_projection_bytes: 128,
             },
         },
         Fact {
             id: fixture::fact_id(fact + 1),
-            data: FactData::InputApplied {
-                input,
-                operation: Some(operation),
-            },
+            data: FactData::InputApplied { input, operation },
         },
         Fact {
             id: fixture::fact_id(fact + 2),
@@ -278,23 +241,12 @@ fn provider_intent() -> ProviderIntent {
         operation: fixture::id(101),
         epoch: fixture::epoch_id(),
         purpose: ProviderPurpose::AgentRound,
-        work: None,
-        plan: None,
-        stage: None,
-        candidate: None,
-        adapter: fixture::text("openai-compatible"),
-        endpoint: fixture::text("https://example.test/v1"),
-        model: fixture::text("test-model"),
-        resource_version: None,
         through: Some(fixture::id(102)),
         request_bytes: u32::try_from(request.len()).expect("fixture request length must fit"),
         request_digest,
-        request_format: 1,
-        deadline_unix_millis: 1_800_000_000_000,
         exposure: Exposure {
             max_input_tokens: 1_000,
             max_output_tokens: 1_000,
-            max_live_millis: 30_000,
         },
     }
 }
@@ -322,7 +274,6 @@ pub(super) fn planned_call(
         name: fixture::text("read_file"),
         arguments: fixture::text(r#"{"path":"README.md"}"#),
     };
-    let contract = ReconciliationContract::None;
     let call = ToolCall {
         id: fixture::id(id),
         batch: fixture::id(batch),
@@ -330,11 +281,6 @@ pub(super) fn planned_call(
         provider_result: fixture::id(201),
         provider_id: fixture::text(provider_id),
         position,
-        registration: fixture::id(303),
-        schema_digest: fixture::digest("read-file-schema"),
-        effect_contract_digest: contract
-            .digest()
-            .expect("fixture reconciliation contract must encode"),
     };
     (provider_call, call)
 }
@@ -352,7 +298,6 @@ pub(super) fn provider_facts(payloads: Vec<ProviderToolCall>, calls: Vec<ToolCal
                         reasoning: fixture::text("I need the file."),
                         tool_calls: Items::new(payloads).expect("fixture tool call must fit"),
                     },
-                    stop_reason: StopReason::ToolCalls,
                     reported_usage: usage(),
                 },
             },
@@ -360,9 +305,7 @@ pub(super) fn provider_facts(payloads: Vec<ProviderToolCall>, calls: Vec<ToolCal
         Fact {
             id: fixture::fact_id(9),
             data: FactData::MeterSettled {
-                meter: fixture::id(202),
                 owner: MeterOwner::Provider(fixture::id(200)),
-                kind: MeterKind::Provider,
                 settlement: MeterSettlement::Known(usage()),
             },
         },
@@ -396,16 +339,7 @@ pub(super) fn start_tool(writer: &mut JournalWriter) {
                     intent: ToolIntent {
                         attempt: fixture::id(304),
                         call: fixture::id(300),
-                        registration: fixture::id(303),
                         normalized_arguments: fixture::text(r#"{"path":"README.md"}"#),
-                        decision: PolicyDecision::Allowed,
-                        approval: ApprovalSource::Policy(fixture::digest("policy")),
-                        replay: ReplayPolicy::ReplaySafe,
-                        deadline_unix_millis: 1_800_000_000_000,
-                        reservation: fixture::id(305),
-                        footprint: WorkspaceFootprint::None,
-                        reconciliation: ReconciliationContract::None,
-                        process: None,
                     },
                 },
             }],
@@ -428,18 +362,14 @@ fn finish_tool(writer: &mut JournalWriter) {
                             attempt: Some(fixture::id(304)),
                             outcome: ToolOutcome::Completed {
                                 output: fixture::text("# Mage"),
-                                job: None,
                             },
-                            workspace: WorkspaceEffect::None,
                         },
                     },
                 },
                 Fact {
                     id: fixture::fact_id(14),
                     data: FactData::MeterSettled {
-                        meter: fixture::id(305),
                         owner: MeterOwner::Tool(fixture::id(304)),
-                        kind: MeterKind::Tool,
                         settlement: MeterSettlement::Known(usage()),
                     },
                 },
@@ -476,9 +406,6 @@ fn close_operation(writer: &mut JournalWriter) {
                         plan: None,
                         candidate: None,
                         verdict: None,
-                        usage_digest: fixture::digest("usage"),
-                        inputs: Items::default(),
-                        diagnostic: None,
                     },
                     stage_outcome: OperationStageOutcome::Stayed,
                 },
@@ -513,4 +440,3 @@ pub(super) fn usage() -> Usage {
         live_millis: Some(100),
     }
 }
-use std::fs;

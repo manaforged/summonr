@@ -61,9 +61,7 @@ impl<P: Provider> Loop<P> {
                 .as_nanos()
                 ^ u128::from(std::process::id()),
         );
-        let intent = parent
-            .fork(child, crate::durable::fact::ForkAdoption::AdoptChild)
-            .map_err(super::session_err)?;
+        let intent = parent.fork(child).map_err(super::session_err)?;
         let child_path = crate::durable::journal::session_path(&crate::prompt::mage_home()?, child);
         parent
             .publish_fork(intent, &child_path)
@@ -382,10 +380,7 @@ impl<P: Provider> Loop<P> {
                 .as_nanos()
                 ^ u128::from(std::process::id()),
         );
-        let intent = self
-            .session
-            .fork(child, crate::durable::fact::ForkAdoption::AdoptChild)
-            .map_err(super::session_err)?;
+        let intent = self.session.fork(child).map_err(super::session_err)?;
         let home = self
             .session
             .path()
@@ -421,25 +416,6 @@ impl<P: Provider> Loop<P> {
         &self.workspace
     }
 
-    /// Run a shell command through the same policy as the `run_command` tool.
-    pub async fn shell(&mut self, command: &str) -> Result<String> {
-        self.tools
-            .execute(&ToolCall {
-                id: "repl".to_string(),
-                kind: ToolKind::Function,
-                function: ToolFunction {
-                    name: "run_command".to_string(),
-                    arguments: serde_json::json!({
-                        "command": command,
-                        "timeout_secs": 600,
-                        "fresh": true
-                    })
-                    .to_string(),
-                },
-            })
-            .await
-    }
-
     /// Run the Goal judge as a durable, metered provider effect.
     pub(crate) async fn judge(&mut self, system: &str, user: &str) -> Result<(String, Usage)> {
         let request = CompletionRequest {
@@ -452,9 +428,12 @@ impl<P: Provider> Loop<P> {
             max_output_tokens: JUDGE_OUTPUT_TOKENS,
             emit_deltas: false,
         };
+        let durable = request
+            .durable_bytes()
+            .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
         let attempt = self
             .session
-            .start_judge(request.prefix_hash().as_bytes())
+            .start_judge(&durable, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
         match self.provider.complete(&request).await {
@@ -617,8 +596,6 @@ fn open_driver(
         workspace: workspace.to_path_buf(),
         model: model.to_string(),
         system: system.to_string(),
-        endpoint: "https://example.test/v1".to_string(),
-        adapter: "openai-compatible".to_string(),
     })
     .map_err(super::session_err)
 }

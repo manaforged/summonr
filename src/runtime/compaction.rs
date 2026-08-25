@@ -65,9 +65,12 @@ impl<P: Provider> Loop<P> {
             emit_deltas: false,
         };
         let prefix_hash = request.prefix_hash();
+        let durable = request
+            .durable_bytes()
+            .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
         let attempt = self
             .session
-            .start_summary(prefix_hash.as_bytes())
+            .start_summary(&durable, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
         match self.provider.complete(&request).await {
@@ -95,6 +98,7 @@ impl<P: Provider> Loop<P> {
                         super::elapsed_millis(started),
                     )
                     .map_err(super::session_err)?;
+                self.spent_tokens = self.session.replay().spent_tokens;
                 Ok(None)
             }
         }

@@ -45,13 +45,13 @@ pub(crate) fn replay(state: &SessionState) -> Replay {
         spent_tokens: state
             .meters
             .settled
-            .values()
+            .iter()
             .map(settled_tokens)
             .fold(0, u64::saturating_add),
         elapsed_millis: state
             .meters
             .settled
-            .values()
+            .iter()
             .map(settled_millis)
             .fold(0, u64::saturating_add),
     }
@@ -59,22 +59,18 @@ pub(crate) fn replay(state: &SessionState) -> Replay {
 
 fn settled_millis(settlement: &MeterSettlement) -> u64 {
     match settlement {
-        MeterSettlement::Known(usage) => usage.live_millis.unwrap_or_default(),
-        MeterSettlement::Conservative(exposure) | MeterSettlement::Unknown(exposure) => {
-            exposure.max_live_millis
+        MeterSettlement::Known(usage) | MeterSettlement::Estimated(usage) => {
+            usage.live_millis.unwrap_or_default()
         }
     }
 }
 
 fn settled_tokens(settlement: &MeterSettlement) -> u64 {
     match settlement {
-        MeterSettlement::Known(usage) => usage
+        MeterSettlement::Known(usage) | MeterSettlement::Estimated(usage) => usage
             .input_tokens
             .unwrap_or_default()
             .saturating_add(usage.output_tokens.unwrap_or_default()),
-        MeterSettlement::Conservative(exposure) | MeterSettlement::Unknown(exposure) => exposure
-            .max_input_tokens
-            .saturating_add(exposure.max_output_tokens),
     }
 }
 

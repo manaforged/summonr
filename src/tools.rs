@@ -176,6 +176,7 @@ impl ToolRegistry {
         self.policy.set_read_only(on);
     }
 
+    #[cfg(test)]
     pub(crate) async fn execute(&self, call: &ToolCall) -> Result<String> {
         self.execute_outcome(call).await.map(|output| output.text)
     }

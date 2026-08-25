@@ -18,33 +18,13 @@ impl SessionDriver {
             WorkPolicy::Goal { .. } => crate::WorkKind::Goal,
         };
         let (phase, reason) = match work.status() {
-            WorkStatus::Active(WorkStage::Plan)
-            | WorkStatus::Paused {
-                stage: WorkStage::Plan,
-                ..
-            } => (crate::WorkPhase::Plan, None),
-            WorkStatus::Active(WorkStage::Execute)
-            | WorkStatus::Paused {
-                stage: WorkStage::Execute,
-                ..
-            } => (crate::WorkPhase::Execute, None),
-            WorkStatus::Active(WorkStage::Verify)
-            | WorkStatus::Paused {
-                stage: WorkStage::Verify,
-                ..
-            } => (crate::WorkPhase::Verify, None),
+            WorkStatus::Active(WorkStage::Plan) => (crate::WorkPhase::Plan, None),
+            WorkStatus::Active(WorkStage::Execute) => (crate::WorkPhase::Execute, None),
+            WorkStatus::Active(WorkStage::Verify) => (crate::WorkPhase::Verify, None),
             WorkStatus::Completed { .. } => (crate::WorkPhase::Completed, None),
-            WorkStatus::Abandoned { reason } => (
-                crate::WorkPhase::Failed,
-                Some(match reason {
-                    CloseReason::User => "Work was stopped by the user.".to_string(),
-                    CloseReason::Superseded => "Work was superseded.".to_string(),
-                    CloseReason::UnrecoverableEffect => {
-                        "Work stopped after an unrecoverable tool effect.".to_string()
-                    }
-                    CloseReason::Other(text) => text.as_str().to_string(),
-                }),
-            ),
+            WorkStatus::Abandoned { reason } => {
+                (crate::WorkPhase::Failed, Some(reason.as_str().to_string()))
+            }
         };
         let current = work
             .active_item
@@ -91,7 +71,7 @@ impl SessionDriver {
         }
         state.revision = WorkRevision::new(state.revision().get().saturating_add(1))?;
         state.status = WorkStatus::Abandoned {
-            reason: CloseReason::Other(Text::new(reason)?),
+            reason: Text::new(reason)?,
         };
         state.items = Items::new(items)?;
         state.active_item = None;
@@ -214,9 +194,6 @@ impl SessionDriver {
             plan: state.selected_plan(),
             candidate: Some(candidate.id()),
             verdict: None,
-            usage_digest: Digest::hash(b"mage:usage-digest:v1", b"execute"),
-            inputs: Items::default(),
-            diagnostic: None,
         };
         let work_fact = super::id::FactId::new(session, self.take());
         let epoch_fact = super::id::FactId::new(session, self.take());
@@ -395,9 +372,7 @@ impl SessionDriver {
                         items[active].disposition = ItemDisposition::Blocked;
                         state.active_item = None;
                         state.status = WorkStatus::Abandoned {
-                            reason: CloseReason::Other(Text::new(format!(
-                                "goal reached its {max_turns} turn limit"
-                            ))?),
+                            reason: Text::new(format!("goal reached its {max_turns} turn limit"))?,
                         };
                     }
                     VerdictDecision::Automatic => {
@@ -413,7 +388,7 @@ impl SessionDriver {
                 items[active].disposition = ItemDisposition::Blocked;
                 state.active_item = None;
                 state.status = WorkStatus::Abandoned {
-                    reason: CloseReason::Other(Text::new("completion checks failed three times")?),
+                    reason: Text::new("completion checks failed three times")?,
                 };
             } else {
                 state.candidate = None;
@@ -471,9 +446,6 @@ impl SessionDriver {
             plan: state.selected_plan(),
             candidate: state.candidate().map(Candidate::id),
             verdict: Some(verdict),
-            usage_digest: Digest::hash(b"mage:usage-digest:v1", b"verify"),
-            inputs: Items::default(),
-            diagnostic: prepared.diagnostic.as_deref().map(Text::new).transpose()?,
         };
         facts.push(Fact {
             id: super::id::FactId::new(session, self.take()),
@@ -525,16 +497,10 @@ impl SessionDriver {
                         text: Text::new(&text)?,
                         images: Items::default(),
                     },
-                    reserved_projection_bytes: 128,
                 },
             });
         }
         self.append(None, facts)
-    }
-
-    /// Set the session Work in the Plan stage.
-    pub(crate) fn set_work(&mut self, objective: &str) -> Result<super::id::WorkId, DriverError> {
-        self.set_work_with(objective, WorkPolicy::Steps, 1)
     }
 
     /// Open or reuse the Single Work that owns an interactive Plan draft.
@@ -614,15 +580,12 @@ impl SessionDriver {
             selected_plan: None,
             items,
             active_item: None,
-            constraints: Items::new(vec![Text::new("One state owner")?])?,
             acceptance_checks: Items::new(acceptance_checks)?,
             scope: None,
             base: None,
             candidate: None,
             verification: None,
             evidence: Items::default(),
-            predecessor: None,
-            projection: Text::new("Work projection")?,
             projection_owner: WorkProjection::Context(entry_id),
         };
         state.validate()?;
@@ -646,14 +609,6 @@ impl SessionDriver {
         let command = self.accepted(b"mage:command:work", objective.as_bytes(), work_fact);
         self.append(Some(command), facts)?;
         Ok(work)
-    }
-
-    /// Select a supplied Plan revision for the current Work.
-    pub(crate) fn select_plan(
-        &mut self,
-        markdown: &str,
-    ) -> Result<super::id::PlanRevisionId, DriverError> {
-        self.select_plan_with(markdown, &["cargo check".to_string()], None)
     }
 
     /// Finish a Plan provider round and select its generated Plan atomically.
@@ -746,8 +701,6 @@ impl SessionDriver {
                     plan_steps.push(PlanStep {
                         id,
                         title: Text::new(&step.text)?,
-                        detail: Text::new(&step.text)?,
-                        dependencies: Items::default(),
                         checks: Items::new(step_checks)?,
                     });
                 }
@@ -756,27 +709,17 @@ impl SessionDriver {
                 (None, Items::default())
             };
         let source = reply.as_ref().map_or_else(
-            || PlanSource::Imported {
-                source: Digest::hash(b"mage:plan-source:v1", markdown.as_bytes()),
-                converter: 1,
-            },
+            || PlanSource::External,
             |reply| PlanSource::Generated {
                 provider: reply.result,
             },
         );
         let mut plan = PlanRevision {
-            format: 1,
             id: revision,
             work,
-            parent: None,
             source,
-            objective: Text::new(markdown)?,
-            constraints: Items::default(),
             steps,
             checks: Items::new(checks)?,
-            risks: Items::default(),
-            assumptions: Items::default(),
-            non_goals: Items::default(),
             markdown: Text::new(markdown)?,
             digest: Digest::default(),
         };
@@ -821,7 +764,6 @@ impl SessionDriver {
                     reasoning: Text::new(reply.reasoning)?,
                     tool_calls: Items::default(),
                 },
-                stop_reason: StopReason::Complete,
                 reported_usage: reply.usage.clone(),
             };
             let operation = self.open_operation()?;
@@ -846,9 +788,6 @@ impl SessionDriver {
                         plan: state.selected_plan(),
                         candidate: None,
                         verdict: None,
-                        usage_digest: Digest::hash(b"mage:usage-digest:v1", b"plan"),
-                        inputs: Items::default(),
-                        diagnostic: None,
                     },
                     stage_outcome: OperationStageOutcome::Stayed,
                 },
@@ -1053,22 +992,14 @@ impl SessionDriver {
         let plan = state.selected_plan().ok_or(DriverError::NoWork)?;
         let observation = self.observe_workspace()?;
         let base = observation.id();
-        let scope = self.scope()?.clone();
-        let head = self.request_head()?.clone();
+        let scope = self.scope()?.id();
         let policy = VerificationPolicy {
             id: super::id::VerificationPolicyId::new(session, self.take()),
-            scope: scope.clone(),
+            scope,
             checks: state.acceptance_checks.clone(),
-            artifacts: Items::new(scope.artifacts().to_vec())?,
-            coverage_rules: Items::new(scope.artifacts().iter().map(|item| item.rule).collect())?,
-            reviewer: ReviewerHead {
-                endpoint: head.endpoint.clone(),
-                model: head.model.clone(),
-                request_format: head.request_format,
-                token_limit: 1_000,
-            },
             repair_limit: 3,
         };
+        let head = self.request_head()?.clone();
         let epoch = ContextEpoch {
             id: super::id::ContextEpochId::new(session, self.take()),
             head,
@@ -1085,7 +1016,7 @@ impl SessionDriver {
         state.selected_plan = Some(plan);
         state.items = Items::new(items)?;
         state.active_item = active;
-        state.scope = Some(scope.id());
+        state.scope = Some(scope);
         state.base = Some(base);
         state.verification = Some(policy);
         state.projection_owner = WorkProjection::Epoch(epoch.id);

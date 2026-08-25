@@ -2,13 +2,10 @@ use std::collections::HashSet;
 
 use super::{ReduceError, Result, SessionState};
 use crate::durable::context::{ContextSource, InputOrigin, InputRoute, OperationOutcome};
-use crate::durable::effect::{
-    DetachedClose, ReconciliationContract, ToolOutcome, ToolResult, WorkspaceFootprint,
-};
+use crate::durable::effect::ToolResult;
 use crate::durable::encoding::Commit;
 use crate::durable::fact::{
-    CommandStatus, CompletionCheck, FactData, FactKind, ForkOutcome, MeterOwner,
-    OperationStageOutcome,
+    CommandStatus, CompletionCheck, FactData, FactKind, MeterOwner, OperationStageOutcome,
 };
 use crate::durable::id::{ToolBatchId, ToolCallId};
 use crate::durable::work::{WorkPolicy, WorkProjection, WorkStage, WorkState};
@@ -31,7 +28,6 @@ pub(super) fn validate(state: &SessionState, commit: &Commit) -> Result<()> {
     provider(&facts)?;
     completion_checks(state, &facts)?;
     tools(state, &facts)?;
-    retry(&facts)?;
     fork(&facts)?;
     context(&facts)?;
     meters(&facts)?;
@@ -150,25 +146,18 @@ fn input(facts: &Facts<'_>) -> Result<()> {
         let FactData::InputApplied { operation, .. } = applied else {
             continue;
         };
-        let legal = match operation {
-            Some(operation) => {
-                let opened = facts.commit.facts.iter().any(|fact| {
-                    matches!(&fact.data, FactData::OperationOpened { operation: id, .. } if id == operation)
-                });
-                let steered = facts.has(FactKind::ContextEntryAdded)
-                    && facts.commit.facts.iter().any(|fact| {
-                        matches!(
-                            &fact.data,
-                            FactData::InputAccepted {
-                                route: InputRoute::Steer,
-                                ..
-                            }
-                        )
-                    });
-                opened || steered
-            }
-            None => facts.has(FactKind::DirectiveChanged) && facts.has(FactKind::ContextEntryAdded),
-        };
+        let legal = facts.commit.facts.iter().any(|fact| {
+            matches!(&fact.data, FactData::OperationOpened { operation: id, .. } if id == operation)
+        }) || facts.has(FactKind::ContextEntryAdded)
+            && facts.commit.facts.iter().any(|fact| {
+                matches!(
+                    &fact.data,
+                    FactData::InputAccepted {
+                        route: InputRoute::Steer,
+                        ..
+                    }
+                )
+            });
         if !legal {
             return Err(ReduceError::Group(
                 "InputApplied requires operation start or steering context update",
@@ -319,7 +308,7 @@ fn operation(facts: &Facts<'_>) -> Result<()> {
             |fact| matches!(&fact.data, FactData::InputAccepted { input: id, .. } if id == input),
         );
         let applied = facts.commit.facts.iter().any(|fact| {
-            matches!(&fact.data, FactData::InputApplied { input: id, operation: Some(owner) } if id == input && owner == operation)
+            matches!(&fact.data, FactData::InputApplied { input: id, operation: owner } if id == input && owner == operation)
         });
         let projected = facts.commit.facts.iter().any(|fact| {
             matches!(
@@ -458,18 +447,6 @@ fn completion_checks(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
 }
 
 fn tools(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
-    for started in facts.data(FactKind::ToolStarted) {
-        let FactData::ToolStarted { intent } = started else {
-            continue;
-        };
-        if matches!(intent.footprint, WorkspaceFootprint::Scope(_))
-            && !facts.has(FactKind::WorkspaceObserved)
-        {
-            return Err(ReduceError::Group(
-                "scoped ToolStarted requires its before observation",
-            ));
-        }
-    }
     for finished in facts.data(FactKind::ToolFinished) {
         let FactData::ToolFinished { result } = finished else {
             continue;
@@ -492,82 +469,9 @@ fn tools(state: &SessionState, facts: &Facts<'_>) -> Result<()> {
                     "started ToolFinished requires MeterSettled",
                 ));
             }
-            let scoped = state
-                .tools
-                .get(&result.call)
-                .and_then(|tool| tool.intent.as_ref())
-                .is_some_and(|intent| matches!(intent.footprint, WorkspaceFootprint::Scope(_)));
-            if scoped && !facts.has(FactKind::WorkspaceObserved) {
-                return Err(ReduceError::Group(
-                    "scoped ToolFinished requires its after observation",
-                ));
-            }
         } else if result.attempt.is_some() || facts.metered(result) {
             return Err(ReduceError::Group(
                 "pre-start ToolFinished must not name an attempt or meter settlement",
-            ));
-        }
-        let process_uncertainty = result.outcome.uncertain()
-            && state
-                .tools
-                .get(&result.call)
-                .and_then(|tool| tool.intent.as_ref())
-                .is_some_and(|intent| {
-                    matches!(
-                        intent.reconciliation,
-                        ReconciliationContract::Process { .. }
-                    )
-                });
-        if (matches!(&result.outcome, ToolOutcome::Completed { job: Some(_), .. })
-            || process_uncertainty)
-            && !facts.has(FactKind::DetachedJobOpened)
-        {
-            return Err(ReduceError::Group(
-                "background or uncertain launch requires DetachedJobOpened",
-            ));
-        }
-    }
-    for observed in facts.data(FactKind::EffectObserved) {
-        let FactData::EffectObserved {
-            observation,
-            observing_result,
-        } = observed
-        else {
-            continue;
-        };
-        let terminal = facts.commit.facts.iter().any(|fact| {
-            matches!(&fact.data, FactData::ToolFinished { result } if result.id == *observing_result)
-        });
-        if !terminal || (observation.workspace.is_some() && !facts.has(FactKind::WorkspaceObserved))
-        {
-            return Err(ReduceError::Group(
-                "EffectObserved requires its observing tool terminal and workspace evidence",
-            ));
-        }
-    }
-    for closed in facts.data(FactKind::DetachedJobClosed) {
-        let FactData::DetachedJobClosed { outcome, .. } = closed else {
-            continue;
-        };
-        if *outcome == DetachedClose::AbandonedUnknown && facts.commit.command.is_none() {
-            return Err(ReduceError::Group(
-                "abandoning a detached job requires a command receipt",
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn retry(facts: &Facts<'_>) -> Result<()> {
-    for finished in facts.data(FactKind::RetryFinished) {
-        let FactData::RetryFinished { retry, .. } = finished else {
-            continue;
-        };
-        if !facts.has_meter(&MeterOwner::Retry(*retry))
-            || (!facts.has(FactKind::ProviderStarted) && !facts.has(FactKind::OperationClosed))
-        {
-            return Err(ReduceError::Group(
-                "RetryFinished requires settlement and next provider or operation close",
             ));
         }
     }
@@ -582,24 +486,10 @@ fn fork(facts: &Facts<'_>) -> Result<()> {
             "ForkPlanned requires command receipt and source observation",
         ));
     }
-    if facts.has(FactKind::ForkCancelRequested) && facts.commit.command.is_none() {
+    if facts.has(FactKind::ForkFinished) && !facts.has(FactKind::WorkspaceObserved) {
         return Err(ReduceError::Group(
-            "ForkCancelRequested requires command receipt",
+            "ForkFinished requires parent observation",
         ));
-    }
-    for finished in facts.data(FactKind::ForkFinished) {
-        if matches!(
-            finished,
-            FactData::ForkFinished {
-                outcome: ForkOutcome::Published { .. },
-                ..
-            }
-        ) && !facts.has(FactKind::WorkspaceObserved)
-        {
-            return Err(ReduceError::Group(
-                "published ForkFinished requires parent observation",
-            ));
-        }
     }
     Ok(())
 }
@@ -608,14 +498,6 @@ fn context(facts: &Facts<'_>) -> Result<()> {
     if facts.has(FactKind::ConversationCleared) && facts.count(FactKind::ContextEpochOpened) != 1 {
         return Err(ReduceError::Group(
             "ConversationCleared requires one replacement epoch",
-        ));
-    }
-    if facts.has(FactKind::DirectiveChanged)
-        && !facts.has(FactKind::ContextEntryAdded)
-        && !facts.has(FactKind::ContextEpochOpened)
-    {
-        return Err(ReduceError::Group(
-            "DirectiveChanged requires a context delta or replacement epoch",
         ));
     }
     Ok(())
@@ -632,9 +514,6 @@ fn meters(facts: &Facts<'_>) -> Result<()> {
             }),
             MeterOwner::Tool(attempt) => facts.commit.facts.iter().any(|fact| {
                 matches!(&fact.data, FactData::ToolFinished { result } if result.attempt == Some(*attempt))
-            }),
-            MeterOwner::Retry(retry) => facts.commit.facts.iter().any(|fact| {
-                matches!(&fact.data, FactData::RetryFinished { retry: id, .. } if id == retry)
             }),
         };
         if !terminal {

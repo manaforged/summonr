@@ -7,55 +7,39 @@ impl SessionDriver {
     pub(crate) fn start_provider(
         &mut self,
         request: &[u8],
+        exposure: Exposure,
     ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        self.start_provider_as(request, ProviderPurpose::AgentRound)
+        self.start_provider_as(request, exposure, ProviderPurpose::AgentRound)
     }
 
     /// Record a compaction-summary provider attempt.
     pub(crate) fn start_summary(
         &mut self,
         request: &[u8],
+        exposure: Exposure,
     ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        self.start_provider_as(request, ProviderPurpose::CompactionSummary)
+        self.start_provider_as(request, exposure, ProviderPurpose::CompactionSummary)
     }
 
     /// Record the harness-owned Goal completion decision.
     pub(crate) fn start_judge(
         &mut self,
         request: &[u8],
+        exposure: Exposure,
     ) -> Result<super::id::ProviderAttemptId, DriverError> {
-        self.start_provider_as(request, ProviderPurpose::GoalJudge)
+        self.start_provider_as(request, exposure, ProviderPurpose::GoalJudge)
     }
 
     fn start_provider_as(
         &mut self,
         request: &[u8],
+        exposure: Exposure,
         purpose: ProviderPurpose,
     ) -> Result<super::id::ProviderAttemptId, DriverError> {
         let session = self.session();
         let operation = self.open_operation()?;
-        let open = self
-            .writer
-            .state()
-            .operation
-            .as_ref()
-            .cloned()
-            .ok_or(DriverError::NoOperation)?;
-        let (plan, candidate) = match open.work {
-            Some(work) => {
-                let state = self
-                    .writer
-                    .state()
-                    .works
-                    .get(&work)
-                    .ok_or(DriverError::NoWork)?;
-                (state.selected_plan(), state.candidate().map(Candidate::id))
-            }
-            None => (None, None),
-        };
         let epoch = self.epoch()?;
         let through = self.through();
-        let head = self.request_head()?.clone();
         let attempt = super::id::ProviderAttemptId::new(session, self.take());
         let result = super::id::ProviderResultId::new(session, self.take());
         let intent = ProviderIntent {
@@ -64,24 +48,10 @@ impl SessionDriver {
             operation,
             epoch,
             purpose,
-            work: open.work,
-            plan,
-            stage: open.stage,
-            candidate,
-            adapter: head.adapter,
-            endpoint: head.endpoint,
-            model: head.model,
-            resource_version: head.resource_version,
             through,
             request_bytes: u32::try_from(request.len()).unwrap_or(u32::MAX),
             request_digest: Digest::hash(b"mage:provider-request:v1", request),
-            request_format: head.request_format,
-            deadline_unix_millis: 1_800_000_000_000,
-            exposure: Exposure {
-                max_input_tokens: 1_000,
-                max_output_tokens: 1_000,
-                max_live_millis: 30_000,
-            },
+            exposure,
         };
         intent.validate()?;
         let facts = vec![Fact {
@@ -107,7 +77,6 @@ impl SessionDriver {
                 reasoning: Text::new(reasoning)?,
                 tool_calls: Items::default(),
             },
-            stop_reason: StopReason::Complete,
             reported_usage: usage.clone(),
         };
         let facts = self.provider_finish_facts(attempt, result, &[], text, outcome, usage)?;
@@ -129,7 +98,6 @@ impl SessionDriver {
                 reasoning: Text::default(),
                 tool_calls: Items::default(),
             },
-            stop_reason: StopReason::Complete,
             reported_usage: usage.clone(),
         };
         let facts = self.provider_finish_facts(attempt, result, &[], text, outcome, usage)?;
@@ -172,29 +140,6 @@ impl SessionDriver {
         Ok(evidence)
     }
 
-    /// Close a provider round and plan one tool obligation.
-    /// Returns the planned tool call id.
-    pub(crate) fn finish_provider_with_tool(
-        &mut self,
-        attempt: super::id::ProviderAttemptId,
-        text: &str,
-        reasoning: &str,
-        usage: Usage,
-        name: &str,
-        arguments: &str,
-    ) -> Result<ToolCallId, DriverError> {
-        self.finish_provider_with_tools(
-            attempt,
-            text,
-            reasoning,
-            usage,
-            &[(name, arguments, name)],
-        )?
-        .into_iter()
-        .next()
-        .ok_or(DriverError::NoTool)
-    }
-
     /// Close a provider round and plan one tool batch in provider order.
     pub(crate) fn finish_provider_with_tools(
         &mut self,
@@ -224,7 +169,6 @@ impl SessionDriver {
                 reasoning: Text::new(reasoning)?,
                 tool_calls: Items::new(payloads)?,
             },
-            stop_reason: StopReason::ToolCalls,
             reported_usage: usage.clone(),
         };
         let facts = self.provider_finish_facts(attempt, result, &planned, text, outcome, usage)?;
@@ -266,12 +210,30 @@ impl SessionDriver {
         outcome: ProviderOutcome,
         usage: Usage,
     ) -> Result<Vec<Fact>, DriverError> {
-        let add_context = match self.writer.state().providers.get(&attempt) {
-            Some(ProviderState::Started(intent)) => intent.purpose != ProviderPurpose::GoalJudge,
+        let intent = match self.writer.state().providers.get(&attempt) {
+            Some(ProviderState::Started(intent)) => intent.clone(),
             _ => return Err(DriverError::NoProvider),
         };
+        let add_context = intent.purpose != ProviderPurpose::GoalJudge
+            && matches!(&outcome, ProviderOutcome::Completed { .. });
+        let settlement = match &outcome {
+            ProviderOutcome::Completed { .. } => MeterSettlement::Known(usage),
+            ProviderOutcome::Failed { .. } => MeterSettlement::Estimated(Usage {
+                input_tokens: Some(
+                    usage
+                        .input_tokens
+                        .unwrap_or(intent.exposure.max_input_tokens),
+                ),
+                output_tokens: Some(
+                    usage
+                        .output_tokens
+                        .unwrap_or(intent.exposure.max_output_tokens),
+                ),
+                ..usage
+            }),
+            ProviderOutcome::Interrupted { .. } => MeterSettlement::Estimated(usage),
+        };
         let session = self.session();
-        let meter = super::id::MeterId::new(session, self.take());
         let mut facts = vec![
             Fact {
                 id: super::id::FactId::new(session, self.take()),
@@ -284,10 +246,8 @@ impl SessionDriver {
             Fact {
                 id: super::id::FactId::new(session, self.take()),
                 data: FactData::MeterSettled {
-                    meter,
                     owner: MeterOwner::Provider(attempt),
-                    kind: MeterKind::Provider,
-                    settlement: MeterSettlement::Known(usage),
+                    settlement,
                 },
             },
         ];
@@ -331,9 +291,6 @@ impl SessionDriver {
                 provider_result,
                 provider_id: Text::new(*provider_id)?,
                 position,
-                registration: super::id::ToolRegistrationVersion::new(session, self.take()),
-                schema_digest: Digest::hash(b"mage:tool-schema:v1", b"read"),
-                effect_contract_digest: ReconciliationContract::None.digest()?,
             });
         }
         Ok(planned)
@@ -344,44 +301,18 @@ impl SessionDriver {
         &mut self,
         call: ToolCallId,
         arguments: &str,
-        name: &str,
     ) -> Result<(), DriverError> {
         let session = self.session();
-        let registration = self
-            .writer
+        self.writer
             .state()
             .tools
             .get(&call)
-            .ok_or(DriverError::NoTool)?
-            .call
-            .registration;
+            .ok_or(DriverError::NoTool)?;
         let attempt = super::id::ToolAttemptId::new(session, self.take());
-        let platform = self
-            .scope()
-            .map(WorkspaceScope::platform)
-            .unwrap_or(PathPlatform::Unix);
-        let footprint = footprint_for(platform, arguments);
-        let process = (name == "run_command").then(|| ProcessRecord::Reserved {
-            job: super::id::JobId::new(session, self.take()),
-            containment: if cfg!(windows) {
-                ProcessContainment::WindowsJob
-            } else {
-                ProcessContainment::PosixGroup
-            },
-        });
         let intent = ToolIntent {
             attempt,
             call,
-            registration,
             normalized_arguments: Text::new(arguments)?,
-            decision: PolicyDecision::Allowed,
-            approval: ApprovalSource::Policy(Digest::hash(b"mage:policy:v1", b"default")),
-            replay: replay_for(name),
-            deadline_unix_millis: 1_800_000_000_000,
-            reservation: super::id::MeterId::new(session, self.take()),
-            footprint,
-            reconciliation: ReconciliationContract::None,
-            process,
         };
         let facts = vec![Fact {
             id: super::id::FactId::new(session, self.take()),
@@ -391,21 +322,11 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// Record a tool terminal result.
-    pub(crate) fn finish_tool(
-        &mut self,
-        call: ToolCallId,
-        output: &str,
-        usage: Usage,
-    ) -> Result<(), DriverError> {
-        self.finish_tools(&[(call, output, usage)])
-    }
-
     /// Record every tool terminal in one batch, then project context in
     /// provider-call order.
     pub(crate) fn finish_tools(
         &mut self,
-        results: &[(ToolCallId, &str, Usage)],
+        results: &[(ToolCallId, &str, bool, Usage)],
     ) -> Result<(), DriverError> {
         if results.is_empty() {
             return Ok(());
@@ -413,7 +334,7 @@ impl SessionDriver {
         let session = self.session();
         let epoch = self.epoch()?;
         let mut prepared = Vec::new();
-        for (call, output, usage) in results {
+        for (call, output, success, usage) in results {
             let tool = self
                 .writer
                 .state()
@@ -422,23 +343,26 @@ impl SessionDriver {
                 .ok_or(DriverError::NoTool)?;
             let intent = tool.intent.as_ref().ok_or(DriverError::NoTool)?;
             let attempt = intent.attempt;
-            let job = match intent.process.as_ref() {
-                Some(ProcessRecord::Reserved { job, .. }) => Some(*job),
-                _ => None,
-            };
             prepared.push((
                 *call,
                 tool.call.result,
                 attempt,
                 *output,
+                *success,
                 usage.clone(),
-                job,
             ));
         }
         let mut facts = Vec::new();
-        for (call, result, attempt, output, usage, reserved) in &prepared {
-            let process = reserved.and_then(|job| running_process(job, output));
-            let job = process.as_ref().map(ProcessRecord::job);
+        for (call, result, attempt, output, success, usage) in &prepared {
+            let outcome = if *success {
+                ToolOutcome::Completed {
+                    output: Text::new(*output)?,
+                }
+            } else {
+                ToolOutcome::Failed {
+                    diagnostic: Text::new(*output)?,
+                }
+            };
             facts.push(Fact {
                 id: super::id::FactId::new(session, self.take()),
                 data: FactData::ToolFinished {
@@ -446,37 +370,19 @@ impl SessionDriver {
                         id: *result,
                         call: *call,
                         attempt: Some(*attempt),
-                        outcome: ToolOutcome::Completed {
-                            output: Text::new(*output)?,
-                            job,
-                        },
-                        workspace: WorkspaceEffect::None,
+                        outcome,
                     },
                 },
             });
             facts.push(Fact {
                 id: super::id::FactId::new(session, self.take()),
                 data: FactData::MeterSettled {
-                    meter: super::id::MeterId::new(session, self.take()),
                     owner: MeterOwner::Tool(*attempt),
-                    kind: MeterKind::Tool,
                     settlement: MeterSettlement::Known(usage.clone()),
                 },
             });
-            if let Some(process) = process {
-                facts.push(Fact {
-                    id: super::id::FactId::new(session, self.take()),
-                    data: FactData::DetachedJobOpened {
-                        job: process.job(),
-                        attempt: *attempt,
-                        process,
-                        state: DetachedState::Running,
-                        contract_digest: ReconciliationContract::None.digest()?,
-                    },
-                });
-            }
         }
-        for (_call, result, _attempt, output, _usage, _reserved) in &prepared {
+        for (_call, result, _attempt, output, _success, _usage) in &prepared {
             let mut entry = ContextEntry {
                 id: super::id::ContextEntryId::new(session, self.take()),
                 epoch,

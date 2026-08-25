@@ -4,7 +4,7 @@ use std::mem::discriminant;
 use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
-use super::bound::{BoundError, Bytes, Items, Text};
+use super::bound::{BoundError, Bytes, Items};
 use super::id::{CoverageRuleId, Digest, ObservationId, WorkspaceScopeId};
 
 const MAX_COMPONENT_BYTES: usize = 255;
@@ -15,8 +15,6 @@ const MAX_RESERVED_PATHS: usize = 128;
 const MAX_ARTIFACT_ROOTS: usize = 64;
 const MAX_OBSERVATION_ENTRIES: usize = 1_000_000;
 const MAX_CHANGE_ENTRIES: usize = 1_000_000;
-const MAX_RULES: usize = 128;
-const MAX_REASON_BYTES: usize = 16_384;
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
 pub(crate) enum WorkspaceError {
@@ -256,14 +254,6 @@ impl WorkspaceIdentity {
         self.root.platform()
     }
 
-    pub(crate) fn root(&self) -> &NativeRoot {
-        &self.root
-    }
-
-    pub(crate) fn components(&self) -> &[PathComponent] {
-        self.components.as_slice()
-    }
-
     pub(crate) fn object(&self) -> Digest {
         self.object
     }
@@ -470,6 +460,7 @@ impl ObservedEntry {
         &self.path
     }
 
+    #[cfg(test)]
     pub(crate) fn kind(&self) -> &ObservedKind {
         &self.kind
     }
@@ -686,53 +677,12 @@ impl ChangeManifest {
         Ok(Self { entries, digest })
     }
 
-    pub(crate) fn validate(&self) -> Result<(), WorkspaceError> {
-        ordered_by(self.entries.as_slice(), ChangeEntry::path)?;
-        if self.digest != manifest_digest(&self.entries) {
-            return Err(WorkspaceError::Digest);
-        }
-        Ok(())
-    }
-
     pub(crate) fn paths(&self) -> impl Iterator<Item = &PathKey> {
         self.entries.iter().map(ChangeEntry::path)
     }
 
     pub(crate) fn digest(&self) -> Digest {
         self.digest
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "state", rename_all = "snake_case")]
-pub(crate) enum WorkspaceEffect {
-    None,
-    Known {
-        changes: ChangeManifest,
-        artifact_rules: Items<CoverageRuleId, MAX_RULES>,
-    },
-    Unknown {
-        reason: Text<MAX_REASON_BYTES>,
-    },
-}
-
-impl WorkspaceEffect {
-    pub(crate) fn validate(&self) -> Result<(), WorkspaceError> {
-        if let Self::Known {
-            changes,
-            artifact_rules,
-        } = self
-        {
-            changes.validate()?;
-            if artifact_rules
-                .as_slice()
-                .windows(2)
-                .any(|pair| pair[0] >= pair[1])
-            {
-                return Err(WorkspaceError::Order);
-            }
-        }
-        Ok(())
     }
 }
 
@@ -744,10 +694,6 @@ fn classify(before: &ObservedKind, after: &ObservedKind) -> Option<ChangeKind> {
     } else {
         Some(ChangeKind::KindChanged)
     }
-}
-
-pub(crate) fn validate_paths(paths: &[PathKey]) -> Result<(), WorkspaceError> {
-    ordered_paths(paths)
 }
 
 fn observation_digest(

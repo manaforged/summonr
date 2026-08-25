@@ -11,6 +11,22 @@ fn request(messages: Vec<Message>) -> CompletionRequest {
 }
 
 #[test]
+fn durable_request_captures_input_and_images_but_not_ui_delivery() -> Result<()> {
+    let first = request(vec![Message::system("same"), Message::user("first")]);
+    let second = request(vec![Message::system("same"), Message::user("second")]);
+    assert_ne!(first.durable_bytes()?, second.durable_bytes()?);
+
+    let mut with_image = first.clone();
+    with_image.messages[1].images = vec![Image::encode("image/png", b"image")];
+    assert_ne!(first.durable_bytes()?, with_image.durable_bytes()?);
+
+    let mut quiet = first.clone();
+    quiet.emit_deltas = false;
+    assert_eq!(first.durable_bytes()?, quiet.durable_bytes()?);
+    Ok(())
+}
+
+#[test]
 fn model_list_sorts_deduplicates_and_ignores_bad_rows() -> Result<()> {
     let models = model_ids(&json!({
         "data": [

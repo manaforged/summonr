@@ -11,8 +11,6 @@ fn format_2_session_matches_its_workspace_identity() -> Result<()> {
         workspace: workspace.clone(),
         model: "test-model".to_string(),
         system: "test".to_string(),
-        endpoint: "https://example.test/v1".to_string(),
-        adapter: "openai-compatible".to_string(),
     })
     .map_err(|error| crate::Error::Config(error.to_string()))?;
     let path = driver.path().to_path_buf();

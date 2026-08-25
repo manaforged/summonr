@@ -66,7 +66,7 @@ fn commit_request_and_observation_encodings_are_fixed() {
         .expect("root commit must encode");
     assert_eq!(
         commit.digest.to_string(),
-        "9da111ee2a309cc69b353aecc0c3e09cd4a5ee5d19be2a26c87a79d656fa3d00"
+        "c815dde2650f4875b04bc4db1155abc91686a1ac27ea9356be22a98eb41979ea"
     );
 
     let request = br#"{"model":"test-model","messages":[]}"#;

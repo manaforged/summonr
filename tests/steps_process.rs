@@ -74,7 +74,7 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
     assert!(work_status(&after_restart, "completed", None));
     wait_for_tokens(&journal, 180)?;
     assert_eq!(
-        budget_limit(&journal, "session_tokens")?,
+        budget_tokens(&journal)?,
         Some(1_000),
         "the resumed Work changed its cumulative budget ceiling"
     );
@@ -105,9 +105,9 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
         "the in-flight step was not retried at least once after the kill"
     );
 
-    let sessions = fs::read_dir(fixture.home.join("sessions-v2"))?
+    let sessions = fs::read_dir(fixture.home.join("sessions"))?
         .filter_map(Result::ok)
-        .filter(|entry| entry.path().extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .filter(|entry| entry.path().join("session.jsonl").is_file())
         .count();
     assert_eq!(sessions, 1, "restart created a new unbound session");
     assert_eq!(only_session(&fixture.home)?, journal);
@@ -455,31 +455,25 @@ fn wait_for_file(path: &Path, timeout: Duration) -> io::Result<()> {
     clippy::disallowed_methods,
     reason = "bounded synchronous integration-test polling"
 )]
+/// Poll every session's `work.json` until one satisfies `predicate`.
 fn wait_for_work(
     home: &Path,
     predicate: impl Fn(&Value) -> bool,
 ) -> Result<Value, Box<dyn std::error::Error>> {
-    let sessions = home.join("sessions-v2");
+    let sessions = home.join("sessions");
     let deadline = Instant::now() + WAIT;
     loop {
         let mut seen = Vec::new();
         if let Ok(entries) = fs::read_dir(&sessions) {
             for entry in entries.flatten() {
-                if entry.path().extension().and_then(|value| value.to_str()) != Some("jsonl") {
+                let Ok(text) = fs::read_to_string(entry.path().join("work.json")) else {
                     continue;
+                };
+                let work: Value = serde_json::from_str(&text)?;
+                if predicate(&work) {
+                    return Ok(work);
                 }
-                let text = fs::read_to_string(entry.path())?;
-                for line in text.lines().rev() {
-                    let event: Value = serde_json::from_str(line)?;
-                    let mut works = Vec::new();
-                    collect_work_states(&event, &mut works);
-                    for work in works {
-                        seen.push(work.clone());
-                        if predicate(&work) {
-                            return Ok(work);
-                        }
-                    }
-                }
+                seen.push(work);
             }
         }
         if Instant::now() >= deadline {
@@ -493,57 +487,30 @@ fn wait_for_work(
     }
 }
 
-fn collect_work_states(value: &Value, states: &mut Vec<Value>) {
-    match value {
-        Value::String(_) => {}
-        Value::Array(values) => {
-            for value in values {
-                collect_work_states(value, states);
-            }
+/// `"completed"` is a bare string; an active stage is `{"active": "execute"}`.
+fn work_status(work: &Value, status: &str, stage: Option<&str>) -> bool {
+    match (work.get("status"), stage) {
+        (Some(Value::String(value)), None) => value == status,
+        (Some(Value::Object(value)), Some(stage)) => {
+            value.get(status).and_then(Value::as_str) == Some(stage)
         }
-        Value::Object(values) => {
-            if values.get("policy").and_then(Value::as_str) == Some("steps")
-                && values.get("revision").is_some()
-                && values.get("items").is_some()
-            {
-                states.push(value.clone());
-                return;
-            }
-            for value in values.values() {
-                collect_work_states(value, states);
-            }
-        }
-        Value::Null | Value::Bool(_) | Value::Number(_) => {}
+        _ => false,
     }
 }
 
-fn work_status(work: &Value, status: &str, stage: Option<&str>) -> bool {
-    let value = work.get("status");
-    value
-        .and_then(|value| value.get("status"))
-        .and_then(Value::as_str)
-        == Some(status)
-        && stage.is_none_or(|stage| {
-            value
-                .and_then(|value| value.get("data"))
-                .and_then(Value::as_str)
-                == Some(stage)
-        })
-}
-
 fn item_disposition(work: &Value, index: usize) -> Option<&str> {
-    work.get("items")?
+    work.get("steps")?
         .as_array()?
         .get(index)?
-        .get("disposition")?
+        .get("state")?
         .as_str()
 }
 
 fn only_session(home: &Path) -> io::Result<PathBuf> {
-    let mut paths = fs::read_dir(home.join("sessions-v2"))?
+    let mut paths = fs::read_dir(home.join("sessions"))?
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().and_then(|value| value.to_str()) == Some("jsonl"))
+        .map(|entry| entry.path().join("session.jsonl"))
+        .filter(|path| path.is_file())
         .collect::<Vec<_>>();
     paths.sort();
     match paths.as_slice() {
@@ -576,55 +543,28 @@ fn wait_for_tokens(path: &Path, expected: u64) -> Result<(), Box<dyn std::error:
     }
 }
 
+/// Tokens charged by every `assistant` and `charge` line of the session log.
 fn settled_tokens(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     let mut total = 0_u64;
     for line in fs::read_to_string(path)?.lines() {
         let value: Value = serde_json::from_str(line)?;
-        total = total.saturating_add(tokens_in(&value));
+        let Some(usage) = value.get("usage") else {
+            continue;
+        };
+        for field in ["input", "output"] {
+            total = total.saturating_add(usage.get(field).and_then(Value::as_u64).unwrap_or(0));
+        }
     }
     Ok(total)
 }
 
-fn tokens_in(value: &Value) -> u64 {
-    match value {
-        Value::Object(values)
-            if values.get("settlement").and_then(Value::as_str) == Some("known") =>
-        {
-            let usage = values.get("data");
-            usage
-                .and_then(|usage| usage.get("input_tokens"))
-                .and_then(Value::as_u64)
-                .unwrap_or_default()
-                .saturating_add(
-                    usage
-                        .and_then(|usage| usage.get("output_tokens"))
-                        .and_then(Value::as_u64)
-                        .unwrap_or_default(),
-                )
-        }
-        Value::Array(values) => values.iter().map(tokens_in).fold(0, u64::saturating_add),
-        Value::Object(values) => values.values().map(tokens_in).fold(0, u64::saturating_add),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => 0,
-    }
-}
-
-fn budget_limit(path: &Path, kind: &str) -> Result<Option<u64>, Box<dyn std::error::Error>> {
+/// The token ceiling from the last `budget` line.
+fn budget_tokens(path: &Path) -> Result<Option<u64>, Box<dyn std::error::Error>> {
     for line in fs::read_to_string(path)?.lines().rev() {
         let value: Value = serde_json::from_str(line)?;
-        if let Some(limit) = find_budget(&value, kind) {
-            return Ok(Some(limit));
+        if value.get("kind").and_then(Value::as_str) == Some("budget") {
+            return Ok(value.get("tokens").and_then(Value::as_u64));
         }
     }
     Ok(None)
-}
-
-fn find_budget(value: &Value, kind: &str) -> Option<u64> {
-    match value {
-        Value::Object(values) if values.get("kind").and_then(Value::as_str) == Some(kind) => {
-            values.get("limit").and_then(Value::as_u64)
-        }
-        Value::Array(values) => values.iter().find_map(|value| find_budget(value, kind)),
-        Value::Object(values) => values.values().find_map(|value| find_budget(value, kind)),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
-    }
 }

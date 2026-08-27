@@ -1,4 +1,5 @@
 use super::*;
+use crate::workflow;
 
 /// Overflow recovery only: clear enough recent tool results to reclaim half
 /// their bytes. Keeping the older head intact gives the retry the longest
@@ -58,7 +59,7 @@ impl<P: Provider> Loop<P> {
         request_messages.extend(slice.iter().cloned());
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let request = CompletionRequest {
-            model: self.model.clone(),
+            model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: tools.to_vec(),
             max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
@@ -70,10 +71,15 @@ impl<P: Provider> Loop<P> {
             .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
         let attempt = self
             .session
-            .start_summary(&durable, super::exposure(&request, &durable))
+            .start_summary(&request.model, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
-        match self.provider.complete(&request).await {
+        match self
+            .seat(workflow::Role::Summary)
+            .0
+            .complete(&request)
+            .await
+        {
             Ok(message)
                 if message.tool_calls.is_empty()
                     && message
@@ -81,8 +87,7 @@ impl<P: Provider> Loop<P> {
                         .as_ref()
                         .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                let mut meter = super::meter(&message.usage);
-                meter.live_millis = Some(super::elapsed_millis(started));
+                let meter = super::meter(&message.usage, super::elapsed_millis(started));
                 let text = message.content.clone().unwrap_or_default();
                 self.session
                     .finish_provider(attempt, &text, "", meter)
@@ -93,7 +98,6 @@ impl<P: Provider> Loop<P> {
                 self.session
                     .fail_provider(
                         attempt,
-                        crate::durable::effect::ProviderFailureKind::Other,
                         "compaction summary failed",
                         super::elapsed_millis(started),
                     )
@@ -157,7 +161,9 @@ impl<P: Provider> Loop<P> {
         };
         self.record_usage(&summary, prefix_hash, usage, events, emit)?;
         let summary = summary.content.unwrap_or_default();
-        self.session.compact(&summary).map_err(super::session_err)?;
+        self.session
+            .compact(&summary, &messages[keep_from..])
+            .map_err(super::session_err)?;
         let replayed = self.session.replay();
         messages.truncate(1);
         messages.extend(replayed.history.iter().cloned());

@@ -1,4 +1,8 @@
 use super::*;
+use crate::durable::driver::work_at;
+use crate::durable::log;
+use crate::durable::work::Policy as WorkPolicy;
+use crate::workflow;
 
 impl<P: Provider> Loop<P> {
     /// Discover policy files and start a new session under `$MAGE_HOME`.
@@ -30,7 +34,7 @@ impl<P: Provider> Loop<P> {
         Ok(loop_)
     }
 
-    /// Resume a format-2 journal.
+    /// Resume the session whose log is at `path`.
     pub fn resume_path(
         provider: P,
         model: impl Into<String>,
@@ -45,7 +49,7 @@ impl<P: Provider> Loop<P> {
         Ok(loop_)
     }
 
-    /// Fork a format-2 journal into a new child session.
+    /// Copy the session at `source` into a new child and continue there.
     pub fn fork_path(
         provider: P,
         model: impl Into<String>,
@@ -53,20 +57,9 @@ impl<P: Provider> Loop<P> {
         system_prompt: impl Into<String>,
         source: &Path,
     ) -> Result<Self> {
-        let mut parent = resume_driver(workspace.as_ref(), source)?;
-        let child = crate::durable::id::SessionId::from_u128(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-                ^ u128::from(std::process::id()),
-        );
-        let intent = parent.fork(child).map_err(super::session_err)?;
-        let child_path = crate::durable::journal::session_path(&crate::prompt::mage_home()?, child);
-        parent
-            .publish_fork(intent, &child_path)
-            .map_err(super::session_err)?;
-        Self::resume_path(provider, model, workspace, system_prompt, &child_path)
+        let parent = resume_driver(workspace.as_ref(), source)?;
+        let child = parent.fork().map_err(super::session_err)?;
+        Self::resume_path(provider, model, workspace, system_prompt, &child)
     }
 
     /// Create a loop with discovered policy and a caller-owned session.
@@ -91,7 +84,7 @@ impl<P: Provider> Loop<P> {
         Ok(loop_)
     }
 
-    /// Create a hermetic loop. The journal lives under `workspace/sessions-v2`.
+    /// Create a hermetic loop. The session lives under `workspace/sessions`.
     pub fn with_session(
         provider: P,
         model: impl Into<String>,
@@ -132,6 +125,7 @@ impl<P: Provider> Loop<P> {
         Ok(Self {
             provider,
             model,
+            seats: BTreeMap::new(),
             system_prompt,
             plan: false,
             tools: ToolRegistry::with_policy_and_search(workspace, policy, search)?,
@@ -147,7 +141,6 @@ impl<P: Provider> Loop<P> {
             },
             spent_tokens: 0,
             context_sample: None,
-            started: Instant::now(),
             context_window: None,
             workspace: workspace
                 .canonicalize()
@@ -263,10 +256,12 @@ impl<P: Provider> Loop<P> {
         self.spent_tokens
     }
 
-    /// Wall-clock seconds charged to this session.
+    /// Seconds of provider and tool work charged to this session. Idle time
+    /// never counts, and the tally carries across resume, so the budget means
+    /// the same thing whether the session is live or resumed.
     #[must_use]
     pub fn elapsed_secs(&self) -> u64 {
-        self.started.elapsed().as_secs()
+        self.session.replay().elapsed_millis / 1000
     }
 
     /// True when the strict command allowlist is active.
@@ -280,6 +275,34 @@ impl<P: Provider> Loop<P> {
         self.provider = provider;
         self.model = model.into();
         self.context_sample = None;
+    }
+
+    /// Give `role` its own seat. Roles without one run on the driving seat.
+    pub fn set_seat(&mut self, role: workflow::Role, provider: P, model: impl Into<String>) {
+        self.seats.insert(role, (provider, model.into()));
+    }
+
+    /// Return `role` to the driving seat.
+    pub fn clear_seat(&mut self, role: workflow::Role) {
+        self.seats.remove(&role);
+    }
+
+    /// The model `role` runs on when it has its own seat.
+    #[must_use]
+    pub fn seat_model(&self, role: workflow::Role) -> Option<&str> {
+        self.seats.get(&role).map(|(_, model)| model.as_str())
+    }
+
+    /// Record the active workflow name in the session; `None` clears it.
+    /// Seats are connected by the caller.
+    pub fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
+        self.session.set_workflow(name).map_err(super::session_err)
+    }
+
+    /// The workflow name the session recorded, if any.
+    #[must_use]
+    pub fn workflow(&self) -> Option<String> {
+        self.session.workflow().map(str::to_string)
     }
 
     /// Arm or disarm the verify gate.
@@ -327,7 +350,7 @@ impl<P: Provider> Loop<P> {
         self
     }
 
-    /// Path of the format-2 session journal.
+    /// Path of the session log.
     #[must_use]
     pub fn session_path(&self) -> &Path {
         self.session.path()
@@ -349,6 +372,39 @@ impl<P: Provider> Loop<P> {
         self.session.work_progress().map_err(super::session_err)
     }
 
+    /// The live Goal Work's objective and progress, when one is active.
+    pub fn active_goal(&self) -> Result<Option<(String, crate::WorkProgress)>> {
+        let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
+            return Ok(None);
+        };
+        let progress = self.work_progress()?;
+        Ok((!progress.terminal()).then_some((objective, progress)))
+    }
+
+    /// One human-readable status block for the active goal, if any.
+    #[must_use]
+    pub fn goal_status(&self) -> Option<String> {
+        let (objective, progress) = self.active_goal().ok().flatten()?;
+        let mut text = format!(
+            "goal active — {}\nround {}/{} · {} tokens · {}",
+            truncate_line(&objective, 80),
+            progress.rounds,
+            progress.max_turns,
+            self.spent_tokens(),
+            progress.phase,
+        );
+        let gates = self.verify_commands();
+        if !gates.is_empty() {
+            text.push_str("\ngates: ");
+            text.push_str(&gates.join(" then "));
+        }
+        if let Some(reason) = &progress.reason {
+            text.push_str("\nlast: ");
+            text.push_str(&truncate_line(reason, 160));
+        }
+        Some(text)
+    }
+
     pub fn abandon_work(&mut self, reason: &str) -> Result<()> {
         self.session
             .abandon_work(reason)
@@ -367,36 +423,17 @@ impl<P: Provider> Loop<P> {
     pub fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
         self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
-        self.started = restored_start(replay.elapsed_millis);
         self
     }
 
-    /// Fork this session into a child journal and continue on the child.
+    /// Fork this session into a child log and continue on the child.
     pub fn fork_live(&mut self) -> Result<String> {
-        let child = crate::durable::id::SessionId::from_u128(
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_nanos()
-                ^ u128::from(std::process::id()),
-        );
-        let intent = self.session.fork(child).map_err(super::session_err)?;
-        let home = self
-            .session
-            .path()
-            .parent()
-            .and_then(Path::parent)
-            .ok_or_else(|| Error::Config("session path has no home".to_string()))?
-            .to_path_buf();
-        let child_path = crate::durable::journal::session_path(&home, child);
-        self.session
-            .publish_fork(intent, &child_path)
-            .map_err(super::session_err)?;
-        let child_driver = crate::durable::product::resume(&home, child, &self.workspace)
-            .map_err(super::session_err)?;
-        let replay = child_driver.replay();
-        self.adopt(child_driver, replay);
-        Ok(child.to_string())
+        let path = self.session.fork().map_err(super::session_err)?;
+        let child = resume_driver(&self.workspace, &path)?;
+        let replay = child.replay();
+        let id = child.id().to_string();
+        self.adopt(child, replay);
+        Ok(id)
     }
 
     /// Swap the live session for a fork: new log, replayed history, and
@@ -405,7 +442,6 @@ impl<P: Provider> Loop<P> {
         self.session = session;
         self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
-        self.started = restored_start(replay.elapsed_millis);
         self.bus = None;
         self.join_bus();
         self.schema = None;
@@ -419,7 +455,7 @@ impl<P: Provider> Loop<P> {
     /// Run the Goal judge as a durable, metered provider effect.
     pub(crate) async fn judge(&mut self, system: &str, user: &str) -> Result<(String, Usage)> {
         let request = CompletionRequest {
-            model: self.model.clone(),
+            model: self.seat(workflow::Role::Judge).1.to_string(),
             messages: vec![
                 Message::system(system.to_string()),
                 Message::user(user.to_string()),
@@ -433,17 +469,16 @@ impl<P: Provider> Loop<P> {
             .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
         let attempt = self
             .session
-            .start_judge(&durable, super::exposure(&request, &durable))
+            .start_judge(&request.model, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
-        match self.provider.complete(&request).await {
+        match self.seat(workflow::Role::Judge).0.complete(&request).await {
             Ok(message) => {
                 let usage = message.usage.clone();
                 let text = message.content.unwrap_or_default();
-                let mut meter = super::meter(&usage);
-                meter.live_millis = Some(super::elapsed_millis(started));
+                let meter = super::meter(&usage, super::elapsed_millis(started));
                 self.session
-                    .finish_judge(attempt, &text, meter)
+                    .finish_provider(attempt, &text, "", meter)
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
                     usage.prompt_tokens.saturating_add(usage.completion_tokens),
@@ -452,12 +487,7 @@ impl<P: Provider> Loop<P> {
             }
             Err(error) => {
                 self.session
-                    .fail_provider(
-                        attempt,
-                        super::durable_failure(error.provider_failure()),
-                        &error.to_string(),
-                        super::elapsed_millis(started),
-                    )
+                    .fail_provider(attempt, &error.to_string(), super::elapsed_millis(started))
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.session.replay().spent_tokens;
                 Err(error)
@@ -489,30 +519,15 @@ impl<P: Provider> Loop<P> {
 
     /// Record that the turn aborted (user cancel, shutdown).
     pub fn abort_note(&mut self, reason: &str) -> Result<()> {
-        if self.session.state().operation.is_none() {
-            return Ok(());
-        }
-        let abort = if reason.contains("shutdown") {
-            crate::durable::context::AbortReason::Shutdown
-        } else {
-            crate::durable::context::AbortReason::User
-        };
-        self.session.abort(abort).map_err(super::session_err)?;
-        Ok(())
+        self.session.abort(reason).map_err(super::session_err)
     }
 
     /// Start or resume numbered-step Work with every check declared by its
     /// plan and contract.
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(
-                markdown,
-                markdown,
-                crate::durable::work::WorkPolicy::Steps,
-                commands,
-            )
-            .map_err(super::session_err)?;
-        Ok(())
+            .prepare_external_work(markdown, WorkPolicy::Steps, commands)
+            .map_err(super::session_err)
     }
 
     /// Start or resume the durable Work owned by the standing-goal runner.
@@ -525,12 +540,7 @@ impl<P: Provider> Loop<P> {
         let max_turns = u32::try_from(max_turns)
             .map_err(|_error| Error::Config("goal turn limit is too large".to_string()))?;
         self.session
-            .prepare_external_work(
-                objective,
-                objective,
-                crate::durable::work::WorkPolicy::Goal { max_turns },
-                commands,
-            )
+            .prepare_external_work(objective, WorkPolicy::Goal { max_turns }, commands)
             .map_err(super::session_err)
     }
 
@@ -539,50 +549,30 @@ impl<P: Provider> Loop<P> {
         self.session.accept_plan().map_err(super::session_err)
     }
 
-    /// Whether a journal contains this workspace's active Steps Work.
+    /// Whether the session at `path` holds this workspace's active Steps Work.
     #[must_use]
     pub fn steps_at(path: &Path, workspace: &Path, markdown: &str) -> bool {
-        crate::durable::product::work_matches(
-            path,
-            workspace,
-            crate::durable::work::WorkPolicy::Steps,
-            markdown,
-        )
+        work_at(path, workspace, WorkPolicy::Steps, markdown)
     }
 
-    /// Whether a journal contains this workspace's active Goal Work.
+    /// Whether the session at `path` holds this workspace's active Goal Work.
     #[must_use]
     pub fn goal_at(path: &Path, workspace: &Path, objective: &str, max_turns: usize) -> bool {
         let Ok(max_turns) = u32::try_from(max_turns) else {
             return false;
         };
-        crate::durable::product::work_matches(
-            path,
-            workspace,
-            crate::durable::work::WorkPolicy::Goal { max_turns },
-            objective,
-        )
+        work_at(path, workspace, WorkPolicy::Goal { max_turns }, objective)
     }
-}
-
-fn restored_start(elapsed_millis: u64) -> std::time::Instant {
-    std::time::Instant::now()
-        .checked_sub(std::time::Duration::from_millis(elapsed_millis))
-        .unwrap_or_else(std::time::Instant::now)
 }
 
 fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
-    let home = path
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| Error::Config("session path has no home".to_string()))?;
-    if let Some(session) = crate::durable::journal::parse_path(path) {
-        return crate::durable::product::resume(home, session, workspace)
-            .map_err(super::session_err);
-    }
-    Err(Error::Config(
-        "session path is not a format-2 journal".to_string(),
-    ))
+    let (Some(home), Some(session)) = (log::home_of(path), log::parse_path(path)) else {
+        return Err(Error::Config(format!(
+            "{} is not a session log",
+            path.display()
+        )));
+    };
+    SessionDriver::resume(home, session, workspace).map_err(super::session_err)
 }
 
 fn open_driver(
@@ -591,11 +581,19 @@ fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    crate::durable::product::open(&crate::durable::product::Open {
-        home: home.as_ref().to_path_buf(),
-        workspace: workspace.to_path_buf(),
-        model: model.to_string(),
-        system: system.to_string(),
-    })
-    .map_err(super::session_err)
+    SessionDriver::open(home.as_ref(), workspace, model, system).map_err(super::session_err)
+}
+
+/// Clip one line of status text to `max` characters on a char boundary.
+fn truncate_line(text: &str, max: usize) -> String {
+    let mut cut = text.find('\n').unwrap_or(text.len()).min(max);
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let line = &text[..cut];
+    if line.len() < text.len() {
+        format!("{line}…")
+    } else {
+        line.to_string()
+    }
 }

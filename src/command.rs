@@ -4,7 +4,10 @@
 pub enum SlashCommand {
     Help,
     Settings,
+    Auth,
+    Login,
     Model,
+    Workflow,
     Theme,
     Session,
     Stats,
@@ -30,7 +33,14 @@ pub struct CommandSpec {
 const SPECS: &[CommandSpec] = &[
     spec("/help", "keys and commands", SlashCommand::Help),
     spec("/settings", "open settings", SlashCommand::Settings),
+    spec("/auth", "show provider authentication", SlashCommand::Auth),
+    spec("/login", "authenticate a provider", SlashCommand::Login),
     spec("/model", "choose the active model", SlashCommand::Model),
+    spec(
+        "/workflow",
+        "seat each step: the card, or NAME · off · set · clear · save · default",
+        SlashCommand::Workflow,
+    ),
     spec("/theme", "cycle the splash theme", SlashCommand::Theme),
     spec("/session", "session id and log path", SlashCommand::Session),
     spec("/stats", "token usage per round", SlashCommand::Stats),
@@ -84,6 +94,12 @@ pub fn parse_command(line: &str) -> Option<SlashCommand> {
     }
     if line == "/model" || line.starts_with("/model ") {
         return Some(SlashCommand::Model);
+    }
+    if line == "/auth" || line.starts_with("/auth ") {
+        return Some(SlashCommand::Auth);
+    }
+    if line == "/login" || line.starts_with("/login ") {
+        return Some(SlashCommand::Login);
     }
     SPECS
         .iter()

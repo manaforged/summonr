@@ -4,7 +4,6 @@ use crate::tools::Event;
 
 const MODE_LATER: &str = "mode switches when the current turn ends — esc cancels now";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends — esc cancels now";
-const BUSY: &str = "busy — esc cancels the current turn";
 
 enum Input {
     User(UserInput),
@@ -37,6 +36,14 @@ impl Worker {
                 tokio::select! {
                     done = &mut turn => break Some(done),
                     command = self.cmd.recv() => match command {
+                        Some(command @ Cmd::Command(_)) => {
+                            self.deferred.push_back(command);
+                            drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+                        }
+                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _))) => {
+                            self.deferred.push_back(command);
+                            drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+                        }
                         Some(Cmd::Cancel) => { cancelled = true; break None; }
                         Some(Cmd::Quit) => { drop(self.ui.send(Msg::Bye)); quit = true; break None; }
                         Some(Cmd::SetMode(plan)) => {
@@ -52,12 +59,14 @@ impl Worker {
                             if let Ok(mut queue) = self.steering.lock() { queue.push_back(text); }
                         }
                         Some(Cmd::Queue(text)) => self.followups.push_back(text),
-                        Some(command @ (Cmd::SetRounds(_) | Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::ListModels)) => {
+                        Some(command @ (Cmd::SetRounds(_) | Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::ListModels | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows)) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
-                        Some(Cmd::Submit(_)) => {
-                            drop(self.ui.send(Msg::System(BUSY.to_string())));
+                        Some(Cmd::Submit(input)) => {
+                            // The interface already shows this as sent; queue it
+                            // for after the turn instead of dropping it.
+                            self.followups.push_back(input);
                         }
                         Some(Cmd::Mail) => {}
                         Some(Cmd::Tick) => {}
@@ -94,7 +103,16 @@ impl Worker {
             })));
             drop(self.ui.send(Msg::Busy(false)));
         } else if let Some(Err(error)) = result {
-            self.fail(&error.to_string());
+            // A failed turn leaves the driver's turn open; close it so the next
+            // prompt is not refused as "a turn is already open".
+            if let Err(abort) = self.loop_.abort_note("turn failed") {
+                self.fail(&format!(
+                    "{error}; and the turn could not be closed: {abort}"
+                ));
+            } else {
+                self.fail(&error.to_string());
+            }
+            drop(self.ui.send(Msg::Busy(false)));
         } else {
             drop(self.ui.send(Msg::Busy(false)));
         }

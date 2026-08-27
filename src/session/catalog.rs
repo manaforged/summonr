@@ -1,48 +1,28 @@
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 
 use super::SessionInfo;
-use crate::durable::journal;
-use crate::durable::observe::workspace_identity_of;
-use crate::durable::project;
+use crate::durable::id::SessionId;
+use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
-use crate::provider::Role;
 
-/// Sessions whose header cwd matches `workspace` or a `summon/*` worktree
-/// of the same repository, newest first.
+/// The newest session whose workspace is `workspace` or a `summon/*`
+/// worktree of the same repository.
 pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
+    last_in(&crate::prompt::mage_home()?, workspace)
+}
+
+pub(crate) fn last_in(home: &Path, workspace: &Path) -> Result<Option<PathBuf>> {
     let want = roots(workspace);
-    let mut matches: Vec<SessionInfo> = list()?
+    let mut matches: Vec<SessionInfo> = list_in(home)?
         .into_iter()
         .filter(|info| {
             info.cwd
                 .as_deref()
                 .is_some_and(|cwd| want.iter().any(|root| root == cwd))
-                || format2_workspace_matches(&info.path, &want)
         })
         .collect();
     Ok(matches.pop().map(|info| info.path))
-}
-
-pub(super) fn format2_workspace_matches(path: &Path, roots: &[String]) -> bool {
-    let Some(session) = journal::parse_path(path) else {
-        return false;
-    };
-    let Ok(state) = journal::inspect(path) else {
-        return false;
-    };
-    if state.session() != Some(session) {
-        return false;
-    }
-    let Some(scope) = state
-        .default_scope
-        .and_then(|scope| state.scopes.get(&scope))
-    else {
-        return false;
-    };
-    roots.iter().any(|root| {
-        workspace_identity_of(Path::new(root))
-            .is_ok_and(|identity| identity.object() == scope.workspace().object())
-    })
 }
 
 fn roots(workspace: &Path) -> Vec<String> {
@@ -68,13 +48,14 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     if id.is_empty() {
         return Err(Error::Config("session id is empty".to_string()));
     }
-    let v2 = crate::prompt::mage_home()?
-        .join("sessions-v2")
-        .join(format!("{id}.jsonl"));
-    if v2.is_file() {
-        return Ok(v2);
+    let home = crate::prompt::mage_home()?;
+    if let Ok(session) = id.parse() {
+        let exact = log::session_path(&home, session);
+        if exact.is_file() {
+            return Ok(exact);
+        }
     }
-    let hits: Vec<PathBuf> = list()?
+    let hits: Vec<PathBuf> = list_in(&home)?
         .into_iter()
         .filter(|info| info.id == id || info.id.starts_with(id))
         .map(|info| info.path)
@@ -88,32 +69,32 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     }
 }
 
-/// All format-2 sessions, oldest first.
+/// Every session under the home, oldest first.
 pub fn list() -> Result<Vec<SessionInfo>> {
-    let v2 = crate::prompt::mage_home()?.join("sessions-v2");
-    let mut paths = if v2.is_dir() {
-        jsonl_paths(&v2)?
-    } else {
-        Vec::new()
-    };
+    list_in(&crate::prompt::mage_home()?)
+}
+
+pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
+    let dir = log::sessions_dir(home);
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)?
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            let id: SessionId = entry.file_name().to_str()?.parse().ok()?;
+            Some(log::session_path(home, id))
+        })
+        .filter(|path| path.is_file())
+        .collect();
     paths.sort();
     Ok(paths.into_iter().map(info).collect())
 }
 
-fn jsonl_paths(dir: &Path) -> Result<Vec<PathBuf>> {
-    Ok(std::fs::read_dir(dir)?
-        .filter_map(std::result::Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
-        .collect())
-}
-
 fn info(path: PathBuf) -> SessionInfo {
-    let id = path
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or("session")
-        .to_string();
+    let id = log::parse_path(&path)
+        .map(|session| session.to_string())
+        .unwrap_or_default();
     let (cwd, model, preview) = peek(&path);
     SessionInfo {
         id,
@@ -124,16 +105,31 @@ fn info(path: PathBuf) -> SessionInfo {
     }
 }
 
+/// Workspace, model, and the first user line without reading the whole log.
 fn peek(path: &Path) -> (Option<String>, Option<String>, String) {
-    let Ok(state) = journal::inspect(path) else {
+    let Ok(file) = std::fs::File::open(path) else {
         return (None, None, String::new());
     };
-    let replay = project::replay(&state);
-    let preview = replay
-        .history
-        .iter()
-        .find(|message| message.role == Role::User && !message.content.is_empty())
-        .map(|message| message.content.chars().take(72).collect())
-        .unwrap_or_default();
-    (None, replay.model, preview)
+    let mut cwd = None;
+    let mut model = None;
+    for line in std::io::BufReader::new(file).lines() {
+        let Ok(line) = line else {
+            break;
+        };
+        match serde_json::from_str(&line) {
+            Ok(Line::Session {
+                workspace,
+                model: name,
+                ..
+            }) => {
+                cwd = Some(workspace.display().to_string());
+                model = Some(name);
+            }
+            Ok(Line::User { text, .. }) if !text.is_empty() => {
+                return (cwd, model, text.chars().take(72).collect());
+            }
+            _ => {}
+        }
+    }
+    (cwd, model, String::new())
 }

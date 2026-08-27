@@ -1,23 +1,14 @@
-//! Format-2 durable execution primitives.
+//! Durable sessions.
 //!
-//! `SessionDriver` is the format-2 owner. `Loop` writes format-2. The reducer
-//! is the live and resume program. Work projections store step and goal
-//! progress. The driver does not keep a second copy of session state.
-pub(crate) mod bound;
-pub(crate) mod context;
+//! `SessionDriver` is the only writer. A session is two files under
+//! `<home>/sessions/<id>/`: `session.jsonl`, the conversation, and
+//! `work.json`, the job. Resume reads both; git is read for the changed-file
+//! manifest and never written.
 pub(crate) mod driver;
-pub(crate) mod effect;
-pub(crate) mod encoding;
-pub(crate) mod fact;
 pub(crate) mod id;
-pub(crate) mod journal;
-pub(crate) mod observe;
-pub(crate) mod product;
-pub(crate) mod project;
-pub(crate) mod publish;
-pub(crate) mod reducer;
+pub(crate) mod log;
+pub(crate) mod tree;
 pub(crate) mod work;
-pub(crate) mod workspace;
 
 #[cfg(test)]
 #[path = "durable_tests.rs"]

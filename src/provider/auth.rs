@@ -10,6 +10,14 @@ use crate::config::OAuth;
 use crate::error::{Error, ProviderFailureKind, Result};
 
 const SKEW: Duration = Duration::from_secs(60);
+
+/// `now + seconds`, clamped so a hostile or corrupt expiry cannot overflow the
+/// monotonic clock (adding an out-of-range `Duration` to an `Instant` panics).
+/// Caps at ten years, far past any real token lifetime.
+fn deadline(seconds: u64) -> Instant {
+    const MAX: u64 = 10 * 365 * 24 * 3600;
+    Instant::now() + Duration::from_secs(seconds.min(MAX))
+}
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 /// Resolved credentials. HTTP stays on `Client`; this type only yields a bearer.
@@ -198,12 +206,23 @@ async fn token(
                     save_disk(home, name, &next)?;
                     return put_chat(http, spec, slot, next).await;
                 }
-                Err(error) if device(spec) => {
-                    return Err(Error::Config(format!(
-                        "token refresh failed ({error}); run `summon login {name}`"
-                    )));
+                Err(error) => {
+                    // Another process sharing this home may have rotated the
+                    // refresh token and written a fresh one. Reload and use it
+                    // rather than reporting a spurious failure.
+                    if let Some(reloaded) = load_disk(home, name)?
+                        && reloaded.fresh()
+                        && reloaded.access_token != issued.access_token
+                    {
+                        return put_chat(http, spec, slot, reloaded).await;
+                    }
+                    if device(spec) {
+                        return Err(Error::Config(format!(
+                            "token refresh failed ({error}); run `summon login {name}`"
+                        )));
+                    }
+                    return Err(error);
                 }
-                Err(error) => return Err(error),
             }
         }
     }
@@ -275,15 +294,14 @@ async fn exchange(http: &reqwest::Client, spec: &OAuth, issued: Issued) -> Resul
         .and_then(serde_json::Value::as_u64)
         .and_then(|unix| {
             let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
-            unix.checked_sub(now)
-                .map(|remain| Instant::now() + Duration::from_secs(remain))
+            unix.checked_sub(now).map(deadline)
         })
         .or_else(|| {
             value
                 .get("expires_in")
                 .and_then(serde_json::Value::as_u64)
                 .filter(|seconds| *seconds > 0)
-                .map(|seconds| Instant::now() + Duration::from_secs(seconds))
+                .map(deadline)
         });
     Ok(Issued {
         access_token: access.to_string(),
@@ -319,7 +337,15 @@ fn credentials_path(home: &Path, name: &str) -> PathBuf {
         .chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
         .collect();
-    home.join("credentials").join(format!("{safe}.json"))
+    // Names that sanitize identically (foo.bar vs foo-bar) would share one
+    // file; disambiguate with a stable hash, but leave already-clean names
+    // untouched so credentials saved before this keep resolving.
+    let file = if safe == name {
+        format!("{safe}.json")
+    } else {
+        format!("{safe}-{}.json", crate::hashline::line_hash(name))
+    };
+    home.join("credentials").join(file)
 }
 
 fn load_disk(home: &Path, name: &str) -> Result<Option<Issued>> {
@@ -351,6 +377,10 @@ fn save_disk(home: &Path, name: &str, issued: &Issued) -> Result<()> {
 
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
+    // Write to a private temp file, then rename over the target. A crash
+    // mid-write leaves the temp file, not a corrupt credential that bricks
+    // every later load.
+    let tmp = path.with_extension("tmp");
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -358,8 +388,10 @@ fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path)?;
+    let mut file = options.open(&tmp)?;
     file.write_all(bytes)?;
+    file.sync_all()?;
+    std::fs::rename(&tmp, path)?;
     Ok(())
 }
 
@@ -378,11 +410,7 @@ fn from_disk(disk: Disk) -> Issued {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        if unix <= now {
-            Instant::now()
-        } else {
-            Instant::now() + Duration::from_secs(unix - now)
-        }
+        deadline(unix.saturating_sub(now))
     });
     Issued {
         access_token: disk.access_token,
@@ -468,10 +496,7 @@ fn issued_from(body: TokenBody) -> Result<Issued> {
     Ok(Issued {
         access_token: access,
         refresh_token: body.refresh_token.filter(|token| !token.trim().is_empty()),
-        expires_at: body
-            .expires_in
-            .filter(|seconds| *seconds > 0)
-            .map(|seconds| Instant::now() + Duration::from_secs(seconds)),
+        expires_at: body.expires_in.filter(|seconds| *seconds > 0).map(deadline),
     })
 }
 
@@ -518,9 +543,10 @@ async fn device_login(
         .unwrap_or(&start.verification_uri);
     notice(&format!("open {uri}"));
     notice(&format!("code {}", start.user_code));
-    let mut interval = Duration::from_secs(start.interval.unwrap_or(5));
-    let deadline =
-        Instant::now() + Duration::from_secs(start.expires_in.filter(|n| *n > 0).unwrap_or(900));
+    // RFC 8628 makes interval a minimum with a 5s default; an explicit 0
+    // must not turn the poll into a hot loop against the token endpoint.
+    let mut interval = Duration::from_secs(start.interval.filter(|n| *n > 0).unwrap_or(5));
+    let deadline = deadline(start.expires_in.filter(|n| *n > 0).unwrap_or(900));
     loop {
         if Instant::now() >= deadline {
             return Err(Error::Config("device login expired".to_string()));

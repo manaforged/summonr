@@ -20,6 +20,8 @@ use worker::worker;
 pub enum Msg {
     Delta(String),
     Thinking(String),
+    /// A streaming tool call was named — show it live before the round ends.
+    Calling(String),
     Event(Event),
     Busy(bool),
     Failed(String),
@@ -32,8 +34,20 @@ pub enum Msg {
         model: String,
         relay: Option<String>,
     },
-    Models(Vec<String>),
+    /// Picker rows as `endpoint\tmodel`, recents first. `recent` is how many
+    /// leading rows are recently-used seats, for the section divider.
+    Models {
+        rows: Vec<String>,
+        recent: usize,
+    },
     ModelsFailed(String),
+    /// The live workflow: its name, the saved names, and one seat per
+    /// [`crate::workflow::Role::ALL`] entry as `endpoint\tmodel`.
+    Workflow {
+        name: Option<String>,
+        names: Vec<String>,
+        seats: Vec<Option<String>>,
+    },
     Mail {
         from: String,
         text: String,
@@ -44,6 +58,9 @@ pub enum Msg {
 
 /// Interface-to-worker commands.
 enum Cmd {
+    Command(String),
+    Login(String),
+    SetKey(String, String),
     Submit(UserInput),
     Mail,
     Steer(UserInput),
@@ -53,7 +70,15 @@ enum Cmd {
     SetVerify(bool),
     SetEndpoint(String),
     SetModel(String),
+    SetSeat(String, String),
     ListModels,
+    /// Seat one workflow role on `endpoint` + `model`.
+    SeatRole(crate::workflow::Role, String, String),
+    /// Return one workflow role to the driving seat.
+    ClearRole(crate::workflow::Role),
+    /// Save the live seats as `[workflows.NAME]` and name the session's workflow.
+    SaveWorkflow(String),
+    ListWorkflows,
     SetBus(bool),
     Cancel,
     Quit,
@@ -87,6 +112,8 @@ pub struct Snapshot {
     pub strict: bool,
     pub endpoint: String,
     pub context_window: Option<u32>,
+    /// The active workflow name, when one is set.
+    pub workflow: Option<String>,
 }
 
 impl Default for Snapshot {
@@ -99,6 +126,7 @@ impl Default for Snapshot {
             max_rounds: 64,
             strict: false,
             endpoint: String::new(),
+            workflow: None,
             context_window: None,
         }
     }
@@ -116,6 +144,12 @@ pub struct Info {
     pub plan: bool,
     pub strict: bool,
     pub workspace: String,
+    /// Workflow to seat at start, when one is named.
+    pub workflow: Option<String>,
+    /// Where settings changes persist. Production points at
+    /// `~/.mage/config.toml`; tests point at a throwaway file so the suite
+    /// never writes the developer's real config.
+    pub config: Option<std::path::PathBuf>,
 }
 
 #[must_use]
@@ -245,16 +279,20 @@ fn tail_lines(output: &str, n: usize) -> String {
 }
 
 fn help_text() -> String {
-    "/exit quit · /clear reset history · /session show the log path · /help this\n\
-     /settings open settings · /model pick a ready seat · /plan plan mode · /plan accept · /plan reject · /auto\n\
-     /goal <objective> work toward it across turns (gates + judge)\n\
-     /agents live bus sessions · /bus toggle auto-reply · /stats token chart\n\
-     @path attach text or an image\n\
-     keys: enter send/steer · tab complete/queue · ctrl+j newline · shift+tab mode\n\
-     pgup/pgdn or wheel scroll · ctrl+o settings · ctrl+g editor\n\
-     settings: enter on model lists every ready seat\n\
-     esc cancel · ctrl+c clear/quit · ctrl+d quit when empty"
-        .to_string()
+    let commands = crate::command_specs()
+        .iter()
+        .map(|spec| format!("{} {}", spec.name, spec.description))
+        .collect::<Vec<_>>()
+        .join(" · ");
+    format!(
+        "{commands}\n\
+         @path attach text or an image\n\
+         keys: enter send/steer · tab complete/queue · ctrl+j newline · shift+tab mode\n\
+         pgup/pgdn or wheel scroll · ctrl+o settings · ctrl+g editor\n\
+         settings: enter on model lists every ready seat\n\
+         workflow card: ↑↓ role · enter seat · d driving · ←→ saved · s save\n\
+         esc cancel · ctrl+c clear/quit · ctrl+d quit when empty"
+    )
 }
 
 #[cfg(test)]

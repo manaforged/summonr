@@ -501,7 +501,10 @@ fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
     {
         let used = last.total().min(window);
         right.push(Span::styled(
-            format!("ctx {}% · ", 100 - used * 100 / window),
+            format!(
+                "ctx {}% · ",
+                100 - u64::from(used) * 100 / u64::from(window)
+            ),
             DIM,
         ));
     }

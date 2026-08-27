@@ -1,1005 +1,517 @@
-use crate::durable::context::{AbortReason, InputOrigin};
-use crate::durable::driver::{DriverError, SessionDriver};
-use crate::durable::effect::{Exposure, MeterSettlement, ToolOutcome, Usage};
-use crate::durable::id::{ProviderAttemptId, SessionId, ToolCallId};
-use crate::durable::journal::inspect;
-use crate::durable::observe::workspace_identity_of;
-use crate::durable::work::WorkPolicy;
-use crate::durable::workspace::{PathComponent, PathKey, PathPlatform, WorkspaceScope};
+use std::path::{Path, PathBuf};
+
+use crate::durable::driver::{DriverError, Exposure, SessionDriver, work_at};
+use crate::durable::id::SessionId;
+use crate::durable::log::{self, Line, Usage};
+use crate::durable::work::{Decision, Policy, Stage, Work};
 use crate::provider::Role;
 
-use super::fixture;
+fn home() -> (tempfile::TempDir, PathBuf) {
+    let home = tempfile::tempdir().expect("tempdir");
+    let workspace = home.path().join("workspace");
+    std::fs::create_dir(&workspace).expect("workspace");
+    std::fs::write(workspace.join("src.txt"), b"hello").expect("file");
+    (home, workspace)
+}
+
+fn open(home: &Path, workspace: &Path) -> SessionDriver {
+    SessionDriver::open(home, workspace, "test-model", "You are Mage.").expect("open")
+}
+
+fn resume(home: &Path, path: &Path, workspace: &Path) -> SessionDriver {
+    let id = log::parse_path(path).expect("session path");
+    SessionDriver::resume(home, id, workspace).expect("resume")
+}
+
+fn exposure() -> Exposure {
+    Exposure {
+        max_input_tokens: 70,
+        max_output_tokens: 30,
+    }
+}
 
 fn usage(input: u64, output: u64, millis: u64) -> Usage {
     Usage {
-        input_tokens: Some(input),
-        output_tokens: Some(output),
-        cached_input_tokens: Some(0),
-        live_millis: Some(millis),
+        input,
+        output,
+        cached: 0,
+        millis,
     }
 }
 
-fn plan_tool(
-    driver: &mut SessionDriver,
-    attempt: ProviderAttemptId,
-    text: &str,
-    reasoning: &str,
-    usage: Usage,
-    name: &str,
-    arguments: &str,
-) -> Result<ToolCallId, DriverError> {
-    driver
-        .finish_provider_with_tools(attempt, text, reasoning, usage, &[(name, arguments, name)])?
-        .into_iter()
-        .next()
-        .ok_or(DriverError::NoTool)
+/// Open a turn on a single-turn Work with no checks.
+fn start(driver: &mut SessionDriver, text: &str) {
+    driver.prepare_turn_work(text, &[]).expect("work");
+    driver.start_input(text, &[]).expect("start");
 }
 
-fn finish_tool(
-    driver: &mut SessionDriver,
-    call: ToolCallId,
-    output: &str,
-    usage: Usage,
-) -> Result<(), DriverError> {
-    driver.finish_tools(&[(call, output, true, usage)])
+fn answer(driver: &mut SessionDriver, text: &str) {
+    let attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    driver
+        .finish_provider(attempt, text, "", usage(10, 5, 100))
+        .expect("finish");
+}
+
+fn kinds(path: &Path) -> Vec<String> {
+    log::read(path)
+        .expect("read")
+        .iter()
+        .map(|line| {
+            serde_json::to_value(line).expect("encode")["kind"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect()
 }
 
 #[test]
-fn start_operation_records_a_durable_group_that_replays() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let scope = fixture::scope();
-    let head = fixture::head();
+fn open_round_and_resume_continues() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    assert!(path.starts_with(home.path().join("sessions")));
+    assert_eq!(log::session_path(home.path(), driver.id()), path);
 
-    let mut driver =
-        SessionDriver::open(&path, fixture::session(), &scope, head).expect("driver must open");
-    driver
-        .start_operation("implement the durable driver")
-        .expect("operation must open");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    assert_eq!(driver.state().seq(), 2);
-    assert!(
-        driver.state().hot_receipts() > 0,
-        "start must store a command receipt"
-    );
+    start(&mut driver, "build the cutover");
+    answer(&mut driver, "done");
+    driver.close().expect("close");
     drop(driver);
 
-    // Replay from disk must restore the open operation, so a second start is
-    // rejected as a duplicate open operation.
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    let result = resumed.start_operation("another");
-    assert!(matches!(result, Err(DriverError::Busy)));
-}
-
-#[test]
-fn start_provider_records_a_durable_round() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    drop((attempt, driver));
-}
-
-#[test]
-fn finish_provider_closes_a_round() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-
-    driver
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("provider must finish");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    drop(driver);
-}
-
-#[test]
-fn failed_provider_charges_exposure_without_adding_assistant_history() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(
-            br#"{"model":"test-model","messages":["request"]}"#,
-            Exposure {
-                max_input_tokens: 70,
-                max_output_tokens: 30,
-            },
-        )
-        .expect("provider must start");
-
-    driver
-        .fail_provider(
-            attempt,
-            crate::durable::effect::ProviderFailureKind::Authentication,
-            "denied",
-            25,
-        )
-        .expect("provider failure must settle");
-
-    let replay = driver.replay();
-    assert_eq!(replay.spent_tokens, 100);
-    assert_eq!(replay.elapsed_millis, 25);
+    let mut resumed = resume(home.path(), &path, &workspace);
+    assert!(!resumed.busy());
+    start(&mut resumed, "second turn");
+    answer(&mut resumed, "again");
+    let replay = resumed.replay();
+    let texts: Vec<(Role, &str)> = replay
+        .history
+        .iter()
+        .map(|message| (message.role, message.content.as_str()))
+        .collect();
     assert_eq!(
-        replay.history.len(),
-        1,
-        "failure must not add blank history"
+        texts,
+        [
+            (Role::User, "build the cutover"),
+            (Role::Assistant, "done"),
+            (Role::User, "second turn"),
+            (Role::Assistant, "again"),
+        ]
     );
-    assert!(driver.state().meters.settled.iter().any(|settlement| {
-        matches!(
-            settlement,
-            MeterSettlement::Estimated(Usage {
-                input_tokens: Some(70),
-                output_tokens: Some(30),
-                live_millis: Some(25),
-                ..
-            })
-        )
-    }));
-    assert!(inspect(&path).is_ok(), "failed round must replay");
+    assert_eq!(replay.spent_tokens, 30);
+    assert_eq!(replay.elapsed_millis, 200);
 }
 
 #[test]
-fn prepare_plan_records_a_plan_stage_work() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-
-    driver
-        .prepare_plan_work("Implement durable execution", &[])
-        .expect("work must set");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    drop(driver);
+fn resume_missing_session_fails() {
+    let (home, workspace) = home();
+    assert!(SessionDriver::resume(home.path(), SessionId::from_u128(99), &workspace).is_err());
 }
 
 #[test]
-fn fork_records_an_intent_and_publishes_the_sealed_child() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let workspace = directory.path().join("workspace");
-    std::fs::create_dir(&workspace).expect("workspace must be created");
-    std::fs::write(workspace.join("src.txt"), b"hello").expect("workspace file must be written");
-    let identity = workspace_identity_of(&workspace).expect("workspace identity must resolve");
-    let scope = WorkspaceScope::new(
-        fixture::id(10),
-        identity,
-        vec![PathKey::root(PathPlatform::Unix)],
-        Vec::new(),
-        Vec::new(),
-    )
-    .expect("scope must be valid");
-
-    let path = directory.path().join("parent.jsonl");
-    let child_path = directory.path().join("child.jsonl");
-    let mut driver = SessionDriver::open(&path, fixture::session(), &scope, fixture::head())
-        .expect("driver must open");
-    driver.set_workspace(&workspace);
-
-    let child = SessionId::from_u128(2);
-    let intent = driver.fork(child).expect("fork must open");
-    assert!(inspect(&path).is_ok(), "fork intent must replay");
-    assert!(driver.state().open_fork.is_some());
-
-    driver
-        .publish_fork(intent, &child_path)
-        .expect("fork must publish");
-    assert!(inspect(&path).is_ok(), "published fork must replay");
-    assert!(driver.state().open_fork.is_none());
-    assert!(driver.state().forks.contains_key(&intent));
-    let sealed = driver
-        .state()
-        .forks
-        .get(&intent)
-        .map(|(sealed, _observation)| *sealed)
-        .expect("fork must publish a sealed child");
-    drop(driver);
-
-    assert!(
-        child_path.is_file(),
-        "publish_fork must create the child journal"
-    );
-    let child_state = inspect(&child_path).expect("child journal must replay alone");
-    assert_eq!(
-        child_state.head(),
-        Some(sealed),
-        "parent must record the child chain head"
-    );
-    let child_driver =
-        SessionDriver::resume(&child_path, child).expect("child must resume without the parent");
-    drop(child_driver.replay());
-    drop(child_driver);
-}
-
-#[test]
-fn select_plan_writes_the_plan_file() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let workspace = directory.path().join("workspace");
-    std::fs::create_dir(&workspace).expect("workspace must be created");
-    let identity = workspace_identity_of(&workspace).expect("workspace identity must resolve");
-    let scope = WorkspaceScope::new(
-        fixture::id(10),
-        identity,
-        vec![PathKey::root(PathPlatform::Unix)],
-        Vec::new(),
-        Vec::new(),
-    )
-    .expect("scope must be valid");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(&path, fixture::session(), &scope, fixture::head())
-        .expect("driver must open");
-    driver.set_workspace(&workspace);
-    let markdown = "# Plan\n\n## Steps\n\n1. Implement the plan.";
-    driver
-        .prepare_external_work(
-            "Implement durable execution",
-            markdown,
-            WorkPolicy::Steps,
-            &[],
-        )
-        .expect("plan must select");
-    let work = driver
-        .state()
-        .works
-        .values()
-        .next()
-        .expect("Work must exist");
-    let revision = work.selected_plan().expect("Plan must be selected");
-    let work = work.id();
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    assert!(
-        driver.state().open_materialization.is_none(),
-        "materialization must settle"
-    );
-    assert!(
-        driver
-            .state()
-            .materializations
-            .values()
-            .any(|materialization| materialization
-                .outcome
-                .as_ref()
-                .is_some_and(crate::durable::fact::MaterializationOutcome::usable)),
-        "Plan file must record a usable outcome"
-    );
-    let destination =
-        crate::durable::work::plan_path(PathPlatform::Unix, fixture::session(), work, revision)
-            .expect("Plan path must be valid");
-    let mut file = workspace;
-    for component in destination.components() {
-        match component {
-            PathComponent::Unix(bytes) => file.push(std::ffi::OsStr::new(
-                std::str::from_utf8(bytes.as_slice()).expect("path must be UTF-8 in this test"),
-            )),
-            PathComponent::Windows(_) => panic!("unix fixture must not use windows paths"),
-        }
-    }
-    assert_eq!(
-        std::fs::read(&file).expect("Plan file must exist"),
-        markdown.as_bytes()
-    );
-    drop(driver);
-}
-
-#[test]
-fn tool_round_plans_starts_and_finishes_a_tool() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
+fn resume_aborts_the_open_turn_and_answers_its_tool_calls() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    start(&mut driver, "killed mid-turn");
     let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-
-    let call = plan_tool(
-        &mut driver,
-        attempt,
-        "done",
-        "",
-        usage(10, 5, 100),
-        "read_file",
-        r#"{"path":"README.md"}"#,
-    )
-    .expect("provider must finish and plan a tool");
-    driver
-        .start_tool(call, r#"{"path":"README.md"}"#)
-        .expect("tool must start");
-    finish_tool(&mut driver, call, "# Mage", usage(4, 2, 20)).expect("tool must finish");
-    driver.close_operation().expect("operation must close");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    drop(driver);
-}
-
-#[test]
-fn failed_tool_is_not_recorded_as_completed() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    let call = plan_tool(
-        &mut driver,
-        attempt,
-        "reading",
-        "",
-        usage(10, 5, 100),
-        "read_file",
-        r#"{"path":"missing"}"#,
-    )
-    .expect("provider must plan the tool");
-    driver
-        .start_tool(call, r#"{"path":"missing"}"#)
-        .expect("tool must start");
-
-    driver
-        .finish_tools(&[(call, "file does not exist", false, usage(0, 0, 5))])
-        .expect("failed tool must finish");
-
-    let outcome = driver
-        .state()
-        .tools
-        .get(&call)
-        .and_then(|tool| tool.result.as_ref())
-        .map(|result| &result.outcome);
-    assert!(matches!(outcome, Some(ToolOutcome::Failed { .. })));
-    assert!(inspect(&path).is_ok(), "failed tool must replay");
-}
-
-#[test]
-fn tool_round_replays_issued_name_and_arguments() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    let arguments = r#"{"path":"Agents.md"}"#;
-    let call = plan_tool(
-        &mut driver,
-        attempt,
-        "calling read_file",
-        "need the agents guide",
-        usage(12, 6, 80),
-        "read_file",
-        arguments,
-    )
-    .expect("provider must finish and plan a tool");
-    driver.start_tool(call, arguments).expect("tool must start");
-    finish_tool(&mut driver, call, "# Agents", usage(3, 1, 15)).expect("tool must finish");
-
-    let replay = driver.replay();
-    assert_eq!(
-        replay.history.len(),
-        3,
-        "user, assistant, and tool must project"
-    );
-    assert_eq!(replay.history[1].role, Role::Assistant);
-    assert_eq!(replay.history[1].tool_calls.len(), 1);
-    assert_eq!(replay.history[1].tool_calls[0].function.name, "read_file");
-    assert_eq!(
-        replay.history[1].tool_calls[0].function.arguments,
-        arguments
-    );
-    assert_eq!(
-        replay.history[1].reasoning.as_deref(),
-        Some("need the agents guide")
-    );
-    assert_eq!(replay.history[2].role, Role::Tool);
-    assert_eq!(replay.history[2].content, "# Agents");
-    assert!(inspect(&path).is_ok(), "tool payload journal must replay");
-    drop(driver);
-}
-
-#[test]
-fn tool_batch_plans_and_finishes_every_call() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read both files")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
+        .start_provider("test-model", exposure())
+        .expect("provider");
     let calls = driver
         .finish_provider_with_tools(
             attempt,
-            "calling two reads",
             "",
-            usage(10, 5, 100),
+            "",
+            usage(1, 1, 1),
             &[
-                ("read_file", r#"{"path":"a.md"}"#, "c1"),
-                ("read_file", r#"{"path":"b.md"}"#, "c2"),
+                ("read_file", r#"{"path":"a"}"#, "c1"),
+                ("read_file", r#"{"path":"b"}"#, "c2"),
             ],
         )
-        .expect("provider must plan both tools");
-    assert_eq!(calls.len(), 2, "one planned id per provider call");
+        .expect("plan tools");
     driver
-        .start_tool(calls[0], r#"{"path":"a.md"}"#)
-        .expect("first tool must start");
-    driver
-        .start_tool(calls[1], r#"{"path":"b.md"}"#)
-        .expect("second tool must start");
-    driver
-        .finish_tools(&[
-            (calls[0], "A", true, usage(1, 1, 10)),
-            (calls[1], "B", true, usage(1, 1, 10)),
-        ])
-        .expect("batch must finish together");
-
-    let replay = driver.replay();
-    assert_eq!(replay.history.len(), 4, "user, assistant, two tools");
-    assert_eq!(replay.history[1].tool_calls.len(), 2);
-    assert_eq!(replay.history[1].tool_calls[0].id, "c1");
-    assert_eq!(replay.history[1].tool_calls[1].id, "c2");
-    assert_eq!(replay.history[2].content, "A");
-    assert_eq!(replay.history[3].content, "B");
-    assert!(inspect(&path).is_ok(), "two-tool batch must replay");
-    drop(driver);
-}
-
-#[test]
-fn close_operation_closes_the_round() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    driver
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("provider must finish");
-
-    driver.close_operation().expect("operation must close");
-
-    assert!(inspect(&path).is_ok(), "journal must replay a valid prefix");
-    drop(driver);
-}
-
-#[test]
-fn provider_requires_an_open_operation() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-
-    assert!(matches!(
-        driver.start_provider(br#"{"model":"test-model"}"#, fixture::exposure()),
-        Err(DriverError::NoOperation)
-    ));
-}
-
-#[test]
-fn resume_continues_an_open_operation() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("implement the durable driver")
-        .expect("operation must open");
+        .finish_tools(&[(calls[0], "A", true, 3)])
+        .expect("first result");
     drop(driver);
 
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    let attempt = resumed
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("resume must continue the open operation");
-    resumed
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("resumed provider must finish");
-    assert!(inspect(&path).is_ok(), "resumed round must replay");
-    let replay = resumed.replay();
-    assert_eq!(replay.history.len(), 2, "user and assistant must project");
-    assert_eq!(replay.history[0].content, "implement the durable driver");
-    assert_eq!(replay.history[1].content, "done");
-    drop(resumed);
+    let mut resumed = resume(home.path(), &path, &workspace);
+    assert!(!resumed.busy(), "resume settles the dead process's turn");
+    let history = resumed.replay().history;
+    assert_eq!(history.len(), 4, "user, assistant, answered, aborted");
+    assert_eq!(history[3].tool_call_id.as_deref(), Some("c2"));
+    assert_eq!(history[3].content, "aborted");
+    assert_eq!(kinds(&path).last().map(String::as_str), Some("close"));
+    start(&mut resumed, "next turn");
 }
 
 #[test]
-fn resume_finishes_an_open_provider_round() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
+fn resume_returns_an_interrupted_verify_to_execute() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
     driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
+        .prepare_turn_work("change the source", &["true".to_string()])
+        .expect("work");
+    driver.start_input("change the source", &[]).expect("start");
+    answer(&mut driver, "done");
+    std::fs::write(workspace.join("src.txt"), b"changed").expect("edit");
+    let paths = driver.enter_verify().expect("capture");
+    assert_eq!(paths, vec!["src.txt".to_string()]);
     drop(driver);
 
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    resumed
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("resume must finish the open provider attempt");
-    resumed.close_operation().expect("operation must close");
-    assert!(inspect(&path).is_ok(), "resumed finish must replay");
-    drop(resumed);
+    let resumed = resume(home.path(), &path, &workspace);
+    let work = Work::load(&log::work_path(&path))
+        .expect("load")
+        .expect("work");
+    assert_eq!(work.stage(), Some(Stage::Execute));
+    assert!(work.candidate.is_none());
+    assert!(!resumed.busy());
 }
 
 #[test]
-fn abort_cancels_an_open_provider_round() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
+fn verdict_writes_the_receipt_and_closes_the_turn() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
     driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    let _attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
+        .prepare_turn_work("write", &["true".to_string()])
+        .expect("work");
+    driver.start_input("write", &[]).expect("start");
+    assert_eq!(driver.stage(), Some(Stage::Execute));
+    answer(&mut driver, "done");
+    std::fs::write(workspace.join("new.txt"), b"x").expect("edit");
+    let paths = driver.enter_verify().expect("capture");
+    assert_eq!(paths, vec!["new.txt".to_string()]);
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    assert!(verdict.passed && verdict.diagnostic.is_none());
     driver
-        .abort(AbortReason::User)
-        .expect("abort must settle and close");
-    assert!(
-        driver.state().operation.is_none(),
-        "abort must close the operation"
-    );
-    let log = std::fs::read_to_string(&path).expect("journal must exist");
-    assert!(
-        log.contains("abort_requested"),
-        "abort must journal AbortRequested: {log}"
-    );
-    assert!(inspect(&path).is_ok(), "aborted journal must replay");
-    drop(driver);
-}
-
-#[test]
-fn run_command_records_arguments_before_execution() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("run the check")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    let call = plan_tool(
-        &mut driver,
-        attempt,
-        "running",
-        "",
-        usage(4, 2, 10),
-        "run_command",
-        r#"{"command":"true"}"#,
-    )
-    .expect("run_command must be planned");
-    driver
-        .start_tool(call, r#"{"command":"true"}"#)
-        .expect("run_command must start");
-    let arguments = driver
-        .state()
-        .tools
-        .values()
-        .next()
-        .and_then(|tool| tool.intent.as_ref())
-        .map(|intent| intent.normalized_arguments.as_str());
-    assert_eq!(arguments, Some(r#"{"command":"true"}"#));
-    drop(driver);
-}
-
-#[test]
-fn background_command_is_a_completed_tool_result() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("run in the background")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    let arguments = r#"{"command":"sleep 1","background":true}"#;
-    let call = plan_tool(
-        &mut driver,
-        attempt,
-        "running",
-        "",
-        usage(4, 2, 10),
-        "run_command",
-        arguments,
-    )
-    .expect("background command must be planned");
-    driver
-        .start_tool(call, arguments)
-        .expect("background command must start");
-    finish_tool(
-        &mut driver,
-        call,
-        "started job abc\npid 4242\nlog /tmp/job.log\nstate: running",
-        usage(1, 0, 5),
-    )
-    .expect("background command must finish");
-    let outcome = driver
-        .state()
-        .tools
-        .get(&call)
-        .and_then(|tool| tool.result.as_ref())
-        .map(|result| &result.outcome);
-    assert!(matches!(
-        outcome,
-        Some(ToolOutcome::Completed { output }) if output.as_str().contains("started job abc")
-    ));
-    assert!(inspect(&path).is_ok(), "journal must replay");
-    drop(driver);
-}
-
-#[test]
-fn resume_after_many_operations_allocates_fresh_ids() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    for index in 0..25 {
-        driver
-            .start_operation(&format!("round {index}"))
-            .expect("operation must open");
-        let attempt = driver
-            .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-            .expect("provider must start");
-        driver
-            .finish_provider(attempt, "done", "", usage(10, 5, 100))
-            .expect("provider must finish");
-        driver.close_operation().expect("operation must close");
-    }
-    drop(driver);
-
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    resumed
-        .start_operation("after many rounds")
-        .expect("fresh operation must open after resume");
-    let attempt = resumed
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("fresh provider must start");
-    resumed
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("fresh provider must finish");
-    resumed
-        .close_operation()
-        .expect("fresh operation must close");
-    assert!(inspect(&path).is_ok(), "post-resume history must replay");
-    drop(resumed);
-}
-
-#[test]
-fn empty_input_is_rejected_before_any_commit() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-
-    assert!(matches!(
-        driver.start_operation("   "),
-        Err(DriverError::Empty)
-    ));
-    assert_eq!(driver.state().seq(), 1);
-}
-
-#[test]
-fn steer_survives_resume_as_the_through_entry() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("implement the durable driver")
-        .expect("operation must open");
-    driver
-        .steer("prefer the short path", InputOrigin::User)
-        .expect("steer must apply");
-    let seq = driver.state().seq();
-    assert!(matches!(
-        driver.steer("   ", InputOrigin::User),
-        Err(DriverError::Empty)
-    ));
-    assert_eq!(driver.state().seq(), seq, "empty steer must not commit");
-    drop(driver);
-
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    let attempt = resumed
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start through the steer entry");
-    resumed
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("provider must finish");
-    let replay = resumed.replay();
+        .commit_verdict(verdict, Decision::Automatic, Some("done\n\nTurn receipt"))
+        .expect("commit");
+    assert!(!driver.busy());
+    assert_eq!(driver.replay().history[1].content, "done\n\nTurn receipt");
     assert_eq!(
-        replay.history.len(),
-        3,
-        "start, steer, and assistant must project"
+        driver.work_progress().expect("progress").phase,
+        crate::WorkPhase::Completed
     );
-    assert_eq!(replay.history[0].content, "implement the durable driver");
-    assert_eq!(replay.history[1].content, "prefer the short path");
-    assert_eq!(replay.history[2].content, "done");
-    assert!(inspect(&path).is_ok(), "steered journal must replay");
-    drop(resumed);
-}
-
-#[test]
-fn compact_during_an_open_operation_rebases_for_the_next_provider() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("implement the durable driver")
-        .expect("operation must open");
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    driver
-        .finish_provider(attempt, "long answer", "", usage(10, 5, 100))
-        .expect("provider must finish");
-    let before = driver.state().current_epoch.expect("epoch must exist");
-
-    driver
-        .compact("Keep the short path.")
-        .expect("compact must rebase at a round boundary");
-    let after = driver
-        .state()
-        .current_epoch
-        .expect("replacement epoch must exist");
-    assert_ne!(before, after, "compact must open a new epoch");
-    drop(driver);
-
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    let attempt = resumed
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start on the compacted epoch");
-    resumed
-        .finish_provider(attempt, "done", "", usage(8, 3, 40))
-        .expect("provider must finish after compact");
-    let replay = resumed.replay();
-    assert_eq!(replay.history[0].content, "implement the durable driver");
-    assert_eq!(replay.history[1].role, Role::System);
-    assert_eq!(replay.history[1].content, "Keep the short path.");
-    assert_eq!(replay.history[2].content, "done");
-    assert!(inspect(&path).is_ok(), "compacted journal must replay");
-    drop(resumed);
-}
-
-#[test]
-fn clear_replaces_an_idle_conversation_and_rejects_an_open_operation() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
-    driver
-        .start_operation("read the spec")
-        .expect("operation must open");
-    assert!(matches!(driver.clear(), Err(DriverError::Busy)));
-    let attempt = driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
-    driver
-        .finish_provider(attempt, "done", "", usage(10, 5, 100))
-        .expect("provider must finish");
-    driver.close_operation().expect("operation must close");
-    let before = driver.state().current_epoch.expect("epoch must exist");
-
-    driver.clear().expect("idle clear must replace the epoch");
-    let after = driver
-        .state()
-        .current_epoch
-        .expect("replacement epoch must exist");
-    assert_ne!(before, after, "clear must open a replacement epoch");
-    assert!(
-        driver.replay().history.is_empty(),
-        "clear must drop history"
+    assert_eq!(
+        kinds(driver.path()),
+        ["session", "user", "assistant", "receipt", "close"]
     );
-    assert!(inspect(&path).is_ok(), "cleared journal must replay");
-    drop(driver);
 }
 
 #[test]
-fn peer_steer_applies_while_an_operation_is_open() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
+fn untouched_file_churn_during_verify_keeps_the_verdict() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "write");
+    answer(&mut driver, "done");
+    driver.enter_verify().expect("capture");
+    // A gate rewrites a file the turn never touched.
+    std::fs::write(workspace.join("Cargo.lock"), b"regenerated").expect("gate write");
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    assert!(verdict.passed, "untouched churn must not fail the verdict");
+    assert!(verdict.diagnostic.is_none());
+}
+
+#[test]
+fn a_changed_candidate_file_during_verify_fails_the_verdict() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "write");
+    // The turn changes a file, so it enters the candidate set.
+    std::fs::write(workspace.join("out.txt"), b"first").expect("edit");
+    answer(&mut driver, "done");
+    driver.enter_verify().expect("capture");
+    // The same file changes again after the candidate was captured.
+    std::fs::write(workspace.join("out.txt"), b"second-and-longer").expect("re-edit");
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    assert!(!verdict.passed);
+    assert_eq!(
+        verdict.diagnostic.as_deref(),
+        Some("workspace changed after candidate capture")
+    );
+}
+
+#[test]
+fn failed_provider_charges_exposure_without_adding_history() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "read the spec");
+    let attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    driver
+        .fail_provider(attempt, "denied", 25)
+        .expect("failure settles");
+    let replay = driver.replay();
+    assert_eq!(replay.spent_tokens, 100);
+    assert_eq!(replay.elapsed_millis, 25);
+    assert_eq!(replay.history.len(), 1);
     assert!(matches!(
-        driver.steer("no operation", InputOrigin::Peer),
-        Err(DriverError::NoOperation)
+        driver.finish_provider(attempt, "late", "", usage(1, 1, 1)),
+        Err(DriverError::NoProvider)
     ));
+}
+
+#[test]
+fn summary_and_judge_rounds_charge_without_messages() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "go");
+    let attempt = driver
+        .start_judge("judge-model", exposure())
+        .expect("judge");
     driver
-        .start_operation("read the spec")
-        .expect("operation must open");
+        .finish_provider(attempt, r#"{"done":true}"#, "", usage(4, 1, 9))
+        .expect("finish judge");
+    let attempt = driver
+        .start_summary("summary-model", exposure())
+        .expect("summary");
     driver
-        .steer("from a peer", InputOrigin::Peer)
-        .expect("peer steer must apply");
+        .finish_provider(attempt, "SUMMARY", "", usage(2, 2, 2))
+        .expect("finish summary");
+    let replay = driver.replay();
+    assert_eq!(replay.spent_tokens, 9);
+    assert_eq!(replay.history.len(), 1, "neither round is a message");
+    let log = std::fs::read_to_string(driver.path()).expect("log");
+    assert!(log.contains("\"note\":\"goal judge\""));
+}
+
+#[test]
+fn steer_survives_resume_and_needs_an_open_turn() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    assert!(matches!(driver.steer("early"), Err(DriverError::NoTurn)));
+    start(&mut driver, "implement");
+    driver.steer("prefer the short path").expect("steer");
+    assert!(matches!(driver.steer("   "), Err(DriverError::Empty)));
     assert!(matches!(
-        driver.start_operation("another"),
+        driver.start_input("again", &[]),
         Err(DriverError::Busy)
     ));
-    let replay = driver.replay();
-    assert_eq!(replay.history[1].content, "from a peer");
-    assert!(inspect(&path).is_ok(), "peer steer journal must replay");
     drop(driver);
+
+    let resumed = resume(home.path(), &path, &workspace);
+    let history = resumed.replay().history;
+    assert_eq!(history[0].content, "implement");
+    assert_eq!(history[1].content, "prefer the short path");
 }
 
 #[test]
-fn recover_closes_an_open_operation() {
-    let directory = tempfile::tempdir().expect("temporary directory must exist");
-    let path = directory.path().join("session.jsonl");
-    let mut driver = SessionDriver::open(
-        &path,
-        fixture::session(),
-        &fixture::scope(),
-        fixture::head(),
-    )
-    .expect("driver must open");
+fn compact_rebases_on_the_open_turn_and_clear_needs_idle() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    start(&mut driver, "implement");
+    assert!(matches!(driver.clear(), Err(DriverError::Busy)));
+    answer(&mut driver, "long answer");
     driver
-        .start_operation("interrupted work")
-        .expect("operation must open");
-    driver
-        .start_provider(br#"{"model":"test-model"}"#, fixture::exposure())
-        .expect("provider must start");
+        .compact("Keep the short path.", &[])
+        .expect("compact");
+    driver.close().expect("close");
     drop(driver);
 
-    let mut resumed = SessionDriver::resume(&path, fixture::session()).expect("resume must reopen");
-    resumed
-        .recover()
-        .expect("recover must abort the open operation");
+    let mut resumed = resume(home.path(), &path, &workspace);
+    let history = resumed.replay().history;
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].content, "implement");
+    assert_eq!(history[1].role, Role::System);
+    resumed.clear().expect("clear");
+    assert!(resumed.replay().history.is_empty());
+}
+
+#[test]
+fn abort_is_idempotent_and_records_its_reason() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    driver.abort("nothing open").expect("idle abort is fine");
+    start(&mut driver, "read");
+    driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    driver.abort("cancelled by user").expect("abort");
+    assert!(!driver.busy());
+    let log = std::fs::read_to_string(driver.path()).expect("log");
+    assert!(log.contains("cancelled by user"));
+    assert_eq!(driver.replay().spent_tokens, 0);
+    start(&mut driver, "next");
+}
+
+#[test]
+fn budget_persists_and_only_changes_are_written() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    driver.set_budget(Some(1_000), None).expect("budget");
+    driver.set_budget(Some(1_000), None).expect("same budget");
+    assert_eq!(kinds(&path), ["session", "budget"]);
+    drop(driver);
+    let resumed = resume(home.path(), &path, &workspace);
+    assert_eq!(resumed.budget_limits(), (Some(1_000), None));
+}
+
+#[test]
+fn fork_copies_the_conversation_but_not_the_work() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "first");
+    answer(&mut driver, "done");
+    driver.close().expect("close");
+    let child_path = driver.fork().expect("fork");
+    assert_ne!(child_path, driver.path());
+    let child = resume(home.path(), &child_path, &workspace);
+    assert_ne!(child.id(), driver.id());
+    assert_eq!(child.replay().history, driver.replay().history);
+    assert!(matches!(child.work_progress(), Err(DriverError::NoWork)));
+    assert!(matches!(
+        log::header(&child_path).expect("header"),
+        Line::Session { parent, .. } if parent == Some(driver.id())
+    ));
+}
+
+#[test]
+fn external_work_resumes_only_the_same_plan_and_checks() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    let plan = "## Steps\n\n1. Implement the plan.";
     assert!(
-        resumed.state().operation.is_none(),
-        "recover must leave the session idle"
+        driver
+            .prepare_external_work(plan, Policy::Single, &[])
+            .is_err()
     );
-    let replay = resumed.replay();
-    assert_eq!(replay.spent_tokens, 0);
-    assert_eq!(replay.elapsed_millis, 0);
+    driver
+        .prepare_external_work(plan, Policy::Steps, &["true".to_string()])
+        .expect("select");
+    assert_eq!(driver.work_progress().expect("progress").current, Some(1));
+    assert!(work_at(&path, &workspace, Policy::Steps, plan));
+    assert!(!work_at(&path, &workspace, Policy::Steps, "other plan"));
+    assert!(!work_at(
+        &path,
+        &workspace,
+        Policy::Goal { max_turns: 1 },
+        plan
+    ));
+    assert!(
+        !work_at(&path, home.path(), Policy::Steps, plan),
+        "another workspace"
+    );
+
+    assert!(
+        driver
+            .prepare_external_work(plan, Policy::Steps, &["false".to_string()])
+            .is_err(),
+        "changed checks are refused"
+    );
+    assert!(
+        driver
+            .prepare_external_work(
+                "## Steps\n\n1. Other.",
+                Policy::Steps,
+                &["true".to_string()]
+            )
+            .is_err(),
+        "another objective is refused"
+    );
+    drop(driver);
+
+    let mut resumed = resume(home.path(), &path, &workspace);
     resumed
-        .start_operation("next turn")
-        .expect("idle session must accept a new operation");
-    drop(resumed);
+        .prepare_external_work(plan, Policy::Steps, &["true".to_string()])
+        .expect("same plan resumes");
+    assert_eq!(resumed.work_progress().expect("progress").current, Some(1));
+}
+
+#[test]
+fn a_turn_needs_work_and_a_plan_must_be_accepted_first() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    assert!(matches!(
+        driver.start_input("hi", &[]),
+        Err(DriverError::NoWork)
+    ));
+    assert!(matches!(
+        driver.start_input("  ", &[]),
+        Err(DriverError::Empty)
+    ));
+    assert!(driver.accept_plan().is_err());
+
+    driver.prepare_plan_work("plan it").expect("plan work");
+    driver.start_input("plan it", &[]).expect("start");
+    let attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    driver
+        .finish_plan(
+            attempt,
+            "# Plan\n\n1. Do it",
+            "",
+            usage(1, 1, 1),
+            &["true".to_string()],
+        )
+        .expect("finish plan");
+    assert!(!driver.busy());
+    assert!(
+        driver
+            .prepare_turn_work("implement", &["true".to_string()])
+            .is_err(),
+        "the plan must be accepted before implementation"
+    );
+    driver.accept_plan().expect("accept");
+    driver
+        .prepare_turn_work("implement", &["true".to_string()])
+        .expect("execute attaches");
+    assert!(
+        driver.prepare_turn_work("implement", &[]).is_err(),
+        "changed checks are refused"
+    );
+}
+
+#[test]
+fn queued_continuations_land_before_the_next_input() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    driver
+        .prepare_turn_work("fix", &["false".to_string()])
+        .expect("work");
+    driver.start_input("fix", &[]).expect("start");
+    answer(&mut driver, "tried");
+    driver.enter_verify().expect("capture");
+    let verdict = driver.prepare_verdict(false).expect("verdict");
+    driver
+        .commit_verdict(verdict, Decision::Automatic, None)
+        .expect("commit");
+
+    driver
+        .prepare_turn_work("again", &["false".to_string()])
+        .expect("same work");
+    let queued = driver.start_input("again", &[]).expect("start");
+    assert_eq!(
+        queued,
+        vec!["Repair the failed completion check.".to_string()]
+    );
+    let history = driver.replay().history;
+    assert_eq!(history[2].content, "Repair the failed completion check.");
+    assert_eq!(history[3].content, "again");
+}
+
+#[test]
+fn resume_uses_the_recorded_workspace_not_the_caller() {
+    let (home, workspace) = home();
+    let driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    drop(driver);
+
+    // Resume the session from a different directory than it was opened in.
+    let elsewhere = home.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("elsewhere");
+    let resumed = resume(home.path(), &path, &elsewhere);
+
+    let recorded = std::fs::canonicalize(&workspace).expect("canonical");
+    assert_eq!(
+        resumed.workspace(),
+        recorded,
+        "resume must use the session's recorded workspace, not the caller's cwd"
+    );
 }

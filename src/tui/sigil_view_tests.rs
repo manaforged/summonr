@@ -32,7 +32,18 @@ fn info() -> Info {
         plan: false,
         strict: true,
         workspace: "~/src/mage".to_string(),
+        workflow: None,
+        config: Some(scratch_config()),
     }
+}
+
+/// A unique throwaway config path so a persisting settings row never writes
+/// the developer's real `~/.mage/config.toml`.
+fn scratch_config() -> PathBuf {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static SEQ: AtomicUsize = AtomicUsize::new(0);
+    let n = SEQ.fetch_add(1, Ordering::Relaxed);
+    std::env::temp_dir().join(format!("mage-test-{}-{n}-config.toml", std::process::id()))
 }
 
 fn apply(app: &App, msg: Msg) {

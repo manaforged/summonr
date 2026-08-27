@@ -12,7 +12,7 @@ impl Worker {
         self.turn(input).await
     }
 
-    async fn command(&mut self, line: &str) -> Option<bool> {
+    pub(super) async fn command(&mut self, line: &str) -> Option<bool> {
         if line.is_empty() {
             return Some(true);
         }
@@ -23,6 +23,20 @@ impl Worker {
             }
             Some(crate::SlashCommand::Help) => {
                 self.system(&super::super::help_text());
+                true
+            }
+            Some(crate::SlashCommand::Auth) => {
+                let name = argument(line).unwrap_or(&self.endpoint);
+                self.auth(name);
+                true
+            }
+            Some(crate::SlashCommand::Login) => {
+                let name = argument(line).unwrap_or(&self.endpoint).to_string();
+                self.login(&name);
+                true
+            }
+            Some(crate::SlashCommand::Workflow) => {
+                self.workflow(argument(line));
                 true
             }
             Some(crate::SlashCommand::Clear) => self.clear(),
@@ -128,6 +142,49 @@ impl Worker {
         true
     }
 
+    fn auth(&self, name: &str) {
+        match crate::endpoint::auth_info(name) {
+            Ok(info) => self.system(&info.status()),
+            Err(error) => self.fail(&error.to_string()),
+        }
+    }
+
+    pub(super) fn login(&self, name: &str) {
+        let info = match crate::endpoint::auth_info(name) {
+            Ok(info) => info,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return;
+            }
+        };
+        if !info.device_login {
+            self.auth(name);
+            return;
+        }
+        let endpoint = match crate::endpoint::resolve(Some(name), None) {
+            Ok(endpoint) => endpoint,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return;
+            }
+        };
+        // Device login polls for up to 15 minutes; run it off the worker task
+        // so it never freezes the interface or wedges queued commands.
+        let ui = self.ui.clone();
+        let name = name.to_string();
+        drop(tokio::spawn(async move {
+            let notice = ui.clone();
+            let result = crate::provider::Client::login(&endpoint, move |line| {
+                drop(notice.send(Msg::System(line.to_string())));
+            })
+            .await;
+            match result {
+                Ok(()) => drop(ui.send(Msg::System(format!("{name}: login complete")))),
+                Err(error) => drop(ui.send(Msg::Failed(error.to_string()))),
+            }
+        }));
+    }
+
     fn unknown(&self, line: &str) -> Option<bool> {
         let head = line.split_whitespace().next().unwrap_or(line);
         self.fail(&format!(
@@ -137,8 +194,12 @@ impl Worker {
     }
 
     /// `/goal <objective>`: run turns until Work records a terminal verdict.
+    /// Bare `/goal`: status of the active goal.
     async fn goal(&mut self, objective: &str) -> bool {
         let gates = self.loop_.verify_commands().to_vec();
+        if objective.is_empty() {
+            return self.goal_status();
+        }
         if let Err(error) = self
             .loop_
             .select_goal(objective, &gates, crate::DEFAULT_MAX_TURNS)
@@ -161,9 +222,21 @@ impl Worker {
             if !self.turn(prompt.into()).await {
                 return false;
             }
-            if self.last_turn.take().is_none() {
-                self.system("goal paused — cancelled by user");
-                return true;
+            match self.last_turn.take() {
+                None => {
+                    self.system("goal paused — cancelled by user");
+                    return true;
+                }
+                // A turn that hit its round limit must not relaunch another
+                // full turn — that is unbounded spend the budget never sees.
+                Some(turn) if turn.aborted => {
+                    if let Err(error) = self.loop_.abandon_work("goal execution aborted") {
+                        self.fail(&error.to_string());
+                    }
+                    self.system("goal stopped — a turn hit the round limit");
+                    return true;
+                }
+                Some(_) => {}
             }
         };
         match code {
@@ -174,4 +247,22 @@ impl Worker {
         }
         true
     }
+
+    /// Bare `/goal`: show the active goal, or usage when none is set.
+    fn goal_status(&mut self) -> bool {
+        if let Some(status) = self.loop_.goal_status() {
+            self.system(&status);
+        } else {
+            self.system(
+                "/goal <objective> — work toward it across turns; gates come from .mage/check.toml",
+            );
+        }
+        true
+    }
+}
+
+fn argument(line: &str) -> Option<&str> {
+    line.split_once(char::is_whitespace)
+        .map(|(_, value)| value.trim())
+        .filter(|value| !value.is_empty())
 }

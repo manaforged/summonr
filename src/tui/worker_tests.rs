@@ -7,6 +7,16 @@ use super::*;
 use crate::prefs::Prefs;
 
 fn worker() -> (Worker, UnboundedSender<Cmd>, PathBuf) {
+    let (worker, tx, _ui, workspace) = worker_ui();
+    (worker, tx, workspace)
+}
+
+fn worker_ui() -> (
+    Worker,
+    UnboundedSender<Cmd>,
+    UnboundedReceiver<Msg>,
+    PathBuf,
+) {
     let workspace = std::env::temp_dir().join(format!(
         "mage-worker-test-{}-{}",
         std::process::id(),
@@ -24,7 +34,7 @@ fn worker() -> (Worker, UnboundedSender<Cmd>, PathBuf) {
     )
     .unwrap_or_else(|error| panic!("{error}"));
     let (tx, rx) = unbounded_channel();
-    let (ui, _) = unbounded_channel();
+    let (ui, ui_rx) = unbounded_channel();
     let info = Info {
         version: "test".to_string(),
         model: "test".to_string(),
@@ -35,8 +45,10 @@ fn worker() -> (Worker, UnboundedSender<Cmd>, PathBuf) {
         plan: false,
         strict: false,
         workspace: workspace.display().to_string(),
+        workflow: None,
+        config: None,
     };
-    (Worker::new(loop_, rx, ui, info), tx, workspace)
+    (Worker::new(loop_, rx, ui, info), tx, ui_rx, workspace)
 }
 
 #[tokio::test]
@@ -85,5 +97,39 @@ fn model_setting_reuses_the_current_endpoint() {
 
     assert_eq!(worker.loop_.model(), "qwen-next");
     assert_eq!(worker.endpoint, "qwen");
+    std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[tokio::test]
+async fn the_card_seats_clears_and_reports_roles() {
+    use crate::workflow::{Role, Seat};
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+    worker.loop_.set_seat(
+        Role::Plan,
+        Client::new("", "http://localhost/v1").unwrap_or_else(|error| panic!("{error}")),
+        "plan-model",
+    );
+    worker.workflow.seats.insert(
+        Role::Plan,
+        Seat {
+            endpoint: "local".to_string(),
+            model: Some("plan-model".to_string()),
+        },
+    );
+    worker.send_workflow();
+    let Some(Msg::Workflow { name, seats, .. }) = ui.recv().await else {
+        panic!("expected a workflow message");
+    };
+    assert_eq!(name, None);
+    assert_eq!(seats.len(), Role::ALL.len());
+    assert_eq!(seats[1].as_deref(), Some("local\tplan-model"));
+    assert_eq!(seats[2], None);
+
+    worker.clear_role(Role::Plan);
+    assert_eq!(worker.loop_.seat_model(Role::Plan), None);
+    let Some(Msg::Workflow { seats, .. }) = ui.recv().await else {
+        panic!("expected a workflow message");
+    };
+    assert_eq!(seats[1], None);
     std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
 }

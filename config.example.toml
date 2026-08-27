@@ -101,3 +101,15 @@ model = "grok-4.6"
 # count = 5
 # # allowed_domains = ["docs.rs", "doc.rust-lang.org"]
 # # excluded_domains = []
+
+# Workflows: one seat per step. A role the workflow does not name runs on
+# the session's driving seat (the endpoint you started with). Pick one with
+# `summon -w NAME`, `/workflow NAME`, or `workflow = "NAME"` here.
+# workflow = "cheap-scout"
+# [workflows.cheap-scout]
+# scout = "kimi"                                   # read-only reconnaissance
+# plan = "grok"                                    # plan-mode rounds
+# # implement unset → the driving seat
+# review = { endpoint = "glm", model = "glm-5.3" } # read-only review after the gates
+# judge = "grok"                                   # goal continue/stop
+# summary = "qwen"                                 # compaction

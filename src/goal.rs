@@ -4,9 +4,10 @@
 //! verdict is mechanical (exit 0 or not); the judge only decides whether
 //! to continue, never whether the work passed.
 //!
-//! State is durable in the session journal through the same Work projection
-//! as step mode, so `summon --goal …` resumes after a process exit.
+//! State lives in the session's `work.json` like step mode, so
+//! `summon --goal …` resumes after a process exit.
 
+use crate::durable::work::Decision;
 use crate::provider::Provider;
 use crate::runtime::Loop;
 
@@ -26,7 +27,7 @@ pub(crate) async fn decision<P: Provider>(
     reply: &str,
     evidence: &str,
     usage: &mut crate::provider::Usage,
-) -> crate::durable::driver::VerdictDecision {
+) -> Decision {
     match loop_
         .judge(JUDGE_SYSTEM, &judge_user(objective, reply, evidence))
         .await
@@ -35,14 +36,12 @@ pub(crate) async fn decision<P: Provider>(
             usage.add(&judge_usage);
             let verdict = parse_verdict(&reply);
             if verdict.done {
-                crate::durable::driver::VerdictDecision::GoalComplete(verdict.reason)
+                Decision::GoalComplete
             } else {
-                crate::durable::driver::VerdictDecision::GoalContinue(verdict.reason)
+                Decision::GoalContinue(verdict.reason)
             }
         }
-        Err(error) => crate::durable::driver::VerdictDecision::GoalContinue(format!(
-            "judge unavailable: {error}"
-        )),
+        Err(error) => Decision::GoalContinue(format!("judge unavailable: {error}")),
     }
 }
 
@@ -108,6 +107,9 @@ fn parse_verdict(reply: &str) -> Verdict {
     let Some(end) = trimmed.rfind('}') else {
         return Verdict::continue_(trimmed.chars().take(200).collect());
     };
+    if end < start {
+        return Verdict::continue_(trimmed.chars().take(200).collect());
+    }
     match serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
         Ok(value) => Verdict {
             done: matches!(value.get("done"), Some(serde_json::Value::Bool(true))),

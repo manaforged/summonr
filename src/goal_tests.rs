@@ -23,6 +23,10 @@ fn verdict_tolerates_prose_and_garbage() {
     assert_eq!(verdict.reason, "the objective looks incomplete");
     let verdict = parse_verdict("{\"done\": \"yes\"}");
     assert!(!verdict.done);
+
+    // A closing brace before an opening one must not panic on the slice.
+    let verdict = parse_verdict("done :) } still thinking {");
+    assert!(!verdict.done);
 }
 
 #[test]

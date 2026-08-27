@@ -1,7 +1,8 @@
 # Work
 
 This is the Mage harness. Summoner is the product name. `summon` is
-the command. The connector owns HTTP and SSE (`src/provider.rs`) and
+the command — `summon MODEL` starts it with a specific model, and a
+bare `summoner` uses your default. The connector owns HTTP and SSE (`src/provider.rs`) and
 credentials (`src/provider/auth.rs`: API key or OAuth token). CoT is
 one field (`reasoning_content`): open-weight `<think>` tags hoist
 into it; frontier hosts that never send it omit it on the next POST.
@@ -17,7 +18,7 @@ Work is one coding job:
 - an objective
 - a policy: one turn, numbered steps, or a standing goal
 - a stage: Plan, Execute, or Verify
-- items, evidence, and (when verifying) a candidate capture of the
+- steps, their checks, and (when verifying) a candidate capture of the
   workspace
 
 `summon --steps` and `summon --goal` are how you start Work from the
@@ -38,30 +39,34 @@ that for the gate. `.mage/check.toml` is a process. Exit 0 or not.
 In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
 
-Crash the process. Run the same command. Resume reads the journal
-and projects Work from its typed facts (`src/durable/project.rs`). If
-the plan text, workspace, or gate list changed, Summoner refuses to
-guess.
+Crash the process. Run the same command. Resume reads the session
+log back into the conversation and `work.json` back into Work, then
+aborts the turn the dead process left open (`src/durable/driver.rs`).
+If the plan text, workspace, or gate list changed, Summoner refuses
+to guess.
 
 That is the agentic loop this repo is built around: you name the job,
-the harness keeps it, the model edits, commands prove it, the journal
-is the resume program.
+the harness keeps it, the model edits, commands prove it, two files
+are the resume program.
 
 ## Where it lives in the tree
 
 | Piece | File |
 |---|---|
-| Work, Plan, stages | `src/durable/work.rs` |
-| Session writer | `src/durable/driver.rs` and `src/durable/driver/lifecycle.rs` |
-| Replay is live state | `src/durable/reducer.rs` |
-| Conversation that writes the journal | `src/runtime/turn.rs` |
+| Work, Plan, stages, `work.json` | `src/durable/work.rs` |
+| Session driver: the one seam `Loop` talks to | `src/durable/driver.rs` |
+| Conversation log, `session.jsonl` | `src/durable/log.rs` |
+| Changed files (git read-only, `(size, mtime)` fallback) | `src/durable/tree.rs` |
+| Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
 | argv (`summon grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
 
-The journal is append-only. Resume replays it. `Loop` does not keep a
-second copy of session state (`src/durable.rs`).
+A session is `~/.mage/sessions/<id>/session.jsonl` (append-only
+messages) plus `work.json` (the job, rewritten atomically after every
+transition). Git is read for the changed-file manifest and never
+written; a non-git workspace gets a `(size, mtime)` walk instead.
 
 On disk you still see Mage names: `~/.mage/sessions/`, `.mage/jobs/`,
 `MAGE_*`. Same harness.

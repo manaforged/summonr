@@ -1,0 +1,111 @@
+//! Review: a reviewer seat reads the change after the gates pass and
+//! either lets it through or sends it back with findings. It is a gate,
+//! not the judge: it can return Work to Execute, never declare it done.
+
+use crate::provider::Provider;
+use crate::runtime::Loop;
+use crate::verify::Outcome;
+use crate::workflow::Role;
+
+/// The check name the receipt shows for a review.
+pub(crate) const CHECK: &str = "review";
+/// How much of the agent's final message the reviewer sees.
+const CONTEXT_CHARS: usize = 4_000;
+/// How much of an unparsable reply becomes the findings.
+const RAW_CHARS: usize = 600;
+
+const SYSTEM: &str = "You review one code change against its objective. Read the changed \
+files with the tools; they are read-only. Reply with one line of JSON: {\"pass\": true|false, \
+\"findings\": \"<what must change, or empty>\"}. Pass only when the change does what the \
+objective asks and you can point to no defect, missing case, or leftover.";
+
+/// Run the reviewer and fold its answer into a check outcome.
+pub(crate) async fn outcome<P: Provider>(
+    loop_: &mut Loop<P>,
+    objective: &str,
+    reply: &str,
+    evidence: &str,
+    paths: &[String],
+    usage: &mut crate::provider::Usage,
+) -> std::result::Result<Outcome, String> {
+    match loop_
+        .aside(
+            Role::Review,
+            SYSTEM,
+            &user(objective, reply, evidence, paths),
+        )
+        .await
+    {
+        Ok((text, review_usage)) => {
+            usage.add(&review_usage);
+            let verdict = parse(&text);
+            Ok(Outcome {
+                command: CHECK.to_string(),
+                passed: verdict.pass,
+                output: verdict.findings,
+            })
+        }
+        // A seat outage is not a rejection: the caller skips the review and
+        // lets the gates stand, instead of failing the verdict.
+        Err(error) => Err(format!("review unavailable: {error}")),
+    }
+}
+
+fn user(objective: &str, reply: &str, evidence: &str, paths: &[String]) -> String {
+    let tail: String = reply
+        .chars()
+        .rev()
+        .take(CONTEXT_CHARS)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect();
+    let changed = if paths.is_empty() {
+        "none".to_string()
+    } else {
+        paths
+            .iter()
+            .map(|path| format!("- {path}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nChanged paths:\n{changed}\n\nAgent's latest response:\n{tail}"
+    )
+}
+
+struct Verdict {
+    pass: bool,
+    findings: String,
+}
+
+/// Parse the reviewer's one-line JSON. Prose around the object is
+/// tolerated; anything unparsable is a rejection carrying the raw text.
+fn parse(reply: &str) -> Verdict {
+    let trimmed = reply.trim();
+    let raw = || Verdict {
+        pass: false,
+        findings: trimmed.chars().take(RAW_CHARS).collect(),
+    };
+    let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) else {
+        return raw();
+    };
+    if end < start {
+        return raw();
+    }
+    match serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
+        Ok(value) => Verdict {
+            pass: matches!(value.get("pass"), Some(serde_json::Value::Bool(true))),
+            findings: value
+                .get("findings")
+                .and_then(|findings| findings.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        },
+        Err(_) => raw(),
+    }
+}
+
+#[cfg(test)]
+#[path = "review_tests.rs"]
+mod tests;

@@ -74,7 +74,7 @@ pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Line> {
             Entry::Error(text) => lines.push(vec![Span::styled(format!("summon: {text}"), RED)]),
             Entry::Chart(rounds) => lines.extend(chart(rounds, accent)),
             Entry::Image { bytes, label, .. } => lines.extend(
-                super::image::render(bytes, width)
+                super::image::render_cached(bytes, width)
                     .map(|rows| {
                         let mut block = vec![vec![Span::styled(label, DIM)]];
                         block.extend(rows);
@@ -258,8 +258,11 @@ fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {
         let bar =
             usize::try_from(round.total()).unwrap_or(0) * 24 / usize::try_from(peak).unwrap_or(1);
         let hit = if round.prompt > 0 {
-            usize::try_from(round.cached).unwrap_or(0) * bar
-                / usize::try_from(round.prompt).unwrap_or(1)
+            // A provider that reports cached > prompt must not blow the bar
+            // width into a multi-gigabyte repeat().
+            (usize::try_from(round.cached).unwrap_or(0) * bar
+                / usize::try_from(round.prompt).unwrap_or(1))
+            .min(bar)
         } else {
             0
         };

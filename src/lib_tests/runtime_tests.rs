@@ -835,3 +835,129 @@ async fn compaction_budget_stops_before_the_followup_request() -> Result<()> {
 fn provider_accepts_empty_key_as_local() {
     Client::new(" ", DEFAULT_BASE_URL).unwrap();
 }
+
+/// A provider that signs its replies and records the model it was asked for.
+struct Tagged {
+    tag: &'static str,
+    calls: Arc<Mutex<Vec<(String, String)>>>,
+}
+
+impl Tagged {
+    fn new(tag: &'static str, calls: &Arc<Mutex<Vec<(String, String)>>>) -> Self {
+        Self {
+            tag,
+            calls: calls.clone(),
+        }
+    }
+}
+
+impl Provider for Tagged {
+    fn complete<'a>(
+        &'a self,
+        request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            if let Ok(mut calls) = self.calls.lock() {
+                calls.push((self.tag.to_string(), request.model.clone()));
+            }
+            let judge = request
+                .messages
+                .first()
+                .is_some_and(|message| message.content.starts_with("You judge"));
+            Ok(AssistantMessage {
+                content: Some(if judge {
+                    r#"{"done":true,"reason":"signed"}"#.to_string()
+                } else {
+                    format!("reply from {}", self.tag)
+                }),
+                ..AssistantMessage::default()
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn roles_run_on_their_own_seats() -> Result<()> {
+    use crate::workflow::Role as Step;
+
+    let workspace = test_workspace()?;
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = Loop::with_session(
+        Tagged::new("driver", &calls),
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    loop_.set_seat(Step::Plan, Tagged::new("plan", &calls), "plan-model");
+    loop_.set_seat(Step::Judge, Tagged::new("judge", &calls), "judge-model");
+    assert_eq!(loop_.seat_model(Step::Plan), Some("plan-model"));
+    assert_eq!(loop_.seat_model(Step::Implement), None);
+    assert_eq!(loop_.workflow(), None);
+    loop_.set_workflow(Some("cheap"))?;
+
+    loop_.set_plan(true);
+    let plan = loop_.turn("plan it").await?;
+    assert_eq!(plan.text, "reply from plan");
+    loop_.accept_plan()?;
+    loop_.set_plan(false);
+    let done = loop_.turn("do it").await?;
+    assert!(done.text.starts_with("reply from driver"));
+    loop_.set_seat(Step::Implement, Tagged::new("impl", &calls), "impl-model");
+    let gates = vec!["true".to_string()];
+    loop_.select_goal("finish", &gates, 3)?;
+    let goal = loop_.turn(&crate::goal_prompt("finish", &gates, 0)).await?;
+    assert!(goal.text.starts_with("reply from impl"));
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
+
+    let calls = calls
+        .lock()
+        .map_err(|_error| Error::Tool("call log is poisoned".to_string()))?
+        .clone();
+    assert_eq!(
+        calls,
+        [
+            ("plan".to_string(), "plan-model".to_string()),
+            ("driver".to_string(), "test-model".to_string()),
+            ("impl".to_string(), "impl-model".to_string()),
+            ("judge".to_string(), "judge-model".to_string()),
+        ]
+    );
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert!(log.contains(r#""model":"judge-model""#), "{log}");
+    assert!(log.contains(r#""kind":"workflow","name":"cheap""#), "{log}");
+    assert_eq!(loop_.workflow().as_deref(), Some("cheap"));
+    loop_.clear_seat(Step::Plan);
+    assert_eq!(loop_.seat_model(Step::Plan), None);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_empty_response_still_charges_the_round() -> Result<()> {
+    struct Empty;
+    impl Provider for Empty {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some(String::new()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Empty, "test-model", &workspace, "test")?;
+    let result = loop_.turn("hello").await;
+    assert!(result.is_err(), "an empty response should fail the turn");
+    assert!(
+        loop_.replay_session().spent_tokens > 0,
+        "the round the provider billed must reach the ledger"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}

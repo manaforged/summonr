@@ -1,4 +1,4 @@
-//! Session catalog and format-2 replay projection.
+//! Session catalog and replay.
 
 use std::path::PathBuf;
 
@@ -18,7 +18,7 @@ pub struct SessionInfo {
     pub preview: String,
 }
 
-/// History reconstructed from the durable journal.
+/// History reconstructed from the session log.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Replay {
     pub history: Vec<Message>,

@@ -1,9 +1,45 @@
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 use sigil::prelude::Rgba8;
 
 use super::{BASE, Line, Span};
 
 /// The tallest block, in chat rows, that a pasted image may occupy.
 const MAX_ROWS: usize = 24;
+
+thread_local! {
+    static CACHE: RefCell<HashMap<(u64, usize), Vec<Line>>> = RefCell::new(HashMap::new());
+}
+
+/// Render with a per-thread cache keyed by image identity and width, so a
+/// pasted image is decoded once, not on every repaint while a turn streams.
+pub(super) fn render_cached(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
+    let key = (identity(bytes), width);
+    if let Some(hit) = CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
+        return Ok(hit);
+    }
+    let rows = render(bytes, width)?;
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 32 {
+            cache.clear();
+        }
+        cache.insert(key, rows.clone());
+    });
+    Ok(rows)
+}
+
+/// Length plus a hash of the leading bytes — enough to tell pasted images
+/// apart without hashing megabytes on every repaint.
+fn identity(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ bytes.len() as u64;
+    for byte in bytes.iter().take(512) {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
 
 /// Decode image bytes and render them as a block of half-block cells.
 ///

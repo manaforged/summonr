@@ -406,8 +406,15 @@ pub trait Provider {
 
 type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Time allowed for one model round, connect to last byte.
+/// Time allowed for one model round, connect to last byte. A long ceiling so a
+/// slow but live generation completes.
 const ROUND_TIMEOUT: Duration = Duration::from_secs(3000);
+
+/// Maximum gap between reads on a streaming round. Bounds a stalled or
+/// half-open connection so the turn fails in seconds instead of hanging on
+/// [`ROUND_TIMEOUT`]. A live model streams tokens or a keep-alive well inside
+/// this window.
+const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// OpenAI-compatible chat client: one `POST {base_url}/chat/completions`
 /// per round, streamed when a delta observer is set.
@@ -422,6 +429,7 @@ pub struct Client {
     genai: Option<genai::Client>,
     on_delta: Option<DeltaFn>,
     on_reasoning: Option<DeltaFn>,
+    on_tool: Option<DeltaFn>,
 }
 
 impl Client {
@@ -505,6 +513,7 @@ impl Client {
         let http = reqwest::Client::builder()
             .timeout(ROUND_TIMEOUT)
             .connect_timeout(Duration::from_secs(20))
+            .read_timeout(IDLE_TIMEOUT)
             .build()
             .map_err(|error| Error::Config(error.to_string()))?;
         Ok(Self {
@@ -517,6 +526,7 @@ impl Client {
             genai,
             on_delta: None,
             on_reasoning: None,
+            on_tool: None,
         })
     }
 
@@ -531,6 +541,14 @@ impl Client {
     #[must_use]
     pub fn on_reasoning(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.on_reasoning = Some(Arc::new(emit));
+        self
+    }
+
+    /// Observe the tool name when a streaming tool call is first named, so
+    /// the interface can show "calling <name>…" before the round completes.
+    #[must_use]
+    pub fn on_tool(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
+        self.on_tool = Some(Arc::new(emit));
         self
     }
 
@@ -590,6 +608,12 @@ impl Client {
         }
         if stream {
             body["stream_options"] = json!({ "include_usage": true });
+        }
+        // OpenAI routes to a cached prefix by this key. Other OpenAI-compatible
+        // hosts cache implicitly and may reject an unknown field, so send it
+        // only to OpenAI itself.
+        if self.url.contains("api.openai.com") {
+            body["prompt_cache_key"] = json!(request.prefix_hash());
         }
         if let (Some(Value::Object(extra)), Value::Object(map)) = (&self.body, &mut body) {
             for (key, value) in extra {

@@ -90,18 +90,27 @@ impl Model {
     pub(super) fn apply(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Bye => return false,
-            Msg::Thinking(_) if !self.prefs.reasoning => {}
+            // Reasoning display is off, but a reasoning-heavy model can think
+            // for many seconds — show that it is alive without the transcript.
+            Msg::Thinking(_) if !self.prefs.reasoning => {
+                self.live_tool = Some(("thinking".to_string(), String::new()));
+            }
             Msg::Thinking(text) => match self.entries.last_mut() {
                 Some(Entry::Thinking(body)) => body.push_str(&text),
                 _ => self.entries.push(Entry::Thinking(text)),
             },
-            Msg::Delta(text) => match self.entries.last_mut() {
-                Some(Entry::Assistant {
-                    text: body,
-                    done: false,
-                }) => body.push_str(&text),
-                _ => self.entries.push(Entry::Assistant { text, done: false }),
-            },
+            Msg::Delta(text) => {
+                // The answer is streaming now; drop the thinking/calling hint.
+                self.live_tool = None;
+                match self.entries.last_mut() {
+                    Some(Entry::Assistant {
+                        text: body,
+                        done: false,
+                    }) => body.push_str(&text),
+                    _ => self.entries.push(Entry::Assistant { text, done: false }),
+                }
+            }
+            Msg::Calling(name) => self.live_tool = Some((name, "…".to_string())),
             Msg::Event(event) => self.apply_event(event),
             Msg::Busy(busy) => self.set_busy(busy),
             Msg::Failed(text) => {
@@ -117,7 +126,7 @@ impl Model {
                 self.model = model;
                 self.relay = relay;
             }
-            Msg::Models(_) | Msg::ModelsFailed(_) => {}
+            Msg::Models { .. } | Msg::ModelsFailed(_) | Msg::Workflow { .. } => {}
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
         }

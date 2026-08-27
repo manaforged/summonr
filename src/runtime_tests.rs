@@ -85,3 +85,44 @@ async fn observed_mail_keeps_its_envelope_limit_and_replay_state() -> Result<()>
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn a_turn_resets_a_leaked_read_only_policy() -> Result<()> {
+    #[derive(Clone)]
+    struct Ack;
+    impl Provider for Ack {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = Result<AssistantMessage>> + Send + 'a>,
+        > {
+            Box::pin(async move {
+                Ok(AssistantMessage {
+                    content: Some("done".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = std::env::temp_dir().join(format!(
+        "mage-readonly-reset-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&workspace)?;
+    let mut loop_ = Loop::with_session(Ack, "test", &workspace, "system")?;
+    // Simulate a scout/review aside cancelled before it could restore.
+    loop_.tools.set_read_only(true);
+    assert!(loop_.tools.is_read_only());
+    loop_.turn_with("do the thing", |_event| {}).await?;
+    assert!(
+        !loop_.tools.is_read_only(),
+        "a non-plan turn must clear a leaked read-only policy"
+    );
+    Ok(())
+}

@@ -3,8 +3,8 @@
 use futures::StreamExt;
 use genai::adapter::AdapterKind;
 use genai::chat::{
-    ChatMessage, ChatOptions, ChatRequest, ChatRole, ChatStreamEvent, MessageContent, Tool,
-    ToolCall as GenaiCall, ToolName, ToolResponse,
+    CacheControl, ChatMessage, ChatOptions, ChatRequest, ChatRole, ChatStreamEvent, MessageContent,
+    MessageOptions, Tool, ToolCall as GenaiCall, ToolName, ToolResponse,
 };
 use genai::resolver::{AuthData, Endpoint as GenaiEndpoint, ProviderConfig};
 use genai::{ModelIden, ServiceTarget};
@@ -215,6 +215,13 @@ fn to_chat(request: &CompletionRequest) -> Result<ChatRequest> {
                 });
             }
         }
+    }
+    // One cache breakpoint on the last message caches the whole prefix
+    // (tools, system, prior turns) on Anthropic; the next turn's new input
+    // is the only uncached part, and the breakpoint rolls forward with the
+    // conversation.
+    if let Some(last) = messages.last_mut() {
+        last.options = Some(MessageOptions::from(CacheControl::Ephemeral));
     }
     let tools = if request.tools.is_empty() {
         None

@@ -268,3 +268,13 @@ fn nonstream_finish_reason_is_deserialized() {
     .unwrap_or_else(|error| panic!("{error}"));
     assert_eq!(reply.choices[0].finish_reason, Some(StopReason::Length));
 }
+
+#[test]
+fn only_openai_host_receives_a_prompt_cache_key() -> Result<()> {
+    let req = request(vec![Message::user("hi")]);
+    let generic = Client::new("k", "https://api.deepseek.com/v1")?.request_body(&req, false)?;
+    assert!(generic.get("prompt_cache_key").is_none());
+    let openai = Client::new("k", "https://api.openai.com/v1")?.request_body(&req, false)?;
+    assert_eq!(openai["prompt_cache_key"], json!(req.prefix_hash()));
+    Ok(())
+}

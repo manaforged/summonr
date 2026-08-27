@@ -44,3 +44,24 @@ fn to_chat_lifts_system_and_tools() -> Result<()> {
     assert_eq!(tools[0].name.as_str(), "read_file");
     Ok(())
 }
+
+#[test]
+fn to_chat_marks_the_last_message_for_prompt_caching() -> Result<()> {
+    let request = CompletionRequest {
+        model: "claude-sonnet-4-5".into(),
+        messages: vec![
+            crate::provider::Message::system("be brief"),
+            crate::provider::Message::user("hello"),
+        ],
+        tools: Vec::new(),
+        max_output_tokens: 128,
+        emit_deltas: false,
+    };
+    let chat = to_chat(&request)?;
+    let last = chat.messages.last().expect("a message");
+    assert!(matches!(
+        last.options.as_ref().and_then(|o| o.cache_control.as_ref()),
+        Some(CacheControl::Ephemeral)
+    ));
+    Ok(())
+}

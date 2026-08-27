@@ -158,33 +158,15 @@ fn locate(content: &str, tag: &str) -> Result<usize> {
     }
 }
 
-/// Resolve `tag..=end_tag`. When one side is ambiguous, the other side
-/// picks the nearest consistent candidate, so repeated lines such as `}`
-/// or `` work as range ends without an `N:` prefix.
+/// Resolve `tag..=end_tag`. Each anchor must identify one line.
 fn span(content: &str, tag: &str, end_tag: Option<&str>) -> Result<(usize, usize)> {
     let end_tag = end_tag.filter(|end| !end.trim().is_empty());
     let Some(end_tag) = end_tag else {
         let start = locate(content, tag)?;
         return Ok((start, start));
     };
-    let start_tag = parse_tag(tag)?;
-    let end_parsed = parse_tag(end_tag)?;
-    let starts = hits(content, &start_tag);
-    let ends = hits(content, &end_parsed);
-    let (start, end) = match (starts.as_slice(), ends.as_slice()) {
-        ([], _) => return Err(stale(content, tag, &start_tag)),
-        (_, []) => return Err(stale(content, end_tag, &end_parsed)),
-        ([s], [e]) => (*s, *e),
-        ([s], many) => match many.iter().find(|e| **e >= *s) {
-            Some(e) => (*s, *e),
-            None => return Err(ambiguous(content, end_tag, many)),
-        },
-        (many, [e]) => match many.iter().rev().find(|s| **s <= *e) {
-            Some(s) => (*s, *e),
-            None => return Err(ambiguous(content, tag, many)),
-        },
-        (many, _) => return Err(ambiguous(content, tag, many)),
-    };
+    let start = locate(content, tag)?;
+    let end = locate(content, end_tag)?;
     if end < start {
         return Err(Error::Tool(
             "end_tag is before tag — check the tags in the latest edit result".to_string(),

@@ -112,8 +112,8 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<i32> {
             app.update(msg);
             changed = true;
         }
-        if ui.is_closed() || app.quit.peek() {
-            return Ok(if ui.is_closed() { 1 } else { 0 });
+        if let Some(code) = status(ui.is_closed(), app.quit.peek()) {
+            return Ok(code);
         }
         if changed {
             app.refresh();
@@ -143,6 +143,16 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<i32> {
             }
         }
         term.paint(&mut screen)?;
+    }
+}
+
+fn status(closed: bool, quit: bool) -> Option<i32> {
+    if quit {
+        Some(0)
+    } else if closed {
+        Some(1)
+    } else {
+        None
     }
 }
 

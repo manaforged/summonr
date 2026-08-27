@@ -206,7 +206,7 @@ fn compact_surfaces_keep_selected_content_inside_the_frame() {
                 .unwrap_or_else(|error| panic!("{width}x{height} chat failed: {error}"));
 
             app.settings_open.set(true);
-            app.settings_sel.set(10);
+            app.settings_sel.set(11);
             let tree = app.clone();
             let frame =
                 sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, height, &[])

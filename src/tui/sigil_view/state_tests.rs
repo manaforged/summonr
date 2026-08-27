@@ -128,6 +128,39 @@ fn local_command_keeps_the_splash_visible() {
 }
 
 #[test]
+fn slash_commands_never_become_model_input() {
+    sigil::reactive::Runtime::scope("mage-slash-routing-test", || {
+        let commands = crate::command_specs()
+            .iter()
+            .map(|spec| spec.name)
+            .chain(std::iter::once("/not-a-command"));
+        for line in commands {
+            for busy in [false, true] {
+                let (cmd, mut rx) = unbounded_channel();
+                let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+                app.model.borrow_mut().busy_since = busy.then(Instant::now);
+                app.replace(line.to_string());
+                app.submit();
+                if let Ok(command) = rx.try_recv() {
+                    assert!(
+                        !matches!(command, Cmd::Submit(_) | Cmd::Steer(_)),
+                        "`{line}` became model input while busy={busy}"
+                    );
+                }
+                assert!(
+                    !app.model
+                        .borrow()
+                        .entries
+                        .iter()
+                        .any(|entry| matches!(entry, Entry::User(text) if text == line)),
+                    "`{line}` entered the transcript while busy={busy}"
+                );
+            }
+        }
+    });
+}
+
+#[test]
 fn slash_prefix_completes_from_the_shared_catalog() {
     sigil::reactive::Runtime::scope("mage-command-completion-test", || {
         let (cmd, _rx) = unbounded_channel();
@@ -295,5 +328,70 @@ fn bye_requests_a_clean_host_exit() {
         assert!(!app.quit.peek());
         apply(&app, Msg::Bye);
         assert!(app.quit.peek());
+    });
+}
+
+#[test]
+fn the_workflow_card_routes_seat_picks_saves_and_cycles() {
+    use crate::workflow::Role;
+    sigil::reactive::Runtime::scope("mage-workflow-card-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.replace("/workflow".to_string());
+        app.submit();
+        assert!(app.workflow_open.peek());
+        assert!(matches!(rx.try_recv(), Ok(Cmd::ListWorkflows)));
+        apply(
+            &app,
+            Msg::Workflow {
+                name: Some("b".to_string()),
+                names: vec!["a".to_string(), "b".to_string()],
+                seats: vec![None, Some("grok\tgrok-4.6".to_string())],
+            },
+        );
+        assert_eq!(app.workflow_name.peek(), "b");
+        assert_eq!(app.workflow_seats.peek().len(), Role::ALL.len());
+
+        app.move_workflow(3);
+        assert_eq!(app.workflow_sel.peek(), 3, "review");
+        app.pick_workflow_seat();
+        assert!(app.editing_model.peek());
+        assert!(matches!(rx.try_recv(), Ok(Cmd::ListModels)));
+        app.replace_model_draft("glm\tglm-5.3".to_string());
+        app.commit_model_edit();
+        assert!(!app.editing_model.peek());
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Cmd::SeatRole(Role::Review, endpoint, model)) if endpoint == "glm" && model == "glm-5.3"
+        ));
+        assert_eq!(app.model_for.peek(), None);
+
+        app.clear_workflow_seat();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::ClearRole(Role::Review))));
+
+        app.cycle_workflow(-1);
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(line)) if line == "/workflow a"));
+        app.cycle_workflow(1);
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(line)) if line == "/workflow a"));
+
+        app.begin_workflow_save();
+        assert!(app.workflow_naming.peek());
+        assert_eq!(app.workflow_draft.peek(), "b");
+        app.move_workflow(-1);
+        assert_eq!(app.workflow_sel.peek(), 3, "naming ignores row moves");
+        app.replace_workflow_draft("fast".to_string());
+        app.pick_workflow_seat();
+        assert!(!app.workflow_naming.peek());
+        assert!(matches!(rx.try_recv(), Ok(Cmd::SaveWorkflow(name)) if name == "fast"));
+
+        app.close_workflow();
+        assert!(!app.workflow_open.peek());
+        app.replace("/workflow fast".to_string());
+        app.submit();
+        assert!(
+            !app.workflow_open.peek(),
+            "a named workflow goes to the worker"
+        );
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(line)) if line == "/workflow fast"));
     });
 }

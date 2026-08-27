@@ -103,11 +103,14 @@ fn settings_model_row_opens_the_provider_picker() {
         app.begin_model_edit();
         assert!(app.editing_model.peek());
         assert!(matches!(rx.try_recv(), Ok(Cmd::ListModels)));
-        app.update(Msg::Models(vec![
-            "glm-5.3".to_string(),
-            "glm-5.4".to_string(),
-            "glm-5.4-air".to_string(),
-        ]));
+        app.update(Msg::Models {
+            recent: 0,
+            rows: vec![
+                "glm-5.3".to_string(),
+                "glm-5.4".to_string(),
+                "glm-5.4-air".to_string(),
+            ],
+        });
         let tree = app.clone();
         let editing = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
@@ -128,16 +131,61 @@ fn settings_model_row_opens_the_provider_picker() {
 }
 
 #[test]
+fn model_picker_sections_recent_then_providers() {
+    sigil::reactive::Runtime::scope("mage-model-recent-section-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.begin_model_edit();
+        app.update(Msg::Models {
+            recent: 1,
+            rows: vec![
+                "qwen\tqwen3.8-27b".to_string(),
+                "glm\tglm-5.3".to_string(),
+                "qwen\tqwen3.8-27b".to_string(),
+            ],
+        });
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(frame.contains("recent"), "recent header missing:\n{frame}");
+        assert!(
+            frame.contains("providers"),
+            "providers header missing:\n{frame}"
+        );
+        let recent_at = frame.find("recent").unwrap_or(usize::MAX);
+        let providers_at = frame.find("providers").unwrap_or(0);
+        assert!(recent_at < providers_at, "recent must sit first:\n{frame}");
+
+        // A filter query collapses the sections into one flat match list.
+        app.replace_model_draft("glm".to_string());
+        let tree = app.clone();
+        let filtered = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(
+            !filtered.contains("providers"),
+            "filtering must drop the section headers:\n{filtered}"
+        );
+        assert!(
+            filtered.contains("glm-5.3"),
+            "filter dropped the match:\n{filtered}"
+        );
+    });
+}
+
+#[test]
 fn model_picker_switches_endpoint() {
     sigil::reactive::Runtime::scope("mage-model-switch-endpoint-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
         app.begin_model_edit();
         assert!(matches!(rx.try_recv(), Ok(Cmd::ListModels)));
-        app.update(Msg::Models(vec![
-            "glm\tglm-5.3".to_string(),
-            "qwen\tqwen3.8-27b-abliterated".to_string(),
-        ]));
+        app.update(Msg::Models {
+            recent: 0,
+            rows: vec![
+                "glm\tglm-5.3".to_string(),
+                "qwen\tqwen3.8-27b-abliterated".to_string(),
+            ],
+        });
         let tree = app.clone();
         let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
@@ -147,7 +195,86 @@ fn model_picker_switches_endpoint() {
         );
         app.move_model(1);
         app.commit_model_edit();
-        assert!(matches!(rx.try_recv(), Ok(Cmd::SetEndpoint(name)) if name == "qwen"));
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Cmd::SetSeat(name, model))
+                if name == "qwen" && model == "qwen3.8-27b-abliterated"
+        ));
+    });
+}
+
+#[test]
+fn auth_command_opens_masked_provider_menu() {
+    sigil::reactive::Runtime::scope("mage-auth-menu-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.replace("/auth glm".to_string());
+        app.submit();
+
+        assert!(app.auth_open.peek());
+        assert!(rx.try_recv().is_err(), "auth command left the UI");
+        assert!(app.model.borrow().entries.is_empty());
+        let selected = app.auth_sel.peek();
+        assert_eq!(app.auth_choices.peek()[selected].name, "glm");
+        let tree = app.clone();
+        let providers = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 80, 24, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(providers.contains("authentication"));
+        assert!(providers.contains("glm"));
+        assert!(providers.contains("copilot"));
+        assert!(providers.contains("device login"));
+
+        app.commit_auth();
+        assert!(app.auth_entering.peek());
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(80, 24);
+        screen
+            .frame(&mut host, &mut router, [], (80, 24))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        router.focus_next(host.cx());
+        let frame = screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::paste("never-render-this-secret")],
+                (80, 24),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        assert_eq!(app.auth_key.peek(), "never-render-this-secret");
+        if std::env::var_os("MAGE_DUMP_FRAME").is_some() {
+            println!("auth menu 80x24:\n{}", frame.text());
+        }
+        assert!(frame.text().contains("authentication"));
+        assert!(frame.text().contains("API key"));
+        assert!(!frame.text().contains("never-render-this-secret"));
+
+        app.commit_auth();
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Cmd::SetKey(name, key))
+                if name == "glm" && key == "never-render-this-secret"
+        ));
+        assert!(!app.auth_open.peek());
+        assert!(app.auth_key.peek().is_empty());
+    });
+}
+
+#[test]
+fn login_command_uses_device_flow_from_menu() {
+    sigil::reactive::Runtime::scope("mage-auth-device-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.replace("/login copilot".to_string());
+        app.submit();
+
+        assert!(app.auth_open.peek());
+        app.commit_auth();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Login(name)) if name == "copilot"));
+        assert!(!app.auth_open.peek());
     });
 }
 
@@ -268,10 +395,10 @@ fn settings_model_edit_uses_enter_and_escape() {
 
         app.begin_model_edit();
         assert!(matches!(rx.try_recv(), Ok(Cmd::ListModels)));
-        app.update(Msg::Models(vec![
-            "glm-5.3".to_string(),
-            "glm-5.4".to_string(),
-        ]));
+        app.update(Msg::Models {
+            recent: 0,
+            rows: vec!["glm-5.3".to_string(), "glm-5.4".to_string()],
+        });
         app.move_model(1);
         screen
             .frame(
@@ -322,5 +449,252 @@ fn settings_tab_moves_between_controls() {
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         assert_eq!(app.settings_sel.peek(), 0);
         assert!(rx.try_recv().is_err(), "settings tab changed the mode");
+    });
+}
+
+#[test]
+fn the_workflow_card_lists_roles_seats_and_saved_names() {
+    sigil::reactive::Runtime::scope("mage-workflow-card-render-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 32);
+        app.refresh();
+        app.open_workflow();
+        apply(
+            &app,
+            Msg::Workflow {
+                name: Some("cheap".to_string()),
+                names: vec!["cheap".to_string(), "fast".to_string()],
+                seats: vec![None, Some("grok\tgrok-4.6".to_string())],
+            },
+        );
+        app.move_workflow(1);
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(frame.contains("⚙ workflow cheap"), "{frame}");
+        assert!(frame.contains("› plan"), "{frame}");
+        assert!(frame.contains("grok  grok-4.6"), "{frame}");
+        assert!(frame.contains("driving · glm glm-5.3"), "{frame}");
+        assert!(frame.contains("saved: [cheap] · fast"), "{frame}");
+        assert!(frame.contains("s save"), "{frame}");
+
+        app.begin_workflow_save();
+        let tree = app.clone();
+        let naming = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(naming.contains("name"), "{naming}");
+        assert!(naming.contains("enter save"), "{naming}");
+
+        app.settings_open.set(true);
+        app.workflow_open.set(false);
+        app.settings_sel.set(5);
+        let tree = app.clone();
+        let settings = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(settings.contains("› workflow"), "{settings}");
+    });
+}
+
+/// A terminal mouse report, mapped the way the live host maps it.
+fn mouse(kind: crossterm::event::MouseEventKind, col: usize, row: usize) -> sigil_hal::ShellEvent {
+    let mut last = sigil_hal::Point::new(0.0, 0.0);
+    sigil_tui::map_mouse(
+        &crossterm::event::MouseEvent {
+            kind,
+            column: u16::try_from(col).unwrap_or(u16::MAX),
+            row: u16::try_from(row).unwrap_or(u16::MAX),
+            modifiers: KeyModifiers::NONE,
+        },
+        Host::CELL,
+        &mut last,
+    )
+    .unwrap_or_else(|| panic!("mouse report did not map"))
+}
+
+#[test]
+fn clicks_select_and_act_on_settings_rows() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    sigil::reactive::Runtime::scope("mage-settings-click-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 32);
+        app.refresh();
+        app.settings_open.set(true);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 32);
+        screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let (col, row) = app
+            .hits
+            .find(&crate::tui::sigil_view::hit::Target::Setting(2))
+            .unwrap_or_else(|| panic!("rounds row was not painted"));
+
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [mouse(kind, col + 3, row)],
+                    (100, 32),
+                )
+                .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        }
+        assert_eq!(app.settings_sel.peek(), 2, "a click selects the row");
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [mouse(kind, col + 3, row)],
+                    (100, 32),
+                )
+                .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        }
+        assert!(
+            matches!(rx.try_recv(), Ok(Cmd::SetRounds(72))),
+            "a second click acts on the selected row"
+        );
+    });
+}
+
+#[test]
+fn dragging_a_role_row_copies_its_seat_and_clicking_saved_applies() {
+    use crossterm::event::{MouseButton, MouseEventKind};
+    sigil::reactive::Runtime::scope("mage-workflow-drag-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 32);
+        app.refresh();
+        app.open_workflow();
+        drop(rx.try_recv());
+        apply(
+            &app,
+            Msg::Workflow {
+                name: Some("cheap".to_string()),
+                names: vec!["cheap".to_string(), "fast".to_string()],
+                seats: vec![None, Some("grok\tgrok-4.6".to_string())],
+            },
+        );
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 32);
+        screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let plan = app
+            .hits
+            .find(&crate::tui::sigil_view::hit::Target::Role(1))
+            .unwrap_or_else(|| panic!("plan row was not painted"));
+        let review = app
+            .hits
+            .find(&crate::tui::sigil_view::hit::Target::Role(3))
+            .unwrap_or_else(|| panic!("review row was not painted"));
+
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [mouse(
+                    MouseEventKind::Down(MouseButton::Left),
+                    plan.0 + 4,
+                    plan.1,
+                )],
+                (100, 32),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert_eq!(app.drag_from.peek(), Some(1));
+        let frame = screen
+            .frame(
+                &mut host,
+                &mut router,
+                [mouse(
+                    MouseEventKind::Drag(MouseButton::Left),
+                    review.0 + 4,
+                    review.1,
+                )],
+                (100, 32),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        assert_eq!(app.drag_over.peek(), Some(3));
+        assert!(frame.text().contains("◆ plan"), "{}", frame.text());
+        assert!(frame.text().contains("▸ review"), "{}", frame.text());
+        assert!(frame.text().contains("drop on a role"), "{}", frame.text());
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [mouse(
+                    MouseEventKind::Up(MouseButton::Left),
+                    review.0 + 4,
+                    review.1,
+                )],
+                (100, 32),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert_eq!(app.drag_from.peek(), None);
+        assert!(matches!(
+            rx.try_recv(),
+            Ok(Cmd::SeatRole(crate::workflow::Role::Review, endpoint, model))
+                if endpoint == "grok" && model == "grok-4.6"
+        ));
+        assert_eq!(app.workflow_sel.peek(), 3);
+
+        let fast = app
+            .hits
+            .find(&crate::tui::sigil_view::hit::Target::Saved(
+                "fast".to_string(),
+            ))
+            .unwrap_or_else(|| panic!("saved name was not painted"));
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [mouse(kind, fast.0 + 1, fast.1)],
+                    (100, 32),
+                )
+                .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        }
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(line)) if line == "/workflow fast"));
+
+        let scout = app
+            .hits
+            .find(&crate::tui::sigil_view::hit::Target::Role(0))
+            .unwrap_or_else(|| panic!("scout row was not painted"));
+        for kind in [
+            MouseEventKind::Down(MouseButton::Left),
+            MouseEventKind::Up(MouseButton::Left),
+        ] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [mouse(kind, scout.0 + 4, scout.1)],
+                    (100, 32),
+                )
+                .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        }
+        assert!(
+            app.editing_model.peek(),
+            "a click on a role opens its seat picker"
+        );
+        assert_eq!(app.model_for.peek(), Some(0));
     });
 }

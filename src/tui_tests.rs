@@ -36,6 +36,14 @@ fn slash_table_is_unique_and_filters_prefixes() {
         Some(crate::SlashCommand::Model)
     );
     assert_eq!(crate::parse_command("/goalkeeper"), None);
+    assert_eq!(
+        crate::parse_command("/auth glm"),
+        Some(crate::SlashCommand::Auth)
+    );
+    assert_eq!(
+        crate::parse_command("/login copilot"),
+        Some(crate::SlashCommand::Login)
+    );
 }
 
 #[test]

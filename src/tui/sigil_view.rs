@@ -3,6 +3,7 @@
 mod app;
 mod canvas;
 mod chat;
+mod hit;
 mod host;
 mod model;
 mod scene;

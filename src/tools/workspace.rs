@@ -8,7 +8,10 @@ use crate::hashline::{dirty_span, line_hash, resolve_span, tagged_span, tagged_t
 use crate::provider::{Image, UserInput};
 
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_string, object_usize, parse_args};
+use crate::SKIP_DIRS;
 
+/// The batch-edit ceiling the tool schema advertises as `maxItems`.
+const MAX_EDITS: usize = 16;
 const READ_DEFAULT_LIMIT: usize = 120;
 const READ_MAX_LIMIT: usize = 400;
 const READ_MAX_BYTES: usize = 2 * 1024 * 1024;
@@ -18,15 +21,6 @@ const GREP_DEFAULT: usize = 50;
 const GREP_MAX: usize = 200;
 const GREP_FILE_MAX: usize = 1024 * 1024;
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
-
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "target",
-    "node_modules",
-    "dist",
-    "__pycache__",
-    ".mage",
-];
 
 impl ToolRegistry {
     pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
@@ -63,15 +57,51 @@ impl ToolRegistry {
 
     pub(super) async fn edit_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("edit_file", arguments)?;
-        let path = nonempty_path(&args, "edit_file")?;
+        self.apply_edit("edit_file", &args).await
+    }
+
+    pub(super) async fn edit_operation(&self, name: &str, arguments: &str) -> Result<ToolOutput> {
+        let mut args: Value = parse_args(name, arguments)?;
+        if name == "delete_lines" {
+            args.as_object_mut()
+                .ok_or_else(|| Error::Tool(format!("{name} arguments must be an object")))?
+                .insert("op".to_string(), Value::String("delete".to_string()));
+        }
+        self.apply_edit(name, &args).await
+    }
+
+    async fn apply_edit(&self, name: &str, args: &Value) -> Result<ToolOutput> {
+        let path = nonempty_path(args, name)?;
         let dest = self.resolve_existing(path)?;
         self.policy.write_path(&self.relative(&dest)?)?;
-        let original = std::fs::read_to_string(&dest)
+        let raw = std::fs::read_to_string(&dest)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+        // Edit in LF so byte offsets and line splices never straddle a "\r\n",
+        // then restore the file's own ending so a CRLF file stays CRLF instead
+        // of coming back with mixed line endings.
+        let crlf = raw.contains("\r\n");
+        let original = if crlf { raw.replace("\r\n", "\n") } else { raw };
+        if let Some(ops) = args.get("edits").and_then(Value::as_array)
+            && ops.len() > MAX_EDITS
+        {
+            return Err(Error::Tool(format!(
+                "too many edits: {} exceeds the {MAX_EDITS} the tool accepts",
+                ops.len()
+            )));
+        }
         let edited = match args.get("edits").and_then(Value::as_array) {
+            Some(ops) if !ops.is_empty() && name == "replace_texts" => {
+                apply_sequence(&original, ops)?
+            }
             Some(ops) if !ops.is_empty() => apply_many(&original, ops)?,
             Some(_) => return Err(Error::Tool("edits is empty".to_string())),
-            None => apply_one(&original, &args)?,
+            None => apply_one(&original, args)
+                .map_err(|error| edit_error_context(error, &original, args))?,
+        };
+        let edited = if crlf {
+            edited.replace("\r\n", "\n").replace('\n', "\r\n")
+        } else {
+            edited
         };
         atomic_write(&dest, path, &edited)?;
         self.writes
@@ -507,6 +537,22 @@ fn glob_to_regex(glob: &str) -> String {
     out
 }
 
+fn edit_error_context(error: Error, text: &str, args: &Value) -> Error {
+    let Error::Tool(message) = error else {
+        return error;
+    };
+    let Some(tag) = args.get("tag").and_then(Value::as_str) else {
+        return Error::Tool(message);
+    };
+    let Ok((line, _)) = resolve_span(text, tag, None) else {
+        return Error::Tool(message);
+    };
+    Error::Tool(format!(
+        "{message}\nCurrent lines:\n{}",
+        tagged_span(text, line.saturating_sub(2), line.saturating_add(2))
+    ))
+}
+
 /// One replace / insert_after / delete object applied to `text`.
 fn apply_one(text: &str, op: &Value) -> Result<String> {
     apply_patches(text, vec![parse_patch(text, op)?])
@@ -521,6 +567,22 @@ struct Patch {
 }
 
 fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
+    if let Some(tag) = op.get("replace_text").and_then(Value::as_str) {
+        return replace_text_patch(
+            text,
+            Some(tag),
+            object_string(op, "old")?,
+            object_string(op, "new")?,
+        );
+    }
+    if op.get("old").is_some() && op.get("new").is_some() {
+        return replace_text_patch(
+            text,
+            optional_tag(op)?,
+            object_string(op, "old")?,
+            object_string(op, "new")?,
+        );
+    }
     if op.get("tag").is_some() {
         let tag = object_string(op, "tag")?;
         if op.get("new").is_some() {
@@ -539,6 +601,12 @@ fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
         }
     }
     if let Some(replace) = op.get("replace") {
+        if !replace.is_object() {
+            return Err(Error::Tool(
+                "replace must be an object with tag, new, and optional end_tag; use replace_text with old and new for exact text"
+                    .to_string(),
+            ));
+        }
         let tag = object_string(replace, "tag")?;
         let new = replace
             .get("new")
@@ -548,19 +616,144 @@ fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
         let end = replace.get("end_tag").and_then(Value::as_str);
         return replace_patch(text, tag, end, new);
     }
+    if let Some(replace) = op.get("replace_text") {
+        if !replace.is_object() {
+            return Err(Error::Tool(
+                "replace_text must be an object with old, new, and optional tag".to_string(),
+            ));
+        }
+        return replace_text_patch(
+            text,
+            optional_tag(replace)?,
+            object_string(replace, "old")?,
+            object_string(replace, "new")?,
+        );
+    }
     if let Some(insert) = op.get("insert_after") {
+        if !insert.is_object() {
+            return Err(Error::Tool(
+                "insert_after must be an object with tag and text".to_string(),
+            ));
+        }
         let tag = object_string(insert, "tag")?;
         let body = object_string(insert, "text")?;
         return insert_patch(text, tag, body);
     }
     if let Some(delete) = op.get("delete") {
+        if !delete.is_object() {
+            return Err(Error::Tool(
+                "delete must be an object with tag and optional end_tag".to_string(),
+            ));
+        }
         let tag = object_string(delete, "tag")?;
         let end = delete.get("end_tag").and_then(Value::as_str);
         return delete_patch(text, tag, end);
     }
     Err(Error::Tool(
-        "edit_file requires replace, insert_after, delete, or edits".to_string(),
+        "edit_file requires replace_text, replace, insert_after, delete, or edits".to_string(),
     ))
+}
+
+fn optional_tag(value: &Value) -> Result<Option<&str>> {
+    match value.get("tag") {
+        None => Ok(None),
+        Some(Value::String(tag)) if !tag.trim().is_empty() => Ok(Some(tag)),
+        Some(_) => Err(Error::Tool("tag must be a non-empty string".to_string())),
+    }
+}
+
+fn replace_text_patch(text: &str, tag: Option<&str>, old: &str, new: &str) -> Result<Patch> {
+    if old.is_empty() {
+        return Err(Error::Tool("replace_text.old is empty".to_string()));
+    }
+    let global_matches = count_matches(text, old);
+    let (byte, line_index) = if global_matches == 1 {
+        let byte = text.find(old).ok_or_else(|| {
+            Error::Tool("replace_text.old disappeared while resolving the edit".to_string())
+        })?;
+        (
+            byte,
+            text[..byte].bytes().filter(|byte| *byte == b'\n').count(),
+        )
+    } else {
+        match tag {
+            Some(tag) => {
+                let line_index = resolve_span(text, tag, None)
+                    .or_else(|error| relocate_exact_anchor(text, tag).ok_or(error))?
+                    .0;
+                let line_start = line_byte(text, line_index);
+                let line_end = text[line_start..]
+                    .find('\n')
+                    .map_or(text.len(), |offset| line_start + offset);
+                let matches = text
+                    .match_indices(old)
+                    .filter(|(byte, _)| *byte >= line_start && *byte <= line_end)
+                    .collect::<Vec<_>>();
+                if matches.len() != 1 {
+                    return Err(Error::Tool(format!(
+                        "replace_text.old must start exactly once on the anchored line; found {}",
+                        matches.len()
+                    )));
+                }
+                (matches[0].0, line_index)
+            }
+            None => {
+                return Err(Error::Tool(format!(
+                    "replace_text.old must occur exactly once in the file when tag is omitted; found {global_matches}"
+                )));
+            }
+        }
+    };
+    let end_byte = byte + old.len();
+    // Count over bytes: end_byte may fall just past a multibyte char, and a
+    // &str slice there panics. Counting to end_byte (not end_byte - 1) also
+    // extends the patch across a line break the match consumed, so `old`
+    // ending in "\n" merges the next line as exact replacement requires.
+    let end_line = text.as_bytes()[..end_byte]
+        .iter()
+        .filter(|byte| **byte == b'\n')
+        .count();
+    let start_byte = line_byte(text, line_index);
+    let line_end = text[end_byte..]
+        .find('\n')
+        .map_or(text.len(), |offset| end_byte + offset);
+    let suffix = &text[end_byte..line_end];
+    let replacement = format!("{}{new}{suffix}", &text[start_byte..byte]);
+    Ok(Patch {
+        start: line_index,
+        end: end_line + 1,
+        anchor_start: line_index,
+        anchor_end: end_line + 1,
+        replacement: if replacement.is_empty() && !old.ends_with('\n') {
+            vec![String::new()]
+        } else {
+            lines(&replacement)
+        },
+    })
+}
+
+fn relocate_exact_anchor(text: &str, tag: &str) -> Option<(usize, usize)> {
+    let anchor = tag.split_once('|').map_or(tag, |(anchor, _)| anchor.trim());
+    let (number, hash) = anchor.split_once(':')?;
+    if number.parse::<usize>().ok()? == 0 {
+        return None;
+    }
+    resolve_span(text, hash, None).ok()
+}
+
+fn line_byte(text: &str, line: usize) -> usize {
+    if line == 0 {
+        return 0;
+    }
+    text.match_indices('\n')
+        .nth(line - 1)
+        .map_or(0, |(byte, _)| byte + 1)
+}
+
+fn count_matches(text: &str, needle: &str) -> usize {
+    // Non-overlapping, to match how `find` and `match_indices` resolve the
+    // edit: "aa" in "aaa" is one placement, not two.
+    text.match_indices(needle).count()
 }
 
 fn replace_patch(text: &str, tag: &str, end_tag: Option<&str>, new: &str) -> Result<Patch> {
@@ -606,11 +799,29 @@ fn lines(text: &str) -> Vec<String> {
 fn apply_many(original: &str, ops: &[Value]) -> Result<String> {
     let mut patches = Vec::with_capacity(ops.len());
     for (index, op) in ops.iter().enumerate() {
-        let patch = parse_patch(original, op)
-            .map_err(|error| Error::Tool(format!("edit {}: {error}", index + 1)))?;
+        let patch = parse_patch(original, op).map_err(|error| {
+            match edit_error_context(error, original, op) {
+                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
+                other => other,
+            }
+        })?;
         patches.push(patch);
     }
     apply_patches(original, patches)
+}
+
+fn apply_sequence(original: &str, ops: &[Value]) -> Result<String> {
+    let mut edited = original.to_string();
+    for (index, op) in ops.iter().enumerate() {
+        let patch = parse_patch(&edited, op).map_err(|error| {
+            match edit_error_context(error, &edited, op) {
+                Error::Tool(message) => Error::Tool(format!("edit {}: {message}", index + 1)),
+                other => other,
+            }
+        })?;
+        edited = apply_patches(&edited, vec![patch])?;
+    }
+    Ok(edited)
 }
 
 /// Validate original-file anchor ranges, then apply from bottom to top.

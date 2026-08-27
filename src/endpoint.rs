@@ -49,6 +49,31 @@ pub enum Wire {
     Gemini,
 }
 
+/// How one endpoint accepts credentials, without exposing the credential.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AuthInfo {
+    pub name: String,
+    pub device_login: bool,
+    pub configured: bool,
+    pub setup: String,
+}
+
+impl AuthInfo {
+    /// One line describing the credential state, without the secret. Both
+    /// interfaces render this so the classification lives in one place.
+    #[must_use]
+    pub fn status(&self) -> String {
+        let state = if self.device_login {
+            "device authentication available"
+        } else if self.configured {
+            "API key configured"
+        } else {
+            "API key missing"
+        };
+        format!("{}: {state} — {}", self.name, self.setup)
+    }
+}
+
 impl Wire {
     fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
@@ -82,23 +107,70 @@ pub fn names() -> Result<Vec<String>> {
     Ok(names)
 }
 
+/// Describe an endpoint's credential state without resolving or printing its secret.
+pub fn auth_info(name: &str) -> Result<AuthInfo> {
+    let file = config::load()?;
+    let process_key = named_env_key(name)
+        .or_else(|| env_key(&["MAGE_API_KEY"]))
+        .is_some();
+    auth_info_from(&file, name, process_key)
+}
+
+pub(crate) fn save_key(name: &str, key: &str) -> Result<()> {
+    if !names()?.iter().any(|candidate| candidate == name) {
+        return Err(Error::Config(format!("unknown endpoint `{name}`")));
+    }
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(Error::Config("API key cannot be empty".to_string()));
+    }
+    config::save_key(&config::path()?, name, key)
+}
+
+fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo> {
+    let row = file.endpoint.get(name);
+    let builtin = preset(name);
+    if row.is_none() && builtin.is_none() {
+        return Err(Error::Config(format!("unknown endpoint `{name}`")));
+    }
+    let device_login = row.and_then(|row| row.auth.as_ref()).is_some_and(|auth| {
+        auth.grant.as_deref() == Some("device_code")
+            || auth
+                .device_url
+                .as_deref()
+                .is_some_and(|url| !url.is_empty())
+    }) || builtin.is_some_and(|preset| preset.oauth.is_some());
+    if device_login {
+        return Ok(AuthInfo {
+            name: name.to_string(),
+            device_login: true,
+            configured: true,
+            setup: format!("run `/login {name}` for device authentication"),
+        });
+    }
+    let config_key = row
+        .and_then(|row| row.api_key.as_deref())
+        .is_some_and(|key| !key.trim().is_empty());
+    let default_key = builtin.and_then(|preset| preset.default_key).is_some();
+    let setup = builtin
+        .map(|preset| preset.missing)
+        .filter(|text| !text.is_empty())
+        .unwrap_or("put api_key in ~/.mage/config.toml")
+        .to_string();
+    Ok(AuthInfo {
+        name: name.to_string(),
+        device_login: false,
+        configured: config_key || process_key || default_key,
+        setup,
+    })
+}
+
 /// Names that resolve with the keys this process has.
 pub(crate) fn ready() -> Vec<String> {
     names()
         .unwrap_or_default()
         .into_iter()
         .filter(|name| resolve(Some(name), None).is_ok())
-        .collect()
-}
-
-/// Ready seats as `(endpoint, model)` for the picker. No host round-trip.
-pub(crate) fn choices() -> Vec<(String, String)> {
-    ready()
-        .into_iter()
-        .filter_map(|name| {
-            let endpoint = resolve(Some(&name), None).ok()?;
-            Some((name, endpoint.model))
-        })
         .collect()
 }
 
@@ -132,7 +204,19 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
 }
 
 /// Pick an endpoint. `name` comes from `--endpoint` / `MAGE_ENDPOINT`.
+/// Resolve an endpoint, requiring a credential so non-interactive runs fail
+/// fast when a key is missing.
 pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
+    resolve_inner(name, model, true)
+}
+
+/// Resolve an endpoint for an interactive start, tolerating a missing key so
+/// the full-screen interface can open and the user can reach `/auth`.
+pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
+    resolve_inner(name, model, false)
+}
+
+fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("MAGE_BASE_URL")
         && !base.trim().is_empty()
         && name.is_none()
@@ -194,7 +278,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
         endpoint.model = named_model(&endpoint.name, &endpoint.model);
     }
 
-    fill_key(endpoint)
+    fill_key(endpoint, require_key)
 }
 
 fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
@@ -429,7 +513,7 @@ fn preset(name: &str) -> Option<&'static Preset> {
     PRESETS.iter().find(|preset| preset.name == name)
 }
 
-fn fill_key(mut endpoint: Endpoint) -> Result<Endpoint> {
+fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     if endpoint.oauth.is_some() || endpoint.api_key.is_some() {
         return Ok(endpoint);
     }
@@ -442,7 +526,7 @@ fn fill_key(mut endpoint: Endpoint) -> Result<Endpoint> {
             endpoint.api_key = Some(key.to_string());
             return Ok(endpoint);
         }
-        if !row.missing.is_empty() {
+        if require_key && !row.missing.is_empty() {
             return Err(Error::Config(row.missing.to_string()));
         }
     }

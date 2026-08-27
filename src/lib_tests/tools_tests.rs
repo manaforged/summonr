@@ -72,6 +72,128 @@ async fn edit_file_replaces_by_tag_and_rejects_stale_hash() -> Result<()> {
 }
 
 #[tokio::test]
+async fn edit_file_replaces_text_without_reproducing_the_line() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("prompt.rs");
+    let original = "let prompt = \"Keep reasoning brief.\"; \\\nnext();\n";
+    std::fs::write(&path, original)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let line = original
+        .lines()
+        .next()
+        .ok_or_else(|| Error::Tool("missing test line".into()))?;
+    let args = serde_json::json!({
+        "path": "prompt.rs",
+        "replace_text": {
+            "tag": line_hash(line),
+            "old": "Keep reasoning brief.",
+            "new": "Keep reasoning concise."
+        }
+    });
+
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(&path)?,
+        "let prompt = \"Keep reasoning concise.\"; \\\nnext();\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_file_replaces_unique_text_without_a_probe() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("prompt.rs");
+    let original = "before\\\nKeep reasoning brief.\\\nafter\\\n";
+    std::fs::write(&path, original)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "prompt.rs",
+        "replace_text": {
+            "old": "Keep reasoning brief.",
+            "new": "Keep reasoning concise."
+        }
+    });
+
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(&path)?,
+        "before\\\nKeep reasoning concise.\\\nafter\\\n"
+    );
+
+    std::fs::write(&path, "brief\nbrief\n")?;
+    let ambiguous = serde_json::json!({
+        "path": "prompt.rs",
+        "replace_text": {"old": "brief", "new": "concise"}
+    });
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&ambiguous)?))
+        .await
+        .unwrap_err();
+    assert_eq!(std::fs::read_to_string(&path)?, "brief\nbrief\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_file_replaces_exact_multiline_text() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("prompt.rs");
+    let original = "fn old() {\n    first();\n    second();\n}\n\nfn keep() {}\n";
+    std::fs::write(&path, original)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "prompt.rs",
+        "edits": [{
+            "tag": line_hash("fn old() {"),
+            "old": "fn old() {\n    first();\n    second();\n}",
+            "new": "fn new() {\n    done();\n}"
+        }]
+    });
+
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(&path)?,
+        "fn new() {\n    done();\n}\n\nfn keep() {}\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_file_replace_text_rejects_unsafe_matches_before_writing() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("repeat.txt");
+    let original = "brief brief\n";
+    std::fs::write(&path, original)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let tag = line_hash("brief brief");
+
+    for (old, new) in [("brief", "short"), ("missing", "short")] {
+        let args = serde_json::json!({
+            "path": "repeat.txt",
+            "replace_text": {"tag": tag, "old": old, "new": new}
+        });
+        tools
+            .execute(&call("edit_file", &serde_json::to_string(&args)?))
+            .await
+            .unwrap_err();
+        assert_eq!(std::fs::read_to_string(&path)?, original);
+    }
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn read_file_rejects_paths_outside_workspace() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
@@ -496,8 +618,288 @@ async fn edit_file_applies_several_edits_in_one_call() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn editing_tools_advertise_flat_operation_shapes() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let definitions = tools.definitions();
+    assert_eq!(
+        definitions
+            .iter()
+            .filter(|tool| matches!(
+                tool.function.name.as_str(),
+                "replace_text"
+                    | "replace_texts"
+                    | "replace_lines"
+                    | "insert_after"
+                    | "delete_lines"
+            ))
+            .count(),
+        5
+    );
+    assert!(
+        definitions
+            .iter()
+            .all(|tool| tool.function.name != "edit_file")
+    );
+    let replace = definitions
+        .iter()
+        .find(|tool| tool.function.name == "replace_lines")
+        .expect("replace_lines definition");
+    assert_eq!(
+        replace.function.parameters["required"],
+        serde_json::json!(["path", "tag", "new"])
+    );
+    assert_eq!(
+        replace.function.parameters["properties"]["tag"]["type"],
+        "string"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
 #[tokio::test]
-async fn edit_tags_resolve_repeats_and_explain_misses() -> Result<()> {
+async fn flat_editing_tools_apply_each_operation() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "alpha\nbeta\ngamma\n")?;
+    tools
+        .execute(&call(
+            "replace_text",
+            r#"{"path":"f.txt","old":"ph","new":"PH"}"#,
+        ))
+        .await?;
+    let beta = crate::hashline::line_hash("beta");
+    tools
+        .execute(&call(
+            "replace_lines",
+            &format!(r#"{{"path":"f.txt","tag":"{beta}","new":"BETA"}}"#),
+        ))
+        .await?;
+    let beta = crate::hashline::line_hash("BETA");
+    tools
+        .execute(&call(
+            "insert_after",
+            &format!(r#"{{"path":"f.txt","tag":"{beta}","text":"between"}}"#),
+        ))
+        .await?;
+    let gamma = crate::hashline::line_hash("gamma");
+    tools
+        .execute(&call(
+            "delete_lines",
+            &format!(r#"{{"path":"f.txt","tag":"{gamma}"}}"#),
+        ))
+        .await?;
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "alPHa\nBETA\nbetween\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_texts_applies_atomic_flat_edits() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "alpha\nbeta\ngamma\n")?;
+
+    tools
+        .execute(&call(
+            "replace_texts",
+            r#"{"path":"f.txt","edits":[{"old":"alpha","new":"ALPHA"},{"old":"gamma","new":"GAMMA"}]}"#,
+        ))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "ALPHA\nbeta\nGAMMA\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_texts_applies_dependent_edits_in_order() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "alpha beta\n")?;
+
+    tools
+        .execute(&call(
+            "replace_texts",
+            r#"{"path":"f.txt","edits":[{"old":"alpha","new":"ALPHA"},{"old":"ALPHA beta","new":"done"}]}"#,
+        ))
+        .await?;
+
+    assert_eq!(std::fs::read_to_string(workspace.join("f.txt"))?, "done\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_texts_relocates_original_anchor_after_line_shift() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(
+        workspace.join("f.txt"),
+        "head\none\ntarget alpha\ntarget beta\n",
+    )?;
+    let target = crate::hashline::line_hash("target alpha");
+
+    tools
+        .execute(&call(
+            "replace_texts",
+            &format!(
+                r#"{{"path":"f.txt","edits":[{{"old":"head","new":"head\ninserted"}},{{"tag":"3:{target}","old":"target","new":"TARGET"}}]}}"#
+            ),
+        ))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "head\ninserted\none\nTARGET alpha\ntarget beta\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_relocates_unchanged_line_after_prior_edit() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "head\ntarget alpha\ntarget beta\n")?;
+    let target = crate::hashline::line_hash("target alpha");
+    tools
+        .execute(&call(
+            "replace_text",
+            r#"{"path":"f.txt","old":"head","new":"head\ninserted"}"#,
+        ))
+        .await?;
+
+    tools
+        .execute(&call(
+            "replace_text",
+            &format!(r#"{{"path":"f.txt","tag":"2:{target}","old":"target","new":"TARGET"}}"#),
+        ))
+        .await?;
+
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "head\ninserted\nTARGET alpha\ntarget beta\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_does_not_relocate_an_ambiguous_hash() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "head\ntarget\ntarget\n")?;
+    let target = crate::hashline::line_hash("target");
+    tools
+        .execute(&call(
+            "replace_text",
+            r#"{"path":"f.txt","old":"head","new":"head\ninserted"}"#,
+        ))
+        .await?;
+
+    let error = tools
+        .execute(&call(
+            "replace_text",
+            &format!(r#"{{"path":"f.txt","tag":"2:{target}","old":"target","new":"TARGET"}}"#),
+        ))
+        .await
+        .expect_err("a colliding hash must not choose a target");
+
+    assert!(error.to_string().contains("stale tag"));
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "head\ninserted\ntarget\ntarget\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_uses_globally_unique_old_despite_nearby_tag() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(
+        workspace.join("f.txt"),
+        "match entry {\n    Entry::User => user(),\n    Entry::Aborted => stop(),\n}\n",
+    )?;
+    let container = crate::hashline::line_hash("match entry {");
+
+    tools
+        .execute(&call(
+            "replace_text",
+            &format!(
+                r#"{{"path":"f.txt","tag":"1:{container}","old":"    Entry::Aborted => stop(),","new":"    Entry::Failed => fail(),\n    Entry::Aborted => stop(),"}}"#
+            ),
+        ))
+        .await?;
+
+    assert!(std::fs::read_to_string(workspace.join("f.txt"))?.contains("Entry::Failed"));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_replace_texts_returns_fresh_anchor_context() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let original = "alpha\nbeta\ngamma\n";
+    std::fs::write(workspace.join("f.txt"), original)?;
+    let beta = crate::hashline::line_hash("beta");
+
+    let error = tools
+        .execute(&call(
+            "replace_texts",
+            &format!(
+                r#"{{"path":"f.txt","edits":[{{"old":"alpha","new":"ALPHA"}},{{"tag":"{beta}","old":"missing","new":"GAMMA"}}]}}"#
+            ),
+        ))
+        .await
+        .expect_err("the stale second edit must reject the batch");
+
+    let message = error.to_string();
+    assert!(message.contains("edit 2:"), "{message}");
+    assert!(message.contains("Current lines:"), "{message}");
+    assert!(message.contains(&format!("2:{beta}|beta")), "{message}");
+    assert_eq!(std::fs::read_to_string(workspace.join("f.txt"))?, original);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_file_explains_a_malformed_nested_replace() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "before\nafter\n")?;
+    let before = crate::hashline::line_hash("before");
+    let after = crate::hashline::line_hash("after");
+    let args = format!(
+        r#"{{"path":"f.txt","edits":[{{"tag":"{before}","end_tag":"{after}","replace":"new"}}]}}"#
+    );
+    let error = tools
+        .execute(&call("edit_file", &args))
+        .await
+        .expect_err("a string is not a replace operation")
+        .to_string();
+    assert!(error.contains("replace must be an object"), "{error}");
+    assert!(error.contains("use replace_text"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "before\nafter\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn edit_tags_reject_ambiguous_ranges_and_explain_misses() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     std::fs::write(
@@ -506,8 +908,21 @@ async fn edit_tags_resolve_repeats_and_explain_misses() -> Result<()> {
     )?;
     let start = crate::hashline::line_hash("fn a() {");
     let close = crate::hashline::line_hash("}");
-    let args = format!(
+    let ambiguous = format!(
         r#"{{"path":"f.txt","replace":{{"tag":"{start}","end_tag":"{close}","new":"fn a() {{ 0 }}"}}}}"#
+    );
+    let error = tools
+        .execute(&call("edit_file", &ambiguous))
+        .await
+        .expect_err("a repeated range end must be numbered")
+        .to_string();
+    assert!(error.contains("matches 2 lines"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "fn a() {\n    1\n}\nfn b() {\n    2\n}\n"
+    );
+    let args = format!(
+        r#"{{"path":"f.txt","replace":{{"tag":"{start}","end_tag":"3:{close}","new":"fn a() {{ 0 }}"}}}}"#
     );
     tools.execute(&call("edit_file", &args)).await?;
     assert_eq!(
@@ -543,6 +958,30 @@ async fn edit_tags_resolve_repeats_and_explain_misses() -> Result<()> {
 }
 
 #[tokio::test]
+async fn failed_flat_edit_returns_fresh_anchor_context() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    std::fs::write(workspace.join("f.txt"), "alpha\nbeta\ngamma\n")?;
+    let beta = crate::hashline::line_hash("beta");
+    let error = tools
+        .execute(&call(
+            "replace_text",
+            &format!(r#"{{"path":"f.txt","tag":"{beta}","old":"missing","new":"BETA"}}"#),
+        ))
+        .await
+        .map(|_| String::new())
+        .unwrap_or_else(|error| error.to_string());
+    assert!(error.contains("Current lines:"), "{error}");
+    assert!(error.contains(&format!("2:{beta}|beta")), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "alpha\nbeta\ngamma\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn edit_file_accepts_near_miss_shapes() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
@@ -568,6 +1007,34 @@ async fn edit_file_accepts_near_miss_shapes() -> Result<()> {
             "edit_file",
             &format!(
                 r#"{{"path":"f.txt","edits":[{{"tag":"{one}","text":"between"}},{{"op":"delete","tag":"{two}"}}]}}"#
+            ),
+        ))
+        .await?;
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "ONE\nbetween\n"
+    );
+
+    let one = crate::hashline::line_hash("ONE");
+    tools
+        .execute(&call(
+            "edit_file",
+            &format!(
+                r#"{{"path":"f.txt","edits":[{{"replace_text":"{one}","old":"ON","new":"on"}}]}}"#
+            ),
+        ))
+        .await?;
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("f.txt"))?,
+        "onE\nbetween\n"
+    );
+
+    let one = crate::hashline::line_hash("onE");
+    tools
+        .execute(&call(
+            "edit_file",
+            &format!(
+                r#"{{"path":"f.txt","edits":[{{"type":"replace_text","tag":"{one}","old":"on","new":"ON"}}]}}"#
             ),
         ))
         .await?;
@@ -876,6 +1343,100 @@ async fn run_command_kill_stops_a_background_job() -> Result<()> {
         killed.contains("state: dead") || killed.contains("state: exit"),
         "{killed}"
     );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_handles_multibyte_old() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("m.rs");
+    std::fs::write(&path, "label: café\nrest\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "m.rs",
+        "replace_text": {"old": "café", "new": "X"}
+    });
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+    assert_eq!(std::fs::read_to_string(&path)?, "label: X\nrest\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_with_old_ending_in_newline_merges() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("j.rs");
+    std::fs::write(&path, "join me\nnext\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "j.rs",
+        "replace_text": {"old": "me\n", "new": "ME"}
+    });
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+    assert_eq!(std::fs::read_to_string(&path)?, "join MEnext\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_preserves_crlf_endings() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("crlf.rs");
+    std::fs::write(&path, "a = 1\r\nb = 2\r\nc = 3\r\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "crlf.rs",
+        "replace_text": {"old": "b = 2", "new": "b = 9"}
+    });
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+    assert_eq!(
+        std::fs::read_to_string(&path)?,
+        "a = 1\r\nb = 9\r\nc = 3\r\n"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_text_counts_overlap_as_one_placement() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("o.rs");
+    std::fs::write(&path, "aaa\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({
+        "path": "o.rs",
+        "replace_text": {"old": "aa", "new": "X"}
+    });
+    tools
+        .execute(&call("edit_file", &serde_json::to_string(&args)?))
+        .await?;
+    assert_eq!(std::fs::read_to_string(&path)?, "Xa\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn replace_texts_rejects_more_than_the_cap() -> Result<()> {
+    let workspace = test_workspace()?;
+    let path = workspace.join("big.txt");
+    std::fs::write(&path, "x\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let edits: Vec<_> = (0..17)
+        .map(|i| serde_json::json!({"old": format!("l{i}"), "new": "y"}))
+        .collect();
+    let args = serde_json::json!({"path": "big.txt", "edits": edits});
+    let out = tools
+        .execute(&call("replace_texts", &serde_json::to_string(&args)?))
+        .await;
+    assert!(out.is_err(), "expected the edit cap to reject 17 edits");
+    assert_eq!(std::fs::read_to_string(&path)?, "x\n");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

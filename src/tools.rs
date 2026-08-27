@@ -237,6 +237,8 @@ impl ToolRegistry {
         match call.function.name.as_str() {
             "read_file" => self.read_file(&call.function.arguments).map(ToolOutput::ok),
             "edit_file" => self.edit_file(&call.function.arguments).await,
+            name @ ("replace_text" | "replace_texts" | "replace_lines" | "insert_after"
+            | "delete_lines") => self.edit_operation(name, &call.function.arguments).await,
             "write_file" => self.write_file(&call.function.arguments).await,
             "list_dir" => self.list_dir(&call.function.arguments).map(ToolOutput::ok),
             "grep" => self.grep(&call.function.arguments).map(ToolOutput::ok),

@@ -103,6 +103,7 @@ pub(super) struct Menu {
 pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     let draft = app.draft.get();
     if app.settings_open.peek()
+        || app.auth_open.peek()
         || app.editing_model.peek()
         || app.model.borrow().busy_since.is_some()
         || !app.commands.open(&draft)

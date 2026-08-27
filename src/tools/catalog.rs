@@ -6,7 +6,11 @@ impl ToolRegistry {
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
         let mut all = vec![
             read_file(),
-            edit_file(),
+            replace_text(),
+            replace_texts(),
+            replace_lines(),
+            insert_after(),
+            delete_lines(),
             write_file(),
             list_dir(),
             grep(),
@@ -24,7 +28,8 @@ impl ToolRegistry {
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
             "read_file" | "list_dir" | "grep" | "diagnostics" | "definition" | "skill" => true,
-            "edit_file" | "write_file" | "run_command" => !self.policy.is_read_only(),
+            "edit_file" | "replace_text" | "replace_texts" | "replace_lines" | "insert_after"
+            | "delete_lines" | "write_file" | "run_command" => !self.policy.is_read_only(),
             "web_search" | "web_fetch" => self.search.is_some(),
             _ => false,
         }
@@ -36,6 +41,11 @@ pub(super) fn known(name: &str) -> bool {
         name,
         "read_file"
             | "edit_file"
+            | "replace_text"
+            | "replace_texts"
+            | "replace_lines"
+            | "insert_after"
+            | "delete_lines"
             | "write_file"
             | "list_dir"
             | "grep"
@@ -65,49 +75,101 @@ fn read_file() -> ToolDefinition {
     )
 }
 
-fn edit_file() -> ToolDefinition {
+fn replace_text() -> ToolDefinition {
     tool(
-        "edit_file",
-        "Edit by hashline. One edit: replace {tag, new, end_tag?} (new may be multiline), insert_after {tag, text}, or delete {tag, end_tag?}. Several independent edits to one file: edits [ {replace|insert_after|delete}, … ]; every anchor resolves against the original file and overlapping edits fail before writing. Prefer the hash alone when unique; N:hash breaks ties. A stale or ambiguous tag fails before any write and shows current tags. A successful write returns fresh tags; any post-edit diagnostic is advisory.",
+        "replace_text",
+        "Replace one exact substring in a file. When old occurs more than once, tag picks the line it starts on; a globally unique old is replaced directly and needs no tag. old and new may span lines. A stale or ambiguous edit fails before writing.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "replace": {
-                    "type": "object",
-                    "properties": {
-                        "tag": {"type": "string"},
-                        "end_tag": {"type": "string"},
-                        "new": {"type": "string"}
-                    },
-                    "required": ["tag", "new"],
-                    "additionalProperties": false
-                },
-                "insert_after": {
-                    "type": "object",
-                    "properties": {
-                        "tag": {"type": "string"},
-                        "text": {"type": "string"}
-                    },
-                    "required": ["tag", "text"],
-                    "additionalProperties": false
-                },
-                "delete": {
-                    "type": "object",
-                    "properties": {
-                        "tag": {"type": "string"},
-                        "end_tag": {"type": "string"}
-                    },
-                    "required": ["tag"],
-                    "additionalProperties": false
-                },
+                "tag": {"type": "string"},
+                "old": {"type": "string"},
+                "new": {"type": "string"}
+            },
+            "required": ["path", "old", "new"],
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn replace_texts() -> ToolDefinition {
+    tool(
+        "replace_texts",
+        "Apply exact-substring replacements to one file atomically, in listed order. Each old may span lines and can match text produced by an earlier edit. When an old occurs more than once, tag picks the line it starts on; a unique old needs no tag. Any stale or ambiguous edit fails before writing.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
                 "edits": {
                     "type": "array",
-                    "items": {"type": "object"},
-                    "description": "Several independent edits to this file. Every anchor resolves against the original file; overlapping edits fail before writing."
+                    "minItems": 2,
+                    "maxItems": 16,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "tag": {"type": "string"},
+                            "old": {"type": "string"},
+                            "new": {"type": "string"}
+                        },
+                        "required": ["old", "new"],
+                        "additionalProperties": false
+                    }
                 }
             },
-            "required": ["path"],
+            "required": ["path", "edits"],
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn replace_lines() -> ToolDefinition {
+    tool(
+        "replace_lines",
+        "Replace whole lines from tag through optional end_tag. Each tag must identify one line; use N:hash when text such as `}` repeats. new may span lines.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "tag": {"type": "string"},
+                "end_tag": {"type": "string"},
+                "new": {"type": "string"}
+            },
+            "required": ["path", "tag", "new"],
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn insert_after() -> ToolDefinition {
+    tool(
+        "insert_after",
+        "Insert text after one tagged line. Use N:hash when the tagged line repeats. text may span lines.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "tag": {"type": "string"},
+                "text": {"type": "string"}
+            },
+            "required": ["path", "tag", "text"],
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn delete_lines() -> ToolDefinition {
+    tool(
+        "delete_lines",
+        "Delete whole lines from tag through optional end_tag. Each tag must identify one line; use N:hash when the line repeats.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "tag": {"type": "string"},
+                "end_tag": {"type": "string"}
+            },
+            "required": ["path", "tag"],
             "additionalProperties": false
         }),
     )
@@ -116,7 +178,7 @@ fn edit_file() -> ToolDefinition {
 fn write_file() -> ToolDefinition {
     tool(
         "write_file",
-        "Create or overwrite a workspace file. Prefer edit_file for existing code.",
+        "Create or overwrite a workspace file. Prefer an edit tool for existing code.",
         serde_json::json!({
             "type": "object",
             "properties": {

@@ -384,7 +384,7 @@ async fn openai_provider_completes_a_tool_round() -> Result<()> {
     assert_eq!(requests.len(), 2);
     assert!(requests[0].contains("\"model\":\"test-model\""));
     assert!(requests[0].contains("read_file"));
-    assert!(requests[0].contains("edit_file"));
+    assert!(requests[0].contains("replace_text"));
     assert_work_receipt(&turn, "done");
     std::fs::remove_dir_all(workspace)?;
     Ok(())

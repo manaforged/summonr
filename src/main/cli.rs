@@ -6,6 +6,7 @@ pub(super) struct Args {
     pub(super) json: bool,
     pub(super) list: bool,
     pub(super) list_sessions: bool,
+    pub(super) list_workflows: bool,
     pub(super) resume: bool,
     pub(super) fork: bool,
     pub(super) trust: bool,
@@ -22,6 +23,7 @@ pub(super) struct Args {
     pub(super) session: Option<String>,
     pub(super) endpoint: Option<String>,
     pub(super) model: Option<String>,
+    pub(super) workflow: Option<String>,
     pub(super) steps: Option<String>,
     pub(super) goal: Option<String>,
     pub(super) max_turns: Option<u32>,
@@ -62,6 +64,7 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--fork" => args.fork = true,
             "endpoints" => args.list = true,
             "sessions" => args.list_sessions = true,
+            "workflows" => args.list_workflows = true,
             "login" => args.login = true,
             "worktrees" => args.list_worktrees = true,
             "--steps" => args.steps = input.next(),
@@ -77,6 +80,9 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
                 )?);
             }
             "--model" => args.model = Some(value(&mut input, "--model", "a value")?),
+            "-w" | "--workflow" => {
+                args.workflow = Some(value(&mut input, "--workflow", "a name")?);
+            }
             "--max-rounds" => args.max_rounds = Some(number(&mut input, "--max-rounds")?),
             "--max-tokens" => args.max_tokens = Some(number(&mut input, "--max-tokens")?),
             "--max-secs" => args.max_secs = Some(number(&mut input, "--max-secs")?),
@@ -120,7 +126,7 @@ where
 fn exit_help() -> ! {
     let bin = option_env!("CARGO_BIN_NAME").unwrap_or("summon");
     println!(
-        "{bin} — Summoner, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e glm -p [PROMPT]\n  {bin} sessions\n  {bin} endpoints\n  {bin} login [NAME]\n  {bin} worktrees\n  {bin} worktrees prune\n\nOptions:\n  -e, --endpoint NAME  glm, kimi, grok, qwen, copilot, openai, openrouter, anthropic, gemini, or a name from ~/.mage/config.toml\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Continuation turns for goal mode (default 20)\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok)\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only mode: no edits, writes, or commands\n      --sandbox        Contain commands and post-edit checks (Seatbelt/bubblewrap)\n      --no-net         Deny network access inside --sandbox\n      --no-verify      Skip the .mage/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --no-tui         Line REPL instead of the full-screen interface\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-rounds N   Provider rounds per turn (default 64)\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 turn aborted\n\nInteractive:\n  /exit   /help   /session   /clear\n  @path      attach a workspace file to the prompt\n\nEndpoints:\n  glm / glm-intl / qwen / kimi / grok / copilot / openai / openrouter / anthropic / gemini  builtins; any other name is an [endpoint.NAME] row\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints lists them\n  {bin} login [NAME]  RFC 8628 device-code login for that endpoint\n\nKeys: ZAI_CODING_API_KEY / ZAI_API_KEY, or api_key in ~/.mage/config.toml.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
+        "{bin} — Summoner, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e glm -p [PROMPT]\n  {bin} sessions\n  {bin} workflows\n  {bin} endpoints\n  {bin} login [NAME]\n  {bin} worktrees\n  {bin} worktrees prune\n\nOptions:\n  -e, --endpoint NAME  glm, kimi, grok, qwen, copilot, openai, openrouter, anthropic, gemini, or a name from ~/.mage/config.toml\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Continuation turns for goal mode (default 20)\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok)\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.mage/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only mode: no edits, writes, or commands\n      --sandbox        Contain commands and post-edit checks (Seatbelt/bubblewrap)\n      --no-net         Deny network access inside --sandbox\n      --no-verify      Skip the .mage/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --no-tui         Line REPL instead of the full-screen interface\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-rounds N   Provider rounds per turn (default 64)\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 turn aborted\n\nInteractive:\n  /exit   /help   /session   /clear\n  @path      attach a workspace file to the prompt\n\nEndpoints:\n  glm / glm-intl / qwen / kimi / grok / copilot / openai / openrouter / anthropic / gemini  builtins; any other name is an [endpoint.NAME] row\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints lists them\n  {bin} login [NAME]  RFC 8628 device-code login for that endpoint\n\nKeys: ZAI_CODING_API_KEY / ZAI_API_KEY, or api_key in ~/.mage/config.toml.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
 Qwen needs no key. Completions seats speak OpenAI chat/completions; anthropic and gemini use native APIs. Override URLs in ~/.mage/config.toml.\nPolicy: ~/.mage/policy.toml then .mage/policy.toml (see policy.example.toml).\nLong commands: run_command background true, then poll job."
     );
     println!(

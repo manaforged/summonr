@@ -1,115 +1,497 @@
-use std::collections::HashSet;
+//! Work: the job the harness holds so the model does not have to.
+//!
+//! One objective, one policy (single turn, numbered steps, or a standing
+//! goal), one stage (Plan, Execute, Verify), and the gates that decide done.
+//! `work.json` beside the session log is the checkpoint: rewritten
+//! atomically after every transition, read back on resume.
+
 use std::fmt::{Display, Formatter};
+use std::io;
+use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::to_vec;
 use thiserror::Error;
 
-use super::bound::{BoundError, Items, Text};
-use super::id::{
-    CandidateId, CheckId, ContextEntryId, ContextEpochId, Digest, EvidenceId, FactId,
-    ObservationId, OperationId, PlanRevisionId, ProviderResultId, SessionId, ToolBatchId,
-    VerificationPolicyId, WorkId, WorkItemId, WorkspaceScopeId,
-};
-use super::workspace::{PathComponent, PathKey, PathPlatform, WorkspaceError};
+use super::tree::{Snapshot, changed};
 
-const MAX_OBJECTIVE_BYTES: usize = 65_536;
-const MAX_TEXT_BYTES: usize = 65_536;
-const MAX_MARKDOWN_BYTES: usize = 1_048_576;
-const MAX_ITEMS: usize = 512;
-const MAX_CHECKS: usize = 256;
-const MAX_EVIDENCE: usize = 2_048;
+/// Failed completion checks tolerated per step or goal turn.
+const REPAIR_LIMIT: u16 = 3;
+const DECISION: &str = "Goal Work requires a completion decision";
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
-pub(crate) enum WorkError {
-    #[error(transparent)]
-    Bound(#[from] BoundError),
-    #[error(transparent)]
-    Workspace(#[from] WorkspaceError),
-    #[error("plan encoding failed: {0}")]
-    Encoding(String),
-    #[error("plan digest does not match its canonical body")]
-    PlanDigest,
-    #[error("candidate digest does not match its canonical body")]
-    CandidateDigest,
-    #[error("work revision must be greater than zero")]
-    Revision,
-    #[error("active item is not present in the Work item set")]
-    ActiveItem,
-    #[error("terminal Work cannot have an active item")]
-    TerminalActiveItem,
-    #[error("Execute and Verify require a selected Plan and verification policy")]
-    Selection,
-    #[error("Execute and Verify require a workspace scope and base observation")]
-    Base,
-    #[error("Verify and completed Work require a candidate")]
-    Candidate,
-    #[error("Work item IDs must be unique")]
-    ItemOrder,
-    #[error("Plan check IDs must be unique and belong to the revision")]
-    PlanIdentity,
-    #[error("Work candidate does not match its selected Plan, policy, scope, or base")]
-    CandidateBinding,
-    #[error("Work candidate manifest does not match its base and capture")]
-    CandidateManifest,
-}
+#[error("{0}")]
+pub(crate) struct WorkError(pub(crate) String);
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
-pub(crate) struct WorkRevision(u64);
-
-impl WorkRevision {
-    pub(crate) fn new(value: u64) -> Result<Self, WorkError> {
-        if value == 0 {
-            return Err(WorkError::Revision);
-        }
-        Ok(Self(value))
-    }
-
-    pub(crate) fn get(self) -> u64 {
-        self.0
+impl From<crate::Error> for WorkError {
+    fn from(error: crate::Error) -> Self {
+        Self(error.to_string())
     }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum WorkStage {
+pub(crate) enum Policy {
+    Single,
+    Steps,
+    Goal { max_turns: u32 },
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Stage {
     Plan,
     Execute,
     Verify,
+    /// A reviewer seat reads the change after the gates passed.
+    Review,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "status", content = "data", rename_all = "snake_case")]
-pub(crate) enum WorkStatus {
-    Active(WorkStage),
-    Completed {
-        candidate: CandidateId,
-        verdict: EvidenceId,
-    },
-    Abandoned {
-        reason: Text<MAX_TEXT_BYTES>,
-    },
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Status {
+    Active(Stage),
+    Completed,
+    Abandoned(String),
 }
 
-impl WorkStatus {
-    pub(crate) fn stage(&self) -> Option<WorkStage> {
-        match self {
-            Self::Active(stage) => Some(*stage),
-            Self::Completed { .. } | Self::Abandoned { .. } => None,
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StepState {
+    Pending,
+    Active,
+    Completed,
+    Blocked,
+}
+
+/// What a contract check proves beyond exit 0.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Observation {
+    /// A workspace-relative file must exist.
+    File(String),
+    /// The command's output must contain this text.
+    Stdout(String),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Check {
+    pub(crate) command: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) observation: Option<Observation>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Step {
+    pub(crate) title: String,
+    /// Indexes into [`Work::checks`] this step must pass.
+    pub(crate) checks: Vec<usize>,
+    pub(crate) state: StepState,
+    pub(crate) attempts: u16,
+    pub(crate) rounds: u32,
+}
+
+impl Step {
+    fn new(title: &str, checks: Vec<usize>) -> Self {
+        Self {
+            title: title.to_string(),
+            checks,
+            state: StepState::Pending,
+            attempts: 0,
+            rounds: 0,
+        }
+    }
+}
+
+/// The workspace as captured when Execute ended.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Candidate {
+    pub(crate) paths: Vec<String>,
+    pub(crate) snapshot: Snapshot,
+}
+
+/// How the harness closes a passed Verify.
+pub(crate) enum Decision {
+    /// Single and Steps: the gates decide alone.
+    Automatic,
+    GoalComplete,
+    GoalContinue(String),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub(crate) struct Work {
+    pub(crate) objective: String,
+    pub(crate) policy: Policy,
+    pub(crate) status: Status,
+    /// Selected plan text; the objective itself for a single turn.
+    pub(crate) plan: Option<String>,
+    pub(crate) checks: Vec<Check>,
+    pub(crate) steps: Vec<Step>,
+    pub(crate) active: Option<usize>,
+    /// Workspace when Execute began.
+    pub(crate) base: Option<Snapshot>,
+    pub(crate) candidate: Option<Candidate>,
+    /// Harness text queued for the next Execute turn.
+    pub(crate) pending: Vec<String>,
+    /// The scout's brief, once a scout seat has run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) brief: Option<String>,
+}
+
+impl Work {
+    pub(crate) fn new(objective: &str, policy: Policy) -> Self {
+        let steps = match policy {
+            Policy::Steps => Vec::new(),
+            Policy::Single | Policy::Goal { .. } => vec![Step::new("Objective", Vec::new())],
+        };
+        Self {
+            objective: objective.to_string(),
+            policy,
+            status: Status::Active(Stage::Plan),
+            plan: None,
+            checks: Vec::new(),
+            steps,
+            active: None,
+            base: None,
+            candidate: None,
+            pending: Vec::new(),
+            brief: None,
+        }
+    }
+
+    pub(crate) fn stage(&self) -> Option<Stage> {
+        match &self.status {
+            Status::Active(stage) => Some(*stage),
+            Status::Completed | Status::Abandoned(_) => None,
         }
     }
 
     pub(crate) fn terminal(&self) -> bool {
         self.stage().is_none()
     }
+
+    /// Select the plan and every check it declares. Steps take their
+    /// items from the plan's numbered list.
+    pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
+        let checks = checks(markdown, self.policy, commands)?;
+        if self.policy == Policy::Steps {
+            let parsed = crate::steps::parse(markdown)?;
+            let last = parsed.len().saturating_sub(1);
+            self.steps = parsed
+                .iter()
+                .enumerate()
+                .map(|(index, step)| {
+                    let mut owned = Vec::new();
+                    for command in commands.iter().chain(&step.checks) {
+                        if let Some(position) = checks.iter().position(|check| {
+                            check.observation.is_none() && check.command == *command
+                        }) && !owned.contains(&position)
+                        {
+                            owned.push(position);
+                        }
+                    }
+                    if index == last {
+                        owned = (0..checks.len()).collect();
+                    }
+                    Step::new(&step.text, owned)
+                })
+                .collect();
+            self.active = None;
+        }
+        self.checks = checks;
+        self.plan = Some(markdown.to_string());
+        Ok(())
+    }
+
+    /// Enter Execute from Plan against a workspace base.
+    pub(crate) fn execute(&mut self, base: Snapshot) -> Result<(), WorkError> {
+        if self.plan.is_none() {
+            return Err(WorkError("Execute requires a selected plan".to_string()));
+        }
+        if let Some(first) = self.steps.first_mut() {
+            first.state = StepState::Active;
+        }
+        self.active = (!self.steps.is_empty()).then_some(0);
+        self.status = Status::Active(Stage::Execute);
+        self.base = Some(base);
+        Ok(())
+    }
+
+    /// Capture the Execute result and enter Verify. Returns the changed paths.
+    pub(crate) fn verify(&mut self, capture: Snapshot) -> Result<Vec<String>, WorkError> {
+        if self.stage() != Some(Stage::Execute) {
+            return Err(WorkError("Verify requires Execute".to_string()));
+        }
+        let base = self
+            .base
+            .as_ref()
+            .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
+        let paths = changed(base, &capture);
+        self.candidate = Some(Candidate {
+            paths: paths.clone(),
+            snapshot: capture,
+        });
+        self.status = Status::Active(Stage::Verify);
+        Ok(paths)
+    }
+
+    /// Advance to Review after the gates passed.
+    pub(crate) fn review(&mut self) -> Result<(), WorkError> {
+        if self.stage() != Some(Stage::Verify) {
+            return Err(WorkError("Review requires Verify".to_string()));
+        }
+        self.status = Status::Active(Stage::Review);
+        Ok(())
+    }
+
+    /// Close Verify or Review with the gate verdict. A failed gate returns
+    /// to Execute with a repair request queued; a continuing goal queues its
+    /// next turn.
+    pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> Result<(), WorkError> {
+        if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
+            return Err(WorkError("a verdict requires Verify".to_string()));
+        }
+        if passed
+            && matches!(
+                (self.policy, &decision),
+                (Policy::Goal { .. }, Decision::Automatic)
+            )
+        {
+            return Err(WorkError(DECISION.to_string()));
+        }
+        if !passed {
+            return self.fail("Repair the failed completion check.".to_string());
+        }
+        let active = self
+            .active
+            .ok_or_else(|| WorkError("Verify has no active item".to_string()))?;
+        let policy = self.policy;
+        let step = self
+            .steps
+            .get_mut(active)
+            .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
+        step.rounds = step.rounds.saturating_add(1);
+        step.attempts = 0;
+        match (policy, decision) {
+            (Policy::Single, _) | (Policy::Goal { .. }, Decision::GoalComplete) => {
+                step.state = StepState::Completed;
+                self.active = None;
+                self.status = Status::Completed;
+            }
+            (Policy::Steps, _) => {
+                step.state = StepState::Completed;
+                match self
+                    .steps
+                    .iter()
+                    .position(|step| step.state == StepState::Pending)
+                {
+                    Some(next) => {
+                        if let Some(step) = self.steps.get_mut(next) {
+                            step.state = StepState::Active;
+                        }
+                        self.active = Some(next);
+                        self.status = Status::Active(Stage::Execute);
+                        self.candidate = None;
+                    }
+                    None => {
+                        self.active = None;
+                        self.status = Status::Completed;
+                    }
+                }
+            }
+            (Policy::Goal { max_turns }, Decision::GoalContinue(reason)) => {
+                if step.rounds < max_turns {
+                    step.state = StepState::Active;
+                    self.status = Status::Active(Stage::Execute);
+                    self.candidate = None;
+                    self.pending.push(format!(
+                        "[summon goal: the objective is not complete — {reason}. Continue with the next concrete action.]"
+                    ));
+                } else {
+                    step.state = StepState::Blocked;
+                    self.active = None;
+                    self.status =
+                        Status::Abandoned(format!("goal reached its {max_turns} turn limit"));
+                }
+            }
+            (Policy::Goal { .. }, Decision::Automatic) => {
+                return Err(WorkError(DECISION.to_string()));
+            }
+        }
+        Ok(())
+    }
+
+    /// The reviewer sent the change back: Review returns to Execute with
+    /// the findings queued, counted like a failed gate.
+    pub(crate) fn reject(&mut self, findings: &str) -> Result<(), WorkError> {
+        if self.stage() != Some(Stage::Review) {
+            return Err(WorkError("a rejection requires Review".to_string()));
+        }
+        self.fail(format!("Address the review findings:\n{findings}"))
+    }
+
+    /// A failed gate or review: another attempt, or abandon at the limit.
+    fn fail(&mut self, continuation: String) -> Result<(), WorkError> {
+        let active = self
+            .active
+            .ok_or_else(|| WorkError("Verify has no active item".to_string()))?;
+        let policy = self.policy;
+        let step = self
+            .steps
+            .get_mut(active)
+            .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
+        step.rounds = step.rounds.saturating_add(1);
+        step.attempts = step.attempts.saturating_add(1);
+        if policy != Policy::Single && step.attempts >= REPAIR_LIMIT {
+            step.state = StepState::Blocked;
+            self.active = None;
+            self.status = Status::Abandoned("completion checks failed three times".to_string());
+        } else {
+            step.state = StepState::Active;
+            self.status = Status::Active(Stage::Execute);
+            self.candidate = None;
+            self.pending.push(continuation);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn abandon(&mut self, reason: &str) {
+        if self.terminal() {
+            return;
+        }
+        if let Some(step) = self.active.and_then(|index| self.steps.get_mut(index)) {
+            step.state = StepState::Blocked;
+        }
+        self.active = None;
+        self.status = Status::Abandoned(reason.to_string());
+    }
+
+    /// Return an interrupted Verify or Review to Execute; the next turn
+    /// captures again. True when something changed.
+    pub(crate) fn interrupt(&mut self) -> bool {
+        if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
+            return false;
+        }
+        self.status = Status::Active(Stage::Execute);
+        self.candidate = None;
+        true
+    }
+
+    /// Checks the active item must pass: the step's own for Steps, all
+    /// declared checks otherwise.
+    pub(crate) fn completion_checks(&self) -> Vec<Check> {
+        if self.policy != Policy::Steps {
+            return self.checks.clone();
+        }
+        self.active
+            .and_then(|index| self.steps.get(index))
+            .map(|step| {
+                step.checks
+                    .iter()
+                    .filter_map(|index| self.checks.get(*index).cloned())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(crate) fn progress(&self) -> WorkProgress {
+        let (kind, max_turns) = match self.policy {
+            Policy::Single => (WorkKind::Single, 0),
+            Policy::Steps => (WorkKind::Steps, 0),
+            Policy::Goal { max_turns } => (WorkKind::Goal, max_turns),
+        };
+        let (phase, reason) = match &self.status {
+            Status::Active(Stage::Plan) => (WorkPhase::Plan, None),
+            Status::Active(Stage::Execute) => (WorkPhase::Execute, None),
+            Status::Active(Stage::Verify) => (WorkPhase::Verify, None),
+            Status::Active(Stage::Review) => (WorkPhase::Review, None),
+            Status::Completed => (WorkPhase::Completed, None),
+            Status::Abandoned(reason) => (WorkPhase::Failed, Some(reason.clone())),
+        };
+        let current = self.active.or_else(|| {
+            self.steps
+                .iter()
+                .rposition(|step| matches!(step.state, StepState::Blocked | StepState::Completed))
+        });
+        let step = current.and_then(|index| self.steps.get(index));
+        WorkProgress {
+            kind,
+            phase,
+            current: (kind == WorkKind::Steps)
+                .then(|| current.map(|index| index + 1))
+                .flatten(),
+            total: self.steps.len(),
+            attempts: step.map_or(0, |step| step.attempts),
+            rounds: step.map_or(0, |step| step.rounds),
+            max_turns,
+            reason,
+        }
+    }
+
+    /// Write the checkpoint atomically: temp file, then rename.
+    pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
+        let temp = path.with_extension("json.tmp");
+        std::fs::write(&temp, serde_json::to_vec_pretty(self)?)?;
+        std::fs::rename(temp, path)
+    }
+
+    /// Read the checkpoint; `None` when the session has no Work yet.
+    pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
+        match std::fs::read(path) {
+            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum WorkPolicy {
-    Single,
-    Steps,
-    Goal { max_turns: u32 },
+/// Every check a plan declares: the configured commands, each step's
+/// ``Run `…` `` commands, and the `## Contract` items.
+pub(crate) fn checks(
+    markdown: &str,
+    policy: Policy,
+    commands: &[String],
+) -> Result<Vec<Check>, WorkError> {
+    let mut checks: Vec<Check> = commands
+        .iter()
+        .map(|command| Check {
+            command: command.clone(),
+            observation: None,
+        })
+        .collect();
+    if policy != Policy::Steps {
+        return Ok(checks);
+    }
+    let mut push = |command: String, observation: Option<Observation>| {
+        if !checks
+            .iter()
+            .any(|known| known.command == command && known.observation == observation)
+        {
+            checks.push(Check {
+                command,
+                observation,
+            });
+        }
+    };
+    for command in crate::steps::parse(markdown)?
+        .iter()
+        .flat_map(|step| &step.checks)
+    {
+        push(command.clone(), None);
+    }
+    for item in crate::steps::contract(markdown)?.items {
+        match item {
+            crate::steps::Item::File(path) => {
+                push(
+                    format!("file exists: {path}"),
+                    Some(Observation::File(path)),
+                );
+            }
+            crate::steps::Item::Stdout { command, expected } => {
+                push(command, Some(Observation::Stdout(expected)));
+            }
+        }
+    }
+    Ok(checks)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -126,6 +508,7 @@ pub enum WorkPhase {
     Plan,
     Execute,
     Verify,
+    Review,
     Completed,
     Failed,
 }
@@ -136,6 +519,7 @@ impl Display for WorkPhase {
             Self::Plan => "planning",
             Self::Execute => "running",
             Self::Verify => "verifying",
+            Self::Review => "reviewing",
             Self::Completed => "completed",
             Self::Failed => "failed",
         })
@@ -150,6 +534,8 @@ pub struct WorkProgress {
     pub total: usize,
     pub attempts: u16,
     pub rounds: u32,
+    /// Continuation turns a Goal Work may still take; 0 otherwise.
+    pub max_turns: u32,
     pub reason: Option<String>,
 }
 
@@ -172,7 +558,7 @@ impl WorkProgress {
                 Some(2)
             }
             WorkPhase::Failed => Some(3),
-            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify => None,
+            WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify | WorkPhase::Review => None,
         }
     }
 }
@@ -188,7 +574,15 @@ impl Display for WorkProgress {
                 )?;
             }
             (WorkKind::Goal, _) => {
-                write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
+                if self.max_turns > 0 {
+                    write!(
+                        formatter,
+                        "Work goal turn {}/{} · {}",
+                        self.rounds, self.max_turns, self.phase
+                    )?;
+                } else {
+                    write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
+                }
             }
             _ => write!(formatter, "Work · {}", self.phase)?,
         }
@@ -197,374 +591,4 @@ impl Display for WorkProgress {
         }
         Ok(())
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ItemDisposition {
-    Pending,
-    Active,
-    Completed,
-    Blocked,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct EvidenceRef {
-    pub(crate) id: EvidenceId,
-    pub(crate) source: FactId,
-    pub(crate) digest: Digest,
-    pub(crate) summary: Text<MAX_TEXT_BYTES>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct WorkItem {
-    pub(crate) id: WorkItemId,
-    pub(crate) disposition: ItemDisposition,
-    pub(crate) title: Text<MAX_TEXT_BYTES>,
-    pub(crate) evidence: Items<EvidenceId, MAX_EVIDENCE>,
-    #[serde(default)]
-    pub(crate) attempts: u16,
-    #[serde(default)]
-    pub(crate) rounds: u32,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "source", content = "data", rename_all = "snake_case")]
-pub(crate) enum PlanSource {
-    Generated { provider: ProviderResultId },
-    External,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct PlanStep {
-    pub(crate) id: WorkItemId,
-    pub(crate) title: Text<MAX_TEXT_BYTES>,
-    #[serde(default)]
-    pub(crate) checks: Items<CheckId, MAX_CHECKS>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
-pub(crate) enum RequiredObservation {
-    File(Text<MAX_TEXT_BYTES>),
-    StdoutContains(Text<MAX_TEXT_BYTES>),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct AcceptanceCheck {
-    pub(crate) id: CheckId,
-    pub(crate) command: Text<MAX_TEXT_BYTES>,
-    pub(crate) required_observation: Option<RequiredObservation>,
-}
-
-#[derive(Serialize)]
-struct PlanBody<'a> {
-    id: PlanRevisionId,
-    work: WorkId,
-    source: &'a PlanSource,
-    steps: &'a Items<PlanStep, MAX_ITEMS>,
-    checks: &'a Items<AcceptanceCheck, MAX_CHECKS>,
-    markdown: &'a Text<MAX_MARKDOWN_BYTES>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct PlanRevision {
-    pub(crate) id: PlanRevisionId,
-    pub(crate) work: WorkId,
-    pub(crate) source: PlanSource,
-    pub(crate) steps: Items<PlanStep, MAX_ITEMS>,
-    pub(crate) checks: Items<AcceptanceCheck, MAX_CHECKS>,
-    pub(crate) markdown: Text<MAX_MARKDOWN_BYTES>,
-    pub(crate) digest: Digest,
-}
-
-impl PlanRevision {
-    pub(crate) fn id(&self) -> PlanRevisionId {
-        self.id
-    }
-
-    pub(crate) fn work(&self) -> WorkId {
-        self.work
-    }
-
-    pub(crate) fn digest(&self) -> Digest {
-        self.digest
-    }
-
-    pub(crate) fn markdown(&self) -> &str {
-        self.markdown.as_str()
-    }
-
-    pub(crate) fn validate(&self) -> Result<(), WorkError> {
-        let mut ids: Vec<_> = self.steps.iter().map(|step| step.id).collect();
-        ids.sort_unstable();
-        if ids.windows(2).any(|pair| pair[0] == pair[1]) {
-            return Err(WorkError::ItemOrder);
-        }
-        let checks: HashSet<_> = self.checks.iter().map(|check| check.id).collect();
-        if checks.len() != self.checks.len()
-            || self.steps.iter().any(|step| {
-                let selected: HashSet<_> = step.checks.iter().copied().collect();
-                selected.len() != step.checks.len()
-                    || selected.iter().any(|check| !checks.contains(check))
-            })
-        {
-            return Err(WorkError::PlanIdentity);
-        }
-        if self.digest != self.calculated_digest()? {
-            return Err(WorkError::PlanDigest);
-        }
-        Ok(())
-    }
-
-    pub(crate) fn calculated_digest(&self) -> Result<Digest, WorkError> {
-        let body = PlanBody {
-            id: self.id,
-            work: self.work,
-            source: &self.source,
-            steps: &self.steps,
-            checks: &self.checks,
-            markdown: &self.markdown,
-        };
-        let bytes = to_vec(&body).map_err(|error| WorkError::Encoding(error.to_string()))?;
-        Ok(Digest::hash(b"mage:plan:v1", &bytes))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct VerificationPolicy {
-    pub(crate) id: VerificationPolicyId,
-    pub(crate) scope: WorkspaceScopeId,
-    pub(crate) checks: Items<CheckId, MAX_CHECKS>,
-    pub(crate) repair_limit: u16,
-}
-
-impl VerificationPolicy {
-    pub(crate) fn id(&self) -> VerificationPolicyId {
-        self.id
-    }
-
-    pub(crate) fn scope(&self) -> WorkspaceScopeId {
-        self.scope
-    }
-}
-
-#[derive(Serialize)]
-struct CandidateBody {
-    work: WorkId,
-    execute_revision: WorkRevision,
-    plan: PlanRevisionId,
-    policy: VerificationPolicyId,
-    scope: WorkspaceScopeId,
-    base_digest: Digest,
-    capture_digest: Digest,
-    manifest_digest: Digest,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct Candidate {
-    pub(crate) id: CandidateId,
-    pub(crate) work: WorkId,
-    pub(crate) execute_revision: WorkRevision,
-    pub(crate) plan: PlanRevisionId,
-    pub(crate) policy: VerificationPolicyId,
-    pub(crate) scope: WorkspaceScopeId,
-    pub(crate) base: ObservationId,
-    pub(crate) capture: ObservationId,
-    pub(crate) manifest_digest: Digest,
-    pub(crate) digest: Digest,
-}
-
-impl Candidate {
-    pub(crate) fn id(&self) -> CandidateId {
-        self.id
-    }
-
-    pub(crate) fn calculated_digest(
-        &self,
-        base_digest: Digest,
-        capture_digest: Digest,
-    ) -> Result<Digest, WorkError> {
-        let body = CandidateBody {
-            work: self.work,
-            execute_revision: self.execute_revision,
-            plan: self.plan,
-            policy: self.policy,
-            scope: self.scope,
-            base_digest,
-            capture_digest,
-            manifest_digest: self.manifest_digest,
-        };
-        let bytes = to_vec(&body).map_err(|error| WorkError::Encoding(error.to_string()))?;
-        Ok(Digest::hash(b"mage:candidate:v1", &bytes))
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(tag = "projection", content = "owner", rename_all = "snake_case")]
-pub(crate) enum WorkProjection {
-    Context(ContextEntryId),
-    Epoch(ContextEpochId),
-    Pending(ToolBatchId),
-    CompletionCheck(FactId),
-    Operation(OperationId),
-    Plan(PlanRevisionId),
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct WorkState {
-    pub(crate) id: WorkId,
-    pub(crate) revision: WorkRevision,
-    pub(crate) objective: Text<MAX_OBJECTIVE_BYTES>,
-    pub(crate) status: WorkStatus,
-    pub(crate) policy: WorkPolicy,
-    pub(crate) selected_plan: Option<PlanRevisionId>,
-    pub(crate) items: Items<WorkItem, MAX_ITEMS>,
-    pub(crate) active_item: Option<WorkItemId>,
-    pub(crate) acceptance_checks: Items<CheckId, MAX_CHECKS>,
-    pub(crate) scope: Option<WorkspaceScopeId>,
-    pub(crate) base: Option<ObservationId>,
-    pub(crate) candidate: Option<Candidate>,
-    pub(crate) verification: Option<VerificationPolicy>,
-    pub(crate) evidence: Items<EvidenceRef, MAX_EVIDENCE>,
-    pub(crate) projection_owner: WorkProjection,
-}
-
-impl WorkState {
-    pub(crate) fn id(&self) -> WorkId {
-        self.id
-    }
-
-    pub(crate) fn revision(&self) -> WorkRevision {
-        self.revision
-    }
-
-    pub(crate) fn status(&self) -> &WorkStatus {
-        &self.status
-    }
-
-    pub(crate) fn policy(&self) -> WorkPolicy {
-        self.policy
-    }
-
-    pub(crate) fn selected_plan(&self) -> Option<PlanRevisionId> {
-        self.selected_plan
-    }
-
-    pub(crate) fn scope(&self) -> Option<WorkspaceScopeId> {
-        self.scope
-    }
-
-    pub(crate) fn base(&self) -> Option<ObservationId> {
-        self.base
-    }
-
-    pub(crate) fn candidate(&self) -> Option<&Candidate> {
-        self.candidate.as_ref()
-    }
-
-    pub(crate) fn verification(&self) -> Option<&VerificationPolicy> {
-        self.verification.as_ref()
-    }
-
-    pub(crate) fn projection_owner(&self) -> &WorkProjection {
-        &self.projection_owner
-    }
-
-    pub(crate) fn validate(&self) -> Result<(), WorkError> {
-        if self.revision.get() == 0 {
-            return Err(WorkError::Revision);
-        }
-        let ids: Vec<_> = self.items.iter().map(|item| item.id).collect();
-        let unique: HashSet<_> = ids.iter().copied().collect();
-        if unique.len() != ids.len() {
-            return Err(WorkError::ItemOrder);
-        }
-        if self
-            .active_item
-            .is_some_and(|active| !ids.contains(&active))
-        {
-            return Err(WorkError::ActiveItem);
-        }
-        if self.status.terminal() && self.active_item.is_some() {
-            return Err(WorkError::TerminalActiveItem);
-        }
-        if matches!(self.status, WorkStatus::Completed { .. })
-            && self
-                .items
-                .iter()
-                .any(|item| item.disposition != ItemDisposition::Completed)
-        {
-            return Err(WorkError::CandidateBinding);
-        }
-        match self.status.stage() {
-            Some(WorkStage::Plan) | None => {}
-            Some(WorkStage::Execute | WorkStage::Verify) => {
-                if self.selected_plan.is_none() || self.verification.is_none() {
-                    return Err(WorkError::Selection);
-                }
-                if self.scope.is_none() || self.base.is_none() {
-                    return Err(WorkError::Base);
-                }
-            }
-        }
-        if matches!(self.status.stage(), Some(WorkStage::Verify)) && self.candidate.is_none() {
-            return Err(WorkError::Candidate);
-        }
-        if let WorkStatus::Completed { candidate, verdict } = self.status
-            && (self.candidate.as_ref().map(Candidate::id) != Some(candidate)
-                || !self.evidence.iter().any(|evidence| evidence.id == verdict))
-        {
-            return Err(WorkError::Candidate);
-        }
-        if let Some(candidate) = &self.candidate {
-            let policy = self.verification.as_ref().map(VerificationPolicy::id);
-            if candidate.work != self.id
-                || Some(candidate.plan) != self.selected_plan
-                || Some(candidate.policy) != policy
-                || Some(candidate.scope) != self.scope
-                || Some(candidate.base) != self.base
-            {
-                return Err(WorkError::CandidateBinding);
-            }
-        }
-        if let (Some(scope), Some(policy)) = (self.scope, self.verification.as_ref())
-            && policy.scope() != scope
-        {
-            return Err(WorkError::Base);
-        }
-        let evidence: HashSet<_> = self.evidence.iter().map(|evidence| evidence.id).collect();
-        if evidence.len() != self.evidence.len()
-            || self
-                .items
-                .iter()
-                .flat_map(|item| item.evidence.iter())
-                .any(|id| !evidence.contains(id))
-        {
-            return Err(WorkError::CandidateBinding);
-        }
-        Ok(())
-    }
-}
-
-pub(crate) fn plan_path(
-    platform: PathPlatform,
-    session: SessionId,
-    work: WorkId,
-    revision: PlanRevisionId,
-) -> Result<PathKey, WorkspaceError> {
-    let component = |value: String| match platform {
-        PathPlatform::Unix => PathComponent::unix(value.into_bytes()),
-        PathPlatform::Windows => PathComponent::windows(value.encode_utf16().collect()),
-    };
-    PathKey::new(
-        platform,
-        vec![
-            component(".mage".to_string())?,
-            component("plans".to_string())?,
-            component(session.path_component())?,
-            component(work.path_component())?,
-            component(format!("{}.md", revision.path_component()))?,
-        ],
-    )
 }

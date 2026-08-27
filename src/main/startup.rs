@@ -1,9 +1,11 @@
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
+use summoner::workflow;
 use summoner::{
     Budget, Client, Endpoint, Loop, Result, add_worktree, finish_worktree, in_git, last_for,
-    list_sessions, list_worktrees, resolve_session, splash, sweep_worktrees, system_prompt_with,
+    list_sessions, list_worktrees, resolve_endpoint, resolve_session, splash, sweep_worktrees,
+    system_prompt_with,
 };
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
@@ -68,6 +70,53 @@ fn print_sessions() -> Result<()> {
             info.preview
         );
     }
+    Ok(())
+}
+
+/// `summoner workflows`: every saved workflow, the default starred.
+fn print_workflows() -> Result<()> {
+    let names = workflow::names()?;
+    if names.is_empty() {
+        println!("no workflows — add [workflows.NAME] to ~/.mage/config.toml");
+        return Ok(());
+    }
+    let default = workflow::default_name()?;
+    for name in names {
+        let mark = if default.as_deref() == Some(name.as_str()) {
+            "*"
+        } else {
+            " "
+        };
+        let seats = workflow::load(&name)
+            .map_or_else(|error| error.to_string(), |workflow| workflow.summary());
+        println!("{mark} {name}\t{seats}");
+    }
+    Ok(())
+}
+
+/// The workflow this run uses: the flag, then the session's own, then the
+/// config default.
+fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
+    if let Some(name) = &args.workflow {
+        return Ok(Some(name.clone()));
+    }
+    if let Some(name) = loop_.workflow() {
+        return Ok(Some(name));
+    }
+    workflow::default_name()
+}
+
+/// Seat every role the workflow names. Non-interactive runs fail on a seat
+/// that does not resolve; the interface seats its own and reports instead.
+fn apply_workflow(loop_: &mut Loop<Client>, name: &str, json: bool) -> Result<()> {
+    let workflow = workflow::load(name)?;
+    for (role, seat) in &workflow.seats {
+        let endpoint = resolve_endpoint(Some(&seat.endpoint), seat.model.as_deref())
+            .map_err(|error| summoner::Error::Config(format!("{name}: {role} seat: {error}")))?;
+        let client = provider(&endpoint, None, json)?;
+        loop_.set_seat(*role, client, endpoint.model);
+    }
+    loop_.set_workflow(Some(name))?;
     Ok(())
 }
 
@@ -174,6 +223,9 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.list_sessions {
         return print_sessions().map(|()| 0);
     }
+    if args.list_workflows {
+        return print_workflows().map(|()| 0);
+    }
     if args.list_worktrees {
         return manage_worktrees(&args).map(|()| 0);
     }
@@ -183,7 +235,13 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
 async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree) = isolate(&args, &cwd)?;
-    let endpoint = summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?;
+    // The full-screen interface may open without a credential so the user can
+    // reach `/auth`; non-interactive modes still require a key up front.
+    let endpoint = if use_tui(&args) {
+        summoner::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
+    } else {
+        summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
+    };
     let ui = channels(use_tui(&args));
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
     let checks = if args.no_verify {
@@ -192,12 +250,27 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
         summoner::check_commands(&workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
-    let loop_ = build(&args, &endpoint, provider, &workspace, check)?;
+    let mut loop_ = build(&args, &endpoint, provider, &workspace, check)?;
+    let workflow = workflow_name(&args, &loop_)?;
+    if !use_tui(&args)
+        && let Some(name) = &workflow
+    {
+        apply_workflow(&mut loop_, name, args.json)?;
+    }
     if let Some(log) = log {
         let session = loop_.session_id();
         log.session(&session, loop_.session_path(), &workspace);
     }
-    let code = dispatch(loop_, &args, &endpoint, workspace, ui, goal_checks).await?;
+    let code = dispatch(
+        loop_,
+        &args,
+        &endpoint,
+        workspace,
+        ui,
+        goal_checks,
+        workflow,
+    )
+    .await?;
     if code == 0
         && let Some(tree) = tree
         && let Err(error) = finish_worktree(&tree)
@@ -285,6 +358,7 @@ async fn dispatch(
     workspace: PathBuf,
     ui: Ui,
     goal_checks: Vec<String>,
+    workflow: Option<String>,
 ) -> Result<i32> {
     let model = endpoint.model.as_str();
     let session = loop_.session_id();
@@ -324,14 +398,16 @@ async fn dispatch(
             plan: args.plan,
             strict: args.strict,
             workspace: splash::short_path(&workspace),
+            workflow,
+            config: summoner::prefs::path(),
         };
         let ui_tx =
             ui.0.ok_or_else(|| summoner::Error::Config("tui sender missing".to_string()))?;
         Ok(summoner::tui::run(loop_, workspace, info, ui_tx, ui_rx)?)
     } else {
-        let full = !args.no_splash && !args.json;
-        splash::interactive(&splash, full);
-        modes::interactive(loop_, &workspace, args.json).await
+        // Not a terminal and no prompt: read the piped input as one turn.
+        splash::line(&splash);
+        modes::print(loop_, args).await
     }
 }
 

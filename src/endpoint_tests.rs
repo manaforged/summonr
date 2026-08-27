@@ -23,7 +23,7 @@ fn kimi_builtin_is_coding_plan() {
 fn fill_key_keeps_a_config_key() {
     let mut endpoint = builtin("grok").expect("grok");
     endpoint.api_key = Some("from-config".to_string());
-    let endpoint = fill_key(endpoint).expect("key");
+    let endpoint = fill_key(endpoint, true).expect("key");
     assert_eq!(endpoint.api_key.as_deref(), Some("from-config"));
 }
 
@@ -40,7 +40,7 @@ fn fill_key_skips_api_key_when_oauth_is_set() {
         device_url: None,
         exchange_url: None,
     });
-    let endpoint = fill_key(endpoint).expect("oauth");
+    let endpoint = fill_key(endpoint, true).expect("oauth");
     assert!(endpoint.api_key.is_none());
     assert!(endpoint.oauth.is_some());
 }
@@ -66,7 +66,7 @@ fn copilot_builtin_is_github_device_login() {
     );
     assert!(endpoint.headers.contains_key("Editor-Version"));
     assert!(is_named("copilot"));
-    let filled = fill_key(endpoint).expect("oauth needs no api key");
+    let filled = fill_key(endpoint, true).expect("oauth needs no api key");
     assert!(filled.api_key.is_none());
 }
 
@@ -76,6 +76,26 @@ fn kimi_missing_key_does_not_offer_device_login() {
     assert!(row.oauth.is_none());
     assert!(row.missing.contains("kimi-code"));
     assert!(!row.missing.contains("login"));
+}
+
+#[test]
+fn auth_info_does_not_expose_keys() {
+    let mut file = File::default();
+    file.endpoint.insert(
+        "glm".to_string(),
+        FileEndpoint {
+            api_key: Some("secret-that-must-not-appear".to_string()),
+            ..FileEndpoint::default()
+        },
+    );
+    let info = auth_info_from(&file, "glm", false).expect("glm auth info");
+    assert!(!info.device_login);
+    assert!(info.configured);
+    assert!(info.setup.contains("ZAI_CODING_API_KEY"));
+    assert!(!info.setup.contains("secret-that-must-not-appear"));
+    let copilot = auth_info_from(&File::default(), "copilot", false).expect("copilot auth info");
+    assert!(copilot.device_login);
+    assert!(copilot.setup.contains("/login copilot"));
 }
 
 #[test]
@@ -104,16 +124,6 @@ fn openai_and_openrouter_are_key_presets() {
         openai.base_url.as_deref(),
         Some("https://api.openai.com/v1")
     );
-}
-
-#[test]
-fn choices_cover_every_ready_seat() {
-    let rows = choices();
-    let names: Vec<String> = rows.iter().map(|(name, _)| name.clone()).collect();
-    assert_eq!(names, ready());
-    for (name, model) in rows {
-        assert!(!model.is_empty(), "{name} has no model");
-    }
 }
 
 #[test]

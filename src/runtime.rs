@@ -1,8 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use crate::durable::driver::SessionDriver;
-use crate::durable::effect::{Exposure, Usage as Meter};
+use crate::durable::driver::{Exposure, SessionDriver};
+use crate::durable::log::Usage as Meter;
 use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::provider::{
@@ -11,6 +12,7 @@ use crate::provider::{
 };
 use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
+use crate::workflow;
 
 const DEFAULT_MAX_ROUNDS: usize = 64;
 pub(crate) const DEFAULT_ROUND_OUTPUT_TOKENS: u32 = 8_192;
@@ -36,7 +38,7 @@ impl Budget {
             && elapsed_secs >= max
         {
             return Some(format!(
-                "budget: {elapsed_secs}s reached the {max}s wall-clock limit"
+                "budget: {elapsed_secs}s reached the {max}s work-time limit"
             ));
         }
         if let Some(max) = self.max_tokens
@@ -67,6 +69,8 @@ pub struct Turn {
 pub struct Loop<P> {
     provider: P,
     model: String,
+    /// Roles with their own seat; the rest run on `provider` + `model`.
+    seats: BTreeMap<workflow::Role, (P, String)>,
     system_prompt: String,
     plan: bool,
     tools: ToolRegistry,
@@ -80,7 +84,6 @@ pub struct Loop<P> {
     spent_tokens: u64,
     /// Last live request size and provider-reported prompt tokens.
     context_sample: Option<(usize, u32)>,
-    started: Instant,
     /// The model's context window in tokens, when the endpoint says.
     context_window: Option<u32>,
     workspace: PathBuf,
@@ -93,48 +96,56 @@ pub struct Loop<P> {
     steer_shared: Option<std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>>,
 }
 
+mod aside;
 mod bus;
 mod compaction;
 mod configure;
 mod turn;
 
+impl<P: Provider> Loop<P> {
+    /// The seat a role runs on: its own, or the driving seat.
+    fn seat(&self, role: workflow::Role) -> (&P, &str) {
+        self.seats.get(&role).map_or(
+            (&self.provider, self.model.as_str()),
+            |(provider, model)| (provider, model.as_str()),
+        )
+    }
+
+    /// The role an agent round belongs to.
+    fn round_role(&self) -> workflow::Role {
+        if self.plan {
+            workflow::Role::Plan
+        } else {
+            workflow::Role::Implement
+        }
+    }
+}
+
 pub(super) fn session_err(error: impl std::fmt::Display) -> Error {
     Error::Config(error.to_string())
 }
 
-pub(super) fn meter(usage: &Usage) -> Meter {
+pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
     Meter {
-        input_tokens: Some(u64::from(usage.prompt_tokens)),
-        output_tokens: Some(u64::from(usage.completion_tokens)),
-        cached_input_tokens: Some(u64::from(usage.cached_tokens)),
-        live_millis: None,
+        input: u64::from(usage.prompt_tokens),
+        output: u64::from(usage.completion_tokens),
+        cached: u64::from(usage.cached_tokens),
+        millis,
     }
 }
 
 pub(super) fn exposure(request: &CompletionRequest, bytes: &[u8]) -> Exposure {
     Exposure {
-        max_input_tokens: u64::try_from(bytes.len()).unwrap_or(u64::MAX),
+        // Estimate input tokens from request bytes (~4 bytes per token) so a
+        // failed round is charged near its real cost, not ~4x it, which would
+        // abort budgets early.
+        max_input_tokens: u64::try_from(bytes.len() / 4).unwrap_or(u64::MAX),
         max_output_tokens: u64::from(request.max_output_tokens),
     }
 }
 
 pub(super) fn elapsed_millis(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
-}
-
-pub(super) fn durable_failure(
-    failure: Option<&crate::error::ProviderFailure>,
-) -> crate::durable::effect::ProviderFailureKind {
-    use crate::durable::effect::ProviderFailureKind as Kind;
-    match failure.map(|failure| failure.kind) {
-        Some(crate::ProviderFailureKind::Authentication) => Kind::Authentication,
-        Some(crate::ProviderFailureKind::RateLimited) => Kind::RateLimit,
-        Some(crate::ProviderFailureKind::ContextOverflow) => Kind::ContextOverflow,
-        Some(crate::ProviderFailureKind::Transport | crate::ProviderFailureKind::Server) => {
-            Kind::Transport
-        }
-        _ => Kind::Other,
-    }
 }
 
 #[cfg(test)]

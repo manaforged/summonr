@@ -1,9 +1,9 @@
 # Summoner
 
-`summon` is a local coding harness. You point it at a model. OpenAI
+Summoner is a local coding harness. You point it at a model. OpenAI
 `POST /v1/chat/completions` hosts work (glm, kimi, grok, llama.cpp,
 config). Anthropic Messages and Gemini use their native APIs. Auth is
-an API key or an OAuth2 token that becomes a bearer. The command is `summon grok` or `summoner grok`.
+an API key or an OAuth2 token that becomes a bearer. `summon` is the command that starts Summoner with a specific model; a bare `summoner` uses your default.
 
 What it actually does: it holds the job so the model does not have to.
 That job is Work. Plan, execute, verify. You keep the objective. The
@@ -25,7 +25,7 @@ summon -V
 summoner -V
 ```
 
-Expect `summon 0.1.0` (same binary as `summoner`). Build fails without Sigil.
+Expect `summoner 0.1.0` (the same binary as `summon`). Build fails without Sigil.
 
 ## Usage
 
@@ -68,6 +68,50 @@ time. Both isolate in a git worktree (`<repo>-worktrees/<id>`) when
 you are in a repo. Exit 0 fast-forwards your branch and removes the
 tree. `--here` stays put. `diagnostics` and `definition` talk to one
 language server (`definition` also lists references and applies rename).
+
+### Workflows
+
+A workflow seats each step on its own model. Roles are `scout`, `plan`,
+`implement`, `review`, `judge`, and `summary`; a role the workflow does
+not name runs on the seat you started with.
+
+```toml
+# ~/.mage/config.toml
+workflow = "cheap-scout"      # optional default
+
+[workflows.cheap-scout]
+plan = "grok"
+review = { endpoint = "glm", model = "glm-5.3" }
+judge = "grok"
+```
+
+`summon -w cheap-scout`, `/workflow cheap-scout` in the interface, or the
+`workflow` key picks one; `summon workflows` lists them. In the
+interface every card action has a verb too:
+
+```
+/workflow                    the card
+/workflow NAME | off         apply a saved workflow, or none
+/workflow list | show        saved workflows · the live seats
+/workflow set ROLE ENDPOINT [MODEL]
+/workflow clear ROLE
+/workflow save NAME          write the live seats as [workflows.NAME]
+/workflow default NAME       the workflow new sessions start with
+```
+
+The card takes the keyboard (↑↓ role, enter picks a seat, `d` returns
+it to the driving seat, ←→ cycles saved workflows, `s` saves) and the
+mouse: click a role to pick its seat, drag a role onto another to copy
+the seat, click a saved name to apply it. The settings modal, model
+picker, and authentication card take clicks as well. The session log
+records the model behind every reply.
+
+With a `scout` seat, a `--steps`, `--goal`, or plan-mode job opens with
+a read-only brief of the files, conventions, and helpers the objective
+touches. With a `review` seat, a turn whose checks passed is read by
+the reviewer before it completes; a rejection sends the findings back
+as the next instruction and counts against the same three-attempt
+limit as a failed check.
 `grep` takes `glob`; an empty pattern lists matching files. Defaults pick
 the first popular binary on PATH for the tree
 (Biome before tsserver on a Node repo, Ruff before pyright on Python).

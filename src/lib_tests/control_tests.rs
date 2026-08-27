@@ -134,48 +134,9 @@ async fn accepted_plan_executes_inside_the_selected_work() -> Result<()> {
 
     assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
     assert!(turn.text.contains("Turn receipt"));
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    assert_eq!(state.works.len(), 1);
-    let work = state
-        .works
-        .values()
-        .next()
-        .expect("accepted Plan must own Work");
-    assert!(matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Completed { .. }
-    ));
-    assert!(work.candidate().is_some());
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
-async fn failed_plan_persistence_keeps_live_and_replayed_history_equal() -> Result<()> {
-    struct Planner;
-    impl Provider for Planner {
-        fn complete<'a>(
-            &'a self,
-            _request: &'a CompletionRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async {
-                Ok(AssistantMessage {
-                    content: Some("draft".to_string()),
-                    ..AssistantMessage::default()
-                })
-            })
-        }
-    }
-    let workspace = test_workspace()?;
-    let mut loop_ = Loop::with_session(Planner, "test-model", &workspace, "test")?.with_plan();
-    drop(std::fs::remove_dir_all(workspace.join(".mage")));
-    std::fs::write(workspace.join(".mage"), "not a directory")?;
-
-    loop_.turn("plan something").await.unwrap_err();
-    let replayed = loop_.replay_session();
-    assert_eq!(replayed.history.len(), loop_.history_len());
-    assert_eq!(replayed.history.len(), 1);
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.kind, crate::WorkKind::Single);
+    assert_eq!(progress.phase, crate::WorkPhase::Completed);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -257,7 +218,7 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         .turn_with("write the plan", |event| {
             if matches!(event, Event::Assistant { .. }) {
                 closed_before_assistant = std::fs::read_to_string(&journal)
-                    .is_ok_and(|log| log.contains(r#""fact":"operation_closed""#));
+                    .is_ok_and(|log| log.contains(r#""kind":"close""#));
             }
         })
         .await?;
@@ -281,28 +242,21 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         Some(turn.text.as_str())
     );
     let log = std::fs::read_to_string(loop_.session_path())?;
-    assert!(log.contains(r#""fact":"completion_check_recorded""#));
-    assert!(log.contains(r#""passed":false"#));
-    assert!(log.contains(r#""outcome":"failed""#));
-    let execute_close = log
+    let receipt = log
         .lines()
-        .find(|line| {
-            line.contains(r#""fact":"operation_closed""#)
-                && line.contains(r#""stage_outcome":"advanced""#)
-        })
-        .expect("turn must close its operation");
-    assert!(!execute_close.contains(r#""provider":null"#));
-    let verdict_close = log
-        .lines()
-        .find(|line| {
-            line.contains(r#""fact":"operation_closed""#)
-                && line.contains(r#""stage_outcome":"returned""#)
-        })
-        .expect("verification must close its operation");
-    assert!(
-        verdict_close.contains(r#""source":"receipt""#),
-        "verdict and visible receipt must share one append: {verdict_close}"
+        .find(|line| line.contains(r#""kind":"receipt""#))
+        .expect("verdict must record its visible receipt");
+    assert!(receipt.contains("`false` failed"), "{receipt}");
+    assert_eq!(
+        log.lines()
+            .filter(|line| line.contains(r#""kind":"close""#))
+            .count(),
+        1,
+        "one turn closes once"
     );
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.phase, crate::WorkPhase::Execute);
+    assert_eq!(progress.attempts, 1);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -323,15 +277,7 @@ async fn ordinary_turn_completes_durable_work() -> Result<()> {
     let turn = loop_.turn("write the plan").await?;
 
     assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    assert_eq!(state.works.len(), 1);
-    let work = state.works.values().next().expect("turn must create Work");
-    assert!(matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Completed { .. }
-    ));
-    assert!(work.candidate().is_some());
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -393,18 +339,9 @@ async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()>
     );
     assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
     assert!(turn.text.contains("shell.txt"));
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    let work = state
-        .works
-        .values()
-        .find(|work| !work.status().terminal())
-        .expect("failed Work must remain active");
-    assert_eq!(
-        work.status(),
-        &crate::durable::work::WorkStatus::Active(crate::durable::work::WorkStage::Execute)
-    );
-    assert!(work.candidate().is_none());
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.phase, crate::WorkPhase::Execute);
+    assert_eq!(progress.attempts, 1);
 
     drop(loop_.turn("continue").await?);
     let requests = requests
@@ -440,16 +377,12 @@ async fn consecutive_ordinary_turns_complete_separate_work() -> Result<()> {
     let workspace = test_workspace()?;
     let mut loop_ = Loop::with_session(Done, "test-model", &workspace, "test")?;
 
-    drop(loop_.turn("first").await?);
-    drop(loop_.turn("second").await?);
-
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    assert_eq!(state.works.len(), 2);
-    assert!(state.works.values().all(|work| matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Completed { .. }
-    )));
+    let first = loop_.turn("first").await?;
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
+    let second = loop_.turn("second").await?;
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
+    assert_work_receipt(&first, "done");
+    assert_work_receipt(&second, "done");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -479,10 +412,7 @@ async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
     );
     assert_eq!(turn.text.matches("`true` passed").count(), 2);
     let log = std::fs::read_to_string(loop_.session_path())?;
-    assert_eq!(
-        log.matches(r#""fact":"completion_check_recorded""#).count(),
-        2
-    );
+    assert_eq!(log.matches("`true` passed").count(), 2);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -507,7 +437,7 @@ async fn unchanged_turn_runs_completion_checks_and_records_receipt() -> Result<(
     assert!(turn.text.contains("Changed: none"));
     assert!(turn.text.contains("`false` failed"));
     let log = std::fs::read_to_string(loop_.session_path())?;
-    assert!(log.contains(r#""fact":"completion_check_recorded""#));
+    assert!(log.contains(r#""kind":"receipt""#));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -530,18 +460,9 @@ async fn external_steps_turn_stays_attached_to_durable_work() -> Result<()> {
 
     assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
     assert!(turn.text.contains("Turn receipt"));
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    let work = state
-        .works
-        .values()
-        .next()
-        .expect("step mode must own Work");
-    assert!(matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Completed { .. }
-    ));
-    assert!(work.candidate().is_some());
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.kind, crate::WorkKind::Steps);
+    assert_eq!(progress.phase, crate::WorkPhase::Completed);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -567,17 +488,15 @@ async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
         assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
     }
 
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    let work = state
-        .works
-        .values()
-        .next()
-        .expect("step mode must own Work");
-    assert!(matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Abandoned { .. }
-    ));
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.phase, crate::WorkPhase::Failed);
+    assert!(
+        progress
+            .reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("three times")),
+        "{progress:?}"
+    );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -664,34 +583,15 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
     assert_eq!(turn.usage.completion_tokens, 6);
     assert_eq!(loop_.spent_tokens(), 40);
 
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
+    let log = std::fs::read_to_string(loop_.session_path())?;
     assert_eq!(
-        state
-            .providers
-            .values()
-            .filter(|provider| matches!(
-                provider,
-                crate::durable::reducer::ProviderState::Finished { intent, .. }
-                    if intent.purpose == crate::durable::effect::ProviderPurpose::GoalJudge
-            ))
-            .count(),
+        log.matches(r#""note":"goal judge""#).count(),
         1,
-        "the Goal judge must be a durable provider effect"
+        "the Goal judge must be a charged provider round"
     );
-    let work = state
-        .works
-        .values()
-        .next()
-        .expect("goal mode must own Work");
-    assert!(matches!(
-        work.policy(),
-        crate::durable::work::WorkPolicy::Goal { .. }
-    ));
-    assert!(matches!(
-        work.status(),
-        crate::durable::work::WorkStatus::Completed { .. }
-    ));
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.kind, crate::WorkKind::Goal);
+    assert_eq!(progress.phase, crate::WorkPhase::Completed);
     assert!(
         !loop_
             .replay_session()
@@ -975,7 +875,7 @@ async fn resumed_time_budget_uses_durable_live_time() -> Result<()> {
     let turn = resumed.turn("resume").await?;
     assert!(turn.aborted);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert!(turn.text.contains("wall-clock limit"));
+    assert!(turn.text.contains("work-time limit"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1167,19 +1067,282 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
     )));
     let log = std::fs::read_to_string(loop_.session_path())?;
     assert!(log.contains("auto one"));
-    let state = crate::durable::journal::inspect(loop_.session_path())
-        .map_err(|error| Error::Config(error.to_string()))?;
-    let request_digests = state
-        .providers
-        .values()
-        .map(|provider| match provider {
-            crate::durable::reducer::ProviderState::Started(intent)
-            | crate::durable::reducer::ProviderState::Finished { intent, .. } => {
-                intent.request_digest
-            }
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Part {
+        /// Writes once, then answers.
+        Implementer,
+        /// Tries to write on every review, rejects the first, passes the second.
+        Reviewer,
+    }
+    /// One provider type playing both seats; records every request it sees.
+    struct Cast {
+        part: Part,
+        rounds: AtomicUsize,
+        requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    }
+    impl Provider for Cast {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                if let Ok(mut requests) = self.requests.lock() {
+                    requests.push(request.clone());
+                }
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                Ok(match self.part {
+                    Part::Implementer if round == 0 => AssistantMessage {
+                        tool_calls: vec![call(
+                            "write_file",
+                            r#"{"path":"plan.md","content":"a\n"}"#,
+                        )],
+                        ..AssistantMessage::default()
+                    },
+                    Part::Implementer => AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                    Part::Reviewer => {
+                        assert!(request.messages[0].content.starts_with("You review"));
+                        let answered = request
+                            .messages
+                            .iter()
+                            .any(|message| message.role == Role::Tool);
+                        if answered {
+                            let verdict = if round < 2 {
+                                r#"{"pass":false,"findings":"add a test for plan.md"}"#
+                            } else {
+                                r#"{"pass":true,"findings":""}"#
+                            };
+                            AssistantMessage {
+                                content: Some(verdict.to_string()),
+                                ..AssistantMessage::default()
+                            }
+                        } else {
+                            AssistantMessage {
+                                tool_calls: vec![call(
+                                    "write_file",
+                                    r#"{"path":"reviewer.txt","content":"no"}"#,
+                                )],
+                                ..AssistantMessage::default()
+                            }
+                        }
+                    }
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = Loop::with_session(
+        Cast {
+            part: Part::Implementer,
+            rounds: AtomicUsize::new(0),
+            requests: requests.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    loop_.set_seat(
+        crate::workflow::Role::Review,
+        Cast {
+            part: Part::Reviewer,
+            rounds: AtomicUsize::new(0),
+            requests: requests.clone(),
+        },
+        "review-model",
+    );
+
+    let first = loop_.turn("write the plan").await?;
+    let review = first.verify.as_ref().expect("the review is the last check");
+    assert_eq!(review.command, "review");
+    assert!(!review.passed);
+    assert!(first.text.contains("`review` failed"), "{}", first.text);
+    assert!(
+        first.text.contains("add a test for plan.md"),
+        "{}",
+        first.text
+    );
+    assert!(first.events.iter().any(
+        |event| matches!(event, Event::Verify { command, passed: false } if command == "review")
+    ));
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.phase, crate::WorkPhase::Execute);
+    assert_eq!(progress.attempts, 1);
+    assert!(
+        !workspace.join("reviewer.txt").exists(),
+        "the reviewer's write must be denied"
+    );
+
+    let second = loop_.turn("continue").await?;
+    assert!(
+        second
+            .verify
+            .as_ref()
+            .is_some_and(|check| check.command == "review" && check.passed)
+    );
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
+
+    let seen = requests
+        .lock()
+        .map_err(|_error| Error::Tool("request capture is poisoned".to_string()))?
+        .clone();
+    let implementer: Vec<&CompletionRequest> = seen
+        .iter()
+        .filter(|request| request.messages[0].content == "test")
+        .collect();
+    assert!(
+        implementer[0]
+            .messages
+            .last()
+            .is_some_and(|message| { message.content.contains("a reviewer reads the change") })
+    );
+    assert!(implementer.last().is_some_and(|request| {
+        request.messages.iter().any(|message| {
+            message.content == "Address the review findings:\nadd a test for plan.md"
         })
-        .collect::<std::collections::HashSet<_>>();
-    assert_eq!(request_digests.len(), 3, "each full request must differ");
+    }));
+    let history = loop_.replay_session().history;
+    assert!(
+        !history
+            .iter()
+            .any(|message| message.content.contains("\"pass\"")),
+        "reviewer chatter stays out of the conversation"
+    );
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert!(log.matches(r#""note":"review""#).count() >= 2, "{log}");
+    assert!(log.contains(r#""model":"review-model""#));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> {
+    #[derive(Clone, Copy, PartialEq, Eq)]
+    enum Part {
+        Implementer,
+        Scout,
+    }
+    struct Cast {
+        part: Part,
+        rounds: Arc<AtomicUsize>,
+        requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    }
+    impl Provider for Cast {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                if let Ok(mut requests) = self.requests.lock() {
+                    requests.push(request.clone());
+                }
+                self.rounds.fetch_add(1, Ordering::SeqCst);
+                Ok(match self.part {
+                    Part::Implementer => AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                    Part::Scout => {
+                        assert!(request.messages[0].content.starts_with("You scout"));
+                        AssistantMessage {
+                            content: Some("touches note.txt; no helpers".to_string()),
+                            ..AssistantMessage::default()
+                        }
+                    }
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let scouted = Arc::new(AtomicUsize::new(0));
+    let mut loop_ = Loop::with_session(
+        Cast {
+            part: Part::Implementer,
+            rounds: Arc::new(AtomicUsize::new(0)),
+            requests: requests.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    loop_.set_seat(
+        crate::workflow::Role::Scout,
+        Cast {
+            part: Part::Scout,
+            rounds: scouted.clone(),
+            requests: requests.clone(),
+        },
+        "scout-model",
+    );
+
+    drop(loop_.turn("just chat").await?);
+    assert_eq!(scouted.load(Ordering::SeqCst), 0, "chat turns never scout");
+
+    loop_.select_steps("## Steps\n\n1. First.\n2. Second.", &["true".to_string()])?;
+    let first = loop_.turn("implement step 1").await?;
+    assert_eq!(scouted.load(Ordering::SeqCst), 1);
+    assert!(
+        first
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Note { text } if text.contains("scout brief")))
+    );
+    drop(loop_.turn("implement step 2").await?);
+    assert_eq!(scouted.load(Ordering::SeqCst), 1, "one brief per Work");
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
+
+    let seen = requests
+        .lock()
+        .map_err(|_error| Error::Tool("request capture is poisoned".to_string()))?
+        .clone();
+    let step_one = seen
+        .iter()
+        .find(|request| {
+            request
+                .messages
+                .iter()
+                .any(|message| message.content.starts_with("implement step 1"))
+        })
+        .expect("the step 1 request");
+    let position = step_one
+        .messages
+        .iter()
+        .position(|message| message.content == "Scout brief:\ntouches note.txt; no helpers")
+        .expect("the brief follows the input");
+    assert!(
+        step_one.messages[position - 1]
+            .content
+            .starts_with("implement step 1")
+    );
+    let history = loop_.replay_session().history;
+    assert_eq!(
+        history
+            .iter()
+            .filter(|message| message.content.starts_with("Scout brief:"))
+            .count(),
+        1
+    );
+    let work = std::fs::read_to_string(loop_.session_path().with_file_name("work.json"))?;
+    assert!(
+        work.contains("\"brief\": \"touches note.txt; no helpers\""),
+        "{work}"
+    );
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert!(log.contains(r#""note":"scout""#));
+    assert!(log.contains(r#""model":"scout-model""#));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

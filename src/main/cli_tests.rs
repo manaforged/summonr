@@ -80,3 +80,13 @@ fn here_and_worktree_conflict() {
         .expect_err("conflict");
     assert!(error.to_string().contains("--here"));
 }
+
+#[test]
+fn workflow_flag_and_subcommand() {
+    let parsed = args(&["-w", "cheap", "-p", "hi"]);
+    assert_eq!(parsed.workflow.as_deref(), Some("cheap"));
+    assert_eq!(args(&["--workflow", "x"]).workflow.as_deref(), Some("x"));
+    let listed = args(&["workflows"]);
+    assert!(listed.list_workflows);
+    assert!(listed.endpoint.is_none());
+}

@@ -11,6 +11,7 @@ use super::{Cmd, Info, Msg};
 use crate::provider::Client;
 use crate::provider::UserInput;
 use crate::runtime::Loop;
+use crate::workflow::Workflow;
 
 mod command;
 mod settings;
@@ -45,6 +46,13 @@ struct Worker {
     last_turn: Option<crate::Turn>,
     /// The last reported bus failure, so a persistent fault reports once.
     bus_error: Option<String>,
+    /// Workflow named at start, seated on the first run tick.
+    named: Option<String>,
+    /// The seats as the card edits them.
+    workflow: Workflow,
+    /// The mage home (config's parent) for recents. `None` in tests keeps the
+    /// picker's recent list out of the developer's real home.
+    home: Option<std::path::PathBuf>,
 }
 
 impl Worker {
@@ -58,7 +66,13 @@ impl Worker {
         loop_.steer_with(steering.clone());
         let check = loop_.verify_commands().to_vec();
         let check = (!check.is_empty()).then_some(check);
+        let home = info
+            .config
+            .as_deref()
+            .and_then(std::path::Path::parent)
+            .map(std::path::Path::to_path_buf);
         Self {
+            home,
             loop_,
             cmd,
             ui,
@@ -74,10 +88,16 @@ impl Worker {
             followups: VecDeque::new(),
             last_turn: None,
             bus_error: None,
+            named: info.workflow,
+            workflow: Workflow::default(),
         }
     }
 
     async fn run(mut self) {
+        if let Some(name) = self.named.take() {
+            self.apply_workflow(&name);
+        }
+        self.remember_seat();
         self.send_settings();
         while let Some(command) = self.next().await {
             if !self.dispatch(command).await {
@@ -112,6 +132,15 @@ impl Worker {
 
     async fn dispatch(&mut self, command: Cmd) -> bool {
         match command {
+            Cmd::Command(line) => self.command(&line).await.unwrap_or(true),
+            Cmd::Login(name) => {
+                self.login(&name);
+                true
+            }
+            Cmd::SetKey(name, key) => {
+                self.set_key(&name, &key);
+                true
+            }
             Cmd::Quit => {
                 if let Err(error) = self.loop_.abort_note("shutdown") {
                     self.fail(&error.to_string());
@@ -148,8 +177,28 @@ impl Worker {
                 self.set_model(&model);
                 true
             }
+            Cmd::SetSeat(endpoint, model) => {
+                self.set_seat(&endpoint, &model);
+                true
+            }
             Cmd::ListModels => {
                 self.list_models();
+                true
+            }
+            Cmd::SeatRole(role, endpoint, model) => {
+                self.seat_role(role, &endpoint, Some(&model));
+                true
+            }
+            Cmd::ClearRole(role) => {
+                self.clear_role(role);
+                true
+            }
+            Cmd::SaveWorkflow(name) => {
+                self.save_workflow(&name);
+                true
+            }
+            Cmd::ListWorkflows => {
+                self.send_workflow();
                 true
             }
             Cmd::SetBus(on) => {
@@ -189,13 +238,18 @@ impl Worker {
         if mail.is_empty() {
             return;
         }
-        for message in mail {
-            drop(self.ui.send(Msg::Mail {
-                from: message.from.clone(),
-                text: message.text.clone(),
-            }));
-        }
         self.queue_mail();
+        // An auto-reply turn drains the same mail and displays it as it feeds
+        // it to the model. Show it at poll only when no such turn will run, so
+        // each message appears exactly once.
+        if !self.pending_mail {
+            for message in mail {
+                drop(self.ui.send(Msg::Mail {
+                    from: message.from.clone(),
+                    text: message.text.clone(),
+                }));
+            }
+        }
     }
 
     fn queue_mail(&mut self) {
@@ -213,6 +267,21 @@ impl Worker {
         self.auto_reply = on;
         if on {
             self.auto_turns = 0;
+        } else {
+            // Disarm any mail turn already queued, so opting out takes effect
+            // before the next tick runs a full turn on peer mail.
+            self.pending_mail = false;
+        }
+    }
+
+    fn set_key(&mut self, name: &str, key: &str) {
+        match crate::endpoint::save_key(name, key) {
+            Ok(()) if name == self.endpoint => {
+                self.set_endpoint(name);
+                self.system(&format!("{name}: API key saved"));
+            }
+            Ok(()) => self.system(&format!("{name}: API key saved")),
+            Err(error) => self.fail(&error.to_string()),
         }
     }
 

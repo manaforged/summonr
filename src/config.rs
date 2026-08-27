@@ -10,6 +10,7 @@ use toml_edit::{DocumentMut, value};
 use crate::error::{Error, Result};
 use crate::prefs::Prefs;
 use crate::prompt::mage_home;
+use crate::workflow::Workflow;
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct File {
@@ -26,6 +27,22 @@ pub(crate) struct File {
     pub bus: Option<bool>,
     #[serde(default)]
     pub lsp: Lsp,
+    /// Default workflow name.
+    pub workflow: Option<String>,
+    /// `[workflows.NAME]`: role -> seat rows.
+    #[serde(default)]
+    pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
+}
+
+/// `role = "endpoint"` or `role = { endpoint = "…", model = "…" }`.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum SeatRow {
+    Name(String),
+    Full {
+        endpoint: String,
+        model: Option<String>,
+    },
 }
 
 /// Language server argv. Empty means detect from the workspace tree.
@@ -132,7 +149,60 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["reasoning"] = value(prefs.reasoning);
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
+    persist(path, &document)
+}
 
+pub(crate) fn save_key(path: &Path, name: &str, key: &str) -> Result<()> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let mut document = text
+        .parse::<DocumentMut>()
+        .map_err(|error| Error::Config(format!("config.toml: {error}")))?;
+    document["endpoint"][name]["api_key"] = value(key);
+    persist(path, &document)
+}
+
+pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
+    let mut document = read_document(path)?;
+    let mut table = toml_edit::Table::new();
+    for (role, seat) in &workflow.seats {
+        table[role.name()] = match &seat.model {
+            None => value(&seat.endpoint),
+            Some(model) => {
+                let mut row = toml_edit::InlineTable::new();
+                row.insert("endpoint", seat.endpoint.as_str().into());
+                row.insert("model", model.as_str().into());
+                toml_edit::Item::Value(toml_edit::Value::InlineTable(row))
+            }
+        };
+    }
+    document["workflows"][workflow.name.as_str()] = toml_edit::Item::Table(table);
+    if let Some(parent) = document["workflows"].as_table_mut() {
+        parent.set_implicit(true);
+    }
+    persist(path, &document)
+}
+
+pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
+    let mut document = read_document(path)?;
+    document["workflow"] = value(name);
+    persist(path, &document)
+}
+
+fn read_document(path: &Path) -> Result<DocumentMut> {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    text.parse::<DocumentMut>()
+        .map_err(|error| Error::Config(format!("config.toml: {error}")))
+}
+
+fn persist(path: &Path, document: &DocumentMut) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| Error::Config("config.toml has no parent directory".to_string()))?;
@@ -143,3 +213,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     temp.persist(path).map_err(|error| Error::Io(error.error))?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

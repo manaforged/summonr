@@ -26,6 +26,7 @@ fn roundtrip_preserves_sections_and_replaces_keys() {
         reasoning: true,
         tools: ToolOutput::Full,
         bus: false,
+        last_endpoint: Some("glm".to_string()),
     };
     save_in(&path, &prefs).unwrap_or_else(|error| panic!("save preferences: {error}"));
     let saved = std::fs::read_to_string(&path).unwrap_or_default();

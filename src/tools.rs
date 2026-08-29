@@ -1,5 +1,3 @@
-//! Workspace tools. Reads tag every line; edits address those hashes.
-
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -21,7 +19,6 @@ pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
     command::exit_code(output)
 }
 
-/// Events emitted during a turn.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
@@ -46,11 +43,9 @@ pub enum Event {
         #[serde(default)]
         reasoning_tokens: u32,
         cached_tokens: u32,
-        /// Stable model + system prompt + tool-schema fingerprint.
         #[serde(default, skip_serializing_if = "String::is_empty")]
         prefix_hash: String,
     },
-    /// Mail from another mage session, injected into the conversation.
     Mail {
         from: String,
         text: String,
@@ -61,7 +56,6 @@ pub enum Event {
     Delta {
         text: String,
     },
-    /// A transient provider problem and the recovery underway.
     Note {
         text: String,
     },
@@ -69,7 +63,6 @@ pub enum Event {
         command: String,
         passed: bool,
     },
-    /// Harness-owned end-of-turn change and verification summary.
     Receipt {
         text: String,
     },
@@ -78,19 +71,14 @@ pub enum Event {
     },
 }
 
-/// Workspace-scoped tools gated by [`Policy`].
 pub(crate) struct ToolRegistry {
     workspace: PathBuf,
     policy: Policy,
     search: Option<Search>,
-    /// Extra environment for every command, on top of the kept host variables.
     env: Vec<(String, String)>,
     sandbox: Option<sandbox::Sandbox>,
-    /// Last foreground command and its result, for the repeat short-circuit.
     recent: std::sync::Mutex<Option<Recent>>,
-    /// Bumped by every edit or write; a repeat only short-circuits when unchanged.
     writes: std::sync::atomic::AtomicU64,
-    /// Signatures of recent calls, for the repeated-call warning.
     history: std::sync::Mutex<std::collections::VecDeque<String>>,
     lsp: std::sync::Mutex<Option<lsp::Conn>>,
 }
@@ -120,7 +108,6 @@ impl ToolOutput {
 }
 
 impl ToolRegistry {
-    /// Environment added to every command this registry runs.
     pub(crate) fn set_env(&mut self, env: impl IntoIterator<Item = (String, String)>) {
         self.env = env.into_iter().collect();
     }
@@ -171,7 +158,6 @@ impl ToolRegistry {
         self.policy.is_read_only()
     }
 
-    /// Plan mode: keep the provider schema stable and deny mutation at execution.
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.policy.set_read_only(on);
     }
@@ -379,17 +365,14 @@ fn object_bool(value: &Value, field: &str) -> bool {
     value.get(field).and_then(Value::as_bool).unwrap_or(false)
 }
 
-/// Resolve `@path` workspace files into one user prompt.
 pub fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
     workspace::attach(workspace, line)
 }
 
-/// Detect a supported image media type from raw bytes.
 pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
     workspace::image_type(bytes)
 }
 
-/// The largest image attachment, in bytes, accepted in one turn.
 pub(crate) const IMAGES_MAX_BYTES: usize = workspace::IMAGES_MAX_BYTES;
 
 pub(crate) fn digest(command: &str, raw: &str) -> String {

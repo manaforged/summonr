@@ -1,17 +1,10 @@
-//! Review: a reviewer seat reads the change after the gates pass and
-//! either lets it through or sends it back with findings. It is a gate,
-//! not the judge: it can return Work to Execute, never declare it done.
-
 use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::verify::Outcome;
 use crate::workflow::Role;
 
-/// The check name the receipt shows for a review.
 pub(crate) const CHECK: &str = "review";
-/// How much of the agent's final message the reviewer sees.
 const CONTEXT_CHARS: usize = 4_000;
-/// How much of an unparsable reply becomes the findings.
 const RAW_CHARS: usize = 600;
 
 const SYSTEM: &str = "You review one code change against its objective. Read the changed \
@@ -19,7 +12,6 @@ files with the tools; they are read-only. Reply with one line of JSON: {\"pass\"
 \"findings\": \"<what must change, or empty>\"}. Pass only when the change does what the \
 objective asks and you can point to no defect, missing case, or leftover.";
 
-/// Run the reviewer and fold its answer into a check outcome.
 pub(crate) async fn outcome<P: Provider>(
     loop_: &mut Loop<P>,
     objective: &str,
@@ -45,8 +37,6 @@ pub(crate) async fn outcome<P: Provider>(
                 output: verdict.findings,
             })
         }
-        // A seat outage is not a rejection: the caller skips the review and
-        // lets the gates stand, instead of failing the verdict.
         Err(error) => Err(format!("review unavailable: {error}")),
     }
 }
@@ -79,8 +69,6 @@ struct Verdict {
     findings: String,
 }
 
-/// Parse the reviewer's one-line JSON. Prose around the object is
-/// tolerated; anything unparsable is a rejection carrying the raw text.
 fn parse(reply: &str) -> Verdict {
     let trimmed = reply.trim();
     let raw = || Verdict {

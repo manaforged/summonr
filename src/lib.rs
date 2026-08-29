@@ -1,15 +1,7 @@
-//! Summoner is a small agent harness with an OpenAI-compatible provider boundary.
-//!
-//! Workspace tools, hashline edits, policy, and an append-only session log.
-
 mod command;
 mod config;
 pub(crate) mod durable;
 
-/// Directories skipped by both the model-facing file tools and the workspace
-/// snapshot walk. VCS metadata and the common build-output
-/// trees, never source a `grep` should surface: a folder literally named
-/// `build` is often source, so it is left to a repo's own `.gitignore`.
 pub(crate) const SKIP_DIRS: &[&str] = &[
     ".git",
     ".mage",

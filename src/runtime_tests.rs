@@ -1,7 +1,6 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    /// Execute one tool call through the same registry and policy as a turn.
     pub(crate) async fn execute_tool(&self, call: &ToolCall) -> Result<String> {
         self.tools.execute(call).await
     }
@@ -116,7 +115,6 @@ async fn a_turn_resets_a_leaked_read_only_policy() -> Result<()> {
     ));
     std::fs::create_dir_all(&workspace)?;
     let mut loop_ = Loop::with_session(Ack, "test", &workspace, "system")?;
-    // Simulate a scout/review aside cancelled before it could restore.
     loop_.tools.set_read_only(true);
     assert!(loop_.tools.is_read_only());
     loop_.turn_with("do the thing", |_event| {}).await?;

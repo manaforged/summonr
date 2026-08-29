@@ -258,8 +258,6 @@ fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {
         let bar =
             usize::try_from(round.total()).unwrap_or(0) * 24 / usize::try_from(peak).unwrap_or(1);
         let hit = if round.prompt > 0 {
-            // A provider that reports cached > prompt must not blow the bar
-            // width into a multi-gigabyte repeat().
             (usize::try_from(round.cached).unwrap_or(0) * bar
                 / usize::try_from(round.prompt).unwrap_or(1))
             .min(bar)

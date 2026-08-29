@@ -1,18 +1,12 @@
-//! Allow / deny for shell and writes. Stricter overlay wins.
-
 use std::path::Path;
 
 use serde::Deserialize;
 
 use crate::error::{Error, Result};
 
-/// Tool permission set for one Summoner process.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Policy {
-    /// When true, only `allow` commands run.
     pub strict: bool,
-    /// When true, every command and write is denied (`summon --plan`).
-    /// An allow list or write list cannot widen this.
     read_only: bool,
     deny: Vec<String>,
     allow: Vec<String>,
@@ -32,13 +26,11 @@ struct File {
 }
 
 impl Policy {
-    /// Built-in deny list. Interactive and `-p` use this unless `strict`.
     #[must_use]
     pub(crate) fn builtin() -> Self {
         Self::default()
     }
 
-    /// Overlay `$MAGE_HOME/policy.toml` then `<workspace>/.mage/policy.toml`.
     pub(crate) fn discover(workspace: &Path) -> Result<Self> {
         let mut policy = Self::builtin();
         if let Ok(home) = crate::prompt::mage_home() {
@@ -78,9 +70,6 @@ impl Policy {
         self.strict = true;
     }
 
-    /// Enter plan mode: read-only, fail closed, no overlay can lift it.
-    /// Set plan mode. Only the runtime mode switch may clear it —
-    /// policy-file overlays run before boot and can never lift it.
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.read_only = on;
     }
@@ -90,9 +79,6 @@ impl Policy {
         self.read_only
     }
 
-    /// Decide whether `command` may run inside `workspace`. Empty command
-    /// is denied. A destructive verb or an output redirect that names a
-    /// path outside the workspace is denied.
     pub(crate) fn command(&self, command: &str, workspace: &Path) -> Result<()> {
         let command = command.trim();
         if command.is_empty() {
@@ -130,7 +116,6 @@ impl Policy {
         Ok(())
     }
 
-    /// Decide whether a workspace-relative path may be written.
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
@@ -171,15 +156,11 @@ fn builtin_deny(command: &str) -> bool {
         || (folded.contains("dd if=") && folded.contains("of=/dev/"))
 }
 
-/// Verbs that change or remove what they are pointed at.
 const DESTRUCTIVE: [&str; 14] = [
     "rm", "rmdir", "unlink", "mv", "cp", "chmod", "chown", "truncate", "tee", "dd", "ln", "shred",
     "install", "rsync",
 ];
 
-/// The first path named by a destructive verb, a `cd`, or an output
-/// redirect that resolves outside `workspace`. `None` when the command
-/// stays inside.
 fn escapes(command: &str, workspace: &Path) -> Option<String> {
     let mut outside_cwd = false;
     for segment in split_segments(command) {
@@ -238,8 +219,6 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
                 targets.push(word.clone());
             }
         }
-        // cp/mv/ln/install/rsync read their sources; only the destination
-        // (last operand) changes anything.
         let checked: Vec<&String> = if DEST_ONLY.contains(&verb.as_str()) {
             targets.last().into_iter().collect()
         } else {
@@ -254,11 +233,8 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
     None
 }
 
-/// Verbs whose only written operand is the last one.
 const DEST_ONLY: [&str; 5] = ["cp", "mv", "ln", "install", "rsync"];
 
-/// Split on `;`, `&&`, `||`, `|`, and newlines. Quotes are not tracked;
-/// a false split only makes the check stricter.
 fn split_segments(command: &str) -> Vec<String> {
     command
         .replace("&&", "\n")
@@ -271,9 +247,6 @@ fn split_segments(command: &str) -> Vec<String> {
         .collect()
 }
 
-/// True when `word` names a path that is not under `workspace`. Device
-/// sinks are allowed. Relative paths are resolved lexically; `..` that
-/// climbs past the workspace root is outside.
 fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
     if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
         return false;
@@ -310,8 +283,6 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
     false
 }
 
-/// `rm -r` aimed at the filesystem root itself (`/`, `/*`), not at an
-/// absolute path below it — those are judged by the workspace check.
 fn wipes_root(folded: &str) -> bool {
     ["rm -rf /", "rm -fr /", "rm -r /"].iter().any(|prefix| {
         folded.match_indices(prefix).any(|(index, _)| {

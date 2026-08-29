@@ -1,38 +1,23 @@
-//! Step mode: the harness holds the plan. It reads the numbered items under
-//! a `## Steps` heading, hands the model one step at a time, and runs the
-//! step's check itself before moving on.
-
 use crate::error::{Error, Result};
 
-/// One numbered step from the plan.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
-    /// 1-based position in the list.
     pub index: usize,
-    /// The step text with its number removed.
     pub text: String,
-    /// Every command named as `Run \`…\`` in the step, in order. All must pass.
     pub checks: Vec<String>,
 }
 
-/// One literal requirement from the plan's `## Contract` section.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Item {
-    /// A file that must exist (workspace-relative).
     File(String),
-    /// A command whose stdout must contain the literal.
     Stdout { command: String, expected: String },
 }
 
-/// A plan's contract: artifacts and executable observations.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Contract {
     pub items: Vec<Item>,
 }
 
-/// Parse the `## Contract` section. Bullet forms:
-/// `- file \`path\`` or `- stdout \`command\` → \`expected\``.
-/// Source-text checks are rejected because they do not prove behavior.
 pub fn contract(markdown: &str) -> Result<Contract> {
     let mut items = Vec::new();
     let mut in_section = false;
@@ -73,8 +58,6 @@ pub fn contract(markdown: &str) -> Result<Contract> {
     Ok(Contract { items })
 }
 
-/// Items the workspace does not satisfy. `Stdout` items need a shell and
-/// are judged by the caller through [`stdout_item`].
 #[must_use]
 pub fn missing(contract: &Contract, workspace: &std::path::Path) -> Vec<String> {
     let mut gone = Vec::new();
@@ -91,7 +74,6 @@ pub fn missing(contract: &Contract, workspace: &std::path::Path) -> Vec<String> 
     gone
 }
 
-/// Judge one `stdout` item from the command's captured result.
 #[must_use]
 pub fn stdout_item(command: &str, expected: &str, output: &str) -> Option<String> {
     if output.contains(expected) {
@@ -101,7 +83,6 @@ pub fn stdout_item(command: &str, expected: &str, output: &str) -> Option<String
     }
 }
 
-/// The follow-up prompt when the contract is not met.
 #[must_use]
 pub fn contract_prompt(gone: &[String]) -> String {
     let list: Vec<String> = gone.iter().map(|item| format!("- {item}")).collect();
@@ -111,9 +92,6 @@ pub fn contract_prompt(gone: &[String]) -> String {
     )
 }
 
-/// Parse the numbered list under the `## Steps` heading of a Markdown
-/// plan. Continuation lines belong to the item above them; the list ends
-/// at the next heading.
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {
     let mut steps: Vec<Step> = Vec::new();
     let mut in_section = false;
@@ -153,7 +131,6 @@ pub fn parse(markdown: &str) -> Result<Vec<Step>> {
     Ok(steps)
 }
 
-/// `N. text` → `(N, text)`.
 fn numbered(line: &str) -> Option<(usize, &str)> {
     let digits: String = line.chars().take_while(char::is_ascii_digit).collect();
     if digits.is_empty() {
@@ -163,7 +140,6 @@ fn numbered(line: &str) -> Option<(usize, &str)> {
     digits.parse().ok().map(|number| (number, rest))
 }
 
-/// Every command in a `Run \`…\`` phrase of a step, in order.
 fn checks_in(text: &str) -> Vec<String> {
     let mut found = Vec::new();
     let mut rest = text;
@@ -181,7 +157,6 @@ fn checks_in(text: &str) -> Vec<String> {
     found
 }
 
-/// The prompt that hands one step to the model.
 #[must_use]
 pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     let mut text = format!(
@@ -202,7 +177,6 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     text
 }
 
-/// The follow-up prompt after a failed check.
 #[must_use]
 pub fn retry_prompt(check: &str, output: &str) -> String {
     let tail: String = output
@@ -217,8 +191,6 @@ pub fn retry_prompt(check: &str, output: &str) -> String {
     format!("The check `{check}` failed. Fix the cause, then run it again.\n\n{tail}\n")
 }
 
-/// Exit code from a `run_command` result: the first `exit N` line, which
-/// may sit below a harness note.
 #[must_use]
 pub fn exit_code(output: &str) -> Option<i32> {
     crate::tools::command_exit_code(output)

@@ -5,15 +5,12 @@ use sigil::prelude::Rgba8;
 
 use super::{BASE, Line, Span};
 
-/// The tallest block, in chat rows, that a pasted image may occupy.
 const MAX_ROWS: usize = 24;
 
 thread_local! {
     static CACHE: RefCell<HashMap<(u64, usize), Vec<Line>>> = RefCell::new(HashMap::new());
 }
 
-/// Render with a per-thread cache keyed by image identity and width, so a
-/// pasted image is decoded once, not on every repaint while a turn streams.
 pub(super) fn render_cached(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
     let key = (identity(bytes), width);
     if let Some(hit) = CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
@@ -30,8 +27,6 @@ pub(super) fn render_cached(bytes: &[u8], width: usize) -> Result<Vec<Line>, Str
     Ok(rows)
 }
 
-/// Length plus a hash of the leading bytes — enough to tell pasted images
-/// apart without hashing megabytes on every repaint.
 fn identity(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ bytes.len() as u64;
     for byte in bytes.iter().take(512) {
@@ -41,18 +36,6 @@ fn identity(bytes: &[u8]) -> u64 {
     hash
 }
 
-/// Decode image bytes and render them as a block of half-block cells.
-///
-/// Each output row is one terminal character row. A row draws two image pixel
-/// rows with one `▀` per cell: the foreground carries the upper pixel and the
-/// background carries the lower pixel, so a `width`×`rows` block shows a
-/// `width`×`rows*2` image. The source is downsampled by nearest neighbour to
-/// fit the available column width, preserving aspect ratio, and is capped at
-/// `MAX_ROWS` rows. Transparent pixels are composited over the chat
-/// background.
-///
-/// Returns `Err` when the bytes are not a decodable image with a non-empty
-/// frame. It never returns a partial block for an out-of-bounds read.
 pub(super) fn render(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
     if width == 0 {
         return Ok(Vec::new());
@@ -94,7 +77,6 @@ pub(super) fn render(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
     Ok(rows)
 }
 
-/// Composite one RGBA pixel over the chat background.
 fn composite(pixel: [u8; 4]) -> Rgba8 {
     let [red, green, blue, alpha] = pixel;
     let alpha = f32::from(alpha) / 255.0;

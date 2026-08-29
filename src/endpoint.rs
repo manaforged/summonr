@@ -1,5 +1,3 @@
-//! Named targets: builtins or `[endpoint.NAME]` rows in config.toml.
-
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -14,33 +12,22 @@ const GROK: &str = "https://api.x.ai/v1";
 const COPILOT: &str = "https://api.githubcopilot.com";
 const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
-/// Public GitHub Copilot CLI OAuth client. No secret.
 const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
 
-/// Resolved provider target for one Summoner process.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     pub name: String,
     pub model: String,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
-    /// OAuth token fetch. When set, `Client` uses this instead of `api_key`.
     pub oauth: Option<crate::config::OAuth>,
-    /// Extra request body merged into every chat call (sampling, `chat_template_kwargs`).
     pub body: Option<serde_json::Value>,
-    /// The model's context window in tokens, when configured — drives
-    /// the compaction trigger and the context-left indicator.
     pub context_window: Option<u32>,
-    /// Environment added to every `run_command` for this seat (a clean
-    /// PATH, a CARGO_TARGET_DIR, …).
     pub env: BTreeMap<String, String>,
-    /// Extra HTTP headers on every chat request.
     pub headers: BTreeMap<String, String>,
-    /// Native protocol. Completions is our OpenAI chat/completions client.
     pub wire: Wire,
 }
 
-/// How this seat talks to the host.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Wire {
     #[default]
@@ -49,7 +36,6 @@ pub enum Wire {
     Gemini,
 }
 
-/// How one endpoint accepts credentials, without exposing the credential.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthInfo {
     pub name: String,
@@ -59,8 +45,6 @@ pub struct AuthInfo {
 }
 
 impl AuthInfo {
-    /// One line describing the credential state, without the secret. Both
-    /// interfaces render this so the classification lives in one place.
     #[must_use]
     pub fn status(&self) -> String {
         let state = if self.device_login {
@@ -84,7 +68,6 @@ impl Wire {
     }
 }
 
-/// True when `token` is a builtin or an `[endpoint.NAME]` row.
 #[must_use]
 pub fn is_named(token: &str) -> bool {
     builtin(token).is_some()
@@ -93,7 +76,6 @@ pub fn is_named(token: &str) -> bool {
             .is_some_and(|names| names.iter().any(|name| name == token))
 }
 
-/// Built-in names, then config names.
 pub fn names() -> Result<Vec<String>> {
     let mut names: Vec<String> = PRESETS
         .iter()
@@ -107,7 +89,6 @@ pub fn names() -> Result<Vec<String>> {
     Ok(names)
 }
 
-/// Describe an endpoint's credential state without resolving or printing its secret.
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let file = config::load()?;
     let process_key = named_env_key(name)
@@ -165,7 +146,6 @@ fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo
     })
 }
 
-/// Names that resolve with the keys this process has.
 pub(crate) fn ready() -> Vec<String> {
     names()
         .unwrap_or_default()
@@ -174,7 +154,6 @@ pub(crate) fn ready() -> Vec<String> {
         .collect()
 }
 
-/// Next resolvable seat after `current`, wrapping. None when none resolve.
 pub(crate) fn next(current: &str) -> Option<String> {
     let names = ready();
     if names.len() < 2 {
@@ -184,7 +163,6 @@ pub(crate) fn next(current: &str) -> Option<String> {
     Some(names[(index + 1) % names.len()].clone())
 }
 
-/// Model ids for a native wire, from presets. Completions seats list via GET /models.
 pub(crate) fn catalog(wire: Wire) -> Vec<String> {
     let mut models = Vec::new();
     for row in PRESETS {
@@ -203,15 +181,10 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
     models
 }
 
-/// Pick an endpoint. `name` comes from `--endpoint` / `MAGE_ENDPOINT`.
-/// Resolve an endpoint, requiring a credential so non-interactive runs fail
-/// fast when a key is missing.
 pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
     resolve_inner(name, model, true)
 }
 
-/// Resolve an endpoint for an interactive start, tolerating a missing key so
-/// the full-screen interface can open and the user can reach `/auth`.
 pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
     resolve_inner(name, model, false)
 }
@@ -245,6 +218,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .or_else(|| std::env::var("MAGE_ENDPOINT").ok())
+        .or_else(|| file.last_endpoint.clone())
         .or_else(|| file.default.clone());
 
     let model_flag = model
@@ -564,7 +538,6 @@ fn builtin(name: &str) -> Option<Endpoint> {
     })
 }
 
-/// TOML table from `config.toml` as the JSON the provider merges into requests.
 fn json(value: &toml::Value) -> serde_json::Value {
     serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
 }

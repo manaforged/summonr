@@ -18,7 +18,6 @@ fn png(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
 
 #[test]
 fn render_lays_two_pixel_rows_per_cell() {
-    // 4x4: four rows of solid colours, so each output cell stacks two rows.
     let image = png(
         &[
             [255, 0, 0, 255],
@@ -46,7 +45,6 @@ fn render_lays_two_pixel_rows_per_cell() {
     assert_eq!(rows.len(), 2);
     assert_eq!(rows[0].len(), 4);
     assert_eq!(rows[0][0].text, "▀");
-    // Top row stacks red above green.
     assert_eq!(rows[0][0].fg.r, 255);
     assert_eq!(rows[0][0].fg.g, 0);
     assert_eq!(rows[0][0].bg.g, 255);
@@ -61,7 +59,6 @@ fn render_does_not_upscale_past_the_source_width() {
 
 #[test]
 fn render_caps_a_tall_image_to_a_bounded_block() {
-    // A 2x200 image becomes a very tall block; it must stop at MAX_ROWS.
     let mut pixels = Vec::new();
     for _ in 0..400 {
         pixels.push([10, 20, 30, 255]);
@@ -80,8 +77,6 @@ fn render_rejects_undecodable_bytes() {
 
 #[test]
 fn render_handles_an_odd_height_without_reading_out_of_bounds() {
-    // 2x3: the final cell has no lower pixel row, so its background is the
-    // chat background rather than a sampled pixel.
     let image = png(
         &[
             [255, 0, 0, 255],

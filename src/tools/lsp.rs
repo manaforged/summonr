@@ -1,5 +1,3 @@
-//! Language Server Protocol client. One connection: diagnostics, definition, references, rename.
-
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -574,7 +572,6 @@ fn apply_text_edits(text: &str, edits: &[TextEdit]) -> Result<String> {
     Ok(out)
 }
 
-/// LSP `character` is UTF-16 code units on the line.
 fn offset(text: &str, line: usize, character: usize) -> Result<usize> {
     let mut pos = 0usize;
     let mut rest = text;

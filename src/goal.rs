@@ -1,19 +1,8 @@
-//! Goal mode: the harness holds the objective. One standing goal, run to
-//! completion across turns — the model works, deterministic gates prove
-//! progress, and a judge round decides whether the goal is met. The gate
-//! verdict is mechanical (exit 0 or not); the judge only decides whether
-//! to continue, never whether the work passed.
-//!
-//! State lives in the session's `work.json` like step mode, so
-//! `summon --goal …` resumes after a process exit.
-
 use crate::durable::work::Decision;
 use crate::provider::Provider;
 use crate::runtime::Loop;
 
-/// Continuation turns allowed before the goal auto-pauses.
 pub const DEFAULT_MAX_TURNS: usize = 20;
-/// How much of the agent's final message the judge sees.
 const JUDGE_CONTEXT_CHARS: usize = 4_000;
 
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
@@ -45,8 +34,6 @@ pub(crate) async fn decision<P: Provider>(
     }
 }
 
-/// Prompt the first turn of a Goal Work. Later turns consume the durable
-/// continuation that the Work verdict queued.
 #[must_use]
 pub fn prompt(objective: &str, gates: &[String], round: u32) -> String {
     if round > 0 {
@@ -97,8 +84,6 @@ impl Verdict {
     }
 }
 
-/// Parse the judge's one-line JSON. Prose around the object is tolerated;
-/// anything unparsable counts as "continue" with the raw text as reason.
 fn parse_verdict(reply: &str) -> Verdict {
     let trimmed = reply.trim();
     let Some(start) = trimmed.find('{') else {

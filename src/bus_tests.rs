@@ -37,7 +37,6 @@ fn heartbeat_makes_and_expires_presence() {
     assert_eq!(roster.len(), 1);
     assert_eq!(roster[0].id, "a");
     assert_eq!(roster[0].status, "idle");
-    // a stale record drops off the roster
     let stale = Agent {
         id: "ghost".to_string(),
         model: "glm".to_string(),
@@ -74,7 +73,6 @@ fn send_and_poll_with_cursor() {
         b.poll().expect("poll again").is_empty(),
         "cursor consumed the mail"
     );
-    // broadcast skips the sender
     assert!(a.poll().expect("poll a").is_empty());
     drop(std::fs::remove_dir_all(&dir));
 }
@@ -85,8 +83,6 @@ fn board_fold_failure_is_loud() {
     use std::os::unix::fs::PermissionsExt as _;
     let (dir, cwd) = setup("fold");
     let a = bus_at(&dir, "a");
-    // An oversized board folds back to disk during a read. A fold that
-    // cannot write fails the read; it never silently skips.
     a.post(&cwd, "k", "v")
         .unwrap_or_else(|error| panic!("post: {error}"));
     let path = dir
@@ -142,11 +138,9 @@ fn hostile_ids_cannot_escape_the_bus_dir() {
     let mut b = bus_at(&dir, "b");
     a.heartbeat("glm", &cwd, "idle");
     b.heartbeat("glm", &cwd, "idle");
-    // a traversal attempt writes inside inbox/, never outside
     assert_eq!(b.send("../../etc/evil", "pwned").unwrap_or(0), 1);
     assert!(!dir.join("etc").exists());
     assert!(dir.join("inbox/..-..-etc-evil.jsonl").exists());
-    // and the sanitized target is readable as a normal mailbox
     let mut evil = bus_at(&dir, "../../etc/evil");
     assert_eq!(evil.poll().expect("poll evil").len(), 1);
     drop(std::fs::remove_dir_all(&dir));
@@ -165,7 +159,6 @@ fn mail_truncates_and_oversized_inboxes_rotate() {
     let mail = b.poll().unwrap_or_else(|error| panic!("poll: {error}"));
     assert_eq!(mail.len(), 1);
     assert_eq!(mail[0].text.chars().count(), MAIL_CHARS);
-    // an oversized mailbox rotates and stays parseable
     let path = dir.join("inbox/b.jsonl");
     let fat = format!("{}\n", "junk\n".repeat(120_000));
     std::fs::write(&path, &fat).unwrap_or_else(|error| panic!("write oversized inbox: {error}"));

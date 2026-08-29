@@ -7,8 +7,6 @@ use super::{
 };
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
-/// The most parallel tool calls one response can carry. Guards against a
-/// wild `index` from a malformed stream growing the call vec without bound.
 const MAX_TOOL_CALLS: usize = 64;
 
 impl Client {
@@ -42,7 +40,6 @@ struct Stream {
     reasoning: String,
     think: think::Scan,
     calls: Vec<ToolCall>,
-    /// Whether each call's name has been announced to `on_tool` already.
     announced: Vec<bool>,
     usage: Usage,
     stop_reason: StopReason,
@@ -125,8 +122,6 @@ impl Stream {
         self.announce(client);
     }
 
-    /// Emit each tool call's name the first time it is known, so the interface
-    /// can show "calling <name>…" while the arguments still stream in.
     fn announce(&mut self, client: &Client) {
         self.announced.resize(self.calls.len(), false);
         for (call, announced) in self.calls.iter().zip(self.announced.iter_mut()) {
@@ -196,8 +191,6 @@ fn frame_end(bytes: &[u8]) -> Option<(usize, usize)> {
 
 pub(super) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
     let index = part.index.unwrap_or(calls.len().saturating_sub(1));
-    // A well-formed stream indexes tool calls sequentially. A wild index from
-    // a broken or hostile proxy must not grow the vec by billions of entries.
     if index >= MAX_TOOL_CALLS {
         return;
     }
@@ -266,9 +259,6 @@ struct Chunk {
     error: Option<StreamError>,
 }
 
-/// An error object some hosts emit mid-stream (HTTP 200, then a failure
-/// event). Without this the failure is dropped and a truncated answer is
-/// recorded as complete.
 #[derive(Deserialize)]
 struct StreamError {
     #[serde(default)]

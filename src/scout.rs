@@ -1,7 +1,3 @@
-//! Scout: a read-only pass before a job's first turn. The brief names the
-//! files, invariants, helpers, and risks the objective touches; it never
-//! plans or edits.
-
 use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::workflow::Role;
@@ -11,7 +7,6 @@ Report what the objective touches: the files and functions, the invariants and c
 they follow, existing helpers to reuse, and the risks. Be concrete: paths and names. Do not \
 plan the change and do not propose edits.";
 
-/// Run the scout on its seat and return the brief.
 pub(crate) async fn brief<P: Provider>(
     loop_: &mut Loop<P>,
     objective: &str,
@@ -24,7 +19,6 @@ pub(crate) async fn brief<P: Provider>(
     Ok(text)
 }
 
-/// The brief as the conversation sees it.
 #[must_use]
 pub(crate) fn note(brief: &str) -> String {
     format!("Scout brief:\n{}", brief.trim())

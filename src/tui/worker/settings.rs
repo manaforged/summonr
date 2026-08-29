@@ -11,10 +11,6 @@ use tokio::sync::mpsc::UnboundedSender;
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
 clear ROLE | save NAME | default NAME] — roles: scout plan implement review judge summary";
 
-/// How long one endpoint's `/models` probe may run before the picker uses
-/// the configured model instead. Discovery runs in the background, so this
-/// only bounds how long a slow host delays its enrichment; the picker is
-/// already usable from the configured seats.
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
 impl Worker {
@@ -30,8 +26,6 @@ impl Worker {
             );
             return;
         }
-        // Recently-used seats that still resolve to a ready endpoint, newest
-        // first, so the picker opens on what the user actually uses.
         let ready: std::collections::HashSet<&str> = endpoints
             .iter()
             .map(|endpoint| endpoint.name.as_str())
@@ -48,8 +42,6 @@ impl Worker {
                     .is_some_and(|name| ready.contains(name))
             })
             .collect();
-        // Populate instantly: recents, then each endpoint's configured model,
-        // deduped. The picker opens without waiting on any host.
         let seats = endpoints
             .iter()
             .map(|endpoint| format!("{}\t{}", endpoint.name, endpoint.model));
@@ -58,9 +50,6 @@ impl Worker {
             recent: recent.len(),
             rows,
         }));
-        // Enrich with each host's live `/models` in the background. A dead
-        // host falls back to its configured model and never blocks the worker
-        // or freezes the picker.
         let ui = self.ui.clone();
         drop(tokio::spawn(async move {
             let models = discover(endpoints, PROBE_TIMEOUT).await;
@@ -98,7 +87,6 @@ impl Worker {
         self.drive(crate::endpoint::resolve(Some(&self.endpoint), Some(model)));
     }
 
-    /// Make a resolved endpoint the driving seat.
     fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
         match endpoint.and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)))
         {
@@ -108,7 +96,6 @@ impl Worker {
         self.send_settings();
     }
 
-    /// A client for `endpoint` that streams into the transcript.
     fn client(&self, endpoint: &Endpoint) -> crate::Result<Client> {
         let delta = self.ui.clone();
         let thinking = self.ui.clone();
@@ -121,7 +108,6 @@ impl Worker {
             .on_tool(move |name| drop(calling.send(Msg::Calling(name.to_string())))))
     }
 
-    /// The `/workflow` grammar; every card action has a verb here.
     pub(super) fn workflow(&mut self, argument: Option<&str>) {
         let words: Vec<&str> = argument
             .map(|argument| argument.split_whitespace().collect())
@@ -174,8 +160,6 @@ impl Worker {
         }
     }
 
-    /// Seat one role; the change is live at once. Without `model` the
-    /// endpoint's configured model is used.
     pub(super) fn seat_role(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
         let resolved = crate::endpoint::resolve(Some(endpoint), model)
             .and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)));
@@ -201,8 +185,6 @@ impl Worker {
         self.send_workflow();
     }
 
-    /// Write the live seats as `[workflows.NAME]` and name the session's
-    /// workflow after it.
     pub(super) fn save_workflow(&mut self, name: &str) {
         self.workflow.name = name.trim().to_string();
         let saved = workflow::save(&self.workflow)
@@ -269,8 +251,6 @@ impl Worker {
         }
     }
 
-    /// Seat every role the workflow names; a seat that fails to resolve is
-    /// reported and left on the driving seat.
     pub(super) fn apply_workflow(&mut self, name: &str) {
         let workflow = match workflow::load(name) {
             Ok(workflow) => workflow,
@@ -309,7 +289,6 @@ impl Worker {
         }));
     }
 
-    /// Record the driving seat as most-recently-used for the picker.
     pub(super) fn remember_seat(&self) {
         if let Some(home) = &self.home {
             let seat = format!("{}\t{}", self.endpoint, self.loop_.model());
@@ -332,11 +311,6 @@ impl Worker {
     }
 }
 
-/// Probe each endpoint's `/models` concurrently and return `name\tmodel`
-/// rows. A Completions host that does not answer within [`PROBE_TIMEOUT`]
-/// contributes its configured model; native wires use their static catalog.
-/// `recent` seats first, then `rest`, dropping duplicates so a recently-used
-/// seat appears once at the top.
 fn merge(recent: Vec<String>, rest: impl Iterator<Item = String>) -> Vec<String> {
     let mut rows = recent;
     for row in rest {
@@ -392,8 +366,6 @@ pub(super) fn set_mode(loop_: &mut Loop<Client>, ui: &UnboundedSender<Msg>, plan
     drop(ui.send(Msg::System(text.to_string())));
 }
 
-/// The modal shows one verify row; several gates collapse to the first
-/// plus a count.
 fn verify_display(commands: &[String]) -> Option<String> {
     match commands {
         [] => None,

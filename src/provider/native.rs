@@ -1,5 +1,3 @@
-//! Anthropic Messages and Gemini native protocols via genai, bound per seat.
-
 use futures::StreamExt;
 use genai::adapter::AdapterKind;
 use genai::chat::{
@@ -216,10 +214,6 @@ fn to_chat(request: &CompletionRequest) -> Result<ChatRequest> {
             }
         }
     }
-    // One cache breakpoint on the last message caches the whole prefix
-    // (tools, system, prior turns) on Anthropic; the next turn's new input
-    // is the only uncached part, and the breakpoint rolls forward with the
-    // conversation.
     if let Some(last) = messages.last_mut() {
         last.options = Some(MessageOptions::from(CacheControl::Ephemeral));
     }

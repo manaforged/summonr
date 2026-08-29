@@ -1,10 +1,3 @@
-//! Work: the job the harness holds so the model does not have to.
-//!
-//! One objective, one policy (single turn, numbered steps, or a standing
-//! goal), one stage (Plan, Execute, Verify), and the gates that decide done.
-//! `work.json` beside the session log is the checkpoint: rewritten
-//! atomically after every transition, read back on resume.
-
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::Path;
@@ -14,7 +7,6 @@ use thiserror::Error;
 
 use super::tree::{Snapshot, changed};
 
-/// Failed completion checks tolerated per step or goal turn.
 const REPAIR_LIMIT: u16 = 3;
 const DECISION: &str = "Goal Work requires a completion decision";
 
@@ -42,7 +34,6 @@ pub(crate) enum Stage {
     Plan,
     Execute,
     Verify,
-    /// A reviewer seat reads the change after the gates passed.
     Review,
 }
 
@@ -63,13 +54,10 @@ pub(crate) enum StepState {
     Blocked,
 }
 
-/// What a contract check proves beyond exit 0.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Observation {
-    /// A workspace-relative file must exist.
     File(String),
-    /// The command's output must contain this text.
     Stdout(String),
 }
 
@@ -83,7 +71,6 @@ pub(crate) struct Check {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Step {
     pub(crate) title: String,
-    /// Indexes into [`Work::checks`] this step must pass.
     pub(crate) checks: Vec<usize>,
     pub(crate) state: StepState,
     pub(crate) attempts: u16,
@@ -102,16 +89,13 @@ impl Step {
     }
 }
 
-/// The workspace as captured when Execute ended.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Candidate {
     pub(crate) paths: Vec<String>,
     pub(crate) snapshot: Snapshot,
 }
 
-/// How the harness closes a passed Verify.
 pub(crate) enum Decision {
-    /// Single and Steps: the gates decide alone.
     Automatic,
     GoalComplete,
     GoalContinue(String),
@@ -122,17 +106,13 @@ pub(crate) struct Work {
     pub(crate) objective: String,
     pub(crate) policy: Policy,
     pub(crate) status: Status,
-    /// Selected plan text; the objective itself for a single turn.
     pub(crate) plan: Option<String>,
     pub(crate) checks: Vec<Check>,
     pub(crate) steps: Vec<Step>,
     pub(crate) active: Option<usize>,
-    /// Workspace when Execute began.
     pub(crate) base: Option<Snapshot>,
     pub(crate) candidate: Option<Candidate>,
-    /// Harness text queued for the next Execute turn.
     pub(crate) pending: Vec<String>,
-    /// The scout's brief, once a scout seat has run.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) brief: Option<String>,
 }
@@ -169,8 +149,6 @@ impl Work {
         self.stage().is_none()
     }
 
-    /// Select the plan and every check it declares. Steps take their
-    /// items from the plan's numbered list.
     pub(crate) fn select(&mut self, markdown: &str, commands: &[String]) -> Result<(), WorkError> {
         let checks = checks(markdown, self.policy, commands)?;
         if self.policy == Policy::Steps {
@@ -202,7 +180,6 @@ impl Work {
         Ok(())
     }
 
-    /// Enter Execute from Plan against a workspace base.
     pub(crate) fn execute(&mut self, base: Snapshot) -> Result<(), WorkError> {
         if self.plan.is_none() {
             return Err(WorkError("Execute requires a selected plan".to_string()));
@@ -216,7 +193,6 @@ impl Work {
         Ok(())
     }
 
-    /// Capture the Execute result and enter Verify. Returns the changed paths.
     pub(crate) fn verify(&mut self, capture: Snapshot) -> Result<Vec<String>, WorkError> {
         if self.stage() != Some(Stage::Execute) {
             return Err(WorkError("Verify requires Execute".to_string()));
@@ -234,7 +210,6 @@ impl Work {
         Ok(paths)
     }
 
-    /// Advance to Review after the gates passed.
     pub(crate) fn review(&mut self) -> Result<(), WorkError> {
         if self.stage() != Some(Stage::Verify) {
             return Err(WorkError("Review requires Verify".to_string()));
@@ -243,9 +218,6 @@ impl Work {
         Ok(())
     }
 
-    /// Close Verify or Review with the gate verdict. A failed gate returns
-    /// to Execute with a repair request queued; a continuing goal queues its
-    /// next turn.
     pub(crate) fn verdict(&mut self, passed: bool, decision: Decision) -> Result<(), WorkError> {
         if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
             return Err(WorkError("a verdict requires Verify".to_string()));
@@ -320,8 +292,6 @@ impl Work {
         Ok(())
     }
 
-    /// The reviewer sent the change back: Review returns to Execute with
-    /// the findings queued, counted like a failed gate.
     pub(crate) fn reject(&mut self, findings: &str) -> Result<(), WorkError> {
         if self.stage() != Some(Stage::Review) {
             return Err(WorkError("a rejection requires Review".to_string()));
@@ -329,7 +299,6 @@ impl Work {
         self.fail(format!("Address the review findings:\n{findings}"))
     }
 
-    /// A failed gate or review: another attempt, or abandon at the limit.
     fn fail(&mut self, continuation: String) -> Result<(), WorkError> {
         let active = self
             .active
@@ -365,8 +334,6 @@ impl Work {
         self.status = Status::Abandoned(reason.to_string());
     }
 
-    /// Return an interrupted Verify or Review to Execute; the next turn
-    /// captures again. True when something changed.
     pub(crate) fn interrupt(&mut self) -> bool {
         if !matches!(self.stage(), Some(Stage::Verify | Stage::Review)) {
             return false;
@@ -376,8 +343,6 @@ impl Work {
         true
     }
 
-    /// Checks the active item must pass: the step's own for Steps, all
-    /// declared checks otherwise.
     pub(crate) fn completion_checks(&self) -> Vec<Check> {
         if self.policy != Policy::Steps {
             return self.checks.clone();
@@ -427,14 +392,12 @@ impl Work {
         }
     }
 
-    /// Write the checkpoint atomically: temp file, then rename.
     pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
         let temp = path.with_extension("json.tmp");
         std::fs::write(&temp, serde_json::to_vec_pretty(self)?)?;
         std::fs::rename(temp, path)
     }
 
-    /// Read the checkpoint; `None` when the session has no Work yet.
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
         match std::fs::read(path) {
             Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
@@ -444,8 +407,6 @@ impl Work {
     }
 }
 
-/// Every check a plan declares: the configured commands, each step's
-/// ``Run `…` `` commands, and the `## Contract` items.
 pub(crate) fn checks(
     markdown: &str,
     policy: Policy,
@@ -534,7 +495,6 @@ pub struct WorkProgress {
     pub total: usize,
     pub attempts: u16,
     pub rounds: u32,
-    /// Continuation turns a Goal Work may still take; 0 otherwise.
     pub max_turns: u32,
     pub reason: Option<String>,
 }

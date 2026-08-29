@@ -1,5 +1,3 @@
-//! Asynchronous command worker for the Sigil terminal interface.
-
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -42,16 +40,10 @@ struct Worker {
     steering: Arc<Mutex<VecDeque<UserInput>>>,
     deferred: VecDeque<Cmd>,
     followups: VecDeque<UserInput>,
-    /// The last completed turn, for callers that inspect it (goal mode).
     last_turn: Option<crate::Turn>,
-    /// The last reported bus failure, so a persistent fault reports once.
     bus_error: Option<String>,
-    /// Workflow named at start, seated on the first run tick.
     named: Option<String>,
-    /// The seats as the card edits them.
     workflow: Workflow,
-    /// The mage home (config's parent) for recents. `None` in tests keeps the
-    /// picker's recent list out of the developer's real home.
     home: Option<std::path::PathBuf>,
 }
 
@@ -239,9 +231,6 @@ impl Worker {
             return;
         }
         self.queue_mail();
-        // An auto-reply turn drains the same mail and displays it as it feeds
-        // it to the model. Show it at poll only when no such turn will run, so
-        // each message appears exactly once.
         if !self.pending_mail {
             for message in mail {
                 drop(self.ui.send(Msg::Mail {
@@ -268,8 +257,6 @@ impl Worker {
         if on {
             self.auto_turns = 0;
         } else {
-            // Disarm any mail turn already queued, so opting out takes effect
-            // before the next tick runs a full turn on peer mail.
             self.pending_mail = false;
         }
     }

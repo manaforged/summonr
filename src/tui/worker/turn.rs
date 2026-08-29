@@ -64,8 +64,6 @@ impl Worker {
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
                         Some(Cmd::Submit(input)) => {
-                            // The interface already shows this as sent; queue it
-                            // for after the turn instead of dropping it.
                             self.followups.push_back(input);
                         }
                         Some(Cmd::Mail) => {}
@@ -103,8 +101,6 @@ impl Worker {
             })));
             drop(self.ui.send(Msg::Busy(false)));
         } else if let Some(Err(error)) = result {
-            // A failed turn leaves the driver's turn open; close it so the next
-            // prompt is not refused as "a turn is already open".
             if let Err(abort) = self.loop_.abort_note("turn failed") {
                 self.fail(&format!(
                     "{error}; and the turn could not be closed: {abort}"

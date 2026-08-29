@@ -1,33 +1,22 @@
-//! Git worktrees for `--goal` and `--steps`.
-//!
-//! `git worktree add`, `merge --ff-only`, `worktree remove`.
-
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{Error, Result};
 
-/// One Summoner worktree plus the branch it will merge back into.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tree {
-    /// Repository the operator started in.
     pub primary: PathBuf,
-    /// Linked checkout where tools run.
     pub path: PathBuf,
-    /// `summon/<id>` branch in the worktree.
     pub branch: String,
-    /// Branch checked out on `primary` when the worktree was added.
     pub base: String,
 }
 
-/// True when `path` is inside a git worktree.
 #[must_use]
 pub fn in_git(path: &Path) -> bool {
     primary(path).is_ok()
 }
 
-/// Main checkout of the repository that contains `path`.
 pub(crate) fn primary(path: &Path) -> Result<PathBuf> {
     let text = git(path, &["worktree", "list", "--porcelain"])?;
     for line in text.lines() {
@@ -41,8 +30,6 @@ pub(crate) fn primary(path: &Path) -> Result<PathBuf> {
     )))
 }
 
-/// Add a `summon/<id>` worktree next to the repo, or reuse this checkout
-/// if it is already one.
 pub fn add(cwd: &Path) -> Result<Tree> {
     let primary = primary(cwd)?;
     if let Some(existing) = locate(&primary, cwd)? {
@@ -78,9 +65,6 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     })
 }
 
-/// Fast-forward the primary branch to the worktree, then delete it.
-///
-/// Uncommitted files fail closed: the worktree stays.
 pub fn finish(tree: &Tree) -> Result<()> {
     if dirty(&tree.path)? {
         return Err(Error::Config(format!(
@@ -92,7 +76,6 @@ pub fn finish(tree: &Tree) -> Result<()> {
     remove(tree)
 }
 
-/// Remove the worktree and its branch. Leaves commits reachable from `base`.
 pub(crate) fn remove(tree: &Tree) -> Result<()> {
     let path = tree.path.to_str().ok_or_else(|| {
         Error::Config(format!(
@@ -105,10 +88,6 @@ pub(crate) fn remove(tree: &Tree) -> Result<()> {
     Ok(())
 }
 
-/// Drop git records for worktrees whose directory is already gone.
-///
-/// Does not remove a checkout that still exists. A `summon/*` branch at
-/// HEAD looks merged; deleting it would steal a live `--goal` tree.
 pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
     let Ok(primary) = primary(cwd) else {
         return Ok(Vec::new());
@@ -117,7 +96,6 @@ pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
     Ok(Vec::new())
 }
 
-/// Linked `summon/*` worktrees for this repository.
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
     let primary = primary(cwd)?;
     let base = git(&primary, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();

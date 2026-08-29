@@ -1,10 +1,7 @@
-//! Content-hash line anchors. Unchanged lines keep their hash after an insert.
-
 use crate::error::{Error, Result};
 
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 
-/// Four-character FNV-1a tag of one line's exact bytes.
 #[must_use]
 pub fn line_hash(text: &str) -> String {
     let mut hash = 0x811c_9dc5_u32;
@@ -22,13 +19,11 @@ pub fn line_hash(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// Render file contents as `N:hash|text` lines.
 #[must_use]
 pub fn tagged_text(content: &str) -> String {
     tagged_span(content, 0, usize::MAX)
 }
 
-/// Render a 0-based inclusive span. `last` is clamped to the last line.
 #[must_use]
 pub(crate) fn tagged_span(content: &str, first: usize, last: usize) -> String {
     let total = content.lines().count();
@@ -92,7 +87,6 @@ fn is_hash(value: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'v'))
 }
 
-/// Every 0-based line whose tag matches.
 fn hits(content: &str, parsed: &Tag) -> Vec<usize> {
     content
         .lines()
@@ -108,8 +102,6 @@ fn hits(content: &str, parsed: &Tag) -> Vec<usize> {
         .collect()
 }
 
-/// The stale-tag error carries the current tags near where the model
-/// was looking, so the next edit needs no read_file.
 fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
     let near = match parsed {
         Tag::Line { number, .. } => Some(*number),
@@ -129,8 +121,6 @@ fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
     }
 }
 
-/// The ambiguity error lists each candidate as `N:hash|text` so the
-/// next call can pick one without a read.
 fn ambiguous(content: &str, tag: &str, found: &[usize]) -> Error {
     let lines: Vec<&str> = content.lines().collect();
     let options: Vec<String> = found
@@ -158,7 +148,6 @@ fn locate(content: &str, tag: &str) -> Result<usize> {
     }
 }
 
-/// Resolve `tag..=end_tag`. Each anchor must identify one line.
 fn span(content: &str, tag: &str, end_tag: Option<&str>) -> Result<(usize, usize)> {
     let end_tag = end_tag.filter(|end| !end.trim().is_empty());
     let Some(end_tag) = end_tag else {
@@ -175,7 +164,6 @@ fn span(content: &str, tag: &str, end_tag: Option<&str>) -> Result<(usize, usize
     Ok((start, end))
 }
 
-/// Resolve a hashline range without changing the file.
 pub(crate) fn resolve_span(
     content: &str,
     tag: &str,
@@ -184,7 +172,6 @@ pub(crate) fn resolve_span(
     span(content, tag, end_tag)
 }
 
-/// Replace `tag..=end_tag` with `new`. `new` may contain newlines.
 #[cfg(test)]
 pub(crate) fn apply_replace(
     content: &str,
@@ -203,7 +190,6 @@ pub(crate) fn apply_replace(
     Ok(join_lines(&lines, content.ends_with('\n')))
 }
 
-/// Insert `text` after `tag`. `text` may contain newlines.
 #[cfg(test)]
 pub(crate) fn apply_insert(content: &str, tag: &str, text: &str) -> Result<String> {
     if text.is_empty() {
@@ -221,7 +207,6 @@ pub(crate) fn apply_insert(content: &str, tag: &str, text: &str) -> Result<Strin
     Ok(join_lines(&lines, content.ends_with('\n')))
 }
 
-/// Delete `tag..=end_tag`.
 #[cfg(test)]
 pub(crate) fn apply_delete(content: &str, tag: &str, end_tag: Option<&str>) -> Result<String> {
     let (start, end) = span(content, tag, end_tag)?;
@@ -230,7 +215,6 @@ pub(crate) fn apply_delete(content: &str, tag: &str, end_tag: Option<&str>) -> R
     Ok(join_lines(&lines, content.ends_with('\n')))
 }
 
-/// 0-based first/last of the first differing run, for a compact post-edit view.
 #[must_use]
 pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
     let old: Vec<&str> = before.lines().collect();

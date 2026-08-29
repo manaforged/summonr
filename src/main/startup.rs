@@ -22,8 +22,6 @@ enum SessionAction {
     Fork(PathBuf),
 }
 
-/// `summon endpoints`: every name, and for the ones that resolve, whether
-/// the host answers `GET /models` with this seat's bearer.
 async fn probe_endpoints() -> Result<()> {
     for name in summoner::endpoint_names()? {
         let endpoint = match summoner::resolve_endpoint(Some(&name), None) {
@@ -73,7 +71,6 @@ fn print_sessions() -> Result<()> {
     Ok(())
 }
 
-/// `summoner workflows`: every saved workflow, the default starred.
 fn print_workflows() -> Result<()> {
     let names = workflow::names()?;
     if names.is_empty() {
@@ -94,8 +91,6 @@ fn print_workflows() -> Result<()> {
     Ok(())
 }
 
-/// The workflow this run uses: the flag, then the session's own, then the
-/// config default.
 fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
     if let Some(name) = &args.workflow {
         return Ok(Some(name.clone()));
@@ -106,8 +101,6 @@ fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
     workflow::default_name()
 }
 
-/// Seat every role the workflow names. Non-interactive runs fail on a seat
-/// that does not resolve; the interface seats its own and reports instead.
 fn apply_workflow(loop_: &mut Loop<Client>, name: &str, json: bool) -> Result<()> {
     let workflow = workflow::load(name)?;
     for (role, seat) in &workflow.seats {
@@ -235,13 +228,14 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
 async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree) = isolate(&args, &cwd)?;
-    // The full-screen interface may open without a credential so the user can
-    // reach `/auth`; non-interactive modes still require a key up front.
     let endpoint = if use_tui(&args) {
         summoner::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
     } else {
         summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
     };
+    if let Some(name) = args.endpoint.as_deref() {
+        summoner::prefs::set_last_endpoint(name);
+    }
     let ui = channels(use_tui(&args));
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
     let checks = if args.no_verify {
@@ -405,7 +399,6 @@ async fn dispatch(
             ui.0.ok_or_else(|| summoner::Error::Config("tui sender missing".to_string()))?;
         Ok(summoner::tui::run(loop_, workspace, info, ui_tx, ui_rx)?)
     } else {
-        // Not a terminal and no prompt: read the piped input as one turn.
         splash::line(&splash);
         modes::print(loop_, args).await
     }
@@ -448,7 +441,6 @@ fn provider(
     Ok(provider)
 }
 
-/// Full-screen interface only for a real interactive session.
 fn use_tui(args: &Args) -> bool {
     !args.print
         && args.steps.is_none()

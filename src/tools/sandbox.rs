@@ -210,9 +210,6 @@ fn is_executable(path: &Path) -> bool {
 fn mac_profile(workspace: &Path, temp: &Path, deny_network: bool) -> Result<String> {
     let workspace = profile_path(workspace)?;
     let temp = profile_path(temp)?;
-    // Network stays denied unless explicitly allowed: reads outside the
-    // workspace are permitted by design, so an open network plus any
-    // interpreter is an exfiltration path.
     let network_rule = if deny_network {
         String::from("(deny network*)\n")
     } else {

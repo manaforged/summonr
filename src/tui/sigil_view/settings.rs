@@ -74,8 +74,6 @@ pub(super) fn workflow_layer(app: App) -> NodeBuilder {
         .child(hit::wire(&app, layer))
 }
 
-/// One row per role: its own seat, or the driving seat dimmed; the saved
-/// names below with the active one bracketed; a name field while saving.
 fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
@@ -398,16 +396,11 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     cells
 }
 
-/// A rendered line in the model picker: a section header or a seat row.
 enum ModelRow {
     Header(&'static str),
     Seat(usize),
 }
 
-/// Lay out `count` seats, `recent` of them recently-used, into display rows.
-/// With `sections`, a "recent" header precedes the recent seats and a
-/// "providers" header precedes the rest; otherwise every seat is one flat
-/// list (the filtered case, where the recent split no longer maps).
 fn list_rows(count: usize, recent: usize, sections: bool) -> Vec<ModelRow> {
     if !sections {
         return (0..count).map(ModelRow::Seat).collect();

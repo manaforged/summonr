@@ -10,7 +10,6 @@ use crate::provider::{Image, UserInput};
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_string, object_usize, parse_args};
 use crate::SKIP_DIRS;
 
-/// The batch-edit ceiling the tool schema advertises as `maxItems`.
 const MAX_EDITS: usize = 16;
 const READ_DEFAULT_LIMIT: usize = 120;
 const READ_MAX_LIMIT: usize = 400;
@@ -76,9 +75,6 @@ impl ToolRegistry {
         self.policy.write_path(&self.relative(&dest)?)?;
         let raw = std::fs::read_to_string(&dest)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        // Edit in LF so byte offsets and line splices never straddle a "\r\n",
-        // then restore the file's own ending so a CRLF file stays CRLF instead
-        // of coming back with mixed line endings.
         let crlf = raw.contains("\r\n");
         let original = if crlf { raw.replace("\r\n", "\n") } else { raw };
         if let Some(ops) = args.get("edits").and_then(Value::as_array)
@@ -310,7 +306,6 @@ pub(super) fn atomic_write(dest: &Path, display: &str, content: &str) -> Result<
         .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))
 }
 
-/// Resolve `@path` workspace files into one user prompt.
 pub(super) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
     let mut out = String::new();
     let mut rest = String::new();
@@ -553,7 +548,6 @@ fn edit_error_context(error: Error, text: &str, args: &Value) -> Error {
     ))
 }
 
-/// One replace / insert_after / delete object applied to `text`.
 fn apply_one(text: &str, op: &Value) -> Result<String> {
     apply_patches(text, vec![parse_patch(text, op)?])
 }
@@ -705,10 +699,6 @@ fn replace_text_patch(text: &str, tag: Option<&str>, old: &str, new: &str) -> Re
         }
     };
     let end_byte = byte + old.len();
-    // Count over bytes: end_byte may fall just past a multibyte char, and a
-    // &str slice there panics. Counting to end_byte (not end_byte - 1) also
-    // extends the patch across a line break the match consumed, so `old`
-    // ending in "\n" merges the next line as exact replacement requires.
     let end_line = text.as_bytes()[..end_byte]
         .iter()
         .filter(|byte| **byte == b'\n')
@@ -751,8 +741,6 @@ fn line_byte(text: &str, line: usize) -> usize {
 }
 
 fn count_matches(text: &str, needle: &str) -> usize {
-    // Non-overlapping, to match how `find` and `match_indices` resolve the
-    // edit: "aa" in "aaa" is one placement, not two.
     text.match_indices(needle).count()
 }
 
@@ -824,7 +812,6 @@ fn apply_sequence(original: &str, ops: &[Value]) -> Result<String> {
     Ok(edited)
 }
 
-/// Validate original-file anchor ranges, then apply from bottom to top.
 fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<String> {
     patches.sort_by_key(|patch| patch.anchor_start);
     for pair in patches.windows(2) {
@@ -836,7 +823,6 @@ fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<String> {
             ));
         }
     }
-    // At a shared boundary, consume the original line before inserting text.
     patches.sort_by_key(|patch| (patch.start, patch.start != patch.end));
     let mut lines = lines(original);
     for patch in patches.into_iter().rev() {

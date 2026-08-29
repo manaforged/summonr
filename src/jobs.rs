@@ -1,5 +1,3 @@
-//! Durable command logs under `<workspace>/.mage/jobs`.
-
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -1075,12 +1075,9 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
 async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Part {
-        /// Writes once, then answers.
         Implementer,
-        /// Tries to write on every review, rejects the first, passes the second.
         Reviewer,
     }
-    /// One provider type playing both seats; records every request it sees.
     struct Cast {
         part: Part,
         rounds: AtomicUsize,

@@ -1,5 +1,3 @@
-//! Live web search and fetch. Runs in Summoner, so every model gets the same tool.
-
 use std::time::Duration;
 
 use crate::config;
@@ -20,19 +18,16 @@ use fetch::{check_url, html_to_md};
 use fetch::{host_blocked, resolves_blocked};
 use results::{Hit, clip, format_hits, parse_rss};
 
-/// Native public-web search and fetch.
 #[derive(Clone)]
 pub(crate) struct Search {
     http: reqwest::Client,
     count: usize,
     allowed: Vec<String>,
     excluded: Vec<String>,
-    /// Test-only override of the search API origin.
     origin: Option<String>,
 }
 
 impl Search {
-    /// Load optional result limits from `~/.mage/config.toml`.
     pub(crate) fn discover() -> Result<Self> {
         let file = config::load()?.search;
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);

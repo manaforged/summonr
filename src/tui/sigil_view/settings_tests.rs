@@ -156,7 +156,6 @@ fn model_picker_sections_recent_then_providers() {
         let providers_at = frame.find("providers").unwrap_or(0);
         assert!(recent_at < providers_at, "recent must sit first:\n{frame}");
 
-        // A filter query collapses the sections into one flat match list.
         app.replace_model_draft("glm".to_string());
         let tree = app.clone();
         let filtered = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
@@ -496,7 +495,6 @@ fn the_workflow_card_lists_roles_seats_and_saved_names() {
     });
 }
 
-/// A terminal mouse report, mapped the way the live host maps it.
 fn mouse(kind: crossterm::event::MouseEventKind, col: usize, row: usize) -> sigil_hal::ShellEvent {
     let mut last = sigil_hal::Point::new(0.0, 0.0);
     sigil_tui::map_mouse(

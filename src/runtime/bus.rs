@@ -1,12 +1,10 @@
 use super::*;
 
 impl<P: Provider> Loop<P> {
-    /// Register on the session bus when `MAGE_BUS` enables it.
     pub(super) fn join_bus(&mut self) {
         self.bus = crate::bus::Bus::join(&self.session_id(), &self.model, &self.workspace);
     }
 
-    /// Registry tools plus the bus tools when this session is on the bus.
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {
         let mut definitions = self.tools.definitions();
         if self.bus.is_some() {
@@ -22,7 +20,6 @@ impl<P: Provider> Loop<P> {
         self.schema.as_ref().map_or(&[], Vec::as_slice)
     }
 
-    /// Execute a bus tool against this session's handle.
     pub(super) fn bus_execute(&mut self, call: &ToolCall) -> Result<String> {
         let name = call.function.name.as_str();
         if self.bus.is_none() {
@@ -47,14 +44,12 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    /// Refresh bus presence with a status line ("idle", "working: edit_file").
     pub fn bus_heartbeat(&mut self, status: &str) {
         if let Some(bus) = &mut self.bus {
             bus.heartbeat(&self.model.clone(), &self.workspace.clone(), status);
         }
     }
 
-    /// Observe new mail for display and retain it for the next provider round.
     pub fn bus_poll(&mut self) -> Result<Vec<crate::bus::Mail>> {
         let mail = match &mut self.bus {
             Some(bus) => bus.poll()?,
@@ -80,7 +75,6 @@ impl<P: Provider> Loop<P> {
         Ok(self.mail.drain(..).collect())
     }
 
-    /// The live roster, for `/agents`.
     pub fn bus_agents(&self) -> Vec<crate::bus::Agent> {
         match &self.bus {
             Some(bus) => bus.agents(),

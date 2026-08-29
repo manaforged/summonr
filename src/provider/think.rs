@@ -1,6 +1,3 @@
-//! Open-weight CoT is often `<think>` in content. Frontier hosts omit it
-//! or send a sibling field. One hoist, one outbound `reasoning_content`.
-
 use serde::Deserialize;
 use serde_json::Value;
 

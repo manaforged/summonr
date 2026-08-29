@@ -40,7 +40,7 @@ impl Client {
             model: ModelIden::new(kind, request.model.clone()),
         };
         let chat = to_chat(request)?;
-        let options = chat_options(&self.headers, request.max_output_tokens);
+        let options = chat_options(&self.headers, request.max_output_tokens, request.effort);
         if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
             return self.stream_native(genai, target, chat, &options).await;
         }
@@ -160,7 +160,20 @@ impl Client {
     }
 }
 
-fn chat_options(headers: &[(String, String)], max_tokens: u32) -> ChatOptions {
+const THINKING_ROOM: u32 = 32_768;
+
+fn chat_options(
+    headers: &[(String, String)],
+    max_tokens: u32,
+    effort: Option<crate::provider::Effort>,
+) -> ChatOptions {
+    use crate::provider::Effort;
+    use genai::chat::ReasoningEffort;
+    let max_tokens = if effort.is_some_and(|effort| effort != Effort::None) {
+        max_tokens.max(THINKING_ROOM)
+    } else {
+        max_tokens
+    };
     let mut options = ChatOptions::default()
         .with_max_tokens(max_tokens)
         .with_capture_content(true)
@@ -171,6 +184,14 @@ fn chat_options(headers: &[(String, String)], max_tokens: u32) -> ChatOptions {
     if !headers.is_empty() {
         let extra: std::collections::HashMap<String, String> = headers.iter().cloned().collect();
         options = options.with_extra_headers(extra);
+    }
+    if let Some(effort) = effort.filter(|effort| *effort != Effort::None) {
+        options = options.with_reasoning_effort(match effort {
+            Effort::None => ReasoningEffort::None,
+            Effort::Low => ReasoningEffort::Low,
+            Effort::Medium => ReasoningEffort::Medium,
+            Effort::High => ReasoningEffort::High,
+        });
     }
     options
 }

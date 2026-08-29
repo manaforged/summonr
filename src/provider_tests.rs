@@ -7,6 +7,7 @@ fn request(messages: Vec<Message>) -> CompletionRequest {
         tools: Vec::new(),
         max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
         emit_deltas: true,
+        effort: None,
     }
 }
 
@@ -276,5 +277,57 @@ fn only_openai_host_receives_a_prompt_cache_key() -> Result<()> {
     assert!(generic.get("prompt_cache_key").is_none());
     let openai = Client::new("k", "https://api.openai.com/v1")?.request_body(&req, false)?;
     assert_eq!(openai["prompt_cache_key"], json!(req.prefix_hash()));
+    Ok(())
+}
+
+#[test]
+fn effort_lands_in_the_body_and_the_body_table_still_wins() -> Result<()> {
+    let client = Client::new("k", "http://h/v1/")?;
+    let mut req = request(vec![Message::user("hi")]);
+    assert!(
+        client
+            .request_body(&req, true)?
+            .get("reasoning_effort")
+            .is_none()
+    );
+    req.effort = Some(Effort::Low);
+    assert_eq!(client.request_body(&req, true)?["reasoning_effort"], "low");
+    let mut pinned = Client::new("k", "http://h/v1/")?;
+    pinned.body = Some(json!({"reasoning_effort": "high"}));
+    assert_eq!(pinned.request_body(&req, true)?["reasoning_effort"], "high");
+    Ok(())
+}
+
+#[test]
+fn effort_parses_the_four_levels_and_price_prices_fresh_cached_and_output() {
+    assert_eq!(Effort::parse(" High "), Some(Effort::High));
+    assert_eq!(Effort::parse("off"), Some(Effort::None));
+    assert_eq!(Effort::parse("turbo"), None);
+    let price = Price {
+        input: 1.0,
+        output: 4.0,
+        cached: 0.25,
+    };
+    let cost = price.cost(1_000_000, 500_000, 400_000);
+    assert!((cost - (0.6 + 0.1 + 2.0)).abs() < 1e-9, "{cost}");
+    assert_eq!(dollars(cost), "$2.70");
+    assert_eq!(dollars(0.00123), "$0.0012");
+    assert!((price.cost(10, 0, 50) - 0.25 * 10.0 / 1_000_000.0).abs() < 1e-12);
+}
+
+#[test]
+fn effort_none_leaves_the_wire_field_out_and_off_parses_in_config() -> Result<()> {
+    let client = Client::new("k", "http://h/v1/")?;
+    let mut req = request(vec![Message::user("hi")]);
+    req.effort = Some(Effort::None);
+    assert!(
+        client
+            .request_body(&req, true)?
+            .get("reasoning_effort")
+            .is_none()
+    );
+    let parsed: Effort = serde_json::from_str("\"off\"")?;
+    assert_eq!(parsed, Effort::None);
+    drop(serde_json::from_str::<Effort>("\"turbo\"").unwrap_err());
     Ok(())
 }

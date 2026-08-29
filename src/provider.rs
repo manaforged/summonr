@@ -303,6 +303,79 @@ pub struct CompletionRequest {
     pub tools: Vec<ToolDefinition>,
     pub max_output_tokens: u32,
     pub emit_deltas: bool,
+    pub effort: Option<Effort>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    None,
+    Low,
+    Medium,
+    High,
+}
+
+impl<'de> Deserialize<'de> for Effort {
+    fn deserialize<D: serde::Deserializer<'de>>(
+        deserializer: D,
+    ) -> std::result::Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).ok_or_else(|| {
+            serde::de::Error::custom(format!(
+                "effort takes none, low, medium, or high, not `{text}`"
+            ))
+        })
+    }
+}
+
+impl Effort {
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" => Some(Self::None),
+            "low" => Some(Self::Low),
+            "medium" => Some(Self::Medium),
+            "high" => Some(Self::High),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Price {
+    pub input: f64,
+    pub output: f64,
+    #[serde(default)]
+    pub cached: f64,
+}
+
+impl Price {
+    #[must_use]
+    pub fn cost(&self, prompt: u64, completion: u64, cached: u64) -> f64 {
+        let cached = cached.min(prompt);
+        let fresh = prompt - cached;
+        (fresh as f64 * self.input + cached as f64 * self.cached + completion as f64 * self.output)
+            / 1_000_000.0
+    }
+}
+
+#[must_use]
+pub fn dollars(amount: f64) -> String {
+    if amount < 0.01 {
+        format!("${amount:.4}")
+    } else {
+        format!("${amount:.2}")
+    }
 }
 
 impl CompletionRequest {
@@ -569,6 +642,9 @@ impl Client {
         }
         if stream {
             body["stream_options"] = json!({ "include_usage": true });
+        }
+        if let Some(effort) = request.effort.filter(|effort| *effort != Effort::None) {
+            body["reasoning_effort"] = json!(effort.as_str());
         }
         if self.url.contains("api.openai.com") {
             body["prompt_cache_key"] = json!(request.prefix_hash());

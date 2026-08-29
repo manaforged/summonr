@@ -27,6 +27,11 @@ base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3"
 # api_key = "…"   # or ZAI_CODING_API_KEY
 # context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
+# effort = "low"            # reasoning effort: none, low, medium, high
+#                           # (chat/completions `reasoning_effort`; Anthropic and
+#                           # Gemini thinking budgets). `--effort` and `/effort` override.
+# price = { input = 0.6, output = 2.2, cached = 0.11 }   # USD per million tokens;
+#                           # turns /stats and the footer into dollars
 
 [endpoint.glm-intl]
 base_url = "https://api.z.ai/api/coding/paas/v4"
@@ -96,8 +101,11 @@ model = "grok-4.6"
 # [endpoint.gemini]
 # wire = "gemini"
 
-# Native web_search needs no API key.
+# web_search: Bing RSS needs no key; set backend = "brave" with a key
+# (or BRAVE_API_KEY) for stable results.
 # [search]
+# backend = "brave"
+# api_key = "…"
 # count = 5
 # # allowed_domains = ["docs.rs", "doc.rust-lang.org"]
 # # excluded_domains = []

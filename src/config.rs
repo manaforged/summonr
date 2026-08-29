@@ -55,6 +55,8 @@ pub(crate) struct Endpoint {
     pub auth: Option<OAuth>,
     pub body: Option<toml::Value>,
     pub context_window: Option<u32>,
+    pub effort: Option<crate::provider::Effort>,
+    pub price: Option<crate::provider::Price>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
@@ -82,6 +84,8 @@ pub(crate) struct Search {
     pub count: Option<usize>,
     pub allowed_domains: Option<Vec<String>>,
     pub excluded_domains: Option<Vec<String>>,
+    pub backend: Option<String>,
+    pub api_key: Option<String>,
 }
 
 pub(crate) fn path() -> Result<PathBuf> {

@@ -1,6 +1,7 @@
 use crate::durable::tree::Snapshot;
 use crate::durable::work::{
     Decision, Observation, Policy, Stage, Status, StepState, Work, WorkKind, WorkPhase, checks,
+    roman,
 };
 
 const PLAN: &str = "## Steps\n\n1. Write a.txt. Run `true # one`.\n2. Write b.txt. Run `true # two`.\n\n## Contract\n\n- file `b.txt`\n- stdout `cat b.txt` → `done`\n";
@@ -286,4 +287,177 @@ fn the_brief_travels_with_the_checkpoint() {
         Work::load(&path).expect("load").and_then(|work| work.brief),
         Some("touches a.rs".to_string())
     );
+}
+
+#[test]
+fn goal_stops_on_a_stop_decision_or_three_idle_turns() {
+    let mut work = Work::new("build it", Policy::Goal { max_turns: 9 });
+    work.select("build it", &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    work.verify(Snapshot::default()).expect("verify");
+    work.verdict(
+        true,
+        Decision::GoalStop("impossible: no network".to_string()),
+    )
+    .expect("stop");
+    assert_eq!(
+        work.status,
+        Status::Abandoned("impossible: no network".to_string())
+    );
+    assert_eq!(work.steps[0].state, StepState::Blocked);
+    assert_eq!(work.progress().exit_code(), Some(3));
+
+    let mut idle = Work::new("build it", Policy::Goal { max_turns: 9 });
+    idle.select("build it", &[]).expect("select");
+    idle.execute(Snapshot::default()).expect("execute");
+    for turn in 1..=3 {
+        idle.verify(Snapshot::default()).expect("verify");
+        idle.verdict(true, Decision::GoalContinue("more".to_string()))
+            .expect("continue");
+        assert_eq!(idle.idle, turn);
+    }
+    assert!(matches!(idle.status, Status::Abandoned(ref reason) if reason.starts_with("stalled:")));
+    assert_eq!(idle.progress().exit_code(), Some(3));
+}
+
+#[test]
+fn ledger_groups_steps_under_roman_phases() {
+    let plan = "## Steps\n\n### Setup\n\n1. Make a.\n2. Make b.\n\n### Tests\n\n3. Test both.\n";
+    let mut work = Work::new(plan, Policy::Steps);
+    work.select(plan, &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    pass(&mut work);
+    assert_eq!(
+        work.progress().ledger,
+        vec![
+            "I. Setup",
+            "  [x] Make a.",
+            "  [/] Make b.",
+            "II. Tests",
+            "  [ ] Test both."
+        ]
+    );
+    work.abandon("late");
+    assert_eq!(work.progress().ledger[2], "  [!] Make b.");
+    assert!(steps_work().progress().ledger[0].starts_with("[/] Write a.txt"));
+    assert!(Work::new("x", Policy::Single).progress().ledger.is_empty());
+    assert_eq!(roman(4), "IV");
+    assert_eq!(roman(14), "XIV");
+    assert_eq!(roman(49), "XLIX");
+    assert_eq!(roman(99), "XCIX");
+    assert_eq!(roman(2024), "MMXXIV");
+}
+
+#[test]
+fn stall_fuse_counts_turns_since_the_last_change() {
+    let mut work = Work::new("build it", Policy::Goal { max_turns: 9 });
+    work.select("build it", &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    let edited = Snapshot::with(&["a.rs"]);
+    work.verify(edited.clone()).expect("verify");
+    assert_eq!(work.idle, 0, "an edit is not idle");
+    work.verdict(true, Decision::GoalContinue("more".to_string()))
+        .expect("continue");
+    assert_eq!(
+        work.base.as_ref(),
+        Some(&edited),
+        "the base advances to the accepted capture"
+    );
+    for turn in 1..=3 {
+        work.verify(edited.clone()).expect("verify");
+        work.verdict(true, Decision::GoalContinue("more".to_string()))
+            .expect("continue");
+        assert_eq!(work.idle, turn);
+    }
+    assert!(matches!(work.status, Status::Abandoned(ref reason) if reason.starts_with("stalled:")));
+
+    let mut steps = steps_work();
+    let first = Snapshot::with(&["a.txt"]);
+    steps.verify(first.clone()).expect("verify");
+    steps
+        .verdict(true, Decision::Automatic)
+        .expect("step one passes");
+    assert_eq!(
+        steps.base.as_ref(),
+        Some(&first),
+        "each step diffs against the last"
+    );
+}
+
+#[test]
+fn touched_paths_accumulate_across_turns_including_failed_ones() {
+    let mut work = steps_work();
+    work.verify(Snapshot::with(&["a.txt"])).expect("verify");
+    work.verdict(false, Decision::Automatic).expect("fail");
+    work.verify(Snapshot::with(&["a.txt", "b.txt"]))
+        .expect("verify");
+    work.verdict(true, Decision::Automatic).expect("pass");
+    assert_eq!(work.progress().touched, vec!["a.txt", "b.txt"]);
+}
+
+#[test]
+fn an_edit_the_snapshot_cannot_see_still_counts_as_progress() {
+    let mut work = Work::new("build it", Policy::Goal { max_turns: 9 });
+    work.select("build it", &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    work.mark_edit();
+    work.verify(Snapshot::default()).expect("verify");
+    assert_eq!(work.idle, 0, "a mutating tool call resets the fuse");
+    work.verdict(true, Decision::GoalContinue("more".to_string()))
+        .expect("continue");
+    work.verify(Snapshot::default()).expect("verify");
+    assert_eq!(work.idle, 1, "the flag is per turn");
+}
+
+#[test]
+fn a_long_plan_gets_a_compact_ledger() {
+    let plan: String = std::iter::once("## Steps\n\n### Big\n\n".to_string())
+        .chain((1..=45).map(|n| format!("{n}. Step {n}.\n")))
+        .collect();
+    let mut work = Work::new(&plan, Policy::Steps);
+    work.select(&plan, &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    pass(&mut work);
+    pass(&mut work);
+    let ledger = work.progress().ledger;
+    assert_eq!(
+        ledger,
+        vec!["I. Big", "  [x] 2 done", "  [/] Step 3.", "  [ ] 42 later"],
+        "{ledger:?}"
+    );
+}
+
+#[test]
+fn a_deferral_keeps_the_turn_open_three_times_then_stops() {
+    let mut work = Work::new("build it", Policy::Goal { max_turns: 9 });
+    work.select("build it", &[]).expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    for _ in 0..3 {
+        assert!(work.defer("job still running".to_string()).expect("defer"));
+        assert_eq!(work.stage(), Some(Stage::Execute));
+    }
+    assert!(!work.defer("job still running".to_string()).expect("capped"));
+    assert_eq!(work.pending.len(), 3);
+    assert_eq!(work.progress().rounds, 0, "deferrals are not turns");
+}
+
+#[test]
+fn a_failing_gate_with_no_change_ends_as_stalled_not_three_strikes() {
+    let mut work = Work::new("build it", Policy::Goal { max_turns: 9 });
+    work.select("build it", &["false".to_string()])
+        .expect("select");
+    work.execute(Snapshot::default()).expect("execute");
+    for _ in 0..3 {
+        work.verify(Snapshot::default()).expect("verify");
+        if work.terminal() {
+            break;
+        }
+        work.verdict(false, Decision::Automatic).expect("fail");
+    }
+    assert!(
+        matches!(work.status, Status::Abandoned(ref reason) if reason.starts_with("stalled:")),
+        "{:?}",
+        work.status
+    );
+    assert_eq!(work.progress().exit_code(), Some(3));
 }

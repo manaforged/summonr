@@ -3,6 +3,7 @@ use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::error::{Error, Result};
+use crate::provider::{Effort, Price};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
 const GLM_INTL: &str = "https://api.z.ai/api/coding/paas/v4";
@@ -14,7 +15,7 @@ const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
 const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Endpoint {
     pub name: String,
     pub model: String,
@@ -23,6 +24,8 @@ pub struct Endpoint {
     pub oauth: Option<crate::config::OAuth>,
     pub body: Option<serde_json::Value>,
     pub context_window: Option<u32>,
+    pub effort: Option<Effort>,
+    pub price: Option<Price>,
     pub env: BTreeMap<String, String>,
     pub headers: BTreeMap<String, String>,
     pub wire: Wire,
@@ -206,6 +209,8 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
             oauth: None,
             body: None,
             context_window: None,
+            effort: None,
+            price: None,
             env: BTreeMap::new(),
             headers: BTreeMap::new(),
             wire: Wire::Completions,
@@ -226,6 +231,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
         .or_else(|| std::env::var("MAGE_MODEL").ok())
         .filter(|value| !value.trim().is_empty());
 
+    let fallback = chosen.is_none();
     let chosen = chosen.unwrap_or_else(|| "glm".to_string());
     let mut endpoint = builtin(&chosen).or_else(|| from_file(&file, &chosen));
 
@@ -252,7 +258,19 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
         endpoint.model = named_model(&endpoint.name, &endpoint.model);
     }
 
-    fill_key(endpoint, require_key)
+    fill_key(endpoint, require_key).map_err(|error| {
+        if !fallback {
+            return error;
+        }
+        let list = PRESETS
+            .iter()
+            .map(|preset| preset.name)
+            .collect::<Vec<_>>()
+            .join(", ");
+        Error::Config(format!(
+            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.mage/config.toml, run `summon login NAME` for device login, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (glm: {error})"
+        ))
+    })
 }
 
 fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
@@ -265,6 +283,8 @@ fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         oauth: row.auth.clone(),
         body: row.body.as_ref().map(json),
         context_window: row.context_window,
+        effort: row.effort,
+        price: row.price,
         env: row.env.clone(),
         headers: row.headers.clone(),
         wire: row
@@ -295,6 +315,12 @@ fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     }
     if let Some(window) = row.context_window {
         endpoint.context_window = Some(window);
+    }
+    if let Some(effort) = row.effort {
+        endpoint.effort = Some(effort);
+    }
+    if let Some(price) = row.price {
+        endpoint.price = Some(price);
     }
     for (key, value) in &row.env {
         endpoint.env.insert(key.clone(), value.clone());
@@ -528,6 +554,8 @@ fn builtin(name: &str) -> Option<Endpoint> {
         oauth: row.oauth.map(|make| make()),
         body: None,
         context_window: None,
+        effort: None,
+        price: None,
         env: BTreeMap::new(),
         headers: row
             .headers

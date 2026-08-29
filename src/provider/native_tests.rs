@@ -3,7 +3,7 @@ use crate::provider::{FunctionDefinition, ToolDefinition, ToolKind};
 
 #[test]
 fn chat_options_use_the_harness_token_cap() {
-    let options = chat_options(&[], 8192);
+    let options = chat_options(&[], 8192, None);
     assert_eq!(options.max_tokens, Some(8192));
 }
 
@@ -35,6 +35,7 @@ fn to_chat_lifts_system_and_tools() -> Result<()> {
         }],
         max_output_tokens: 128,
         emit_deltas: true,
+        effort: None,
     };
     let chat = to_chat(&request)?;
     assert_eq!(chat.system.as_deref(), Some("be brief"));
@@ -56,6 +57,7 @@ fn to_chat_marks_the_last_message_for_prompt_caching() -> Result<()> {
         tools: Vec::new(),
         max_output_tokens: 128,
         emit_deltas: false,
+        effort: None,
     };
     let chat = to_chat(&request)?;
     let last = chat.messages.last().expect("a message");
@@ -64,4 +66,27 @@ fn to_chat_marks_the_last_message_for_prompt_caching() -> Result<()> {
         Some(CacheControl::Ephemeral)
     ));
     Ok(())
+}
+
+#[test]
+fn chat_options_carry_the_effort_dial() {
+    use crate::provider::Effort;
+    use genai::chat::ReasoningEffort;
+    assert!(chat_options(&[], 8192, None).reasoning_effort.is_none());
+    assert_eq!(
+        chat_options(&[], 8192, Some(Effort::High)).max_tokens,
+        Some(32_768),
+        "a thinking budget needs room under max_tokens"
+    );
+    assert_eq!(chat_options(&[], 8192, None).max_tokens, Some(8192));
+    assert!(
+        chat_options(&[], 8192, Some(Effort::None))
+            .reasoning_effort
+            .is_none(),
+        "none leaves the wire field out on every wire"
+    );
+    assert!(matches!(
+        chat_options(&[], 8192, Some(Effort::Low)).reasoning_effort,
+        Some(ReasoningEffort::Low)
+    ));
 }

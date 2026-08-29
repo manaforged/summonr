@@ -4,7 +4,8 @@ use crate::provider::Message;
 
 mod catalog;
 
-pub use catalog::{last_for, list, resolve_id};
+pub(crate) use catalog::name_of as catalog_name;
+pub use catalog::{export, last_for, list, resolve_id, set_name, short};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionInfo {
@@ -13,6 +14,7 @@ pub struct SessionInfo {
     pub cwd: Option<String>,
     pub model: Option<String>,
     pub preview: String,
+    pub name: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

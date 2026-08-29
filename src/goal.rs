@@ -6,9 +6,11 @@ pub const DEFAULT_MAX_TURNS: usize = 20;
 const JUDGE_CONTEXT_CHARS: usize = 4_000;
 
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
-line of JSON: {\"done\": true|false, \"reason\": \"<one sentence>\"}. Mark done only when the \
-response shows concrete evidence — a command result, file, or test output — that the objective \
-is met. When it is not met, name what remains.";
+line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"reason\": \
+\"<one sentence>\"}. `done` only when the response shows concrete evidence — a command result, \
+file, or test output — that the objective is met. `continue` when work remains; name what \
+remains. `stalled` when the response reports no concrete action on the objective. \
+`impossible` when the objective cannot be met in this workspace; name the blocker.";
 
 pub(crate) async fn decision<P: Provider>(
     loop_: &mut Loop<P>,
@@ -24,10 +26,11 @@ pub(crate) async fn decision<P: Provider>(
         Ok((reply, judge_usage)) => {
             usage.add(&judge_usage);
             let verdict = parse_verdict(&reply);
-            if verdict.done {
-                Decision::GoalComplete
-            } else {
-                Decision::GoalContinue(verdict.reason)
+            match verdict.state {
+                State::Done => Decision::GoalComplete,
+                State::Continue => Decision::GoalContinue(verdict.reason),
+                State::Stalled => Decision::GoalStop(format!("stalled: {}", verdict.reason)),
+                State::Impossible => Decision::GoalStop(format!("impossible: {}", verdict.reason)),
             }
         }
         Err(error) => Decision::GoalContinue(format!("judge unavailable: {error}")),
@@ -70,15 +73,23 @@ fn judge_user(objective: &str, reply: &str, evidence: &str) -> String {
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    Done,
+    Continue,
+    Stalled,
+    Impossible,
+}
+
 struct Verdict {
-    done: bool,
+    state: State,
     reason: String,
 }
 
 impl Verdict {
     fn continue_(reason: String) -> Self {
         Self {
-            done: false,
+            state: State::Continue,
             reason,
         }
     }
@@ -97,7 +108,16 @@ fn parse_verdict(reply: &str) -> Verdict {
     }
     match serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
         Ok(value) => Verdict {
-            done: matches!(value.get("done"), Some(serde_json::Value::Bool(true))),
+            state: match value.get("verdict").and_then(|verdict| verdict.as_str()) {
+                Some("done") => State::Done,
+                Some("stalled") => State::Stalled,
+                Some("impossible") => State::Impossible,
+                Some(_) => State::Continue,
+                None if matches!(value.get("done"), Some(serde_json::Value::Bool(true))) => {
+                    State::Done
+                }
+                None => State::Continue,
+            },
             reason: value
                 .get("reason")
                 .and_then(|reason| reason.as_str())

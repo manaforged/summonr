@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
 use std::io;
 use std::path::Path;
@@ -8,6 +9,10 @@ use thiserror::Error;
 use super::tree::{Snapshot, changed};
 
 const REPAIR_LIMIT: u16 = 3;
+const STALL_LIMIT: u16 = 3;
+const DEFER_LIMIT: u16 = 3;
+const LEDGER_WIDTH: usize = 72;
+const LEDGER_MAX: usize = 40;
 const DECISION: &str = "Goal Work requires a completion decision";
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -71,6 +76,8 @@ pub(crate) struct Check {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Step {
     pub(crate) title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) phase: Option<String>,
     pub(crate) checks: Vec<usize>,
     pub(crate) state: StepState,
     pub(crate) attempts: u16,
@@ -78,9 +85,10 @@ pub(crate) struct Step {
 }
 
 impl Step {
-    fn new(title: &str, checks: Vec<usize>) -> Self {
+    fn new(title: &str, phase: Option<&str>, checks: Vec<usize>) -> Self {
         Self {
             title: title.to_string(),
+            phase: phase.map(str::to_string),
             checks,
             state: StepState::Pending,
             attempts: 0,
@@ -99,6 +107,7 @@ pub(crate) enum Decision {
     Automatic,
     GoalComplete,
     GoalContinue(String),
+    GoalStop(String),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -115,13 +124,21 @@ pub(crate) struct Work {
     pub(crate) pending: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) brief: Option<String>,
+    #[serde(default)]
+    pub(crate) idle: u16,
+    #[serde(default)]
+    pub(crate) edited: bool,
+    #[serde(default)]
+    pub(crate) deferred: u16,
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub(crate) touched: BTreeSet<String>,
 }
 
 impl Work {
     pub(crate) fn new(objective: &str, policy: Policy) -> Self {
         let steps = match policy {
             Policy::Steps => Vec::new(),
-            Policy::Single | Policy::Goal { .. } => vec![Step::new("Objective", Vec::new())],
+            Policy::Single | Policy::Goal { .. } => vec![Step::new("Objective", None, Vec::new())],
         };
         Self {
             objective: objective.to_string(),
@@ -135,6 +152,10 @@ impl Work {
             candidate: None,
             pending: Vec::new(),
             brief: None,
+            idle: 0,
+            edited: false,
+            deferred: 0,
+            touched: BTreeSet::new(),
         }
     }
 
@@ -170,7 +191,7 @@ impl Work {
                     if index == last {
                         owned = (0..checks.len()).collect();
                     }
-                    Step::new(&step.text, owned)
+                    Step::new(&step.text, step.phase.as_deref(), owned)
                 })
                 .collect();
             self.active = None;
@@ -202,6 +223,14 @@ impl Work {
             .as_ref()
             .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
         let paths = changed(base, &capture);
+        self.touched.extend(paths.iter().cloned());
+        self.idle = if paths.is_empty() && !self.edited {
+            self.idle.saturating_add(1)
+        } else {
+            0
+        };
+        self.edited = false;
+        self.deferred = 0;
         self.candidate = Some(Candidate {
             paths: paths.clone(),
             snapshot: capture,
@@ -262,7 +291,7 @@ impl Work {
                         }
                         self.active = Some(next);
                         self.status = Status::Active(Stage::Execute);
-                        self.candidate = None;
+                        self.rebase();
                     }
                     None => {
                         self.active = None;
@@ -270,11 +299,22 @@ impl Work {
                     }
                 }
             }
+            (Policy::Goal { .. }, Decision::GoalStop(reason)) => {
+                step.state = StepState::Blocked;
+                self.active = None;
+                self.status = Status::Abandoned(reason);
+            }
             (Policy::Goal { max_turns }, Decision::GoalContinue(reason)) => {
-                if step.rounds < max_turns {
+                if self.idle >= STALL_LIMIT {
+                    step.state = StepState::Blocked;
+                    self.active = None;
+                    self.status = Status::Abandoned(format!(
+                        "stalled: no workspace change in {STALL_LIMIT} turns"
+                    ));
+                } else if step.rounds < max_turns {
                     step.state = StepState::Active;
                     self.status = Status::Active(Stage::Execute);
-                    self.candidate = None;
+                    self.rebase();
                     self.pending.push(format!(
                         "[summon goal: the objective is not complete — {reason}. Continue with the next concrete action.]"
                     ));
@@ -290,6 +330,18 @@ impl Work {
             }
         }
         Ok(())
+    }
+
+    pub(crate) fn defer(&mut self, note: String) -> Result<bool, WorkError> {
+        if self.stage() != Some(Stage::Execute) {
+            return Err(WorkError("a deferral requires Execute".to_string()));
+        }
+        if self.deferred >= DEFER_LIMIT {
+            return Ok(false);
+        }
+        self.deferred += 1;
+        self.pending.push(note);
+        Ok(true)
     }
 
     pub(crate) fn reject(&mut self, findings: &str) -> Result<(), WorkError> {
@@ -310,17 +362,33 @@ impl Work {
             .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
-        if policy != Policy::Single && step.attempts >= REPAIR_LIMIT {
+        if matches!(policy, Policy::Goal { .. }) && self.idle >= STALL_LIMIT {
+            step.state = StepState::Blocked;
+            self.active = None;
+            self.status = Status::Abandoned(format!(
+                "stalled: no workspace change in {STALL_LIMIT} turns"
+            ));
+        } else if policy != Policy::Single && step.attempts >= REPAIR_LIMIT {
             step.state = StepState::Blocked;
             self.active = None;
             self.status = Status::Abandoned("completion checks failed three times".to_string());
         } else {
             step.state = StepState::Active;
             self.status = Status::Active(Stage::Execute);
-            self.candidate = None;
+            self.rebase();
             self.pending.push(continuation);
         }
         Ok(())
+    }
+
+    pub(crate) fn mark_edit(&mut self) {
+        self.edited = true;
+    }
+
+    fn rebase(&mut self) {
+        if let Some(candidate) = self.candidate.take() {
+            self.base = Some(candidate.snapshot);
+        }
     }
 
     pub(crate) fn abandon(&mut self, reason: &str) {
@@ -389,7 +457,72 @@ impl Work {
             rounds: step.map_or(0, |step| step.rounds),
             max_turns,
             reason,
+            ledger: self.ledger(),
+            touched: self.touched.iter().cloned().collect(),
         }
+    }
+
+    fn ledger(&self) -> Vec<String> {
+        if self.policy != Policy::Steps {
+            return Vec::new();
+        }
+        let mut lines = Vec::new();
+        let mut phase: Option<&str> = None;
+        let mut number = 0;
+        let compact = self.steps.len() > LEDGER_MAX;
+        for step in &self.steps {
+            if step.phase.as_deref() != phase && step.phase.is_some() {
+                phase = step.phase.as_deref();
+                number += 1;
+                let heading: String = phase
+                    .unwrap_or_default()
+                    .chars()
+                    .take(LEDGER_WIDTH)
+                    .collect();
+                lines.push(format!("{}. {heading}", roman(number)));
+            }
+            if compact && step.state != StepState::Active {
+                let tally = |lines: &mut Vec<String>, mark: &str, word: &str| {
+                    let suffix = format!(" {word}");
+                    match lines.last_mut() {
+                        Some(line)
+                            if line.starts_with(&format!("  {mark} "))
+                                && line.ends_with(&suffix) =>
+                        {
+                            let count: usize = line
+                                .split_whitespace()
+                                .nth(2)
+                                .and_then(|n| n.parse().ok())
+                                .unwrap_or(1);
+                            *line = format!("  {mark} {} {word}", count + 1);
+                        }
+                        _ => lines.push(format!("  {mark} 1 {word}")),
+                    }
+                };
+                match step.state {
+                    StepState::Completed => tally(&mut lines, "[x]", "done"),
+                    StepState::Pending => tally(&mut lines, "[ ]", "later"),
+                    StepState::Blocked => tally(&mut lines, "[!]", "blocked"),
+                    StepState::Active => {}
+                }
+                continue;
+            }
+            let mark = match step.state {
+                StepState::Pending => "[ ]",
+                StepState::Active => "[/]",
+                StepState::Completed => "[x]",
+                StepState::Blocked => "[!]",
+            };
+            let indent = if phase.is_some() { "  " } else { "" };
+            let title: String = step.title.chars().take(LEDGER_WIDTH).collect();
+            let ellipsis = if step.title.chars().count() > LEDGER_WIDTH {
+                "…"
+            } else {
+                ""
+            };
+            lines.push(format!("{indent}{mark} {title}{ellipsis}"));
+        }
+        lines
     }
 
     pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
@@ -405,6 +538,33 @@ impl Work {
             Err(error) => Err(error),
         }
     }
+}
+
+pub(crate) fn roman(number: usize) -> String {
+    const DIGITS: [(usize, &str); 13] = [
+        (1000, "M"),
+        (900, "CM"),
+        (500, "D"),
+        (400, "CD"),
+        (100, "C"),
+        (90, "XC"),
+        (50, "L"),
+        (40, "XL"),
+        (10, "X"),
+        (9, "IX"),
+        (5, "V"),
+        (4, "IV"),
+        (1, "I"),
+    ];
+    let mut rest = number;
+    let mut text = String::new();
+    for (value, glyph) in DIGITS {
+        while rest >= value {
+            text.push_str(glyph);
+            rest -= value;
+        }
+    }
+    text
 }
 
 pub(crate) fn checks(
@@ -497,6 +657,10 @@ pub struct WorkProgress {
     pub rounds: u32,
     pub max_turns: u32,
     pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ledger: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub touched: Vec<String>,
 }
 
 impl WorkProgress {

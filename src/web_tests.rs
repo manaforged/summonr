@@ -8,6 +8,7 @@ impl Search {
             allowed: Vec::new(),
             excluded: Vec::new(),
             origin: Some(origin.to_string()),
+            brave: None,
         })
     }
 }
@@ -67,4 +68,17 @@ fn html_keeps_links_and_headings() {
     assert!(md.contains("# Title"));
     assert!(md.contains("[A](https://a.dev)"));
     assert!(!md.contains("alert"));
+}
+
+#[test]
+fn brave_json_becomes_hits_and_garbage_is_named() {
+    let hits = parse_brave(
+        r#"{"web":{"results":[{"title":"LazyLock in std::sync","url":"https://doc.rust-lang.org/std/sync/struct.LazyLock.html","description":"A value which is initialized on the first access."},{"title":"no url"}]}}"#,
+    )
+    .expect("parse");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "LazyLock in std::sync");
+    assert!(hits[0].snippet.starts_with("A value"));
+    drop(parse_brave("<html>").unwrap_err());
+    assert!(parse_brave("{}").expect("empty").is_empty());
 }

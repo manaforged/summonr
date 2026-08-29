@@ -25,6 +25,19 @@ fn parses_numbered_items_with_continuations_and_checks() {
 }
 
 #[test]
+fn phase_headings_group_the_steps() {
+    let plan = "## Steps\n\n### Setup\n\n1. Make `a`.\n2. Make `b`.\n\n### Tests\n\n3. Test both. Run `cargo test`.\n\n## Notes\n\n### Not a phase\n";
+    let steps = parse(plan).unwrap_or_default();
+    assert_eq!(steps.len(), 3);
+    assert_eq!(steps[0].phase.as_deref(), Some("Setup"));
+    assert_eq!(steps[1].phase.as_deref(), Some("Setup"));
+    assert_eq!(steps[2].phase.as_deref(), Some("Tests"));
+    assert_eq!(steps[2].checks, vec!["cargo test"]);
+    let flat = parse(PLAN).unwrap_or_default();
+    assert!(flat.iter().all(|step| step.phase.is_none()));
+}
+
+#[test]
 fn missing_section_is_an_error() {
     parse("# Plan\n\n1. no heading\n").unwrap_err();
     parse("## Steps\n\nnothing numbered\n").unwrap_err();

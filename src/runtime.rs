@@ -49,7 +49,7 @@ impl Budget {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Turn {
     pub text: String,
     pub events: Vec<Event>,
@@ -63,6 +63,14 @@ pub struct Loop<P> {
     provider: P,
     model: String,
     seats: BTreeMap<workflow::Role, (P, String)>,
+    tuning: BTreeMap<
+        workflow::Role,
+        (
+            Option<crate::provider::Effort>,
+            Option<crate::provider::Price>,
+        ),
+    >,
+    price: Option<crate::provider::Price>,
     system_prompt: String,
     plan: bool,
     tools: ToolRegistry,
@@ -75,6 +83,9 @@ pub struct Loop<P> {
     spent_tokens: u64,
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
+    effort: Option<crate::provider::Effort>,
+    turn_started: u64,
+    accepted: bool,
     workspace: PathBuf,
     bus: Option<crate::bus::Bus>,
     mail: std::collections::VecDeque<crate::bus::Mail>,
@@ -94,6 +105,20 @@ impl<P: Provider> Loop<P> {
             (&self.provider, self.model.as_str()),
             |(provider, model)| (provider, model.as_str()),
         )
+    }
+
+    pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<crate::provider::Effort> {
+        self.tuning
+            .get(&role)
+            .and_then(|(effort, _)| *effort)
+            .or(self.effort)
+    }
+
+    pub(crate) fn price_for(&self, role: workflow::Role) -> Option<crate::provider::Price> {
+        self.tuning
+            .get(&role)
+            .and_then(|(_, price)| *price)
+            .or(self.price)
     }
 
     fn round_role(&self) -> workflow::Role {

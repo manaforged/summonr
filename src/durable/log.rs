@@ -317,6 +317,10 @@ pub(crate) fn work_path(session: &Path) -> PathBuf {
     session.with_file_name(WORK)
 }
 
+pub(crate) fn name_path(session: &Path) -> PathBuf {
+    session.with_file_name("name")
+}
+
 pub(crate) fn sessions_dir(home: &Path) -> PathBuf {
     home.join(DIR)
 }

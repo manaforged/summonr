@@ -6,6 +6,8 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
+const FINGERPRINT_MAX: u64 = 256 * 1024;
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u32);
 
@@ -30,15 +32,36 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .unwrap_or_default();
+        let mark = if metadata.len() <= FINGERPRINT_MAX {
+            std::fs::read(&path).map_or(modified.subsec_nanos(), |bytes| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                bytes.hash(&mut hasher);
+                hasher.finish() as u32
+            })
+        } else {
+            modified.subsec_nanos()
+        };
         files.insert(
             relative.to_string_lossy().replace('\\', "/"),
-            Entry(metadata.len(), modified.as_secs(), modified.subsec_nanos()),
+            Entry(metadata.len(), modified.as_secs(), mark),
         );
     }
     Ok(Snapshot(files))
 }
 
 impl Snapshot {
+    #[cfg(test)]
+    pub(crate) fn with(paths: &[&str]) -> Self {
+        Self(
+            paths
+                .iter()
+                .enumerate()
+                .map(|(index, path)| ((*path).to_string(), Entry(index as u64 + 1, 0, 0)))
+                .collect(),
+        )
+    }
+
     pub(crate) fn matches(&self, other: &Snapshot, paths: &[String]) -> bool {
         paths
             .iter()
@@ -63,7 +86,7 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     paths
 }
 
-fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
+pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
@@ -85,6 +108,12 @@ fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
             .map(|name| PathBuf::from(String::from_utf8_lossy(name).into_owned()))
             .collect());
     }
+    let mut found = Vec::new();
+    walk(root, root, &mut found)?;
+    Ok(found)
+}
+
+pub(crate) fn walked(root: &Path) -> io::Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     walk(root, root, &mut found)?;
     Ok(found)

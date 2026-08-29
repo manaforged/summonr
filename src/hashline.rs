@@ -25,6 +25,24 @@ pub fn tagged_text(content: &str) -> String {
 }
 
 #[must_use]
+pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize) -> String {
+    if total == 0 || lines.is_empty() {
+        return format!("lines 0-0/{total}");
+    }
+    let last = first + lines.len() - 1;
+    let mut out = format!("lines {}-{}/{}", first + 1, last + 1, total);
+    for (offset, line) in lines.iter().enumerate() {
+        out.push('\n');
+        out.push_str(&(first + offset + 1).to_string());
+        out.push(':');
+        out.push_str(&line_hash(line));
+        out.push('|');
+        out.push_str(line);
+    }
+    out
+}
+
+#[must_use]
 pub(crate) fn tagged_span(content: &str, first: usize, last: usize) -> String {
     let total = content.lines().count();
     if total == 0 {
@@ -76,7 +94,7 @@ fn parse_tag(tag: &str) -> Result<Tag> {
         return Ok(Tag::Hash(tag.to_string()));
     }
     Err(Error::Tool(format!(
-        "stale or unknown tag `{tag}` — read the file again"
+        "`{tag}` is not a tag — pass N:hash exactly as read_file printed it"
     )))
 }
 

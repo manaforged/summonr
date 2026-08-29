@@ -4,15 +4,17 @@ use regex::Regex;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::hashline::{dirty_span, line_hash, resolve_span, tagged_span, tagged_text};
+use crate::hashline::{
+    dirty_span, line_hash, resolve_span, tagged_lines, tagged_span, tagged_text,
+};
 use crate::provider::{Image, UserInput};
 
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_string, object_usize, parse_args};
 use crate::SKIP_DIRS;
 
 const MAX_EDITS: usize = 16;
-const READ_DEFAULT_LIMIT: usize = 120;
-const READ_MAX_LIMIT: usize = 400;
+const READ_DEFAULT_LIMIT: usize = 300;
+const READ_MAX_LIMIT: usize = 1000;
 const READ_MAX_BYTES: usize = 2 * 1024 * 1024;
 const SMALL_FILE_LINES: usize = 80;
 const LIST_MAX: usize = 200;
@@ -23,6 +25,7 @@ pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
     pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
+        use std::io::BufRead;
         let args: Value = parse_args("read_file", arguments)?;
         let path = object_string(&args, "path")?;
         let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
@@ -30,27 +33,62 @@ impl ToolRegistry {
             .unwrap_or(READ_DEFAULT_LIMIT)
             .clamp(1, READ_MAX_LIMIT);
         let canonical = self.resolve_existing(path)?;
-        let bytes = std::fs::read(&canonical)
+        let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        if bytes.len() > READ_MAX_BYTES {
-            return Err(Error::Tool(format!(
-                "`{path}` is larger than {READ_MAX_BYTES} bytes — read a smaller range"
-            )));
-        }
-        let text = String::from_utf8(bytes)
-            .map_err(|error| Error::Tool(format!("`{path}` is not valid UTF-8: {error}")))?;
-        let total = text.lines().count();
         let first = offset.saturating_sub(1);
+        let mut total = 0_usize;
+        let mut window: Vec<String> = Vec::new();
+        let mut bytes = 0_usize;
+        let mut clipped = false;
+        for raw in std::io::BufReader::new(file).split(b'\n') {
+            let mut raw =
+                raw.map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+            let index = total;
+            total += 1;
+            if index < first || window.len() >= limit || bytes > READ_MAX_BYTES {
+                continue;
+            }
+            if raw.last() == Some(&b'\r') {
+                raw.pop();
+            }
+            let mut line = String::from_utf8(raw).map_err(|error| {
+                Error::Tool(format!(
+                    "`{path}` is not valid UTF-8 at line {}: {error}",
+                    index + 1
+                ))
+            })?;
+            if line.len() > READ_MAX_BYTES {
+                let mut cut = READ_MAX_BYTES;
+                while !line.is_char_boundary(cut) {
+                    cut -= 1;
+                }
+                line.truncate(cut);
+                line.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
+                clipped = true;
+            }
+            bytes += line.len() + 1;
+            if bytes > READ_MAX_BYTES && !window.is_empty() {
+                continue;
+            }
+            window.push(line);
+        }
         if total == 0 {
-            return Ok(format!("{path}  {tagged}", tagged = tagged_text(&text)));
+            return Ok(format!("{path}  lines 0-0/0"));
         }
         if first >= total {
             return Err(Error::Tool(format!(
                 "`{path}` has {total} lines; offset {offset} is past the end"
             )));
         }
-        let last = first.saturating_add(limit).saturating_sub(1);
-        let body = tagged_span(&text, first, last);
+        let shown = window.len();
+        let body = tagged_lines(&window, first, total);
+        if (shown < limit || clipped) && first + shown < total {
+            return Ok(format!(
+                "{path}  {body}\n[truncated at {READ_MAX_BYTES} bytes after line {}; continue with offset {}]",
+                first + shown,
+                first + shown + 1
+            ));
+        }
         Ok(format!("{path}  {body}"))
     }
 
@@ -75,8 +113,13 @@ impl ToolRegistry {
         self.policy.write_path(&self.relative(&dest)?)?;
         let raw = std::fs::read_to_string(&dest)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        let crlf = raw.contains("\r\n");
-        let original = if crlf { raw.replace("\r\n", "\n") } else { raw };
+        if raw.is_empty() {
+            return Err(Error::Tool(format!(
+                "`{path}` is empty — there is no line to anchor an edit; use write_file"
+            )));
+        }
+        let endings = terminators(&raw);
+        let original = raw.replace("\r\n", "\n");
         if let Some(ops) = args.get("edits").and_then(Value::as_array)
             && ops.len() > MAX_EDITS
         {
@@ -94,11 +137,7 @@ impl ToolRegistry {
             None => apply_one(&original, args)
                 .map_err(|error| edit_error_context(error, &original, args))?,
         };
-        let edited = if crlf {
-            edited.replace("\r\n", "\n").replace('\n', "\r\n")
-        } else {
-            edited
-        };
+        let edited = restore(&endings, &original, &edited);
         atomic_write(&dest, path, &edited)?;
         self.writes
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -212,15 +251,53 @@ impl ToolRegistry {
                 &mut scanned,
             )?;
         } else {
-            grep_walk(
-                &root,
-                &self.workspace,
-                regex.as_ref(),
-                glob.as_ref(),
-                limit,
-                &mut hits,
-                &mut scanned,
-            )?;
+            let base = self
+                .workspace
+                .canonicalize()
+                .unwrap_or(self.workspace.clone());
+            let root = root.canonicalize().unwrap_or(root);
+            let mut files = if root == base {
+                crate::durable::tree::listing(&base)
+            } else {
+                crate::durable::tree::walked(&root).map(|found| {
+                    found
+                        .into_iter()
+                        .filter_map(|rel| {
+                            root.join(rel)
+                                .strip_prefix(&base)
+                                .ok()
+                                .map(Path::to_path_buf)
+                        })
+                        .collect()
+                })
+            }
+            .map_err(|error| Error::Tool(format!("cannot search the workspace: {error}")))?;
+            files.sort();
+            for rel in files {
+                if hits.len() >= limit {
+                    break;
+                }
+                let path = base.join(&rel);
+                if !path.starts_with(&root)
+                    || rel.components().any(|part| {
+                        SKIP_DIRS.contains(&part.as_os_str().to_string_lossy().as_ref())
+                    })
+                    || !path
+                        .symlink_metadata()
+                        .is_ok_and(|metadata| metadata.is_file())
+                {
+                    continue;
+                }
+                grep_file(
+                    &path,
+                    &base,
+                    regex.as_ref(),
+                    glob.as_ref(),
+                    limit,
+                    &mut hits,
+                    &mut scanned,
+                )?;
+            }
         }
         if hits.is_empty() {
             if pattern.is_empty() {
@@ -388,48 +465,6 @@ fn edit_view(before: &str, after: &str) -> String {
     let from = first.saturating_sub(2);
     let to = last.saturating_add(2);
     tagged_span(after, from, to)
-}
-
-fn grep_walk(
-    dir: &Path,
-    workspace: &Path,
-    regex: Option<&Regex>,
-    glob: Option<&Regex>,
-    limit: usize,
-    hits: &mut Vec<String>,
-    scanned: &mut usize,
-) -> Result<()> {
-    if hits.len() >= limit {
-        return Ok(());
-    }
-    let mut entries: Vec<_> = std::fs::read_dir(dir)
-        .map_err(|error| Error::Tool(format!("cannot search `{}`: {error}", dir.display())))?
-        .filter_map(std::result::Result::ok)
-        .collect();
-    entries.sort_by_key(|entry| entry.file_name());
-    for entry in entries {
-        if hits.len() >= limit {
-            break;
-        }
-        let name = entry.file_name();
-        let name = name.to_string_lossy();
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .map_err(|error| Error::Tool(format!("cannot search `{}`: {error}", path.display())))?;
-        if file_type.is_dir() {
-            if SKIP_DIRS.contains(&name.as_ref()) {
-                continue;
-            }
-            grep_walk(&path, workspace, regex, glob, limit, hits, scanned)?;
-            continue;
-        }
-        if !file_type.is_file() {
-            continue;
-        }
-        grep_file(&path, workspace, regex, glob, limit, hits, scanned)?;
-    }
-    Ok(())
 }
 
 fn grep_file(
@@ -833,4 +868,63 @@ fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<String> {
         text.push('\n');
     }
     Ok(text)
+}
+
+fn terminators(raw: &str) -> Vec<&'static str> {
+    let mut endings = Vec::new();
+    let mut rest = raw;
+    while !rest.is_empty() {
+        match rest.find('\n') {
+            Some(at) => {
+                let crlf = at > 0 && rest.as_bytes()[at - 1] == b'\r';
+                endings.push(if crlf { "\r\n" } else { "\n" });
+                rest = &rest[at + 1..];
+            }
+            None => {
+                endings.push("");
+                rest = "";
+            }
+        }
+    }
+    endings
+}
+
+fn restore(endings: &[&'static str], original: &str, edited: &str) -> String {
+    let crlf = endings.iter().filter(|e| **e == "\r\n").count();
+    let lf = endings.iter().filter(|e| **e == "\n").count();
+    let majority = if crlf > lf { "\r\n" } else { "\n" };
+    let old: Vec<&str> = original.lines().collect();
+    let new: Vec<&str> = edited.lines().collect();
+    let mut prefix = 0;
+    while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
+        prefix += 1;
+    }
+    let mut suffix = 0;
+    while suffix < old.len() - prefix
+        && suffix < new.len() - prefix
+        && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix]
+    {
+        suffix += 1;
+    }
+    let trailing = edited.ends_with('\n');
+    let mut out = String::with_capacity(edited.len() + new.len());
+    for (index, line) in new.iter().enumerate() {
+        let kept = if index < prefix {
+            endings.get(index).copied()
+        } else if index >= new.len() - suffix {
+            endings.get(old.len() - (new.len() - index)).copied()
+        } else {
+            None
+        };
+        out.push_str(line);
+        let last = index + 1 == new.len();
+        if last && !trailing {
+            break;
+        }
+        out.push_str(match kept {
+            Some(ending) if !ending.is_empty() => ending,
+            _ => majority,
+        });
+    }
+    out
 }

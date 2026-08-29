@@ -295,6 +295,12 @@ fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {
     if cached > 0 && prompted > 0 {
         summary.push_str(&format!(" · {}% cached", cached * 100 / prompted));
     }
+    if rounds.iter().any(|round| round.cost.is_some()) {
+        summary.push_str(&format!(
+            " · {}",
+            crate::dollars(rounds.iter().filter_map(|round| round.cost).sum())
+        ));
+    }
     lines.push(vec![Span::styled(summary, DIM)]);
     lines
 }

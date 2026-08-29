@@ -11,6 +11,11 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
     } else {
         args.prompt.join(" ")
     };
+    if let Some(command) = slash(&prompt) {
+        return Err(summoner::Error::Config(format!(
+            "`{command}` is an interface command; -p takes a prompt"
+        )));
+    }
     let input = summoner::attach(loop_.workspace(), &prompt)?;
     let turn = complete(&mut loop_, input, args.json).await?;
     if !args.json {
@@ -119,6 +124,12 @@ async fn complete(loop_: &mut Loop<Client>, input: UserInput, json: bool) -> Res
     }
 }
 
+fn slash(prompt: &str) -> Option<&str> {
+    let line = prompt.trim_start().lines().next()?;
+    summoner::parse_command(line)?;
+    line.split_whitespace().next()
+}
+
 fn print_json(event: &Event) {
     match serde_json::to_string(event) {
         Ok(line) => println!("{line}"),
@@ -132,7 +143,12 @@ fn print_live(event: &Event) {
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
-        Event::Work { progress } => eprintln!("\n{progress}"),
+        Event::Work { progress } => {
+            eprintln!("\n{progress}");
+            for line in &progress.ledger {
+                eprintln!("{line}");
+            }
+        }
         Event::Receipt { text } => println!("\n{text}"),
         Event::Aborted { reason } => eprintln!("\n{reason}"),
         _ => {}
@@ -161,3 +177,7 @@ fn step_event(json: bool, index: usize, total: usize, state: &str, check: Option
         eprintln!("\n[step {index}/{total}] {state}");
     }
 }
+
+#[cfg(test)]
+#[path = "modes_tests.rs"]
+mod tests;

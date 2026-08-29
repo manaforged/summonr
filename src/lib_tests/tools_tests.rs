@@ -1334,13 +1334,18 @@ async fn run_command_kill_stops_a_background_job() -> Result<()> {
     let mut killed = String::new();
     for _ in 0..10 {
         killed = tools.execute(&call("run_command", &poll)).await?;
-        if killed.contains("state: dead") || killed.contains("state: exit") {
+        if killed.contains("state: dead")
+            || killed.contains("state: exit")
+            || killed.contains("state: killed")
+        {
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
     assert!(
-        killed.contains("state: dead") || killed.contains("state: exit"),
+        killed.contains("state: dead")
+            || killed.contains("state: exit")
+            || killed.contains("state: killed"),
         "{killed}"
     );
     std::fs::remove_dir_all(workspace)?;
@@ -1437,6 +1442,215 @@ async fn replace_texts_rejects_more_than_the_cap() -> Result<()> {
         .await;
     assert!(out.is_err(), "expected the edit cap to reject 17 edits");
     assert_eq!(std::fs::read_to_string(&path)?, "x\n");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn grep_skips_gitignored_trees() -> Result<()> {
+    let workspace = test_workspace()?;
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.email", "s@t"],
+        vec!["config", "user.name", "S"],
+    ] {
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&workspace)
+                .args(args)
+                .status()?
+                .success()
+        );
+    }
+    std::fs::write(workspace.join(".gitignore"), ".venv/\n")?;
+    std::fs::create_dir_all(workspace.join(".venv/lib"))?;
+    std::fs::write(workspace.join(".venv/lib/x.py"), "needle in venv\n")?;
+    std::fs::create_dir_all(workspace.join("src"))?;
+    std::fs::write(workspace.join("src/a.rs"), "needle in source\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call("grep", r#"{"pattern":"needle"}"#))
+        .await?;
+    assert!(out.starts_with("1 matches"), "{out}");
+    assert!(out.contains("src/a.rs:1:"), "{out}");
+    assert!(!out.contains(".venv"), "{out}");
+    let scoped = tools
+        .execute(&call("grep", r#"{"pattern":"needle","path":"src"}"#))
+        .await?;
+    assert!(scoped.contains("src/a.rs:1:"), "{scoped}");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_windows_a_file_larger_than_the_byte_cap() -> Result<()> {
+    let workspace = test_workspace()?;
+    let line = "x".repeat(3000);
+    let big: String = (0..3000).map(|i| format!("{i} {line}\n")).collect();
+    std::fs::write(workspace.join("big.txt"), &big)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call(
+            "read_file",
+            r#"{"path":"big.txt","offset":5,"limit":3}"#,
+        ))
+        .await?;
+    assert!(out.contains("|4 "), "{out}");
+    assert!(out.contains("|6 "), "{out}");
+    assert!(!out.contains("|7 "), "{out}");
+    let wide = tools
+        .execute(&call("read_file", r#"{"path":"big.txt","limit":1000}"#))
+        .await?;
+    assert!(
+        wide.contains("[truncated at"),
+        "a 3 MB window is cut with a notice"
+    );
+    assert!(
+        wide.contains("continue with offset"),
+        "{}",
+        &wide[wide.len() - 120..]
+    );
+    assert!(
+        !crate::tools::readonly("definition"),
+        "definition can rename"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn grep_skips_symlinks_and_searches_an_ignored_path_on_request() -> Result<()> {
+    let workspace = test_workspace()?;
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.email", "s@t"],
+        vec!["config", "user.name", "S"],
+    ] {
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&workspace)
+                .args(args)
+                .status()?
+                .success()
+        );
+    }
+    let outside = tempfile::tempdir()?;
+    std::fs::write(outside.path().join("secret.txt"), "needle outside\n")?;
+    std::os::unix::fs::symlink(outside.path().join("secret.txt"), workspace.join("leak"))?;
+    std::fs::write(workspace.join(".gitignore"), "vendor/\n")?;
+    std::fs::create_dir_all(workspace.join("vendor"))?;
+    std::fs::write(workspace.join("vendor/lib.py"), "needle vendored\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call("grep", r#"{"pattern":"needle"}"#))
+        .await?;
+    assert!(!out.contains("leak"), "{out}");
+    assert!(!out.contains("vendor"), "{out}");
+    let scoped = tools
+        .execute(&call("grep", r#"{"pattern":"needle","path":"vendor"}"#))
+        .await?;
+    assert!(scoped.contains("vendor/lib.py:1:"), "{scoped}");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn an_empty_file_says_use_write_file() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::write(workspace.join("empty.txt"), "")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let error = tools
+        .execute(&call(
+            "insert_after",
+            r#"{"path":"empty.txt","tag":"1:0000","text":"x"}"#,
+        ))
+        .await
+        .expect_err("nothing to anchor")
+        .to_string();
+    assert!(error.contains("use write_file"), "{error}");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn one_giant_line_is_clipped_not_returned_whole() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::write(
+        workspace.join("wide.txt"),
+        format!("{}\nnext\n", "y".repeat(3 * 1024 * 1024)),
+    )?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call("read_file", r#"{"path":"wide.txt"}"#))
+        .await?;
+    assert!(out.len() < 2_200_000, "{} bytes", out.len());
+    assert!(
+        out.contains("[line clipped at"),
+        "{}",
+        &out[out.len() - 200..]
+    );
+    assert!(
+        out.contains("continue with offset 2"),
+        "the next line is on the next window"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_writing_command_counts_as_a_mutation_and_a_reading_one_does_not() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let read = tools
+        .execute_outcome(&call("run_command", r#"{"command":"cat note.txt"}"#))
+        .await?;
+    assert!(!read.mutated);
+    let write = tools
+        .execute_outcome(&call("run_command", r#"{"command":"touch made.txt"}"#))
+        .await?;
+    assert!(write.mutated);
+    let git = tools
+        .execute_outcome(&call("run_command", r#"{"command":"git --version"}"#))
+        .await?;
+    assert!(git.mutated, "an unknown git verb is not read-only");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_streams_a_window_past_bad_bytes_and_keeps_line_endings() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut bytes = b"one\ntwo\n".to_vec();
+    bytes.extend_from_slice(&[0xff, 0xfe, b'\n']);
+    bytes.extend_from_slice(b"four\n");
+    std::fs::write(workspace.join("mixed.bin"), &bytes)?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let head = tools
+        .execute(&call("read_file", r#"{"path":"mixed.bin","limit":2}"#))
+        .await?;
+    assert!(head.contains("lines 1-2/4"), "{head}");
+    let error = tools
+        .execute(&call("read_file", r#"{"path":"mixed.bin"}"#))
+        .await
+        .expect_err("bad bytes in the window")
+        .to_string();
+    assert!(error.contains("line 3"), "{error}");
+
+    std::fs::write(workspace.join("endings.txt"), "one\ntwo\r\nthree\n")?;
+    let out = tools
+        .execute(&call(
+            "replace_text",
+            r#"{"path":"endings.txt","old":"one","new":"ONE"}"#,
+        ))
+        .await?;
+    assert!(out.starts_with("edited"), "{out}");
+    assert_eq!(
+        std::fs::read(workspace.join("endings.txt"))?,
+        b"ONE\ntwo\r\nthree\n",
+        "each untouched line keeps its own terminator"
+    );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

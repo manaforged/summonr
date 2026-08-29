@@ -159,7 +159,6 @@ impl Fixture {
             "--steps".to_string(),
             "PLAN.md".to_string(),
             "--json".to_string(),
-            "--no-tui".to_string(),
             "--no-splash".to_string(),
             "--max-tokens".to_string(),
             "1000".to_string(),

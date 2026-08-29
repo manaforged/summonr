@@ -12,7 +12,7 @@ use super::{
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 const TAIL_LINES: usize = 60;
-const SHELL_DEFAULT_SECS: u64 = 30;
+const SHELL_DEFAULT_SECS: u64 = 120;
 const SHELL_MAX_SECS: u64 = 600;
 
 const REPEAT_SECS: u64 = 45;
@@ -43,6 +43,10 @@ impl ToolRegistry {
             if object_bool(&args, "kill") {
                 let record = crate::jobs::load(&self.workspace, id)?;
                 kill_group(record.pid);
+                let exit = crate::jobs::exit_path(&self.workspace, id);
+                if !exit.is_file() {
+                    crate::jobs::write_killed(&exit)?;
+                }
             }
             let status = crate::jobs::status(&self.workspace, id)?;
             return Ok(ToolOutput {
@@ -114,7 +118,14 @@ impl ToolRegistry {
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
         crate::jobs::write(
             &rec_path,
-            &crate::jobs::stamp(&id, pid, command, &self.workspace, background)?,
+            &crate::jobs::stamp(
+                &id,
+                pid,
+                command,
+                &self.workspace,
+                background,
+                self.session.lock().ok().and_then(|session| session.clone()),
+            )?,
         )?;
         Ok(StartedCommand {
             id,
@@ -157,7 +168,7 @@ impl ToolRegistry {
                 Ok(ToolOutput {
                     text: output,
                     success: code == 0,
-                    mutated: false,
+                    mutated: code == 0 && !readonly_verb(command),
                 })
             }
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
@@ -348,6 +359,27 @@ fn command_env() -> Vec<(String, String)> {
                 .map(|value| ((*key).to_string(), value))
         })
         .collect()
+}
+
+fn readonly_verb(command: &str) -> bool {
+    let mut words = command.split_whitespace();
+    let Some(verb) = words.next() else {
+        return true;
+    };
+    let verb = verb.rsplit('/').next().unwrap_or(verb);
+    match verb {
+        "cat" | "ls" | "grep" | "rg" | "find" | "head" | "tail" | "wc" | "echo" | "printf"
+        | "pwd" | "which" | "env" | "printenv" | "type" | "file" | "stat" | "du" | "df"
+        | "date" | "true" | "false" | "test" | "tree" | "less" | "more" | "sort" | "uniq"
+        | "diff" | "cut" | "awk" | "sed" | "jq" | "xxd" | "od" => true,
+        "git" => matches!(
+            words.next(),
+            Some(
+                "status" | "log" | "diff" | "show" | "branch" | "ls-files" | "blame" | "rev-parse"
+            )
+        ),
+        _ => false,
+    }
 }
 
 fn kill_group(pid: u32) {

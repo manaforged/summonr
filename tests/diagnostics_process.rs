@@ -50,7 +50,7 @@ async fn killed_harness_leaves_an_open_run() -> std::io::Result<()> {
     let home = tempfile::tempdir()?;
     let log = home.path().join("logs/summoner.jsonl");
     let mut child = Command::new(env!("CARGO_BIN_EXE_summoner"))
-        .args(["qwen", "--no-tui"])
+        .args(["qwen"])
         .env("MAGE_HOME", home.path())
         .stdin(Stdio::piped())
         .stdout(Stdio::null())

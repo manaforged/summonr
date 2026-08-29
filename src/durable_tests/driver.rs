@@ -1,9 +1,9 @@
 use std::path::{Path, PathBuf};
 
-use crate::durable::driver::{DriverError, Exposure, SessionDriver, work_at};
+use crate::durable::driver::{DriverError, Exposure, SessionDriver, active_at, work_at};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line, Usage};
-use crate::durable::work::{Decision, Policy, Stage, Work};
+use crate::durable::work::{Decision, Policy, Stage, Work, WorkPhase};
 use crate::provider::Role;
 
 fn home() -> (tempfile::TempDir, PathBuf) {
@@ -383,6 +383,12 @@ fn external_work_resumes_only_the_same_plan_and_checks() {
     assert_eq!(driver.work_progress().expect("progress").current, Some(1));
     assert!(work_at(&path, &workspace, Policy::Steps, plan));
     assert!(!work_at(&path, &workspace, Policy::Steps, "other plan"));
+    assert_eq!(
+        active_at(&path, &workspace),
+        Some((Policy::Steps, plan.to_string())),
+        "an unfinished job is reported whatever the caller asks for"
+    );
+    assert_eq!(active_at(&path, home.path()), None);
     assert!(!work_at(
         &path,
         &workspace,
@@ -448,20 +454,37 @@ fn a_turn_needs_work_and_a_plan_must_be_accepted_first() {
         )
         .expect("finish plan");
     assert!(!driver.busy());
-    assert!(
-        driver
-            .prepare_turn_work("implement", &["true".to_string()])
-            .is_err(),
-        "the plan must be accepted before implementation"
-    );
-    driver.accept_plan().expect("accept");
     driver
         .prepare_turn_work("implement", &["true".to_string()])
-        .expect("execute attaches");
+        .expect("the next implementation turn accepts the plan");
+    assert_eq!(
+        driver.work_progress().expect("progress").phase,
+        WorkPhase::Execute
+    );
+    assert!(driver.accept_plan().is_err(), "nothing left to accept");
     assert!(
         driver.prepare_turn_work("implement", &[]).is_err(),
         "changed checks are refused"
     );
+}
+
+#[test]
+fn a_plan_turn_that_selected_nothing_does_not_trap_the_session() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    driver.prepare_plan_work("plan it").expect("plan work");
+    assert_eq!(
+        driver.work_progress().expect("progress").phase,
+        WorkPhase::Plan
+    );
+    driver
+        .prepare_turn_work("implement", &[])
+        .expect("a fresh Work replaces the empty plan");
+    assert_eq!(
+        driver.work_progress().expect("progress").phase,
+        WorkPhase::Execute
+    );
+    assert_eq!(driver.objective().expect("objective"), "implement");
 }
 
 #[test]
@@ -508,5 +531,111 @@ fn resume_uses_the_recorded_workspace_not_the_caller() {
         resumed.workspace(),
         recorded,
         "resume must use the session's recorded workspace, not the caller's cwd"
+    );
+}
+
+#[test]
+fn a_goal_matches_its_session_whatever_the_turn_limit() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    driver
+        .prepare_external_work("finish it", Policy::Goal { max_turns: 20 }, &[])
+        .expect("select goal");
+    assert!(work_at(
+        &path,
+        &workspace,
+        Policy::Goal { max_turns: 7 },
+        "finish it"
+    ));
+    assert!(!work_at(&path, &workspace, Policy::Steps, "finish it"));
+    driver
+        .prepare_external_work("finish it", Policy::Goal { max_turns: 7 }, &[])
+        .expect("a rerun with another turn limit attaches to the same goal");
+    assert_eq!(driver.work_progress().expect("progress").max_turns, 20);
+}
+
+#[test]
+fn resume_into_a_deleted_workspace_names_the_path() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let id = driver.id();
+    driver.prepare_turn_work("keep going", &[]).expect("work");
+    drop(driver);
+    std::fs::remove_dir_all(&workspace).expect("remove workspace");
+    let error = SessionDriver::resume(home.path(), id, &workspace)
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(error.contains("no longer exists"), "{error}");
+    assert!(error.contains(&workspace.display().to_string()), "{error}");
+}
+
+#[test]
+fn a_resumed_interrupted_turn_tells_the_model_it_was_interrupted() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    driver.prepare_turn_work("do it", &[]).expect("work");
+    driver.start_input("do it", &[]).expect("start");
+    let _attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    drop(driver);
+    let mut resumed = resume(home.path(), &path, &workspace);
+    resumed.prepare_turn_work("do it", &[]).expect("work again");
+    let queued = resumed.start_input("do it", &[]).expect("start again");
+    assert!(
+        queued.iter().any(|text| text.contains("was interrupted")),
+        "{queued:?}"
+    );
+}
+
+#[test]
+fn the_next_base_is_taken_after_the_gates_ran() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    driver
+        .prepare_external_work("keep going", Policy::Goal { max_turns: 5 }, &[])
+        .expect("goal");
+    driver.start_input("go", &[]).expect("start");
+    std::fs::write(workspace.join("edit.txt"), "model\n").expect("model edit");
+    let paths = driver.enter_verify().expect("capture");
+    assert_eq!(paths, vec!["edit.txt"]);
+    std::fs::write(workspace.join("stamp.txt"), "gate\n").expect("gate write");
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    assert!(verdict.passed, "{:?}", verdict.diagnostic);
+    driver
+        .commit_verdict(verdict, Decision::GoalContinue("more".to_string()), None)
+        .expect("continue");
+    driver.start_input("again", &[]).expect("start");
+    let paths = driver.enter_verify().expect("capture");
+    assert!(
+        paths.is_empty(),
+        "the gate's file is already in the base: {paths:?}"
+    );
+}
+
+#[test]
+fn a_finished_session_resumes_from_anywhere_after_its_tree_is_gone() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let path = driver.path().to_path_buf();
+    driver.prepare_turn_work("ship it", &[]).expect("work");
+    driver.start_input("ship it", &[]).expect("start");
+    driver.enter_verify().expect("capture");
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    driver
+        .commit_verdict(verdict, Decision::Automatic, None)
+        .expect("complete");
+    drop(driver);
+    std::fs::remove_dir_all(&workspace).expect("remove");
+    let elsewhere = home.path().join("elsewhere");
+    std::fs::create_dir(&elsewhere).expect("elsewhere");
+    let resumed = resume(home.path(), &path, &elsewhere);
+    assert_eq!(
+        resumed.workspace().canonicalize().ok(),
+        elsewhere.canonicalize().ok(),
+        "a terminal session follows the caller"
     );
 }

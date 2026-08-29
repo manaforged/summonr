@@ -165,7 +165,13 @@ impl Worker {
             .and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)));
         match resolved {
             Ok((endpoint, client)) => {
-                self.loop_.set_seat(role, client, endpoint.model.clone());
+                self.loop_.set_seat(
+                    role,
+                    client,
+                    endpoint.model.clone(),
+                    endpoint.effort,
+                    endpoint.price,
+                );
                 self.workflow.seats.insert(
                     role,
                     Seat {
@@ -263,7 +269,13 @@ impl Worker {
             let client = crate::endpoint::resolve(Some(&seat.endpoint), seat.model.as_deref())
                 .and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)));
             match client {
-                Ok((endpoint, client)) => self.loop_.set_seat(*role, client, endpoint.model),
+                Ok((endpoint, client)) => self.loop_.set_seat(
+                    *role,
+                    client,
+                    endpoint.model,
+                    endpoint.effort,
+                    endpoint.price,
+                ),
                 Err(error) => self.fail(&format!("{name}: {role} seat {seat}: {error}")),
             }
         }
@@ -281,6 +293,8 @@ impl Worker {
         self.endpoint = endpoint.name;
         self.loop_.set_context_window(endpoint.context_window);
         self.loop_.set_env(endpoint.env);
+        self.loop_.set_effort(self.dial.or(endpoint.effort));
+        self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
         drop(self.ui.send(Msg::Model {

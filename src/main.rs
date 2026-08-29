@@ -9,6 +9,11 @@ mod startup;
 
 #[tokio::main]
 async fn main() {
+    #[cfg(windows)]
+    {
+        eprintln!("summon: Windows is unsupported; run it under WSL");
+        std::process::exit(1);
+    }
     match startup::run().await {
         Ok(code) => std::process::exit(code),
         Err(error) => {

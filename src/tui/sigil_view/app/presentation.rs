@@ -33,8 +33,16 @@ pub(super) fn status(model: &Model, info: &Info) -> String {
             )
         },
     );
+    let cost = if model.usage.iter().any(|round| round.cost.is_some()) {
+        format!(
+            " · {}",
+            crate::dollars(model.usage.iter().filter_map(|round| round.cost).sum())
+        )
+    } else {
+        String::new()
+    };
     format!(
-        "{} · {} tokens · {}% cached · {} peer{} · {activity}",
+        "{} · {} tokens{cost} · {}% cached · {} peer{} · {activity}",
         info.workspace,
         fmt_tokens(total),
         cache_rate(model),
@@ -90,9 +98,13 @@ pub(in crate::tui::sigil_view) fn stats(rounds: &[Round]) -> String {
     if rounds.is_empty() {
         return "No token usage yet.".to_string();
     }
-    let mut rows = vec!["round | prompt | completion | reasoning | cached | prefix".to_string()];
+    let priced = rounds.iter().any(|round| round.cost.is_some());
+    let mut rows = vec![format!(
+        "round | prompt | completion | reasoning | cached | prefix{}",
+        if priced { " | cost" } else { "" }
+    )];
     for (index, round) in rounds.iter().enumerate() {
-        rows.push(format!(
+        let mut row = format!(
             "{} | {} | {} | {} | {} · total {} | {}",
             index + 1,
             round.prompt,
@@ -101,6 +113,19 @@ pub(in crate::tui::sigil_view) fn stats(rounds: &[Round]) -> String {
             round.cached,
             round.total(),
             round.prefix_hash,
+        );
+        if priced {
+            row.push_str(&format!(
+                " | {}",
+                round.cost.map_or_else(|| "—".to_string(), crate::dollars)
+            ));
+        }
+        rows.push(row);
+    }
+    if priced {
+        rows.push(format!(
+            "total {}",
+            crate::dollars(rounds.iter().filter_map(|round| round.cost).sum())
         ));
     }
     rows.join("\n")

@@ -1,4 +1,4 @@
-use super::{Msg, Worker, set_mode};
+use super::{Cmd, Msg, Worker, set_mode};
 use crate::provider::UserInput;
 
 impl Worker {
@@ -40,6 +40,7 @@ impl Worker {
                 true
             }
             Some(crate::SlashCommand::Clear) => self.clear(),
+            Some(crate::SlashCommand::Compact) => self.compact().await,
             Some(crate::SlashCommand::PlanAccept) => self.accept_plan(),
             Some(crate::SlashCommand::PlanReject) => self.reject_plan(),
             Some(crate::SlashCommand::Plan) => {
@@ -61,6 +62,11 @@ impl Worker {
                 }
             }
             Some(crate::SlashCommand::Session) => self.session(),
+            Some(crate::SlashCommand::Name) => self.name(argument(line)),
+            Some(crate::SlashCommand::Steps) => {
+                return Some(self.steps(argument(line).unwrap_or_default()).await);
+            }
+            Some(crate::SlashCommand::Effort) => self.effort(argument(line)),
             Some(crate::SlashCommand::Fork) => self.fork(),
             Some(crate::SlashCommand::Agents) => self.agents(),
             Some(_) => self.unknown(line).unwrap_or(true),
@@ -100,10 +106,27 @@ impl Worker {
 
     fn session(&self) -> bool {
         self.system(&format!(
-            "{} · {}",
+            "{}{} · {}",
             self.loop_.session_id(),
+            self.loop_
+                .name()
+                .map_or_else(String::new, |name| format!(" ({name})")),
             self.loop_.session_path().display()
         ));
+        true
+    }
+
+    fn name(&self, name: Option<&str>) -> bool {
+        match name {
+            Some(name) => match self.loop_.set_name(name) {
+                Ok(()) => self.system(&format!("session named {name}")),
+                Err(error) => self.fail(&error.to_string()),
+            },
+            None => match self.loop_.name() {
+                Some(name) => self.system(&format!("session name: {name}")),
+                None => self.system("this session has no name — /name TEXT"),
+            },
+        }
         true
     }
 
@@ -191,10 +214,144 @@ impl Worker {
         Some(true)
     }
 
+    async fn compact(&mut self) -> bool {
+        match self.loop_.compact().await {
+            Ok(true) => self.system("context compacted — earlier turns summarized"),
+            Ok(false) => self.system("nothing to compact yet"),
+            Err(error) => self.fail(&error.to_string()),
+        }
+        true
+    }
+
+    fn take_clear(&mut self, head: &str) -> bool {
+        let position = self.deferred.iter().position(|command| {
+            matches!(
+                command,
+                Cmd::Command(line)
+                    if line.trim_start().starts_with(head)
+                        && matches!(argument(line), Some("clear" | "stop" | "off" | "cancel"))
+            )
+        });
+        position.is_some_and(|index| self.deferred.remove(index).is_some())
+    }
+
+    async fn steps(&mut self, plan_path: &str) -> bool {
+        if plan_path.is_empty() {
+            self.system(
+                "/steps PLAN.md — run each numbered item under `## Steps`; /steps clear ends it",
+            );
+            return true;
+        }
+        if matches!(plan_path, "clear" | "stop" | "off" | "cancel") {
+            match self.loop_.work_progress() {
+                Ok(progress) if progress.kind == crate::WorkKind::Steps && !progress.terminal() => {
+                    if let Err(error) = self.loop_.abandon_work("steps cleared by user") {
+                        self.fail(&error.to_string());
+                    } else {
+                        self.system("steps cleared");
+                    }
+                }
+                _ => self.system("no active steps run"),
+            }
+            return true;
+        }
+        let path = self.loop_.workspace().join(plan_path);
+        let markdown = match std::fs::read_to_string(&path) {
+            Ok(markdown) => markdown,
+            Err(error) => {
+                self.fail(&format!("cannot read {}: {error}", path.display()));
+                return true;
+            }
+        };
+        let steps = match crate::steps::parse(&markdown) {
+            Ok(steps) => steps,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return true;
+            }
+        };
+        let total = steps.len();
+        let checks = self.loop_.verify_commands().to_vec();
+        if let Err(error) = self.loop_.select_steps(&markdown, &checks) {
+            self.fail(&error.to_string());
+            return true;
+        }
+        let code = loop {
+            let progress = match self.loop_.work_progress() {
+                Ok(progress) => progress,
+                Err(error) => {
+                    self.fail(&error.to_string());
+                    return true;
+                }
+            };
+            if let Some(code) = progress.exit_code() {
+                break code;
+            }
+            let Some(step) = progress
+                .current
+                .and_then(|current| steps.get(current.saturating_sub(1)))
+            else {
+                self.fail("Steps Work is outside the selected plan");
+                return true;
+            };
+            if self.take_clear("/steps") {
+                if let Err(error) = self.loop_.abandon_work("steps cleared by user") {
+                    self.fail(&error.to_string());
+                }
+                self.system("steps cleared");
+                return true;
+            }
+            let prompt = crate::steps::prompt(step, total, plan_path);
+            if !self.turn(prompt.into()).await {
+                return false;
+            }
+            match self.last_turn.take() {
+                None => {
+                    self.system("steps paused — cancelled by user; /steps PLAN.md resumes");
+                    return true;
+                }
+                Some(turn) if turn.aborted => {
+                    if let Err(error) = self.loop_.abandon_work("step execution aborted") {
+                        self.fail(&error.to_string());
+                    }
+                    self.system("steps stopped — a turn hit the round limit");
+                    return true;
+                }
+                Some(_) => {}
+            }
+        };
+        match code {
+            0 => self.system(&format!("steps complete — {total} of {total}")),
+            code => {
+                let reason = self
+                    .loop_
+                    .work_progress()
+                    .ok()
+                    .and_then(|progress| progress.reason)
+                    .unwrap_or_default();
+                self.system(&format!("steps stopped (exit {code}) — {reason}"));
+            }
+        }
+        true
+    }
+
     async fn goal(&mut self, objective: &str) -> bool {
         let gates = self.loop_.verify_commands().to_vec();
         if objective.is_empty() {
             return self.goal_status();
+        }
+        if matches!(objective, "clear" | "stop" | "off" | "cancel") {
+            match self.loop_.active_goal().ok().flatten() {
+                Some((objective, _)) => {
+                    if let Err(error) = self.loop_.abandon_work("goal cleared by user") {
+                        self.fail(&error.to_string());
+                    } else {
+                        self.system(&format!("goal cleared — {objective}"));
+                    }
+                }
+                None => self.system("no active goal"),
+            }
+            return true;
         }
         if let Err(error) = self
             .loop_
@@ -213,6 +370,13 @@ impl Worker {
             };
             if let Some(code) = progress.exit_code() {
                 break code;
+            }
+            if self.take_clear("/goal") {
+                if let Err(error) = self.loop_.abandon_work("goal cleared by user") {
+                    self.fail(&error.to_string());
+                }
+                self.system(&format!("goal cleared — {objective}"));
+                return true;
             }
             let prompt = crate::goal::prompt(objective, &gates, progress.rounds);
             if !self.turn(prompt.into()).await {
@@ -235,10 +399,40 @@ impl Worker {
         };
         match code {
             0 => self.system("goal achieved"),
-            code => self.system(&format!(
-                "goal stopped (exit {code}) — resume with `summon --goal`"
-            )),
+            code => {
+                let reason = self
+                    .loop_
+                    .work_progress()
+                    .ok()
+                    .and_then(|progress| progress.reason)
+                    .unwrap_or_else(|| "resume with `summon --goal`".to_string());
+                self.system(&format!("goal stopped (exit {code}) — {reason}"));
+            }
         }
+        true
+    }
+
+    fn effort(&mut self, level: Option<&str>) -> bool {
+        match level {
+            None => {}
+            Some(level) => match crate::Effort::parse(level) {
+                Some(effort) => {
+                    self.dial = Some(effort);
+                    self.loop_.set_effort(Some(effort));
+                }
+                None => {
+                    self.fail(&format!(
+                        "effort takes none, low, medium, or high, not `{level}`"
+                    ));
+                    return true;
+                }
+            },
+        }
+        let current = self
+            .loop_
+            .effort()
+            .map_or("endpoint default", crate::Effort::as_str);
+        self.system(&format!("effort: {current}"));
         true
     }
 
@@ -247,7 +441,7 @@ impl Worker {
             self.system(&status);
         } else {
             self.system(
-                "/goal <objective> — work toward it across turns; gates come from .mage/check.toml",
+                "/goal <objective> — work toward it across turns; gates come from .mage/check.toml; /goal clear ends it",
             );
         }
         true

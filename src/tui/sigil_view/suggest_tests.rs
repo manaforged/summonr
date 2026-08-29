@@ -34,3 +34,24 @@ fn popup_rows_stay_at_the_requested_cell_width() {
         42
     );
 }
+
+#[test]
+fn arguments_close_the_picker_so_enter_submits() {
+    use crate::tui::matching_commands;
+    assert!(matching_commands("/steps PLAN.md").is_empty());
+    assert!(matching_commands("/goal fix the plan").is_empty());
+    assert!(matching_commands("/effort low").is_empty());
+    assert_eq!(
+        matching_commands("/plan acc")
+            .iter()
+            .map(|row| row.0)
+            .collect::<Vec<_>>(),
+        ["/plan accept"]
+    );
+    assert!(
+        matching_commands("/stp")
+            .iter()
+            .any(|row| row.0 == "/steps"),
+        "single-token fuzzy matching stays"
+    );
+}

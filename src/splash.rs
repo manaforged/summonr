@@ -1,17 +1,9 @@
-//! Startup banner. Full splash on an interactive terminal, one line otherwise.
-//!
-//! Everything here is deterministic: same input, same bytes. Color is
-//! applied only when stderr is a terminal, `NO_COLOR` is unset, and TERM
-//! is not `dumb`. `--no-splash` drops to the compact line form.
-
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
-/// Everything the splash knows how to draw.
 pub struct Splash<'a> {
     pub version: &'a str,
     pub model: &'a str,
-    /// Relay host for OpenAI-compatible endpoints, when there is one.
     pub relay: Option<&'a str>,
     pub session: &'a str,
     pub resumed: bool,
@@ -53,25 +45,20 @@ const LOGO: [&str; 6] = [
 const LOGO_WIDTH: usize = 74;
 const LABEL_WIDTH: usize = 8;
 
-/// The block logo, for the splash line and the TUI cover.
 pub fn logo() -> &'static [&'static str; 6] {
     &LOGO
 }
 
-/// Rendered width of [`logo`].
 #[must_use]
 pub fn logo_width() -> usize {
     LOGO_WIDTH
 }
 
-/// Home-abbreviated display form of a path.
 #[must_use]
 pub fn short_path(path: &Path) -> String {
     display_path(path)
 }
 
-/// Print the splash for an interactive session. `full` false (or a piped
-/// stderr, or `--no-splash`) falls back to the compact status line.
 pub fn interactive(splash: &Splash, full: bool) {
     if !full || !std::io::stderr().is_terminal() {
         line(splash);
@@ -82,7 +69,6 @@ pub fn interactive(splash: &Splash, full: bool) {
     eprintln!("{}", render(splash, palette));
 }
 
-/// Compact one-line status, for print mode and non-terminal stderr.
 pub fn line(splash: &Splash) {
     match splash.relay {
         Some(relay) => eprintln!(
@@ -103,7 +89,6 @@ fn colored() -> bool {
     !matches!(std::env::var("TERM"), Ok(term) if term == "dumb")
 }
 
-/// Raw label / value rows shown on the splash, unstyled, for other fronts.
 #[must_use]
 pub fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
     let mut rows = vec![("summoner", splash.version.to_string())];
@@ -165,7 +150,6 @@ fn row(palette: &Palette, label: &str, value: &str) -> String {
     )
 }
 
-/// Host part of a base URL: `https://open.bigmodel.cn/api/…` → `open.bigmodel.cn`.
 pub fn host_of(url: Option<&str>) -> Option<&str> {
     let url = url?;
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
@@ -173,7 +157,6 @@ pub fn host_of(url: Option<&str>) -> Option<&str> {
     (!host.is_empty()).then_some(host)
 }
 
-/// `~/src/summoner` style path when it sits under `home`.
 fn abbreviate(path: &Path, home: Option<&Path>) -> String {
     if let Some(home) = home
         && let Ok(rest) = path.strip_prefix(home)

@@ -1,13 +1,3 @@
-//! Check command configuration.
-//!
-//! `<workspace>/.mage/check.toml` names one command or several:
-//!
-//! ```toml
-//! check = "cargo test -p summoner"
-//! # or:
-//! checks = ["cargo clippy -- -D warnings", "cargo test -p summoner"]
-//! ```
-
 use std::path::Path;
 
 use serde::Deserialize;
@@ -15,7 +5,6 @@ use serde::Deserialize;
 use crate::error::{Error, Result};
 use crate::tools::ToolOutput;
 
-/// Verdict of one verify run.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Outcome {
     pub command: String,
@@ -29,7 +18,6 @@ struct CheckFile {
     checks: Option<Vec<String>>,
 }
 
-/// Load the workspace check commands. `Ok(None)` when unconfigured.
 pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
     let path = workspace.join(".mage/check.toml");
     if !path.is_file() {
@@ -59,7 +47,6 @@ pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
     Ok(Some(commands))
 }
 
-/// Convert the command executor result into a completion-check verdict.
 #[must_use]
 pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Error>) -> Outcome {
     match result {
@@ -76,7 +63,6 @@ pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Er
     }
 }
 
-/// Append controller-owned mutation and verification facts to provider prose.
 #[must_use]
 pub(crate) fn receipt(model: &str, changes: &[String], checks: &[Outcome]) -> String {
     let failed = checks.iter().find(|check| !check.passed);
@@ -90,7 +76,6 @@ pub(crate) fn receipt(model: &str, changes: &[String], checks: &[Outcome]) -> St
     text
 }
 
-/// Format the harness-owned part of a turn without repeating model prose.
 #[must_use]
 pub(crate) fn summary(changes: &[String], checks: &[Outcome]) -> String {
     let failed = checks.iter().find(|check| !check.passed);

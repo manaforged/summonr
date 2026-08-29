@@ -1,5 +1,3 @@
-//! Full-screen Sigil interface over Summoner's asynchronous agent worker.
-
 use std::path::PathBuf;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -16,11 +14,9 @@ mod worker;
 
 use worker::worker;
 
-/// Worker-to-interface messages.
 pub enum Msg {
     Delta(String),
     Thinking(String),
-    /// A streaming tool call was named — show it live before the round ends.
     Calling(String),
     Event(Event),
     Busy(bool),
@@ -34,15 +30,11 @@ pub enum Msg {
         model: String,
         relay: Option<String>,
     },
-    /// Picker rows as `endpoint\tmodel`, recents first. `recent` is how many
-    /// leading rows are recently-used seats, for the section divider.
     Models {
         rows: Vec<String>,
         recent: usize,
     },
     ModelsFailed(String),
-    /// The live workflow: its name, the saved names, and one seat per
-    /// [`crate::workflow::Role::ALL`] entry as `endpoint\tmodel`.
     Workflow {
         name: Option<String>,
         names: Vec<String>,
@@ -56,7 +48,6 @@ pub enum Msg {
     Bye,
 }
 
-/// Interface-to-worker commands.
 enum Cmd {
     Command(String),
     Login(String),
@@ -72,11 +63,8 @@ enum Cmd {
     SetModel(String),
     SetSeat(String, String),
     ListModels,
-    /// Seat one workflow role on `endpoint` + `model`.
     SeatRole(crate::workflow::Role, String, String),
-    /// Return one workflow role to the driving seat.
     ClearRole(crate::workflow::Role),
-    /// Save the live seats as `[workflows.NAME]` and name the session's workflow.
     SaveWorkflow(String),
     ListWorkflows,
     SetBus(bool),
@@ -85,7 +73,6 @@ enum Cmd {
     Tick,
 }
 
-/// Token counts for one provider round.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Round {
     pub prompt: u32,
@@ -101,7 +88,6 @@ impl Round {
     }
 }
 
-/// Authoritative view of the live configuration.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
     pub model: String,
@@ -112,7 +98,6 @@ pub struct Snapshot {
     pub strict: bool,
     pub endpoint: String,
     pub context_window: Option<u32>,
-    /// The active workflow name, when one is set.
     pub workflow: Option<String>,
 }
 
@@ -132,7 +117,6 @@ impl Default for Snapshot {
     }
 }
 
-/// Facts rendered in the interface header and splash.
 #[derive(Clone, Debug)]
 pub struct Info {
     pub version: String,
@@ -144,11 +128,7 @@ pub struct Info {
     pub plan: bool,
     pub strict: bool,
     pub workspace: String,
-    /// Workflow to seat at start, when one is named.
     pub workflow: Option<String>,
-    /// Where settings changes persist. Production points at
-    /// `~/.mage/config.toml`; tests point at a throwaway file so the suite
-    /// never writes the developer's real config.
     pub config: Option<std::path::PathBuf>,
 }
 
@@ -211,7 +191,6 @@ fn subsequence(text: &str, needle: &str) -> bool {
     next.is_none()
 }
 
-/// Run the Sigil terminal interface to completion.
 pub fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,

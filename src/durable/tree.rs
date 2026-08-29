@@ -1,9 +1,3 @@
-//! Workspace snapshots: which files changed between two moments.
-//!
-//! A snapshot is `(size, mtime)` per file. Inside a git repository the file
-//! list comes from `git ls-files`, so ignored trees cost nothing; elsewhere a
-//! walk skips [`crate::SKIP_DIRS`]. Git is only ever read.
-
 use std::collections::BTreeMap;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -12,15 +6,12 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
-/// Size and modification time of one file.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u32);
 
-/// Every file under a workspace root, by relative path.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Snapshot(BTreeMap<String, Entry>);
 
-/// Snapshot `root`, skipping everything under `exclude`.
 pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapshot> {
     let mut files = BTreeMap::new();
     for relative in listing(root)? {
@@ -48,9 +39,6 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
 }
 
 impl Snapshot {
-    /// Whether `paths` have identical entries in both snapshots. A subset
-    /// comparison: churn on files outside `paths` — a gate rewriting
-    /// `Cargo.lock`, a regenerated fixture — is ignored.
     pub(crate) fn matches(&self, other: &Snapshot, paths: &[String]) -> bool {
         paths
             .iter()
@@ -58,7 +46,6 @@ impl Snapshot {
     }
 }
 
-/// Paths added, changed, or removed between two snapshots, sorted.
 pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     let mut paths: Vec<String> = capture
         .0

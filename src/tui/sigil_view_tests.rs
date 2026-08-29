@@ -37,8 +37,6 @@ fn info() -> Info {
     }
 }
 
-/// A unique throwaway config path so a persisting settings row never writes
-/// the developer's real `~/.mage/config.toml`.
 fn scratch_config() -> PathBuf {
     use std::sync::atomic::{AtomicUsize, Ordering};
     static SEQ: AtomicUsize = AtomicUsize::new(0);

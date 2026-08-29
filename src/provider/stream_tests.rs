@@ -68,7 +68,6 @@ fn a_streaming_tool_call_announces_its_name_once_before_the_round_ends() -> Resu
         }
     });
     let mut stream = Stream::default();
-    // Name arrives first; arguments stream in later frames.
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"write\"}}]}}]}\n\n",
@@ -81,7 +80,6 @@ fn a_streaming_tool_call_announces_its_name_once_before_the_round_ends() -> Resu
         &client,
         b"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{\\\"path\\\":\\\"a\\\"}\"}}]}}]}\n\n",
     )?;
-    // Fires exactly once — later argument frames do not re-announce.
     assert_eq!(
         *calls.lock().unwrap_or_else(|e| e.into_inner()),
         vec!["write"]

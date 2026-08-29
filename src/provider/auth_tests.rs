@@ -193,10 +193,8 @@ fn oauth_needs_token_url_and_client_id() {
 
 #[test]
 fn a_huge_expiry_does_not_overflow_the_monotonic_clock() {
-    // u64::MAX seconds would panic on Instant + Duration without the clamp.
     let far = super::deadline(u64::MAX);
     assert!(far > std::time::Instant::now());
-    // A normal expiry lands close to now + seconds.
     let soon = super::deadline(60);
     assert!(soon > std::time::Instant::now());
 }
@@ -204,12 +202,10 @@ fn a_huge_expiry_does_not_overflow_the_monotonic_clock() {
 #[test]
 fn credential_paths_do_not_collide_across_punctuation() {
     let home = Path::new("/tmp/h");
-    // A clean name keeps its plain path so existing credentials still resolve.
     assert_eq!(
         credentials_path(home, "glm"),
         home.join("credentials/glm.json")
     );
-    // Names that sanitize identically get distinct files.
     assert_ne!(
         credentials_path(home, "foo.bar"),
         credentials_path(home, "foo-bar")

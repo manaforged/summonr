@@ -1,11 +1,8 @@
-//! Lazy skills. Catalog is one line each; `skill` loads the body.
-
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 use crate::prompt::mage_home;
 
-/// Markdown block listing available skills, if any exist.
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     let mut rows = Vec::new();
@@ -33,7 +30,6 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     Some(out)
 }
 
-/// Read one skill body. `name` is a single path segment.
 pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
     let name = name.trim();
     if !valid(name) {

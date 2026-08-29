@@ -1,10 +1,3 @@
-//! The session driver: the one seam between `Loop` and the store.
-//!
-//! Two files under `<home>/sessions/<id>/`: `session.jsonl`, the
-//! conversation, and `work.json`, the job. The driver holds the live state
-//! those files describe; resume folds the log, loads the checkpoint, and
-//! aborts whatever turn the dead process left open.
-
 use std::path::{Path, PathBuf};
 
 use thiserror::Error;
@@ -40,7 +33,6 @@ pub(crate) enum DriverError {
     State(String),
 }
 
-/// The request size a provider round may be charged when it fails.
 pub(crate) struct Exposure {
     pub(crate) max_input_tokens: u64,
     pub(crate) max_output_tokens: u64,
@@ -63,17 +55,13 @@ struct Round {
 }
 
 struct Turn {
-    /// Work stage the turn opened in.
     stage: Option<Stage>,
     round: Option<Round>,
-    /// Planned tool calls and their provider ids.
     calls: Vec<(Call, String)>,
 }
 
-/// A Verify verdict prepared against the live workspace.
 pub(crate) struct Verdict {
     pub(crate) passed: bool,
-    /// Set when the workspace moved after the candidate was captured.
     pub(crate) diagnostic: Option<String>,
 }
 
@@ -87,7 +75,6 @@ pub(crate) struct SessionDriver {
 }
 
 impl SessionDriver {
-    /// Start a new session under `home`.
     pub(crate) fn open(
         home: &Path,
         workspace: &Path,
@@ -114,7 +101,6 @@ impl SessionDriver {
         Ok(driver)
     }
 
-    /// Reopen a session and settle whatever the last process left open.
     pub(crate) fn resume(
         home: &Path,
         id: SessionId,
@@ -131,9 +117,6 @@ impl SessionDriver {
                 path.display()
             )));
         }
-        // Resume in the session's own workspace, not wherever the command ran.
-        // The recorded path is already canonical; the Work checkpoint and the
-        // change snapshot both describe that tree.
         let workspace = if state.workspace.as_os_str().is_empty() {
             canonical(workspace)
         } else {
@@ -168,7 +151,6 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// Open a turn on the active Work. Returns harness text queued for it.
     pub(crate) fn start_input(
         &mut self,
         text: &str,
@@ -187,9 +169,6 @@ impl SessionDriver {
         } else {
             Vec::new()
         };
-        // Persist that the queue is consumed before writing the lines. A crash
-        // here loses the queued continuation (the goal loop re-derives it),
-        // which beats re-appending it and duplicating it in the conversation.
         if !queued.is_empty() {
             self.checkpoint()?;
         }
@@ -213,7 +192,6 @@ impl SessionDriver {
         Ok(queued)
     }
 
-    /// Add user or peer text to the open turn.
     pub(crate) fn steer(&mut self, text: &str) -> Result<(), DriverError> {
         if text.trim().is_empty() {
             return Err(DriverError::Empty);
@@ -228,7 +206,6 @@ impl SessionDriver {
         })
     }
 
-    /// Open an agent round on `model`.
     pub(crate) fn start_provider(
         &mut self,
         model: &str,
@@ -253,7 +230,6 @@ impl SessionDriver {
         self.start_round(Purpose::Judge, model, exposure)
     }
 
-    /// Open a private round for a scout or review seat.
     pub(crate) fn start_aside(
         &mut self,
         role: Role,
@@ -303,7 +279,6 @@ impl SessionDriver {
         }
     }
 
-    /// Close a provider round that answered without tool calls.
     pub(crate) fn finish_provider(
         &mut self,
         attempt: Attempt,
@@ -344,7 +319,6 @@ impl SessionDriver {
         self.append(line)
     }
 
-    /// Close a provider round and plan its tool calls in provider order.
     pub(crate) fn finish_provider_with_tools(
         &mut self,
         attempt: Attempt,
@@ -386,7 +360,6 @@ impl SessionDriver {
         Ok(ids)
     }
 
-    /// Close a provider round that failed; it is charged its full exposure.
     pub(crate) fn fail_provider(
         &mut self,
         attempt: Attempt,
@@ -406,7 +379,6 @@ impl SessionDriver {
         })
     }
 
-    /// Record every tool result of the batch in provider-call order.
     pub(crate) fn finish_tools(
         &mut self,
         results: &[(Call, &str, bool, u64)],
@@ -428,8 +400,6 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// Capture the Execute result and move Work to Verify. Returns the
-    /// changed paths.
     pub(crate) fn enter_verify(&mut self) -> Result<Vec<String>, DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
@@ -444,12 +414,8 @@ impl SessionDriver {
         Ok(paths)
     }
 
-    /// Check the candidate is still what the gates ran against.
     pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
         let now = self.snapshot()?;
-        // Stable when the files the turn changed are still as captured. A gate
-        // that rewrites an untouched file (Cargo.lock, a generated fixture)
-        // must not invalidate a verdict whose checks passed.
         let stable = self
             .work
             .as_ref()
@@ -467,7 +433,6 @@ impl SessionDriver {
         })
     }
 
-    /// Move Work from Verify to Review once the gates passed.
     pub(crate) fn enter_review(&mut self) -> Result<(), DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
@@ -476,8 +441,6 @@ impl SessionDriver {
         self.checkpoint()
     }
 
-    /// The reviewer sent the change back: queue its findings, record the
-    /// receipt, and close the turn.
     pub(crate) fn commit_review(
         &mut self,
         findings: &str,
@@ -499,7 +462,6 @@ impl SessionDriver {
         self.close()
     }
 
-    /// Commit the verdict, the visible receipt, and close the turn.
     pub(crate) fn commit_verdict(
         &mut self,
         verdict: Verdict,
@@ -522,7 +484,6 @@ impl SessionDriver {
         self.close()
     }
 
-    /// Close the open turn.
     pub(crate) fn close(&mut self) -> Result<(), DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
@@ -532,9 +493,6 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// Abort the open turn: unanswered tool calls get an `aborted` result so
-    /// the conversation stays well-formed, and an interrupted Verify returns
-    /// to Execute. Idle sessions are left alone.
     pub(crate) fn abort(&mut self, reason: &str) -> Result<(), DriverError> {
         if self.turn.is_none() {
             return Ok(());
@@ -559,7 +517,6 @@ impl SessionDriver {
         Ok(())
     }
 
-    /// Replace the older conversation with a summary.
     pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<(), DriverError> {
         self.append(Line::Summary {
             text: summary.to_string(),
@@ -567,7 +524,6 @@ impl SessionDriver {
         })
     }
 
-    /// Drop the idle conversation.
     pub(crate) fn clear(&mut self) -> Result<(), DriverError> {
         if self.turn.is_some() {
             return Err(DriverError::Busy);
@@ -575,8 +531,6 @@ impl SessionDriver {
         self.append(Line::Clear)
     }
 
-    /// Copy this conversation into a new child session and return its log
-    /// path. Work stays here.
     pub(crate) fn fork(&self) -> Result<PathBuf, DriverError> {
         let home = log::home_of(self.log.path())
             .ok_or_else(|| DriverError::State("session log has no home".to_string()))?;
@@ -613,7 +567,6 @@ impl SessionDriver {
         (self.state.tokens, self.state.millis)
     }
 
-    /// Record the active workflow name; `None` clears it.
     pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<(), DriverError> {
         if self.state.workflow.as_deref() == name {
             return Ok(());
@@ -627,7 +580,6 @@ impl SessionDriver {
         self.state.workflow.as_deref()
     }
 
-    /// Work stage the open turn began in.
     pub(crate) fn stage(&self) -> Option<Stage> {
         self.turn.as_ref().and_then(|turn| turn.stage)
     }
@@ -666,7 +618,6 @@ impl SessionDriver {
         self.checkpoint()
     }
 
-    /// The active Work's objective.
     pub(crate) fn objective(&self) -> Result<String, DriverError> {
         Ok(self
             .work
@@ -676,8 +627,6 @@ impl SessionDriver {
             .clone())
     }
 
-    /// Whether the active Work is a job that has not been scouted: numbered
-    /// steps, a goal, or a single turn in plan mode.
     pub(crate) fn needs_scout(&self, plan: bool) -> bool {
         self.active().is_some_and(|work| {
             work.brief.is_none()
@@ -688,7 +637,6 @@ impl SessionDriver {
         })
     }
 
-    /// Keep the scout's brief with the Work.
     pub(crate) fn set_brief(&mut self, brief: &str) -> Result<(), DriverError> {
         self.work.as_mut().ok_or(DriverError::NoWork)?.brief = Some(brief.to_string());
         self.checkpoint()
@@ -707,7 +655,6 @@ impl SessionDriver {
             .completion_checks())
     }
 
-    /// Open or reuse the single-turn Work that owns an interactive Plan.
     pub(crate) fn prepare_plan_work(&mut self, objective: &str) -> Result<(), DriverError> {
         match self.active() {
             None => self.set_work(objective, Policy::Single),
@@ -720,7 +667,6 @@ impl SessionDriver {
         }
     }
 
-    /// Finish the Plan round and select its text as the plan.
     pub(crate) fn finish_plan(
         &mut self,
         attempt: Attempt,
@@ -738,7 +684,6 @@ impl SessionDriver {
         self.close()
     }
 
-    /// Enter the selected interactive Plan into Execute.
     pub(crate) fn accept_plan(&mut self) -> Result<(), DriverError> {
         let selected = self.active().is_some_and(|work| {
             work.policy == Policy::Single
@@ -753,8 +698,6 @@ impl SessionDriver {
         self.execute()
     }
 
-    /// Open or resume the Work a Steps or Goal runner owns. `text` is the
-    /// plan for Steps and the objective for Goal.
     pub(crate) fn prepare_external_work(
         &mut self,
         text: &str,
@@ -803,8 +746,6 @@ impl SessionDriver {
         }
     }
 
-    /// Attach one turn to the active Work, or open a single-turn Work for
-    /// this objective.
     pub(crate) fn prepare_turn_work(
         &mut self,
         objective: &str,
@@ -891,8 +832,6 @@ impl SessionDriver {
     }
 }
 
-/// Whether the session at `path` holds this workspace's active Work for
-/// `policy` and `text`.
 pub(crate) fn work_at(path: &Path, workspace: &Path, policy: Policy, text: &str) -> bool {
     let Ok(Line::Session {
         workspace: recorded,

@@ -1,5 +1,3 @@
-//! Credentials for one `chat/completions` host: a static key or an OAuth token.
-
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -11,16 +9,12 @@ use crate::error::{Error, ProviderFailureKind, Result};
 
 const SKEW: Duration = Duration::from_secs(60);
 
-/// `now + seconds`, clamped so a hostile or corrupt expiry cannot overflow the
-/// monotonic clock (adding an out-of-range `Duration` to an `Instant` panics).
-/// Caps at ten years, far past any real token lifetime.
 fn deadline(seconds: u64) -> Instant {
     const MAX: u64 = 10 * 365 * 24 * 3600;
     Instant::now() + Duration::from_secs(seconds.min(MAX))
 }
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
-/// Resolved credentials. HTTP stays on `Client`; this type only yields a bearer.
 #[derive(Clone)]
 pub(super) struct Auth {
     inner: Arc<Inner>,
@@ -168,7 +162,6 @@ impl Auth {
         }
     }
 
-    /// Drop the cached bearer so the next `token()` reloads or exchanges.
     pub(super) fn forget_live(&self) {
         if let Inner::OAuth(inner) = &*self.inner
             && let Ok(mut guard) = inner.slot.lock()
@@ -207,9 +200,6 @@ async fn token(
                     return put_chat(http, spec, slot, next).await;
                 }
                 Err(error) => {
-                    // Another process sharing this home may have rotated the
-                    // refresh token and written a fresh one. Reload and use it
-                    // rather than reporting a spurious failure.
                     if let Some(reloaded) = load_disk(home, name)?
                         && reloaded.fresh()
                         && reloaded.access_token != issued.access_token
@@ -337,9 +327,6 @@ fn credentials_path(home: &Path, name: &str) -> PathBuf {
         .chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '-' })
         .collect();
-    // Names that sanitize identically (foo.bar vs foo-bar) would share one
-    // file; disambiguate with a stable hash, but leave already-clean names
-    // untouched so credentials saved before this keep resolving.
     let file = if safe == name {
         format!("{safe}.json")
     } else {
@@ -377,9 +364,6 @@ fn save_disk(home: &Path, name: &str, issued: &Issued) -> Result<()> {
 
 fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
-    // Write to a private temp file, then rename over the target. A crash
-    // mid-write leaves the temp file, not a corrupt credential that bricks
-    // every later load.
     let tmp = path.with_extension("tmp");
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
@@ -543,8 +527,6 @@ async fn device_login(
         .unwrap_or(&start.verification_uri);
     notice(&format!("open {uri}"));
     notice(&format!("code {}", start.user_code));
-    // RFC 8628 makes interval a minimum with a 5s default; an explicit 0
-    // must not turn the poll into a hot loop against the token endpoint.
     let mut interval = Duration::from_secs(start.interval.filter(|n| *n > 0).unwrap_or(5));
     let deadline = deadline(start.expires_in.filter(|n| *n > 0).unwrap_or(900));
     loop {

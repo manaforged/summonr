@@ -87,7 +87,6 @@ pub(super) async fn goal(
     Ok(code)
 }
 
-/// Run turns until the durable Work verdict becomes terminal.
 pub(super) async fn drive_goal(
     loop_: &mut Loop<Client>,
     objective: &str,

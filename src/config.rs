@@ -1,5 +1,3 @@
-//! One parser and writer for `~/.mage/config.toml`.
-
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -16,6 +14,8 @@ use crate::workflow::Workflow;
 pub(crate) struct File {
     pub default: Option<String>,
     #[serde(default)]
+    pub last_endpoint: Option<String>,
+    #[serde(default)]
     pub endpoint: BTreeMap<String, Endpoint>,
     #[serde(default)]
     pub search: Search,
@@ -27,14 +27,11 @@ pub(crate) struct File {
     pub bus: Option<bool>,
     #[serde(default)]
     pub lsp: Lsp,
-    /// Default workflow name.
     pub workflow: Option<String>,
-    /// `[workflows.NAME]`: role -> seat rows.
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
 }
 
-/// `role = "endpoint"` or `role = { endpoint = "…", model = "…" }`.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum SeatRow {
@@ -45,7 +42,6 @@ pub(crate) enum SeatRow {
     },
 }
 
-/// Language server argv. Empty means detect from the workspace tree.
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Lsp {
     pub command: Option<Vec<String>>,
@@ -56,21 +52,16 @@ pub(crate) struct Endpoint {
     pub base_url: Option<String>,
     pub model: Option<String>,
     pub api_key: Option<String>,
-    /// OAuth token endpoint. When set, the connector fetches a bearer
-    /// token; `api_key` is not used.
     pub auth: Option<OAuth>,
     pub body: Option<toml::Value>,
     pub context_window: Option<u32>,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
-    /// Extra HTTP headers on every chat request (Copilot editor headers, …).
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
-    /// `anthropic`, `gemini`, or omitted for chat/completions.
     pub wire: Option<String>,
 }
 
-/// RFC 6749 token request for a `chat/completions` host.
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
 pub struct OAuth {
     pub token_url: String,
@@ -78,14 +69,10 @@ pub struct OAuth {
     pub client_secret: Option<String>,
     pub refresh_token: Option<String>,
     pub scope: Option<String>,
-    /// `client_credentials`, `refresh_token`, or `device_code`.
     #[serde(default)]
     pub grant: Option<String>,
-    /// RFC 8628 device authorization URL. Implies `device_code`.
     #[serde(default)]
     pub device_url: Option<String>,
-    /// After the OAuth access token, GET this URL with that Bearer and
-    /// use the JSON `token` / `access_token` as the chat bearer.
     #[serde(default)]
     pub exchange_url: Option<String>,
 }
@@ -149,6 +136,12 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["reasoning"] = value(prefs.reasoning);
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
+    match &prefs.last_endpoint {
+        Some(name) => document["last_endpoint"] = value(name),
+        None => {
+            document.as_table_mut().remove("last_endpoint");
+        }
+    }
     persist(path, &document)
 }
 

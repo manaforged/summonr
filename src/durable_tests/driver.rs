@@ -39,7 +39,6 @@ fn usage(input: u64, output: u64, millis: u64) -> Usage {
     }
 }
 
-/// Open a turn on a single-turn Work with no checks.
 fn start(driver: &mut SessionDriver, text: &str) {
     driver.prepare_turn_work(text, &[]).expect("work");
     driver.start_input(text, &[]).expect("start");
@@ -206,7 +205,6 @@ fn untouched_file_churn_during_verify_keeps_the_verdict() {
     start(&mut driver, "write");
     answer(&mut driver, "done");
     driver.enter_verify().expect("capture");
-    // A gate rewrites a file the turn never touched.
     std::fs::write(workspace.join("Cargo.lock"), b"regenerated").expect("gate write");
     let verdict = driver.prepare_verdict(true).expect("verdict");
     assert!(verdict.passed, "untouched churn must not fail the verdict");
@@ -218,11 +216,9 @@ fn a_changed_candidate_file_during_verify_fails_the_verdict() {
     let (home, workspace) = home();
     let mut driver = open(home.path(), &workspace);
     start(&mut driver, "write");
-    // The turn changes a file, so it enters the candidate set.
     std::fs::write(workspace.join("out.txt"), b"first").expect("edit");
     answer(&mut driver, "done");
     driver.enter_verify().expect("capture");
-    // The same file changes again after the candidate was captured.
     std::fs::write(workspace.join("out.txt"), b"second-and-longer").expect("re-edit");
     let verdict = driver.prepare_verdict(true).expect("verdict");
     assert!(!verdict.passed);
@@ -503,7 +499,6 @@ fn resume_uses_the_recorded_workspace_not_the_caller() {
     let path = driver.path().to_path_buf();
     drop(driver);
 
-    // Resume the session from a different directory than it was opened in.
     let elsewhere = home.path().join("elsewhere");
     std::fs::create_dir(&elsewhere).expect("elsewhere");
     let resumed = resume(home.path(), &path, &elsewhere);

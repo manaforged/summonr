@@ -25,7 +25,6 @@ impl std::fmt::Display for ProviderFailure {
     }
 }
 
-/// Errors returned by configuration, provider calls, or tool execution.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("configuration error: {0}")]

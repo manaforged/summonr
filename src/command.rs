@@ -1,5 +1,3 @@
-//! Shared interactive command grammar.
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SlashCommand {
     Help,

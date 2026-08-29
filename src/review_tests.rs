@@ -24,7 +24,6 @@ fn prose_without_json_is_a_rejection_carrying_the_text() {
     assert!(!broken.pass);
     assert_eq!(broken.findings, "{not json}");
 
-    // A closing brace before an opening one must not panic on the slice.
     let reversed = parse("nope } more to do {");
     assert!(!reversed.pass);
     assert_eq!(reversed.findings, "nope } more to do {");

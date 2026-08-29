@@ -1,10 +1,3 @@
-//! Workflows: one seat per step.
-//!
-//! A workflow names the endpoint, and optionally the model, that runs each
-//! role. A role the workflow does not name uses the session's driving seat.
-//! Workflows live in `~/.mage/config.toml` as `[workflows.NAME]` tables; the
-//! top-level `workflow` key names the default.
-
 use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
@@ -12,23 +5,15 @@ use std::str::FromStr;
 use crate::config::{self, File, SeatRow};
 use crate::error::{Error, Result};
 
-/// Words `/workflow` reads as verbs; a workflow cannot take one as its name.
 pub const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "save", "default"];
 
-/// A step that calls a model.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Role {
-    /// Read-only reconnaissance before a job's first plan or turn.
     Scout,
-    /// Plan-mode rounds.
     Plan,
-    /// Execute rounds.
     Implement,
-    /// Read-only review after the gates pass.
     Review,
-    /// The goal judge.
     Judge,
-    /// The compaction summary.
     Summary,
 }
 
@@ -72,7 +57,6 @@ impl FromStr for Role {
     }
 }
 
-/// An endpoint and, when set, a model on it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Seat {
     pub endpoint: String,
@@ -100,7 +84,6 @@ impl Workflow {
         self.seats.get(&role)
     }
 
-    /// `role seat · role seat …`, for status lines.
     #[must_use]
     pub fn summary(&self) -> String {
         if self.seats.is_empty() {
@@ -114,12 +97,10 @@ impl Workflow {
     }
 }
 
-/// Saved workflow names, in config order.
 pub fn names() -> Result<Vec<String>> {
     Ok(config::load()?.workflows.keys().cloned().collect())
 }
 
-/// The workflow the config names as default, if any.
 pub fn default_name() -> Result<Option<String>> {
     Ok(config::load()?.workflow)
 }
@@ -158,7 +139,6 @@ pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
     })
 }
 
-/// Write the workflow's `[workflows.NAME]` table, replacing any existing one.
 pub fn save(workflow: &Workflow) -> Result<()> {
     let name = workflow.name.trim();
     if name.is_empty() {
@@ -172,7 +152,6 @@ pub fn save(workflow: &Workflow) -> Result<()> {
     config::save_workflow(&config::path()?, workflow)
 }
 
-/// Make a saved workflow the default for new sessions.
 pub fn set_default(name: &str) -> Result<()> {
     let path = config::path()?;
     from_file(&config::load_from(&path)?, name)?;

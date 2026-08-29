@@ -1,13 +1,9 @@
 use super::*;
 use crate::workflow::Role;
 
-/// Provider rounds an aside may take before it must answer.
 const ROUNDS: usize = 8;
 
 impl<P: Provider> Loop<P> {
-    /// A private conversation on `role`'s seat with read-only tools:
-    /// charged to the session, never added to history. Scout and review
-    /// run here.
     pub(crate) async fn aside(
         &mut self,
         role: Role,

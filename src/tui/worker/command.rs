@@ -168,8 +168,6 @@ impl Worker {
                 return;
             }
         };
-        // Device login polls for up to 15 minutes; run it off the worker task
-        // so it never freezes the interface or wedges queued commands.
         let ui = self.ui.clone();
         let name = name.to_string();
         drop(tokio::spawn(async move {
@@ -193,8 +191,6 @@ impl Worker {
         Some(true)
     }
 
-    /// `/goal <objective>`: run turns until Work records a terminal verdict.
-    /// Bare `/goal`: status of the active goal.
     async fn goal(&mut self, objective: &str) -> bool {
         let gates = self.loop_.verify_commands().to_vec();
         if objective.is_empty() {
@@ -227,8 +223,6 @@ impl Worker {
                     self.system("goal paused — cancelled by user");
                     return true;
                 }
-                // A turn that hit its round limit must not relaunch another
-                // full turn — that is unbounded spend the budget never sees.
                 Some(turn) if turn.aborted => {
                     if let Err(error) = self.loop_.abandon_work("goal execution aborted") {
                         self.fail(&error.to_string());
@@ -248,7 +242,6 @@ impl Worker {
         true
     }
 
-    /// Bare `/goal`: show the active goal, or usage when none is set.
     fn goal_status(&mut self) -> bool {
         if let Some(status) = self.loop_.goal_status() {
             self.system(&status);

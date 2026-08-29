@@ -10,15 +10,11 @@ use super::{
     Recent, ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args,
 };
 
-/// How much of a finished job's log the digest may read.
 const LOG_READ_BYTES: usize = 512 * 1024;
-/// Lines a plain (non-toolchain) result keeps from the end.
 const TAIL_LINES: usize = 60;
 const SHELL_DEFAULT_SECS: u64 = 30;
 const SHELL_MAX_SECS: u64 = 600;
 
-/// A repeated command within this window, with no edit in between,
-/// returns the previous result instead of running again.
 const REPEAT_SECS: u64 = 45;
 
 pub(crate) fn exit_code(output: &str) -> Option<i32> {
@@ -228,9 +224,6 @@ fn background_result(started: StartedCommand) -> ToolOutput {
     }
 }
 
-/// What the model needs from a finished command: for a toolchain run,
-/// the error and failure blocks plus the summary lines; otherwise the
-/// whole output when short, or its head and tail when long.
 pub(super) fn digest(command: &str, raw: &str) -> String {
     let lines: Vec<&str> = raw.lines().collect();
     if lines.len() <= TAIL_LINES {
@@ -284,8 +277,6 @@ fn plain_output(lines: &[&str]) -> String {
     )
 }
 
-/// Error blocks (`error…` through the next blank line), panics and
-/// failing tests with their following lines, and summary lines.
 fn toolchain_digest(lines: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut carry = 0_usize;

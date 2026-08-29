@@ -6,8 +6,6 @@ use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
 
-/// The newest session whose workspace is `workspace` or a `summon/*`
-/// worktree of the same repository.
 pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
     last_in(&crate::prompt::mage_home()?, workspace)
 }
@@ -42,7 +40,6 @@ fn roots(workspace: &Path) -> Vec<String> {
     want
 }
 
-/// Resolve a session id or unique prefix to a log path.
 pub fn resolve_id(id: &str) -> Result<PathBuf> {
     let id = id.trim();
     if id.is_empty() {
@@ -69,7 +66,6 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     }
 }
 
-/// Every session under the home, oldest first.
 pub fn list() -> Result<Vec<SessionInfo>> {
     list_in(&crate::prompt::mage_home()?)
 }
@@ -105,7 +101,6 @@ fn info(path: PathBuf) -> SessionInfo {
     }
 }
 
-/// Workspace, model, and the first user line without reading the whole log.
 fn peek(path: &Path) -> (Option<String>, Option<String>, String) {
     let Ok(file) = std::fs::File::open(path) else {
         return (None, None, String::new());

@@ -90,8 +90,6 @@ impl Model {
     pub(super) fn apply(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Bye => return false,
-            // Reasoning display is off, but a reasoning-heavy model can think
-            // for many seconds — show that it is alive without the transcript.
             Msg::Thinking(_) if !self.prefs.reasoning => {
                 self.live_tool = Some(("thinking".to_string(), String::new()));
             }
@@ -100,7 +98,6 @@ impl Model {
                 _ => self.entries.push(Entry::Thinking(text)),
             },
             Msg::Delta(text) => {
-                // The answer is streaming now; drop the thinking/calling hint.
                 self.live_tool = None;
                 match self.entries.last_mut() {
                     Some(Entry::Assistant {

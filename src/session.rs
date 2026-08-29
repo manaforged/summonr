@@ -1,5 +1,3 @@
-//! Session catalog and replay.
-
 use std::path::PathBuf;
 
 use crate::provider::Message;
@@ -8,7 +6,6 @@ mod catalog;
 
 pub use catalog::{last_for, list, resolve_id};
 
-/// One listed session.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionInfo {
     pub id: String,
@@ -18,7 +15,6 @@ pub struct SessionInfo {
     pub preview: String,
 }
 
-/// History reconstructed from the session log.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Replay {
     pub history: Vec<Message>,

@@ -24,7 +24,6 @@ use auth::Auth;
 
 pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 
-/// Chat role on the OpenAI-compatible wire.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
@@ -34,7 +33,6 @@ pub enum Role {
     Tool,
 }
 
-/// One image supplied with a user prompt.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Image {
     pub media_type: String,
@@ -81,7 +79,6 @@ mod image_bytes {
     }
 }
 
-/// Text and images supplied together as one user turn.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct UserInput {
     pub text: String,
@@ -106,7 +103,6 @@ impl From<String> for UserInput {
     }
 }
 
-/// One message in the provider conversation.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Message {
     pub role: Role,
@@ -118,8 +114,6 @@ pub struct Message {
     pub tool_calls: Vec<ToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
-    /// The model's thinking for this assistant turn. Sent back as
-    /// `reasoning_content` so the template can keep it in context.
     #[serde(
         default,
         rename = "reasoning_content",
@@ -164,7 +158,6 @@ impl Message {
     }
 }
 
-/// Tool-call kind on the OpenAI-compatible wire.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolKind {
@@ -172,7 +165,6 @@ pub enum ToolKind {
     Function,
 }
 
-/// A function call emitted by an OpenAI-compatible provider.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ToolCall {
     pub id: String,
@@ -187,7 +179,6 @@ pub struct ToolFunction {
     pub arguments: String,
 }
 
-/// Token counts reported by a provider.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(from = "UsageWire")]
 pub struct Usage {
@@ -195,17 +186,12 @@ pub struct Usage {
     pub prompt_tokens: u32,
     #[serde(default)]
     pub completion_tokens: u32,
-    /// Completion tokens spent on hidden reasoning, when the provider says.
     #[serde(default)]
     pub reasoning_tokens: u32,
-    /// Prompt tokens served from the provider's cache, when it says.
     #[serde(default)]
     pub cached_tokens: u32,
 }
 
-/// `usage` as providers send it: the cache count sits under
-/// `prompt_tokens_details` (OpenAI, llama.cpp, DeepSeek) or, on some
-/// hosts, flat as `cached_tokens` / `prompt_cache_hit_tokens`.
 #[derive(Deserialize)]
 struct UsageWire {
     #[serde(default)]
@@ -268,7 +254,6 @@ impl Usage {
     }
 }
 
-/// The assistant message returned by a provider.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct AssistantMessage {
     #[serde(default)]
@@ -287,7 +272,6 @@ pub struct AssistantMessage {
     pub stop_reason: StopReason,
 }
 
-/// Why the provider ended one model round.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum StopReason {
@@ -312,19 +296,16 @@ impl AssistantMessage {
     }
 }
 
-/// The request supplied to a provider for one model round.
 #[derive(Clone, Debug)]
 pub struct CompletionRequest {
     pub model: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
     pub max_output_tokens: u32,
-    /// Forward streamed text and reasoning to the interface.
     pub emit_deltas: bool,
 }
 
 impl CompletionRequest {
-    /// Canonical bytes for the provider effect recorded in the session journal.
     pub(crate) fn durable_bytes(&self) -> serde_json::Result<Vec<u8>> {
         #[derive(Serialize)]
         struct DurableMessage<'a> {
@@ -364,7 +345,6 @@ impl CompletionRequest {
         })
     }
 
-    /// Stable identity of the request head that should survive appended turns.
     pub(crate) fn prefix_hash(&self) -> String {
         let system = self.messages.first().map(|message| &message.content);
         let bytes = serde_json::to_vec(&(&self.model, system, &self.tools)).unwrap_or_default();
@@ -377,7 +357,6 @@ impl CompletionRequest {
     }
 }
 
-/// A function definition advertised to the provider.
 #[derive(Clone, Debug, Serialize)]
 pub struct ToolDefinition {
     #[serde(rename = "type")]
@@ -392,7 +371,6 @@ pub struct FunctionDefinition {
     pub parameters: Value,
 }
 
-/// A provider implementation for one model round.
 #[allow(
     async_fn_in_trait,
     reason = "Provider is an application-owned trait with no public Send contract"
@@ -406,18 +384,10 @@ pub trait Provider {
 
 type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 
-/// Time allowed for one model round, connect to last byte. A long ceiling so a
-/// slow but live generation completes.
 const ROUND_TIMEOUT: Duration = Duration::from_secs(3000);
 
-/// Maximum gap between reads on a streaming round. Bounds a stalled or
-/// half-open connection so the turn fails in seconds instead of hanging on
-/// [`ROUND_TIMEOUT`]. A live model streams tokens or a keep-alive well inside
-/// this window.
 const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 
-/// OpenAI-compatible chat client: one `POST {base_url}/chat/completions`
-/// per round, streamed when a delta observer is set.
 #[derive(Clone)]
 pub struct Client {
     http: reqwest::Client,
@@ -433,7 +403,6 @@ pub struct Client {
 }
 
 impl Client {
-    /// Host and key only (tests, `MAGE_BASE_URL`).
     pub fn new(api_key: impl Into<String>, base_url: impl Into<String>) -> Result<Self> {
         let mut key = api_key.into();
         if key.trim().is_empty() {
@@ -449,7 +418,6 @@ impl Client {
         )
     }
 
-    /// Connect to a resolved endpoint.
     pub fn connect(endpoint: &crate::endpoint::Endpoint) -> Result<Self> {
         let base = endpoint
             .base_url
@@ -476,7 +444,6 @@ impl Client {
         )
     }
 
-    /// RFC 8628 device-code login. Prints the user code and waits for the token.
     pub async fn login(
         endpoint: &crate::endpoint::Endpoint,
         notice: impl FnMut(&str),
@@ -530,29 +497,24 @@ impl Client {
         })
     }
 
-    /// Print token deltas as they arrive (interactive / print).
     #[must_use]
     pub fn on_delta(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.on_delta = Some(Arc::new(emit));
         self
     }
 
-    /// Observe reasoning deltas as they arrive (thinking display).
     #[must_use]
     pub fn on_reasoning(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.on_reasoning = Some(Arc::new(emit));
         self
     }
 
-    /// Observe the tool name when a streaming tool call is first named, so
-    /// the interface can show "calling <name>…" before the round completes.
     #[must_use]
     pub fn on_tool(mut self, emit: impl Fn(&str) + Send + Sync + 'static) -> Self {
         self.on_tool = Some(Arc::new(emit));
         self
     }
 
-    /// Read the provider credentials from the process environment.
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("MAGE_API_KEY").map_err(|error| {
             Error::Config(format!(
@@ -564,7 +526,6 @@ impl Client {
         Self::new(api_key, base_url)
     }
 
-    /// List model identifiers advertised by this OpenAI-compatible host.
     pub async fn models(&self) -> Result<Vec<String>> {
         let base = self
             .url
@@ -609,9 +570,6 @@ impl Client {
         if stream {
             body["stream_options"] = json!({ "include_usage": true });
         }
-        // OpenAI routes to a cached prefix by this key. Other OpenAI-compatible
-        // hosts cache implicitly and may reject an unknown field, so send it
-        // only to OpenAI itself.
         if self.url.contains("api.openai.com") {
             body["prompt_cache_key"] = json!(request.prefix_hash());
         }

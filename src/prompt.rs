@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-/// Resolve `$MAGE_HOME`, defaulting to `~/.mage`.
 pub fn mage_home() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("MAGE_HOME") {
         if path.is_empty() {
@@ -18,12 +17,10 @@ pub fn mage_home() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".mage"))
 }
 
-/// Load prompts without trusting a repo `AGENTS.md`.
 pub fn system_prompt(workspace: &Path) -> String {
     compose(workspace, mage_home().ok().as_deref(), false)
 }
 
-/// Load prompts. `trust` includes workspace `AGENTS.md`.
 pub fn system_prompt_with(workspace: &Path, trust: bool) -> String {
     compose(workspace, mage_home().ok().as_deref(), trust)
 }
@@ -51,7 +48,6 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool) -> Str
     parts.join("\n\n")
 }
 
-/// Turn-local harness facts. These append after cached history.
 #[must_use]
 pub fn harness_section(plan: bool, checks: &[String]) -> String {
     let mut parts = vec![if plan {

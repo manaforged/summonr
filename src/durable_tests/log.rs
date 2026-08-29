@@ -287,7 +287,6 @@ fn summary_keeps_the_recent_tail_verbatim() {
             tail: tail.clone(),
         },
     ]);
-    // opener + summary + the two tail messages.
     assert_eq!(state.history.len(), 4);
     assert_eq!(state.history[0].content, "current");
     assert_eq!(state.history[1].role, Role::System);
@@ -301,7 +300,6 @@ fn summary_keeps_the_recent_tail_verbatim() {
 fn open_heals_a_torn_last_line_so_resume_never_bricks() {
     use std::io::Write;
 
-    // Case A: a complete line that lost only its trailing newline is kept.
     let dir = tempfile::tempdir().expect("tempdir");
     let path = log::session_path(dir.path(), SessionId::from_u128(11));
     {
@@ -311,7 +309,6 @@ fn open_heals_a_torn_last_line_so_resume_never_bricks() {
     }
     let torn = serde_json::to_string(&user("second", false)).expect("encode");
     {
-        // Append the line WITHOUT a trailing newline, as a crash would leave it.
         let mut file = std::fs::OpenOptions::new()
             .append(true)
             .open(&path)
@@ -330,7 +327,6 @@ fn open_heals_a_torn_last_line_so_resume_never_bricks() {
         "torn-but-complete line kept, no weld: {lines:?}"
     );
 
-    // Case B: a genuinely partial tail is dropped, not welded.
     let path = log::session_path(dir.path(), SessionId::from_u128(12));
     {
         let mut log = Log::create(&path).expect("create");
@@ -357,7 +353,6 @@ fn open_heals_a_torn_last_line_so_resume_never_bricks() {
 fn a_torn_multibyte_last_line_does_not_brick_read() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("torn.jsonl");
-    // A complete header line, then a tail cut mid-'é' (invalid UTF-8).
     let mut bytes = serde_json::to_vec(&header(1)).expect("encode");
     bytes.push(b'\n');
     bytes.extend_from_slice(b"{\"kind\":\"user\",\"text\":\"caf\xc3");

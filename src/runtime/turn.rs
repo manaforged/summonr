@@ -6,11 +6,6 @@ use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
 
 impl<P: Provider> Loop<P> {
-    /// Inject user steering and freshly arrived bus mail into the
-    /// conversation. Steering is the user's own words, so it lands
-    /// verbatim; mail is peer text, never user instructions — the
-    /// envelope says so, and each round injects at most a capped batch
-    /// so a flooded mailbox cannot blow up the context.
     fn take_mail(
         &mut self,
         messages: &mut Vec<Message>,
@@ -68,8 +63,6 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
-    /// Complete one round with retries: backoff on transient failures,
-    /// and one compact-and-retry on context overflow.
     async fn complete_retry(
         &mut self,
         messages: &mut [Message],
@@ -190,12 +183,10 @@ impl<P: Provider> Loop<P> {
         super::compaction::estimate(chars, self.context_sample)
     }
 
-    /// Run one user turn, including any provider-requested tool calls.
     pub async fn turn(&mut self, prompt: &str) -> Result<Turn> {
         self.turn_with(prompt, |_| {}).await
     }
 
-    /// Run one user turn and emit each event as it happens.
     pub async fn turn_with(
         &mut self,
         input: impl Into<UserInput>,
@@ -205,7 +196,6 @@ impl<P: Provider> Loop<P> {
         self.run_turn(messages, emit).await
     }
 
-    /// Run a turn from peer mail already observed by the interface.
     pub async fn turn_mail_with(&mut self, emit: impl FnMut(&Event)) -> Result<Turn> {
         if self.mail.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
@@ -322,8 +312,6 @@ impl<P: Provider> Loop<P> {
         self.abort_turn(abort_reason, events, emit, usage, reached)
     }
 
-    /// Run the scout seat once per job Work and hand its brief to the
-    /// conversation as the message after the input.
     async fn scout(
         &mut self,
         messages: &mut Vec<Message>,
@@ -336,7 +324,6 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let objective = self.session.objective().map_err(super::session_err)?;
-        // A scout-seat outage must not fail the turn — skip the brief.
         let brief = match crate::scout::brief(self, &objective, usage).await {
             Ok(brief) => brief,
             Err(error) => {
@@ -367,8 +354,6 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        // A cancelled scout/review aside can leave the tool policy read-only;
-        // a turn always begins matching the session's plan mode.
         self.tools.set_read_only(self.plan);
         let commands = self.verify.as_deref().unwrap_or_default();
         if self.plan {
@@ -472,9 +457,6 @@ impl<P: Provider> Loop<P> {
         meter: Meter,
     ) -> Result<Turn> {
         if message.content.trim().is_empty() {
-            // The provider billed for this round even with no usable output.
-            // Charge and close the attempt so the tokens reach the ledger,
-            // then fail the turn.
             self.session
                 .fail_provider(
                     attempt,
@@ -572,8 +554,6 @@ impl<P: Provider> Loop<P> {
                         }
                         checks.push(review);
                     }
-                    // The reviewer seat was unreachable — skip it and let the
-                    // gates stand rather than counting a failed attempt.
                     Err(why) => {
                         self.push_event(
                             &mut events,

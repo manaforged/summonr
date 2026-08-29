@@ -1,9 +1,3 @@
-//! The shared cell canvas: one cell type and palette for every surface.
-//!
-//! Chat, settings, and the splash scene paint into `Vec<Cell>` grids and
-//! hand them to their own row renderers. This module owns the cell type,
-//! the blank, the color helper, and the palette both surfaces share.
-
 use sigil::prelude::*;
 
 pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {

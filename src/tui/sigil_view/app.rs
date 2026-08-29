@@ -48,19 +48,15 @@ pub(super) struct App {
     pub(super) model_sel: Signal<usize>,
     pub(super) model_loading: Signal<bool>,
     pub(super) model_error: Signal<String>,
-    /// The workflow role the open seat picker is choosing for, by
-    /// [`Role::ALL`] index; `None` picks the driving seat.
     pub(super) model_for: Signal<Option<usize>>,
     pub(super) workflow_open: Signal<bool>,
     pub(super) workflow_name: Signal<String>,
     pub(super) workflow_names: Signal<Vec<String>>,
-    /// One `endpoint\tmodel` row per [`Role::ALL`] entry; `None` is driving.
     pub(super) workflow_seats: Signal<Vec<Option<String>>>,
     pub(super) workflow_sel: Signal<usize>,
     pub(super) workflow_naming: Signal<bool>,
     pub(super) workflow_draft: Signal<String>,
     pub(super) workflow_caret: Signal<usize>,
-    /// Role row a pointer drag started on, and the row it is over now.
     pub(super) drag_from: Signal<Option<usize>>,
     pub(super) drag_over: Signal<Option<usize>>,
     pub(super) hits: Hits,
@@ -157,9 +153,6 @@ impl App {
                     rows.insert(0, current);
                     recent = recent.saturating_add(1);
                 }
-                // Keep the cursor on the same row when a later, enriched list
-                // replaces the instant one so background discovery does not
-                // yank the user's selection.
                 let selected = self
                     .model_choices
                     .peek()
@@ -198,9 +191,6 @@ impl App {
         let pinned = self.scroll_y.peek() >= old_extent;
         let model = self.model.borrow();
         let transcript = model.transcript();
-        // Estimate the scroll extent from wrapped rows in cell units. Counting
-        // unwrapped lines undershoots badly when long lines wrap, which parks
-        // auto-follow above the bottom and hides the end of a reply.
         let width = usize::from(self.viewport.peek().0);
         let content_left = if width > 28 {
             2
@@ -244,9 +234,6 @@ impl App {
             busy
         };
         let ticks = self.ticks.peek().saturating_add(1);
-        // Bump the repaint signal only while something animates. An idle
-        // session must not rebuild the whole transcript — and re-decode every
-        // pasted image — 25 times a second forever.
         if busy || !self.splash_revealed.peek() {
             self.ticks.set(ticks);
         }
@@ -415,14 +402,10 @@ impl App {
         }
     }
 
-    /// Consume the images pasted since the last submit.
     fn take_pasted(&self) -> Vec<crate::provider::Image> {
         std::mem::take(&mut *self.pasted_images.borrow_mut())
     }
 
-    /// Handle a bracketed paste of one image path. Returns `true` when the
-    /// text names a supported image and is consumed as an attachment, so the
-    /// caller must not insert the path text verbatim.
     pub(super) fn paste(&self, text: &str) -> bool {
         if self.auth_open.peek() {
             return false;
@@ -430,8 +413,6 @@ impl App {
         let Some(path) = image_path(&self.workspace, text) else {
             return false;
         };
-        // Stat before read: a pasted path to a huge file must not trigger a
-        // multi-gigabyte allocation on the render thread before the size check.
         let Ok(meta) = std::fs::metadata(path.as_path()) else {
             return false;
         };
@@ -451,8 +432,6 @@ impl App {
         true
     }
 
-    /// Record one pasted image, render it in the transcript, and remember it
-    /// so the next submit attaches the bytes to the outgoing provider turn.
     fn paste_image(&self, media_type: &str, bytes: &[u8], path: &Path) {
         let image = crate::provider::Image::encode(media_type, bytes);
         self.pasted_images.borrow_mut().push(image);
@@ -566,8 +545,6 @@ impl App {
         }
     }
 
-    /// A press on a card. Returns true when a drag begins (a workflow role
-    /// row), so the caller captures the pointer.
     pub(super) fn press(&self, col: usize, row: usize) -> bool {
         let Some(target) = self.hits.at(col, row) else {
             return false;
@@ -595,8 +572,6 @@ impl App {
         });
     }
 
-    /// Release after a drag copies the source row's seat onto the row
-    /// under the pointer; a release on the source row is a plain click.
     pub(super) fn release(&self, col: usize, row: usize) {
         let Some(from) = self.drag_from.peek() else {
             return;
@@ -653,7 +628,6 @@ impl App {
         }
     }
 
-    /// Open the workflow card and ask the worker for the live seats.
     pub(super) fn open_workflow(&self) {
         self.workflow_sel.set(0);
         self.workflow_naming.set(false);
@@ -662,7 +636,6 @@ impl App {
         drop(self.cmd.send(Cmd::ListWorkflows));
     }
 
-    /// Esc on the card: leave naming first, then close.
     pub(super) fn close_workflow(&self) {
         if self.workflow_naming.peek() {
             self.workflow_naming.set(false);
@@ -685,7 +658,6 @@ impl App {
         );
     }
 
-    /// ←→ on the card: apply the previous or next saved workflow.
     pub(super) fn cycle_workflow(&self, delta: isize) {
         if self.workflow_naming.peek() {
             return;
@@ -707,7 +679,6 @@ impl App {
         );
     }
 
-    /// Enter on the card: save while naming, else pick a seat for the row.
     pub(super) fn pick_workflow_seat(&self) {
         if self.workflow_naming.peek() {
             self.commit_workflow();
@@ -726,7 +697,6 @@ impl App {
         }
     }
 
-    /// `s` on the card: edit the name, prefilled with the current one.
     pub(super) fn begin_workflow_save(&self) {
         if self.workflow_naming.peek() {
             return;
@@ -770,9 +740,6 @@ impl App {
             .collect();
         let current = self.model.borrow().snapshot.endpoint.clone();
         let focus = focus.unwrap_or(&current);
-        // Fall back to the active endpoint, not the first row, when the
-        // requested provider is unknown, so a typo never targets an
-        // unrelated provider for a key save.
         let selected = choices
             .iter()
             .position(|choice| choice.name == focus)
@@ -973,11 +940,6 @@ fn save(path: Option<&Path>, prefs: &Prefs) -> Result<(), String> {
     prefs::save_in(path, prefs).map_err(|error| format!("settings not saved: {error}"))
 }
 
-/// Resolve a bracketed-paste string to an existing image file path.
-///
-/// Accepts a bare path, or one wrapped in single or double quotes or in
-/// parentheses (terminals wrap the pasted clipboard in a different way on
-/// some platforms). A relative path resolves against the workspace.
 fn image_path(workspace: &Path, text: &str) -> Option<PathBuf> {
     let text = text.trim();
     let text = text

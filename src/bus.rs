@@ -1,18 +1,3 @@
-//! The bus: a file-backed shared mind for summoner sessions on one machine.
-//!
-//! Layout under `$MAGE_HOME/bus/`:
-//!
-//! ```text
-//! agents/<session-id>.json      registry record, rewritten on heartbeat
-//! inbox/<session-id>.jsonl      per-session mailbox, append-only
-//! board/<workspace-slug>.jsonl  shared blackboard, last write wins per key
-//! ```
-//!
-//! No daemon and no locks: records are temp-write + rename, mailboxes and
-//! boards are O_APPEND lines. A session joins when `MAGE_BUS` is configured,
-//! heartbeats its status, polls its inbox between rounds, and leaves on drop.
-//! Sessions stay off the bus by default; set `MAGE_BUS=on` to join.
-
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -24,24 +9,16 @@ use crate::prompt::mage_home;
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
 
-/// How long a record may go silent before the roster calls it dead.
-/// Long tool calls (a 60-second build) must not age a session off.
 const STALE_SECS: u64 = 120;
 
-/// One mail envelope may carry at most this much text.
 const MAIL_CHARS: usize = 1_000;
-/// Files past this size get rotated on read (mailboxes) or folded
-/// (boards), so a spammy writer cannot grow them forever.
 const MAX_FILE_BYTES: usize = 256 * 1024;
-/// Records older than a day are swept on roster reads.
 const SWEEP_SECS: u64 = 24 * 3600;
 
 fn bus_enabled(value: Option<&OsStr>) -> bool {
     value.is_some_and(|value| value != OsStr::new("off"))
 }
 
-/// A session id safe for a file name: the bus trusts the model with
-/// target ids, so anything but plain name characters becomes a dash.
 fn clean_id(id: &str) -> String {
     id.chars()
         .map(|c| {
@@ -55,7 +32,6 @@ fn clean_id(id: &str) -> String {
         .collect()
 }
 
-/// One live session on the machine.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
     pub id: String,
@@ -66,7 +42,6 @@ pub struct Agent {
     pub last_seen: u64,
 }
 
-/// One mailbox line.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Mail {
     pub ts: u64,
@@ -82,7 +57,6 @@ pub(crate) fn envelope(from: &str, text: &str) -> String {
     )
 }
 
-/// One blackboard line; the last write for a key wins.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct Post {
     ts: u64,
@@ -91,7 +65,6 @@ struct Post {
     value: String,
 }
 
-/// A session's handle to the bus. Owns its read cursor.
 pub(crate) struct Bus {
     id: String,
     dir: PathBuf,
@@ -107,7 +80,6 @@ fn now() -> u64 {
         .unwrap_or(0)
 }
 
-/// `cwd` as a flat directory name, pi-style.
 fn slug(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
@@ -115,9 +87,6 @@ fn slug(cwd: &str) -> String {
 }
 
 impl Bus {
-    /// Join the bus when `MAGE_BUS` is configured, or return None when it is
-    /// absent, disabled, or the session has no home. The inbox cursor starts
-    /// at the end: mail from before this boot is not replayed.
     pub(crate) fn join(id: &str, model: &str, cwd: &Path) -> Option<Self> {
         if !bus_enabled(std::env::var_os("MAGE_BUS").as_deref()) {
             return None;
@@ -182,7 +151,6 @@ impl Bus {
         self.last_beat = ts;
     }
 
-    /// Refresh presence; cheap no-op between beats unless status changed.
     pub(crate) fn heartbeat(&mut self, model: &str, cwd: &Path, status: &str) {
         if now() < self.last_beat + 2 && status == self.status {
             return;
@@ -190,8 +158,6 @@ impl Bus {
         self.write_record(model, cwd, status);
     }
 
-    /// Live roster: records seen in the last [`STALE_SECS`] seconds.
-    /// Records older than a day are swept from disk as a side effect.
     pub(crate) fn agents(&self) -> Vec<Agent> {
         let cutoff = now().saturating_sub(STALE_SECS);
         let sweep = now().saturating_sub(SWEEP_SECS);
@@ -218,8 +184,6 @@ impl Bus {
         roster
     }
 
-    /// Append `text` to one peer's mailbox, or to every other live peer
-    /// when `to` is "all". Text truncates at [`MAIL_CHARS`].
     pub(crate) fn send(&self, to: &str, text: &str) -> Result<usize> {
         let mail = Mail {
             ts: now(),
@@ -250,8 +214,6 @@ impl Bus {
         Ok(targets.len())
     }
 
-    /// Drain mail addressed to this session since the last poll. An
-    /// oversized mailbox is rotated down to its newest lines first.
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
         let path = self.inbox_path(&self.id.clone());
         let mut text = std::fs::read_to_string(&path).unwrap_or_default();
@@ -275,8 +237,6 @@ impl Bus {
         Ok(mail)
     }
 
-    /// Read the workspace blackboard as folded key/value posts. An
-    /// oversized board is folded back to disk as a side effect.
     pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {
         let path = self.board_path(cwd);
         let text = std::fs::read_to_string(&path).unwrap_or_default();
@@ -309,7 +269,6 @@ impl Bus {
         Ok(board)
     }
 
-    /// Post to the workspace blackboard.
     pub(crate) fn post(&self, cwd: &Path, key: &str, value: &str) -> Result<()> {
         let post = Post {
             ts: now(),
@@ -333,7 +292,6 @@ impl Bus {
             .join(format!("{}.jsonl", slug(&cwd.display().to_string())))
     }
 
-    /// Deregister. Best effort; the roster also expires stale records.
     pub(crate) fn leave(&self) {
         drop(std::fs::remove_file(self.record_path()));
     }
@@ -345,7 +303,6 @@ impl Drop for Bus {
     }
 }
 
-/// Model-facing bus tools, advertised alongside the workspace tools.
 pub(crate) fn definitions() -> Vec<ToolDefinition> {
     vec![
         tool(
@@ -388,7 +345,6 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
     ]
 }
 
-/// True when `name` is a bus tool the runtime executes itself.
 pub(crate) fn is_bus_tool(name: &str) -> bool {
     matches!(name, "agents" | "inbox" | "board" | "send")
 }

@@ -1,9 +1,6 @@
 use super::*;
 use crate::workflow;
 
-/// Overflow recovery only: clear enough recent tool results to reclaim half
-/// their bytes. Keeping the older head intact gives the retry the longest
-/// reusable prefix available without another model call.
 pub(super) fn force_compact(messages: &mut [Message]) -> bool {
     let target = messages
         .iter()
@@ -26,14 +23,10 @@ pub(super) fn force_compact(messages: &mut [Message]) -> bool {
     changed
 }
 
-/// Chars per token, for the compaction estimate.
 pub(super) const CHARS_PER_TOKEN: usize = 4;
-/// Tokens kept free under the window before auto-compaction fires.
 const RESERVE_TOKENS: u32 = 16_384;
-/// Trigger when the endpoint's window is unknown (~100k tokens).
 const DEFAULT_COMPACT_CHARS: usize = 400_000;
 
-/// Continuation summary shape, pi-style.
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
     Next steps / Files read / Files modified.";
@@ -108,9 +101,6 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    /// Stage-two compaction: when the estimate nears the window, replace
-    /// the older conversation with a continuation summary. The tail
-    /// splice never splits a tool call from its results.
     pub(super) async fn auto_compact(
         &mut self,
         messages: &mut Vec<Message>,

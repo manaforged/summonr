@@ -710,7 +710,6 @@ async fn auto_compact_summarizes_and_records() -> Result<()> {
     }
     let workspace = test_workspace()?;
     let mut loop_ = Loop::with_session(Summer, "test-model", &workspace, "test")?;
-    // a hair-trigger window: compact as soon as anything is said
     loop_.set_context_window(Some(16_386));
     let history = vec![
         Message::user("u1"),
@@ -836,7 +835,6 @@ fn provider_accepts_empty_key_as_local() {
     Client::new(" ", DEFAULT_BASE_URL).unwrap();
 }
 
-/// A provider that signs its replies and records the model it was asked for.
 struct Tagged {
     tag: &'static str,
     calls: Arc<Mutex<Vec<(String, String)>>>,

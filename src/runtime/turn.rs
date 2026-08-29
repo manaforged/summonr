@@ -5,6 +5,11 @@ use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
 
+#[cfg(not(test))]
+const JOB_WAIT_SECS: u64 = 120;
+#[cfg(test)]
+const JOB_WAIT_SECS: u64 = 1;
+
 impl<P: Provider> Loop<P> {
     fn take_mail(
         &mut self,
@@ -171,6 +176,7 @@ impl<P: Provider> Loop<P> {
             tools: tools.to_vec(),
             max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
             emit_deltas: true,
+            effort: self.effort_for(role),
         }
     }
 
@@ -216,6 +222,15 @@ impl<P: Provider> Loop<P> {
         let mut usage = Usage::default();
         let mut abort_reason = None;
         let tools = self.advertised_tools().to_vec();
+        if std::mem::take(&mut self.accepted) {
+            self.push_event(
+                &mut events,
+                &mut emit,
+                Event::Note {
+                    text: "plan accepted — /plan reject to discard".to_string(),
+                },
+            )?;
+        }
         self.scout(&mut messages, &mut usage, &mut events, &mut emit)
             .await?;
 
@@ -242,7 +257,15 @@ impl<P: Provider> Loop<P> {
             if assistant.usage.prompt_tokens > 0 {
                 self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
             }
-            self.record_usage(&assistant, prefix_hash, &mut usage, &mut events, &mut emit)?;
+            let role = self.round_role();
+            self.record_usage(
+                &assistant,
+                prefix_hash,
+                role,
+                &mut usage,
+                &mut events,
+                &mut emit,
+            )?;
             let stop_reason = assistant.stop_reason;
             let meter = super::meter(&assistant.usage, live_millis);
             let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
@@ -324,7 +347,10 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let objective = self.session.objective().map_err(super::session_err)?;
-        let brief = match crate::scout::brief(self, &objective, usage).await {
+        let before = usage.clone();
+        let brief = crate::scout::brief(self, &objective, usage).await;
+        self.seat_usage(workflow::Role::Scout, &before, usage, events, emit)?;
+        let brief = match brief {
             Ok(brief) => brief,
             Err(error) => {
                 return self.push_event(
@@ -355,17 +381,27 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
         self.tools.set_read_only(self.plan);
+        self.turn_started = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
         let commands = self.verify.as_deref().unwrap_or_default();
         if self.plan {
             self.session
                 .prepare_plan_work(&input.text)
                 .map_err(super::session_err)?;
-        } else {
-            self.session
-                .prepare_turn_work(&input.text, commands)
-                .map_err(super::session_err)?;
+        } else if self
+            .session
+            .prepare_turn_work(&input.text, commands)
+            .map_err(super::session_err)?
+        {
+            self.accepted = true;
         }
-        let harness = self.harness_note(self.work_progress()?.kind);
+        let mut harness = self.harness_note(&self.work_progress()?);
+        if self.accepted {
+            harness.push_str(
+                "\n\nHarness: the selected plan is now accepted; /plan reject discards it.",
+            );
+        }
         input.text = crate::session::decorate(&harness, &input.text);
         let queued = self
             .session
@@ -383,13 +419,26 @@ impl<P: Provider> Loop<P> {
         self.budget.breach(self.spent_tokens, self.elapsed_secs())
     }
 
-    fn harness_note(&self, kind: crate::WorkKind) -> String {
+    fn harness_note(&self, progress: &crate::WorkProgress) -> String {
         let mut note =
             crate::prompt::harness_section(self.plan, self.verify.as_deref().unwrap_or_default());
         if self.plan {
             note.push_str("\n\nHarness: Work remains in Plan until you select and accept it.");
-        } else if kind != crate::WorkKind::Single {
+        } else if progress.kind != crate::WorkKind::Single {
             note.push_str("\n\nHarness: the Steps or Goal runner owns this Work.");
+        }
+        if progress.kind == crate::WorkKind::Goal && progress.max_turns > 0 {
+            note.push_str(&format!(
+                "\n\nHarness: goal round {} of {}.",
+                progress.rounds + 1,
+                progress.max_turns
+            ));
+        }
+        if !progress.ledger.is_empty() {
+            note.push_str(
+                "\n\nHarness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n",
+            );
+            note.push_str(&progress.ledger.join("\n"));
         }
         if self.seat_model(workflow::Role::Review).is_some() {
             note.push_str(
@@ -413,10 +462,45 @@ impl<P: Provider> Loop<P> {
             .await
     }
 
+    fn seat_usage(
+        &mut self,
+        role: workflow::Role,
+        before: &Usage,
+        after: &Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let prompt = after.prompt_tokens.saturating_sub(before.prompt_tokens);
+        let completion = after
+            .completion_tokens
+            .saturating_sub(before.completion_tokens);
+        if prompt == 0 && completion == 0 {
+            return Ok(());
+        }
+        let cached = after.cached_tokens.saturating_sub(before.cached_tokens);
+        self.push_event(
+            events,
+            emit,
+            Event::Usage {
+                prompt_tokens: prompt,
+                completion_tokens: completion,
+                reasoning_tokens: after
+                    .reasoning_tokens
+                    .saturating_sub(before.reasoning_tokens),
+                cached_tokens: cached,
+                prefix_hash: format!("{role:?}").to_lowercase(),
+                cost: self.price_for(role).map(|price| {
+                    price.cost(u64::from(prompt), u64::from(completion), u64::from(cached))
+                }),
+            },
+        )
+    }
+
     pub(super) fn record_usage(
         &mut self,
         assistant: &AssistantMessage,
         prefix_hash: String,
+        role: workflow::Role,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -434,6 +518,13 @@ impl<P: Provider> Loop<P> {
                     reasoning_tokens: assistant.usage.reasoning_tokens,
                     cached_tokens: assistant.usage.cached_tokens,
                     prefix_hash,
+                    cost: self.price_for(role).map(|price| {
+                        price.cost(
+                            u64::from(assistant.usage.prompt_tokens),
+                            u64::from(assistant.usage.completion_tokens),
+                            u64::from(assistant.usage.cached_tokens),
+                        )
+                    }),
                 },
             )?;
         }
@@ -501,8 +592,45 @@ impl<P: Provider> Loop<P> {
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
         let (text, verify, receipt) = if self.session.stage() == Some(Stage::Execute) {
+            let (mut checks, running) = self.await_jobs(&mut events, &mut emit).await?;
+            if !running.is_empty() {
+                let note = format!(
+                    "[summon: background job{} still running — {} — wait for it with the job id, or kill it, before you report done]",
+                    if running.len() == 1 { "" } else { "s" },
+                    running.join("; ")
+                );
+                if self.session.defer(&note).map_err(super::session_err)? {
+                    self.commit(&messages);
+                    let progress = self.work_progress()?;
+                    self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+                    self.push_event(
+                        &mut events,
+                        &mut emit,
+                        Event::Note {
+                            text: format!(
+                                "turn deferred — background work still running: {}",
+                                running.join("; ")
+                            ),
+                        },
+                    )?;
+                    let text = message.content;
+                    self.push_event(
+                        &mut events,
+                        &mut emit,
+                        Event::Assistant { text: text.clone() },
+                    )?;
+                    return Ok(Turn {
+                        text,
+                        events,
+                        rounds: round,
+                        usage,
+                        verify: None,
+                        aborted: false,
+                    });
+                }
+            }
             let paths = self.session.enter_verify().map_err(super::session_err)?;
-            let mut checks = self.run_verify(&mut events, &mut emit).await?;
+            checks.extend(self.run_verify(&mut events, &mut emit).await?);
             let mut verdict = self
                 .session
                 .prepare_verdict(checks.iter().all(|check| check.passed))
@@ -529,7 +657,8 @@ impl<P: Provider> Loop<P> {
                 self.session.enter_review().map_err(super::session_err)?;
                 let objective = self.session.objective().map_err(super::session_err)?;
                 let evidence = crate::verify::summary(&paths, &checks);
-                match crate::review::outcome(
+                let before = usage.clone();
+                let reviewed = crate::review::outcome(
                     self,
                     &objective,
                     &message.content,
@@ -537,8 +666,15 @@ impl<P: Provider> Loop<P> {
                     &paths,
                     &mut usage,
                 )
-                .await
-                {
+                .await;
+                self.seat_usage(
+                    workflow::Role::Review,
+                    &before,
+                    &usage,
+                    &mut events,
+                    &mut emit,
+                )?;
+                match reviewed {
                     Ok(review) => {
                         self.push_event(
                             &mut events,
@@ -551,6 +687,14 @@ impl<P: Provider> Loop<P> {
                         if !review.passed {
                             verdict.passed = false;
                             rejected = Some(review.output.clone());
+                            let findings: String = review.output.chars().take(600).collect();
+                            self.push_event(
+                                &mut events,
+                                &mut emit,
+                                Event::Note {
+                                    text: format!("review findings:\n{findings}"),
+                                },
+                            )?;
                         }
                         checks.push(review);
                     }
@@ -570,8 +714,23 @@ impl<P: Provider> Loop<P> {
                 if let Some(objective) =
                     self.session.goal_objective().map_err(super::session_err)?
                 {
-                    crate::goal::decision(self, &objective, &message.content, &receipt, &mut usage)
-                        .await
+                    let before = usage.clone();
+                    let decision = crate::goal::decision(
+                        self,
+                        &objective,
+                        &message.content,
+                        &receipt,
+                        &mut usage,
+                    )
+                    .await;
+                    self.seat_usage(
+                        workflow::Role::Judge,
+                        &before,
+                        &usage,
+                        &mut events,
+                        &mut emit,
+                    )?;
+                    decision
                 } else {
                     Decision::Automatic
                 }
@@ -589,7 +748,15 @@ impl<P: Provider> Loop<P> {
                     .commit_verdict(verdict, decision, Some(&text))
                     .map_err(super::session_err)?,
             }
-            (text, checks.last().cloned(), Some(receipt))
+            (
+                text,
+                checks
+                    .iter()
+                    .find(|check| !check.passed)
+                    .or(checks.last())
+                    .cloned(),
+                Some(receipt),
+            )
         } else {
             self.session.close().map_err(super::session_err)?;
             (message.content, None, None)
@@ -628,30 +795,44 @@ impl<P: Provider> Loop<P> {
             };
             self.push_event(events, emit, event)?;
         }
-        let mut finished = Vec::new();
-        let mut results = Vec::new();
-        for (planned, call) in planned.into_iter().zip(calls) {
-            let started = Instant::now();
-            let output = if crate::bus::is_bus_tool(&call.function.name) {
-                self.bus_execute(&call)
-                    .map(|text| crate::tools::ToolOutput {
+        let outputs = if calls
+            .iter()
+            .all(|call| crate::tools::readonly(&call.function.name))
+        {
+            let tools = &self.tools;
+            futures::future::join_all(calls.iter().map(|call| async move {
+                let started = Instant::now();
+                (
+                    tools.execute_outcome(call).await,
+                    super::elapsed_millis(started),
+                )
+            }))
+            .await
+        } else {
+            let mut outputs = Vec::with_capacity(calls.len());
+            for call in &calls {
+                let started = Instant::now();
+                let output = if crate::bus::is_bus_tool(&call.function.name) {
+                    self.bus_execute(call).map(|text| crate::tools::ToolOutput {
                         text,
                         success: true,
                         mutated: false,
                     })
-            } else {
-                self.tools.execute_outcome(&call).await
-            };
+                } else {
+                    self.tools.execute_outcome(call).await
+                };
+                outputs.push((output, super::elapsed_millis(started)));
+            }
+            outputs
+        };
+        let mut finished = Vec::new();
+        let mut results = Vec::new();
+        for ((planned, call), (output, millis)) in planned.into_iter().zip(calls).zip(outputs) {
             let (success, mutated, text) = match output {
                 Ok(output) => (output.success, output.mutated, output.text),
                 Err(error) => (false, false, error.to_string()),
             };
-            finished.push((
-                planned,
-                text.clone(),
-                success,
-                super::elapsed_millis(started),
-            ));
+            finished.push((planned, text.clone(), success, millis));
             results.push((call.id, success, mutated, text));
         }
         self.session
@@ -662,6 +843,12 @@ impl<P: Provider> Loop<P> {
                     .collect::<Vec<_>>(),
             )
             .map_err(super::session_err)?;
+        if results
+            .iter()
+            .any(|(_, success, mutated, _)| *success && *mutated)
+        {
+            self.session.mark_edit().map_err(super::session_err)?;
+        }
         for (id, success, mutated, text) in results {
             let event = Event::ToolResult {
                 id: id.clone(),
@@ -674,6 +861,73 @@ impl<P: Provider> Loop<P> {
         }
         self.commit(messages);
         Ok(())
+    }
+
+    async fn await_jobs(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<(Vec<Outcome>, Vec<String>)> {
+        let mut outcomes = Vec::new();
+        let mut running = Vec::new();
+        let session = self.session.id().to_string();
+        let mut latest: std::collections::BTreeMap<String, crate::jobs::Record> =
+            std::collections::BTreeMap::new();
+        for record in crate::jobs::since(&self.workspace, self.turn_started, Some(&session)) {
+            latest.insert(record.command.clone(), record);
+        }
+        for record in latest.into_values() {
+            let label = format!("job {} `{}`", record.id, record.command);
+            let started = Instant::now();
+            let mut wait = 1_u64;
+            let mut announced = false;
+            let status = loop {
+                let status = crate::jobs::status(&self.workspace, &record.id)?;
+                if !status.running || started.elapsed().as_secs() >= JOB_WAIT_SECS {
+                    break status;
+                }
+                if !announced {
+                    announced = true;
+                    self.push_event(
+                        events,
+                        emit,
+                        Event::Note {
+                            text: format!("waiting for background {label}"),
+                        },
+                    )?;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                wait = (wait * 2).min(10);
+            };
+            if status.killed {
+                continue;
+            }
+            if status.running {
+                running.push(label.clone());
+            }
+            let outcome = Outcome {
+                command: label,
+                passed: status.exit_code == Some(0),
+                output: if status.running {
+                    format!(
+                        "still running after {JOB_WAIT_SECS}s — wait for it or kill it\n{}",
+                        status.text
+                    )
+                } else {
+                    status.text
+                },
+            };
+            self.push_event(
+                events,
+                emit,
+                Event::Verify {
+                    command: outcome.command.clone(),
+                    passed: outcome.passed,
+                },
+            )?;
+            outcomes.push(outcome);
+        }
+        Ok((outcomes, running))
     }
 
     async fn run_verify(

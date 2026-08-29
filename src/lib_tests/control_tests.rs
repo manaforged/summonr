@@ -1157,6 +1157,8 @@ async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
             requests: requests.clone(),
         },
         "review-model",
+        None,
+        None,
     );
 
     let first = loop_.turn("write the plan").await?;
@@ -1283,6 +1285,8 @@ async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> 
             requests: requests.clone(),
         },
         "scout-model",
+        None,
+        None,
     );
 
     drop(loop_.turn("just chat").await?);
@@ -1341,5 +1345,38 @@ async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> 
     assert!(log.contains(r#""note":"scout""#));
     assert!(log.contains(r#""model":"scout-model""#));
     std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn resume_binds_tools_to_the_recorded_workspace() -> Result<()> {
+    struct Idle;
+    impl Provider for Idle {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("ok".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let elsewhere = test_workspace()?;
+    let first = Loop::with_session(Idle, "test-model", &workspace, "test")?;
+    let path = first.session_path().to_path_buf();
+    drop(first);
+
+    let resumed = Loop::resume_path(Idle, "test-model", &elsewhere, "test", &path)?;
+    assert_eq!(
+        resumed.workspace().canonicalize()?,
+        workspace.canonicalize()?,
+        "tools run where the session was recorded, not where it was resumed"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    std::fs::remove_dir_all(elsewhere)?;
     Ok(())
 }

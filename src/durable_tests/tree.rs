@@ -69,3 +69,24 @@ fn git_listing_honours_gitignore() {
         vec!["tracked.txt".to_string(), "untracked.txt".to_string()]
     );
 }
+
+#[test]
+fn a_same_size_edit_with_the_old_timestamp_still_counts_as_a_change() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("a.txt");
+    std::fs::write(&file, "aaaa").expect("write");
+    let modified = std::fs::metadata(&file)
+        .expect("meta")
+        .modified()
+        .expect("mtime");
+    let before = snapshot(dir.path(), None).expect("snapshot");
+    std::fs::write(&file, "bbbb").expect("rewrite");
+    std::fs::File::options()
+        .write(true)
+        .open(&file)
+        .expect("open")
+        .set_modified(modified)
+        .expect("set mtime");
+    let after = snapshot(dir.path(), None).expect("snapshot");
+    assert_eq!(changed(&before, &after), vec!["a.txt"]);
+}

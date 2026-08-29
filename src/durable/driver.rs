@@ -106,6 +106,7 @@ impl SessionDriver {
         id: SessionId,
         workspace: &Path,
     ) -> Result<Self, DriverError> {
+        let caller = workspace;
         let path = log::session_path(home, id);
         let mut state = State::default();
         for line in log::read(&path)? {
@@ -122,9 +123,20 @@ impl SessionDriver {
         } else {
             state.workspace.clone()
         };
+        let work = Work::load(&log::work_path(&path))?;
+        let workspace = if workspace.is_dir() {
+            workspace
+        } else if work.as_ref().is_none_or(Work::terminal) {
+            canonical(caller)
+        } else {
+            return Err(DriverError::State(format!(
+                "session {id} was recorded in {}, which no longer exists",
+                workspace.display()
+            )));
+        };
         let mut driver = Self {
             log: Log::open(&path)?,
-            work: Work::load(&log::work_path(&path))?,
+            work,
             state,
             workspace,
             turn: None,
@@ -141,7 +153,17 @@ impl SessionDriver {
                 round: None,
                 calls: Vec::new(),
             });
-            return self.abort("process stopped before the turn finished");
+            self.abort("process stopped before the turn finished")?;
+            if let Some(work) = &mut self.work
+                && !work.terminal()
+            {
+                work.pending.push(
+                    "[summon: the previous attempt at this turn was interrupted; the workspace is as it left it — continue from there]"
+                        .to_string(),
+                );
+                self.checkpoint()?;
+            }
+            return Ok(());
         }
         if let Some(work) = &mut self.work
             && work.interrupt()
@@ -400,6 +422,30 @@ impl SessionDriver {
         Ok(())
     }
 
+    pub(crate) fn mark_edit(&mut self) -> Result<(), DriverError> {
+        if let Some(work) = self.work.as_mut().filter(|work| !work.terminal()) {
+            work.mark_edit();
+            self.checkpoint()?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn defer(&mut self, note: &str) -> Result<bool, DriverError> {
+        if self.turn.is_none() {
+            return Err(DriverError::NoTurn);
+        }
+        let deferred = self
+            .work
+            .as_mut()
+            .ok_or(DriverError::NoWork)?
+            .defer(note.to_string())?;
+        if deferred {
+            self.checkpoint()?;
+            self.close()?;
+        }
+        Ok(deferred)
+    }
+
     pub(crate) fn enter_verify(&mut self) -> Result<Vec<String>, DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
@@ -422,6 +468,9 @@ impl SessionDriver {
             .and_then(|work| work.candidate.as_ref())
             .is_some_and(|candidate| candidate.snapshot.matches(&now, &candidate.paths));
         if stable {
+            if let Some(candidate) = self.work.as_mut().and_then(|work| work.candidate.as_mut()) {
+                candidate.snapshot = now;
+            }
             return Ok(Verdict {
                 passed,
                 diagnostic: None,
@@ -517,6 +566,19 @@ impl SessionDriver {
         Ok(())
     }
 
+    pub(crate) fn charge(
+        &mut self,
+        usage: Usage,
+        note: &str,
+        model: &str,
+    ) -> Result<(), DriverError> {
+        self.append(Line::Charge {
+            usage,
+            note: note.to_string(),
+            model: model.to_string(),
+        })
+    }
+
     pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<(), DriverError> {
         self.append(Line::Summary {
             text: summary.to_string(),
@@ -597,7 +659,6 @@ impl SessionDriver {
         self.log.path()
     }
 
-    #[cfg(test)]
     pub(crate) fn workspace(&self) -> &Path {
         &self.workspace
     }
@@ -710,7 +771,9 @@ impl SessionDriver {
             ));
         }
         match self.active() {
-            Some(work) if work.policy != policy => {
+            Some(work)
+                if std::mem::discriminant(&work.policy) != std::mem::discriminant(&policy) =>
+            {
                 return Err(DriverError::State(
                     "another Work policy is already active".to_string(),
                 ));
@@ -750,7 +813,7 @@ impl SessionDriver {
         &mut self,
         objective: &str,
         commands: &[String],
-    ) -> Result<(), DriverError> {
+    ) -> Result<bool, DriverError> {
         let created = self.active().is_none();
         if created {
             self.set_work(objective, Policy::Single)?;
@@ -772,11 +835,23 @@ impl SessionDriver {
             ));
         }
         match work.stage() {
-            Some(Stage::Plan) if work.policy == Policy::Single && !created => Err(
-                DriverError::State("accept the selected Plan before implementation".to_string()),
-            ),
-            Some(Stage::Plan) => self.execute(),
-            Some(Stage::Execute) => Ok(()),
+            Some(Stage::Plan) if work.policy == Policy::Single && work.plan.is_none() => {
+                if let Some(work) = self.work.as_mut() {
+                    work.abandon("the plan turn selected no plan");
+                }
+                self.set_work(objective, Policy::Single)?;
+                self.work
+                    .as_mut()
+                    .ok_or(DriverError::NoWork)?
+                    .select(objective, commands)?;
+                self.execute()?;
+                Ok(false)
+            }
+            Some(Stage::Plan) => {
+                self.execute()?;
+                Ok(!created)
+            }
+            Some(Stage::Execute) => Ok(false),
             Some(Stage::Verify | Stage::Review) => Err(DriverError::State(
                 "Work is still in Verify after an interrupted turn".to_string(),
             )),
@@ -846,7 +921,37 @@ pub(crate) fn work_at(path: &Path, workspace: &Path, policy: Policy, text: &str)
     Work::load(&log::work_path(path))
         .ok()
         .flatten()
-        .is_some_and(|work| work.policy == policy && work.objective == text && !work.terminal())
+        .is_some_and(|work| {
+            std::mem::discriminant(&work.policy) == std::mem::discriminant(&policy)
+                && work.objective == text
+                && !work.terminal()
+        })
+}
+
+pub(crate) fn touched_at(path: &Path) -> Vec<String> {
+    Work::load(&log::work_path(path))
+        .ok()
+        .flatten()
+        .map(|work| work.touched.into_iter().collect())
+        .unwrap_or_default()
+}
+
+pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String)> {
+    let Ok(Line::Session {
+        workspace: recorded,
+        ..
+    }) = log::header(path)
+    else {
+        return None;
+    };
+    if recorded != canonical(workspace) {
+        return None;
+    }
+    Work::load(&log::work_path(path))
+        .ok()
+        .flatten()
+        .filter(|work| work.policy != Policy::Single && !work.terminal())
+        .map(|work| (work.policy, work.objective))
 }
 
 pub(crate) fn canonical(path: &Path) -> PathBuf {

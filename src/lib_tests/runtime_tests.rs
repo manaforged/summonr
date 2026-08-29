@@ -887,8 +887,20 @@ async fn roles_run_on_their_own_seats() -> Result<()> {
         "test",
     )?
     .with_verify(vec!["true".to_string()]);
-    loop_.set_seat(Step::Plan, Tagged::new("plan", &calls), "plan-model");
-    loop_.set_seat(Step::Judge, Tagged::new("judge", &calls), "judge-model");
+    loop_.set_seat(
+        Step::Plan,
+        Tagged::new("plan", &calls),
+        "plan-model",
+        None,
+        None,
+    );
+    loop_.set_seat(
+        Step::Judge,
+        Tagged::new("judge", &calls),
+        "judge-model",
+        None,
+        None,
+    );
     assert_eq!(loop_.seat_model(Step::Plan), Some("plan-model"));
     assert_eq!(loop_.seat_model(Step::Implement), None);
     assert_eq!(loop_.workflow(), None);
@@ -901,7 +913,13 @@ async fn roles_run_on_their_own_seats() -> Result<()> {
     loop_.set_plan(false);
     let done = loop_.turn("do it").await?;
     assert!(done.text.starts_with("reply from driver"));
-    loop_.set_seat(Step::Implement, Tagged::new("impl", &calls), "impl-model");
+    loop_.set_seat(
+        Step::Implement,
+        Tagged::new("impl", &calls),
+        "impl-model",
+        None,
+        None,
+    );
     let gates = vec!["true".to_string()];
     loop_.select_goal("finish", &gates, 3)?;
     let goal = loop_.turn(&crate::goal_prompt("finish", &gates, 0)).await?;
@@ -955,6 +973,223 @@ async fn an_empty_response_still_charges_the_round() -> Result<()> {
     assert!(
         loop_.replay_session().spent_tokens > 0,
         "the round the provider billed must reach the ledger"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_compact_summarizes_everything_before_the_last_request() -> Result<()> {
+    struct Summer;
+    impl Provider for Summer {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("summary of the early turns".to_string()),
+                    usage: Usage {
+                        prompt_tokens: 90,
+                        completion_tokens: 10,
+                        reasoning_tokens: 0,
+                        cached_tokens: 0,
+                    },
+                    ..Default::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Summer, "test-model", &workspace, "test")?;
+    assert!(
+        !loop_.compact().await?,
+        "an empty session has nothing to compact"
+    );
+    for n in 1..=4 {
+        drop(loop_.turn(&format!("u{n}")).await?);
+    }
+    let before = loop_.history_len();
+    let spent = loop_.spent_tokens();
+    assert!(loop_.compact().await?);
+    let after = loop_.history_len();
+    assert!(after < before, "{after} < {before}");
+    assert_eq!(loop_.spent_tokens(), spent + 100, "the summary is charged");
+    assert_eq!(
+        loop_.replay_session().spent_tokens,
+        loop_.spent_tokens(),
+        "the charge is durable"
+    );
+    let replay = loop_.replay_session();
+    assert!(
+        replay
+            .history
+            .iter()
+            .any(|message| message.content.contains("summary of the early turns")),
+        "the summary stands in for the early turns"
+    );
+    assert!(
+        replay
+            .history
+            .iter()
+            .any(|message| message.content.starts_with("u4")),
+        "the latest request survives"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn manual_compact_rejects_a_summary_that_calls_a_tool() -> Result<()> {
+    struct Caller;
+    impl Provider for Caller {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                assert!(request.tools.is_empty(), "compaction advertises no tools");
+                Ok(AssistantMessage {
+                    content: Some("let me look".to_string()),
+                    tool_calls: vec![call("read_file", r#"{"path":"note.txt"}"#)],
+                    ..Default::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Caller, "test-model", &workspace, "test")?;
+    loop_ = loop_.restore((1..=4).map(|n| Message::user(format!("u{n}"))).collect());
+    let before = loop_.history_len();
+    let error = loop_
+        .compact()
+        .await
+        .expect_err("tool call is not a summary");
+    assert!(
+        error.to_string().contains("tried to call a tool"),
+        "{error}"
+    );
+    assert_eq!(loop_.history_len(), before, "the context is unchanged");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_role_seat_keeps_its_own_effort_and_price() -> Result<()> {
+    use crate::provider::{Effort, Price};
+    use crate::workflow::Role;
+    struct Quiet;
+    impl Provider for Quiet {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("ok".to_string()),
+                    usage: Usage {
+                        prompt_tokens: 1_000_000,
+                        completion_tokens: 0,
+                        reasoning_tokens: 0,
+                        cached_tokens: 0,
+                    },
+                    ..Default::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Quiet, "test-model", &workspace, "test")?;
+    let driving = Price {
+        input: 2.0,
+        output: 0.0,
+        cached: 0.0,
+    };
+    let judge = Price {
+        input: 20.0,
+        output: 0.0,
+        cached: 0.0,
+    };
+    loop_.set_effort(Some(Effort::Low));
+    loop_.set_price(Some(driving));
+    loop_.set_seat(
+        Role::Judge,
+        Quiet,
+        "judge-model",
+        Some(Effort::High),
+        Some(judge),
+    );
+    assert_eq!(loop_.effort_for(Role::Judge), Some(Effort::High));
+    assert_eq!(loop_.effort_for(Role::Implement), Some(Effort::Low));
+    assert_eq!(loop_.price_for(Role::Judge), Some(judge));
+    assert_eq!(loop_.price_for(Role::Review), Some(driving));
+
+    let turn = loop_.turn("hi").await?;
+    let cost = turn.events.iter().find_map(|event| match event {
+        Event::Usage { cost, .. } => *cost,
+        _ => None,
+    });
+    assert_eq!(cost, Some(2.0), "the driving seat priced this round");
+
+    loop_.select_goal("finish it", &[], 3)?;
+    let turn = loop_.turn("go").await?;
+    let judged = turn.events.iter().find_map(|event| match event {
+        Event::Usage {
+            prefix_hash, cost, ..
+        } if prefix_hash == "judge" => *cost,
+        _ => None,
+    });
+    assert_eq!(
+        judged,
+        Some(20.0),
+        "the judge round is priced at its own seat"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn the_turn_after_a_plan_announces_the_accept() -> Result<()> {
+    struct Planner;
+    impl Provider for Planner {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("# Plan\n\n1. Do it".to_string()),
+                    ..Default::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Planner, "test-model", &workspace, "test")?.with_plan();
+    drop(loop_.turn("plan it").await?);
+    loop_.set_plan(false);
+    let turn = loop_.turn("now do it").await?;
+    assert!(
+        turn.events.iter().any(|event| matches!(
+            event,
+            Event::Note { text } if text.starts_with("plan accepted")
+        )),
+        "{:?}",
+        turn.events
+    );
+    let replay = loop_.replay_session();
+    assert!(
+        replay.history.iter().any(|message| message
+            .content
+            .contains("the selected plan is now accepted")),
+        "the model was told"
+    );
+    let again = loop_.turn("more").await?;
+    assert!(
+        !again.events.iter().any(
+            |event| matches!(event, Event::Note { text } if text.starts_with("plan accepted"))
+        ),
+        "announced once"
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())

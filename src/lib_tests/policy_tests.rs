@@ -171,12 +171,11 @@ async fn external_steps_are_owned_by_work() -> Result<()> {
             .content
             .contains("Steps or Goal runner owns this Work")
     }));
-    assert!(
-        !request
-            .messages
-            .iter()
-            .any(|message| message.content.contains("Do not expose this step yet"))
-    );
+    assert!(request.messages.last().is_some_and(|message| {
+        message.content.contains("Harness ledger")
+            && message.content.contains("[/] Implement it")
+            && message.content.contains("[ ] Do not expose this step yet")
+    }));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -227,6 +226,321 @@ async fn commands_execute_inside_work() -> Result<()> {
         event,
         Event::ToolResult { success: true, output, .. } if output.contains("guarded")
     )));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+struct JobProvider {
+    rounds: AtomicUsize,
+}
+
+impl Provider for JobProvider {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "run_command",
+                        r#"{"command":"sleep 0.3; echo built > done.txt","background":true}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("started the build in the background".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_turn_waits_for_its_background_job_before_verify() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        JobProvider {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+
+    let turn = loop_.turn("build it").await?;
+
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("done.txt"))?.trim(),
+        "built",
+        "the job finished before the turn closed"
+    );
+    assert!(turn.events.iter().any(|event| matches!(
+        event,
+        Event::Verify { command, passed: true } if command.starts_with("job ")
+    )));
+    assert!(turn.text.contains("Changed: `done.txt`"), "{}", turn.text);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+struct TwoReads {
+    rounds: AtomicUsize,
+}
+
+impl Provider for TwoReads {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![
+                        ToolCall {
+                            id: "first".to_string(),
+                            ..call("grep", r#"{"pattern":"hello"}"#)
+                        },
+                        ToolCall {
+                            id: "second".to_string(),
+                            ..call("read_file", r#"{"path":"note.txt"}"#)
+                        },
+                    ],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("read both".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn read_only_calls_in_one_round_answer_in_call_order() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        TwoReads {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+    let turn = loop_.turn("look").await?;
+    let results: Vec<(&str, bool)> = turn
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ToolResult { id, success, .. } => Some((id.as_str(), *success)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(results.len(), 2, "{results:?}");
+    assert!(results.iter().all(|(_, ok)| *ok), "{results:?}");
+    let calls: Vec<&str> = turn
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            Event::ToolCall { id, .. } => Some(id.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(calls, ["first", "second"]);
+    assert_eq!(
+        results.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        calls,
+        "results keep the call order"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+struct FailingJob {
+    rounds: AtomicUsize,
+}
+
+impl Provider for FailingJob {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "run_command",
+                        r#"{"command":"exit 3","background":true}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("kicked off the build".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_background_job_that_already_failed_fails_the_turn() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        FailingJob {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    let turn = loop_.turn("build it").await?;
+    assert!(
+        turn.verify.as_ref().is_some_and(|check| !check.passed),
+        "the failed job is the turn's verdict even though the declared check passed"
+    );
+    assert!(turn.events.iter().any(|event| matches!(
+        event,
+        Event::Verify { command, passed: false } if command.starts_with("job ")
+    )));
+    assert!(
+        turn.text.starts_with("Verification failed"),
+        "{}",
+        turn.text
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+struct Retry {
+    rounds: AtomicUsize,
+}
+
+impl Provider for Retry {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "run_command",
+                        r#"{"command":"test -f ok.txt","background":true}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                1 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "write_file",
+                        r#"{"path":"ok.txt","content":"fixed\n"}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                2 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "run_command",
+                        r#"{"command":"test -f ok.txt","background":true}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("fixed and rebuilt".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_rerun_of_the_same_command_supersedes_its_failed_first_try() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        Retry {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    let turn = loop_.turn("build it").await?;
+    assert!(
+        !turn
+            .events
+            .iter()
+            .any(|event| matches!(event, Event::Verify { passed: false, .. })),
+        "{:?}",
+        turn.events
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+struct LongJob {
+    rounds: AtomicUsize,
+}
+
+impl Provider for LongJob {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "run_command",
+                        r#"{"command":"sleep 20","background":true}"#,
+                    )],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("all done".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_turn_with_a_job_still_running_is_deferred_not_judged() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        LongJob {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+    let turn = loop_.turn("build it").await?;
+    assert!(turn.verify.is_none(), "no verdict was taken");
+    assert!(
+        turn.events.iter().any(|event| matches!(
+            event,
+            Event::Note { text } if text.starts_with("turn deferred")
+        )),
+        "{:?}",
+        turn.events
+    );
+    let progress = loop_.work_progress()?;
+    assert_eq!(
+        progress.phase,
+        crate::WorkPhase::Execute,
+        "the Work stays open"
+    );
+    assert_eq!(progress.attempts, 0, "no repair strike");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

@@ -3,6 +3,7 @@ use crate::error::{Error, Result};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Step {
     pub index: usize,
+    pub phase: Option<String>,
     pub text: String,
     pub checks: Vec<String>,
 }
@@ -95,8 +96,15 @@ pub fn contract_prompt(gone: &[String]) -> String {
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {
     let mut steps: Vec<Step> = Vec::new();
     let mut in_section = false;
+    let mut phase: Option<String> = None;
     for line in markdown.lines() {
         let trimmed = line.trim_end();
+        if let Some(heading) = trimmed.strip_prefix("### ") {
+            if in_section {
+                phase = Some(heading.trim().to_string());
+            }
+            continue;
+        }
         if let Some(heading) = trimmed.strip_prefix("## ") {
             if in_section {
                 break;
@@ -110,6 +118,7 @@ pub fn parse(markdown: &str) -> Result<Vec<Step>> {
         if let Some((number, rest)) = numbered(trimmed) {
             steps.push(Step {
                 index: number,
+                phase: phase.clone(),
                 text: rest.trim().to_string(),
                 checks: Vec::new(),
             });

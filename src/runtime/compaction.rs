@@ -57,6 +57,7 @@ impl<P: Provider> Loop<P> {
             tools: tools.to_vec(),
             max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
             emit_deltas: false,
+            effort: self.effort_for(workflow::Role::Summary),
         };
         let prefix_hash = request.prefix_hash();
         let durable = request
@@ -149,7 +150,14 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(());
         };
-        self.record_usage(&summary, prefix_hash, usage, events, emit)?;
+        self.record_usage(
+            &summary,
+            prefix_hash,
+            workflow::Role::Summary,
+            usage,
+            events,
+            emit,
+        )?;
         let summary = summary.content.unwrap_or_default();
         self.session
             .compact(&summary, &messages[keep_from..])
@@ -166,6 +174,53 @@ impl<P: Provider> Loop<P> {
             },
         )?;
         Ok(())
+    }
+
+    pub async fn compact(&mut self) -> Result<bool> {
+        let mut messages = Vec::with_capacity(self.history.len() + 1);
+        messages.push(Message::system(self.system_prompt.clone()));
+        messages.extend(self.history.iter().cloned());
+        let Some(keep_from) = messages
+            .iter()
+            .rposition(|message| message.role == Role::User)
+            .filter(|index| *index > 1)
+        else {
+            return Ok(false);
+        };
+        let mut request_messages = messages[..keep_from].to_vec();
+        request_messages.push(Message::user(SUMMARY_ASK.to_string()));
+        let request = CompletionRequest {
+            model: self.seat(workflow::Role::Summary).1.to_string(),
+            messages: request_messages,
+            tools: Vec::new(),
+            max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            emit_deltas: false,
+            effort: self.effort_for(workflow::Role::Summary),
+        };
+        let reply = self
+            .seat(workflow::Role::Summary)
+            .0
+            .complete(&request)
+            .await?;
+        if !reply.tool_calls.is_empty() {
+            return Err(Error::Config(
+                "the compaction summary tried to call a tool; the context is unchanged".to_string(),
+            ));
+        }
+        let summary = reply
+            .content
+            .filter(|text| !text.trim().is_empty())
+            .ok_or_else(|| Error::Config("the compaction summary was empty".to_string()))?;
+        let model = request.model.clone();
+        self.session
+            .charge(super::meter(&reply.usage, 0), "manual compaction", &model)
+            .map_err(super::session_err)?;
+        self.session
+            .compact(&summary, &messages[keep_from..])
+            .map_err(super::session_err)?;
+        self.spent_tokens = self.session.replay().spent_tokens;
+        self.commit(&messages);
+        Ok(true)
     }
 }
 

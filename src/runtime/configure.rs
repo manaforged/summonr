@@ -29,6 +29,7 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
+        loop_.tools.set_session(&loop_.session.id().to_string());
         loop_.join_bus();
         Ok(loop_)
     }
@@ -42,6 +43,7 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Self> {
         let session = resume_driver(workspace.as_ref(), path)?;
         let replay = session.replay();
+        let workspace = session.workspace().to_path_buf();
         let mut loop_ = Self::open(provider, model, workspace, system_prompt, session)?;
         loop_ = loop_.restore_replay(replay);
         Ok(loop_)
@@ -76,6 +78,7 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
+        loop_.tools.set_session(&loop_.session.id().to_string());
         loop_.join_bus();
         Ok(loop_)
     }
@@ -121,6 +124,8 @@ impl<P: Provider> Loop<P> {
             provider,
             model,
             seats: BTreeMap::new(),
+            tuning: BTreeMap::new(),
+            price: None,
             system_prompt,
             plan: false,
             tools: ToolRegistry::with_policy_and_search(workspace, policy, search)?,
@@ -137,6 +142,9 @@ impl<P: Provider> Loop<P> {
             spent_tokens: 0,
             context_sample: None,
             context_window: None,
+            effort: None,
+            turn_started: 0,
+            accepted: false,
             workspace: workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
@@ -175,6 +183,15 @@ impl<P: Provider> Loop<P> {
 
     pub fn set_context_window(&mut self, window: Option<u32>) {
         self.context_window = window;
+    }
+
+    pub fn set_effort(&mut self, effort: Option<crate::provider::Effort>) {
+        self.effort = effort;
+    }
+
+    #[must_use]
+    pub fn effort(&self) -> Option<crate::provider::Effort> {
+        self.effort
     }
 
     #[must_use]
@@ -248,12 +265,25 @@ impl<P: Provider> Loop<P> {
         self.context_sample = None;
     }
 
-    pub fn set_seat(&mut self, role: workflow::Role, provider: P, model: impl Into<String>) {
+    pub fn set_seat(
+        &mut self,
+        role: workflow::Role,
+        provider: P,
+        model: impl Into<String>,
+        effort: Option<crate::provider::Effort>,
+        price: Option<crate::provider::Price>,
+    ) {
         self.seats.insert(role, (provider, model.into()));
+        self.tuning.insert(role, (effort, price));
     }
 
     pub fn clear_seat(&mut self, role: workflow::Role) {
         self.seats.remove(&role);
+        self.tuning.remove(&role);
+    }
+
+    pub fn set_price(&mut self, price: Option<crate::provider::Price>) {
+        self.price = price;
     }
 
     #[must_use]
@@ -317,6 +347,15 @@ impl<P: Provider> Loop<P> {
     #[cfg(test)]
     pub(crate) fn replay_session(&self) -> crate::session::Replay {
         self.session.replay()
+    }
+
+    pub fn set_name(&self, name: &str) -> Result<()> {
+        crate::session::set_name(self.session.path(), name)
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<String> {
+        crate::session::catalog_name(self.session.path())
     }
 
     #[must_use]
@@ -389,6 +428,7 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) fn adopt(&mut self, session: SessionDriver, replay: crate::session::Replay) {
         self.session = session;
+        self.tools.set_session(&self.session.id().to_string());
         self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
         self.bus = None;
@@ -411,6 +451,7 @@ impl<P: Provider> Loop<P> {
             tools: Vec::new(),
             max_output_tokens: JUDGE_OUTPUT_TOKENS,
             emit_deltas: false,
+            effort: self.effort_for(workflow::Role::Judge),
         };
         let durable = request
             .durable_bytes()
@@ -488,6 +529,22 @@ impl<P: Provider> Loop<P> {
 
     pub fn accept_plan(&mut self) -> Result<()> {
         self.session.accept_plan().map_err(super::session_err)
+    }
+
+    #[must_use]
+    pub fn touched_at(path: &Path) -> Vec<String> {
+        crate::durable::driver::touched_at(path)
+    }
+
+    #[must_use]
+    pub fn job_at(path: &Path, workspace: &Path) -> Option<(crate::WorkKind, String)> {
+        let (policy, objective) = crate::durable::driver::active_at(path, workspace)?;
+        let kind = match policy {
+            WorkPolicy::Single => crate::WorkKind::Single,
+            WorkPolicy::Steps => crate::WorkKind::Steps,
+            WorkPolicy::Goal { .. } => crate::WorkKind::Goal,
+        };
+        Some((kind, objective))
     }
 
     #[must_use]

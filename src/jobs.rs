@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 
 const ID_MAX: usize = 80;
+const KILLED: &str = "killed";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Record {
@@ -16,12 +17,15 @@ pub(crate) struct Record {
     pub workspace: String,
     pub started: u64,
     pub background: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
 }
 
 pub(crate) struct Status {
     pub text: String,
     pub exit_code: Option<i32>,
     pub running: bool,
+    pub killed: bool,
 }
 
 pub(crate) fn dir(workspace: &Path) -> PathBuf {
@@ -63,25 +67,71 @@ pub(crate) fn load(workspace: &Path, id: &str) -> Result<Record> {
         .map_err(|error| Error::Tool(format!("job `{id}` is invalid: {error}")))
 }
 
+pub fn live(workspace: &Path) -> Vec<String> {
+    since(workspace, 0, None)
+        .into_iter()
+        .filter(|record| {
+            !dir(workspace).join(format!("{}.exit", record.id)).is_file()
+                && alive_since(record.pid, record.started)
+        })
+        .map(|record| {
+            format!(
+                "{} `{}` (pid {}; stop it with run_command job kill, or delete .mage/jobs/{}.json)",
+                record.id, record.command, record.pid, record.id
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Vec<Record> {
+    let root = dir(workspace);
+    let Ok(entries) = std::fs::read_dir(&root) else {
+        return Vec::new();
+    };
+    let mut jobs: Vec<Record> = entries
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|entry| {
+            let text = std::fs::read_to_string(entry.path()).ok()?;
+            serde_json::from_str::<Record>(&text).ok()
+        })
+        .filter(|record| {
+            record.background
+                && record.started >= started
+                && match (session, record.session.as_deref()) {
+                    (Some(mine), Some(theirs)) => mine == theirs,
+                    _ => true,
+                }
+        })
+        .collect();
+    jobs.sort_by_key(|record| record.started);
+    jobs
+}
+
 pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
     let record = load(workspace, id)?;
     let root = dir(workspace);
     let log = root.join(format!("{}.log", record.id));
     let exit = root.join(format!("{}.exit", record.id));
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
+    let mut killed = false;
     let (state, exit_code, running) = if exit.is_file() {
-        let code = std::fs::read_to_string(&exit)
-            .ok()
-            .and_then(|code| code.trim().parse::<i32>().ok());
+        let text = std::fs::read_to_string(&exit).unwrap_or_default();
+        killed = text.trim() == KILLED;
+        let code = text.trim().parse::<i32>().ok();
         (
-            format!(
-                "exit {}",
-                code.map_or_else(|| "?".to_string(), |code| code.to_string())
-            ),
+            if killed {
+                "killed".to_string()
+            } else {
+                format!(
+                    "exit {}",
+                    code.map_or_else(|| "?".to_string(), |code| code.to_string())
+                )
+            },
             code,
             false,
         )
-    } else if alive(record.pid) {
+    } else if alive_since(record.pid, record.started) {
         ("running".to_string(), None, true)
     } else {
         ("dead".to_string(), None, false)
@@ -102,6 +152,7 @@ pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
         ),
         exit_code,
         running,
+        killed,
     })
 }
 
@@ -145,6 +196,7 @@ pub(crate) fn stamp(
     command: &str,
     workspace: &Path,
     background: bool,
+    session: Option<String>,
 ) -> Result<Record> {
     let started = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -157,7 +209,48 @@ pub(crate) fn stamp(
         workspace: workspace.display().to_string(),
         started,
         background,
+        session,
     })
+}
+
+pub(crate) fn write_killed(path: &Path) -> Result<()> {
+    let mut file = std::fs::File::create(path)?;
+    writeln!(file, "{KILLED}")?;
+    Ok(())
+}
+
+pub(crate) fn exit_path(workspace: &Path, id: &str) -> PathBuf {
+    dir(workspace).join(format!("{id}.exit"))
+}
+
+pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
+    if !alive(pid) {
+        return false;
+    }
+    let elapsed = std::process::Command::new("ps")
+        .args(["-o", "etime=", "-p", &pid.to_string()])
+        .output()
+        .ok()
+        .and_then(|output| elapsed_secs(String::from_utf8_lossy(&output.stdout).trim()));
+    let Some(elapsed) = elapsed else {
+        return true;
+    };
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs());
+    now.saturating_sub(elapsed) <= started.saturating_add(5)
+}
+
+pub(crate) fn elapsed_secs(etime: &str) -> Option<u64> {
+    let (days, clock) = match etime.split_once('-') {
+        Some((days, clock)) => (days.parse::<u64>().ok()?, clock),
+        None => (0, etime),
+    };
+    let mut total = 0_u64;
+    for part in clock.split(':') {
+        total = total * 60 + part.trim().parse::<u64>().ok()?;
+    }
+    Some(days * 86_400 + total)
 }
 
 pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
@@ -197,3 +290,7 @@ fn new_id() -> Result<String> {
         .as_nanos();
     Ok(format!("{nanos}-{}", std::process::id()))
 }
+
+#[cfg(test)]
+#[path = "jobs_tests.rs"]
+mod tests;

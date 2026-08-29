@@ -37,6 +37,7 @@ impl<P: Provider> Loop<P> {
                 tools: tools.to_vec(),
                 max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
                 emit_deltas: false,
+                effort: self.effort_for(role),
             };
             let durable = request.durable_bytes().map_err(|error| {
                 Error::Config(format!("cannot encode provider request: {error}"))

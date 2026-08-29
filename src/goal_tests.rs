@@ -1,30 +1,43 @@
 use super::*;
 
 #[test]
-fn verdict_parses_clean_json() {
-    let verdict = parse_verdict("{\"done\": true, \"reason\": \"tests pass\"}");
-    assert!(verdict.done);
+fn verdict_parses_four_states_and_the_legacy_done_flag() {
+    let verdict = parse_verdict("{\"verdict\": \"done\", \"reason\": \"tests pass\"}");
+    assert_eq!(verdict.state, State::Done);
     assert_eq!(verdict.reason, "tests pass");
 
-    let verdict = parse_verdict("{\"done\": false, \"reason\": \"two files remain\"}");
-    assert!(!verdict.done);
+    let verdict = parse_verdict("{\"verdict\": \"continue\", \"reason\": \"two files remain\"}");
+    assert_eq!(verdict.state, State::Continue);
     assert_eq!(verdict.reason, "two files remain");
+
+    let verdict = parse_verdict("{\"verdict\": \"stalled\", \"reason\": \"same reply twice\"}");
+    assert_eq!(verdict.state, State::Stalled);
+    let verdict = parse_verdict("{\"verdict\": \"impossible\", \"reason\": \"no network\"}");
+    assert_eq!(verdict.state, State::Impossible);
+    let verdict = parse_verdict("{\"verdict\": \"maybe\", \"reason\": \"x\"}");
+    assert_eq!(verdict.state, State::Continue);
+
+    let verdict = parse_verdict("{\"done\": true, \"reason\": \"tests pass\"}");
+    assert_eq!(verdict.state, State::Done);
+    let verdict = parse_verdict("{\"done\": false, \"reason\": \"two files remain\"}");
+    assert_eq!(verdict.state, State::Continue);
 }
 
 #[test]
 fn verdict_tolerates_prose_and_garbage() {
-    let verdict = parse_verdict("Sure! {\"done\": true, \"reason\": \"built\"} hope that helps");
-    assert!(verdict.done);
+    let verdict =
+        parse_verdict("Sure! {\"verdict\": \"done\", \"reason\": \"built\"} hope that helps");
+    assert_eq!(verdict.state, State::Done);
     assert_eq!(verdict.reason, "built");
 
     let verdict = parse_verdict("the objective looks incomplete");
-    assert!(!verdict.done);
+    assert_eq!(verdict.state, State::Continue);
     assert_eq!(verdict.reason, "the objective looks incomplete");
     let verdict = parse_verdict("{\"done\": \"yes\"}");
-    assert!(!verdict.done);
+    assert_eq!(verdict.state, State::Continue);
 
     let verdict = parse_verdict("done :) } still thinking {");
-    assert!(!verdict.done);
+    assert_eq!(verdict.state, State::Continue);
 }
 
 #[test]

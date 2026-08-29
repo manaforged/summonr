@@ -9,6 +9,7 @@ use crate::provider::{FunctionDefinition, ToolCall, ToolDefinition, ToolKind, Us
 use crate::web::Search;
 
 mod catalog;
+pub(crate) use catalog::readonly;
 mod command;
 mod lsp;
 pub(crate) mod sandbox;
@@ -19,7 +20,7 @@ pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
     command::exit_code(output)
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     ToolCall {
@@ -45,6 +46,8 @@ pub enum Event {
         cached_tokens: u32,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         prefix_hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost: Option<f64>,
     },
     Mail {
         from: String,
@@ -52,6 +55,11 @@ pub enum Event {
     },
     Aborted {
         reason: String,
+    },
+    Merged {
+        branch: String,
+        base: String,
+        files: Vec<String>,
     },
     Delta {
         text: String,
@@ -81,6 +89,7 @@ pub(crate) struct ToolRegistry {
     writes: std::sync::atomic::AtomicU64,
     history: std::sync::Mutex<std::collections::VecDeque<String>>,
     lsp: std::sync::Mutex<Option<lsp::Conn>>,
+    session: std::sync::Mutex<Option<String>>,
 }
 
 struct Recent {
@@ -134,6 +143,7 @@ impl ToolRegistry {
             writes: std::sync::atomic::AtomicU64::new(0),
             history: std::sync::Mutex::new(std::collections::VecDeque::new()),
             lsp: std::sync::Mutex::new(None),
+            session: std::sync::Mutex::new(None),
         })
     }
 
@@ -156,6 +166,12 @@ impl ToolRegistry {
 
     pub(crate) fn is_read_only(&self) -> bool {
         self.policy.is_read_only()
+    }
+
+    pub(crate) fn set_session(&self, id: &str) {
+        if let Ok(mut session) = self.session.lock() {
+            *session = Some(id.to_string());
+        }
     }
 
     pub(crate) fn set_read_only(&mut self, on: bool) {

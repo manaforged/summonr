@@ -9,6 +9,7 @@ const HITS_MAX: usize = 8;
 const QUERY_MAX: usize = 400;
 
 const SEARCH_URL: &str = "https://www.bing.com/search";
+const BRAVE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 
 mod fetch;
 mod results;
@@ -16,7 +17,7 @@ mod results;
 #[cfg(test)]
 use fetch::{check_url, html_to_md};
 use fetch::{host_blocked, resolves_blocked};
-use results::{Hit, clip, format_hits, parse_rss};
+use results::{Hit, clip, format_hits, parse_brave, parse_rss};
 
 #[derive(Clone)]
 pub(crate) struct Search {
@@ -25,6 +26,7 @@ pub(crate) struct Search {
     allowed: Vec<String>,
     excluded: Vec<String>,
     origin: Option<String>,
+    brave: Option<String>,
 }
 
 impl Search {
@@ -33,12 +35,33 @@ impl Search {
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);
         let allowed = normalize_domains(file.allowed_domains.unwrap_or_default());
         let excluded = normalize_domains(file.excluded_domains.unwrap_or_default());
+        let brave = match file.backend.as_deref().map(str::trim) {
+            Some("brave") => Some(
+                file.api_key
+                    .filter(|key| !key.trim().is_empty())
+                    .or_else(|| std::env::var("BRAVE_API_KEY").ok())
+                    .filter(|key| !key.trim().is_empty())
+                    .ok_or_else(|| {
+                        Error::Config(
+                            "[search] backend = \"brave\" needs api_key or BRAVE_API_KEY"
+                                .to_string(),
+                        )
+                    })?,
+            ),
+            None | Some("bing") | Some("bing-rss") => None,
+            Some(other) => {
+                return Err(Error::Config(format!(
+                    "[search] backend takes brave or bing, not `{other}`"
+                )));
+            }
+        };
         Ok(Self {
             http: client()?,
             count,
             allowed,
             excluded,
             origin: None,
+            brave,
         })
     }
 
@@ -56,13 +79,64 @@ impl Search {
             return Err(Error::Tool("web_search query is too long".to_string()));
         }
         let count = count.unwrap_or(self.count).clamp(1, HITS_MAX);
-        let hits = self.rss(query, freshness).await?;
+        let (hits, via) = match &self.brave {
+            Some(key) => (self.brave(query, count, freshness, key).await?, "brave"),
+            None => (
+                self.rss(query, freshness).await?,
+                "bing rss — set [search] backend = \"brave\" with api_key for stable results",
+            ),
+        };
         let hits = self
             .filter_hits(hits)
             .into_iter()
             .take(count)
             .collect::<Vec<_>>();
-        Ok(format_hits(query, &hits))
+        Ok(format!("{}\nvia {via}", format_hits(query, &hits)))
+    }
+
+    async fn brave(
+        &self,
+        query: &str,
+        count: usize,
+        freshness: Option<&str>,
+        key: &str,
+    ) -> Result<Vec<Hit>> {
+        let endpoint = self.origin.clone().unwrap_or_else(|| BRAVE_URL.to_string());
+        let mut url = reqwest::Url::parse(&endpoint)
+            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("q", query);
+            pairs.append_pair("count", &count.to_string());
+            if let Some(filter) = match freshness {
+                Some("day") => Some("pd"),
+                Some("week") => Some("pw"),
+                Some("month") => Some("pm"),
+                _ => None,
+            } {
+                pairs.append_pair("freshness", filter);
+            }
+        }
+        let response = self
+            .http
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .header("X-Subscription-Token", key)
+            .send()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        if !status.is_success() {
+            return Err(Error::Tool(format!(
+                "web_search HTTP {status}: {}",
+                clip(&body, 200)
+            )));
+        }
+        parse_brave(&body)
     }
 
     async fn rss(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {

@@ -70,3 +70,12 @@ fn copied_hash_and_text_is_a_valid_edit_anchor() -> Result<()> {
     assert_eq!(replaced, "done\nworld\n");
     Ok(())
 }
+
+#[test]
+fn a_non_tag_is_named_as_such_not_as_stale() {
+    let error = parse_tag("}").expect_err("not a tag").to_string();
+    assert!(
+        error.contains("is not a tag") && error.contains("N:hash"),
+        "{error}"
+    );
+}

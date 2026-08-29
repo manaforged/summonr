@@ -34,6 +34,38 @@ pub(super) fn parse_rss(xml: &str) -> Vec<Hit> {
     hits
 }
 
+pub(super) fn parse_brave(json: &str) -> crate::error::Result<Vec<Hit>> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|error| {
+        crate::error::Error::Tool(format!(
+            "web_search returned an unexpected response: {error}"
+        ))
+    })?;
+    let results = value
+        .get("web")
+        .and_then(|web| web.get("results"))
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(results
+        .iter()
+        .filter_map(|item| {
+            let text = |key: &str| {
+                item.get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            };
+            let url = text("url");
+            (!url.is_empty()).then(|| Hit {
+                title: text("title"),
+                url,
+                snippet: clip(&text("description"), 240),
+            })
+        })
+        .collect())
+}
+
 pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
     if hits.is_empty() {
         return format!("web_search  0 hits  `{query}`");

@@ -36,6 +36,13 @@ impl ToolRegistry {
     }
 }
 
+pub(crate) fn readonly(name: &str) -> bool {
+    matches!(
+        name,
+        "read_file" | "list_dir" | "grep" | "diagnostics" | "skill" | "web_search" | "web_fetch"
+    )
+}
+
 pub(super) fn known(name: &str) -> bool {
     matches!(
         name,
@@ -67,7 +74,7 @@ fn read_file() -> ToolDefinition {
             "properties": {
                 "path": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 400}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
             },
             "required": ["path"],
             "additionalProperties": false
@@ -206,7 +213,7 @@ fn list_dir() -> ToolDefinition {
 fn grep() -> ToolDefinition {
     tool(
         "grep",
-        "Search workspace files. Each hit is `path:N:hash|line` so you can edit without another read. glob limits which files (*.rs, src/**/*.ts). Empty pattern with glob lists matching files.",
+        "Search workspace files. Each hit is `path:N:hash|line` so you can edit without another read. glob limits which files (*.rs, src/**/*.ts). Empty pattern with glob lists matching files. The workspace search honors .gitignore; an explicit path searches everything under it.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -268,7 +275,7 @@ fn skill() -> ToolDefinition {
 fn run_command() -> ToolDefinition {
     tool(
         "run_command",
-        "Run a workspace shell command. Foreground commands default to 30 seconds; pass timeout_secs or set background true for longer tests. Background returns a job id and keeps running after Summoner exits. Pass job to poll it, or job plus kill true to stop it. Results contain the exit code and a concise diagnostic digest. Do not create or edit files with the shell; use write_file or edit_file. Prefer web_search for discovery and web_fetch for public pages.",
+        "Run a workspace shell command. Foreground commands default to 120 seconds; pass timeout_secs or set background true for longer tests. Background returns a job id and keeps running after Summoner exits. Pass job to poll it, or job plus kill true to stop it. Results contain the exit code and a concise diagnostic digest. Do not create or edit files with the shell; use write_file or edit_file. Prefer web_search for discovery and web_fetch for public pages.",
         serde_json::json!({
             "type": "object",
             "properties": {

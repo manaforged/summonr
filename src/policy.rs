@@ -135,16 +135,75 @@ impl Policy {
     }
 }
 
+fn expands_to_shell(var: &str) -> bool {
+    let name: String = var
+        .trim_start_matches('{')
+        .chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect();
+    if name.is_empty() {
+        return true;
+    }
+    match std::env::var(&name) {
+        Ok(value) => {
+            let program = value.split_whitespace().next().unwrap_or_default();
+            let program = program.rsplit('/').next().unwrap_or(program);
+            matches!(program, "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish")
+        }
+        Err(_) => true,
+    }
+}
+
+fn pipes_to_shell(command: &str) -> bool {
+    command.split('|').skip(1).any(|segment| {
+        segment
+            .trim_start_matches('&')
+            .split_whitespace()
+            .map(|word| word.rsplit('/').next().unwrap_or(word))
+            .find(|word| {
+                !matches!(
+                    *word,
+                    "env"
+                        | "sudo"
+                        | "doas"
+                        | "nice"
+                        | "nohup"
+                        | "exec"
+                        | "command"
+                        | "time"
+                        | "xargs"
+                        | "timeout"
+                        | "stdbuf"
+                        | "setsid"
+                        | "flock"
+                        | "chronic"
+                ) && !word.starts_with('-')
+                    && !word.contains('=')
+                    && !word.chars().all(|c| c.is_ascii_digit())
+            })
+            .is_some_and(|word| {
+                let bare: String = word.chars().filter(|c| !matches!(c, '"' | '\'')).collect();
+                if let Some(var) = bare.strip_prefix('$') {
+                    return expands_to_shell(var);
+                }
+                let name = bare
+                    .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
+                    .to_ascii_lowercase();
+                matches!(
+                    name.as_str(),
+                    "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish"
+                ) || word.starts_with('`')
+            })
+    })
+}
+
 fn builtin_deny(command: &str) -> bool {
     let folded = collapse(command);
     wipes_root(&folded)
         || folded.contains("git push --force")
         || folded.contains("git push -f")
         || folded.contains("git push --mirror")
-        || folded.contains("| sh")
-        || folded.contains("| bash")
-        || folded.contains("|sh")
-        || folded.contains("|bash")
+        || pipes_to_shell(command)
         || folded.contains("mkfs")
         || folded.contains(":(){ :|:& };:")
         || folded.starts_with("sudo ")
@@ -216,6 +275,9 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
                 break;
             }
             if destructive {
+                if in_temp(word) {
+                    return Some(word.clone());
+                }
                 targets.push(word.clone());
             }
         }
@@ -247,6 +309,15 @@ fn split_segments(command: &str) -> Vec<String> {
         .collect()
 }
 
+fn in_temp(word: &str) -> bool {
+    let temp = std::env::temp_dir();
+    let target = Path::new(word.trim_end_matches('*'));
+    word.starts_with('/')
+        && [temp.clone(), temp.canonicalize().unwrap_or_default()]
+            .iter()
+            .any(|root| !root.as_os_str().is_empty() && target.starts_with(root))
+}
+
 fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
     if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
         return false;
@@ -256,9 +327,12 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
     }
     if word.starts_with('/') {
         let target = Path::new(word);
+        let temp = std::env::temp_dir();
         let roots = [
             workspace.to_path_buf(),
             workspace.canonicalize().unwrap_or_default(),
+            temp.clone(),
+            temp.canonicalize().unwrap_or_default(),
         ];
         return !roots
             .iter()

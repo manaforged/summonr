@@ -71,6 +71,19 @@ fn html_keeps_links_and_headings() {
 }
 
 #[test]
+fn unset_backend_uses_brave_when_a_key_is_set() {
+    assert_eq!(
+        select_brave(None, Some("k".into())).expect("none"),
+        Some("k".into())
+    );
+    assert_eq!(
+        select_brave(Some("bing"), Some("k".into())).expect("bing"),
+        None
+    );
+    drop(select_brave(Some("brave"), None).unwrap_err());
+}
+
+#[test]
 fn brave_json_becomes_hits_and_garbage_is_named() {
     let hits = parse_brave(
         r#"{"web":{"results":[{"title":"LazyLock in std::sync","url":"https://doc.rust-lang.org/std/sync/struct.LazyLock.html","description":"A value which is initialized on the first access."},{"title":"no url"}]}}"#,

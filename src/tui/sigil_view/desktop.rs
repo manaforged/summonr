@@ -21,7 +21,6 @@ pub(super) fn root(app: App) -> NodeBuilder {
         .theme(Theme::dark())
         .children_reactive(move || {
             drop((
-                screen.transcript.get(),
                 screen.status.get(),
                 screen.layout.get(),
                 screen.panes.get(),

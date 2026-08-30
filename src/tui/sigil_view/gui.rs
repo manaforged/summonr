@@ -21,8 +21,7 @@ const FRAME: Duration = Duration::from_millis(40);
 
 type Inbox = Rc<RefCell<UnboundedReceiver<Msg>>>;
 
-/// Runs the same panes as the terminal host in a desktop window. Returns
-/// when the window closes.
+/// Runs the same App in a desktop window.
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -117,8 +116,7 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
         app.refresh();
     }
     if app.quit.peek() {
-        // ponytail: the process ends here; upgrade when sigil exposes an exit request.
-        std::process::exit(0);
+        sigil::request_exit();
     }
 }
 
@@ -141,3 +139,7 @@ fn reveal(path: &Path) -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "gui_tests.rs"]
+mod tests;

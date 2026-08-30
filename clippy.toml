@@ -8,7 +8,6 @@ allow-dbg-in-tests = true
 
 disallowed-types = [
     { path = "once_cell::sync::Lazy", reason = "use std::sync::LazyLock" },
-    { path = "lazy_static::Lazy", reason = "use std::sync::LazyLock" },
 ]
 
 disallowed-macros = [

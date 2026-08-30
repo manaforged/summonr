@@ -25,6 +25,8 @@ pub(crate) struct File {
     pub reasoning: Option<bool>,
     pub tools: Option<String>,
     pub bus: Option<bool>,
+    pub layout: Option<String>,
+    pub secrets: Option<String>,
     #[serde(default)]
     pub lsp: Lsp,
     pub workflow: Option<String>,
@@ -122,6 +124,14 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
             "config.toml: `theme` must be `space` or `fantasy`".to_string(),
         ));
     }
+    match file.secrets.as_deref().map(str::trim) {
+        None | Some("") | Some("file") | Some("keychain") => {}
+        Some(other) => {
+            return Err(Error::Config(format!(
+                "config.toml: secrets must be \"file\" or \"keychain\", not `{other}`"
+            )));
+        }
+    }
     Ok(file)
 }
 
@@ -140,6 +150,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["reasoning"] = value(prefs.reasoning);
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
+    document["layout"] = value(&prefs.layout);
     match &prefs.last_endpoint {
         Some(name) => document["last_endpoint"] = value(name),
         None => {
@@ -149,17 +160,15 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     persist(path, &document)
 }
 
-pub(crate) fn save_key(path: &Path, name: &str, key: &str) -> Result<()> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    let mut document = text
-        .parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("config.toml: {error}")))?;
-    document["endpoint"][name]["api_key"] = value(key);
-    persist(path, &document)
+pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
+    let mut document = read_document(path)?;
+    let removed = document["endpoint"][name]
+        .as_table_like_mut()
+        .is_some_and(|row| row.remove("api_key").is_some());
+    if removed {
+        persist(path, &document)?;
+    }
+    Ok(removed)
 }
 
 pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {

@@ -80,27 +80,45 @@ fn title_bar(app: App) -> NodeBuilder {
 }
 
 fn transcript(app: App) -> NodeBuilder {
-    let entries: Vec<Entry> = app.model.borrow().entries.clone();
-    let mut column = container().layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .grow(1.0)
-            .min_size(0.0, 0.0)
-            .padding_x(36.0)
-            .padding_y(20.0)
-            .gap(16.0)
-            .overflow_y(Overflow::Scroll),
-    );
-    if entries.is_empty() {
-        column = column.child(
-            label("ask anything — @file attaches · !cmd runs · /help lists")
-                .class(classes!("text-sm text-gray-11")),
-        );
-    }
-    for entry in entries {
-        column = column.child(row(entry));
-    }
-    column
+    let live = app.clone();
+    let body = container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .padding_x(36.0)
+                .padding_y(20.0)
+                .gap(16.0),
+        )
+        .children_reactive(move || {
+            drop(live.transcript.get());
+            let entries: Vec<Entry> = live.model.borrow().entries.clone();
+            let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
+            if entries.is_empty() {
+                column = column.child(
+                    label("ask anything — @file attaches · !cmd runs · /help lists")
+                        .class(classes!("text-sm text-gray-11")),
+                );
+            } else {
+                for entry in entries {
+                    column = column.child(row(entry));
+                }
+            }
+            vec![column]
+        });
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .grow(1.0)
+                .min_size(0.0, 0.0),
+        )
+        .child(
+            scroll(body, app.extent)
+                .fill()
+                .scroll_bind(app.scroll_y)
+                .scroll_to_end()
+                .auto_pin_to_bottom(true),
+        )
 }
 
 fn row(entry: Entry) -> NodeBuilder {
@@ -159,11 +177,9 @@ fn row(entry: Entry) -> NodeBuilder {
         }
         Entry::System(body) => wrap(text(body).class(classes!("text-xs text-gray-11"))),
         Entry::Chart(rounds) => wrap(
-            label(format!(
-                "{} rounds — /stats in the terminal draws the chart",
-                rounds.len()
-            ))
-            .class(classes!("text-xs text-gray-11")),
+            chart(rounds.iter().map(|round| round.total() as f32))
+                .height(72.0)
+                .width(280.0),
         ),
         Entry::Image { label: name, .. } => wrap(badge(name, Tone::Neutral)),
     }

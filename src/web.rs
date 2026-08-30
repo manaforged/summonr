@@ -11,6 +11,23 @@ const QUERY_MAX: usize = 400;
 const SEARCH_URL: &str = "https://www.bing.com/search";
 const BRAVE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
 
+fn select_brave(backend: Option<&str>, key: Option<String>) -> Result<Option<String>> {
+    match backend.map(str::trim) {
+        Some("brave") => key
+            .ok_or_else(|| {
+                Error::Config(
+                    "[search] backend = \"brave\" needs api_key or BRAVE_API_KEY".to_string(),
+                )
+            })
+            .map(Some),
+        None => Ok(key),
+        Some("bing") | Some("bing-rss") => Ok(None),
+        Some(other) => Err(Error::Config(format!(
+            "[search] backend takes brave or bing, not `{other}`"
+        ))),
+    }
+}
+
 mod fetch;
 mod results;
 
@@ -35,26 +52,12 @@ impl Search {
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);
         let allowed = normalize_domains(file.allowed_domains.unwrap_or_default());
         let excluded = normalize_domains(file.excluded_domains.unwrap_or_default());
-        let brave = match file.backend.as_deref().map(str::trim) {
-            Some("brave") => Some(
-                file.api_key
-                    .filter(|key| !key.trim().is_empty())
-                    .or_else(|| std::env::var("BRAVE_API_KEY").ok())
-                    .filter(|key| !key.trim().is_empty())
-                    .ok_or_else(|| {
-                        Error::Config(
-                            "[search] backend = \"brave\" needs api_key or BRAVE_API_KEY"
-                                .to_string(),
-                        )
-                    })?,
-            ),
-            None | Some("bing") | Some("bing-rss") => None,
-            Some(other) => {
-                return Err(Error::Config(format!(
-                    "[search] backend takes brave or bing, not `{other}`"
-                )));
-            }
-        };
+        let key = file
+            .api_key
+            .filter(|key| !key.trim().is_empty())
+            .or_else(|| std::env::var("BRAVE_API_KEY").ok())
+            .filter(|key| !key.trim().is_empty());
+        let brave = select_brave(file.backend.as_deref(), key)?;
         Ok(Self {
             http: client()?,
             count,

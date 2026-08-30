@@ -1,20 +1,6 @@
 use super::*;
 
 #[test]
-fn save_key_preserves_endpoint_settings() {
-    let home = tempfile::tempdir().expect("temp home");
-    let path = home.path().join("config.toml");
-    std::fs::write(&path, "[endpoint.glm]\nmodel = \"glm-5.3-flash\"\n").expect("seed config");
-
-    save_key(&path, "glm", "new-secret").expect("save key");
-
-    let file = load_from(&path).expect("load config");
-    let endpoint = file.endpoint.get("glm").expect("glm endpoint");
-    assert_eq!(endpoint.model.as_deref(), Some("glm-5.3-flash"));
-    assert_eq!(endpoint.api_key.as_deref(), Some("new-secret"));
-}
-
-#[test]
 fn endpoint_rows_carry_effort_and_price() {
     let home = tempfile::tempdir().expect("temp home");
     let path = home.path().join("config.toml");
@@ -33,6 +19,40 @@ fn endpoint_rows_carry_effort_and_price() {
     let error = load_from(&path).expect_err("bad effort").to_string();
     assert!(
         error.contains("turbo") || error.contains("effort"),
+        "{error}"
+    );
+}
+
+#[test]
+fn remove_key_strips_only_the_key() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[endpoint.glm]\nmodel = \"glm-5.3\"\napi_key = \"secret\"\n",
+    )
+    .expect("seed config");
+    assert!(remove_key(&path, "glm").expect("remove"));
+    let text = std::fs::read_to_string(&path).expect("read");
+    assert!(!text.contains("secret"), "{text}");
+    assert!(text.contains("model = \"glm-5.3\""), "{text}");
+    assert!(!remove_key(&path, "glm").expect("nothing left"));
+    assert!(!remove_key(&home.path().join("missing.toml"), "glm").expect("no file"));
+}
+
+#[test]
+fn secrets_accepts_file_and_keychain_only() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(&path, "secrets = \"keychain\"\n").expect("seed");
+    assert_eq!(
+        load_from(&path).expect("load").secrets.as_deref(),
+        Some("keychain")
+    );
+    std::fs::write(&path, "secrets = \"disk\"\n").expect("seed");
+    let error = load_from(&path).expect_err("bad secrets").to_string();
+    assert!(
+        error.contains("file") && error.contains("keychain"),
         "{error}"
     );
 }

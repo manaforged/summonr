@@ -39,6 +39,13 @@ crossterm = "0.28"
 sigil = { package = "sigil-ui", git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a", default-features = false, features = ["tui"] }
 sigil-hal = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
 sigil-tui = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+sigil-ide-core = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+
+[features]
+default = []
+# `summon --gui`: the same panes in a winit + wgpu window.
+gui = ["sigil/desktop"]
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"

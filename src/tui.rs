@@ -45,6 +45,20 @@ pub enum Msg {
         text: String,
     },
     Peers(usize),
+    Files(Vec<String>),
+    Diff(crate::diff::Diff),
+    Trees(Vec<crate::worktree::Status>),
+    Changed(Vec<String>),
+    Edited(Vec<String>),
+    View {
+        path: String,
+        rope: sigil_ide_core::buffer::Rope,
+        added: Vec<(usize, usize)>,
+    },
+    Patch {
+        path: String,
+        text: String,
+    },
     Bye,
 }
 
@@ -63,6 +77,14 @@ enum Cmd {
     SetModel(String),
     SetSeat(String, String),
     ListModels,
+    ListFiles,
+    Diff(Option<std::path::PathBuf>),
+    Patch(Option<std::path::PathBuf>, String),
+    Trees,
+    View(Option<std::path::PathBuf>, String),
+    Save(String, String),
+    Merge(std::path::PathBuf),
+    Discard(std::path::PathBuf),
     SeatRole(crate::workflow::Role, String, String),
     ClearRole(crate::workflow::Role),
     SaveWorkflow(String),
@@ -73,13 +95,14 @@ enum Cmd {
     Tick,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Round {
     pub prompt: u32,
     pub completion: u32,
     pub reasoning: u32,
     pub cached: u32,
     pub prefix_hash: String,
+    pub cost: Option<f64>,
 }
 
 impl Round {
@@ -147,6 +170,9 @@ pub fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
     if !prefix.is_empty() {
         return prefix;
     }
+    if needle.contains(char::is_whitespace) {
+        return Vec::new();
+    }
     let mut matches: Vec<_> = crate::command_specs()
         .iter()
         .enumerate()
@@ -197,7 +223,16 @@ pub fn run(
     info: Info,
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
+    gui: bool,
 ) -> Result<i32> {
+    if gui {
+        #[cfg(feature = "gui")]
+        return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx);
+        #[cfg(not(feature = "gui"))]
+        return Err(crate::error::Error::Config(
+            "this build has no window; install with `cargo install --features gui`".to_string(),
+        ));
+    }
     sigil_view::run(loop_, workspace, info, ui_tx, ui_rx)
 }
 
@@ -268,6 +303,12 @@ fn help_text() -> String {
          @path attach text or an image\n\
          keys: enter send/steer · tab complete/queue · ctrl+j newline · shift+tab mode\n\
          pgup/pgdn or wheel scroll · ctrl+o settings · ctrl+g editor\n\
+         panes: ctrl+e files · ctrl+l ledger · ctrl+x diff · /pane worktrees · ctrl+p hide/show · ctrl+→ focus pane · ctrl+← composer\n\
+         in a pane: ↑↓ move · ←→ collapse/expand or hunks/list · enter attach @path or view hunks · right-click menu · esc back\n\
+         view: → on a file or /view PATH · ↑↓ scroll · o open in $EDITOR · esc back\n\
+         diff: t last turn only · c copy the patch\n\
+         edit: e in the view pane · type, enter, arrows · ctrl+s save · esc leave (twice to discard)\n\
+         ctrl+shift+←/→ resize the split\n\
          settings: enter on model lists every ready seat\n\
          workflow card: ↑↓ role · enter seat · d driving · ←→ saved · s save\n\
          esc cancel · ctrl+c clear/quit · ctrl+d quit when empty"

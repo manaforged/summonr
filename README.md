@@ -44,16 +44,37 @@ model = "whatever-the-server-calls-it"
 api_key = "local"
 ```
 
-Then `summon local`. `summon endpoints` probes `GET /models` for each
+Then `summon local`. `effort = "low"` on a row (or `--effort LEVEL`,
+`/effort LEVEL` in the interface) sets the reasoning effort for that
+seat — set it only on a seat whose model reasons, because a host that
+does not take `reasoning_effort` answers 400; `price = { input, output, cached }` in USD per million tokens
+prices every round in `/stats` and the footer. A workflow seat keeps
+its own row's effort and price; `--effort` and `/effort` set the
+driving seat and any role seat whose row does not say. `summon endpoints` probes `GET /models` for each
 name so a dead host fails before the first tool round. `summon login NAME`
 runs RFC 8628 device-code login when that row has `device_url`.
+
+Keys live in the OS keychain (macOS Keychain, Windows Credential
+Manager, Linux Secret Service): `summon login NAME --key` reads one
+from stdin and stores it; `summon logout NAME` forgets it. Where no
+keychain is reachable the key goes to `~/.mage/credentials.toml`
+(mode 0600); `MAGE_SECRETS=file` forces that. Resolution order is the
+host's environment variable, the keychain, the credentials file, then
+`api_key` in `config.toml` — which still works but is plaintext, and
+Summoner says so once per run until you move it.
+
+On macOS an unsigned development build is a new identity after every
+`cargo build`, so the Keychain asks again for each stored key. Either
+run with `MAGE_SECRETS=file` while developing, or sign the build once
+with a stable identity: `scripts/dev-sign.sh setup` (once), then
+`scripts/dev-sign.sh` after each build.
 
 Built-ins: chat/completions seats `glm`, `glm-intl`, `qwen`, `kimi`,
 `grok`, `copilot`, `openai`, `openrouter`; native wires `anthropic`
 (Messages) and `gemini`. `summon login copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
-key (`KIMI_*` or `~/.kimi-code/credentials`). Keys are the host's own
-env (`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
+key (`KIMI_*` or `~/.kimi-code/credentials`). Environment keys are the host's own
+(`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Overlay `wire = "anthropic"`
 on any `[endpoint.NAME]` row. See [`config.example.toml`](config.example.toml).
 
@@ -62,11 +83,33 @@ summon --goal "make cargo test pass"
 summon --steps PLAN.md
 ```
 
+`summon --name TEXT` (or `/name TEXT`) names a session; `--session`
+takes a name or an id prefix, `summon sessions` lists both, and
+`summon export [ID|NAME]` prints the transcript as Markdown.
+
 `--goal` keeps one objective until `.mage/check.toml` is green and a
-judge says stop. `--steps` hands the model one numbered item at a
-time. Both isolate in a git worktree (`<repo>-worktrees/<id>`) when
-you are in a repo. Exit 0 fast-forwards your branch and removes the
-tree. `--here` stays put. `diagnostics` and `definition` talk to one
+judge says stop. The judge answers `done`, `continue`, `stalled`, or
+`impossible`; the last two end the goal with the reason, and three
+turns without a workspace change end it as stalled. `--steps` hands
+the model one numbered item at a time. A turn that ends while a
+background command it started is still running is deferred — no
+verdict, no repair strike, up to three times — until the job exits or
+the model kills it. A `### Heading` under
+`## Steps` groups the items that follow it into a phase. Every turn
+carries the ledger — phases as Roman numerals, `[x]` done, `[/]` this
+step, `[ ]` later, `[!]` blocked — to the model and to the transcript.
+Both isolate in a git worktree (`<repo>-worktrees/<id>`) when you are
+in a repo. Exit 0 commits the files the run changed as
+`summon: <objective>` (files over 5 MB and anything the run did not
+touch are left in place and named), fast-forwards your branch, and
+removes the tree; a tree that cannot fast-forward or still holds
+uncommitted files is kept and named, and the exit code is 1.
+`--here` stays put.
+
+In plan mode the model reads and proposes; nothing runs. Toggle plan
+mode off and the next message accepts the selected plan — the
+transcript and the model both see `plan accepted`; `/plan reject`
+discards it instead. `diagnostics` and `definition` talk to one
 language server (`definition` also lists references and applies rename).
 
 ### Workflows
@@ -99,6 +142,61 @@ interface every card action has a verb too:
 /workflow default NAME       the workflow new sessions start with
 ```
 
+`summon --gui` opens the session in a desktop window (a build with
+`--features gui`). The window is the Codex shape on Sigil: a left rail
+that switches the Files, Changes, Worktrees, and Plan panes and lists this
+workspace's sessions; a main column with the transcript, a composer card,
+and an Auto/Plan switch; a right rail that shows the open pane with real
+widgets — clickable file rows, +/− chips that open a file's hunks, an
+Edit/Save file view. The title bar's changes badge is live. The same
+`App`, keys, and layouts drive the terminal and the window.
+
+The screen is a set of panes on one session. `ctrl+e` (or `/pane
+files`) opens the repository tree beside the chat; `ctrl+l` the plan
+ledger; `ctrl+p` hides or restores the pane. In the tree: `ctrl+→`
+focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End`
+jump, Enter opens a directory or attaches `@path` to your prompt, and
+a right-click (or the mouse) opens a menu — attach, open in `$EDITOR`,
+insert path. `ctrl+←` or `esc` returns to the composer. `/pane off`
+closes the pane. `/layout focus`, `run`, `files`, and `review` are
+presets, `/layout "chat | files 30%"` sets the split, and
+ctrl+shift+←/→ resizes it. The layout persists in `~/.mage/config.toml`
+as `layout`.
+
+`ctrl+x` (or `/pane diff`, `/diff`) shows the changes against the base:
+the worktree base for a `--goal`/`--steps` run, `HEAD` otherwise. Each
+row is `+added −removed path`; Enter or `→` opens that file's hunks,
+`↑↓` scroll them, `←` or `esc` returns to the list, and the right-click
+menu adds view hunks. `/diff PATH` jumps to one file. After a turn that
+changed the tree, the transcript gets one `changes: N files · +a −r`
+line. The same data is `summon diff [PATH]` (the patch), `summon diff
+--stat`, and `summon diff --json`.
+
+`→` on a file in the tree (or `/view PATH`, or the menu's view file)
+reads it in the view pane with line numbers; lines the diff added are
+green with a `+`. `↑↓`, `PgUp/PgDn`, `Home/End` scroll, `o` opens it in
+`$EDITOR`, `esc` returns to the tree. `e` edits the file in place: the
+keyboard goes to the file (type, Enter, arrows, Home/End), the caret is
+the inverted cell, `ctrl+s` saves, and `esc` leaves — with unsaved text a
+second `esc` discards it. The tree, the diff, and the view
+follow the file system: a change on disk relists, re-diffs, or reloads
+the pane within about half a second.
+
+In the diff pane `t` keeps only the files the last turn edited (the
+header says `· last turn`), `c` copies the patch on show to the clipboard
+(OSC 52 in the terminal; the system clipboard in the window), and a pane
+80 columns or wider shows a file's hunks side by side, old on the left.
+`summon diff --turn N` (or `--turn last`) is the same filter for the
+latest session in this directory.
+
+`/pane worktrees` lists the `summon/*` worktrees of this repository:
+branch, commits ahead of the base, dirty or clean, the session that ran
+there, and the directory. Enter or `→` opens that worktree's diff (`esc`
+comes back); the right-click menu offers show diff, merge (the same
+ff-only merge a run ends with; a dirty tree is refused), remove
+worktree (only when clean and fully merged), and insert path. `summon
+worktrees` prints the same rows; `summon worktrees --json` as JSON.
+
 The card takes the keyboard (↑↓ role, enter picks a seat, `d` returns
 it to the driving seat, ←→ cycles saved workflows, `s` saves) and the
 mouse: click a role to pick its seat, drag a role onto another to copy
@@ -112,13 +210,18 @@ touches. With a `review` seat, a turn whose checks passed is read by
 the reviewer before it completes; a rejection sends the findings back
 as the next instruction and counts against the same three-attempt
 limit as a failed check.
-`grep` takes `glob`; an empty pattern lists matching files. Defaults pick
+`grep` takes `glob`, honors `.gitignore`, and lists matching files
+when the pattern is empty.
+`web_search` reads Bing RSS without a key; `[search] backend = "brave"`
+with `api_key` (or `BRAVE_API_KEY`) uses the Brave Search API and every
+result says which backend answered. Defaults pick
 the first popular binary on PATH for the tree
 (Biome before tsserver on a Node repo, Ruff before pyright on Python).
 Set `[lsp] command` in `.mage/config.toml` to plug in anything else.
 
-Unknown flags exit 1. A red verify gate exits 2. A budget abort
-exits 3.
+Unknown flags exit 1. A red verify gate exits 2. A run that stops
+short — a budget breach, a stalled or impossible goal, or an aborted
+turn — exits 3.
 
 ## Limits
 
@@ -128,6 +231,12 @@ exits 3.
 - Home is still `~/.mage`. Env is still `MAGE_*`.
 - Not crates.io. No Sigil SSH, no build.
 - An older `mage` binary may still be on `PATH`. Use `summon`.
+- No MCP client, plugin, or hook API. The tool set is the built-in
+  one. A CLI with a README is a tool the model already knows how to
+  run through `run_command`; a skill under `~/.mage/skills` or
+  `.mage/skills` carries instructions; the bus carries mail between
+  sessions. An extension door waits for a feature the built-ins cannot
+  reach.
 
 ## Docs
 

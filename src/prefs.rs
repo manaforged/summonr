@@ -35,6 +35,7 @@ pub struct Prefs {
     pub reasoning: bool,
     pub tools: ToolOutput,
     pub bus: bool,
+    pub layout: String,
     pub last_endpoint: Option<String>,
 }
 
@@ -48,12 +49,21 @@ impl Default for Prefs {
             tools: ToolOutput::Compact,
             bus: true,
             last_endpoint: None,
+            layout: "chat".to_string(),
         }
     }
 }
 
 #[cfg(test)]
-const KEYS: [&str; 6] = ["theme", "splash", "animations", "reasoning", "tools", "bus"];
+const KEYS: [&str; 7] = [
+    "theme",
+    "splash",
+    "animations",
+    "reasoning",
+    "tools",
+    "bus",
+    "layout",
+];
 
 pub fn load_from(path: &Path) -> Result<Prefs> {
     let file = config::load_from(path)?;
@@ -77,6 +87,9 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
             ToolOutput::Compact
         };
     }
+    if let Some(layout) = file.layout {
+        prefs.layout = layout;
+    }
     if let Some(bus) = file.bus {
         prefs.bus = bus;
     }
@@ -93,7 +106,7 @@ pub fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
 pub fn set_last_endpoint(name: &str) {
     if let (Ok(mut prefs), Some(path)) = (load(), path()) {
         prefs.last_endpoint = Some(name.to_string());
-        let _ = save_in(&path, &prefs);
+        drop(save_in(&path, &prefs));
     }
 }
 

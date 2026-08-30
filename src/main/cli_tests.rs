@@ -90,3 +90,98 @@ fn workflow_flag_and_subcommand() {
     assert!(listed.list_workflows);
     assert!(listed.endpoint.is_none());
 }
+
+#[test]
+fn effort_flag_takes_a_level_and_rejects_the_rest() {
+    assert_eq!(
+        args(&["--effort", "low"]).effort,
+        Some(summoner::Effort::Low)
+    );
+    assert!(args(&[]).effort.is_none());
+    let error = parse_from(["--effort", "turbo"].map(str::to_string))
+        .expect_err("bad level")
+        .to_string();
+    assert!(error.contains("turbo"), "{error}");
+}
+
+#[test]
+fn a_bare_unknown_name_is_an_error_not_a_prompt() {
+    let error = parse_from(["nosuch", "-p"].map(str::to_string))
+        .expect_err("unknown endpoint")
+        .to_string();
+    assert!(error.contains("unknown endpoint `nosuch`"), "{error}");
+    let parsed = args(&["-p", "nosuch"]);
+    assert_eq!(parsed.prompt, ["nosuch"]);
+    let parsed = args(&["-p", "fix", "the", "tests"]);
+    assert_eq!(parsed.prompt, ["fix", "the", "tests"]);
+}
+
+#[test]
+fn a_bare_unknown_name_before_goal_or_steps_is_an_error() {
+    let error = parse_from(["nosuch", "--goal", "fix it"].map(str::to_string))
+        .expect_err("unknown endpoint")
+        .to_string();
+    assert!(error.contains("unknown endpoint `nosuch`"), "{error}");
+    let parsed = args(&["--goal", "fix it"]);
+    assert!(parsed.prompt.is_empty());
+}
+
+#[test]
+fn help_lists_every_interactive_command() {
+    let text = super::interactive();
+    for spec in summoner::command_specs() {
+        assert!(
+            text.contains(spec.name),
+            "{} missing from {text}",
+            spec.name
+        );
+    }
+    assert!(text.lines().all(|line| line.len() <= 72), "{text}");
+}
+
+#[test]
+fn export_and_name_parse() {
+    let parsed = args(&["export", "18d0"]);
+    assert!(parsed.export);
+    assert_eq!(parsed.prompt, ["18d0"]);
+    let parsed = args(&["--name", "widget spike", "-p", "hi"]);
+    assert_eq!(parsed.name.as_deref(), Some("widget spike"));
+    assert_eq!(parsed.prompt, ["hi"]);
+    let parsed = args(&["-p", "export"]);
+    assert!(!parsed.export, "after -p, export is a prompt");
+}
+
+#[test]
+fn max_turns_zero_is_refused() {
+    let error = parse_from(["--goal", "x", "--max-turns", "0"].map(str::to_string))
+        .expect_err("zero")
+        .to_string();
+    assert!(error.contains("at least 1"), "{error}");
+    assert_eq!(args(&["--max-turns", "3"]).max_turns, Some(3));
+}
+
+#[test]
+fn login_key_and_logout_parse() {
+    let parsed = args(&["login", "glm", "--key"]);
+    assert!(parsed.login && parsed.key);
+    assert_eq!(parsed.endpoint.as_deref(), Some("glm"));
+    let parsed = args(&["logout", "glm"]);
+    assert!(parsed.logout);
+    assert_eq!(parsed.endpoint.as_deref(), Some("glm"));
+}
+
+#[test]
+fn diff_takes_a_path_and_stat() {
+    let parsed = args(&["diff", "src/lib.rs", "--stat"]);
+    assert!(parsed.diff);
+    assert!(parsed.stat);
+    assert_eq!(parsed.prompt, vec!["src/lib.rs".to_string()]);
+    assert!(
+        !args(&["-p", "diff"]).diff,
+        "a prompt word is not the subcommand"
+    );
+    assert_eq!(
+        args(&["diff", "--turn", "last"]).turn.as_deref(),
+        Some("last")
+    );
+}

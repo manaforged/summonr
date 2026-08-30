@@ -4,6 +4,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::error::{Error, Result};
 
+const COMMIT_MAX: u64 = 5 * 1024 * 1024;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tree {
     pub primary: PathBuf,
@@ -12,13 +14,74 @@ pub struct Tree {
     pub base: String,
 }
 
+/// One worktree with its distance from the base and the session that ran in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Status {
+    pub tree: Tree,
+    pub ahead: u32,
+    pub dirty: bool,
+    pub session: Option<String>,
+}
+
+pub fn status(cwd: &Path) -> Result<Vec<Status>> {
+    let sessions = crate::session::list().unwrap_or_default();
+    list(cwd)?
+        .into_iter()
+        .map(|tree| {
+            let range = format!("{}..{}", tree.base, tree.branch);
+            let ahead = git(&tree.primary, &["rev-list", "--count", &range])
+                .ok()
+                .and_then(|count| count.parse().ok())
+                .unwrap_or(0);
+            let dirty = dirty(&tree.path)?;
+            let here = tree.path.display().to_string();
+            let session = sessions
+                .iter()
+                .rev()
+                .find(|info| info.cwd.as_deref() == Some(here.as_str()))
+                .map(|info| info.id.clone());
+            Ok(Status {
+                tree,
+                ahead,
+                dirty,
+                session,
+            })
+        })
+        .collect()
+}
+
+/// Removes a worktree that holds nothing: no uncommitted change and no
+/// commit the base lacks.
+pub(crate) fn discard(tree: &Tree) -> Result<()> {
+    if dirty(&tree.path)? {
+        return Err(Error::Config(format!(
+            "{} has uncommitted changes; merge or clean it first",
+            tree.branch
+        )));
+    }
+    let range = format!("{}..{}", tree.base, tree.branch);
+    let ahead: u32 = git(&tree.primary, &["rev-list", "--count", &range])?
+        .parse()
+        .unwrap_or(0);
+    if ahead > 0 {
+        return Err(Error::Config(format!(
+            "{} has {ahead} commit{} {} lacks; merge it first",
+            tree.branch,
+            if ahead == 1 { "" } else { "s" },
+            tree.base
+        )));
+    }
+    remove(tree)
+}
+
 #[must_use]
 pub fn in_git(path: &Path) -> bool {
     primary(path).is_ok()
 }
 
 pub(crate) fn primary(path: &Path) -> Result<PathBuf> {
-    let text = git(path, &["worktree", "list", "--porcelain"])?;
+    let text = git(path, &["worktree", "list", "--porcelain"])
+        .map_err(|_error| Error::Config(format!("{} is not a git repository", path.display())))?;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("worktree ") {
             return Ok(PathBuf::from(rest));
@@ -42,6 +105,12 @@ pub fn add(cwd: &Path) -> Result<Tree> {
         std::fs::create_dir_all(parent)?;
     }
     let base = git(&primary, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if base == "HEAD" {
+        return Err(Error::Config(format!(
+            "{} is on a detached HEAD; check out a branch first, or run with --here",
+            primary.display()
+        )));
+    }
     git(
         &primary,
         &[
@@ -55,6 +124,11 @@ pub fn add(cwd: &Path) -> Result<Tree> {
             "HEAD",
         ],
     )?;
+    let record = base_record(&primary, &id)?;
+    if let Some(parent) = record.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&record, format!("{base}\n"))?;
     let path = path.canonicalize().unwrap_or(path);
     let primary = primary.canonicalize().unwrap_or(primary);
     Ok(Tree {
@@ -65,15 +139,85 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     })
 }
 
-pub fn finish(tree: &Tree) -> Result<()> {
+pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
+    let mut committed = Vec::new();
     if dirty(&tree.path)? {
+        let tracked = git(&tree.path, &["ls-files"])?;
+        let tracked: std::collections::HashSet<&str> = tracked.lines().collect();
+        let small: Vec<&str> = paths
+            .iter()
+            .map(String::as_str)
+            .filter(|path| {
+                std::fs::metadata(tree.path.join(path)).map_or_else(
+                    |_missing| tracked.contains(path),
+                    |meta| meta.len() <= COMMIT_MAX,
+                )
+            })
+            .collect();
+        if !small.is_empty() {
+            let mut args = vec!["add", "--all", "--"];
+            args.extend(small.iter().copied());
+            git(&tree.path, &args)?;
+            git(&tree.path, &["commit", "-q", "-m", &subject(objective)])?;
+            committed = small.iter().map(|path| (*path).to_string()).collect();
+        }
+        let leftover = git(&tree.path, &["status", "--porcelain"])?;
+        if !leftover.is_empty() {
+            return Err(Error::Config(format!(
+                "left uncommitted in {} (not part of this run, or over {} bytes):\n{leftover}",
+                tree.path.display(),
+                COMMIT_MAX
+            )));
+        }
+    }
+    let big: Vec<String> = git(
+        &tree.primary,
+        &[
+            "diff",
+            "--name-only",
+            &format!("{}..{}", tree.base, tree.branch),
+        ],
+    )?
+    .lines()
+    .filter(|path| {
+        std::fs::metadata(tree.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX)
+    })
+    .map(str::to_string)
+    .collect();
+    if !big.is_empty() {
         return Err(Error::Config(format!(
-            "uncommitted files in {}",
-            tree.path.display()
+            "files over {COMMIT_MAX} bytes on {}: {} — remove them from the branch before it can merge",
+            tree.branch,
+            big.join(", ")
+        )));
+    }
+    let head = git(&tree.primary, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if head != tree.base {
+        return Err(Error::Config(format!(
+            "{} is on {head}; the run started on {}",
+            tree.primary.display(),
+            tree.base
         )));
     }
     git(&tree.primary, &["merge", "--ff-only", "--", &tree.branch])?;
-    remove(tree)
+    remove(tree)?;
+    Ok(committed)
+}
+
+fn subject(objective: &str) -> String {
+    let text: String = objective
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(42)
+        .collect();
+    let mut chars = text.trim_end_matches(['.', ' ']).chars();
+    let head: String = chars
+        .next()
+        .map(|c| c.to_lowercase().collect())
+        .unwrap_or_default();
+    format!("summon: {head}{}", chars.as_str())
 }
 
 pub(crate) fn remove(tree: &Tree) -> Result<()> {
@@ -85,6 +229,11 @@ pub(crate) fn remove(tree: &Tree) -> Result<()> {
     })?;
     git(&tree.primary, &["worktree", "remove", "--force", path])?;
     drop(git(&tree.primary, &["branch", "-d", &tree.branch]));
+    if let Some(id) = tree.branch.strip_prefix("summon/")
+        && let Ok(record) = base_record(&tree.primary, id)
+    {
+        drop(std::fs::remove_file(record));
+    }
     Ok(())
 }
 
@@ -103,6 +252,16 @@ pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
     Ok(parse_list(&primary, &base, &text)
         .into_iter()
         .filter(|tree| tree.branch.starts_with("summon/"))
+        .map(|mut tree| {
+            if let Some(id) = tree.branch.strip_prefix("summon/")
+                && let Ok(record) = base_record(&primary, id)
+                && let Ok(recorded) = std::fs::read_to_string(record)
+                && !recorded.trim().is_empty()
+            {
+                tree.base = recorded.trim().to_string();
+            }
+            tree
+        })
         .collect())
 }
 
@@ -111,6 +270,17 @@ fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
     Ok(list(primary)?
         .into_iter()
         .find(|tree| tree.path == cwd && tree.branch.starts_with("summon/")))
+}
+
+fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
+    let common = git(primary, &["rev-parse", "--git-common-dir"])?;
+    let common = Path::new(&common);
+    let common = if common.is_absolute() {
+        common.to_path_buf()
+    } else {
+        primary.join(common)
+    };
+    Ok(common.join("summon").join(format!("{id}.base")))
 }
 
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {

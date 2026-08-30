@@ -12,9 +12,11 @@ use crate::runtime::Loop;
 use crate::workflow::Workflow;
 
 mod command;
+mod reader;
 mod settings;
 mod turn;
 
+use reader::Reader;
 use settings::set_mode;
 
 pub(super) async fn worker(
@@ -44,7 +46,10 @@ struct Worker {
     bus_error: Option<String>,
     named: Option<String>,
     workflow: Workflow,
+    dial: Option<crate::Effort>,
     home: Option<std::path::PathBuf>,
+    last_diff: Option<crate::diff::Diff>,
+    reader: Reader,
 }
 
 impl Worker {
@@ -63,8 +68,10 @@ impl Worker {
             .as_deref()
             .and_then(std::path::Path::parent)
             .map(std::path::Path::to_path_buf);
+        let reader = Reader::new(loop_.workspace().to_path_buf(), ui.clone());
         Self {
             home,
+            reader,
             loop_,
             cmd,
             ui,
@@ -81,7 +88,9 @@ impl Worker {
             last_turn: None,
             bus_error: None,
             named: info.workflow,
+            last_diff: None,
             workflow: Workflow::default(),
+            dial: None,
         }
     }
 
@@ -91,6 +100,7 @@ impl Worker {
         }
         self.remember_seat();
         self.send_settings();
+        self.reader.watch();
         while let Some(command) = self.next().await {
             if !self.dispatch(command).await {
                 break;
@@ -175,6 +185,45 @@ impl Worker {
             }
             Cmd::ListModels => {
                 self.list_models();
+                true
+            }
+            command @ (Cmd::ListFiles
+            | Cmd::Diff(_)
+            | Cmd::Patch(..)
+            | Cmd::Trees
+            | Cmd::View(..)
+            | Cmd::Save(..)) => {
+                self.reader.run(command);
+                true
+            }
+            Cmd::Merge(path) => {
+                match self.tree_at(&path).and_then(|tree| {
+                    crate::worktree::finish(&tree, "merge from the worktrees pane", &[])
+                        .map(|_| tree)
+                }) {
+                    Ok(tree) => drop(self.ui.send(Msg::System(format!(
+                        "merged {} into {}",
+                        tree.branch, tree.base
+                    )))),
+                    Err(error) => drop(self.ui.send(Msg::System(format!("merge failed: {error}")))),
+                }
+                self.reader.trees();
+                true
+            }
+            Cmd::Discard(path) => {
+                match self
+                    .tree_at(&path)
+                    .and_then(|tree| crate::worktree::discard(&tree).map(|()| tree))
+                {
+                    Ok(tree) => drop(
+                        self.ui
+                            .send(Msg::System(format!("removed worktree {}", tree.branch))),
+                    ),
+                    Err(error) => {
+                        drop(self.ui.send(Msg::System(format!("worktree kept: {error}"))))
+                    }
+                }
+                self.reader.trees();
                 true
             }
             Cmd::SeatRole(role, endpoint, model) => {
@@ -263,11 +312,11 @@ impl Worker {
 
     fn set_key(&mut self, name: &str, key: &str) {
         match crate::endpoint::save_key(name, key) {
-            Ok(()) if name == self.endpoint => {
+            Ok(source) if name == self.endpoint => {
                 self.set_endpoint(name);
-                self.system(&format!("{name}: API key saved"));
+                self.system(&format!("{name}: API key saved in the {}", source.label()));
             }
-            Ok(()) => self.system(&format!("{name}: API key saved")),
+            Ok(source) => self.system(&format!("{name}: API key saved in the {}", source.label())),
             Err(error) => self.fail(&error.to_string()),
         }
     }

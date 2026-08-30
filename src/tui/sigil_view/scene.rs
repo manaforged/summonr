@@ -1,9 +1,8 @@
 use sigil::prelude::*;
-use sigil_tui::Host;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
-use super::canvas::{BASE, CYAN, Cell, DIM, GRAY, GREEN, TEXT, rgb};
+use super::canvas::{BASE, CYAN, Cell, DIM, GRAY, GREEN, TEXT, cell as metrics, rgb};
 use super::model::Model;
 use crate::tui::short_session;
 
@@ -387,7 +386,23 @@ fn prompt(
     );
     write(cells, cols, x + width.saturating_sub(1), y, "╮", border);
     write(cells, cols, x, y + 1, "│", border);
-    if visible {
+    if visible && app.view_edit.peek() {
+        let path = app
+            .model
+            .borrow()
+            .view
+            .as_ref()
+            .map(|view| view.path.clone())
+            .unwrap_or_default();
+        write(
+            cells,
+            cols,
+            x + 3,
+            y + 1,
+            &format!("editing {path} · ctrl+s save · esc leave"),
+            DIM,
+        );
+    } else if visible {
         write(cells, cols, x + 3, y + 1, "❯ ", mode_color);
         let caret = if (ticks / 6).is_multiple_of(2) {
             '▌'
@@ -452,7 +467,7 @@ fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
 fn scene_row(cells: &[Cell]) -> NodeBuilder {
     let mut row = container().layout(
         LayoutStyle::flex_row()
-            .height(Host::CELL)
+            .height(metrics().h)
             .fill_width()
             .gap(0.0),
     );
@@ -475,8 +490,8 @@ fn scene_row(cells: &[Cell]) -> NodeBuilder {
             container()
                 .layout(
                     LayoutStyle::flex_row()
-                        .width((end - start) as f32 * Host::CELL)
-                        .height(Host::CELL),
+                        .width((end - start) as f32 * metrics().w)
+                        .height(metrics().h),
                 )
                 .style(surface)
                 .child(label(text).class(class).style(ink)),

@@ -2,9 +2,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use sigil::prelude::*;
-use sigil_tui::Host;
 
 use super::app::App;
+use super::canvas::cell as metrics;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Target {
@@ -13,6 +13,7 @@ pub(super) enum Target {
     Auth(usize),
     Role(usize),
     Saved(String),
+    File(usize),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,8 +60,9 @@ impl Hits {
 }
 
 fn cell(event: &PointerEvent) -> (usize, usize) {
-    let col = (event.position.x / Host::CELL).max(0.0) as usize;
-    let row = (event.position.y / Host::CELL).max(0.0) as usize;
+    let cell = metrics();
+    let col = (event.position.x / cell.w).max(0.0) as usize;
+    let row = (event.position.y / cell.h).max(0.0) as usize;
     (col, row)
 }
 
@@ -70,6 +72,13 @@ pub(super) fn wire(app: &App, layer: NodeBuilder) -> NodeBuilder {
     let release = app.clone();
     layer
         .pointer_down(move |event| {
+            if event.button == Some(MouseButton::Right) {
+                let (col, row) = cell(event);
+                if press.context_at(col, row) {
+                    event.stop_propagation();
+                }
+                return;
+            }
             if event.button != Some(MouseButton::Left) {
                 return;
             }

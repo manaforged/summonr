@@ -40,7 +40,8 @@ impl Worker {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
-                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _))) => {
+                        Some(command @ (Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command),
+                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Merge(_) | Cmd::Discard(_))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
@@ -110,7 +111,59 @@ impl Worker {
             }
             drop(self.ui.send(Msg::Busy(false)));
         } else {
+            self.send_diff(true);
             drop(self.ui.send(Msg::Busy(false)));
         }
+    }
+
+    /// Sends the workspace diff to the interface. With `announce`, only a
+    /// change since the last report is sent, with a transcript line.
+    pub(super) fn send_diff(&mut self, announce: bool) {
+        let diff = match crate::diff::stats(self.loop_.workspace()) {
+            Ok(diff) => diff,
+            Err(error) => {
+                if !announce {
+                    drop(
+                        self.ui
+                            .send(Msg::System(format!("diff unavailable: {error}"))),
+                    );
+                }
+                return;
+            }
+        };
+        if announce {
+            let calls = self.last_turn.iter().flat_map(|turn| {
+                turn.events.iter().filter_map(|event| match event {
+                    Event::ToolCall {
+                        name, arguments, ..
+                    } => Some((name.as_str(), arguments.as_str())),
+                    _ => None,
+                })
+            });
+            drop(self.ui.send(Msg::Edited(crate::diff::edited(calls))));
+            if self.last_diff.as_ref() == Some(&diff) {
+                return;
+            }
+            if !diff.files.is_empty() {
+                drop(self.ui.send(Msg::System(format!(
+                    "changes: {} · /pane diff",
+                    diff.summary()
+                ))));
+            }
+        }
+        self.last_diff = Some(diff.clone());
+        drop(self.ui.send(Msg::Diff(diff)));
+    }
+
+    pub(super) fn tree_at(
+        &self,
+        path: &std::path::Path,
+    ) -> crate::error::Result<crate::worktree::Tree> {
+        crate::worktree::list(self.loop_.workspace())?
+            .into_iter()
+            .find(|tree| tree.path == path)
+            .ok_or_else(|| {
+                crate::error::Error::Config(format!("no worktree at {}", path.display()))
+            })
     }
 }

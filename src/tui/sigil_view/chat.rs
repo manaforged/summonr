@@ -1,5 +1,4 @@
 use sigil::prelude::*;
-use sigil_tui::Host;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
@@ -76,7 +75,8 @@ impl Span {
 type Line = Vec<Span>;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
+    let (_, rows) = app.viewport.get();
+    let cols = app.chat_cols();
     let draft = app.draft.get();
     let mut cells = grid(&app.model.borrow(), &app, &draft, cols, rows);
     if let Some(menu) = super::suggest::menu(&app, cols, rows) {
@@ -126,7 +126,7 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
     let transcript = transcript::entries(model, content_width, accent);
     let visible = wrap(transcript, content_width);
     let max_start = visible.len().saturating_sub(body_height);
-    let start = ((app.scroll_y.peek() / Host::CELL) as usize).min(max_start);
+    let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);
     if visible.is_empty() && body_height > 0 {
         let hint = empty_hint(content_width);
         let pad = content_width.saturating_sub(UnicodeWidthStr::width(hint)) / 2;
@@ -154,6 +154,11 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
             &line,
         );
     }
+    let editing = app
+        .view_edit
+        .peek()
+        .then(|| model.view.as_ref().map(|view| view.path.clone()))
+        .flatten();
     prompt_rows(
         &mut cells,
         [width, content_left, content_width, prompt],
@@ -161,6 +166,7 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         draft,
         app.caret.peek(),
         app.ticks.peek(),
+        editing.as_deref(),
     );
     write_line_at(
         &mut cells,
@@ -278,6 +284,7 @@ fn prompt_rows(
     draft: &str,
     caret_position: usize,
     ticks: u64,
+    editing: Option<&str>,
 ) {
     let [stride, origin, width, top] = area;
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
@@ -317,7 +324,16 @@ fn prompt_rows(
     } else {
         ' '
     };
-    let input = draft_view(draft, caret_position, interior.saturating_sub(2), caret);
+    let (prompt, input) = match editing {
+        Some(path) => (
+            Span::text("  "),
+            format!("editing {path} · ctrl+s save · esc leave"),
+        ),
+        None => (
+            Span::styled("❯ ", mode_color),
+            draft_view(draft, caret_position, interior.saturating_sub(2), caret),
+        ),
+    };
     let used = UnicodeWidthStr::width(input.as_str());
     write_line_at(
         cells,
@@ -328,7 +344,7 @@ fn prompt_rows(
         &vec![
             Span::styled("│", border),
             Span::text(" "),
-            Span::styled("❯ ", mode_color),
+            prompt,
             Span::text(input),
             Span::text(" ".repeat(interior.saturating_sub(used + 2))),
             Span::text(" "),
@@ -363,6 +379,7 @@ pub(super) fn composer_hint(busy: bool, width: usize) -> &'static str {
         ]
     } else {
         &[
+            " enter send · ctrl+o settings · ctrl+j newline · shift+tab mode · ctrl+e files · ctrl+x diff · ctrl+p pane ",
             " enter send · ctrl+o settings · ctrl+j newline · shift+tab mode ",
             " enter send · ^j newline · ⇧tab mode ",
             " enter send · ^j newline ",
@@ -663,7 +680,7 @@ pub(super) fn row(cells: &[Cell]) -> NodeBuilder {
     let mut row = container()
         .layout(
             LayoutStyle::flex_row()
-                .height(Host::CELL)
+                .height(canvas::cell().h)
                 .fill_width()
                 .gap(0.0),
         )
@@ -684,18 +701,23 @@ pub(super) fn row(cells: &[Cell]) -> NodeBuilder {
             .iter()
             .filter_map(|cell| (cell.ch != '\0').then_some(cell.ch))
             .collect();
-        let class = match (cell.bold, cell.italic) {
-            (true, true) => "font-mono font-bold italic",
-            (true, false) => "font-mono font-bold",
-            (false, true) => "font-mono italic",
-            (false, false) => "font-mono",
+        let metrics = canvas::cell();
+        let class = match (cell.bold, cell.italic, metrics.text.is_empty()) {
+            (true, true, true) => "font-mono font-bold italic",
+            (true, false, true) => "font-mono font-bold",
+            (false, true, true) => "font-mono italic",
+            (false, false, true) => "font-mono",
+            (true, true, false) => "font-mono font-bold italic text-sm",
+            (true, false, false) => "font-mono font-bold text-sm",
+            (false, true, false) => "font-mono italic text-sm",
+            (false, false, false) => "font-mono text-sm",
         };
         row = row.child(
             container()
                 .layout(
                     LayoutStyle::flex_row()
-                        .width((end - start) as f32 * Host::CELL)
-                        .height(Host::CELL),
+                        .width((end - start) as f32 * metrics.w)
+                        .height(metrics.h),
                 )
                 .style(Style::new().bg(cell.bg))
                 .child(

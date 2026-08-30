@@ -66,7 +66,7 @@ pub(crate) fn run(
     Ok(code)
 }
 
-fn start_tick(tx: UnboundedSender<Cmd>) {
+pub(super) fn start_tick(tx: UnboundedSender<Cmd>) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(2));
         loop {
@@ -125,6 +125,25 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<i32> {
         }
         app.tick();
         frame(&mut screen, &mut host, &mut router, incoming, (cols, rows))?;
+        if let Some(path) = app.open_file.peek() {
+            app.open_file.set(None);
+            term.suspend()?;
+            let opened = open_external(&app.workspace.join(&path));
+            term.resume()?;
+            screen.invalidate();
+            if let Err(error) = opened {
+                app.model
+                    .borrow_mut()
+                    .entries
+                    .push(Entry::Error(error.to_string()));
+            }
+            app.refresh();
+        }
+        if let Some(text) = app.copy.peek() {
+            app.copy.set(None);
+            term.copy(&text)?;
+            app.copied(&text);
+        }
         if app.editor_requested.peek() {
             app.editor_requested.set(false);
             term.suspend()?;
@@ -238,6 +257,16 @@ impl Terminal {
         Ok(())
     }
 
+    /// Puts `text` on the clipboard through OSC 52; the terminal decides
+    /// whether to honour it.
+    fn copy(&mut self, text: &str) -> Result<()> {
+        use base64::Engine as _;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
+        queue!(self.out, Print(format!("\x1b]52;c;{encoded}\x07")))?;
+        self.out.flush()?;
+        Ok(())
+    }
+
     fn suspend(&mut self) -> Result<()> {
         restore(&mut self.out)?;
         disable_raw_mode()?;
@@ -256,6 +285,23 @@ impl Terminal {
         self.redraw = true;
         Ok(())
     }
+}
+
+fn open_external(path: &std::path::Path) -> Result<()> {
+    let editor = std::env::var("VISUAL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| std::env::var("EDITOR").ok())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "vi".to_string());
+    let status = std::process::Command::new(&editor)
+        .arg(path)
+        .status()
+        .map_err(|error| Error::Tool(format!("cannot start {editor}: {error}")))?;
+    if !status.success() {
+        return Err(Error::Tool(format!("editor exited with {status}")));
+    }
+    Ok(())
 }
 
 fn edit_external(initial: &str) -> Result<String> {

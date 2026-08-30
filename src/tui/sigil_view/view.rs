@@ -1,5 +1,4 @@
 use sigil::prelude::*;
-use sigil_tui::Host;
 
 use super::super::Cmd;
 use super::app::App;
@@ -50,6 +49,9 @@ pub(super) fn root(app: App) -> NodeBuilder {
             screen.drag_from.get(),
             screen.drag_over.get(),
             screen.ticks.get(),
+            screen.view_edit.get(),
+            screen.view_text.get(),
+            screen.view_caret.get(),
         ));
         let view = if screen.auth_open.get() {
             settings::auth_layer(screen.clone())
@@ -73,7 +75,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
     })
 }
 
-fn shell(app: &App) -> NodeBuilder {
+pub(super) fn shell(app: &App) -> NodeBuilder {
     let cancel = app.clone();
     let settings = app.clone();
     let interrupt = app.clone();
@@ -94,6 +96,23 @@ fn shell(app: &App) -> NodeBuilder {
     let seat_save = app.clone();
     let editor = app.clone();
     let scroll = app.clone();
+    let split_left = app.clone();
+    let focus_chat = app.clone();
+    let focus_pane = app.clone();
+    let hot_files = app.clone();
+    let hot_ledger = app.clone();
+    let hot_diff = app.clone();
+    let open_view = app.clone();
+    let recent = app.clone();
+    let edit = app.clone();
+    let save = app.clone();
+    let copy = app.clone();
+    let hot_side = app.clone();
+    let home = app.clone();
+    let end = app.clone();
+    let left = app.clone();
+    let right = app.clone();
+    let split_right = app.clone();
     container()
         .role(Role::Main)
         .label("Summoner agent harness")
@@ -102,12 +121,94 @@ fn shell(app: &App) -> NodeBuilder {
         .class("w-full h-full bg-surface")
         .key_capture(Key::Escape, move |event| {
             event.stop_propagation();
-            escape(&cancel);
+            if cancel.edit_stop() {
+            } else if cancel.context.peek().is_some() {
+                cancel.context_close();
+            } else if cancel.pane_back() {
+            } else if cancel.pane_focus.peek() {
+                cancel.focus_pane(false);
+            } else {
+                escape(&cancel);
+            }
+        })
+        .key_capture(Shortcut::ctrl(LogicalKey::character("e")), move |event| {
+            event.stop_propagation();
+            hot_files.toggle_pane(super::pane::Pane::Files);
+        })
+        .key_capture(Shortcut::ctrl(LogicalKey::character("l")), move |event| {
+            event.stop_propagation();
+            hot_ledger.toggle_pane(super::pane::Pane::Ledger);
+        })
+        .key_capture(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
+            event.stop_propagation();
+            hot_diff.toggle_pane(super::pane::Pane::Diff);
+        })
+        .key_capture(Shortcut::ctrl(LogicalKey::character("p")), move |event| {
+            event.stop_propagation();
+            hot_side.toggle_side();
+        })
+        .key_capture(LogicalKey::character("e"), move |event| {
+            if edit.pane_active() == Some(super::pane::Pane::View) {
+                event.stop_propagation();
+                edit.edit_start();
+            }
+        })
+        .key_capture(Shortcut::ctrl(LogicalKey::character("s")), move |event| {
+            if save.view_edit.peek() {
+                event.stop_propagation();
+                save.edit_save();
+            }
+        })
+        .key_capture(LogicalKey::character("t"), move |event| {
+            if recent.pane_active() == Some(super::pane::Pane::Diff) {
+                event.stop_propagation();
+                recent.toggle_recent();
+            }
+        })
+        .key_capture(LogicalKey::character("c"), move |event| {
+            if copy.pane_active() == Some(super::pane::Pane::Diff) {
+                event.stop_propagation();
+                copy.copy_patch();
+            }
+        })
+        .key_capture(LogicalKey::character("o"), move |event| {
+            if open_view.pane_active() == Some(super::pane::Pane::View) {
+                event.stop_propagation();
+                open_view.view_external();
+            }
+        })
+        .key_capture(Key::Home, move |event| {
+            if home.pane_active().is_some() {
+                event.stop_propagation();
+                home.pane_edge(false);
+            }
+        })
+        .key_capture(Key::End, move |event| {
+            if end.pane_active().is_some() {
+                event.stop_propagation();
+                end.pane_edge(true);
+            }
+        })
+        .key_capture(Key::ArrowLeft, move |event| {
+            if left.pane_active().is_some() {
+                event.stop_propagation();
+                left.pane_collapse();
+            }
+        })
+        .key_capture(Key::ArrowRight, move |event| {
+            if right.pane_active().is_some() {
+                event.stop_propagation();
+                right.pane_expand();
+            }
         })
         .child(tab_shortcuts(&complete))
         .key_capture(Key::Enter, move |event| {
             event.stop_propagation();
-            if enter.auth_open.peek() {
+            if enter.context.peek().is_some() {
+                enter.context_enter();
+            } else if enter.pane_active().is_some() {
+                enter.pane_enter();
+            } else if enter.auth_open.peek() {
                 enter.commit_auth();
             } else if enter.editing_model.peek() {
                 enter.commit_model_edit();
@@ -121,6 +222,34 @@ fn shell(app: &App) -> NodeBuilder {
                 }
             }
         })
+        .key_capture(Shortcut::ctrl(Key::ArrowLeft), move |event| {
+            event.stop_propagation();
+            focus_chat.focus_pane(false);
+        })
+        .key_capture(Shortcut::ctrl(Key::ArrowRight), move |event| {
+            event.stop_propagation();
+            focus_pane.focus_pane(true);
+        })
+        .key_capture(
+            Shortcut::new(
+                Key::ArrowLeft,
+                ModifiersState::CONTROL | ModifiersState::SHIFT,
+            ),
+            move |event| {
+                event.stop_propagation();
+                split_left.nudge_split(-5);
+            },
+        )
+        .key_capture(
+            Shortcut::new(
+                Key::ArrowRight,
+                ModifiersState::CONTROL | ModifiersState::SHIFT,
+            ),
+            move |event| {
+                event.stop_propagation();
+                split_right.nudge_split(5);
+            },
+        )
         .key_capture(Shortcut::ctrl(LogicalKey::character("j")), move |event| {
             if !newline.settings_open.peek()
                 && !newline.auth_open.peek()
@@ -176,14 +305,28 @@ fn shell(app: &App) -> NodeBuilder {
         })
         .key_capture(Key::PageUp, move |event| {
             event.stop_propagation();
-            page_up.page_history(-1.0);
+            if page_up.pane_active().is_some() {
+                page_up.pane_page(-1);
+            } else {
+                page_up.page_history(-1.0);
+            }
         })
         .key_capture(Key::PageDown, move |event| {
             event.stop_propagation();
-            page_down.page_history(1.0);
+            if page_down.pane_active().is_some() {
+                page_down.pane_page(1);
+            } else {
+                page_down.page_history(1.0);
+            }
         })
         .key_capture(Key::ArrowUp, move |event| {
-            if setting_up.auth_open.peek() {
+            if setting_up.context.peek().is_some() {
+                event.stop_propagation();
+                setting_up.context_move(-1);
+            } else if setting_up.pane_active().is_some() {
+                event.stop_propagation();
+                setting_up.pane_move(-1);
+            } else if setting_up.auth_open.peek() {
                 event.stop_propagation();
                 setting_up.move_auth(-1);
             } else if setting_up.editing_model.peek() {
@@ -201,7 +344,13 @@ fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(Key::ArrowDown, move |event| {
-            if setting_down.auth_open.peek() {
+            if setting_down.context.peek().is_some() {
+                event.stop_propagation();
+                setting_down.context_move(1);
+            } else if setting_down.pane_active().is_some() {
+                event.stop_propagation();
+                setting_down.pane_move(1);
+            } else if setting_down.auth_open.peek() {
                 event.stop_propagation();
                 setting_down.move_auth(1);
             } else if setting_down.editing_model.peek() {
@@ -289,7 +438,7 @@ fn shell(app: &App) -> NodeBuilder {
         .on_scroll(move |event| {
             let delta = match event.delta {
                 ScrollDelta::Pixels(point) => point.y,
-                ScrollDelta::Lines(point) => point.y * Host::CELL * 3.0,
+                ScrollDelta::Lines(point) => point.y * super::canvas::cell().h * 3.0,
             };
             let before = scroll.scroll_y.peek();
             scroll.scroll_history(delta);
@@ -394,11 +543,39 @@ fn splash(app: App) -> NodeBuilder {
 }
 
 fn chat(app: App) -> NodeBuilder {
+    let (cols, rows) = app.viewport.get();
+    let layout = app.layout.get();
+    let (chat_cols, side_cols) = layout.split(cols);
+    let surface = chat_surface(app.clone(), chat_cols);
+    match layout.secondary {
+        Some(pane) if side_cols > 0 => super::hit::wire(
+            &app,
+            container()
+                .layout(LayoutStyle::flex_row().fill_width().fill_height().gap(0.0))
+                .style(Style::new().bg(SCRIM))
+                .child(surface)
+                .child(super::panes::body(&app, pane, side_cols + 1, rows)),
+        ),
+        _ => surface,
+    }
+}
+
+fn chat_surface(app: App, cols: u16) -> NodeBuilder {
     let submit = app.clone();
     let changed = app.clone();
     let surface = app.clone();
+    let editing = app.view_edit.get();
+    let (value, caret) = if editing {
+        (app.view_text, app.view_caret)
+    } else {
+        (app.draft, app.caret)
+    };
     container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
+        .layout(
+            LayoutStyle::block()
+                .width(f32::from(cols) * super::canvas::cell().w)
+                .fill_height(),
+        )
         .style(Style::new().bg(SCRIM))
         .child(
             container()
@@ -409,15 +586,25 @@ fn chat(app: App) -> NodeBuilder {
                         .class("grow"),
                 )
                 .child(
-                    text_edit(app.draft)
-                        .caret_position(app.caret)
+                    text_edit(value)
+                        .caret_position(caret)
                         .placeholder("")
-                        .change(move |draft| changed.change(draft))
+                        .change(move |draft| {
+                            if !editing {
+                                changed.change(draft);
+                            }
+                        })
                         .submit(move |_| submit.submit())
-                        .height(Host::CELL * 3.0)
+                        .height(super::canvas::cell().h * 3.0)
                         .class("w-full"),
                 )
-                .child(container().layout(LayoutStyle::flex_row().fill_width().height(Host::CELL))),
+                .child(
+                    container().layout(
+                        LayoutStyle::flex_row()
+                            .fill_width()
+                            .height(super::canvas::cell().h),
+                    ),
+                ),
         )
         .child(chat_surface::layer(surface))
 }

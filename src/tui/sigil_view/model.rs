@@ -38,9 +38,24 @@ pub(super) enum Entry {
     },
 }
 
+/// One workspace file in the view pane with its added-line ranges.
+#[derive(Clone)]
+pub(super) struct View {
+    pub(super) path: String,
+    pub(super) rope: sigil_ide_core::buffer::Rope,
+    pub(super) added: Vec<(usize, usize)>,
+}
+
 #[derive(Clone)]
 pub(super) struct Model {
     pub(super) entries: Vec<Entry>,
+    pub(super) ledger: Vec<String>,
+    pub(super) files: Vec<String>,
+    pub(super) diff: crate::diff::Diff,
+    pub(super) patch: Option<(String, String)>,
+    pub(super) trees: Vec<crate::worktree::Status>,
+    pub(super) view: Option<View>,
+    pub(super) recent: Vec<String>,
     tools: HashMap<String, usize>,
     pub(super) usage: Vec<Round>,
     pub(super) prompt_tokens: u64,
@@ -62,6 +77,13 @@ impl Model {
     pub(super) fn new(info: &Info) -> Self {
         Self {
             entries: Vec::new(),
+            ledger: Vec::new(),
+            files: Vec::new(),
+            diff: crate::diff::Diff::default(),
+            patch: None,
+            trees: Vec::new(),
+            view: None,
+            recent: Vec::new(),
             tools: HashMap::new(),
             usage: Vec::new(),
             prompt_tokens: 0,
@@ -126,6 +148,13 @@ impl Model {
             Msg::Models { .. } | Msg::ModelsFailed(_) | Msg::Workflow { .. } => {}
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
+            Msg::Files(files) => self.files = files,
+            Msg::Diff(diff) => self.diff = diff,
+            Msg::Trees(trees) => self.trees = trees,
+            Msg::Changed(_) => {}
+            Msg::Edited(paths) => self.recent = paths,
+            Msg::View { path, rope, added } => self.view = Some(View { path, rope, added }),
+            Msg::Patch { path, text } => self.patch = Some((path, text)),
         }
         true
     }
@@ -164,6 +193,15 @@ impl Model {
             }
             Event::Assistant { text } => self.finish_assistant(text),
             Event::Aborted { reason } => self.entries.push(Entry::Aborted(reason)),
+            Event::Merged {
+                branch,
+                base,
+                files,
+            } => self.entries.push(Entry::System(format!(
+                "merged {branch} into {base}: {} file{}",
+                files.len(),
+                if files.len() == 1 { "" } else { "s" }
+            ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Event::Note { text } => self.entries.push(Entry::System(text)),
             Event::Verify { command, passed } => {
@@ -171,7 +209,12 @@ impl Model {
             }
             Event::Receipt { .. } => {}
             Event::Work { progress } => {
+                self.ledger = progress.ledger.clone();
                 self.entries.push(Entry::System(progress.to_string()));
+                if !progress.ledger.is_empty() {
+                    self.entries
+                        .push(Entry::System(progress.ledger.join("\n> ")));
+                }
             }
             Event::Usage {
                 prompt_tokens,
@@ -179,12 +222,14 @@ impl Model {
                 reasoning_tokens,
                 cached_tokens,
                 prefix_hash,
+                cost,
             } => self.record_usage(
                 prompt_tokens,
                 completion_tokens,
                 reasoning_tokens,
                 cached_tokens,
                 prefix_hash,
+                cost,
             ),
             Event::Delta { .. } => {}
         }
@@ -237,6 +282,7 @@ impl Model {
         reasoning: u32,
         cached: u32,
         prefix_hash: String,
+        cost: Option<f64>,
     ) {
         self.rounds += 1;
         self.usage.push(Round {
@@ -245,6 +291,7 @@ impl Model {
             reasoning,
             cached,
             prefix_hash,
+            cost,
         });
         self.prompt_tokens += u64::from(prompt);
         self.completion_tokens += u64::from(completion);

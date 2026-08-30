@@ -9,6 +9,14 @@ pub enum SlashCommand {
     Theme,
     Session,
     Stats,
+    Effort,
+    Compact,
+    Name,
+    Steps,
+    Pane,
+    Layout,
+    Diff,
+    View,
     Agents,
     Bus,
     Fork,
@@ -40,8 +48,47 @@ const SPECS: &[CommandSpec] = &[
         SlashCommand::Workflow,
     ),
     spec("/theme", "cycle the splash theme", SlashCommand::Theme),
+    spec(
+        "/pane",
+        "open a pane beside the chat: /pane files · ledger · diff · worktrees · off",
+        SlashCommand::Pane,
+    ),
+    spec(
+        "/layout",
+        "arrange the screen: focus · run · files · review · `chat | files 30%`",
+        SlashCommand::Layout,
+    ),
+    spec(
+        "/diff",
+        "changes against the base in a pane; /diff PATH shows one file's hunks",
+        SlashCommand::Diff,
+    ),
+    spec(
+        "/view",
+        "read a workspace file in a pane: /view PATH; o opens it in $EDITOR",
+        SlashCommand::View,
+    ),
     spec("/session", "session id and log path", SlashCommand::Session),
-    spec("/stats", "token usage per round", SlashCommand::Stats),
+    spec(
+        "/name",
+        "name this session; bare shows the name",
+        SlashCommand::Name,
+    ),
+    spec(
+        "/steps",
+        "run a plan's `## Steps` one at a time: /steps PLAN.md · clear",
+        SlashCommand::Steps,
+    ),
+    spec(
+        "/stats",
+        "token usage and cost per round",
+        SlashCommand::Stats,
+    ),
+    spec(
+        "/effort",
+        "reasoning effort: none · low · medium · high, or bare to show",
+        SlashCommand::Effort,
+    ),
     spec(
         "/agents",
         "live summoner sessions on the bus",
@@ -50,6 +97,11 @@ const SPECS: &[CommandSpec] = &[
     spec("/bus", "toggle bus auto-reply", SlashCommand::Bus),
     spec("/fork", "branch this session", SlashCommand::Fork),
     spec("/clear", "reset conversation history", SlashCommand::Clear),
+    spec(
+        "/compact",
+        "summarize earlier turns, keep the latest",
+        SlashCommand::Compact,
+    ),
     spec("/plan", "toggle plan mode", SlashCommand::Plan),
     spec(
         "/plan accept",
@@ -86,21 +138,19 @@ pub const fn command_specs() -> &'static [CommandSpec] {
 
 #[must_use]
 pub fn parse_command(line: &str) -> Option<SlashCommand> {
-    let line = line.trim();
-    if line == "/goal" || line.starts_with("/goal ") {
-        return Some(SlashCommand::Goal);
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    if !tokens.first().is_some_and(|head| head.starts_with('/')) {
+        return None;
     }
-    if line == "/model" || line.starts_with("/model ") {
-        return Some(SlashCommand::Model);
-    }
-    if line == "/auth" || line.starts_with("/auth ") {
-        return Some(SlashCommand::Auth);
-    }
-    if line == "/login" || line.starts_with("/login ") {
-        return Some(SlashCommand::Login);
-    }
-    SPECS
-        .iter()
-        .find(|spec| spec.name == line)
-        .map(|spec| spec.command)
+    (1..=tokens.len().min(2)).rev().find_map(|count| {
+        let head = tokens[..count].join(" ");
+        SPECS
+            .iter()
+            .find(|spec| spec.name == head)
+            .map(|spec| spec.command)
+    })
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod tests;

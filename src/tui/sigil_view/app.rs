@@ -3,7 +3,6 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use sigil::prelude::{Signal, signal};
-use sigil_tui::Host;
 use tokio::sync::mpsc::UnboundedSender;
 use unicode_width::UnicodeWidthStr;
 
@@ -12,8 +11,10 @@ use crate::provider::UserInput;
 use crate::workflow::Role;
 
 use super::super::{Cmd, Info, Msg};
+use super::canvas::cell;
 use super::hit::{Hits, Target};
 use super::model::{Entry, Model};
+use super::pane::{Layout, Pane};
 use super::suggest::Picker;
 
 pub(super) mod presentation;
@@ -25,7 +26,7 @@ pub(super) struct App {
     pub(super) model: Rc<RefCell<Model>>,
     pub(super) cmd: UnboundedSender<Cmd>,
     pub(super) info: Info,
-    workspace: PathBuf,
+    pub(super) workspace: PathBuf,
     pub(super) git_branch: Option<String>,
     pub(super) prefs_path: Option<PathBuf>,
     pub(super) transcript: Signal<String>,
@@ -38,6 +39,7 @@ pub(super) struct App {
     pub(super) status: Signal<String>,
     pub(super) settings: Signal<String>,
     pub(super) facts: Signal<String>,
+    pub(super) panes: Signal<u64>,
     pub(super) settings_open: Signal<bool>,
     pub(super) settings_sel: Signal<usize>,
     pub(super) editing_model: Signal<bool>,
@@ -71,6 +73,28 @@ pub(super) struct App {
     pub(super) splash: Signal<bool>,
     pub(super) theme_name: Signal<String>,
     pub(super) viewport: Signal<(u16, u16)>,
+    pub(super) layout: Signal<Layout>,
+    pub(super) pane_focus: Signal<bool>,
+    pub(super) file_cursor: Signal<usize>,
+    pub(super) expanded: Signal<Vec<String>>,
+    pub(super) last_pane: Signal<Option<Pane>>,
+    pub(super) context: Signal<Option<Context>>,
+    pub(super) diff_cursor: Signal<usize>,
+    pub(super) diff_view: Signal<Option<String>>,
+    pub(super) diff_scroll: Signal<usize>,
+    pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
+    pub(super) tree_cursor: Signal<usize>,
+    pub(super) view_scroll: Signal<usize>,
+    pub(super) view_from: Signal<Option<Pane>>,
+    pub(super) diff_recent: Signal<bool>,
+    pub(super) view_edit: Signal<bool>,
+    pub(super) view_text: Signal<String>,
+    pub(super) view_caret: Signal<usize>,
+    view_saved: Signal<String>,
+    discard_armed: Signal<bool>,
+    pub(super) copy: Signal<Option<String>>,
+    copy_pending: Signal<bool>,
+    pub(super) open_file: Signal<Option<String>>,
     pub(super) quit: Signal<bool>,
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
@@ -96,6 +120,7 @@ impl App {
             status: signal(String::new()),
             settings: signal(String::new()),
             facts: signal(String::new()),
+            panes: signal(0),
             settings_open: signal(false),
             settings_sel: signal(0),
             editing_model: signal(false),
@@ -129,6 +154,28 @@ impl App {
             splash: signal(info.prefs.splash),
             theme_name: signal(info.prefs.theme.clone()),
             viewport: signal((80, 24)),
+            layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
+            pane_focus: signal(false),
+            file_cursor: signal(0),
+            expanded: signal(Vec::new()),
+            last_pane: signal(None),
+            context: signal(None),
+            diff_cursor: signal(0),
+            diff_view: signal(None),
+            diff_scroll: signal(0),
+            diff_root: signal(None),
+            tree_cursor: signal(0),
+            view_scroll: signal(0),
+            view_from: signal(None),
+            diff_recent: signal(false),
+            view_edit: signal(false),
+            view_text: signal(String::new()),
+            view_caret: signal(0),
+            view_saved: signal(String::new()),
+            discard_armed: signal(false),
+            copy: signal(None),
+            copy_pending: signal(false),
+            open_file: signal(None),
             quit: signal(false),
             editor_requested: signal(false),
             commands: Picker::new(),
@@ -141,6 +188,45 @@ impl App {
     }
 
     pub(super) fn update(&self, msg: Msg) {
+        if matches!(msg, Msg::Event(crate::Event::Work { .. })) {
+            match self.layout.peek().secondary {
+                Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
+                Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+                Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
+                _ => {}
+            }
+        }
+        if matches!(msg, Msg::Diff(_))
+            && let Some(path) = self.diff_view.peek()
+        {
+            drop(self.cmd.send(Cmd::Patch(self.root(), path)));
+        }
+        if let Msg::Patch { path, text } = &msg
+            && path.is_empty()
+            && self.copy_pending.peek()
+        {
+            self.copy_pending.set(false);
+            self.copy.set(Some(text.clone()));
+            return;
+        }
+        if let Msg::Changed(paths) = &msg {
+            let viewing = self
+                .model
+                .borrow()
+                .view
+                .as_ref()
+                .map(|view| view.path.clone());
+            match self.layout.peek().secondary {
+                Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
+                Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+                Some(Pane::View) => {
+                    if let Some(path) = viewing.filter(|path| paths.contains(path)) {
+                        drop(self.cmd.send(Cmd::View(self.root(), path)));
+                    }
+                }
+                _ => {}
+            }
+        }
         match msg {
             Msg::Models { mut rows, recent } => {
                 let snapshot = self.model.borrow().snapshot.clone();
@@ -191,7 +277,7 @@ impl App {
         let pinned = self.scroll_y.peek() >= old_extent;
         let model = self.model.borrow();
         let transcript = model.transcript();
-        let width = usize::from(self.viewport.peek().0);
+        let width = usize::from(self.chat_cols());
         let content_left = if width > 28 {
             2
         } else {
@@ -203,7 +289,7 @@ impl App {
             .map(|line| UnicodeWidthStr::width(line).max(1).div_ceil(content_width))
             .sum();
         self.estimated_extent
-            .set(wrapped as f32 * Host::CELL + Host::CELL);
+            .set(wrapped as f32 * cell().h + cell().h);
         self.transcript.set(transcript);
         self.header.set(header(&model, &self.info));
         self.status.set(status(&model, &self.info));
@@ -211,6 +297,7 @@ impl App {
             .set(settings_text(&model.snapshot, &model.prefs));
         self.facts.set(facts(&model, &self.info));
         self.theme_name.set(model.prefs.theme.clone());
+        self.panes.set(self.panes.peek().wrapping_add(1));
         if old_extent <= 1.0 || pinned {
             self.scroll_y.set(self.extent.peek());
         }
@@ -243,7 +330,7 @@ impl App {
     }
 
     pub(super) fn page_history(&self, direction: f32) {
-        let page = f32::from(self.viewport.peek().1.saturating_sub(5).max(1)) * Host::CELL;
+        let page = f32::from(self.viewport.peek().1.saturating_sub(5).max(1)) * cell().h;
         let next = self.scroll_y.peek() + direction * page;
         self.scroll_y.set(next.clamp(0.0, self.extent.peek()));
     }
@@ -254,6 +341,10 @@ impl App {
     }
 
     pub(super) fn submit(&self) {
+        if self.view_edit.peek() {
+            self.edit_newline();
+            return;
+        }
         let text = self.draft.peek();
         if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
             return;
@@ -466,6 +557,10 @@ impl App {
                 self.refresh();
             }
             Some(crate::SlashCommand::Theme) => self.toggle_theme(),
+            Some(crate::SlashCommand::Pane) => self.pane_command(argument(line)),
+            Some(crate::SlashCommand::Layout) => self.layout_command(argument(line)),
+            Some(crate::SlashCommand::Diff) => self.diff_command(argument(line)),
+            Some(crate::SlashCommand::View) => self.view_command(argument(line)),
             Some(crate::SlashCommand::Bus) => self.toggle_bus(),
             _ => return false,
         }
@@ -621,6 +716,11 @@ impl App {
             Target::Role(index) => {
                 self.workflow_sel.set(index);
                 self.pick_workflow_seat();
+            }
+            Target::File(index) => {
+                self.file_cursor.set(index);
+                self.pane_focus.set(true);
+                self.pane_enter();
             }
             Target::Saved(name) => {
                 drop(self.cmd.send(Cmd::Command(format!("/workflow {name}"))));
@@ -866,6 +966,756 @@ impl App {
             .collect()
     }
 
+    pub(super) fn chat_cols(&self) -> u16 {
+        self.layout.get().split(self.viewport.get().0).0
+    }
+
+    pub(super) fn set_layout(&self, layout: Layout) {
+        if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
+            if self.view_text.peek() != self.view_saved.peek() {
+                self.model.borrow_mut().entries.push(Entry::Error(
+                    "unsaved edits in the view pane — ctrl+s saves, esc leaves".to_string(),
+                ));
+                self.refresh();
+                return;
+            }
+            self.view_edit.set(false);
+        }
+        let opened = |pane: Pane| {
+            layout.secondary == Some(pane) && self.layout.peek().secondary != Some(pane)
+        };
+        if opened(Pane::Files) {
+            drop(self.cmd.send(Cmd::ListFiles));
+        }
+        if opened(Pane::Diff) {
+            drop(self.cmd.send(Cmd::Diff(self.root())));
+        }
+        if opened(Pane::Worktrees) {
+            drop(self.cmd.send(Cmd::Trees));
+        }
+        if layout.secondary.is_none() {
+            self.pane_focus.set(false);
+        }
+        self.layout.set(layout);
+        let mut model = self.model.borrow_mut();
+        model.prefs.layout = layout.text();
+        model
+            .entries
+            .push(Entry::System(format!("layout: {}", layout.text())));
+        let prefs = model.prefs.clone();
+        drop(model);
+        self.persist(&prefs);
+        self.refresh();
+    }
+
+    pub(super) fn toggle_pane(&self, pane: Pane) {
+        if pane == Pane::Diff {
+            self.diff_root.set(None);
+        }
+        let layout = self.layout.peek();
+        if layout.secondary == Some(pane) {
+            self.last_pane.set(Some(pane));
+            self.set_layout(Layout {
+                secondary: None,
+                ..layout
+            });
+        } else {
+            self.set_layout(Layout {
+                secondary: Some(pane),
+                ..layout
+            });
+            self.pane_focus.set(true);
+        }
+    }
+
+    pub(super) fn toggle_side(&self) {
+        let layout = self.layout.peek();
+        match layout.secondary {
+            Some(pane) => self.toggle_pane(pane),
+            None => {
+                let pane = self.last_pane.peek().unwrap_or(Pane::Files);
+                self.toggle_pane(pane);
+            }
+        }
+    }
+
+    pub(super) fn pane_page(&self, delta: isize) {
+        let rows = isize::from(
+            i16::try_from(self.viewport.peek().1.saturating_sub(4).max(1)).unwrap_or(1),
+        );
+        self.pane_move(delta * rows);
+    }
+
+    pub(super) fn pane_edge(&self, end: bool) {
+        if self.layout.peek().secondary == Some(Pane::View) {
+            let last = self.view_lines().saturating_sub(1) as isize;
+            self.view_move(if end { last } else { -last });
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+            let last = self.tree_rows().len().saturating_sub(1) as isize;
+            self.tree_move(if end { last } else { -last });
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Diff) {
+            let last = if self.diff_view.peek().is_some() {
+                self.patch_lines().saturating_sub(1)
+            } else {
+                self.diff_rows().len().saturating_sub(1)
+            };
+            self.diff_move(if end { last as isize } else { -(last as isize) });
+            return;
+        }
+        let count = self.file_rows().len();
+        if count > 0 {
+            self.file_cursor.set(if end { count - 1 } else { 0 });
+            self.refresh();
+        }
+    }
+
+    pub(super) fn pane_collapse(&self) {
+        if self.layout.peek().secondary == Some(Pane::View) {
+            self.pane_back();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Diff) {
+            self.pane_back();
+            return;
+        }
+        let rows = self.file_rows();
+        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
+        let Some(row) = rows.get(cursor) else {
+            return;
+        };
+        if row.dir && row.open {
+            self.pane_enter();
+            return;
+        }
+        if let Some((parent, _)) = row.path.rsplit_once('/')
+            && let Some(index) = rows.iter().position(|candidate| candidate.path == parent)
+        {
+            self.file_cursor.set(index);
+            self.refresh();
+        }
+    }
+
+    pub(super) fn pane_expand(&self) {
+        if self.layout.peek().secondary == Some(Pane::View) {
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+            self.tree_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Diff) {
+            if self.diff_view.peek().is_none() {
+                self.diff_enter();
+            }
+            return;
+        }
+        let rows = self.file_rows();
+        let cursor = self.file_cursor.peek().min(rows.len().saturating_sub(1));
+        match rows.get(cursor) {
+            Some(row) if row.dir => {
+                if !row.open {
+                    self.pane_enter();
+                }
+            }
+            Some(row) => self.view_open(row.path.clone()),
+            None => {}
+        }
+    }
+
+    /// Shows one workspace file in the view pane; esc returns to the pane
+    /// it was opened from.
+    pub(super) fn view_open(&self, path: String) {
+        let layout = self.layout.peek();
+        if layout.secondary != Some(Pane::View) {
+            self.view_from.set(layout.secondary);
+            self.set_layout(Layout {
+                secondary: Some(Pane::View),
+                ..layout
+            });
+        }
+        self.view_scroll.set(0);
+        self.pane_focus.set(true);
+        drop(self.cmd.send(Cmd::View(self.root(), path)));
+        self.refresh();
+    }
+
+    /// Turns the view pane into an editor on the file it shows.
+    pub(super) fn edit_start(&self) {
+        let text = self
+            .model
+            .borrow()
+            .view
+            .as_ref()
+            .map(|view| view.rope.to_string_lossy());
+        let Some(text) = text else {
+            return;
+        };
+        self.view_saved.set(text.clone());
+        self.view_text.set(text);
+        self.view_caret.set(0);
+        self.discard_armed.set(false);
+        self.view_edit.set(true);
+        self.pane_focus.set(true);
+        self.refresh();
+    }
+
+    /// Leaves edit mode. Unsaved text needs a second call, so one esc cannot
+    /// discard work. Returns false when nothing was being edited.
+    pub(super) fn edit_stop(&self) -> bool {
+        if !self.view_edit.peek() {
+            return false;
+        }
+        if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
+            self.discard_armed.set(true);
+            self.model.borrow_mut().entries.push(Entry::System(
+                "unsaved edits — ctrl+s saves, esc again discards".to_string(),
+            ));
+            self.refresh();
+            return true;
+        }
+        self.view_edit.set(false);
+        self.discard_armed.set(false);
+        self.refresh();
+        true
+    }
+
+    pub(super) fn edit_save(&self) {
+        let path = self
+            .model
+            .borrow()
+            .view
+            .as_ref()
+            .map(|view| view.path.clone());
+        let Some(path) = path else {
+            return;
+        };
+        let text = self.view_text.peek();
+        self.view_saved.set(text.clone());
+        self.discard_armed.set(false);
+        drop(self.cmd.send(Cmd::Save(path, text)));
+        self.refresh();
+    }
+
+    fn edit_newline(&self) {
+        let mut text = self.view_text.peek();
+        let caret = self.view_caret.peek().min(text.len());
+        if !text.is_char_boundary(caret) {
+            return;
+        }
+        text.insert(caret, '\n');
+        self.view_text.set(text);
+        self.view_caret.set(caret + 1);
+        self.refresh();
+    }
+
+    pub(super) fn view_external(&self) {
+        if let Some(path) = self
+            .model
+            .borrow()
+            .view
+            .as_ref()
+            .map(|view| view.path.clone())
+        {
+            self.open_file.set(Some(path));
+        }
+        self.refresh();
+    }
+
+    fn view_lines(&self) -> usize {
+        self.model
+            .borrow()
+            .view
+            .as_ref()
+            .map_or(0, |view| view.rope.to_string_lossy().lines().count())
+    }
+
+    fn view_move(&self, delta: isize) {
+        let last = self.view_lines().saturating_sub(1) as isize;
+        let scroll = (self.view_scroll.peek() as isize + delta).clamp(0, last);
+        self.view_scroll.set(scroll as usize);
+        self.refresh();
+    }
+
+    fn view_command(&self, argument: Option<&str>) {
+        match argument {
+            Some(path) => self.view_open(path.trim_start_matches('@').to_string()),
+            None => {
+                let path = self
+                    .model
+                    .borrow()
+                    .view
+                    .as_ref()
+                    .map(|view| view.path.clone());
+                match path {
+                    Some(path) => self.view_open(path),
+                    None => {
+                        self.model
+                            .borrow_mut()
+                            .entries
+                            .push(Entry::Error("usage: /view PATH".to_string()));
+                        self.refresh();
+                    }
+                }
+            }
+        }
+    }
+
+    pub(super) fn context_at(&self, col: usize, row: usize) -> bool {
+        let Some(Target::File(index)) = self.hits.at(col, row) else {
+            return false;
+        };
+        let kind = self.layout.peek().secondary.unwrap_or(Pane::Files);
+        let rows = match kind {
+            Pane::Diff => self.diff_rows(),
+            Pane::Worktrees => self.tree_rows(),
+            Pane::View => return false,
+            _ => self.file_rows(),
+        };
+        let Some(target) = rows.get(index).cloned() else {
+            return false;
+        };
+        match kind {
+            Pane::Diff => self.diff_cursor.set(index),
+            Pane::Worktrees => self.tree_cursor.set(index),
+            _ => self.file_cursor.set(index),
+        }
+        self.pane_focus.set(true);
+        self.context.set(Some(Context {
+            col,
+            row,
+            cursor: 0,
+            target,
+            kind,
+        }));
+        self.refresh();
+        true
+    }
+
+    pub(super) fn context_move(&self, delta: isize) {
+        let Some(mut context) = self.context.peek() else {
+            return;
+        };
+        let count = context.items().len() as isize;
+        context.cursor = ((context.cursor as isize + delta).rem_euclid(count)) as usize;
+        self.context.set(Some(context));
+        self.refresh();
+    }
+
+    pub(super) fn context_close(&self) {
+        self.context.set(None);
+        self.refresh();
+    }
+
+    pub(super) fn context_enter(&self) {
+        let Some(context) = self.context.peek() else {
+            return;
+        };
+        self.context.set(None);
+        match context
+            .items()
+            .get(context.cursor)
+            .map(|(_, action)| *action)
+        {
+            Some(Action::Toggle) => self.pane_enter(),
+            Some(Action::Attach) => self.mention(&context.target.path),
+            Some(Action::Hunks) => self.diff_open(context.target.path.clone()),
+            Some(Action::View) => self.view_open(context.target.path.clone()),
+            Some(Action::Diff) => {
+                self.tree_show(
+                    PathBuf::from(&context.target.path),
+                    context.target.name.clone(),
+                );
+            }
+            Some(Action::Merge) => {
+                drop(
+                    self.cmd
+                        .send(Cmd::Merge(PathBuf::from(&context.target.path))),
+                );
+                self.refresh();
+            }
+            Some(Action::Discard) => {
+                drop(
+                    self.cmd
+                        .send(Cmd::Discard(PathBuf::from(&context.target.path))),
+                );
+                self.refresh();
+            }
+            Some(Action::Open) => {
+                self.open_file.set(Some(context.target.path.clone()));
+                self.refresh();
+            }
+            Some(Action::Insert) => {
+                let mut draft = self.draft.peek();
+                draft.push_str(&context.target.path);
+                self.replace(draft);
+                self.pane_focus.set(false);
+                self.refresh();
+            }
+            None => self.refresh(),
+        }
+    }
+
+    pub(super) fn focus_pane(&self, on: bool) {
+        let has_pane = self.layout.peek().secondary.is_some();
+        self.pane_focus.set(on && has_pane);
+        self.refresh();
+    }
+
+    pub(super) fn pane_active(&self) -> Option<Pane> {
+        if self.view_edit.peek() {
+            return None;
+        }
+        self.pane_focus
+            .peek()
+            .then(|| self.layout.peek().secondary)
+            .flatten()
+    }
+
+    pub(super) fn file_rows(&self) -> Vec<FileRow> {
+        let model = self.model.borrow();
+        let expanded = self.expanded.peek();
+        file_rows(&model.files, &expanded)
+    }
+
+    pub(super) fn pane_move(&self, delta: isize) {
+        if self.layout.peek().secondary == Some(Pane::View) {
+            self.view_move(delta);
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+            self.tree_move(delta);
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Diff) {
+            self.diff_move(delta);
+            return;
+        }
+        let count = self.file_rows().len();
+        if count == 0 {
+            return;
+        }
+        let cursor = self.file_cursor.peek().min(count - 1) as isize;
+        let next = (cursor + delta).clamp(0, count as isize - 1) as usize;
+        self.file_cursor.set(next);
+        self.refresh();
+    }
+
+    pub(super) fn pane_enter(&self) {
+        if self.layout.peek().secondary == Some(Pane::View) {
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+            self.tree_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Diff) {
+            self.diff_enter();
+            return;
+        }
+        let rows = self.file_rows();
+        let Some(row) = rows.get(self.file_cursor.peek().min(rows.len().saturating_sub(1))) else {
+            return;
+        };
+        if row.dir {
+            let mut expanded = self.expanded.peek();
+            match expanded.iter().position(|dir| *dir == row.path) {
+                Some(index) => drop(expanded.remove(index)),
+                None => expanded.push(row.path.clone()),
+            }
+            self.expanded.set(expanded);
+        } else {
+            self.mention(&row.path);
+        }
+        self.refresh();
+    }
+
+    fn mention(&self, path: &str) {
+        let mut draft = self.draft.peek();
+        if !draft.is_empty() && !draft.ends_with(' ') {
+            draft.push(' ');
+        }
+        draft.push('@');
+        draft.push_str(path);
+        draft.push(' ');
+        self.replace(draft);
+        self.pane_focus.set(false);
+        self.refresh();
+    }
+
+    /// The diff rows on show: every change, or only the last turn's files
+    /// while the `t` filter is on.
+    pub(super) fn diff_stats(&self) -> Vec<crate::diff::Stat> {
+        let model = self.model.borrow();
+        let recent = self.diff_recent.peek();
+        model
+            .diff
+            .files
+            .iter()
+            .filter(|stat| !recent || model.recent.contains(&stat.path))
+            .cloned()
+            .collect()
+    }
+
+    pub(super) fn toggle_recent(&self) {
+        self.diff_recent.set(!self.diff_recent.peek());
+        self.diff_cursor.set(0);
+        self.refresh();
+    }
+
+    /// Copies the patch on show: the viewed file's hunks, or the whole
+    /// workspace patch from the list.
+    pub(super) fn copy_patch(&self) {
+        let viewed = self.diff_view.peek();
+        let text = self
+            .model
+            .borrow()
+            .patch
+            .as_ref()
+            .filter(|(path, _)| viewed.as_deref() == Some(path.as_str()))
+            .map(|(_, text)| text.clone());
+        match text {
+            Some(text) => self.copy.set(Some(text)),
+            None => {
+                self.copy_pending.set(true);
+                drop(self.cmd.send(Cmd::Patch(self.root(), String::new())));
+            }
+        }
+        self.refresh();
+    }
+
+    pub(super) fn copied(&self, text: &str) {
+        let lines = text.lines().count();
+        self.model.borrow_mut().entries.push(Entry::System(format!(
+            "copied the patch: {lines} line{}",
+            if lines == 1 { "" } else { "s" }
+        )));
+        self.refresh();
+    }
+
+    pub(super) fn diff_rows(&self) -> Vec<FileRow> {
+        self.diff_stats()
+            .iter()
+            .map(|stat| FileRow {
+                path: stat.path.clone(),
+                name: stat.path.clone(),
+                depth: 0,
+                dir: false,
+                open: false,
+            })
+            .collect()
+    }
+
+    fn patch_lines(&self) -> usize {
+        self.model
+            .borrow()
+            .patch
+            .as_ref()
+            .map_or(0, |(_, text)| text.lines().count())
+    }
+
+    fn diff_move(&self, delta: isize) {
+        if self.diff_view.peek().is_some() {
+            let last = self.patch_lines().saturating_sub(1) as isize;
+            let scroll = (self.diff_scroll.peek() as isize + delta).clamp(0, last);
+            self.diff_scroll.set(scroll as usize);
+        } else {
+            let count = self.diff_rows().len();
+            if count == 0 {
+                return;
+            }
+            let cursor = self.diff_cursor.peek().min(count - 1) as isize;
+            self.diff_cursor
+                .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        }
+        self.refresh();
+    }
+
+    fn diff_enter(&self) {
+        if self.pane_back() {
+            return;
+        }
+        let rows = self.diff_rows();
+        let cursor = self.diff_cursor.peek().min(rows.len().saturating_sub(1));
+        if let Some(row) = rows.get(cursor) {
+            self.diff_open(row.path.clone());
+        }
+    }
+
+    pub(super) fn diff_open(&self, path: String) {
+        self.diff_scroll.set(0);
+        self.diff_view.set(Some(path.clone()));
+        drop(self.cmd.send(Cmd::Patch(self.root(), path)));
+        self.refresh();
+    }
+
+    /// The directory the diff pane reads: a worktree chosen in the
+    /// worktrees pane, or the session workspace.
+    fn root(&self) -> Option<PathBuf> {
+        self.diff_root.peek().map(|(path, _)| path)
+    }
+
+    pub(super) fn tree_rows(&self) -> Vec<FileRow> {
+        self.model
+            .borrow()
+            .trees
+            .iter()
+            .map(|row| FileRow {
+                path: row.tree.path.display().to_string(),
+                name: row.tree.branch.clone(),
+                depth: 0,
+                dir: false,
+                open: false,
+            })
+            .collect()
+    }
+
+    fn tree_move(&self, delta: isize) {
+        let count = self.tree_rows().len();
+        if count == 0 {
+            return;
+        }
+        let cursor = self.tree_cursor.peek().min(count - 1) as isize;
+        self.tree_cursor
+            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+        self.refresh();
+    }
+
+    fn tree_enter(&self) {
+        let rows = self.tree_rows();
+        let cursor = self.tree_cursor.peek().min(rows.len().saturating_sub(1));
+        if let Some(row) = rows.get(cursor) {
+            self.tree_show(PathBuf::from(&row.path), row.name.clone());
+        }
+    }
+
+    /// Opens the diff pane on one worktree; esc returns to the list.
+    pub(super) fn tree_show(&self, path: PathBuf, branch: String) {
+        self.diff_root.set(Some((path, branch)));
+        self.diff_view.set(None);
+        let layout = self.layout.peek();
+        self.set_layout(Layout {
+            secondary: Some(Pane::Diff),
+            ..layout
+        });
+        self.pane_focus.set(true);
+        self.refresh();
+    }
+
+    /// Leaves the hunk view for the file list. Returns false when there is
+    /// no hunk view to leave.
+    pub(super) fn pane_back(&self) -> bool {
+        let layout = self.layout.peek();
+        if layout.secondary == Some(Pane::View) {
+            let back = self.view_from.peek().unwrap_or(Pane::Files);
+            self.set_layout(Layout {
+                secondary: Some(back),
+                ..layout
+            });
+            self.pane_focus.set(true);
+            self.refresh();
+            return true;
+        }
+        if layout.secondary != Some(Pane::Diff) {
+            return false;
+        }
+        if self.diff_view.peek().is_some() {
+            self.diff_view.set(None);
+            self.refresh();
+            return true;
+        }
+        if self.diff_root.peek().is_some() {
+            self.diff_root.set(None);
+            self.set_layout(Layout {
+                secondary: Some(Pane::Worktrees),
+                ..layout
+            });
+            self.pane_focus.set(true);
+            self.refresh();
+            return true;
+        }
+        false
+    }
+
+    fn diff_command(&self, argument: Option<&str>) {
+        self.diff_root.set(None);
+        let layout = self.layout.peek();
+        if layout.secondary != Some(Pane::Diff) {
+            self.set_layout(Layout {
+                secondary: Some(Pane::Diff),
+                ..layout
+            });
+        }
+        self.pane_focus.set(true);
+        match argument {
+            Some(path) => self.diff_open(path.to_string()),
+            None => {
+                self.diff_view.set(None);
+                self.refresh();
+            }
+        }
+    }
+
+    pub(super) fn nudge_split(&self, delta: i16) {
+        let layout = self.layout.peek();
+        if layout.secondary.is_some() {
+            self.set_layout(layout.nudge(delta));
+        }
+    }
+
+    fn pane_command(&self, argument: Option<&str>) {
+        let layout = self.layout.peek();
+        match argument {
+            None => {
+                let names: Vec<&str> = Pane::SECONDARY.iter().map(|pane| pane.name()).collect();
+                self.model.borrow_mut().entries.push(Entry::System(format!(
+                    "layout: {} · /pane {} · /pane off · /layout focus|run|files|review",
+                    layout.text(),
+                    names.join("|")
+                )));
+                self.refresh();
+            }
+            Some("off" | "close") => self.set_layout(Layout {
+                secondary: None,
+                ..layout
+            }),
+            Some(name) => match Pane::parse(name) {
+                Some(Pane::Chat) | None => {
+                    self.model
+                        .borrow_mut()
+                        .entries
+                        .push(Entry::Error(format!("no pane named `{name}`")));
+                    self.refresh();
+                }
+                Some(pane) => self.set_layout(Layout {
+                    secondary: Some(pane),
+                    ..layout
+                }),
+            },
+        }
+    }
+
+    fn layout_command(&self, argument: Option<&str>) {
+        match argument {
+            None => self.pane_command(None),
+            Some(text) => match Layout::parse(text) {
+                Some(layout) => self.set_layout(layout),
+                None => {
+                    self.model.borrow_mut().entries.push(Entry::Error(format!(
+                        "no layout `{text}` — focus, run, files, review, or `chat | ledger 40%`"
+                    )));
+                    self.refresh();
+                }
+            },
+        }
+    }
+
     pub(super) fn toggle_theme(&self) {
         let mut model = self.model.borrow_mut();
         model.prefs.theme = if model.prefs.theme == "fantasy" {
@@ -973,4 +1823,110 @@ fn read_git_branch(workspace: &Path) -> Option<String> {
     head.strip_prefix("ref: refs/heads/")
         .map(str::to_string)
         .or_else(|| (!head.is_empty()).then(|| head.chars().take(7).collect()))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct FileRow {
+    pub(super) path: String,
+    pub(super) name: String,
+    pub(super) depth: usize,
+    pub(super) dir: bool,
+    pub(super) open: bool,
+}
+
+pub(super) fn file_rows(files: &[String], expanded: &[String]) -> Vec<FileRow> {
+    let mut rows: Vec<FileRow> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut sorted: Vec<&String> = files.iter().collect();
+    sorted.sort();
+    for file in sorted {
+        let parts: Vec<&str> = file.split('/').filter(|part| !part.is_empty()).collect();
+        let mut prefix = String::new();
+        let mut hidden = false;
+        for (depth, part) in parts.iter().enumerate() {
+            let last = depth + 1 == parts.len();
+            let path = if prefix.is_empty() {
+                (*part).to_string()
+            } else {
+                format!("{prefix}/{part}")
+            };
+            if !hidden && seen.insert(path.clone()) {
+                let open = last || expanded.contains(&path);
+                rows.push(FileRow {
+                    path: path.clone(),
+                    name: (*part).to_string(),
+                    depth,
+                    dir: !last,
+                    open,
+                });
+            }
+            if !last && !expanded.contains(&path) {
+                hidden = true;
+            }
+            prefix = path;
+        }
+    }
+    rows
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Action {
+    Attach,
+    Open,
+    Insert,
+    Toggle,
+    Hunks,
+    Diff,
+    Merge,
+    Discard,
+    View,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) struct Context {
+    pub(super) col: usize,
+    pub(super) row: usize,
+    pub(super) cursor: usize,
+    pub(super) target: FileRow,
+    pub(super) kind: Pane,
+}
+
+impl Context {
+    pub(super) fn items(&self) -> Vec<(&'static str, Action)> {
+        if self.kind == Pane::Worktrees {
+            vec![
+                ("show diff", Action::Diff),
+                ("merge (ff-only)", Action::Merge),
+                ("remove worktree (clean only)", Action::Discard),
+                ("insert path", Action::Insert),
+            ]
+        } else if self.kind == Pane::Diff {
+            vec![
+                ("view hunks", Action::Hunks),
+                ("view file", Action::View),
+                ("attach @path to prompt", Action::Attach),
+                ("open in $EDITOR", Action::Open),
+                ("insert path", Action::Insert),
+            ]
+        } else if self.target.dir {
+            vec![
+                (
+                    if self.target.open {
+                        "collapse"
+                    } else {
+                        "expand"
+                    },
+                    Action::Toggle,
+                ),
+                ("insert path", Action::Insert),
+            ]
+        } else {
+            vec![
+                ("attach @path to prompt", Action::Attach),
+                ("view file", Action::View),
+                ("open in $EDITOR", Action::Open),
+                ("insert path", Action::Insert),
+            ]
+        }
+    }
 }

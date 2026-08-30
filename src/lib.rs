@@ -41,8 +41,9 @@ pub mod workflow;
 pub use command::{CommandSpec, SlashCommand, command_specs, parse_command};
 pub use durable::work::{WorkKind, WorkPhase, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, auth_info, forget_key, is_named as is_endpoint, names as endpoint_names,
-    resolve as resolve_endpoint, resolve_unauthed as resolve_endpoint_unauthed, save_key,
+    AuthInfo, Endpoint, adopt_keys, auth_info, forget_key, is_named as is_endpoint,
+    names as endpoint_names, resolve as resolve_endpoint,
+    resolve_unauthed as resolve_endpoint_unauthed, save_key,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
 pub use goal::{DEFAULT_MAX_TURNS, prompt as goal_prompt};

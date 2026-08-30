@@ -292,6 +292,63 @@ fn print_diff(args: &Args) -> Result<()> {
     Ok(())
 }
 
+/// Moves plaintext keys out of config.toml once per run and names them.
+fn adopt(args: &Args) -> Result<Vec<String>> {
+    let moved = summoner::adopt_keys()?;
+    if !moved.is_empty() && !args.json {
+        eprintln!(
+            "moved {} out of config.toml into the credential store",
+            moved.join(", ")
+        );
+    }
+    Ok(moved)
+}
+
+/// Raw mode for one prompt; the terminal comes back however the read ends.
+struct Raw;
+
+impl Raw {
+    fn enter() -> Result<Self> {
+        crossterm::terminal::enable_raw_mode()?;
+        Ok(Self)
+    }
+}
+
+impl Drop for Raw {
+    fn drop(&mut self) {
+        drop(crossterm::terminal::disable_raw_mode());
+    }
+}
+
+/// Reads one line from stdin. On a terminal it prompts and keeps the echo
+/// off, so the key never lands in the scrollback.
+fn read_secret(prompt: &str) -> Result<String> {
+    use std::io::Read as _;
+    if !std::io::stdin().is_terminal() {
+        let mut key = String::new();
+        std::io::stdin().read_line(&mut key)?;
+        return Ok(key);
+    }
+    eprint!("{prompt}");
+    let raw = Raw::enter()?;
+    let mut key = String::new();
+    let mut byte = [0_u8; 1];
+    let outcome = loop {
+        if std::io::stdin().read(&mut byte)? == 0 {
+            break Ok(());
+        }
+        match byte[0] {
+            b'\r' | b'\n' => break Ok(()),
+            0x03 | 0x04 => break Err(summoner::Error::Config("cancelled".to_string())),
+            0x7f | 0x08 => drop(key.pop()),
+            other => key.push(other as char),
+        }
+    };
+    drop(raw);
+    eprintln!();
+    outcome.map(|()| key)
+}
+
 async fn run_login(args: &Args) -> Result<()> {
     if args.endpoint.is_none() {
         return Err(summoner::Error::Config(
@@ -300,8 +357,13 @@ async fn run_login(args: &Args) -> Result<()> {
     }
     if args.key {
         let name = args.endpoint.as_deref().unwrap_or_default();
-        let mut key = String::new();
-        std::io::stdin().read_line(&mut key)?;
+        if !args.prompt.is_empty() {
+            return Err(summoner::Error::Config(
+                "do not put the key on the command line — `summon login NAME --key` asks for it"
+                    .to_string(),
+            ));
+        }
+        let key = read_secret(&format!("key for {name}: "))?;
         let source = summoner::save_key(name, key.trim())?;
         println!("key for {name} stored in {}", source.label());
         return Ok(());
@@ -330,6 +392,7 @@ pub(super) async fn run() -> Result<i32> {
 }
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
+    let adopted = adopt(&args)?;
     if args.login {
         return run_login(&args).await.map(|()| 0);
     }
@@ -368,10 +431,10 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.diff {
         return print_diff(&args).map(|()| 0);
     }
-    launch(args, log).await
+    launch(args, log, &adopted).await
 }
 
-async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
+async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(&args, &cwd)?;
     let endpoint = if use_tui(&args) {
@@ -382,9 +445,12 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if let Some(name) = args.endpoint.as_deref() {
         summoner::prefs::set_last_endpoint(name);
     }
-    if endpoint.source == Some(summoner::secret::Source::Config) && !args.json {
+    if endpoint.source == Some(summoner::secret::Source::Config)
+        && !args.json
+        && !adopted.contains(&endpoint.name)
+    {
         eprintln!(
-            "the key for {} is plaintext in config.toml — `summon login {} --key` moves it to the keychain",
+            "the key for {} is plaintext in config.toml — `summon login {} --key` moves it into the credential store",
             endpoint.name, endpoint.name
         );
     }

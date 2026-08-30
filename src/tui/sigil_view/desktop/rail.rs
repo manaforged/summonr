@@ -3,6 +3,7 @@
 use sigil::prelude::*;
 
 use super::super::app::App;
+use super::super::model::Entry;
 use super::super::pane::Pane;
 use super::{hit, icons, open, spacer};
 use crate::session;
@@ -90,23 +91,30 @@ fn sessions(app: &App) -> NodeBuilder {
             .clone()
             .unwrap_or_else(|| info.preview.chars().take(36).collect());
         let live = info.id == current;
+        let open = app.clone();
+        let short = session::short(&info.id).to_string();
         list = list.child(
-            hit(title.clone(), live, || {})
-                .child(status_dot(live))
-                .child(
-                    label(if title.is_empty() {
-                        "untitled".to_string()
-                    } else {
-                        title
-                    })
-                    .ellipsize()
-                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 16.0))
-                    .class(classes!("text-sm text-gray-12")),
-                )
-                .child(
-                    label(session::short(&info.id).to_string())
-                        .class(classes!("text-xs text-gray-11")),
-                ),
+            hit(title.clone(), live, move || {
+                open.copy.set(Some(short.clone()));
+                open.model.borrow_mut().entries.push(Entry::System(format!(
+                    "summon --session {short} opens this session"
+                )));
+                open.refresh();
+            })
+            .child(status_dot(live))
+            .child(
+                label(if title.is_empty() {
+                    "untitled".to_string()
+                } else {
+                    title
+                })
+                .ellipsize()
+                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 16.0))
+                .class(classes!("text-sm text-gray-12")),
+            )
+            .child(
+                label(session::short(&info.id).to_string()).class(classes!("text-xs text-gray-11")),
+            ),
         );
     }
     list

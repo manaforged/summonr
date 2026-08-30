@@ -335,47 +335,49 @@ fn credentials_path(home: &Path, name: &str) -> PathBuf {
     home.join("credentials").join(file)
 }
 
+fn secret_name(name: &str) -> String {
+    format!("oauth:{name}")
+}
+
+/// Removes the token file an earlier build kept under ~/.mage/credentials.
+pub(crate) fn forget_legacy(name: &str) -> Result<bool> {
+    let path = credentials_path(&crate::prompt::mage_home()?, name);
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 fn load_disk(home: &Path, name: &str) -> Result<Option<Issued>> {
-    let path = credentials_path(home, name);
-    let Ok(text) = std::fs::read_to_string(&path) else {
-        return Ok(None);
+    let text = match crate::secret::get(&secret_name(name))? {
+        Some((text, _)) => text,
+        None => {
+            let legacy = credentials_path(home, name);
+            let Ok(text) = std::fs::read_to_string(&legacy) else {
+                return Ok(None);
+            };
+            crate::secret::set(&secret_name(name), &text)?;
+            std::fs::remove_file(&legacy)?;
+            text
+        }
     };
     let disk: Disk = serde_json::from_str(&text)
-        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))?;
+        .map_err(|error| Error::Config(format!("stored token for {name}: {error}")))?;
     if disk.access_token.trim().is_empty() {
         return Ok(None);
     }
     Ok(Some(from_disk(disk)))
 }
 
-fn save_disk(home: &Path, name: &str, issued: &Issued) -> Result<()> {
-    let path = credentials_path(home, name);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
+fn save_disk(_home: &Path, name: &str, issued: &Issued) -> Result<()> {
     let disk = Disk {
         access_token: issued.access_token.clone(),
         refresh_token: issued.refresh_token.clone(),
         expires_at: issued.expires_at.map(unix_at),
     };
-    let text = serde_json::to_string_pretty(&disk)?;
-    write_private(&path, text.as_bytes())
-}
-
-fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::io::Write;
-    let tmp = path.with_extension("tmp");
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(&tmp)?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    std::fs::rename(&tmp, path)?;
+    let text = serde_json::to_string(&disk)?;
+    crate::secret::set(&secret_name(name), &text)?;
     Ok(())
 }
 

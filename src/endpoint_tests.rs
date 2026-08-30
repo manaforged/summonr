@@ -197,3 +197,43 @@ chat_template_kwargs = { reasoning_effort = "low" }
     );
     assert_eq!(builtin("qwen").and_then(|endpoint| endpoint.body), None);
 }
+
+#[test]
+fn adopt_moves_plaintext_keys_out_of_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("config.toml");
+    std::fs::write(
+        &path,
+        "[endpoint.glm]\napi_key = \"sk-glm\"\n\n[endpoint.kimi]\nbase_url = \"https://kimi.invalid/v1\"\n",
+    )
+    .expect("write");
+    let moved = adopt_from(&path).expect("adopt");
+    assert_eq!(moved, vec!["glm".to_string()]);
+    let text = std::fs::read_to_string(&path).expect("read");
+    assert!(!text.contains("sk-glm"), "{text}");
+    assert!(text.contains("kimi.invalid"), "other rows stay: {text}");
+    assert_eq!(
+        secret::get("glm")
+            .expect("get")
+            .map(|(key, _)| key)
+            .as_deref(),
+        Some("sk-glm")
+    );
+    assert!(adopt_from(&path).expect("adopt again").is_empty());
+    std::fs::write(&path, "[endpoint.glm]\napi_key = \"sk-stale\"\n").expect("write");
+    assert_eq!(adopt_from(&path).expect("adopt"), vec!["glm".to_string()]);
+    assert_eq!(
+        secret::get("glm")
+            .expect("get")
+            .map(|(key, _)| key)
+            .as_deref(),
+        Some("sk-glm"),
+        "the stored key wins over a stale config row"
+    );
+    assert!(
+        !std::fs::read_to_string(&path)
+            .expect("read")
+            .contains("sk-stale")
+    );
+    secret::forget("glm").expect("forget");
+}

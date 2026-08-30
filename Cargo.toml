@@ -36,16 +36,19 @@ reqwest = { version = "0.13", default-features = false, features = ["form", "jso
 genai = { version = "0.6.5", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.28"
-sigil = { package = "sigil-ui", git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a", default-features = false, features = ["tui"] }
-sigil-hal = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
-sigil-tui = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
-sigil-ide-core = { git = "https://github.com/ThomGardiner/sigil.git", rev = "d8f248f1d3d2525cceb99bd3776169d16f2fea1a" }
-keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service", "crypto-rust"] }
+sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc", default-features = false, features = ["tui"] }
+sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc" }
+sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc" }
+sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc" }
+chacha20poly1305 = "0.10"
 
 [features]
 default = []
 # `summon --gui`: the same panes in a winit + wgpu window.
-gui = ["sigil/desktop"]
+gui = ["sigil/clipboard", "sigil/desktop"]
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
 winapi-util = "0.1"

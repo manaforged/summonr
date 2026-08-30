@@ -11,6 +11,7 @@ use serde_json::{Value, json};
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
 mod auth;
+pub(crate) use auth::forget_legacy;
 mod native;
 mod stream;
 mod think;

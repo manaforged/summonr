@@ -4,6 +4,7 @@ use std::path::Path;
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::error::{Error, Result};
 use crate::provider::{Effort, Price};
+use crate::secret::{self, Source};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
 const GLM_INTL: &str = "https://api.z.ai/api/coding/paas/v4";
@@ -21,6 +22,7 @@ pub struct Endpoint {
     pub model: String,
     pub base_url: Option<String>,
     pub api_key: Option<String>,
+    pub source: Option<Source>,
     pub oauth: Option<crate::config::OAuth>,
     pub body: Option<serde_json::Value>,
     pub context_window: Option<u32>,
@@ -96,11 +98,12 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let file = config::load()?;
     let process_key = named_env_key(name)
         .or_else(|| env_key(&["MAGE_API_KEY"]))
-        .is_some();
+        .is_some()
+        || secret::get(name)?.is_some();
     auth_info_from(&file, name, process_key)
 }
 
-pub(crate) fn save_key(name: &str, key: &str) -> Result<()> {
+pub fn save_key(name: &str, key: &str) -> Result<Source> {
     if !names()?.iter().any(|candidate| candidate == name) {
         return Err(Error::Config(format!("unknown endpoint `{name}`")));
     }
@@ -108,7 +111,45 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<()> {
     if key.is_empty() {
         return Err(Error::Config("API key cannot be empty".to_string()));
     }
-    config::save_key(&config::path()?, name, key)
+    let source = secret::set(name, key)?;
+    config::remove_key(&config::path()?, name)?;
+    Ok(source)
+}
+
+pub fn forget_key(name: &str) -> Result<bool> {
+    let stored = secret::forget(name)?;
+    let token = secret::forget(&format!("oauth:{name}"))?;
+    let legacy = crate::provider::forget_legacy(name)?;
+    let config = config::remove_key(&config::path()?, name)?;
+    Ok(stored || token || legacy || config)
+}
+
+/// Moves every plaintext `api_key` in config.toml into the secret store. A
+/// key the store already holds wins; the config row goes either way.
+/// Returns the endpoints moved; nothing changes when the store is away.
+pub fn adopt_keys() -> Result<Vec<String>> {
+    adopt_from(&config::path()?)
+}
+
+pub(crate) fn adopt_from(path: &Path) -> Result<Vec<String>> {
+    let file = config::load_from(path)?;
+    let mut moved = Vec::new();
+    for (name, row) in &file.endpoint {
+        let Some(key) = row
+            .api_key
+            .as_deref()
+            .map(str::trim)
+            .filter(|key| !key.is_empty())
+        else {
+            continue;
+        };
+        if secret::get(name)?.is_none() {
+            secret::set(name, key)?;
+        }
+        config::remove_key(path, name)?;
+        moved.push(name.clone());
+    }
+    Ok(moved)
 }
 
 fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo> {
@@ -206,6 +247,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| "glm-5.3".to_string()),
             api_key: env_key(&["MAGE_API_KEY"]).or_else(glm_key),
+            source: None,
             oauth: None,
             body: None,
             context_window: None,
@@ -280,6 +322,7 @@ fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         model: row.model.clone().unwrap_or_default(),
         base_url: row.base_url.as_deref().map(trim_slash),
         api_key: row.api_key.clone().filter(|key| !key.trim().is_empty()),
+        source: None,
         oauth: row.auth.clone(),
         body: row.body.as_ref().map(json),
         context_window: row.context_window,
@@ -358,7 +401,7 @@ const PRESETS: &[Preset] = &[
             "GLM_API_KEY",
         ],
         default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME --key`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -375,7 +418,7 @@ const PRESETS: &[Preset] = &[
             "GLM_API_KEY",
         ],
         default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME --key`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -417,7 +460,7 @@ const PRESETS: &[Preset] = &[
         model: "grok-4.6",
         env_keys: &["XAI_API_KEY", "GROK_API_KEY"],
         default_key: None,
-        missing: "set XAI_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set XAI_API_KEY, or `summon login NAME --key`",
         aliases: &[
             ("grok", "grok-4.6"),
             ("grok-4-6", "grok-4.6"),
@@ -449,7 +492,7 @@ const PRESETS: &[Preset] = &[
         model: "gpt-4o",
         env_keys: &["OPENAI_API_KEY"],
         default_key: None,
-        missing: "set OPENAI_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set OPENAI_API_KEY, or `summon login NAME --key`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -461,7 +504,7 @@ const PRESETS: &[Preset] = &[
         model: "openai/gpt-4o",
         env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
         default_key: None,
-        missing: "set OPENROUTER_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set OPENROUTER_API_KEY, or `summon login NAME --key`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -473,7 +516,7 @@ const PRESETS: &[Preset] = &[
         model: "claude-sonnet-4-5",
         env_keys: &["ANTHROPIC_API_KEY"],
         default_key: None,
-        missing: "set ANTHROPIC_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set ANTHROPIC_API_KEY, or `summon login NAME --key`",
         aliases: &[
             ("sonnet", "claude-sonnet-4-5"),
             ("claude", "claude-sonnet-4-5"),
@@ -488,7 +531,7 @@ const PRESETS: &[Preset] = &[
         model: "gemini-2.5-flash",
         env_keys: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         default_key: None,
-        missing: "set GEMINI_API_KEY or GOOGLE_API_KEY, or put api_key in ~/.mage/config.toml",
+        missing: "set GEMINI_API_KEY or GOOGLE_API_KEY, or `summon login NAME --key`",
         aliases: &[("flash", "gemini-2.5-flash"), ("pro", "gemini-2.5-pro")],
         oauth: None,
         headers: &[],
@@ -514,11 +557,21 @@ fn preset(name: &str) -> Option<&'static Preset> {
 }
 
 fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
-    if endpoint.oauth.is_some() || endpoint.api_key.is_some() {
+    if endpoint.oauth.is_some() {
         return Ok(endpoint);
     }
     if let Some(key) = named_env_key(&endpoint.name).or_else(|| env_key(&["MAGE_API_KEY"])) {
         endpoint.api_key = Some(key);
+        endpoint.source = Some(Source::Env);
+        return Ok(endpoint);
+    }
+    if let Some((key, source)) = secret::get(&endpoint.name)? {
+        endpoint.api_key = Some(key);
+        endpoint.source = Some(source);
+        return Ok(endpoint);
+    }
+    if endpoint.api_key.is_some() {
+        endpoint.source = Some(Source::Config);
         return Ok(endpoint);
     }
     if let Some(row) = preset(&endpoint.name) {
@@ -527,7 +580,10 @@ fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
             return Ok(endpoint);
         }
         if require_key && !row.missing.is_empty() {
-            return Err(Error::Config(row.missing.to_string()));
+            return Err(Error::Config(format!(
+                "{} — or `summon login {} --key`",
+                row.missing, endpoint.name
+            )));
         }
     }
     Ok(endpoint)
@@ -551,6 +607,7 @@ fn builtin(name: &str) -> Option<Endpoint> {
         base_url: Some(row.base_url.into()),
         model: row.model.into(),
         api_key: row.default_key.map(str::to_string),
+        source: None,
         oauth: row.oauth.map(|make| make()),
         body: None,
         context_window: None,

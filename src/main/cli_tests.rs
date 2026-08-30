@@ -185,3 +185,14 @@ fn diff_takes_a_path_and_stat() {
         Some("last")
     );
 }
+
+#[test]
+fn login_key_never_takes_the_key_as_an_argument() {
+    let parsed = args(&["login", "glm", "--key", "sk-on-argv"]);
+    assert!(parsed.key);
+    assert_eq!(
+        parsed.prompt,
+        vec!["sk-on-argv".to_string()],
+        "startup refuses this"
+    );
+}

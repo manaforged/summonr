@@ -54,20 +54,26 @@ driving seat and any role seat whose row does not say. `summon endpoints` probes
 name so a dead host fails before the first tool round. `summon login NAME`
 runs RFC 8628 device-code login when that row has `device_url`.
 
-Keys live in the OS keychain (macOS Keychain, Windows Credential
-Manager, Linux Secret Service): `summon login NAME --key` reads one
-from stdin and stores it; `summon logout NAME` forgets it. Where no
-keychain is reachable the key goes to `~/.mage/credentials.toml`
-(mode 0600); `MAGE_SECRETS=file` forces that. Resolution order is the
-host's environment variable, the keychain, the credentials file, then
-`api_key` in `config.toml` — which still works but is plaintext, and
-Summoner says so once per run until you move it.
+Keys live in `~/.mage/credentials.toml`, a sealed ChaCha20-Poly1305
+blob (mode 0600, written through a rename). The wrapping key is a
+32-byte item in the OS store (`summoner` / `seal`), not a file next to
+the blob. `cat` of the file does not show keys. File mode still needs
+that OS item: a locked keychain is an error, not a plaintext leftover
+in `config.toml`. `summon login NAME --key` prompts for a key (echo
+off) and stores it; `summon logout NAME` forgets it and any login
+token. A plaintext `api_key` in `config.toml` is moved into that file
+the first time Summoner runs, and it says so once. Resolution order is
+the host's environment variable, the store, then `api_key` in
+`config.toml`.
 
-On macOS an unsigned development build is a new identity after every
-`cargo build`, so the Keychain asks again for each stored key. Either
-run with `MAGE_SECRETS=file` while developing, or sign the build once
-with a stable identity: `scripts/dev-sign.sh setup` (once), then
-`scripts/dev-sign.sh` after each build.
+If you want the OS store instead, set `secrets = "keychain"` in
+`config.toml` (or `MAGE_SECRETS=keychain`). On macOS that is one
+Keychain entry holding every secret, read and written through
+`/usr/bin/security`, so the one-time "Always Allow" is granted to
+Apple's signed tool and survives every rebuild of Summoner; Windows uses
+Credential Manager and Linux the Secret Service, one entry per secret.
+A locked keychain is reported, never worked around with a file, and
+the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `glm`, `glm-intl`, `qwen`, `kimi`,
 `grok`, `copilot`, `openai`, `openrouter`; native wires `anthropic`

@@ -1,6 +1,7 @@
 # Copy to ~/.mage/config.toml and edit.
 # A workspace `.mage/config.toml` may set [lsp] only.
-# Do not put secrets in the git repo.
+# Do not put secrets in the git repo. Keys belong in the sealed store:
+# `summon login NAME --key`; `summon endpoints` shows where each key lives.
 #
 # Completions seats: base_url + model, optional [endpoint.NAME.body].
 # Native seats set wire = "anthropic" or wire = "gemini".
@@ -25,7 +26,7 @@ default = "glm"
 [endpoint.glm]
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3"
-# api_key = "…"   # or ZAI_CODING_API_KEY
+# api_key = "…"   # plaintext; prefer `summon login glm --key` or ZAI_CODING_API_KEY
 # context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
 # effort = "low"            # reasoning effort: none, low, medium, high
 #                           # (chat/completions `reasoning_effort`; Anthropic and

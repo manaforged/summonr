@@ -4,7 +4,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use super::app::App;
 use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
 use super::model::Model;
-use crate::tui::{Round, fmt_tokens, short_session};
+use crate::tui::{Round, context, fmt_tokens, short_session};
 
 #[path = "chat/transcript.rs"]
 mod transcript;
@@ -351,8 +351,9 @@ fn prompt_rows(
             Span::styled("│", border),
         ],
     );
-    let hint = composer_hint(busy, width);
-    let hint_width = UnicodeWidthStr::width(hint);
+    let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
+    let hint = composer_hint(busy, width, &options);
+    let hint_width = UnicodeWidthStr::width(hint.as_str());
     let dash = width.saturating_sub(hint_width + 2);
     write_line_at(
         cells,
@@ -369,28 +370,25 @@ fn prompt_rows(
     );
 }
 
-pub(super) fn composer_hint(busy: bool, width: usize) -> &'static str {
+pub(super) fn composer_hint(busy: bool, width: usize, options: &str) -> String {
     let available = width.saturating_sub(2);
-    let choices: &[&str] = if busy {
-        &[
-            " esc cancel · enter steer · tab queue ",
-            " ↵ steer · tab queue · esc cancel ",
-            " ↵ steer · esc cancel ",
+    let choices = if busy {
+        vec![
+            " esc cancel · enter steer · tab queue ".to_string(),
+            " ↵ steer · tab queue · esc cancel ".to_string(),
+            " ↵ steer · esc cancel ".to_string(),
         ]
     } else {
-        &[
-            " enter send · ctrl+o settings · ctrl+j newline · shift+tab mode · ctrl+e files · ctrl+x diff · ctrl+p pane ",
-            " enter send · ctrl+o settings · ctrl+j newline · shift+tab mode ",
-            " enter send · ^j newline · ⇧tab mode ",
-            " enter send · ^j newline ",
-            " enter send ",
+        vec![
+            format!(" enter send · {options} options "),
+            format!(" ↵ send · {} options ", options.replace("ctrl+", "^")),
+            " enter send ".to_string(),
         ]
     };
     choices
-        .iter()
-        .copied()
-        .find(|hint| UnicodeWidthStr::width(*hint) <= available)
-        .unwrap_or("")
+        .into_iter()
+        .find(|hint| UnicodeWidthStr::width(hint.as_str()) <= available)
+        .unwrap_or_default()
 }
 
 pub(super) fn draft_view(draft: &str, position: usize, width: usize, caret: char) -> String {
@@ -512,19 +510,13 @@ fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
         }
         return join(left, right, width);
     }
-    if let Some(window) = model.snapshot.context_window
-        && let Some(last) = model.usage.last()
-        && window > 0
-    {
-        let used = last.total().min(window);
-        right.push(Span::styled(
-            format!(
-                "ctx {}% · ",
-                100 - u64::from(used) * 100 / u64::from(window)
-            ),
-            DIM,
-        ));
-    }
+    right.push(Span::styled(
+        format!(
+            "ctx {} · ",
+            context(model.usage.last(), model.snapshot.context_window)
+        ),
+        DIM,
+    ));
     let spark = sparkline(&model.usage);
     if !spark.is_empty() {
         right.push(Span::styled(format!("{spark} "), accent));

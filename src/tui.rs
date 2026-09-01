@@ -59,7 +59,14 @@ pub enum Msg {
         path: String,
         text: String,
     },
+    Resume(String),
     Bye,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Exit {
+    Code(i32),
+    Resume(String),
 }
 
 enum Cmd {
@@ -224,7 +231,7 @@ pub fn run(
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
     gui: bool,
-) -> Result<i32> {
+) -> Result<Exit> {
     if gui {
         #[cfg(feature = "gui")]
         return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx);
@@ -242,7 +249,12 @@ fn short_session(id: &str) -> String {
 }
 
 fn fmt_tokens(tokens: u64) -> String {
-    if tokens >= 1000 {
+    if tokens >= 1_000_000 {
+        format!(
+            "{:.1}m",
+            f64::from(u32::try_from(tokens).unwrap_or(u32::MAX)) / 1_000_000.0
+        )
+    } else if tokens >= 1000 {
         format!(
             "{:.1}k",
             f64::from(u32::try_from(tokens).unwrap_or(u32::MAX)) / 1000.0
@@ -250,6 +262,19 @@ fn fmt_tokens(tokens: u64) -> String {
     } else {
         tokens.to_string()
     }
+}
+
+fn context(round: Option<&Round>, window: Option<u32>) -> String {
+    let Some(window) = window.filter(|window| *window > 0) else {
+        return "not set".to_string();
+    };
+    let used = round.map_or(0, Round::total).min(window);
+    format!(
+        "{} / {} · {}% used",
+        fmt_tokens(u64::from(used)),
+        fmt_tokens(u64::from(window)),
+        u64::from(used) * 100 / u64::from(window),
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -301,8 +326,9 @@ fn help_text() -> String {
     format!(
         "{commands}\n\
          @path attach text or an image\n\
-         keys: enter send/steer · tab complete/queue · ctrl+j newline · shift+tab mode\n\
-         pgup/pgdn or wheel scroll · ctrl+o settings · ctrl+g editor\n\
+         keys: enter send/steer · tab complete/queue · shift+tab mode\n\
+         options: ctrl+o by default · hotkeys are editable there\n\
+         pgup/pgdn or wheel scroll\n\
          panes: ctrl+e files · ctrl+l ledger · ctrl+x diff · /pane worktrees · ctrl+p hide/show · ctrl+→ focus pane · ctrl+← composer\n\
          in a pane: ↑↓ move · ←→ collapse/expand or hunks/list · enter attach @path or view hunks · right-click menu · esc back\n\
          view: → on a file or /view PATH · ↑↓ scroll · o open in $EDITOR · esc back\n\

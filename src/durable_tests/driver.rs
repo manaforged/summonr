@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use crate::child::{ChildRecord, ChildState};
 use crate::durable::driver::{DriverError, Exposure, SessionDriver, active_at, work_at};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line, Usage};
@@ -100,6 +101,150 @@ fn open_round_and_resume_continues() {
     );
     assert_eq!(replay.spent_tokens, 30);
     assert_eq!(replay.elapsed_millis, 200);
+}
+
+#[test]
+fn fresh_child_has_lineage_without_parent_history_or_work() {
+    let (home, workspace) = home();
+    let parent = open(home.path(), &workspace);
+    let child = SessionDriver::open_child(
+        home.path(),
+        &workspace,
+        "child-model",
+        "child-system",
+        parent.id(),
+    )
+    .expect("open child");
+
+    assert!(child.replay().history.is_empty());
+    assert_eq!(child.depth(), 1);
+    assert!(matches!(child.work_progress(), Err(DriverError::NoWork)));
+    let header = log::header(child.path()).expect("child header");
+    assert!(matches!(
+        header,
+        Line::Session {
+            parent: Some(id),
+            ..
+        } if id == parent.id()
+    ));
+}
+
+#[test]
+fn resume_interrupts_a_running_child_record() {
+    let (home, workspace) = home();
+    let mut parent = open(home.path(), &workspace);
+    let path = parent.path().to_path_buf();
+    let child = SessionDriver::open_child(
+        home.path(),
+        &workspace,
+        "child-model",
+        "child-system",
+        parent.id(),
+    )
+    .expect("open child");
+    parent
+        .start_child(ChildRecord {
+            version: 1,
+            id: child.id(),
+            parent: parent.id(),
+            assignment: "inspect".to_string(),
+            model: "child-model".to_string(),
+            workspace: workspace.canonicalize().expect("canonical workspace"),
+            depth: 1,
+            access: crate::child::Access::Implement,
+            state: ChildState::Running,
+        })
+        .expect("record child");
+    drop(parent);
+
+    let resumed = resume(home.path(), &path, &workspace);
+    assert!(matches!(
+        resumed.children().as_slice(),
+        [ChildRecord {
+            state: ChildState::Interrupted(_),
+            ..
+        }]
+    ));
+}
+
+#[test]
+fn parent_runs_at_most_four_children() {
+    let (home, workspace) = home();
+    let mut parent = open(home.path(), &workspace);
+    let workspace = workspace.canonicalize().expect("canonical workspace");
+    let mut records = Vec::new();
+    for index in 0..crate::child::MAX_PARALLEL {
+        let record = ChildRecord {
+            version: 1,
+            id: SessionId::from_u128(index as u128 + 1),
+            parent: parent.id(),
+            assignment: format!("inspect {index}"),
+            model: "child-model".to_string(),
+            workspace: workspace.clone(),
+            depth: 1,
+            access: crate::child::Access::Research,
+            state: ChildState::Running,
+        };
+        parent.start_child(record.clone()).expect("start child");
+        records.push(record);
+    }
+    let overflow = ChildRecord {
+        version: 1,
+        id: SessionId::from_u128(u128::MAX),
+        parent: parent.id(),
+        assignment: "overflow".to_string(),
+        model: "child-model".to_string(),
+        workspace,
+        depth: 1,
+        access: crate::child::Access::Research,
+        state: ChildState::Running,
+    };
+
+    assert!(matches!(
+        parent.start_child(overflow),
+        Err(DriverError::Busy)
+    ));
+    for record in records {
+        parent
+            .finish_child(record.interrupt("done"))
+            .expect("finish child");
+    }
+}
+
+#[test]
+fn parent_child_count_is_bounded() {
+    let (home, workspace) = home();
+    let mut parent = open(home.path(), &workspace);
+    for index in 0..crate::child::MAX_PER_PARENT {
+        let record = ChildRecord {
+            version: 1,
+            id: SessionId::from_u128(index as u128 + 1),
+            parent: parent.id(),
+            assignment: "inspect".to_string(),
+            model: "child-model".to_string(),
+            workspace: workspace.canonicalize().expect("canonical workspace"),
+            depth: 1,
+            access: crate::child::Access::Implement,
+            state: ChildState::Running,
+        };
+        parent.start_child(record.clone()).expect("start child");
+        parent
+            .finish_child(record.interrupt("done"))
+            .expect("finish child");
+    }
+    let overflow = ChildRecord {
+        version: 1,
+        id: SessionId::from_u128(u128::MAX),
+        parent: parent.id(),
+        assignment: "overflow".to_string(),
+        model: "child-model".to_string(),
+        workspace: workspace.canonicalize().expect("canonical workspace"),
+        depth: 1,
+        access: crate::child::Access::Implement,
+        state: ChildState::Running,
+    };
+
+    assert!(parent.start_child(overflow).is_err());
 }
 
 #[test]

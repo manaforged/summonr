@@ -1,7 +1,10 @@
 use std::path::Path;
 use std::process::Command;
 
-use super::{add, discard, finish, list, primary, status, subject, sweep};
+use super::{
+    add, add_children, discard, finish, list, primary, reconcile_children, remove_child, status,
+    subject, sweep,
+};
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
@@ -36,6 +39,106 @@ fn add_creates_a_linked_checkout_on_a_summon_branch() {
         dir.path().canonicalize().expect("canonical")
     );
     assert_eq!(list(dir.path()).expect("list").len(), 1);
+}
+
+#[test]
+fn child_worktrees_reconcile_disjoint_edits_without_commits() {
+    let dir = repo();
+    let trees = add_children(dir.path(), 3).expect("child worktrees");
+    let container = trees[0].path.parent().expect("container").to_path_buf();
+    std::fs::write(trees[0].path.join("one.txt"), "one\n").expect("one");
+    std::fs::write(trees[1].path.join("two.txt"), "two\n").expect("two");
+    std::fs::write(trees[2].path.join("three.bin"), [0_u8, 159, 255]).expect("three");
+    let changes = vec![
+        (trees[0].clone(), vec!["one.txt".to_string()]),
+        (trees[1].clone(), vec!["two.txt".to_string()]),
+        (trees[2].clone(), vec!["three.bin".to_string()]),
+    ];
+
+    let warnings = reconcile_children(dir.path(), &changes).expect("reconcile");
+
+    assert!(warnings.is_empty());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("one.txt")).unwrap(),
+        "one\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("two.txt")).unwrap(),
+        "two\n"
+    );
+    assert_eq!(
+        std::fs::read(dir.path().join("three.bin")).unwrap(),
+        [0, 159, 255]
+    );
+    assert_eq!(
+        Command::new("git")
+            .args(["-C"])
+            .arg(dir.path())
+            .args(["rev-list", "--count", "HEAD"])
+            .output()
+            .expect("rev-list")
+            .stdout,
+        b"1\n"
+    );
+    assert!(!container.exists(), "empty child container is removed");
+}
+
+#[test]
+fn child_worktree_conflict_keeps_trees_and_parent_unchanged() {
+    let dir = repo();
+    let trees = add_children(dir.path(), 2).expect("child worktrees");
+    std::fs::write(trees[0].path.join("README"), "first\n").expect("first");
+    std::fs::write(trees[1].path.join("README"), "second\n").expect("second");
+    let changes = vec![
+        (trees[0].clone(), vec!["README".to_string()]),
+        (trees[1].clone(), vec!["README".to_string()]),
+    ];
+
+    let error = reconcile_children(dir.path(), &changes).expect_err("conflict");
+
+    assert!(error.to_string().contains("conflict"), "{error}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("README")).unwrap(),
+        "root\n"
+    );
+    assert!(trees.iter().all(|tree| tree.path.exists()));
+    for tree in &trees {
+        remove_child(tree).expect("remove retained child");
+    }
+}
+
+#[test]
+fn parent_edit_while_children_run_keeps_the_child_worktree() {
+    let dir = repo();
+    let trees = add_children(dir.path(), 1).expect("child worktree");
+    std::fs::write(trees[0].path.join("child.txt"), "child\n").expect("child edit");
+    std::fs::write(dir.path().join("README"), "parent edit\n").expect("parent edit");
+    let changes = vec![(trees[0].clone(), vec!["child.txt".to_string()])];
+
+    let error = reconcile_children(dir.path(), &changes).expect_err("parent drift");
+
+    assert!(
+        error.to_string().contains("parent tracked files changed"),
+        "{error}"
+    );
+    assert!(!dir.path().join("child.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("README")).unwrap(),
+        "parent edit\n"
+    );
+    assert!(trees[0].path.exists());
+    remove_child(&trees[0]).expect("remove retained child");
+}
+
+#[test]
+fn child_worktrees_refuse_tracked_parent_edits() {
+    let dir = repo();
+    std::fs::write(dir.path().join("README"), "dirty\n").expect("dirty");
+
+    let error = add_children(dir.path(), 2).expect_err("dirty parent");
+
+    assert!(error.to_string().contains("clean tracked files"), "{error}");
+    assert!(list(dir.path()).expect("list").is_empty());
 }
 
 #[test]

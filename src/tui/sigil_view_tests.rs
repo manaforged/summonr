@@ -347,6 +347,52 @@ fn pane_hotkeys_and_the_context_menu_drive_the_files_pane() {
 }
 
 #[test]
+fn pane_header_close_button_hides_the_side_pane() {
+    sigil::reactive::Runtime::scope("mage-pane-close-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.prefs.splash = false;
+        let app = App::new(start, PathBuf::from("/tmp/mage-close-test"), cmd);
+        app.resize(120, 40);
+        app.toggle_pane(super::pane::Pane::Diff);
+
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(120, 40);
+        let text = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .text();
+        assert!(
+            text.contains('×'),
+            "pane header has a close control:\n{text}"
+        );
+
+        let (col, row) = app
+            .hits
+            .find(&super::hit::Target::Close)
+            .unwrap_or_else(|| panic!("close control is clickable"));
+        app.press(col, row);
+        assert_eq!(app.layout.peek().secondary, None);
+    });
+}
+
+#[test]
+fn resume_request_closes_the_ui_with_the_selected_session() {
+    sigil::reactive::Runtime::scope("mage-resume-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-resume-test"), cmd);
+
+        apply(&app, Msg::Resume("18d1584caf02c607".to_string()));
+
+        assert_eq!(app.resume.borrow().as_deref(), Some("18d1584caf02c607"));
+        assert!(app.quit.peek());
+    });
+}
+
+#[test]
 fn the_diff_pane_lists_changes_and_shows_hunks() {
     use crate::diff::{Diff, Stat};
     sigil::reactive::Runtime::scope("mage-diff-pane-test", || {

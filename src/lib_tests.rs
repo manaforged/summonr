@@ -120,13 +120,22 @@ fn test_workspace() -> Result<PathBuf> {
 }
 
 fn assert_work_receipt(turn: &Turn, provider_text: &str) {
-    assert!(turn.text.starts_with(provider_text), "{}", turn.text);
-    assert!(turn.text.contains("Turn receipt"), "{}", turn.text);
+    assert_eq!(turn.text, provider_text);
     assert!(
         turn.events.iter().any(
-            |event| matches!(event, Event::Receipt { text } if text.starts_with("Turn receipt"))
+            |event| matches!(event, Event::Receipt { receipt } if receipt.text.starts_with("Turn receipt"))
         )
     );
+}
+
+fn turn_receipt(turn: &Turn) -> &crate::Receipt {
+    turn.events
+        .iter()
+        .find_map(|event| match event {
+            Event::Receipt { receipt } => Some(receipt),
+            _ => None,
+        })
+        .expect("turn receipt")
 }
 
 fn sandbox_for_test(workspace: &std::path::Path) -> Result<Option<crate::tools::sandbox::Sandbox>> {

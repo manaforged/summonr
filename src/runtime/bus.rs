@@ -10,6 +10,9 @@ impl<P: Provider> Loop<P> {
         if self.bus.is_some() {
             definitions.extend(crate::bus::definitions());
         }
+        if self.task_available() {
+            definitions.push(super::child::definition());
+        }
         definitions
     }
 

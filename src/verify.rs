@@ -1,15 +1,34 @@
 use std::path::Path;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
 use crate::tools::ToolOutput;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Outcome {
     pub command: String,
     pub passed: bool,
     pub output: String,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Receipt {
+    pub changes: Vec<String>,
+    pub checks: Vec<Outcome>,
+    pub text: String,
+}
+
+impl Receipt {
+    #[must_use]
+    pub(crate) fn new(changes: Vec<String>, checks: Vec<Outcome>) -> Self {
+        let text = summary(&changes, &checks);
+        Self {
+            changes,
+            checks,
+            text,
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -64,15 +83,15 @@ pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Er
 }
 
 #[must_use]
-pub(crate) fn receipt(model: &str, changes: &[String], checks: &[Outcome]) -> String {
-    let failed = checks.iter().find(|check| !check.passed);
+pub(crate) fn context(model: &str, receipt: &Receipt) -> String {
+    let failed = receipt.checks.iter().any(|check| !check.passed);
     let mut text = String::new();
-    if failed.is_some() {
+    if failed {
         text.push_str("Verification failed.\n\n");
     }
     text.push_str(model.trim());
     text.push_str("\n\n");
-    text.push_str(&summary(changes, checks));
+    text.push_str(&receipt.text);
     text
 }
 

@@ -28,9 +28,14 @@ fn headless_frame_is_painted_by_sigil() {
             "transcript missing:\n{frame}"
         );
         assert!(
-            frame.contains("enter send"),
+            frame.contains("enter send · ctrl+o options"),
             "Sigil composer missing:\n{frame}"
         );
+        assert!(
+            !frame.contains("ctrl+j newline"),
+            "footer is noisy:\n{frame}"
+        );
+        assert!(!frame.contains("ctrl+e files"), "footer is noisy:\n{frame}");
     });
 }
 

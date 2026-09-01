@@ -30,13 +30,13 @@ fn autocomplete_and_settings_keep_the_overlays() {
             .frame(&mut host, &mut router, [], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
             .clone();
-        assert!(settings.text().contains("⚙ settings"));
+        assert!(settings.text().contains("⚙ options"));
         assert!(settings.text().contains("› mode"));
         assert!(settings.text().contains("interface"));
         assert!(
             settings
                 .text()
-                .contains("tab/↑↓ select · ←→ change · enter open · esc close")
+                .contains("↑↓ select · ←→ change · enter open · esc close")
         );
         assert!(has_color(
             &settings,
@@ -77,6 +77,124 @@ fn autocomplete_and_settings_keep_the_overlays() {
             .frame(&mut host, &mut router, [typed], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         assert_eq!(app.draft.peek(), "/", "settings changed the hidden draft");
+    });
+}
+
+#[test]
+fn options_show_and_rebind_hotkeys() {
+    sigil::reactive::Runtime::scope("mage-hotkey-options-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 32);
+        app.refresh();
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 32);
+        screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        router.focus_next(host.cx());
+        let ctrl = |key| {
+            sigil_tui::map_key(&TerminalKeyEvent::new(
+                KeyCode::Char(key),
+                KeyModifiers::CONTROL,
+            ))
+            .unwrap_or_else(|| panic!("ctrl+{key} did not map"))
+        };
+
+        screen
+            .frame(&mut host, &mut router, [ctrl('o')], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(app.settings_open.peek());
+        app.settings_sel.set(12);
+        let options = screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        assert!(options.text().contains("› hotkeys"), "{}", options.text());
+
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Enter)],
+                (100, 32),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(app.hotkeys_open.peek());
+        let hotkeys = screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        if std::env::var_os("MAGE_DUMP_FRAME").is_some() {
+            println!("hotkeys 100x32:\n{}", hotkeys.text());
+        }
+        assert!(hotkeys.text().contains("› options"), "{}", hotkeys.text());
+        assert!(hotkeys.text().contains("ctrl+o"), "{}", hotkeys.text());
+        assert!(hotkeys.text().contains("r reset"), "{}", hotkeys.text());
+
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Enter), ctrl('c')],
+                (100, 32),
+            )
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(app.hotkey_recording.peek());
+        assert_eq!(app.hotkey_note.peek(), "ctrl+c is reserved");
+        assert!(!app.quit.peek(), "reserved hotkey triggered ctrl+c");
+
+        screen
+            .frame(&mut host, &mut router, [ctrl('k')], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(!app.hotkey_recording.peek());
+        assert_eq!(
+            app.model
+                .borrow()
+                .prefs
+                .hotkeys
+                .label(crate::prefs::Hotkey::Options),
+            "ctrl+k"
+        );
+        let saved = std::fs::read_to_string(
+            app.prefs_path
+                .as_deref()
+                .unwrap_or_else(|| panic!("test has no preference path")),
+        )
+        .unwrap_or_else(|error| panic!("read saved hotkeys: {error}"));
+        assert!(saved.contains("options = \"ctrl+k\""), "{saved}");
+
+        screen
+            .frame(&mut host, &mut router, [ctrl('k')], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(!app.hotkeys_open.peek());
+        screen
+            .frame(&mut host, &mut router, [ctrl('k')], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(!app.settings_open.peek());
+        let rebound = screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        assert!(
+            rebound.text().contains("enter send · ctrl+k options"),
+            "{}",
+            rebound.text()
+        );
+        assert!(!rebound.text().contains("ctrl+o options"));
+        let loaded = crate::prefs::load_from(
+            app.prefs_path
+                .as_deref()
+                .unwrap_or_else(|| panic!("test has no preference path")),
+        )
+        .unwrap_or_else(|error| panic!("reload saved hotkeys: {error}"));
+        assert_eq!(
+            loaded.hotkeys.label(crate::prefs::Hotkey::Options),
+            "ctrl+k"
+        );
     });
 }
 

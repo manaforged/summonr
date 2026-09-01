@@ -7,6 +7,7 @@ use super::super::model::Entry;
 use super::super::pane::Pane;
 use super::{hairline, hit, icons, open, spacer};
 use crate::session;
+use crate::tui::{context, fmt_tokens};
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
     container()
@@ -35,6 +36,7 @@ fn title_bar(app: App) -> NodeBuilder {
         (model.diff.added(), model.diff.removed())
     };
     let badge_app = app.clone();
+    let options = app.clone();
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -50,6 +52,18 @@ fn title_bar(app: App) -> NodeBuilder {
         )
         .child(label(workspace).class(classes!("text-sm text-gray-11")))
         .child(spacer())
+        .child(
+            hit("Options".to_string(), false, move || {
+                options.toggle_options()
+            })
+            .layout(
+                LayoutStyle::flex_row()
+                    .fixed_size(28.0, 28.0)
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::Center),
+            )
+            .child(icons::options()),
+        )
         .child(
             hit("Run".to_string(), false, move || run.submit())
                 .layout(
@@ -296,11 +310,21 @@ fn composer(app: App) -> NodeBuilder {
 }
 
 fn status_strip(app: App) -> NodeBuilder {
-    let plan = app.model.borrow().snapshot.plan;
+    let (plan, context, tokens, cached) = {
+        let model = app.model.borrow();
+        let cached = (model.cached_tokens > 0 && model.prompt_tokens > 0)
+            .then(|| model.cached_tokens.saturating_mul(100) / model.prompt_tokens);
+        (
+            model.snapshot.plan,
+            context(model.usage.last(), model.snapshot.context_window),
+            model.prompt_tokens.saturating_add(model.completion_tokens),
+            cached,
+        )
+    };
     let branch = app.git_branch.clone().unwrap_or_default();
     let auto = app.clone();
     let planned = app.clone();
-    container()
+    let mut strip = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -331,9 +355,29 @@ fn status_strip(app: App) -> NodeBuilder {
                     }
                 })),
         )
+        .child(hairline())
+        .child(metric("context", context))
+        .child(hairline())
+        .child(metric("session", format!("{} tokens", fmt_tokens(tokens))));
+    if let Some(cached) = cached {
+        strip =
+            strip.child(label(format!("{cached}% cached")).class(classes!("text-xs text-gray-11")));
+    }
+    strip
         .child(spacer())
         .child(icons::branch())
         .child(label(branch).class(classes!("text-xs text-gray-11")))
+}
+
+fn metric(name: &'static str, value: String) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .align_items(AlignItems::Center)
+                .gap(4.0),
+        )
+        .child(label(name).class(classes!("text-xs text-gray-11")))
+        .child(label(value).class(classes!("text-xs font-mono text-gray-12")))
 }
 
 fn seg(title: &'static str, on: bool, act: impl Fn() + 'static) -> NodeBuilder {

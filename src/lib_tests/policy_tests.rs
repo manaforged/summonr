@@ -281,7 +281,12 @@ async fn a_turn_waits_for_its_background_job_before_verify() -> Result<()> {
         event,
         Event::Verify { command, passed: true } if command.starts_with("job ")
     )));
-    assert!(turn.text.contains("Changed: `done.txt`"), "{}", turn.text);
+    let receipt = turn_receipt(&turn);
+    assert!(
+        receipt.text.contains("Changed: `done.txt`"),
+        "{}",
+        receipt.text
+    );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -402,18 +407,15 @@ async fn a_background_job_that_already_failed_fails_the_turn() -> Result<()> {
     .with_verify(vec!["true".to_string()]);
     let turn = loop_.turn("build it").await?;
     assert!(
-        turn.verify.as_ref().is_some_and(|check| !check.passed),
+        turn.checks.iter().any(|check| !check.passed),
         "the failed job is the turn's verdict even though the declared check passed"
     );
     assert!(turn.events.iter().any(|event| matches!(
         event,
         Event::Verify { command, passed: false } if command.starts_with("job ")
     )));
-    assert!(
-        turn.text.starts_with("Verification failed"),
-        "{}",
-        turn.text
-    );
+    let receipt = turn_receipt(&turn);
+    assert!(receipt.text.contains("failed"), "{}", receipt.text);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -525,7 +527,7 @@ async fn a_turn_with_a_job_still_running_is_deferred_not_judged() -> Result<()> 
         "system",
     )?;
     let turn = loop_.turn("build it").await?;
-    assert!(turn.verify.is_none(), "no verdict was taken");
+    assert!(turn.checks.is_empty(), "no verdict was taken");
     assert!(
         turn.events.iter().any(|event| matches!(
             event,

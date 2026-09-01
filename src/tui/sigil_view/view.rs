@@ -24,6 +24,10 @@ pub(super) fn root(app: App) -> NodeBuilder {
             screen.viewport.get(),
             screen.scroll_y.get(),
             screen.settings_sel.get(),
+            screen.hotkeys_open.get(),
+            screen.hotkey_sel.get(),
+            screen.hotkey_recording.get(),
+            screen.hotkey_note.get(),
             screen.auth_open.get(),
             screen.auth_choices.get(),
             screen.auth_sel.get(),
@@ -59,6 +63,8 @@ pub(super) fn root(app: App) -> NodeBuilder {
             settings::model_picker_layer(screen.clone())
         } else if screen.workflow_open.get() {
             settings::workflow_layer(screen.clone())
+        } else if screen.hotkeys_open.get() {
+            settings::hotkeys_layer(screen.clone())
         } else if screen.settings_open.get() {
             settings::settings_layer(screen.clone())
         } else if screen.splash.get() {
@@ -77,12 +83,10 @@ pub(super) fn root(app: App) -> NodeBuilder {
 
 pub(super) fn shell(app: &App) -> NodeBuilder {
     let cancel = app.clone();
-    let settings = app.clone();
     let interrupt = app.clone();
     let eof = app.clone();
     let complete = app.clone();
     let enter = app.clone();
-    let newline = app.clone();
     let page_up = app.clone();
     let page_down = app.clone();
     let setting_up = app.clone();
@@ -94,34 +98,33 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
     let setting_decrease = app.clone();
     let seat_clear = app.clone();
     let seat_save = app.clone();
-    let editor = app.clone();
+    let hotkey_reset = app.clone();
     let scroll = app.clone();
     let split_left = app.clone();
     let focus_chat = app.clone();
     let focus_pane = app.clone();
-    let hot_files = app.clone();
-    let hot_ledger = app.clone();
-    let hot_diff = app.clone();
     let open_view = app.clone();
     let recent = app.clone();
     let edit = app.clone();
     let save = app.clone();
     let copy = app.clone();
-    let hot_side = app.clone();
     let home = app.clone();
     let end = app.clone();
     let left = app.clone();
     let right = app.clone();
     let split_right = app.clone();
-    container()
+    let shell = container()
         .role(Role::Main)
         .label("Summoner agent harness")
         .theme(Theme::dark())
         .layout(LayoutStyle::flex_column().fill_width().fill_height())
-        .class("w-full h-full bg-surface")
+        .class("w-full h-full bg-surface");
+    hotkey_shortcuts(shell, app)
         .key_capture(Key::Escape, move |event| {
             event.stop_propagation();
-            if cancel.edit_stop() {
+            if cancel.options_active() {
+                escape(&cancel);
+            } else if cancel.edit_stop() {
             } else if cancel.context.peek().is_some() {
                 cancel.context_close();
             } else if cancel.pane_back() {
@@ -130,22 +133,6 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             } else {
                 escape(&cancel);
             }
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("e")), move |event| {
-            event.stop_propagation();
-            hot_files.toggle_pane(super::pane::Pane::Files);
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("l")), move |event| {
-            event.stop_propagation();
-            hot_ledger.toggle_pane(super::pane::Pane::Ledger);
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("x")), move |event| {
-            event.stop_propagation();
-            hot_diff.toggle_pane(super::pane::Pane::Diff);
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("p")), move |event| {
-            event.stop_propagation();
-            hot_side.toggle_side();
         })
         .key_capture(LogicalKey::character("e"), move |event| {
             if edit.pane_active() == Some(super::pane::Pane::View) {
@@ -214,6 +201,8 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 enter.commit_model_edit();
             } else if enter.workflow_open.peek() {
                 enter.pick_workflow_seat();
+            } else if enter.hotkeys_open.peek() {
+                enter.edit_hotkey();
             } else if enter.settings_open.peek() {
                 enter.adjust_setting(1);
             } else {
@@ -250,46 +239,6 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 split_right.nudge_split(5);
             },
         )
-        .key_capture(Shortcut::ctrl(LogicalKey::character("j")), move |event| {
-            if !newline.settings_open.peek()
-                && !newline.auth_open.peek()
-                && !newline.workflow_open.peek()
-            {
-                event.stop_propagation();
-                newline.newline();
-            }
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("o")), move |event| {
-            event.stop_propagation();
-            if settings.auth_open.peek() {
-                settings.cancel_auth();
-                return;
-            }
-            if settings.editing_model.peek() {
-                settings.cancel_model_edit();
-                return;
-            }
-            if settings.workflow_open.peek() {
-                settings.workflow_open.set(false);
-                return;
-            }
-            let open = !settings.settings_open.peek();
-            if open {
-                settings.settings_sel.set(0);
-            } else {
-                settings.cancel_model_edit();
-            }
-            settings.settings_open.set(open);
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("g")), move |event| {
-            if !editor.settings_open.peek()
-                && !editor.auth_open.peek()
-                && !editor.workflow_open.peek()
-            {
-                event.stop_propagation();
-                editor.editor_requested.set(true);
-            }
-        })
         .key_capture(Shortcut::ctrl(LogicalKey::character("c")), move |event| {
             event.stop_propagation();
             interrupt.interrupt();
@@ -335,6 +284,9 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             } else if setting_up.workflow_open.peek() {
                 event.stop_propagation();
                 setting_up.move_workflow(-1);
+            } else if setting_up.hotkeys_open.peek() {
+                event.stop_propagation();
+                setting_up.move_hotkey(-1);
             } else if setting_up.settings_open.peek() {
                 event.stop_propagation();
                 setting_up.move_setting(-1);
@@ -359,6 +311,9 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             } else if setting_down.workflow_open.peek() {
                 event.stop_propagation();
                 setting_down.move_workflow(1);
+            } else if setting_down.hotkeys_open.peek() {
+                event.stop_propagation();
+                setting_down.move_hotkey(1);
             } else if setting_down.settings_open.peek() {
                 event.stop_propagation();
                 setting_down.move_setting(1);
@@ -375,6 +330,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
                 setting_left.cycle_workflow(-1);
             } else if setting_left.settings_open.peek()
+                && !setting_left.hotkeys_open.peek()
                 && !setting_left.workflow_open.peek()
                 && !setting_left.editing_model.peek()
                 && !setting_left.auth_open.peek()
@@ -391,6 +347,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
                 setting_right.cycle_workflow(1);
             } else if setting_right.settings_open.peek()
+                && !setting_right.hotkeys_open.peek()
                 && !setting_right.workflow_open.peek()
                 && !setting_right.editing_model.peek()
                 && !setting_right.auth_open.peek()
@@ -418,21 +375,36 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(LogicalKey::character(" "), move |event| {
-            if setting_space.settings_open.peek() && !setting_space.workflow_open.peek() {
+            if setting_space.settings_open.peek()
+                && !setting_space.hotkeys_open.peek()
+                && !setting_space.workflow_open.peek()
+            {
                 event.stop_propagation();
                 setting_space.adjust_setting(1);
             }
         })
         .key_capture(LogicalKey::character("+"), move |event| {
-            if setting_increase.settings_open.peek() && !setting_increase.workflow_open.peek() {
+            if setting_increase.settings_open.peek()
+                && !setting_increase.hotkeys_open.peek()
+                && !setting_increase.workflow_open.peek()
+            {
                 event.stop_propagation();
                 setting_increase.adjust_setting(1);
             }
         })
         .key_capture(LogicalKey::character("-"), move |event| {
-            if setting_decrease.settings_open.peek() && !setting_decrease.workflow_open.peek() {
+            if setting_decrease.settings_open.peek()
+                && !setting_decrease.hotkeys_open.peek()
+                && !setting_decrease.workflow_open.peek()
+            {
                 event.stop_propagation();
                 setting_decrease.adjust_setting(-1);
+            }
+        })
+        .key_capture(LogicalKey::character("r"), move |event| {
+            if hotkey_reset.hotkeys_open.peek() && !hotkey_reset.hotkey_recording.peek() {
+                event.stop_propagation();
+                hotkey_reset.reset_hotkeys();
             }
         })
         .on_scroll(move |event| {
@@ -472,6 +444,8 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                         complete.move_model(1);
                     } else if complete.workflow_open.peek() {
                         complete.move_workflow(1);
+                    } else if complete.hotkeys_open.peek() {
+                        complete.move_hotkey(1);
                     } else if complete.settings_open.peek() {
                         complete.move_setting(1);
                     } else if complete.model.borrow().busy_since.is_some() {
@@ -492,6 +466,8 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                         mode.move_model(-1);
                     } else if mode.workflow_open.peek() {
                         mode.move_workflow(-1);
+                    } else if mode.hotkeys_open.peek() {
+                        mode.move_hotkey(-1);
                     } else if mode.settings_open.peek() {
                         mode.move_setting(-1);
                     } else {
@@ -501,7 +477,31 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
         )
 }
 
+fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
+    for key in 'a'..='z' {
+        let route = app.clone();
+        node = node.key_capture(
+            Shortcut::ctrl(LogicalKey::character(key.to_string())),
+            move |event| {
+                if route.route_hotkey(key) {
+                    event.stop_propagation();
+                }
+            },
+        );
+    }
+    node
+}
+
 fn escape(app: &App) {
+    if app.hotkey_recording.peek() {
+        app.hotkey_recording.set(false);
+        app.hotkey_note.set(String::new());
+        return;
+    }
+    if app.hotkeys_open.peek() {
+        app.close_hotkeys();
+        return;
+    }
     if app.auth_open.peek() {
         app.cancel_auth();
         return;

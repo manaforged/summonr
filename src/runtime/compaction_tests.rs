@@ -35,6 +35,12 @@ fn estimate_uses_observed_tokens_plus_new_text() {
 }
 
 #[test]
+fn context_pressure_starts_at_80_percent() {
+    assert!(!under_pressure(799, 1_000));
+    assert!(under_pressure(800, 1_000));
+}
+
+#[test]
 fn overflow_recovery_preserves_the_oldest_tool_prefix() {
     let mut messages = vec![
         Message::system("system"),

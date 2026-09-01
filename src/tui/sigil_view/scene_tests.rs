@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::Round;
 
 #[test]
 fn splash_is_one_compact_terminal_composition() {
@@ -330,6 +331,44 @@ fn narrow_busy_status_keeps_time_ahead_of_tool_detail() {
         assert!(
             status.contains("working · r3 · 0s"),
             "core status missing:\n{frame}"
+        );
+    });
+}
+
+#[test]
+fn idle_status_shows_context_limit_and_percentage_used() {
+    sigil::reactive::Runtime::scope("mage-context-status-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        {
+            let mut model = app.model.borrow_mut();
+            model.snapshot.context_window = Some(262_144);
+            model.usage.push(Round {
+                prompt: 64_000,
+                completion: 1_536,
+                reasoning: 8_000,
+                cached: 32_000,
+                prefix_hash: String::new(),
+                cost: None,
+            });
+            model.prompt_tokens = 64_000;
+            model.completion_tokens = 1_536;
+            model.cached_tokens = 32_000;
+        }
+        app.resize(100, 32);
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let status = frame.lines().last().unwrap_or_default();
+
+        assert!(
+            status.contains("ctx 65.5k / 262.1k · 25% used"),
+            "context meter missing:\n{frame}"
+        );
+        assert!(
+            !status.contains("75%"),
+            "remaining capacity shown:\n{frame}"
         );
     });
 }

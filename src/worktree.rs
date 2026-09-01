@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use std::io::Write;
 
 use crate::error::{Error, Result};
 
@@ -98,12 +100,6 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     if let Some(existing) = locate(&primary, cwd)? {
         return Ok(existing);
     }
-    let id = new_id();
-    let branch = format!("summon/{id}");
-    let path = worktree_dir(&primary, &id)?;
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
     let base = git(&primary, &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if base == "HEAD" {
         return Err(Error::Config(format!(
@@ -111,8 +107,53 @@ pub fn add(cwd: &Path) -> Result<Tree> {
             primary.display()
         )));
     }
+    add_from(&primary, &base, "HEAD")
+}
+
+pub(crate) fn add_children(cwd: &Path, count: usize) -> Result<Vec<Tree>> {
+    if count == 0 {
+        return Ok(Vec::new());
+    }
+    let primary = primary(cwd)?;
+    let base = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    if base == "HEAD" {
+        return Err(Error::Config(format!(
+            "{} is on a detached HEAD; check out a branch before delegating writable tasks",
+            cwd.display()
+        )));
+    }
+    let dirty = git(cwd, &["status", "--porcelain", "--untracked-files=no"])?;
+    if !dirty.is_empty() {
+        return Err(Error::Config(
+            "writable child worktrees require clean tracked files; finish or commit the current edits first"
+                .to_string(),
+        ));
+    }
+    let start = git(cwd, &["rev-parse", "HEAD"])?;
+    let mut trees = Vec::with_capacity(count);
+    for _ in 0..count {
+        match add_from(&primary, &base, &start) {
+            Ok(tree) => trees.push(tree),
+            Err(error) => {
+                for tree in &trees {
+                    drop(remove_child(tree));
+                }
+                return Err(error);
+            }
+        }
+    }
+    Ok(trees)
+}
+
+fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
+    let id = new_id();
+    let branch = format!("summon/{id}");
+    let path = worktree_dir(primary, &id)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
     git(
-        &primary,
+        primary,
         &[
             "worktree",
             "add",
@@ -121,22 +162,194 @@ pub fn add(cwd: &Path) -> Result<Tree> {
             path.to_str().ok_or_else(|| {
                 Error::Config(format!("worktree path is not utf-8: {}", path.display()))
             })?,
-            "HEAD",
+            start,
         ],
     )?;
-    let record = base_record(&primary, &id)?;
-    if let Some(parent) = record.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&record, format!("{base}\n"))?;
     let path = path.canonicalize().unwrap_or(path);
-    let primary = primary.canonicalize().unwrap_or(primary);
-    Ok(Tree {
+    let primary = primary
+        .canonicalize()
+        .unwrap_or_else(|_| primary.to_path_buf());
+    let tree = Tree {
         primary,
         path,
         branch,
-        base,
-    })
+        base: base.to_string(),
+    };
+    let recorded = (|| {
+        let record = base_record(&tree.primary, &id)?;
+        if let Some(parent) = record.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&record, format!("{base}\n"))?;
+        Ok(())
+    })();
+    if let Err(error) = recorded {
+        drop(remove_child(&tree));
+        return Err(error);
+    }
+    Ok(tree)
+}
+
+pub(crate) fn same_repository(left: &Path, right: &Path) -> bool {
+    match (primary(left), primary(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+pub(crate) fn reconcile_children(
+    target: &Path,
+    children: &[(Tree, Vec<String>)],
+) -> Result<Vec<String>> {
+    if children.is_empty() {
+        return Ok(Vec::new());
+    }
+    let start = git(target, &["rev-parse", "HEAD"])?;
+    let dirty = git(target, &["status", "--porcelain", "--untracked-files=no"])?;
+    if !dirty.is_empty() {
+        return Err(Error::Config(
+            "the parent tracked files changed while writable children ran; their worktrees were kept"
+                .to_string(),
+        ));
+    }
+    for (tree, _) in children {
+        let head = git(&tree.path, &["rev-parse", "HEAD"])?;
+        if head != start {
+            return Err(Error::Config(format!(
+                "{} moved from the parent base; its worktree was kept",
+                tree.branch
+            )));
+        }
+    }
+
+    let patches = children
+        .iter()
+        .map(|(tree, paths)| patch(&tree.path, paths))
+        .collect::<Result<Vec<_>>>()?;
+    let integration = &children[0].0.path;
+    for bytes in patches.iter().skip(1).filter(|bytes| !bytes.is_empty()) {
+        apply(integration, bytes).map_err(|error| {
+            Error::Config(format!(
+                "writable child changes conflict in {}: {error}",
+                integration.display()
+            ))
+        })?;
+    }
+    let mut paths = children
+        .iter()
+        .flat_map(|(_, paths)| paths.iter().cloned())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    let combined = patch(integration, &paths)?;
+
+    let current = git(target, &["rev-parse", "HEAD"])?;
+    let dirty = git(target, &["status", "--porcelain", "--untracked-files=no"])?;
+    if current != start || !dirty.is_empty() {
+        return Err(Error::Config(
+            "the parent tracked files changed before reconciliation; child worktrees were kept"
+                .to_string(),
+        ));
+    }
+    if !combined.is_empty() {
+        apply(target, &combined).map_err(|error| {
+            Error::Config(format!(
+                "cannot apply writable child changes to {}: {error}",
+                target.display()
+            ))
+        })?;
+    }
+
+    let mut warnings = Vec::new();
+    for (tree, _) in children {
+        if let Err(error) = remove_child(tree) {
+            warnings.push(format!(
+                "applied changes, but could not remove {}: {error}",
+                tree.path.display()
+            ));
+        }
+    }
+    Ok(warnings)
+}
+
+fn patch(tree: &Path, paths: &[String]) -> Result<Vec<u8>> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
+    }
+    for path in paths {
+        if std::fs::metadata(tree.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX) {
+            return Err(Error::Config(format!(
+                "{path} exceeds {COMMIT_MAX} bytes; the child worktree was kept"
+            )));
+        }
+    }
+    let mut list = vec![
+        "--literal-pathspecs",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--",
+    ];
+    list.extend(paths.iter().map(String::as_str));
+    let untracked = git(tree, &list)?;
+    if !untracked.is_empty() {
+        let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
+        mark.extend(untracked.lines());
+        git(tree, &mark)?;
+    }
+    let mut diff = vec![
+        "--literal-pathspecs",
+        "diff",
+        "--binary",
+        "--no-ext-diff",
+        "HEAD",
+        "--",
+    ];
+    diff.extend(paths.iter().map(String::as_str));
+    git_bytes(tree, &diff)
+}
+
+fn apply(tree: &Path, patch: &[u8]) -> Result<()> {
+    git_input(
+        tree,
+        &["apply", "--check", "--binary", "--whitespace=nowarn", "-"],
+        patch,
+    )?;
+    git_input(
+        tree,
+        &["apply", "--binary", "--whitespace=nowarn", "-"],
+        patch,
+    )?;
+    Ok(())
+}
+
+pub(crate) fn remove_child(tree: &Tree) -> Result<()> {
+    let head = git(&tree.primary, &["rev-parse", &tree.branch])?;
+    let path = tree.path.to_str().ok_or_else(|| {
+        Error::Config(format!(
+            "worktree path is not utf-8: {}",
+            tree.path.display()
+        ))
+    })?;
+    git(&tree.primary, &["worktree", "remove", "--force", path])?;
+    git(
+        &tree.primary,
+        &[
+            "update-ref",
+            "-d",
+            &format!("refs/heads/{}", tree.branch),
+            &head,
+        ],
+    )?;
+    if let Some(id) = tree.branch.strip_prefix("summon/")
+        && let Ok(record) = base_record(&tree.primary, id)
+    {
+        drop(std::fs::remove_file(record));
+    }
+    if let Some(parent) = tree.path.parent() {
+        drop(std::fs::remove_dir(parent));
+    }
+    Ok(())
 }
 
 pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
@@ -339,6 +552,11 @@ fn new_id() -> String {
 }
 
 fn git(repo: &Path, args: &[&str]) -> Result<String> {
+    let output = git_bytes(repo, args)?;
+    Ok(String::from_utf8_lossy(&output).trim().to_string())
+}
+
+fn git_bytes(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
         .args(["-C"])
         .arg(repo)
@@ -353,7 +571,34 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
             err.to_string()
         }));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(output.stdout)
+}
+
+fn git_input(repo: &Path, args: &[&str], input: &[u8]) -> Result<()> {
+    let mut child = Command::new("git")
+        .args(["-C"])
+        .arg(repo)
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| Error::Config("git command has no stdin".to_string()))?
+        .write_all(input)?;
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        let err = err.trim();
+        return Err(Error::Config(if err.is_empty() {
+            format!("git {} failed", args.first().unwrap_or(&"command"))
+        } else {
+            err.to_string()
+        }));
+    }
+    Ok(())
 }
 
 #[cfg(test)]

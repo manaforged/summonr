@@ -24,6 +24,7 @@ pub(super) fn force_compact(messages: &mut [Message]) -> bool {
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
+const COMPACT_PERCENT: usize = 80;
 const RESERVE_TOKENS: u32 = 16_384;
 const DEFAULT_COMPACT_CHARS: usize = 400_000;
 
@@ -38,6 +39,10 @@ pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
         }
         _ => chars.div_ceil(CHARS_PER_TOKEN),
     }
+}
+
+fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
+    estimated_tokens.saturating_mul(100) >= (window as usize).saturating_mul(COMPACT_PERCENT)
 }
 
 impl<P: Provider> Loop<P> {
@@ -115,7 +120,7 @@ impl<P: Provider> Loop<P> {
         let pressure = self
             .context_window
             .map_or(chars >= DEFAULT_COMPACT_CHARS, |window| {
-                estimated_tokens >= window.saturating_sub(RESERVE_TOKENS) as usize
+                under_pressure(estimated_tokens, window)
             });
         if !pressure || messages.len() < 8 {
             return Ok(());

@@ -9,11 +9,13 @@ use super::canvas::cell as metrics;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Target {
     Setting(usize),
+    Hotkey(usize),
     Model(usize),
     Auth(usize),
     Role(usize),
     Saved(String),
     File(usize),
+    Close,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

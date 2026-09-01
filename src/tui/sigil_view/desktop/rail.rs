@@ -3,7 +3,6 @@
 use sigil::prelude::*;
 
 use super::super::app::App;
-use super::super::model::Entry;
 use super::super::pane::Pane;
 use super::{hit, icons, open, spacer};
 use crate::session;
@@ -92,14 +91,12 @@ fn sessions(app: &App) -> NodeBuilder {
             .unwrap_or_else(|| info.preview.chars().take(36).collect());
         let live = info.id == current;
         let open = app.clone();
-        let short = session::short(&info.id).to_string();
+        let id = info.id.clone();
         list = list.child(
             hit(title.clone(), live, move || {
-                open.copy.set(Some(short.clone()));
-                open.model.borrow_mut().entries.push(Entry::System(format!(
-                    "summon --session {short} opens this session"
-                )));
-                open.refresh();
+                if !live {
+                    open.request_resume(id.clone());
+                }
             })
             .child(status_dot(live))
             .child(

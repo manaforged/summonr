@@ -175,6 +175,7 @@ fn body_table_becomes_request_json() {
 [endpoint.impl]
 base_url = "http://127.0.0.1:8081/v1"
 model = "qwen3.8-27b-ud"
+idle_timeout_secs = 600
 [endpoint.impl.body]
 temperature = 0.6
 top_k = 20
@@ -195,6 +196,7 @@ chat_template_kwargs = { reasoning_effort = "low" }
             "chat_template_kwargs": {"reasoning_effort": "low"}
         }))
     );
+    assert_eq!(endpoint.idle_timeout_secs, Some(600));
     assert_eq!(builtin("qwen").and_then(|endpoint| endpoint.body), None);
 }
 

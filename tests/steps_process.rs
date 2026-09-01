@@ -325,7 +325,13 @@ fn serve(
         stream
             .set_read_timeout(Some(WAIT))
             .map_err(|error| format!("set stream timeout: {error}"))?;
-        let body = read_http_body(&mut stream).map_err(|error| format!("read request: {error}"))?;
+        let Some(body) =
+            read_http_body(&mut stream).map_err(|error| format!("read request: {error}"))?
+        else {
+            write_context_response(&mut stream)
+                .map_err(|error| format!("context response: {error}"))?;
+            continue;
+        };
         let prompt = last_user_prompt(&body).map_err(|error| format!("decode request: {error}"))?;
         requests.push(prompt.clone());
         match requests.len() {
@@ -356,13 +362,13 @@ fn serve(
     Ok(requests)
 }
 
-fn read_http_body(stream: &mut TcpStream) -> io::Result<String> {
+fn read_http_body(stream: &mut TcpStream) -> io::Result<Option<String>> {
     let mut request = Vec::new();
     let mut buffer = [0_u8; 4096];
     let header_end = loop {
         let count = stream.read(&mut buffer)?;
         if count == 0 {
-            return Ok(String::from_utf8_lossy(&request).into_owned());
+            return Ok(Some(String::from_utf8_lossy(&request).into_owned()));
         }
         request.extend_from_slice(&buffer[..count]);
         if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
@@ -370,6 +376,9 @@ fn read_http_body(stream: &mut TcpStream) -> io::Result<String> {
         }
     };
     let headers = String::from_utf8_lossy(&request[..header_end]);
+    if headers.starts_with("GET /props?model=") {
+        return Ok(None);
+    }
     let length = headers
         .lines()
         .find_map(|line| {
@@ -394,7 +403,19 @@ fn read_http_body(stream: &mut TcpStream) -> io::Result<String> {
             "request body ended before content length",
         ));
     }
-    Ok(String::from_utf8_lossy(&request[header_end..header_end + length]).into_owned())
+    Ok(Some(
+        String::from_utf8_lossy(&request[header_end..header_end + length]).into_owned(),
+    ))
+}
+
+fn write_context_response(stream: &mut TcpStream) -> io::Result<()> {
+    let body = r#"{"default_generation_settings":{"n_ctx":32768}}"#;
+    write!(
+        stream,
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        body.len(),
+        body
+    )
 }
 
 fn last_user_prompt(body: &str) -> Result<String, serde_json::Error> {

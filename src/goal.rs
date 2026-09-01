@@ -1,6 +1,7 @@
 use crate::durable::work::Decision;
 use crate::provider::Provider;
 use crate::runtime::Loop;
+use crate::{Error, ProviderFailureKind, Result};
 
 pub const DEFAULT_MAX_TURNS: usize = 20;
 const JUDGE_CONTEXT_CHARS: usize = 4_000;
@@ -19,21 +20,41 @@ pub(crate) async fn decision<P: Provider>(
     evidence: &str,
     usage: &mut crate::provider::Usage,
 ) -> Decision {
-    match loop_
+    let (reply, judge_usage) = match loop_
         .judge(JUDGE_SYSTEM, &judge_user(objective, reply, evidence))
         .await
     {
-        Ok((reply, judge_usage)) => {
+        Ok(reply) => reply,
+        Err(error) => return Decision::GoalContinue(format!("judge unavailable: {error}")),
+    };
+    usage.add(&judge_usage);
+    let verdict = match parse_verdict(&reply) {
+        Ok(verdict) => verdict,
+        Err(first) => {
+            let (reply, judge_usage) = match loop_.judge(JUDGE_SYSTEM, &repair_user(&reply)).await {
+                Ok(reply) => reply,
+                Err(error) => {
+                    return Decision::GoalContinue(format!(
+                        "judge repair unavailable after {first}: {error}"
+                    ));
+                }
+            };
             usage.add(&judge_usage);
-            let verdict = parse_verdict(&reply);
-            match verdict.state {
-                State::Done => Decision::GoalComplete,
-                State::Continue => Decision::GoalContinue(verdict.reason),
-                State::Stalled => Decision::GoalStop(format!("stalled: {}", verdict.reason)),
-                State::Impossible => Decision::GoalStop(format!("impossible: {}", verdict.reason)),
+            match parse_verdict(&reply) {
+                Ok(verdict) => verdict,
+                Err(error) => {
+                    return Decision::GoalContinue(format!(
+                        "goal judge remained malformed after one repair: {error}"
+                    ));
+                }
             }
         }
-        Err(error) => Decision::GoalContinue(format!("judge unavailable: {error}")),
+    };
+    match verdict.state {
+        State::Done => Decision::GoalComplete,
+        State::Continue => Decision::GoalContinue(verdict.reason),
+        State::Stalled => Decision::GoalStop(format!("stalled: {}", verdict.reason)),
+        State::Impossible => Decision::GoalStop(format!("impossible: {}", verdict.reason)),
     }
 }
 
@@ -73,6 +94,14 @@ fn judge_user(objective: &str, reply: &str, evidence: &str) -> String {
     )
 }
 
+fn repair_user(reply: &str) -> String {
+    format!(
+        "The previous response was invalid. Return exactly one verdict JSON object and no other \
+         text. Previous response:\n{}",
+        reply.chars().take(JUDGE_CONTEXT_CHARS).collect::<String>()
+    )
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
     Done,
@@ -86,46 +115,50 @@ struct Verdict {
     reason: String,
 }
 
-impl Verdict {
-    fn continue_(reason: String) -> Self {
-        Self {
-            state: State::Continue,
-            reason,
-        }
+fn parse_verdict(reply: &str) -> Result<Verdict> {
+    let trimmed = reply.trim();
+    let start = trimmed.find('{').ok_or_else(malformed_judge)?;
+    let end = trimmed.rfind('}').ok_or_else(malformed_judge)?;
+    if end < start {
+        return Err(malformed_judge());
     }
+    let value: serde_json::Value =
+        serde_json::from_str(&trimmed[start..=end]).map_err(|error| {
+            Error::provider(
+                ProviderFailureKind::Malformed,
+                format!("goal judge returned invalid JSON: {error}"),
+            )
+        })?;
+    let state = match value.get("verdict").and_then(|verdict| verdict.as_str()) {
+        Some("done") => State::Done,
+        Some("continue") => State::Continue,
+        Some("stalled") => State::Stalled,
+        Some("impossible") => State::Impossible,
+        Some(value) => {
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                format!("goal judge returned unknown verdict `{value}`"),
+            ));
+        }
+        None => match value.get("done").and_then(serde_json::Value::as_bool) {
+            Some(true) => State::Done,
+            Some(false) => State::Continue,
+            None => return Err(malformed_judge()),
+        },
+    };
+    let reason = value
+        .get("reason")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(malformed_judge)?
+        .to_string();
+    Ok(Verdict { state, reason })
 }
 
-fn parse_verdict(reply: &str) -> Verdict {
-    let trimmed = reply.trim();
-    let Some(start) = trimmed.find('{') else {
-        return Verdict::continue_(trimmed.chars().take(200).collect());
-    };
-    let Some(end) = trimmed.rfind('}') else {
-        return Verdict::continue_(trimmed.chars().take(200).collect());
-    };
-    if end < start {
-        return Verdict::continue_(trimmed.chars().take(200).collect());
-    }
-    match serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
-        Ok(value) => Verdict {
-            state: match value.get("verdict").and_then(|verdict| verdict.as_str()) {
-                Some("done") => State::Done,
-                Some("stalled") => State::Stalled,
-                Some("impossible") => State::Impossible,
-                Some(_) => State::Continue,
-                None if matches!(value.get("done"), Some(serde_json::Value::Bool(true))) => {
-                    State::Done
-                }
-                None => State::Continue,
-            },
-            reason: value
-                .get("reason")
-                .and_then(|reason| reason.as_str())
-                .unwrap_or("no reason given")
-                .to_string(),
-        },
-        Err(_) => Verdict::continue_(trimmed.chars().take(200).collect()),
-    }
+fn malformed_judge() -> Error {
+    Error::provider(
+        ProviderFailureKind::Malformed,
+        "goal judge returned no valid verdict object",
+    )
 }
 
 #[cfg(test)]

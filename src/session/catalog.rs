@@ -10,14 +10,40 @@ pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
     last_in(&crate::prompt::mage_home()?, workspace)
 }
 
+pub(crate) fn previous_for(workspace: &Path, current: &str) -> Result<Option<SessionInfo>> {
+    previous_in(&crate::prompt::mage_home()?, workspace, current)
+}
+
+pub(crate) fn previous_in(
+    home: &Path,
+    workspace: &Path,
+    current: &str,
+) -> Result<Option<SessionInfo>> {
+    let want = roots(workspace);
+    let mut matches: Vec<SessionInfo> = list_in(home)?
+        .into_iter()
+        .filter(|info| {
+            info.id != current
+                && info.depth == 0
+                && info
+                    .cwd
+                    .as_deref()
+                    .is_some_and(|cwd| want.iter().any(|root| root == cwd))
+        })
+        .collect();
+    Ok(matches.pop())
+}
+
 pub(crate) fn last_in(home: &Path, workspace: &Path) -> Result<Option<PathBuf>> {
     let want = roots(workspace);
     let mut matches: Vec<SessionInfo> = list_in(home)?
         .into_iter()
         .filter(|info| {
-            info.cwd
-                .as_deref()
-                .is_some_and(|cwd| want.iter().any(|root| root == cwd))
+            info.depth == 0
+                && info
+                    .cwd
+                    .as_deref()
+                    .is_some_and(|cwd| want.iter().any(|root| root == cwd))
         })
         .collect();
     Ok(matches.pop().map(|info| info.path))
@@ -142,6 +168,7 @@ pub fn export(path: &Path) -> Result<String> {
             Line::Clear => out.push_str("---\n\n"),
             Line::Budget { .. }
             | Line::Workflow { .. }
+            | Line::Child { .. }
             | Line::Charge { .. }
             | Line::Close { .. } => {}
         }
@@ -207,7 +234,7 @@ fn info(path: PathBuf) -> SessionInfo {
     let id = log::parse_path(&path)
         .map(|session| session.to_string())
         .unwrap_or_default();
-    let (cwd, model, preview) = peek(&path);
+    let (cwd, model, preview, parent, depth) = peek(&path);
     let name = name_of(&path);
     SessionInfo {
         id,
@@ -216,15 +243,19 @@ fn info(path: PathBuf) -> SessionInfo {
         model,
         preview,
         name,
+        parent,
+        depth,
     }
 }
 
-fn peek(path: &Path) -> (Option<String>, Option<String>, String) {
+fn peek(path: &Path) -> (Option<String>, Option<String>, String, Option<String>, u8) {
     let Ok(file) = std::fs::File::open(path) else {
-        return (None, None, String::new());
+        return (None, None, String::new(), None, 0);
     };
     let mut cwd = None;
     let mut model = None;
+    let mut parent = None;
+    let mut depth = 0;
     for line in std::io::BufReader::new(file).lines() {
         let Ok(line) = line else {
             break;
@@ -233,16 +264,20 @@ fn peek(path: &Path) -> (Option<String>, Option<String>, String) {
             Ok(Line::Session {
                 workspace,
                 model: name,
+                parent: recorded_parent,
+                depth: recorded_depth,
                 ..
             }) => {
                 cwd = Some(workspace.display().to_string());
                 model = Some(name);
+                parent = recorded_parent.map(|id| id.to_string());
+                depth = recorded_depth;
             }
             Ok(Line::User { text, .. }) if !text.is_empty() => {
-                return (cwd, model, preview(&text));
+                return (cwd, model, preview(&text), parent, depth);
             }
             _ => {}
         }
     }
-    (cwd, model, String::new())
+    (cwd, model, String::new(), parent, depth)
 }

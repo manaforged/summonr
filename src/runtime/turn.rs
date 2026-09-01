@@ -70,13 +70,14 @@ impl<P: Provider> Loop<P> {
 
     async fn complete_retry(
         &mut self,
-        messages: &mut [Message],
+        messages: &mut Vec<Message>,
         tools: &[crate::provider::ToolDefinition],
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, String, usize, Attempt, u64)>> {
         let mut attempt = 0_u32;
         let mut overflowed = false;
+        let mut repaired = false;
         let mut wait = 2_u64;
         let role = self.round_role();
         loop {
@@ -115,6 +116,32 @@ impl<P: Provider> Loop<P> {
                     }
                     let text = error.to_string();
                     let failure = error.provider_failure();
+                    if !repaired
+                        && failure.is_some_and(|failure| {
+                            !failure.partial_output
+                                && failure.kind == ProviderFailureKind::MalformedToolCall
+                        })
+                    {
+                        repaired = true;
+                        let input = UserInput::from(
+                            "[summon control: the provider rejected the previous tool call because \
+                             its arguments were invalid JSON. Retry that action with one valid tool \
+                             call. Split a large file write into smaller edits if needed.]",
+                        );
+                        self.session
+                            .steer(&input.text)
+                            .map_err(super::session_err)?;
+                        messages.push(Message::user(input));
+                        self.push_event(
+                            events,
+                            emit,
+                            Event::Note {
+                                text: "malformed tool-call JSON — requesting one repaired call"
+                                    .to_string(),
+                            },
+                        )?;
+                        continue;
+                    }
                     if !overflowed
                         && failure.is_some_and(|failure| {
                             failure.kind == ProviderFailureKind::ContextOverflow
@@ -198,6 +225,7 @@ impl<P: Provider> Loop<P> {
         input: impl Into<UserInput>,
         emit: impl FnMut(&Event),
     ) -> Result<Turn> {
+        let _report = self.herdr.turn();
         let messages = self.begin_turn(input.into())?;
         self.run_turn(messages, emit).await
     }
@@ -329,8 +357,15 @@ impl<P: Provider> Loop<P> {
                         .collect::<Vec<_>>(),
                 )
                 .map_err(super::session_err)?;
-            self.execute_calls(planned, calls, &mut messages, &mut events, &mut emit)
-                .await?;
+            self.execute_calls(
+                planned,
+                calls,
+                &mut messages,
+                &mut events,
+                &mut emit,
+                &mut usage,
+            )
+            .await?;
         }
         self.abort_turn(abort_reason, events, emit, usage, reached)
     }
@@ -380,7 +415,8 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        self.tools.set_read_only(self.plan);
+        let child_read_only = self.depth > 0 && self.tools.is_read_only();
+        self.tools.set_read_only(self.plan || child_read_only);
         self.turn_started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
@@ -584,14 +620,14 @@ impl<P: Provider> Loop<P> {
                 events,
                 rounds: round,
                 usage,
-                verify: None,
+                checks: Vec::new(),
                 aborted: false,
             });
         }
         self.session
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
-        let (text, verify, receipt) = if self.session.stage() == Some(Stage::Execute) {
+        let (text, checks, receipt) = if self.session.stage() == Some(Stage::Execute) {
             let (mut checks, running) = self.await_jobs(&mut events, &mut emit).await?;
             if !running.is_empty() {
                 let note = format!(
@@ -624,7 +660,7 @@ impl<P: Provider> Loop<P> {
                         events,
                         rounds: round,
                         usage,
-                        verify: None,
+                        checks: Vec::new(),
                         aborted: false,
                     });
                 }
@@ -709,7 +745,7 @@ impl<P: Provider> Loop<P> {
                     }
                 }
             }
-            let receipt = crate::verify::summary(&paths, &checks);
+            let receipt = crate::Receipt::new(paths, checks.clone());
             let decision = if verdict.passed {
                 if let Some(objective) =
                     self.session.goal_objective().map_err(super::session_err)?
@@ -719,7 +755,7 @@ impl<P: Provider> Loop<P> {
                         self,
                         &objective,
                         &message.content,
-                        &receipt,
+                        &receipt.text,
                         &mut usage,
                     )
                     .await;
@@ -737,35 +773,27 @@ impl<P: Provider> Loop<P> {
             } else {
                 Decision::Automatic
             };
-            let text = crate::verify::receipt(&message.content, &paths, &checks);
+            let context = crate::verify::context(&message.content, &receipt);
             match rejected {
                 Some(findings) => self
                     .session
-                    .commit_review(&findings, Some(&text))
+                    .commit_review(&findings, Some(&context))
                     .map_err(super::session_err)?,
                 None => self
                     .session
-                    .commit_verdict(verdict, decision, Some(&text))
+                    .commit_verdict(verdict, decision, Some(&context))
                     .map_err(super::session_err)?,
             }
-            (
-                text,
-                checks
-                    .iter()
-                    .find(|check| !check.passed)
-                    .or(checks.last())
-                    .cloned(),
-                Some(receipt),
-            )
+            (message.content, checks, Some(receipt))
         } else {
             self.session.close().map_err(super::session_err)?;
-            (message.content, None, None)
+            (message.content, Vec::new(), None)
         };
         self.commit(&messages);
         let progress = self.work_progress()?;
         self.push_event(&mut events, &mut emit, Event::Work { progress })?;
-        if let Some(text) = receipt {
-            self.push_event(&mut events, &mut emit, Event::Receipt { text })?;
+        if let Some(receipt) = receipt {
+            self.push_event(&mut events, &mut emit, Event::Receipt { receipt })?;
         }
         let event = Event::Assistant { text: text.clone() };
         self.push_event(&mut events, &mut emit, event)?;
@@ -774,7 +802,7 @@ impl<P: Provider> Loop<P> {
             events,
             rounds: round,
             usage,
-            verify,
+            checks,
             aborted: false,
         })
     }
@@ -786,6 +814,7 @@ impl<P: Provider> Loop<P> {
         messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
     ) -> Result<()> {
         for call in &calls {
             let event = Event::ToolCall {
@@ -795,7 +824,20 @@ impl<P: Provider> Loop<P> {
             };
             self.push_event(events, emit, event)?;
         }
-        let outputs = if calls
+        let outputs = if calls.iter().all(|call| call.function.name == "task") {
+            self.tasks_execute(&calls)
+                .await
+                .into_iter()
+                .map(|result| match result {
+                    Ok(execution) => (
+                        Ok(execution.output),
+                        execution.millis,
+                        Some(execution.usage),
+                    ),
+                    Err(error) => (Err(error), 0, None),
+                })
+                .collect()
+        } else if calls
             .iter()
             .all(|call| crate::tools::readonly(&call.function.name))
         {
@@ -805,6 +847,7 @@ impl<P: Provider> Loop<P> {
                 (
                     tools.execute_outcome(call).await,
                     super::elapsed_millis(started),
+                    None,
                 )
             }))
             .await
@@ -812,22 +855,35 @@ impl<P: Provider> Loop<P> {
             let mut outputs = Vec::with_capacity(calls.len());
             for call in &calls {
                 let started = Instant::now();
-                let output = if crate::bus::is_bus_tool(&call.function.name) {
-                    self.bus_execute(call).map(|text| crate::tools::ToolOutput {
-                        text,
-                        success: true,
-                        mutated: false,
-                    })
+                let (output, child_usage) = if call.function.name == "task" {
+                    match self.task_execute(call).await {
+                        Ok(execution) => (Ok(execution.output), Some(execution.usage)),
+                        Err(error) => (Err(error), None),
+                    }
+                } else if crate::bus::is_bus_tool(&call.function.name) {
+                    (
+                        self.bus_execute(call).map(|text| crate::tools::ToolOutput {
+                            text,
+                            success: true,
+                            mutated: false,
+                        }),
+                        None,
+                    )
                 } else {
-                    self.tools.execute_outcome(call).await
+                    (self.tools.execute_outcome(call).await, None)
                 };
-                outputs.push((output, super::elapsed_millis(started)));
+                outputs.push((output, super::elapsed_millis(started), child_usage));
             }
             outputs
         };
         let mut finished = Vec::new();
         let mut results = Vec::new();
-        for ((planned, call), (output, millis)) in planned.into_iter().zip(calls).zip(outputs) {
+        for ((planned, call), (output, millis, child_usage)) in
+            planned.into_iter().zip(calls).zip(outputs)
+        {
+            if let Some(child_usage) = child_usage {
+                usage.add(&child_usage);
+            }
             let (success, mutated, text) = match output {
                 Ok(output) => (output.success, output.mutated, output.text),
                 Err(error) => (false, false, error.to_string()),
@@ -1017,7 +1073,7 @@ impl<P: Provider> Loop<P> {
             events,
             rounds: reached,
             usage,
-            verify: None,
+            checks: Vec::new(),
             aborted: true,
         })
     }

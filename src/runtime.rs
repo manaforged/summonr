@@ -55,7 +55,7 @@ pub struct Turn {
     pub events: Vec<Event>,
     pub rounds: usize,
     pub usage: Usage,
-    pub verify: Option<Outcome>,
+    pub checks: Vec<Outcome>,
     pub aborted: bool,
 }
 
@@ -76,6 +76,7 @@ pub struct Loop<P> {
     tools: ToolRegistry,
     schema: Option<Vec<ToolDefinition>>,
     history: Vec<Message>,
+    herdr: crate::herdr::Reporter,
     session: SessionDriver,
     max_rounds: usize,
     verify: Option<Vec<String>>,
@@ -91,10 +92,12 @@ pub struct Loop<P> {
     mail: std::collections::VecDeque<crate::bus::Mail>,
     steer: std::collections::VecDeque<UserInput>,
     steer_shared: Option<std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>>,
+    depth: u8,
 }
 
 mod aside;
 mod bus;
+mod child;
 mod compaction;
 mod configure;
 mod turn;

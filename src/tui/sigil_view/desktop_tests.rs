@@ -61,3 +61,31 @@ fn the_right_rail_follows_the_open_pane() {
         while rx.try_recv().is_ok() {}
     });
 }
+
+#[test]
+fn options_and_hotkey_editor_build_in_the_desktop_rail() {
+    with_cx("summoner-desktop-options", |cx| {
+        let (app, _rx) = app();
+        app.toggle_options();
+        assert!(app.settings_open.peek());
+        let options = cx.add(root(app.clone()));
+        assert!(cx.first_child(options).is_some(), "options tree builds");
+
+        app.settings_sel.set(12);
+        app.adjust_setting(1);
+        assert!(app.hotkeys_open.peek());
+        let hotkeys = cx.add(root(app.clone()));
+        assert!(cx.first_child(hotkeys).is_some(), "hotkey tree builds");
+
+        app.edit_hotkey();
+        assert!(app.route_hotkey('k'));
+        assert_eq!(
+            app.model
+                .borrow()
+                .prefs
+                .hotkeys
+                .label(crate::prefs::Hotkey::Options),
+            "ctrl+k"
+        );
+    });
+}

@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 use crate::error::{Error, Result};
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Sandbox {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     backend: Backend,
@@ -20,7 +20,7 @@ pub(crate) struct Sandbox {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 enum Backend {
     #[cfg(target_os = "macos")]
     Mac {

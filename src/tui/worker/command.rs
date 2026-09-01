@@ -62,6 +62,7 @@ impl Worker {
                 }
             }
             Some(crate::SlashCommand::Session) => self.session(),
+            Some(crate::SlashCommand::Resume) => self.resume(argument(line)),
             Some(crate::SlashCommand::Name) => self.name(argument(line)),
             Some(crate::SlashCommand::Steps) => {
                 return Some(self.steps(argument(line).unwrap_or_default()).await);
@@ -113,6 +114,31 @@ impl Worker {
                 .map_or_else(String::new, |name| format!(" ({name})")),
             self.loop_.session_path().display()
         ));
+        true
+    }
+
+    fn resume(&self, key: Option<&str>) -> bool {
+        let selected = match key {
+            Some(key) => crate::session::resolve_id(key).and_then(|path| {
+                crate::session::list()?
+                    .into_iter()
+                    .find(|info| info.path == path)
+                    .ok_or_else(|| crate::Error::Config(format!("session `{key}` disappeared")))
+            }),
+            None => crate::session::previous_for(
+                self.loop_.workspace(),
+                &self.loop_.session_id().to_string(),
+            )
+            .and_then(|info| {
+                info.ok_or_else(|| {
+                    crate::Error::Config("no previous session for this workspace".to_string())
+                })
+            }),
+        };
+        match selected {
+            Ok(info) => drop(self.ui.send(Msg::Resume(info.id))),
+            Err(error) => self.fail(&error.to_string()),
+        }
         true
     }
 

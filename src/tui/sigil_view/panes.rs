@@ -22,7 +22,8 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
             .gap(0.0),
     );
     let width = usize::from(cols);
-    let lines: Vec<Vec<Line>> = match pane {
+    app.hits.clear();
+    let mut lines: Vec<Vec<Line>> = match pane {
         Pane::Ledger => single(ledger(app)),
         Pane::Files => single(files(app, usize::from(rows))),
         Pane::Diff => diff(app, width, usize::from(rows)),
@@ -30,6 +31,14 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
         Pane::View => single(view(app, usize::from(rows))),
         Pane::Chat => Vec::new(),
     };
+    close_header(&mut lines, width);
+    let left = usize::from(app.chat_cols()) + 1;
+    app.hits.add(
+        0,
+        left + width.saturating_sub(1),
+        left + width,
+        super::hit::Target::Close,
+    );
     let caret = (pane == Pane::View && app.view_edit.get()).then(|| {
         let body = usize::from(rows).saturating_sub(2);
         let window = super::editor::window(
@@ -50,6 +59,23 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
 
 fn single(lines: Vec<Line>) -> Vec<Vec<Line>> {
     lines.into_iter().map(|line| vec![line]).collect()
+}
+
+fn close_header(lines: &mut [Vec<Line>], width: usize) {
+    let Some(header) = lines.first_mut() else {
+        return;
+    };
+    let Some((title, color)) = header.first().cloned() else {
+        return;
+    };
+    let limit = width.saturating_sub(4);
+    let title: String = title.chars().take(limit).collect();
+    let gap = width.saturating_sub(title.chars().count() + 3);
+    *header = vec![
+        (title, color),
+        (" ".repeat(gap), TEXT),
+        ("×".to_string(), DIM),
+    ];
 }
 
 fn ledger(app: &App) -> Vec<(String, Rgba8)> {
@@ -107,7 +133,6 @@ fn files(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         .saturating_sub(body / 2)
         .min(tree.len().saturating_sub(body));
     let left = usize::from(app.chat_cols()) + 1;
-    app.hits.clear();
     for (index, row) in tree.iter().enumerate().skip(start).take(body) {
         app.hits.add(
             index - start + 2,
@@ -230,7 +255,6 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
         .saturating_sub(body / 2)
         .min(count.saturating_sub(body));
     let left = usize::from(app.chat_cols()) + 1;
-    app.hits.clear();
     for (index, stat) in stats.iter().enumerate().skip(start).take(body) {
         let text = format!(
             "+{:<4} −{:<4} {}{}",
@@ -307,7 +331,6 @@ fn trees(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         .saturating_sub(body / 2)
         .min(count.saturating_sub(body));
     let left = usize::from(app.chat_cols()) + 1;
-    app.hits.clear();
     for (index, row) in model.trees.iter().enumerate().skip(start).take(body) {
         let text = format!(
             "{:<16} +{:<3} {:<5} {:<8} {}",

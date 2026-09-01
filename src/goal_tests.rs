@@ -2,42 +2,43 @@ use super::*;
 
 #[test]
 fn verdict_parses_four_states_and_the_legacy_done_flag() {
-    let verdict = parse_verdict("{\"verdict\": \"done\", \"reason\": \"tests pass\"}");
+    let verdict = parse_verdict("{\"verdict\": \"done\", \"reason\": \"tests pass\"}")
+        .expect("valid verdict");
     assert_eq!(verdict.state, State::Done);
     assert_eq!(verdict.reason, "tests pass");
 
-    let verdict = parse_verdict("{\"verdict\": \"continue\", \"reason\": \"two files remain\"}");
+    let verdict = parse_verdict("{\"verdict\": \"continue\", \"reason\": \"two files remain\"}")
+        .expect("valid verdict");
     assert_eq!(verdict.state, State::Continue);
     assert_eq!(verdict.reason, "two files remain");
 
-    let verdict = parse_verdict("{\"verdict\": \"stalled\", \"reason\": \"same reply twice\"}");
+    let verdict = parse_verdict("{\"verdict\": \"stalled\", \"reason\": \"same reply twice\"}")
+        .expect("valid verdict");
     assert_eq!(verdict.state, State::Stalled);
-    let verdict = parse_verdict("{\"verdict\": \"impossible\", \"reason\": \"no network\"}");
+    let verdict = parse_verdict("{\"verdict\": \"impossible\", \"reason\": \"no network\"}")
+        .expect("valid verdict");
     assert_eq!(verdict.state, State::Impossible);
-    let verdict = parse_verdict("{\"verdict\": \"maybe\", \"reason\": \"x\"}");
-    assert_eq!(verdict.state, State::Continue);
+    assert!(parse_verdict("{\"verdict\": \"maybe\", \"reason\": \"x\"}").is_err());
 
-    let verdict = parse_verdict("{\"done\": true, \"reason\": \"tests pass\"}");
+    let verdict = parse_verdict("{\"done\": true, \"reason\": \"tests pass\"}")
+        .expect("valid legacy verdict");
     assert_eq!(verdict.state, State::Done);
-    let verdict = parse_verdict("{\"done\": false, \"reason\": \"two files remain\"}");
+    let verdict = parse_verdict("{\"done\": false, \"reason\": \"two files remain\"}")
+        .expect("valid legacy verdict");
     assert_eq!(verdict.state, State::Continue);
 }
 
 #[test]
-fn verdict_tolerates_prose_and_garbage() {
+fn verdict_tolerates_prose_but_rejects_garbage() {
     let verdict =
-        parse_verdict("Sure! {\"verdict\": \"done\", \"reason\": \"built\"} hope that helps");
+        parse_verdict("Sure! {\"verdict\": \"done\", \"reason\": \"built\"} hope that helps")
+            .expect("embedded verdict");
     assert_eq!(verdict.state, State::Done);
     assert_eq!(verdict.reason, "built");
 
-    let verdict = parse_verdict("the objective looks incomplete");
-    assert_eq!(verdict.state, State::Continue);
-    assert_eq!(verdict.reason, "the objective looks incomplete");
-    let verdict = parse_verdict("{\"done\": \"yes\"}");
-    assert_eq!(verdict.state, State::Continue);
-
-    let verdict = parse_verdict("done :) } still thinking {");
-    assert_eq!(verdict.state, State::Continue);
+    assert!(parse_verdict("the objective looks incomplete").is_err());
+    assert!(parse_verdict("{\"done\": \"yes\"}").is_err());
+    assert!(parse_verdict("done :) } still thinking {").is_err());
 }
 
 #[test]

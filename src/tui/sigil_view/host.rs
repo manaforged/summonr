@@ -16,7 +16,7 @@ use sigil_hal::{Point, ShellEvent};
 use sigil_tui::{EventRouter, Host, Screen};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{Cmd, Info, Msg, worker};
+use super::super::{Cmd, Exit, Info, Msg, worker};
 use super::app::App;
 use super::model::Entry;
 use super::view::root;
@@ -33,13 +33,13 @@ pub(crate) fn run(
     info: Info,
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
-) -> Result<i32> {
+) -> Result<Exit> {
     let (cmd_tx, cmd_rx) = unbounded_channel();
     start_tick(cmd_tx.clone());
     let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
     let session = info.session.clone();
     let version = info.version.clone();
-    let code = sigil::reactive::Runtime::scope("mage-tui", || {
+    let exit = sigil::reactive::Runtime::scope("mage-tui", || {
         live(App::new(info, workspace, cmd_tx.clone()), ui_rx)
     })?;
     drop(cmd_tx.send(Cmd::Quit));
@@ -60,10 +60,12 @@ pub(crate) fn run(
         }
         Err(_) => worker.abort(),
     }
-    eprintln!(
-        "\n  summon {version} · session {session}\n  resume: summon -c · by id: summon --session {session} · branch: summon --fork\n"
-    );
-    Ok(code)
+    if matches!(exit, Exit::Code(_)) {
+        eprintln!(
+            "\n  summon {version} · session {session}\n  resume: summon -c · by id: summon --session {session} · branch: summon --fork\n"
+        );
+    }
+    Ok(exit)
 }
 
 pub(super) fn start_tick(tx: UnboundedSender<Cmd>) {
@@ -78,7 +80,7 @@ pub(super) fn start_tick(tx: UnboundedSender<Cmd>) {
     });
 }
 
-fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<i32> {
+fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     guard();
     let mut term = Terminal::enter()?;
     let (mut cols, mut rows) = crossterm::terminal::size()?;
@@ -112,8 +114,11 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<i32> {
             app.update(msg);
             changed = true;
         }
+        if let Some(id) = app.resume.borrow().clone() {
+            return Ok(Exit::Resume(id));
+        }
         if let Some(code) = status(ui.is_closed(), app.quit.peek()) {
-            return Ok(code);
+            return Ok(Exit::Code(code));
         }
         if changed {
             app.refresh();

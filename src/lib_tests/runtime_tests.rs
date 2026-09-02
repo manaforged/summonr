@@ -429,6 +429,68 @@ async fn permanent_error_does_not_retry() -> Result<()> {
 }
 
 #[tokio::test]
+async fn malformed_tool_call_gets_one_repair_prompt() -> Result<()> {
+    struct Broken {
+        calls: AtomicUsize,
+        requests: Arc<Mutex<Vec<CompletionRequest>>>,
+    }
+
+    impl Provider for Broken {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                self.requests
+                    .lock()
+                    .map_err(|_error| Error::Tool("request capture is poisoned".to_string()))?
+                    .push(request.clone());
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Err(Error::Provider(ProviderFailure {
+                        kind: ProviderFailureKind::MalformedToolCall,
+                        status: Some(500),
+                        message: "tool call arguments are invalid JSON".to_string(),
+                        partial_output: false,
+                    }));
+                }
+                Ok(AssistantMessage {
+                    content: Some("recovered".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = Loop::with_session(
+        Broken {
+            calls: AtomicUsize::new(0),
+            requests: requests.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?;
+    let turn = loop_.turn("write the file").await?;
+    assert_work_receipt(&turn, "recovered");
+    assert!(turn.events.iter().any(|event| matches!(
+        event,
+        Event::Note { text } if text.contains("requesting one repaired call")
+    )));
+    let requests = captured(&requests)?;
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests[1]
+            .messages
+            .last()
+            .is_some_and(|message| message.content.contains("invalid JSON"))
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn partial_stream_failure_does_not_retry() -> Result<()> {
     struct Partial(Arc<AtomicUsize>);
     impl Provider for Partial {
@@ -710,7 +772,7 @@ async fn auto_compact_summarizes_and_records() -> Result<()> {
     }
     let workspace = test_workspace()?;
     let mut loop_ = Loop::with_session(Summer, "test-model", &workspace, "test")?;
-    loop_.set_context_window(Some(16_386));
+    loop_.set_context_window(Some(512));
     let history = vec![
         Message::user("u1"),
         Message::user("u2"),
@@ -817,7 +879,7 @@ async fn compaction_budget_stops_before_the_followup_request() -> Result<()> {
         max_tokens: Some(100),
         max_secs: None,
     })?;
-    loop_.set_context_window(Some(16_386));
+    loop_.set_context_window(Some(512));
 
     let turn = loop_.turn("u8").await?;
 
@@ -1082,11 +1144,15 @@ async fn a_role_seat_keeps_its_own_effort_and_price() -> Result<()> {
     impl Provider for Quiet {
         fn complete<'a>(
             &'a self,
-            _request: &'a CompletionRequest,
+            request: &'a CompletionRequest,
         ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async {
+            Box::pin(async move {
                 Ok(AssistantMessage {
-                    content: Some("ok".to_string()),
+                    content: Some(if request.model == "judge-model" {
+                        r#"{"verdict":"done","reason":"complete"}"#.to_string()
+                    } else {
+                        "ok".to_string()
+                    }),
                     usage: Usage {
                         prompt_tokens: 1_000_000,
                         completion_tokens: 0,

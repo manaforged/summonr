@@ -132,8 +132,8 @@ async fn accepted_plan_executes_inside_the_selected_work() -> Result<()> {
     loop_.set_plan(false);
     let turn = loop_.turn("implement the accepted plan").await?;
 
-    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
-    assert!(turn.text.contains("Turn receipt"));
+    assert!(turn.checks.iter().all(|check| check.passed));
+    assert!(!turn.checks.is_empty());
     let progress = loop_.work_progress()?;
     assert_eq!(progress.kind, crate::WorkKind::Single);
     assert_eq!(progress.phase, crate::WorkPhase::Completed);
@@ -223,23 +223,24 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         })
         .await?;
     assert!(closed_before_assistant);
-    let verify = turn.verify.as_ref().expect("mutating turn must verify");
+    let verify = turn.checks.last().expect("mutating turn must verify");
     assert_eq!(verify.command, "false");
     assert!(!verify.passed);
     assert!(turn.events.iter().any(
         |event| matches!(event, Event::Verify { command, passed: false } if command == "false")
     ));
     assert!(turn.text.contains("done"));
-    assert!(turn.text.contains("Verification"));
-    assert!(turn.text.contains("failed"));
-    assert!(turn.text.contains("plan.md"));
+    let receipt = turn_receipt(&turn);
+    assert!(receipt.text.contains("Verification"));
+    assert!(receipt.text.contains("failed"));
+    assert!(receipt.text.contains("plan.md"));
     let replay = loop_.replay_session();
     assert_eq!(
         replay
             .history
             .last()
             .map(|message| message.content.as_str()),
-        Some(turn.text.as_str())
+        Some(crate::verify::context(&turn.text, receipt).as_str())
     );
     let log = std::fs::read_to_string(loop_.session_path())?;
     let receipt = log
@@ -276,7 +277,8 @@ async fn ordinary_turn_completes_durable_work() -> Result<()> {
 
     let turn = loop_.turn("write the plan").await?;
 
-    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert!(turn.checks.iter().all(|check| check.passed));
+    assert!(!turn.checks.is_empty());
     assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -337,8 +339,8 @@ async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()>
             .iter()
             .any(|event| { matches!(event, Event::ToolResult { mutated: false, .. }) })
     );
-    assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
-    assert!(turn.text.contains("shell.txt"));
+    assert!(turn.checks.iter().any(|check| !check.passed));
+    assert!(turn_receipt(&turn).text.contains("shell.txt"));
     let progress = loop_.work_progress()?;
     assert_eq!(progress.phase, crate::WorkPhase::Execute);
     assert_eq!(progress.attempts, 1);
@@ -402,7 +404,8 @@ async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
 
     let turn = loop_.turn("write the plan").await?;
 
-    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert!(turn.checks.iter().all(|check| check.passed));
+    assert!(!turn.checks.is_empty());
     assert_eq!(
         turn.events
             .iter()
@@ -410,7 +413,7 @@ async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
             .count(),
         2
     );
-    assert_eq!(turn.text.matches("`true` passed").count(), 2);
+    assert_eq!(turn_receipt(&turn).text.matches("`true` passed").count(), 2);
     let log = std::fs::read_to_string(loop_.session_path())?;
     assert_eq!(log.matches("`true` passed").count(), 2);
     std::fs::remove_dir_all(workspace)?;
@@ -432,10 +435,10 @@ async fn unchanged_turn_runs_completion_checks_and_records_receipt() -> Result<(
 
     let turn = loop_.turn("read the note").await?;
 
-    assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
-    assert!(turn.text.contains("Turn receipt"));
-    assert!(turn.text.contains("Changed: none"));
-    assert!(turn.text.contains("`false` failed"));
+    assert!(turn.checks.iter().any(|check| !check.passed));
+    let receipt = turn_receipt(&turn);
+    assert!(receipt.text.contains("Changed: none"));
+    assert!(receipt.text.contains("`false` failed"));
     let log = std::fs::read_to_string(loop_.session_path())?;
     assert!(log.contains(r#""kind":"receipt""#));
     std::fs::remove_dir_all(workspace)?;
@@ -458,8 +461,8 @@ async fn external_steps_turn_stays_attached_to_durable_work() -> Result<()> {
 
     let turn = loop_.turn("implement step 1").await?;
 
-    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
-    assert!(turn.text.contains("Turn receipt"));
+    assert!(turn.checks.iter().all(|check| check.passed));
+    assert!(!turn.checks.is_empty());
     let progress = loop_.work_progress()?;
     assert_eq!(progress.kind, crate::WorkKind::Steps);
     assert_eq!(progress.phase, crate::WorkPhase::Completed);
@@ -485,7 +488,7 @@ async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
         let turn = loop_
             .turn(&format!("implement step 1, attempt {attempt}"))
             .await?;
-        assert!(turn.verify.as_ref().is_some_and(|check| !check.passed));
+        assert!(turn.checks.iter().any(|check| !check.passed));
     }
 
     let progress = loop_.work_progress()?;
@@ -578,7 +581,8 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
     let turn = loop_
         .turn(&crate::goal_prompt(objective, &checks, 0))
         .await?;
-    assert!(turn.verify.as_ref().is_some_and(|check| check.passed));
+    assert!(turn.checks.iter().all(|check| check.passed));
+    assert!(!turn.checks.is_empty());
     assert_eq!(turn.usage.prompt_tokens, 34);
     assert_eq!(turn.usage.completion_tokens, 6);
     assert_eq!(loop_.spent_tokens(), 40);
@@ -600,6 +604,70 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
             .any(|message| message.content.contains(r#"{"done":true"#)),
         "judge JSON must not enter the user conversation"
     );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn malformed_goal_judge_repairs_once() -> Result<()> {
+    struct MalformedJudge {
+        rounds: AtomicUsize,
+    }
+
+    impl Provider for MalformedJudge {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                Ok(match self.rounds.fetch_add(1, Ordering::SeqCst) {
+                    0 => AssistantMessage {
+                        tool_calls: vec![call(
+                            "write_file",
+                            r#"{"path":"goal.txt","content":"done\n"}"#,
+                        )],
+                        ..AssistantMessage::default()
+                    },
+                    1 => AssistantMessage {
+                        content: Some("implemented and verified".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                    2 => AssistantMessage {
+                        content: Some("looks good".to_string()),
+                        ..AssistantMessage::default()
+                    },
+                    _ => AssistantMessage {
+                        content: Some(
+                            r#"{"verdict":"done","reason":"repair accepted"}"#.to_string(),
+                        ),
+                        ..AssistantMessage::default()
+                    },
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let checks = vec!["true".to_string()];
+    let mut loop_ = Loop::with_session(
+        MalformedJudge {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(checks.clone());
+    loop_.select_goal("finish the objective", &checks, crate::DEFAULT_MAX_TURNS)?;
+
+    let turn = loop_.turn("finish the objective").await?;
+
+    assert!(!turn.aborted);
+    let progress = loop_.work_progress()?;
+    assert_eq!(progress.phase, crate::WorkPhase::Completed);
+    assert_eq!(progress.exit_code(), Some(0));
+    let log = std::fs::read_to_string(loop_.session_path())?;
+    assert_eq!(log.matches(r#""note":"goal judge""#).count(), 2);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1162,14 +1230,15 @@ async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
     );
 
     let first = loop_.turn("write the plan").await?;
-    let review = first.verify.as_ref().expect("the review is the last check");
+    let review = first.checks.last().expect("the review is the last check");
     assert_eq!(review.command, "review");
     assert!(!review.passed);
-    assert!(first.text.contains("`review` failed"), "{}", first.text);
+    let receipt = turn_receipt(&first);
+    assert!(receipt.text.contains("`review` failed"), "{}", receipt.text);
     assert!(
-        first.text.contains("add a test for plan.md"),
+        receipt.text.contains("add a test for plan.md"),
         "{}",
-        first.text
+        receipt.text
     );
     assert!(first.events.iter().any(
         |event| matches!(event, Event::Verify { command, passed: false } if command == "review")
@@ -1185,8 +1254,8 @@ async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
     let second = loop_.turn("continue").await?;
     assert!(
         second
-            .verify
-            .as_ref()
+            .checks
+            .last()
             .is_some_and(|check| check.command == "review" && check.passed)
     );
     assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Completed);

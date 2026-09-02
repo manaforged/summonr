@@ -57,7 +57,12 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
             return Ok(3);
         }
         let after = loop_.work_progress()?;
-        if let Some(check) = turn.verify.as_ref() {
+        if let Some(check) = turn
+            .checks
+            .iter()
+            .find(|check| !check.passed)
+            .or_else(|| turn.checks.last())
+        {
             step_event(
                 args.json,
                 current,
@@ -149,14 +154,14 @@ fn print_live(event: &Event) {
                 eprintln!("{line}");
             }
         }
-        Event::Receipt { text } => println!("\n{text}"),
+        Event::Receipt { receipt } => println!("\n{}", receipt.text),
         Event::Aborted { reason } => eprintln!("\n{reason}"),
         _ => {}
     }
 }
 
 fn exit(turn: &Turn) -> i32 {
-    if turn.verify.as_ref().is_some_and(|verify| !verify.passed) {
+    if turn.checks.iter().any(|check| !check.passed) {
         2
     } else if turn.aborted {
         3

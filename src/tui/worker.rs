@@ -140,7 +140,7 @@ impl Worker {
                 true
             }
             Cmd::SetKey(name, key) => {
-                self.set_key(&name, &key);
+                self.set_key(&name, &key).await;
                 true
             }
             Cmd::Quit => {
@@ -172,15 +172,15 @@ impl Worker {
                 true
             }
             Cmd::SetEndpoint(name) => {
-                self.set_endpoint(&name);
+                self.set_endpoint(&name).await;
                 true
             }
             Cmd::SetModel(model) => {
-                self.set_model(&model);
+                self.set_model(&model).await;
                 true
             }
             Cmd::SetSeat(endpoint, model) => {
-                self.set_seat(&endpoint, &model);
+                self.set_seat(&endpoint, &model).await;
                 true
             }
             Cmd::ListModels => {
@@ -310,10 +310,10 @@ impl Worker {
         }
     }
 
-    fn set_key(&mut self, name: &str, key: &str) {
+    async fn set_key(&mut self, name: &str, key: &str) {
         match crate::endpoint::save_key(name, key) {
             Ok(source) if name == self.endpoint => {
-                self.set_endpoint(name);
+                self.set_endpoint(name).await;
                 self.system(&format!("{name}: API key saved in the {}", source.label()));
             }
             Ok(source) => self.system(&format!("{name}: API key saved in the {}", source.label())),

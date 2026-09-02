@@ -29,6 +29,7 @@ async fn picker_discovers_models_from_completions_endpoint() -> crate::Result<()
         oauth: None,
         body: None,
         context_window: None,
+        idle_timeout_secs: None,
         effort: None,
         price: None,
         env: Default::default(),

@@ -104,7 +104,7 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    fn with_parts(
+    pub(super) fn with_parts(
         provider: P,
         model: impl Into<String>,
         workspace: impl AsRef<Path>,
@@ -120,6 +120,9 @@ impl<P: Provider> Loop<P> {
         }
         let system_prompt = system_prompt.into();
         let (max_tokens, max_live_millis) = session.budget_limits();
+        let depth = session.depth();
+        let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
+        let herdr = crate::herdr::Reporter::discover(&session.id().to_string(), depth);
         Ok(Self {
             provider,
             model,
@@ -128,9 +131,10 @@ impl<P: Provider> Loop<P> {
             price: None,
             system_prompt,
             plan: false,
-            tools: ToolRegistry::with_policy_and_search(workspace, policy, search)?,
+            tools,
             schema: None,
             history: Vec::new(),
+            herdr,
             session,
             max_rounds: DEFAULT_MAX_ROUNDS,
             verify: None,
@@ -152,6 +156,7 @@ impl<P: Provider> Loop<P> {
             mail: std::collections::VecDeque::new(),
             steer: std::collections::VecDeque::new(),
             steer_shared: None,
+            depth,
         })
     }
 

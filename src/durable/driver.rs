@@ -97,6 +97,35 @@ impl SessionDriver {
             system: system.to_string(),
             workspace: driver.workspace.clone(),
             parent: None,
+            depth: 0,
+        })?;
+        Ok(driver)
+    }
+
+    pub(crate) fn open_child(
+        home: &Path,
+        workspace: &Path,
+        model: &str,
+        system: &str,
+        parent: SessionId,
+    ) -> Result<Self, DriverError> {
+        let id = SessionId::new();
+        let path = log::session_path(home, id);
+        let mut driver = Self {
+            log: Log::create(&path)?,
+            state: State::default(),
+            work: None,
+            workspace: canonical(workspace),
+            turn: None,
+            next: 1,
+        };
+        driver.append(Line::Session {
+            id,
+            model: model.to_string(),
+            system: system.to_string(),
+            workspace: driver.workspace.clone(),
+            parent: Some(parent),
+            depth: 1,
         })?;
         Ok(driver)
     }
@@ -170,6 +199,7 @@ impl SessionDriver {
         {
             self.checkpoint()?;
         }
+        self.interrupt_children("process stopped before the child finished")?;
         Ok(())
     }
 
@@ -563,6 +593,96 @@ impl SessionDriver {
         {
             self.checkpoint()?;
         }
+        self.interrupt_children(reason)?;
+        Ok(())
+    }
+
+    pub(crate) fn start_child(
+        &mut self,
+        record: crate::child::ChildRecord,
+    ) -> Result<(), DriverError> {
+        if !matches!(record.state, crate::child::ChildState::Running) {
+            return Err(DriverError::State(
+                "a child must start in the running state".to_string(),
+            ));
+        }
+        let workspace = record.workspace == self.workspace
+            || record.access == crate::child::Access::Implement
+                && crate::worktree::same_repository(&self.workspace, &record.workspace);
+        if record.version != 1
+            || record.parent != self.id()
+            || record.depth != self.depth().saturating_add(1)
+            || !workspace
+            || record.assignment.trim().is_empty()
+            || record.assignment.chars().count() > crate::child::ASSIGNMENT_MAX_CHARS
+            || record.model.trim().is_empty()
+        {
+            return Err(DriverError::State(
+                "child identity does not match the parent session".to_string(),
+            ));
+        }
+        if self.state.child_total >= crate::child::MAX_PER_PARENT {
+            return Err(DriverError::State(format!(
+                "a session can create at most {} children",
+                crate::child::MAX_PER_PARENT
+            )));
+        }
+        let running = self
+            .state
+            .children
+            .values()
+            .filter(|child| !child.state.terminal())
+            .count();
+        if running >= crate::child::MAX_PARALLEL {
+            return Err(DriverError::Busy);
+        }
+        self.append(Line::Child { record })
+    }
+
+    pub(crate) fn finish_child(
+        &mut self,
+        record: crate::child::ChildRecord,
+    ) -> Result<(), DriverError> {
+        if !record.state.terminal() {
+            return Err(DriverError::State(
+                "a child result must be terminal".to_string(),
+            ));
+        }
+        match self.state.children.get(&record.id) {
+            Some(child) if !child.state.terminal() && child.same_child(&record) => {
+                self.append(Line::Child { record })
+            }
+            Some(child) if !child.same_child(&record) => Err(DriverError::State(format!(
+                "child {} changed identity before settlement",
+                record.id
+            ))),
+            Some(_) => Err(DriverError::State(format!(
+                "child {} is already terminal",
+                record.id
+            ))),
+            None => Err(DriverError::State(format!(
+                "child {} was not started by this session",
+                record.id
+            ))),
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn children(&self) -> Vec<crate::child::ChildRecord> {
+        self.state.children.values().cloned().collect()
+    }
+
+    fn interrupt_children(&mut self, reason: &str) -> Result<(), DriverError> {
+        let records = self
+            .state
+            .children
+            .values()
+            .filter(|child| !child.state.terminal())
+            .map(|child| child.interrupt(reason))
+            .collect::<Vec<_>>();
+        for record in records {
+            self.append(Line::Child { record })?;
+        }
         Ok(())
     }
 
@@ -605,6 +725,7 @@ impl SessionDriver {
             system: self.state.system.clone(),
             workspace: self.state.workspace.clone(),
             parent: self.state.id,
+            depth: 0,
         })?;
         for line in log::read(self.log.path())? {
             if !matches!(line, Line::Session { .. }) {
@@ -665,6 +786,10 @@ impl SessionDriver {
 
     pub(crate) fn id(&self) -> SessionId {
         self.state.id.expect("an open session has a header")
+    }
+
+    pub(crate) fn depth(&self) -> u8 {
+        self.state.depth
     }
 
     pub(crate) fn work_progress(&self) -> Result<WorkProgress, DriverError> {

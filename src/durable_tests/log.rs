@@ -11,6 +11,7 @@ fn header(id: u128) -> Line {
         system: "You are Mage.".to_string(),
         workspace: Path::new("/tmp/mage").to_path_buf(),
         parent: None,
+        depth: 0,
     }
 }
 

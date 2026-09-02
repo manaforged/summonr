@@ -454,6 +454,17 @@ pub trait Provider {
         &'a self,
         request: &'a CompletionRequest,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>>;
+
+    fn child(&self) -> Option<Self>
+    where
+        Self: Sized,
+    {
+        None
+    }
+
+    fn supports_children(&self) -> bool {
+        false
+    }
 }
 
 type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
@@ -461,6 +472,8 @@ type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 const ROUND_TIMEOUT: Duration = Duration::from_secs(3000);
 
 const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
+
+const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Clone)]
 pub struct Client {
@@ -489,6 +502,7 @@ impl Client {
             Vec::new(),
             Wire::Completions,
             None,
+            IDLE_TIMEOUT,
         )
     }
 
@@ -508,6 +522,15 @@ impl Client {
             .collect();
         let genai = Self::native_kind(endpoint.wire)
             .map(|kind| genai::Client::builder().with_adapter_kind(kind).build());
+        let idle_timeout = match endpoint.idle_timeout_secs {
+            Some(0) => {
+                return Err(Error::Config(
+                    "endpoint idle_timeout_secs must be at least 1".to_string(),
+                ));
+            }
+            Some(seconds) => Duration::from_secs(seconds),
+            None => IDLE_TIMEOUT,
+        };
         Self::build(
             base,
             Auth::from_endpoint(endpoint)?,
@@ -515,6 +538,7 @@ impl Client {
             headers,
             endpoint.wire,
             genai,
+            idle_timeout,
         )
     }
 
@@ -538,6 +562,7 @@ impl Client {
         headers: Vec<(String, String)>,
         wire: Wire,
         genai: Option<genai::Client>,
+        idle_timeout: Duration,
     ) -> Result<Self> {
         if let Some(extra) = &body {
             let map = extra
@@ -554,7 +579,7 @@ impl Client {
         let http = reqwest::Client::builder()
             .timeout(ROUND_TIMEOUT)
             .connect_timeout(Duration::from_secs(20))
-            .read_timeout(IDLE_TIMEOUT)
+            .read_timeout(idle_timeout)
             .build()
             .map_err(|error| Error::Config(error.to_string()))?;
         Ok(Self {
@@ -608,9 +633,42 @@ impl Client {
         if let Some(kind) = Self::native_kind(self.wire) {
             return self.list_native(kind).await;
         }
+        let value = self.get(format!("{base}/models")).await?;
+        model_ids(&value)
+    }
+
+    pub async fn context(&self, model: &str) -> Option<u32> {
+        if Self::native_kind(self.wire).is_some() {
+            return None;
+        }
+        tokio::time::timeout(PROBE_TIMEOUT, self.probe(model))
+            .await
+            .ok()
+            .flatten()
+    }
+
+    async fn probe(&self, model: &str) -> Option<u32> {
+        let base = self
+            .url
+            .strip_suffix("/chat/completions")
+            .unwrap_or(&self.url);
+        let root = base.strip_suffix("/v1").unwrap_or(base);
+        if let Ok(mut url) = reqwest::Url::parse(&format!("{root}/props")) {
+            url.query_pairs_mut().append_pair("model", model);
+            if let Ok(value) = self.get(url.to_string()).await
+                && let Some(limit) = loaded(&value)
+            {
+                return Some(limit);
+            }
+        }
+        let value = self.get(format!("{base}/models")).await.ok()?;
+        listed(&value, model)
+    }
+
+    async fn get(&self, url: String) -> Result<Value> {
         let token = self.auth.token(&self.http).await?;
         let response = self
-            .attach(self.http.get(format!("{base}/models")), &token)
+            .attach(self.http.get(url), &token)
             .send()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
@@ -623,7 +681,7 @@ impl Client {
             .json()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Malformed, error.to_string()))?;
-        model_ids(&value)
+        Ok(value)
     }
 
     fn request_body(&self, request: &CompletionRequest, stream: bool) -> Result<Value> {
@@ -740,11 +798,52 @@ fn model_ids(value: &Value) -> Result<Vec<String>> {
     Ok(models)
 }
 
+fn loaded(value: &Value) -> Option<u32> {
+    value
+        .pointer("/default_generation_settings/n_ctx")
+        .or_else(|| value.get("n_ctx"))
+        .and_then(tokens)
+}
+
+fn listed(value: &Value, model: &str) -> Option<u32> {
+    let rows = value.get("data")?.as_array()?;
+    let row = rows
+        .iter()
+        .find(|row| row.get("id").and_then(Value::as_str) == Some(model))
+        .or_else(|| (rows.len() == 1).then(|| &rows[0]))?;
+    [
+        row.get("context_length"),
+        row.get("context_window"),
+        row.get("max_model_len"),
+        row.get("max_context_length"),
+        row.pointer("/top_provider/context_length"),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(tokens)
+}
+
+fn tokens(value: &Value) -> Option<u32> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str()?.parse().ok())
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+}
+
 fn response_failure(code: u16, text: &str) -> Error {
     let lower = text.to_lowercase();
     let kind = match code {
         401 | 403 => ProviderFailureKind::Authentication,
         429 => ProviderFailureKind::RateLimited,
+        500..=599
+            if lower.contains("tool call")
+                && lower.contains("arguments")
+                && lower.contains("json")
+                && (lower.contains("parse") || lower.contains("invalid")) =>
+        {
+            ProviderFailureKind::MalformedToolCall
+        }
         500..=599 => ProviderFailureKind::Server,
         400 if lower.contains("context")
             && ["window", "length", "too long", "exceed"]
@@ -797,6 +896,18 @@ impl Provider for Client {
                 self.complete_once(request).await
             }
         })
+    }
+
+    fn child(&self) -> Option<Self> {
+        let mut child = self.clone();
+        child.on_delta = None;
+        child.on_reasoning = None;
+        child.on_tool = None;
+        Some(child)
+    }
+
+    fn supports_children(&self) -> bool {
+        true
     }
 }
 

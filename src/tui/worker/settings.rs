@@ -75,22 +75,29 @@ impl Worker {
         self.send_settings();
     }
 
-    pub(super) fn set_endpoint(&mut self, name: &str) {
-        self.drive(crate::endpoint::resolve(Some(name), None));
+    pub(super) async fn set_endpoint(&mut self, name: &str) {
+        self.drive(crate::endpoint::resolve(Some(name), None)).await;
     }
 
-    pub(super) fn set_seat(&mut self, endpoint: &str, model: &str) {
-        self.drive(crate::endpoint::resolve(Some(endpoint), Some(model)));
+    pub(super) async fn set_seat(&mut self, endpoint: &str, model: &str) {
+        self.drive(crate::endpoint::resolve(Some(endpoint), Some(model)))
+            .await;
     }
 
-    pub(super) fn set_model(&mut self, model: &str) {
-        self.drive(crate::endpoint::resolve(Some(&self.endpoint), Some(model)));
+    pub(super) async fn set_model(&mut self, model: &str) {
+        self.drive(crate::endpoint::resolve(Some(&self.endpoint), Some(model)))
+            .await;
     }
 
-    fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
+    pub(super) async fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
         match endpoint.and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)))
         {
-            Ok((endpoint, provider)) => self.use_endpoint(endpoint, provider),
+            Ok((mut endpoint, provider)) => {
+                if endpoint.context_window.is_none() {
+                    endpoint.context_window = provider.context(&endpoint.model).await;
+                }
+                self.use_endpoint(endpoint, provider);
+            }
             Err(error) => self.fail(&error.to_string()),
         }
         self.send_settings();

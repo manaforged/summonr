@@ -11,6 +11,16 @@ fn workspace_instructions_load_by_default() {
 }
 
 #[test]
+fn command_containment_is_the_default() {
+    let defaults = args(&[]);
+    assert!(!defaults.no_sandbox);
+    assert!(!defaults.network);
+    assert!(args(&["--no-sandbox"]).no_sandbox);
+    assert!(args(&["--net"]).network);
+    assert!(!args(&["--sandbox", "--no-net"]).network);
+}
+
+#[test]
 fn first_token_named_endpoint_is_the_target() {
     let parsed = args(&["grok", "-p", "hello"]);
     assert_eq!(parsed.endpoint.as_deref(), Some("grok"));
@@ -65,6 +75,17 @@ fn sessions_subcommand_is_not_an_endpoint() {
     let parsed = args(&["sessions"]);
     assert!(parsed.list_sessions);
     assert!(parsed.endpoint.is_none());
+}
+
+#[test]
+fn diagnostics_subcommands_are_not_prompts() {
+    let logs = args(&["logs"]);
+    assert!(logs.logs);
+    assert!(logs.endpoint.is_none());
+    let doctor = args(&["doctor"]);
+    assert!(doctor.doctor);
+    assert!(doctor.endpoint.is_none());
+    assert!(parse_from(["logs", "extra"].map(str::to_string)).is_err());
 }
 
 #[test]

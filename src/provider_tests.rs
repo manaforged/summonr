@@ -43,6 +43,60 @@ fn model_list_sorts_deduplicates_and_ignores_bad_rows() -> Result<()> {
 }
 
 #[test]
+fn context_metadata_selects_the_active_model_and_valid_limits() {
+    let models = json!({
+        "data": [
+            {"id": "other", "context_length": 8192},
+            {"id": "qwen", "context_length": 262144}
+        ]
+    });
+    assert_eq!(listed(&models, "qwen"), Some(262_144));
+    assert_eq!(listed(&models, "missing"), None);
+    assert_eq!(
+        loaded(&json!({
+            "default_generation_settings": {"n_ctx": 65536}
+        })),
+        Some(65_536)
+    );
+    assert_eq!(loaded(&json!({"n_ctx": 0})), None);
+}
+
+#[tokio::test]
+async fn context_reads_the_loaded_llama_server_window() -> Result<()> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0")?;
+    let address = listener.local_addr()?;
+    let server = std::thread::spawn(move || -> std::io::Result<()> {
+        let (mut stream, _) = listener.accept()?;
+        let mut request = [0_u8; 2048];
+        let count = stream.read(&mut request)?;
+        let request = String::from_utf8_lossy(&request[..count]);
+        assert!(request.starts_with("GET /props?model=qwen "));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("authorization: bearer key")
+        );
+        let body = r#"{"default_generation_settings":{"n_ctx":131072}}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+    });
+    let client = Client::new("key", format!("http://{address}/v1"))?;
+
+    assert_eq!(client.context("qwen").await, Some(131_072));
+
+    server
+        .join()
+        .map_err(|_panic| Error::Config("context fixture panicked".to_string()))??;
+    Ok(())
+}
+
+#[test]
 fn usage_reads_cached_tokens_from_details_or_flat() {
     let nested: Usage = serde_json::from_str(
         r#"{"prompt_tokens":1224,"completion_tokens":2,"prompt_tokens_details":{"cached_tokens":708}}"#,
@@ -191,6 +245,7 @@ fn body_extras_reject_provider_owned_fields() {
             Vec::new(),
             crate::endpoint::Wire::Completions,
             None,
+            IDLE_TIMEOUT,
         );
         assert!(error.is_err(), "reserved key {key} was accepted");
     }
@@ -202,6 +257,11 @@ fn http_failures_keep_status_and_category() {
         (401, "no", ProviderFailureKind::Authentication),
         (429, "slow", ProviderFailureKind::RateLimited),
         (503, "down", ProviderFailureKind::Server),
+        (
+            500,
+            "Failed to parse tool call arguments as JSON",
+            ProviderFailureKind::MalformedToolCall,
+        ),
         (
             400,
             "context length exceeded",
@@ -329,5 +389,24 @@ fn effort_none_leaves_the_wire_field_out_and_off_parses_in_config() -> Result<()
     let parsed: Effort = serde_json::from_str("\"off\"")?;
     assert_eq!(parsed, Effort::None);
     drop(serde_json::from_str::<Effort>("\"turbo\"").unwrap_err());
+    Ok(())
+}
+
+#[test]
+fn child_client_drops_parent_stream_callbacks() -> Result<()> {
+    let parent = Client::new("k", "http://h/v1/")?
+        .on_delta(|_| {})
+        .on_reasoning(|_| {})
+        .on_tool(|_| {});
+    let child = parent
+        .child()
+        .ok_or_else(|| Error::Config("client does not support children".to_string()))?;
+
+    assert!(parent.on_delta.is_some());
+    assert!(parent.on_reasoning.is_some());
+    assert!(parent.on_tool.is_some());
+    assert!(child.on_delta.is_none());
+    assert!(child.on_reasoning.is_none());
+    assert!(child.on_tool.is_none());
     Ok(())
 }

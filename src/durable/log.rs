@@ -36,6 +36,8 @@ pub(crate) enum Line {
         workspace: PathBuf,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         parent: Option<SessionId>,
+        #[serde(default, skip_serializing_if = "is_zero")]
+        depth: u8,
     },
     Budget {
         tokens: Option<u64>,
@@ -43,6 +45,9 @@ pub(crate) enum Line {
     },
     Workflow {
         name: Option<String>,
+    },
+    Child {
+        record: crate::child::ChildRecord,
     },
     User {
         text: String,
@@ -88,6 +93,10 @@ pub(crate) enum Line {
     },
 }
 
+fn is_zero(value: &u8) -> bool {
+    *value == 0
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct State {
     pub(crate) id: Option<SessionId>,
@@ -95,9 +104,12 @@ pub(crate) struct State {
     pub(crate) system: String,
     pub(crate) workspace: PathBuf,
     pub(crate) parent: Option<SessionId>,
+    pub(crate) depth: u8,
     pub(crate) tokens: Option<u64>,
     pub(crate) millis: Option<u64>,
     pub(crate) workflow: Option<String>,
+    pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
+    pub(crate) child_total: usize,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,
     pub(crate) elapsed: u64,
@@ -114,18 +126,32 @@ impl State {
                 system,
                 workspace,
                 parent,
+                depth,
             } => {
                 self.id = Some(id);
                 self.model = model;
                 self.system = system;
                 self.workspace = workspace;
                 self.parent = parent;
+                self.depth = depth;
             }
             Line::Budget { tokens, millis } => {
                 self.tokens = tokens;
                 self.millis = millis;
             }
             Line::Workflow { name } => self.workflow = name,
+            Line::Child { record } => {
+                if !self.children.contains_key(&record.id) {
+                    self.child_total = self.child_total.saturating_add(1);
+                }
+                self.children.insert(record.id, record);
+                while self.children.len() > crate::child::MAX_PER_PARENT {
+                    let Some(oldest) = self.children.keys().next().cloned() else {
+                        break;
+                    };
+                    self.children.remove(&oldest);
+                }
+            }
             Line::User {
                 text,
                 images,

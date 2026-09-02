@@ -57,9 +57,29 @@ fn tool_argument_uses_an_editable_summary() {
 fn compact_formatters_keep_the_useful_tail() {
     assert_eq!(fmt_tokens(999), "999");
     assert_eq!(fmt_tokens(1_500), "1.5k");
+    assert_eq!(fmt_tokens(1_000_000), "1.0m");
     assert_eq!(short_session("session-12345"), "12345");
     assert_eq!(last_line("one\n\ntwo\n"), "two");
     assert_eq!(tail_lines("one\ntwo\nthree", 2), "two\nthree");
+}
+
+#[test]
+fn context_reports_the_limit_and_percentage_used() {
+    let round = Round {
+        prompt: 64_000,
+        completion: 1_536,
+        reasoning: 8_000,
+        cached: 32_000,
+        prefix_hash: String::new(),
+        cost: None,
+    };
+
+    assert_eq!(
+        context(Some(&round), Some(262_144)),
+        "65.5k / 262.1k · 25% used"
+    );
+    assert_eq!(context(None, Some(262_144)), "0 / 262.1k · 0% used");
+    assert_eq!(context(Some(&round), None), "not set");
 }
 
 #[test]
@@ -69,10 +89,9 @@ fn help_lists_the_live_composer_bindings() {
         "/model",
         "enter send/steer",
         "tab complete/queue",
-        "ctrl+j newline",
         "shift+tab mode",
-        "ctrl+o settings",
-        "ctrl+g editor",
+        "ctrl+o by default",
+        "hotkeys are editable",
     ] {
         assert!(help.contains(binding), "missing `{binding}` in:\n{help}");
     }

@@ -6,7 +6,7 @@ use sigil::prelude::{Signal, signal};
 use tokio::sync::mpsc::UnboundedSender;
 use unicode_width::UnicodeWidthStr;
 
-use crate::prefs::{self, Prefs};
+use crate::prefs::{self, Hotkey, Prefs};
 use crate::provider::UserInput;
 use crate::workflow::Role;
 
@@ -42,6 +42,10 @@ pub(super) struct App {
     pub(super) panes: Signal<u64>,
     pub(super) settings_open: Signal<bool>,
     pub(super) settings_sel: Signal<usize>,
+    pub(super) hotkeys_open: Signal<bool>,
+    pub(super) hotkey_sel: Signal<usize>,
+    pub(super) hotkey_recording: Signal<bool>,
+    pub(super) hotkey_note: Signal<String>,
     pub(super) editing_model: Signal<bool>,
     pub(super) model_draft: Signal<String>,
     pub(super) model_caret: Signal<usize>,
@@ -95,6 +99,7 @@ pub(super) struct App {
     pub(super) copy: Signal<Option<String>>,
     copy_pending: Signal<bool>,
     pub(super) open_file: Signal<Option<String>>,
+    pub(super) resume: Rc<RefCell<Option<String>>>,
     pub(super) quit: Signal<bool>,
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
@@ -123,6 +128,10 @@ impl App {
             panes: signal(0),
             settings_open: signal(false),
             settings_sel: signal(0),
+            hotkeys_open: signal(false),
+            hotkey_sel: signal(0),
+            hotkey_recording: signal(false),
+            hotkey_note: signal(String::new()),
             editing_model: signal(false),
             model_draft: signal(String::new()),
             model_caret: signal(0),
@@ -176,6 +185,7 @@ impl App {
             copy: signal(None),
             copy_pending: signal(false),
             open_file: signal(None),
+            resume: Rc::new(RefCell::new(None)),
             quit: signal(false),
             editor_requested: signal(false),
             commands: Picker::new(),
@@ -228,6 +238,7 @@ impl App {
             }
         }
         match msg {
+            Msg::Resume(id) => self.request_resume(id),
             Msg::Models { mut rows, recent } => {
                 let snapshot = self.model.borrow().snapshot.clone();
                 let current = format!("{}\t{}", snapshot.endpoint, snapshot.model);
@@ -270,6 +281,11 @@ impl App {
                 }
             }
         }
+    }
+
+    pub(super) fn request_resume(&self, id: String) {
+        *self.resume.borrow_mut() = Some(id);
+        self.quit.set(true);
     }
 
     pub(super) fn refresh(&self) {
@@ -536,7 +552,10 @@ impl App {
 
     fn local(&self, line: &str) -> bool {
         match crate::parse_command(line) {
-            Some(crate::SlashCommand::Settings) => self.settings_open.set(true),
+            Some(crate::SlashCommand::Settings) => {
+                self.hotkeys_open.set(false);
+                self.settings_open.set(true);
+            }
             Some(crate::SlashCommand::Auth | crate::SlashCommand::Login) => {
                 self.begin_auth(argument(line));
             }
@@ -601,7 +620,7 @@ impl App {
             self.settings_sel
                 .peek()
                 .saturating_add_signed(delta)
-                .min(11),
+                .min(12),
         );
     }
 
@@ -636,8 +655,121 @@ impl App {
             }
             9 => self.toggle_reasoning(),
             10 => self.toggle_tools(),
-            _ => self.toggle_bus(),
+            11 => self.toggle_bus(),
+            12 => self.open_hotkeys(),
+            _ => {}
         }
+    }
+
+    pub(super) fn toggle_options(&self) {
+        if self.auth_open.peek() {
+            self.cancel_auth();
+            return;
+        }
+        if self.editing_model.peek() {
+            self.cancel_model_edit();
+            return;
+        }
+        if self.workflow_open.peek() {
+            self.workflow_open.set(false);
+            return;
+        }
+        if self.hotkeys_open.peek() {
+            self.close_hotkeys();
+            return;
+        }
+        let open = !self.settings_open.peek();
+        if open {
+            self.settings_sel.set(0);
+        }
+        self.settings_open.set(open);
+    }
+
+    pub(super) fn open_hotkeys(&self) {
+        self.hotkey_sel.set(0);
+        self.hotkey_recording.set(false);
+        self.hotkey_note.set(String::new());
+        self.hotkeys_open.set(true);
+    }
+
+    pub(super) fn close_hotkeys(&self) {
+        self.hotkey_recording.set(false);
+        self.hotkey_note.set(String::new());
+        self.hotkeys_open.set(false);
+    }
+
+    pub(super) fn move_hotkey(&self, delta: isize) {
+        if self.hotkey_recording.peek() {
+            return;
+        }
+        self.hotkey_sel.set(
+            self.hotkey_sel
+                .peek()
+                .saturating_add_signed(delta)
+                .min(Hotkey::ALL.len() - 1),
+        );
+    }
+
+    pub(super) fn edit_hotkey(&self) {
+        if !self.hotkey_recording.peek() {
+            self.hotkey_note.set(String::new());
+            self.hotkey_recording.set(true);
+        }
+    }
+
+    pub(super) fn reset_hotkeys(&self) {
+        let mut model = self.model.borrow_mut();
+        model.prefs.hotkeys = Default::default();
+        let prefs = model.prefs.clone();
+        drop(model);
+        self.hotkey_recording.set(false);
+        self.hotkey_note.set(String::new());
+        self.persist(&prefs);
+        self.refresh();
+    }
+
+    pub(super) fn route_hotkey(&self, key: char) -> bool {
+        if self.hotkey_recording.peek() {
+            if !crate::prefs::available(key) {
+                self.hotkey_note.set(format!("ctrl+{key} is reserved"));
+                return true;
+            }
+            let action = Hotkey::ALL[self.hotkey_sel.peek().min(Hotkey::ALL.len() - 1)];
+            let mut model = self.model.borrow_mut();
+            let _ = model.prefs.hotkeys.assign(action, key);
+            let prefs = model.prefs.clone();
+            drop(model);
+            self.hotkey_recording.set(false);
+            self.hotkey_note.set(String::new());
+            self.persist(&prefs);
+            self.refresh();
+            return true;
+        }
+        let action = self.model.borrow().prefs.hotkeys.action(key);
+        let Some(action) = action else {
+            return false;
+        };
+        if action != Hotkey::Options && self.options_active() {
+            return true;
+        }
+        match action {
+            Hotkey::Options => self.toggle_options(),
+            Hotkey::Newline => self.newline(),
+            Hotkey::Editor => self.editor_requested.set(true),
+            Hotkey::Files => self.toggle_pane(Pane::Files),
+            Hotkey::Ledger => self.toggle_pane(Pane::Ledger),
+            Hotkey::Diff => self.toggle_pane(Pane::Diff),
+            Hotkey::Pane => self.toggle_side(),
+        }
+        true
+    }
+
+    pub(super) fn options_active(&self) -> bool {
+        self.settings_open.peek()
+            || self.hotkeys_open.peek()
+            || self.auth_open.peek()
+            || self.editing_model.peek()
+            || self.workflow_open.peek()
     }
 
     pub(super) fn press(&self, col: usize, row: usize) -> bool {
@@ -705,6 +837,12 @@ impl App {
                     self.settings_sel.set(index);
                 }
             }
+            Target::Hotkey(index) => {
+                self.hotkey_recording.set(false);
+                self.hotkey_note.set(String::new());
+                self.hotkey_sel.set(index);
+                self.edit_hotkey();
+            }
             Target::Model(index) => {
                 self.model_sel.set(index);
                 self.commit_model_edit();
@@ -722,6 +860,7 @@ impl App {
                 self.pane_focus.set(true);
                 self.pane_enter();
             }
+            Target::Close => self.toggle_side(),
             Target::Saved(name) => {
                 drop(self.cmd.send(Cmd::Command(format!("/workflow {name}"))));
             }
@@ -805,7 +944,7 @@ impl App {
         self.workflow_naming.set(true);
     }
 
-    fn commit_workflow(&self) {
+    pub(super) fn commit_workflow(&self) {
         let name = self.workflow_draft.peek().trim().to_string();
         if name.is_empty() {
             return;

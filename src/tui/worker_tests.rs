@@ -88,15 +88,33 @@ async fn auto_reply_only_replaces_a_tick() {
     std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
 }
 
-#[test]
-fn model_setting_reuses_the_current_endpoint() {
-    let (mut worker, _tx, workspace) = worker();
-    worker.endpoint = "qwen".to_string();
+#[tokio::test]
+async fn endpoint_change_keeps_its_detected_context() {
+    use crate::endpoint::{Endpoint, Wire};
 
-    worker.set_model("qwen-next");
+    let (mut worker, _tx, workspace) = worker();
+    let endpoint = Endpoint {
+        name: "local".to_string(),
+        model: "qwen-next".to_string(),
+        base_url: Some("http://localhost/v1".to_string()),
+        api_key: Some("key".to_string()),
+        source: None,
+        oauth: None,
+        body: None,
+        context_window: Some(65_536),
+        idle_timeout_secs: None,
+        effort: None,
+        price: None,
+        env: Default::default(),
+        headers: Default::default(),
+        wire: Wire::Completions,
+    };
+
+    worker.drive(Ok(endpoint)).await;
 
     assert_eq!(worker.loop_.model(), "qwen-next");
-    assert_eq!(worker.endpoint, "qwen");
+    assert_eq!(worker.endpoint, "local");
+    assert_eq!(worker.loop_.context_window(), Some(65_536));
     std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
 }
 
@@ -201,5 +219,25 @@ async fn effort_and_name_take_arguments_in_the_interface() {
     assert_eq!(worker.command("/name widget spike").await, Some(true));
     assert_eq!(system_line(&mut ui).await, "session named widget spike");
     assert_eq!(worker.loop_.name().as_deref(), Some("widget spike"));
+    std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
+}
+
+#[tokio::test]
+async fn bare_resume_reports_when_the_workspace_has_no_previous_session() {
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+
+    assert_eq!(worker.command("/resume").await, Some(true));
+    let failed = loop {
+        match tokio::time::timeout(Duration::from_secs(5), ui.recv()).await {
+            Ok(Some(Msg::Failed(text))) => break text,
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => panic!("no failure arrived"),
+        }
+    };
+
+    assert_eq!(
+        failed,
+        "configuration error: no previous session for this workspace"
+    );
     std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
 }

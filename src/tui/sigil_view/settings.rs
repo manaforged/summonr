@@ -26,6 +26,26 @@ pub(super) fn settings_layer(app: App) -> NodeBuilder {
         .child(hit::wire(&app, layer))
 }
 
+pub(super) fn hotkeys_layer(app: App) -> NodeBuilder {
+    let (cols, rows) = app.viewport.get();
+    let cells = hotkeys_grid(&app, usize::from(cols), usize::from(rows));
+    let mut layer = container().layout(
+        LayoutStyle::flex_column()
+            .position(Position::Absolute)
+            .inset(0.0)
+            .fill_width()
+            .fill_height()
+            .gap(0.0),
+    );
+    for line in cells.chunks(usize::from(cols).max(1)) {
+        layer = layer.child(row(line));
+    }
+    container()
+        .layout(LayoutStyle::block().fill_width().fill_height())
+        .child(text_field(signal(String::new())).class("w-full h-full"))
+        .child(hit::wire(&app, layer))
+}
+
 pub(super) fn model_picker_layer(app: App) -> NodeBuilder {
     let (cols, rows) = app.viewport.get();
     let cells = model_picker_grid(&app, usize::from(cols), usize::from(rows));
@@ -608,9 +628,10 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             "reasoning",
             "tools",
             "bus",
+            "hotkeys",
         ];
         let selected = labels[app.settings_sel.peek().min(labels.len() - 1)];
-        write_at(&mut cells, width, 1, 0, "settings", GRAY);
+        write_at(&mut cells, width, 1, 0, "options", GRAY);
         write_at(
             &mut cells,
             width,
@@ -644,7 +665,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         &format!("╭{}╮", "─".repeat(card_width - 2)),
         accent,
     );
-    write_at(&mut cells, width, left + 1, top, " ⚙ settings ", accent);
+    write_at(&mut cells, width, left + 1, top, " ⚙ options ", accent);
     for y in top + 1..top + card_height - 1 {
         write_at(&mut cells, width, left, y, "│", accent);
         write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
@@ -658,8 +679,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         accent,
     );
     let hints: &[&str] = &[
-        " tab/↑↓ select · ←→ change · enter open · esc close ",
-        " ↑↓ select · ←→ change · esc close ",
+        " ↑↓ select · ←→ change · enter open · esc close ",
         " ↑↓ · ←→ · enter · esc ",
         " ↑↓ ←→ esc ",
     ];
@@ -729,6 +749,10 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             }
             .to_string(),
         ),
+        (
+            "hotkeys",
+            format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
+        ),
     ];
     let available = card_height.saturating_sub(2);
     let compact = !expanded;
@@ -750,7 +774,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             write_at(&mut cells, width, left + 2, top + offset, label, DIM);
         }
     }
-    let positions = [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 17];
+    let positions = [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18];
     app.hits.clear();
     for (offset, (index, (label, value))) in
         rows.iter().enumerate().take(end).skip(start).enumerate()
@@ -784,6 +808,145 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         );
     }
     cells
+}
+
+fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
+    use crate::prefs::Hotkey;
+
+    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
+    for cell in &mut cells {
+        cell.bg = BLACK;
+    }
+    if width < 8 || height < 3 {
+        return cells;
+    }
+    let selected = app.hotkey_sel.peek().min(Hotkey::ALL.len() - 1);
+    let model = app.model.borrow();
+    if width < 28 || height < 13 {
+        let action = Hotkey::ALL[selected];
+        write_at(&mut cells, width, 1, 0, "hotkeys", GRAY);
+        write_at(
+            &mut cells,
+            width,
+            1,
+            height / 2,
+            &ellipsize(
+                &format!("› {}  {}", action.name(), model.prefs.hotkeys.label(action)),
+                width.saturating_sub(2),
+            ),
+            TEXT,
+        );
+        write_at(&mut cells, width, 1, height - 1, "↑↓ enter esc", DIM);
+        return cells;
+    }
+    let accent = accent(&model.prefs.theme);
+    let card_width = 64.min(width.saturating_sub(4));
+    let card_height = 13;
+    let left = width.saturating_sub(card_width) / 2;
+    let top = height.saturating_sub(card_height) / 2;
+    for y in top..top + card_height {
+        for x in left..left + card_width {
+            if let Some(cell) = cells.get_mut(y * width + x) {
+                *cell = Cell::blank();
+            }
+        }
+    }
+    write_at(
+        &mut cells,
+        width,
+        left,
+        top,
+        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        accent,
+    );
+    write_at(&mut cells, width, left + 1, top, " hotkeys ", accent);
+    for y in top + 1..top + card_height - 1 {
+        write_at(&mut cells, width, left, y, "│", accent);
+        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
+    }
+    write_at(
+        &mut cells,
+        width,
+        left,
+        top + card_height - 1,
+        &format!("╰{}╯", "─".repeat(card_width - 2)),
+        accent,
+    );
+    let hint = if app.hotkey_recording.peek() {
+        " press ctrl+letter · esc cancel "
+    } else {
+        " ↑↓ select · enter change · r reset · esc back "
+    };
+    write_at(
+        &mut cells,
+        width,
+        left + card_width.saturating_sub(hint.chars().count() + 1),
+        top + card_height - 1,
+        hint,
+        DIM,
+    );
+    app.hits.clear();
+    for (index, action) in Hotkey::ALL.iter().copied().enumerate() {
+        let y = top + 2 + index;
+        app.hits
+            .add(y, left + 1, left + card_width - 1, Target::Hotkey(index));
+        let active = index == selected;
+        write_at(
+            &mut cells,
+            width,
+            left + 2,
+            y,
+            &format!("{} {:<10}", if active { '›' } else { ' ' }, action.name()),
+            if active { accent } else { DIM },
+        );
+        let binding = if active && app.hotkey_recording.peek() {
+            "press ctrl+letter".to_string()
+        } else {
+            model.prefs.hotkeys.label(action)
+        };
+        write_at(
+            &mut cells,
+            width,
+            left + 16,
+            y,
+            &binding,
+            if active { TEXT } else { DIM },
+        );
+        write_at(
+            &mut cells,
+            width,
+            left + 36,
+            y,
+            hotkey_description(action),
+            DIM,
+        );
+    }
+    let note = app.hotkey_note.peek();
+    if !note.is_empty() {
+        write_at(
+            &mut cells,
+            width,
+            left + 2,
+            top + 10,
+            &ellipsize(&note, card_width.saturating_sub(4)),
+            RED,
+        );
+    }
+    cells
+}
+
+const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
+    use crate::prefs::Hotkey;
+
+    match action {
+        Hotkey::Options => "open options",
+        Hotkey::Newline => "insert newline",
+        Hotkey::Editor => "open $EDITOR",
+        Hotkey::Files => "toggle files",
+        Hotkey::Ledger => "toggle ledger",
+        Hotkey::Diff => "toggle diff",
+        Hotkey::Pane => "hide/show pane",
+    }
 }
 
 const fn on_off(value: bool) -> &'static str {

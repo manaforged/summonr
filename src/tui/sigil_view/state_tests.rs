@@ -41,6 +41,39 @@ fn streamed_events_become_a_markdown_transcript() {
 }
 
 #[test]
+fn turn_receipt_does_not_duplicate_the_streamed_reply() {
+    sigil::reactive::Runtime::scope("mage-stream-receipt-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        apply(&app, Msg::Delta("Hello world".to_string()));
+        apply(
+            &app,
+            Msg::Event(Event::Receipt {
+                receipt: crate::Receipt::new(Vec::new(), Vec::new()),
+            }),
+        );
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "Hello world".to_string(),
+            }),
+        );
+
+        assert_eq!(app.transcript.peek().matches("Hello world").count(), 1);
+        let model = app.model.borrow();
+        let replies: Vec<_> = model
+            .entries
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::Assistant { text, done } => Some((text.as_str(), *done)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(replies, vec![("Hello world", true)]);
+    });
+}
+
+#[test]
 fn tool_result_updates_the_existing_call() {
     sigil::reactive::Runtime::scope("mage-tool-view-test", || {
         let (cmd, _rx) = unbounded_channel();

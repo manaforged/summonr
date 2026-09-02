@@ -31,6 +31,90 @@ fn last_session_matches_its_workspace() -> Result<()> {
 }
 
 #[test]
+fn child_session_does_not_replace_the_default_resume_target() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let workspace = home.path().join("workspace");
+    std::fs::create_dir(&workspace)?;
+    let parent = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        &workspace,
+        "parent-model",
+        "test",
+    )
+    .map_err(|error| crate::Error::Config(error.to_string()))?;
+    let parent_path = parent.path().to_path_buf();
+    let child = crate::durable::driver::SessionDriver::open_child(
+        home.path(),
+        &workspace,
+        "child-model",
+        "test",
+        parent.id(),
+    )
+    .map_err(|error| crate::Error::Config(error.to_string()))?;
+
+    assert_ne!(child.path(), parent_path);
+    assert_eq!(
+        catalog::last_in(home.path(), &workspace)?,
+        Some(parent_path)
+    );
+    Ok(())
+}
+
+#[test]
+fn previous_session_skips_the_current_session() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let workspace = home.path().join("workspace");
+    std::fs::create_dir(&workspace)?;
+    let first =
+        crate::durable::driver::SessionDriver::open(home.path(), &workspace, "first-model", "test")
+            .map_err(|error| crate::Error::Config(error.to_string()))?;
+    let first_id = first.id().to_string();
+    drop(first);
+    let current = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        &workspace,
+        "current-model",
+        "test",
+    )
+    .map_err(|error| crate::Error::Config(error.to_string()))?;
+    let current_id = current.id().to_string();
+    drop(current);
+
+    let previous = catalog::previous_in(home.path(), &workspace, &current_id)?
+        .unwrap_or_else(|| panic!("previous session"));
+
+    assert_eq!(previous.id, first_id);
+    assert_eq!(previous.model.as_deref(), Some("first-model"));
+    Ok(())
+}
+
+#[test]
+fn depth_zero_fork_remains_a_default_resume_target() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let workspace = home.path().join("workspace");
+    std::fs::create_dir(&workspace)?;
+    let parent = crate::durable::driver::SessionDriver::open(
+        home.path(),
+        &workspace,
+        "parent-model",
+        "test",
+    )
+    .map_err(|error| crate::Error::Config(error.to_string()))?;
+    let fork = parent
+        .fork()
+        .map_err(|error| crate::Error::Config(error.to_string()))?;
+
+    assert_eq!(catalog::last_in(home.path(), &workspace)?, Some(fork));
+    assert_eq!(
+        catalog::list_in(home.path())?
+            .last()
+            .map(|session| session.depth),
+        Some(0)
+    );
+    Ok(())
+}
+
+#[test]
 fn harness_text_follows_the_user_text() {
     assert_eq!(decorate("control", "request"), "request\n\ncontrol");
     assert_eq!(decorate("control", ""), "control");

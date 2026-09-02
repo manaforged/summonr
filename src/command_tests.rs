@@ -24,6 +24,11 @@ fn commands_with_arguments_resolve_by_prefix() {
     );
     assert_eq!(parse_command("  /plan  "), Some(SlashCommand::Plan));
     assert_eq!(parse_command("/compact"), Some(SlashCommand::Compact));
+    assert_eq!(parse_command("/resume"), Some(SlashCommand::Resume));
+    assert_eq!(
+        parse_command("/resume widget spike"),
+        Some(SlashCommand::Resume)
+    );
     assert_eq!(parse_command("/bogus x"), None);
     assert_eq!(parse_command("fix /tmp/x"), None);
     assert_eq!(parse_command(""), None);

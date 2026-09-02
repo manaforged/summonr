@@ -155,6 +155,7 @@ impl Model {
             Msg::Edited(paths) => self.recent = paths,
             Msg::View { path, rope, added } => self.view = Some(View { path, rope, added }),
             Msg::Patch { path, text } => self.patch = Some((path, text)),
+            Msg::Resume(_) => {}
         }
         true
     }
@@ -207,7 +208,7 @@ impl Model {
             Event::Verify { command, passed } => {
                 self.entries.push(Entry::Verify { command, passed });
             }
-            Event::Receipt { .. } => {}
+            Event::Receipt { receipt } => self.entries.push(Entry::System(receipt.text)),
             Event::Work { progress } => {
                 self.ledger = progress.ledger.clone();
                 self.entries.push(Entry::System(progress.to_string()));
@@ -266,12 +267,25 @@ impl Model {
     }
 
     fn finish_assistant(&mut self, text: String) {
-        match self.entries.last_mut() {
-            Some(Entry::Assistant { text: body, done }) if !*done => {
-                *body = text;
-                *done = true;
-            }
-            _ => self.entries.push(Entry::Assistant { text, done: true }),
+        let pending = self
+            .entries
+            .iter_mut()
+            .rev()
+            .take_while(|entry| {
+                matches!(
+                    entry,
+                    Entry::Assistant { done: false, .. } | Entry::Verify { .. } | Entry::System(_)
+                )
+            })
+            .find_map(|entry| match entry {
+                Entry::Assistant { text, done } if !*done => Some((text, done)),
+                _ => None,
+            });
+        if let Some((body, done)) = pending {
+            *body = text;
+            *done = true;
+        } else {
+            self.entries.push(Entry::Assistant { text, done: true });
         }
     }
 

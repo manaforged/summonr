@@ -418,8 +418,9 @@ fn prompt(
         write(cells, cols, x + 5, y + 1, &input, TEXT);
     }
     write(cells, cols, x + width.saturating_sub(1), y + 1, "│", border);
-    let hint = super::chat::composer_hint(busy, usize::from(width));
-    let dash = usize::from(width).saturating_sub(hint.chars().count() + 2);
+    let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
+    let hint = super::chat::composer_hint(busy, usize::from(width), &options);
+    let dash = usize::from(width).saturating_sub(UnicodeWidthStr::width(hint.as_str()) + 2);
     write(
         cells,
         cols,
@@ -428,7 +429,7 @@ fn prompt(
         &format!("╰{}", "─".repeat(dash)),
         border,
     );
-    write(cells, cols, x + 1 + dash as u16, y + 2, hint, DIM);
+    write(cells, cols, x + 1 + dash as u16, y + 2, &hint, DIM);
     write(cells, cols, x + width.saturating_sub(1), y + 2, "╯", border);
 }
 

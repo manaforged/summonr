@@ -8,6 +8,7 @@ pub enum SlashCommand {
     Workflow,
     Theme,
     Session,
+    Resume,
     Stats,
     Effort,
     Compact,
@@ -69,6 +70,11 @@ const SPECS: &[CommandSpec] = &[
         SlashCommand::View,
     ),
     spec("/session", "session id and log path", SlashCommand::Session),
+    spec(
+        "/resume",
+        "resume the previous session here, or /resume ID|NAME",
+        SlashCommand::Resume,
+    ),
     spec(
         "/name",
         "name this session; bare shows the name",

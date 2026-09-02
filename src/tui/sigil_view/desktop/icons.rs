@@ -39,6 +39,22 @@ pub(super) fn play() -> PathNode {
         .close()
 }
 
+pub(super) fn options() -> PathNode {
+    fine(16, 16)
+        .move_to(2.0, 4.0)
+        .line_to(14.0, 4.0)
+        .move_to(6.0, 2.0)
+        .line_to(6.0, 6.0)
+        .move_to(2.0, 8.0)
+        .line_to(14.0, 8.0)
+        .move_to(10.0, 6.0)
+        .line_to(10.0, 10.0)
+        .move_to(2.0, 12.0)
+        .line_to(14.0, 12.0)
+        .move_to(5.0, 10.0)
+        .line_to(5.0, 14.0)
+}
+
 pub(super) fn branch() -> PathNode {
     ring(mark(16, 16), 5.0, 4.0, 2.0)
         .move_to(5.0, 6.0)

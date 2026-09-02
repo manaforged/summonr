@@ -4,13 +4,21 @@ use sigil::prelude::*;
 
 use super::super::app::{App, FileRow};
 use super::super::pane::Pane;
-use super::{hit, spacer};
+use super::{hit, options, spacer};
 
 const WIDTH: f32 = 360.0;
 
 pub(super) fn slot(app: App) -> NodeBuilder {
     let mut slot = container().layout(LayoutStyle::flex_row().fill_height().shrink(0.0));
-    if let Some(pane) = app.layout.peek().secondary {
+    if app.editing_model.peek() {
+        slot = slot.child(options::models(app));
+    } else if app.workflow_open.peek() {
+        slot = slot.child(options::workflow(app));
+    } else if app.hotkeys_open.peek() {
+        slot = slot.child(options::hotkeys(app));
+    } else if app.settings_open.peek() {
+        slot = slot.child(options::main(app));
+    } else if let Some(pane) = app.layout.peek().secondary {
         slot = slot.child(pane_body(app, pane));
     }
     slot
@@ -40,7 +48,7 @@ fn pane_body(app: App, pane: Pane) -> NodeBuilder {
     column
 }
 
-fn header(title: String, note: String) -> NodeBuilder {
+fn header(app: &App, title: String, note: String) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -51,6 +59,19 @@ fn header(title: String, note: String) -> NodeBuilder {
         .child(label(title).class(classes!("text-sm font-medium text-gray-12")))
         .child(spacer())
         .child(label(note).class(classes!("text-xs text-gray-11")))
+        .child(close(app))
+}
+
+fn close(app: &App) -> NodeBuilder {
+    let close = app.clone();
+    hit("Close pane".to_string(), false, move || close.toggle_side())
+        .layout(
+            LayoutStyle::flex_row()
+                .fixed_size(28.0, 28.0)
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center),
+        )
+        .child(label("×").class(classes!("text-xs text-gray-11")))
 }
 
 fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
@@ -58,7 +79,11 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
     if let Some(path) = app.diff_view.peek() {
         let back = app.clone();
         column = column
-            .child(header(path.clone(), format!("vs {}", model.diff.base)))
+            .child(header(
+                &app,
+                path.clone(),
+                format!("vs {}", model.diff.base),
+            ))
             .child(
                 hit("Back to changes".to_string(), false, move || {
                     back.pane_back();
@@ -103,7 +128,7 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         }
         return column.child(hunk);
     }
-    column = column.child(header("Changes".to_string(), model.diff.summary()));
+    column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
     drop(model);
     let stats = app.diff_stats();
     if stats.is_empty() {
@@ -135,7 +160,11 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    column = column.child(header(repo, app.git_branch.clone().unwrap_or_default()));
+    column = column.child(header(
+        &app,
+        repo,
+        app.git_branch.clone().unwrap_or_default(),
+    ));
     let rows: Vec<FileRow> = app.file_rows();
     if rows.is_empty() {
         return column.child(label("no files listed yet").class(classes!("text-xs text-gray-11")));
@@ -179,7 +208,11 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
 
 fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let trees = app.model.borrow().trees.clone();
-    column = column.child(header("Worktrees".to_string(), trees.len().to_string()));
+    column = column.child(header(
+        &app,
+        "Worktrees".to_string(),
+        trees.len().to_string(),
+    ));
     if trees.is_empty() {
         return column.child(
             label("no worktrees — summon --worktree, --goal, or --steps")
@@ -254,6 +287,7 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .child(label("Edit").class(classes!("text-xs text-gray-12"))),
         );
     }
+    bar = bar.child(close(&app));
     column = column.child(bar);
     if editing {
         return column.child(
@@ -304,7 +338,7 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
 
 fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     let lines = app.model.borrow().ledger.clone();
-    column = column.child(header("Plan".to_string(), String::new()));
+    column = column.child(header(app, "Plan".to_string(), String::new()));
     if lines.is_empty() {
         return column.child(
             label("no plan is running — /steps PLAN.md or --goal")

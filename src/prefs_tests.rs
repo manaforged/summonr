@@ -27,6 +27,7 @@ fn roundtrip_preserves_sections_and_replaces_keys() {
         tools: ToolOutput::Full,
         bus: false,
         layout: "chat".to_string(),
+        hotkeys: Hotkeys::default(),
         last_endpoint: Some("glm".to_string()),
     };
     save_in(&path, &prefs).unwrap_or_else(|error| panic!("save preferences: {error}"));
@@ -42,9 +43,41 @@ fn roundtrip_preserves_sections_and_replaces_keys() {
     assert!(top.contains(&"splash = false"));
     assert!(top.contains(&"animations = false"));
     assert!(top.contains(&"tools = \"full\""));
+    assert!(top.iter().any(|line| line.starts_with("hotkeys = ")));
     assert!(saved.contains("[endpoint.local]\nbase_url = \"http://x\"\ntheme = \"inner\""));
     assert_eq!(load_from(&path).ok(), Some(prefs));
     drop(std::fs::remove_file(&path));
+}
+
+#[test]
+fn hotkeys_load_overrides_and_reject_conflicts() {
+    let path = tmp("hotkeys");
+    std::fs::write(
+        &path,
+        "hotkeys = { options = \"ctrl+k\", files = \"ctrl+o\" }\n",
+    )
+    .unwrap_or_else(|error| panic!("write hotkeys: {error}"));
+    let prefs = load_from(&path).unwrap_or_else(|error| panic!("load hotkeys: {error}"));
+    assert_eq!(prefs.hotkeys.label(Hotkey::Options), "ctrl+k");
+    assert_eq!(prefs.hotkeys.label(Hotkey::Files), "ctrl+o");
+
+    std::fs::write(&path, "hotkeys = { options = \"ctrl+e\" }\n")
+        .unwrap_or_else(|error| panic!("write conflict: {error}"));
+    let error = load_from(&path)
+        .expect_err("duplicate hotkey must fail")
+        .to_string();
+    assert!(error.contains("assigned more than once"), "{error}");
+    drop(std::fs::remove_file(&path));
+}
+
+#[test]
+fn assigning_a_used_hotkey_swaps_the_actions() {
+    let mut hotkeys = Hotkeys::default();
+
+    assert!(hotkeys.assign(Hotkey::Options, 'e'));
+    assert_eq!(hotkeys.label(Hotkey::Options), "ctrl+e");
+    assert_eq!(hotkeys.label(Hotkey::Files), "ctrl+o");
+    assert!(!hotkeys.assign(Hotkey::Options, 'c'));
 }
 
 #[test]

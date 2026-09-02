@@ -10,6 +10,7 @@ use super::app::App;
 use super::pane::Pane;
 
 mod icons;
+mod options;
 mod rail;
 mod side;
 mod thread;
@@ -25,6 +26,25 @@ pub(super) fn root(app: App) -> NodeBuilder {
                 screen.layout.get(),
                 screen.panes.get(),
                 screen.pane_focus.get(),
+                screen.settings_open.get(),
+                screen.settings_sel.get(),
+                screen.hotkeys_open.get(),
+                screen.hotkey_sel.get(),
+                screen.hotkey_recording.get(),
+                screen.hotkey_note.get(),
+                screen.editing_model.get(),
+                screen.model_draft.get(),
+                screen.model_choices.get(),
+                screen.model_sel.get(),
+                screen.model_loading.get(),
+                screen.model_error.get(),
+                screen.workflow_open.get(),
+                screen.workflow_name.get(),
+                screen.workflow_names.get(),
+                screen.workflow_seats.get(),
+                screen.workflow_sel.get(),
+                screen.workflow_naming.get(),
+                screen.workflow_draft.get(),
                 screen.diff_view.get(),
                 screen.view_edit.get(),
             ));

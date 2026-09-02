@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use sigil::prelude::Cx;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{Cmd, Info, Msg, worker};
+use super::super::{Cmd, Exit, Info, Msg, worker};
 use super::app::App;
 use super::desktop::root;
 use super::host::start_tick;
@@ -28,15 +28,18 @@ pub(crate) fn run(
     info: Info,
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
-) -> Result<i32> {
+) -> Result<Exit> {
     let (cmd_tx, cmd_rx) = unbounded_channel();
     start_tick(cmd_tx.clone());
     let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
     let inbox: Inbox = Rc::new(RefCell::new(ui_rx));
     let commands = cmd_tx.clone();
+    let resume = Rc::new(RefCell::new(None));
+    let requested = resume.clone();
     let opened = tokio::task::block_in_place(|| {
         sigil::launch(window(), move |cx: &mut Cx| {
-            let app = App::new(info, workspace, commands);
+            let mut app = App::new(info, workspace, commands);
+            app.resume = requested;
             app.resize(160, 50);
             app.refresh();
             let tick = app.clone();
@@ -59,9 +62,9 @@ pub(crate) fn run(
             }
         });
     });
-    opened
-        .map(|()| 0)
-        .map_err(|error| Error::Tool(format!("the window failed: {error}")))
+    opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
+    let selected = resume.borrow().clone();
+    Ok(selected.map_or(Exit::Code(0), Exit::Resume))
 }
 
 fn window() -> sigil::AppConfig {

@@ -22,6 +22,11 @@ enum SessionAction {
     Fork(PathBuf),
 }
 
+enum Launch {
+    Done(i32),
+    Resume(String),
+}
+
 async fn probe_endpoints() -> Result<()> {
     for name in summoner::endpoint_names()? {
         let endpoint = match summoner::resolve_endpoint(Some(&name), None) {
@@ -376,11 +381,9 @@ async fn run_login(args: &Args) -> Result<()> {
 }
 
 pub(super) async fn run() -> Result<i32> {
+    let args = cli::parse()?;
     let log = diagnostics::Log::start();
-    let result = match cli::parse() {
-        Ok(args) => route(args, log.as_ref()).await,
-        Err(error) => Err(error),
-    };
+    let result = route(args, log.as_ref()).await;
     let (code, error) = match &result {
         Ok(code) => (*code, None),
         Err(error) => (1, Some(error.to_string())),
@@ -392,6 +395,12 @@ pub(super) async fn run() -> Result<i32> {
 }
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
+    if args.logs {
+        return diagnostics::print_logs(log.map(diagnostics::Log::path));
+    }
+    if args.doctor {
+        return diagnostics::doctor(log.map(diagnostics::Log::path));
+    }
     let adopted = adopt(&args)?;
     if args.login {
         return run_login(&args).await.map(|()| 0);
@@ -434,10 +443,28 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     launch(args, log, &adopted).await
 }
 
-async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) -> Result<i32> {
+async fn launch(mut args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) -> Result<i32> {
+    loop {
+        match launch_once(&args, log, adopted).await? {
+            Launch::Done(code) => return Ok(code),
+            Launch::Resume(id) => {
+                args.session = Some(id);
+                args.resume = false;
+                args.fork = false;
+                args.name = None;
+            }
+        }
+    }
+}
+
+async fn launch_once(
+    args: &Args,
+    log: Option<&diagnostics::Log>,
+    adopted: &[String],
+) -> Result<Launch> {
     let cwd = workspace()?;
-    let (workspace, tree, action) = isolate(&args, &cwd)?;
-    let endpoint = if use_tui(&args) {
+    let (workspace, tree, action) = isolate(args, &cwd)?;
+    let mut endpoint = if use_tui(args) {
         summoner::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
     } else {
         summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
@@ -454,17 +481,20 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
             endpoint.name, endpoint.name
         );
     }
-    let ui = channels(use_tui(&args));
+    let ui = channels(use_tui(args));
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
+    if endpoint.context_window.is_none() {
+        endpoint.context_window = provider.context(&endpoint.model).await;
+    }
     let checks = if args.no_verify {
         None
     } else {
         summoner::check_commands(&workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
-    let mut loop_ = build(&args, &endpoint, provider, &workspace, check, action)?;
-    let workflow = workflow_name(&args, &loop_)?;
-    if !use_tui(&args)
+    let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
+    let workflow = workflow_name(args, &loop_)?;
+    if !use_tui(args)
         && let Some(name) = &workflow
     {
         apply_workflow(&mut loop_, name, args.json)?;
@@ -474,18 +504,13 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
     if let Some(log) = log {
         log.session(&session, loop_.session_path(), &workspace);
     }
-    let code = dispatch(
-        loop_,
-        &args,
-        &endpoint,
-        workspace,
-        ui,
-        goal_checks,
-        workflow,
-    )
-    .await?;
+    let exit = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
+    let code = match exit {
+        summoner::tui::Exit::Code(code) => code,
+        summoner::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
+    };
     let Some(tree) = tree else {
-        return Ok(code);
+        return Ok(Launch::Done(code));
     };
     if code != 0 {
         eprintln!(
@@ -493,7 +518,7 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
             tree.path.display(),
             tree.branch
         );
-        return Ok(code);
+        return Ok(Launch::Done(code));
     }
     let live = summoner::live_jobs(&tree.path);
     if !live.is_empty() {
@@ -504,10 +529,10 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
             if live.len() == 1 { "" } else { "s" },
             live.join("; ")
         );
-        return Ok(1);
+        return Ok(Launch::Done(1));
     }
     let touched = Loop::<Client>::touched_at(&session_path);
-    match finish_worktree(&tree, &objective(&args, &session), &touched) {
+    match finish_worktree(&tree, &objective(args, &session), &touched) {
         Ok(files) => {
             eprintln!(
                 "merged {} into {}: {} file{}{}",
@@ -530,7 +555,7 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
                     println!("{line}");
                 }
             }
-            Ok(code)
+            Ok(Launch::Done(code))
         }
         Err(error) => {
             eprintln!(
@@ -538,7 +563,7 @@ async fn launch(args: Args, log: Option<&diagnostics::Log>, adopted: &[String]) 
                 tree.path.display(),
                 tree.branch
             );
-            Ok(1)
+            Ok(Launch::Done(1))
         }
     }
 }
@@ -600,8 +625,8 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    if args.sandbox {
-        loop_ = loop_.with_sandbox(args.no_net)?;
+    if !args.no_sandbox {
+        loop_ = loop_.with_sandbox(!args.network)?;
     }
     if args.plan {
         loop_ = loop_.with_plan();
@@ -642,7 +667,7 @@ async fn dispatch(
     ui: Ui,
     goal_checks: Vec<String>,
     workflow: Option<String>,
-) -> Result<i32> {
+) -> Result<summoner::tui::Exit> {
     let model = endpoint.model.as_str();
     let session = loop_.session_id();
     let splash = splash::Splash {
@@ -659,13 +684,19 @@ async fn dispatch(
     };
     if let Some(plan_path) = args.steps.as_deref() {
         splash::line(&splash);
-        modes::steps(loop_, args, plan_path).await
+        modes::steps(loop_, args, plan_path)
+            .await
+            .map(summoner::tui::Exit::Code)
     } else if let Some(objective) = args.goal.as_deref() {
         splash::line(&splash);
-        modes::goal(loop_, args, objective, goal_checks).await
+        modes::goal(loop_, args, objective, goal_checks)
+            .await
+            .map(summoner::tui::Exit::Code)
     } else if args.print || !args.prompt.is_empty() {
         splash::line(&splash);
-        modes::print(loop_, args).await
+        modes::print(loop_, args)
+            .await
+            .map(summoner::tui::Exit::Code)
     } else if let Some(ui_rx) = ui.1 {
         let mut prefs = summoner::prefs::load()?;
         if args.no_splash {
@@ -686,12 +717,12 @@ async fn dispatch(
         };
         let ui_tx =
             ui.0.ok_or_else(|| summoner::Error::Config("tui sender missing".to_string()))?;
-        Ok(summoner::tui::run(
-            loop_, workspace, info, ui_tx, ui_rx, args.gui,
-        )?)
+        summoner::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
     } else {
         splash::line(&splash);
-        modes::print(loop_, args).await
+        modes::print(loop_, args)
+            .await
+            .map(summoner::tui::Exit::Code)
     }
 }
 

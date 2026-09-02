@@ -1,4 +1,5 @@
 use std::io::{BufReader, Read, Write, pipe};
+use std::sync::mpsc;
 use std::thread;
 
 use serde_json::{Value, json};
@@ -107,6 +108,26 @@ fn reply_loop(reader: impl Read, mut writer: impl Write) {
     }
 }
 
+fn initialization_loop(reader: impl Read, mut writer: impl Write, sender: mpsc::Sender<Value>) {
+    let mut reader = BufReader::new(reader);
+    while let Ok(message) = read_msg(&mut reader) {
+        let method = message.get("method").and_then(Value::as_str);
+        if method == Some("exit") {
+            break;
+        }
+        if method != Some("initialize") {
+            continue;
+        }
+        sender.send(message.clone()).expect("capture initialize");
+        let id = message.get("id").cloned().expect("initialize id");
+        write_msg(
+            &mut writer,
+            &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {} } }),
+        )
+        .expect("reply initialize");
+    }
+}
+
 #[test]
 fn content_length_round_trips() -> Result<()> {
     let (reader, mut writer) = pipe()?;
@@ -141,6 +162,27 @@ fn fake_server_reports_diagnostics_and_definition() -> Result<()> {
     );
     drop(conn);
     drop(server.join());
+    Ok(())
+}
+
+#[test]
+fn initialization_includes_module_options() -> Result<()> {
+    let directory = tempfile::tempdir()?;
+    let options = language::options(language::named("rust")?);
+    let (server_read, client_write) = pipe()?;
+    let (client_read, server_write) = pipe()?;
+    let (sender, receiver) = mpsc::channel();
+    let server = thread::spawn(move || initialization_loop(server_read, server_write, sender));
+    let conn = Conn::from_io_with(client_read, client_write, directory.path(), &options)?;
+    let initialize = receiver
+        .recv()
+        .map_err(|error| Error::Tool(format!("cannot receive initialize message: {error}")))?;
+
+    assert_eq!(initialize["params"]["initializationOptions"], options);
+    drop(conn);
+    server
+        .join()
+        .map_err(|_panic| Error::Tool("initialization server panicked".to_string()))?;
     Ok(())
 }
 
@@ -251,9 +293,9 @@ fn utf16_columns_count_emoji() -> Result<()> {
 fn cargo_workspace_selects_rust_analyzer() {
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"x\"\n").expect("toml");
-    let result = from_tree(dir.path());
+    let result = from_tree(dir.path(), &dir.path().join("src/main.rs"));
     match result {
-        Ok(argv) => assert_eq!(argv[0], "rust-analyzer"),
+        Ok(launch) => assert_eq!(launch.argv[0], "rust-analyzer"),
         Err(error) => assert!(error.to_string().contains("rust-analyzer")),
     }
 }
@@ -262,11 +304,12 @@ fn cargo_workspace_selects_rust_analyzer() {
 fn js_tree_picks_biome_or_typescript() {
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("package.json"), "{}\n").expect("json");
-    let result = from_tree(dir.path());
+    let result = from_tree(dir.path(), &dir.path().join("app.ts"));
     match result {
-        Ok(argv) => assert!(
-            argv[0] == "biome" || argv[0] == "typescript-language-server",
-            "{argv:?}"
+        Ok(launch) => assert!(
+            launch.argv[0] == "biome" || launch.argv[0] == "typescript-language-server",
+            "{:?}",
+            launch.argv
         ),
         Err(error) => {
             let text = error.to_string();
@@ -279,7 +322,7 @@ fn js_tree_picks_biome_or_typescript() {
 }
 
 #[test]
-fn workspace_config_plugs_in_the_server() {
+fn workspace_config_cannot_supply_an_executable() {
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::create_dir_all(dir.path().join(".mage")).expect("dir");
     std::fs::write(
@@ -287,6 +330,8 @@ fn workspace_config_plugs_in_the_server() {
         "[lsp]\ncommand = [\"true\"]\n",
     )
     .expect("config");
-    let argv = detect(dir.path()).expect("detect");
-    assert_eq!(argv, ["true"]);
+    let error = detect(dir.path(), &dir.path().join("main.rs"))
+        .expect_err("workspace command must fail")
+        .to_string();
+    assert!(error.contains("cannot set [lsp] command"), "{error}");
 }

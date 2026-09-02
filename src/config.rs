@@ -26,6 +26,8 @@ pub(crate) struct File {
     pub tools: Option<String>,
     pub bus: Option<bool>,
     pub layout: Option<String>,
+    #[serde(default)]
+    pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,
     #[serde(default)]
     pub lsp: Lsp,
@@ -46,6 +48,7 @@ pub(crate) enum SeatRow {
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Lsp {
+    pub module: Option<String>,
     pub command: Option<Vec<String>>,
 }
 
@@ -57,6 +60,7 @@ pub(crate) struct Endpoint {
     pub auth: Option<OAuth>,
     pub body: Option<toml::Value>,
     pub context_window: Option<u32>,
+    pub idle_timeout_secs: Option<u64>,
     pub effort: Option<crate::provider::Effort>,
     pub price: Option<crate::provider::Price>,
     #[serde(default)]
@@ -132,6 +136,19 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
             )));
         }
     }
+    if file.lsp.module.is_some() && file.lsp.command.is_some() {
+        return Err(Error::Config(
+            "config.toml: [lsp] accepts `module` or `command`, not both".to_string(),
+        ));
+    }
+    if let Some(module) = file.lsp.module.as_deref() {
+        crate::language::named(module)?;
+    }
+    if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
+        return Err(Error::Config(
+            "config.toml: [lsp] command must not be empty".to_string(),
+        ));
+    }
     Ok(file)
 }
 
@@ -151,6 +168,11 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
     document["layout"] = value(&prefs.layout);
+    let mut hotkeys = toml_edit::InlineTable::new();
+    for (action, binding) in prefs.hotkeys.entries() {
+        hotkeys.insert(action.name(), binding.into());
+    }
+    document["hotkeys"] = toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys));
     match &prefs.last_endpoint {
         Some(name) => document["last_endpoint"] = value(name),
         None => {

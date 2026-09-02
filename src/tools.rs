@@ -72,7 +72,7 @@ pub enum Event {
         passed: bool,
     },
     Receipt {
-        text: String,
+        receipt: crate::Receipt,
     },
     Work {
         progress: crate::WorkProgress,
@@ -85,10 +85,12 @@ pub(crate) struct ToolRegistry {
     search: Option<Search>,
     env: Vec<(String, String)>,
     sandbox: Option<sandbox::Sandbox>,
+    background: bool,
+    verification: bool,
     recent: std::sync::Mutex<Option<Recent>>,
     writes: std::sync::atomic::AtomicU64,
     history: std::sync::Mutex<std::collections::VecDeque<String>>,
-    lsp: std::sync::Mutex<Option<lsp::Conn>>,
+    lsp: std::sync::Mutex<std::collections::BTreeMap<String, lsp::Conn>>,
     session: std::sync::Mutex<Option<String>>,
 }
 
@@ -139,16 +141,27 @@ impl ToolRegistry {
             search,
             env: Vec::new(),
             sandbox: None,
+            background: true,
+            verification: true,
             recent: std::sync::Mutex::new(None),
             writes: std::sync::atomic::AtomicU64::new(0),
             history: std::sync::Mutex::new(std::collections::VecDeque::new()),
-            lsp: std::sync::Mutex::new(None),
+            lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
         })
     }
 
     pub(crate) fn set_strict(&mut self) {
         self.policy.set_strict();
+    }
+
+    pub(crate) fn child_at(&self, workspace: &Path, session: &str) -> Result<Self> {
+        let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
+        child.env.clone_from(&self.env);
+        child.background = false;
+        child.verification = false;
+        child.set_session(session);
+        Ok(child)
     }
 
     pub(crate) fn exists(&self, path: &str) -> Result<bool> {

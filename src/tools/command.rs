@@ -58,6 +58,11 @@ impl ToolRegistry {
         let command = object_string(&args, "command")?;
         self.check_command(command)?;
         let background = object_bool(&args, "background");
+        if background && !self.background {
+            return Err(Error::Denied(
+                "background commands are unavailable in child sessions".to_string(),
+            ));
+        }
         let fresh = object_bool(&args, "fresh");
         let writes = self.writes.load(std::sync::atomic::Ordering::Relaxed);
         if !background
@@ -240,27 +245,12 @@ pub(super) fn digest(command: &str, raw: &str) -> String {
     if lines.len() <= TAIL_LINES {
         return raw.trim_end().to_string();
     }
-    if is_toolchain(command)
+    if crate::language::toolchain(command)
         && let Some(output) = toolchain_output(&lines)
     {
         return output;
     }
     plain_output(&lines)
-}
-
-fn is_toolchain(command: &str) -> bool {
-    [
-        "cargo",
-        "rustc",
-        "npm",
-        "node --test",
-        "pytest",
-        "go test",
-        "go build",
-        "tsc",
-    ]
-    .iter()
-    .any(|tool| command.contains(tool))
 }
 
 fn toolchain_output(lines: &[&str]) -> Option<String> {

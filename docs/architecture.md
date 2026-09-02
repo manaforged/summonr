@@ -82,6 +82,27 @@ harness `merge --ff-only` into the branch you started on, then
 already gone. `--here` skips isolation. Interactive sessions stay in
 cwd unless you pass `--worktree`.
 
+Concurrent `implement` children use the same linked-worktree directory.
+Each child starts from the parent's tracked `HEAD` and has file tools only.
+Summoner first applies every child patch in one child worktree. If the patches
+conflict, the parent stays unchanged and the worktrees remain for inspection.
+If they combine cleanly, Summoner applies one patch to the parent and removes
+the child worktrees. The parent runs verification after reconciliation.
+
+## Language modules
+
+`src/language.rs` contains the four compiled-in language modules: Rust,
+TypeScript/JavaScript, Python, and Go. A module owns project markers, source
+extensions, server candidates, and LSP initialization options. `src/tools/lsp.rs`
+uses the requested file to select a module and keeps one server connection for
+each active module.
+
+The Rust module disables rust-analyzer check-on-save, build scripts, proc
+macros, and `cargo --all-targets`. The model must use `run_command` for an
+explicit Cargo check or test. A workspace may choose a compiled-in module, but
+it cannot provide an executable command. Only the user config at
+`~/.mage/config.toml` may set `[lsp] command`.
+
 ## What this is not
 
 - Not a new harness. Disk and env still say Mage (`~/.mage`, `MAGE_*`).

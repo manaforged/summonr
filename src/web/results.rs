@@ -66,6 +66,28 @@ pub(super) fn parse_brave(json: &str) -> crate::error::Result<Vec<Hit>> {
         .collect())
 }
 
+pub(super) fn parse_duckduckgo(html: &str) -> Vec<Hit> {
+    let mut hits = Vec::new();
+    let mut from = 0;
+    while let Some((title_end, title, raw_url)) = anchor(html, "result__a", from) {
+        let next = html[title_end..]
+            .find("class=\"result__a\"")
+            .map_or(html.len(), |offset| title_end + offset);
+        let snippet = anchor(&html[..next], "result__snippet", title_end)
+            .map(|(_, text, _)| text)
+            .unwrap_or_default();
+        if let Some(url) = result_url(raw_url) {
+            hits.push(Hit {
+                title: clip(&title, 120),
+                url,
+                snippet: clip(&snippet, SNIPPET_MAX),
+            });
+        }
+        from = title_end;
+    }
+    hits
+}
+
 pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
     if hits.is_empty() {
         return format!("web_search  0 hits  `{query}`");
@@ -85,8 +107,33 @@ pub(super) fn format_hits(query: &str, hits: &[Hit]) -> String {
 }
 
 fn result_url(raw: String) -> Option<String> {
-    let url = reqwest::Url::parse(raw.trim()).ok()?;
+    let raw = decode(raw.trim());
+    let raw = raw
+        .strip_prefix("//")
+        .map_or(raw.clone(), |rest| format!("https://{rest}"));
+    let url = reqwest::Url::parse(&raw).ok()?;
+    if url.host_str() == Some("duckduckgo.com") && url.path() == "/l/" {
+        let target = url
+            .query_pairs()
+            .find_map(|(key, value)| (key == "uddg").then(|| value.into_owned()))?;
+        return result_url(target);
+    }
     matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+}
+
+fn anchor(html: &str, class: &str, from: usize) -> Option<(usize, String, String)> {
+    let marker = format!("class=\"{class}\"");
+    let marker_start = html[from..].find(&marker)? + from;
+    let tag_start = html[..marker_start].rfind("<a")?;
+    let tag_end = html[marker_start..].find('>')? + marker_start;
+    let close = html[tag_end + 1..].find("</a>")? + tag_end + 1;
+    let href_start = html[tag_start..tag_end].find("href=\"")? + tag_start + 6;
+    let href_end = html[href_start..tag_end].find('"')? + href_start;
+    Some((
+        close + "</a>".len(),
+        plain(&html[tag_end + 1..close]),
+        html[href_start..href_end].to_string(),
+    ))
 }
 
 fn field(item: &str, name: &str) -> Option<String> {

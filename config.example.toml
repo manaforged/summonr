@@ -1,5 +1,5 @@
 # Copy to ~/.mage/config.toml and edit.
-# A workspace `.mage/config.toml` may set [lsp] only.
+# A workspace `.mage/config.toml` may select an [lsp] module only.
 # Do not put secrets in the git repo. Keys belong in the sealed store:
 # `summon login NAME --key`; `summon endpoints` shows where each key lives.
 #
@@ -16,10 +16,14 @@ default = "glm"
 # tools = "compact"      # "compact" keeps a tool's last line; "full" keeps twelve
 # bus = true             # let incoming mail start a turn after MAGE_BUS joins
 #
-# Language server for diagnostics/definition/rename (types and lint it reports).
-# Workspace `.mage/config.toml` wins. If unset, the first popular binary
-# on PATH for this tree (rust-analyzer, gopls, biome then tsserver, ruff
-# then pyright). Override with:
+# Language modules route diagnostics, definition, and rename for Rust,
+# TypeScript/JavaScript, Python, and Go. Selection uses the file extension
+# and the nearest project marker. To force one curated module, use:
+# [lsp]
+# module = "rust"
+#
+# A trusted ~/.mage/config.toml may instead set a custom command. Repository
+# config cannot supply executable argv.
 # [lsp]
 # command = ["vscode-eslint-language-server", "--stdio"]
 

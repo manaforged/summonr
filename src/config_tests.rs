@@ -56,3 +56,31 @@ fn secrets_accepts_file_and_keychain_only() {
         "{error}"
     );
 }
+
+#[test]
+fn lsp_accepts_one_curated_module_or_global_command() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(&path, "[lsp]\nmodule = \"rust\"\n").expect("seed module");
+    assert_eq!(
+        load_from(&path).expect("load module").lsp.module.as_deref(),
+        Some("rust")
+    );
+
+    std::fs::write(
+        &path,
+        "[lsp]\nmodule = \"rust\"\ncommand = [\"rust-analyzer\"]\n",
+    )
+    .expect("seed conflict");
+    let conflict = load_from(&path)
+        .expect_err("conflict must fail")
+        .to_string();
+    assert!(conflict.contains("not both"), "{conflict}");
+
+    std::fs::write(&path, "[lsp]\nmodule = \"java\"\n").expect("seed unknown");
+    let unknown = load_from(&path).expect_err("unknown must fail").to_string();
+    assert!(
+        unknown.contains("unknown language module `java`"),
+        "{unknown}"
+    );
+}

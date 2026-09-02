@@ -10,8 +10,16 @@ const QUERY_MAX: usize = 400;
 
 const SEARCH_URL: &str = "https://www.bing.com/search";
 const BRAVE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
+const DUCKDUCKGO_URL: &str = "https://html.duckduckgo.com/html/";
 
-fn select_brave(backend: Option<&str>, key: Option<String>) -> Result<Option<String>> {
+#[derive(Clone, Debug)]
+enum Backend {
+    Brave(String),
+    DuckDuckGo,
+    Bing,
+}
+
+fn select_backend(backend: Option<&str>, key: Option<String>) -> Result<Backend> {
     match backend.map(str::trim) {
         Some("brave") => key
             .ok_or_else(|| {
@@ -19,11 +27,12 @@ fn select_brave(backend: Option<&str>, key: Option<String>) -> Result<Option<Str
                     "[search] backend = \"brave\" needs api_key or BRAVE_API_KEY".to_string(),
                 )
             })
-            .map(Some),
-        None => Ok(key),
-        Some("bing") | Some("bing-rss") => Ok(None),
+            .map(Backend::Brave),
+        None => Ok(key.map_or(Backend::DuckDuckGo, Backend::Brave)),
+        Some("duckduckgo") | Some("ddg") => Ok(Backend::DuckDuckGo),
+        Some("bing") | Some("bing-rss") => Ok(Backend::Bing),
         Some(other) => Err(Error::Config(format!(
-            "[search] backend takes brave or bing, not `{other}`"
+            "[search] backend takes brave, duckduckgo, or bing, not `{other}`"
         ))),
     }
 }
@@ -34,7 +43,7 @@ mod results;
 #[cfg(test)]
 use fetch::{check_url, html_to_md};
 use fetch::{host_blocked, resolves_blocked};
-use results::{Hit, clip, format_hits, parse_brave, parse_rss};
+use results::{Hit, clip, format_hits, parse_brave, parse_duckduckgo, parse_rss};
 
 #[derive(Clone)]
 pub(crate) struct Search {
@@ -43,7 +52,7 @@ pub(crate) struct Search {
     allowed: Vec<String>,
     excluded: Vec<String>,
     origin: Option<String>,
-    brave: Option<String>,
+    backend: Backend,
 }
 
 impl Search {
@@ -57,14 +66,14 @@ impl Search {
             .filter(|key| !key.trim().is_empty())
             .or_else(|| std::env::var("BRAVE_API_KEY").ok())
             .filter(|key| !key.trim().is_empty());
-        let brave = select_brave(file.backend.as_deref(), key)?;
+        let backend = select_backend(file.backend.as_deref(), key)?;
         Ok(Self {
             http: client()?,
             count,
             allowed,
             excluded,
             origin: None,
-            brave,
+            backend,
         })
     }
 
@@ -82,12 +91,13 @@ impl Search {
             return Err(Error::Tool("web_search query is too long".to_string()));
         }
         let count = count.unwrap_or(self.count).clamp(1, HITS_MAX);
-        let (hits, via) = match &self.brave {
-            Some(key) => (self.brave(query, count, freshness, key).await?, "brave"),
-            None => (
-                self.rss(query, freshness).await?,
-                "bing rss — set [search] backend = \"brave\" with api_key for stable results",
+        let (hits, via) = match &self.backend {
+            Backend::Brave(key) => (self.brave(query, count, freshness, key).await?, "brave"),
+            Backend::DuckDuckGo => (
+                self.duckduckgo(query, freshness).await?,
+                "duckduckgo html — set [search] backend = \"brave\" with api_key for an API-backed search",
             ),
+            Backend::Bing => (self.rss(query, freshness).await?, "bing rss"),
         };
         let hits = self
             .filter_hits(hits)
@@ -140,6 +150,47 @@ impl Search {
             )));
         }
         parse_brave(&body)
+    }
+
+    async fn duckduckgo(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {
+        let endpoint = self
+            .origin
+            .clone()
+            .unwrap_or_else(|| DUCKDUCKGO_URL.to_string());
+        let mut url = reqwest::Url::parse(&endpoint)
+            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("q", query);
+            if let Some(filter) = duckduckgo_freshness(freshness) {
+                pairs.append_pair("df", filter);
+            }
+        }
+        let response = self
+            .http
+            .get(url)
+            .header(reqwest::header::ACCEPT, "text/html")
+            .send()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        if !status.is_success() {
+            return Err(Error::Tool(format!(
+                "web_search HTTP {status}: {}",
+                clip(&body, 200)
+            )));
+        }
+        let hits = parse_duckduckgo(&body);
+        if hits.is_empty() && !body.contains("No results.") {
+            return Err(Error::Tool(
+                "web_search returned an unexpected response".to_string(),
+            ));
+        }
+        Ok(hits)
     }
 
     async fn rss(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {
@@ -254,6 +305,15 @@ fn freshness_filter(value: Option<&str>) -> Option<&'static str> {
         Some("day") => Some("ex1:\"ez1\""),
         Some("week") => Some("ex1:\"ez2\""),
         Some("month") => Some("ex1:\"ez3\""),
+        _ => None,
+    }
+}
+
+fn duckduckgo_freshness(value: Option<&str>) -> Option<&'static str> {
+    match value {
+        Some("day") => Some("d"),
+        Some("week") => Some("w"),
+        Some("month") => Some("m"),
         _ => None,
     }
 }

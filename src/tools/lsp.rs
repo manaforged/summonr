@@ -5,6 +5,7 @@ use std::process::{Child, Command, Stdio};
 use serde_json::{Value, json};
 
 use crate::error::{Error, Result};
+use crate::language;
 
 use super::{
     ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args, workspace,
@@ -18,17 +19,23 @@ pub(super) struct Conn {
     root: String,
 }
 
+#[derive(Debug)]
+pub(super) struct Launch {
+    key: String,
+    argv: Vec<String>,
+    options: Value,
+}
+
 impl Conn {
-    pub(super) fn spawn(workspace: &Path) -> Result<Self> {
-        let argv = detect(workspace)?;
-        let mut child = Command::new(&argv[0])
-            .args(&argv[1..])
+    pub(super) fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
+        let mut child = Command::new(&launch.argv[0])
+            .args(&launch.argv[1..])
             .current_dir(workspace)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|error| Error::Tool(format!("cannot start {}: {error}", argv[0])))?;
+            .map_err(|error| Error::Tool(format!("cannot start {}: {error}", launch.argv[0])))?;
         let stdout = child
             .stdout
             .take()
@@ -44,7 +51,7 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace),
         };
-        conn.handshake()?;
+        conn.handshake(&launch.options)?;
         Ok(conn)
     }
 
@@ -54,6 +61,16 @@ impl Conn {
         writer: impl Write + Send + 'static,
         root: &Path,
     ) -> Result<Self> {
+        Self::from_io_with(reader, writer, root, &json!({}))
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_io_with(
+        reader: impl Read + Send + 'static,
+        writer: impl Write + Send + 'static,
+        root: &Path,
+        options: &Value,
+    ) -> Result<Self> {
         let mut conn = Self {
             child: None,
             reader: BufReader::new(Box::new(reader)),
@@ -61,17 +78,18 @@ impl Conn {
             next_id: 1,
             root: file_uri(root),
         };
-        conn.handshake()?;
+        conn.handshake(options)?;
         Ok(conn)
     }
 
-    fn handshake(&mut self) -> Result<()> {
+    fn handshake(&mut self, options: &Value) -> Result<()> {
         let result = self.request(
             "initialize",
             json!({
                 "processId": null,
                 "rootUri": self.root,
                 "workspaceFolders": [{ "uri": self.root, "name": "workspace" }],
+                "initializationOptions": options,
                 "capabilities": {
                     "workspace": { "workspaceFolders": true, "configuration": true },
                     "window": { "workDoneProgress": true },
@@ -176,7 +194,7 @@ impl Conn {
             json!({
                 "textDocument": {
                     "uri": file_uri(path),
-                    "languageId": language_id(path),
+                    "languageId": language::language_id(path),
                     "version": 1,
                     "text": text
                 }
@@ -259,78 +277,66 @@ impl Drop for Conn {
     }
 }
 
-pub(super) fn detect(workspace: &Path) -> Result<Vec<String>> {
-    if let Some(command) = configured(workspace) {
-        return argv(&command);
+pub(super) fn detect(workspace: &Path, path: &Path) -> Result<Launch> {
+    if let Some(module) = workspace_module(workspace)? {
+        return built(language::named(&module)?);
     }
-    from_tree(workspace)
+    let config = crate::config::load()?;
+    if let Some(command) = config.lsp.command {
+        return custom(&command);
+    }
+    if let Some(module) = config.lsp.module {
+        return built(language::named(&module)?);
+    }
+    from_tree(workspace, path)
 }
 
-struct Kind {
-    markers: &'static [&'static str],
-    bins: &'static [(&'static str, &'static [&'static str])],
+fn from_tree(workspace: &Path, path: &Path) -> Result<Launch> {
+    built(language::detect(workspace, path)?)
 }
 
-const KINDS: &[Kind] = &[
-    Kind {
-        markers: &["Cargo.toml"],
-        bins: &[("rust-analyzer", &[])],
-    },
-    Kind {
-        markers: &["go.mod"],
-        bins: &[("gopls", &[])],
-    },
-    Kind {
-        markers: &["package.json"],
-        bins: &[
-            ("biome", &["lsp-proxy"]),
-            ("typescript-language-server", &["--stdio"]),
-        ],
-    },
-    Kind {
-        markers: &["pyproject.toml", "setup.py"],
-        bins: &[("ruff", &["server"]), ("pyright-langserver", &["--stdio"])],
-    },
-];
+fn workspace_module(workspace: &Path) -> Result<Option<String>> {
+    let path = workspace.join(".mage/config.toml");
+    if !path.is_file() {
+        return Ok(None);
+    }
+    let config = crate::config::load_from(&path)?;
+    if config.lsp.command.is_some() {
+        return Err(Error::Config(
+            "workspace .mage/config.toml cannot set [lsp] command; use a curated module or put the command in ~/.mage/config.toml"
+                .to_string(),
+        ));
+    }
+    Ok(config.lsp.module)
+}
 
-fn from_tree(workspace: &Path) -> Result<Vec<String>> {
+fn built(module: &language::Module) -> Result<Launch> {
     let mut names = Vec::new();
-    for kind in KINDS {
-        if !kind
-            .markers
-            .iter()
-            .any(|marker| workspace.join(marker).is_file())
-        {
-            continue;
+    for server in module.servers {
+        names.push(server.name);
+        if on_path(server.name) {
+            let mut command = vec![server.name.to_string()];
+            command.extend(server.args.iter().map(|arg| (*arg).to_string()));
+            return Ok(Launch {
+                key: module.id.to_string(),
+                argv: command,
+                options: language::options(module),
+            });
         }
-        for (name, args) in kind.bins {
-            names.push(*name);
-            if on_path(name) {
-                let mut command = vec![(*name).to_string()];
-                command.extend(args.iter().map(|arg| (*arg).to_string()));
-                return Ok(command);
-            }
-        }
-        return Err(Error::Tool(format!(
-            "{} not on PATH; set [lsp] command in .mage/config.toml",
-            names.join(" or ")
-        )));
     }
-    Err(Error::Tool(
-        "no language server: set [lsp] command in .mage/config.toml".to_string(),
-    ))
+    Err(Error::Tool(format!(
+        "{} not on PATH for the {} module; install one or set [lsp] command in ~/.mage/config.toml",
+        names.join(" or "),
+        module.id
+    )))
 }
 
-fn configured(workspace: &Path) -> Option<Vec<String>> {
-    read_command(&workspace.join(".mage/config.toml"))
-        .or_else(|| crate::config::load().ok().and_then(|file| file.lsp.command))
-        .filter(|command| !command.is_empty())
-}
-
-fn read_command(path: &Path) -> Option<Vec<String>> {
-    let text = std::fs::read_to_string(path).ok()?;
-    let file: crate::config::File = toml::from_str(&text).ok()?;
-    file.lsp.command
+fn custom(command: &[String]) -> Result<Launch> {
+    Ok(Launch {
+        key: "custom".to_string(),
+        argv: argv(command)?,
+        options: json!({}),
+    })
 }
 
 fn argv(command: &[String]) -> Result<Vec<String>> {
@@ -341,7 +347,7 @@ fn argv(command: &[String]) -> Result<Vec<String>> {
         .ok_or_else(|| Error::Tool("[lsp] command is empty".to_string()))?;
     if !on_path(name) {
         return Err(Error::Tool(format!(
-            "{name} is not on PATH; set [lsp] command to your language server"
+            "{name} is not on PATH; fix [lsp] command in ~/.mage/config.toml"
         )));
     }
     Ok(command.to_vec())
@@ -357,20 +363,6 @@ fn on_path(name: &str) -> bool {
 fn file_uri(path: &Path) -> String {
     let raw = path.to_string_lossy();
     format!("file://{}", raw.replace(' ', "%20"))
-}
-
-fn language_id(path: &Path) -> &'static str {
-    match path.extension().and_then(|ext| ext.to_str()) {
-        Some("rs") => "rust",
-        Some("go") => "go",
-        Some("ts") => "typescript",
-        Some("tsx") => "typescriptreact",
-        Some("js" | "mjs" | "cjs") => "javascript",
-        Some("jsx") => "javascriptreact",
-        Some("py") => "python",
-        Some("toml") => "toml",
-        _ => "plaintext",
-    }
 }
 
 fn diagnostic_items(value: &Value) -> Vec<String> {
@@ -679,7 +671,8 @@ impl ToolRegistry {
         let args = parse_args("diagnostics", arguments)?;
         let path = nonempty_path(&args, "diagnostics")?;
         let file = self.resolve_existing(path)?;
-        let text = tokio::task::block_in_place(|| self.with_lsp(|conn| conn.diagnostics(&file)))?;
+        let text =
+            tokio::task::block_in_place(|| self.with_lsp(&file, |conn| conn.diagnostics(&file)))?;
         Ok(ToolOutput::ok(text))
     }
 
@@ -702,13 +695,13 @@ impl ToolRegistry {
             }
             let name = new_name.to_string();
             let edit = tokio::task::block_in_place(|| {
-                self.with_lsp(|conn| conn.rename(&file, line, character, &name))
+                self.with_lsp(&file, |conn| conn.rename(&file, line, character, &name))
             })?;
             return self.apply_workspace_edit(&edit);
         }
         let refs = object_bool(&args, "references");
         let text = tokio::task::block_in_place(|| {
-            self.with_lsp(|conn| {
+            self.with_lsp(&file, |conn| {
                 if refs {
                     conn.references(&file, line, character)
                 } else {
@@ -720,11 +713,12 @@ impl ToolRegistry {
     }
 
     pub(super) async fn check_after_edit(&self, dest: &Path) -> Option<ToolOutput> {
-        let live = self.lsp.lock().ok()?.is_some();
+        let key = detect(&self.workspace, dest).ok()?.key;
+        let live = self.lsp.lock().ok()?.contains_key(&key);
         if !live {
             return None;
         }
-        let text = self.with_lsp(|conn| conn.diagnostics(dest)).ok()?;
+        let text = self.with_lsp(dest, |conn| conn.diagnostics(dest)).ok()?;
         Some(ToolOutput {
             text: format!("diagnostics: {text}"),
             success: !text.starts_with("error "),
@@ -832,22 +826,22 @@ impl ToolRegistry {
         Ok(path)
     }
 
-    fn with_lsp<T>(&self, f: impl FnOnce(&mut Conn) -> Result<T>) -> Result<T> {
-        let mut slot = self
+    fn with_lsp<T>(&self, path: &Path, f: impl FnOnce(&mut Conn) -> Result<T>) -> Result<T> {
+        let launch = detect(&self.workspace, path)?;
+        let key = launch.key.clone();
+        let mut slots = self
             .lsp
             .lock()
             .map_err(|_poison| Error::Tool("lsp lock poisoned".to_string()))?;
-        let conn = ensure(&mut slot, &self.workspace)?;
+        if !slots.contains_key(&key) {
+            let conn = Conn::spawn(&self.workspace, &launch)?;
+            slots.insert(key.clone(), conn);
+        }
+        let conn = slots
+            .get_mut(&key)
+            .ok_or_else(|| Error::Tool("language server is missing".to_string()))?;
         f(conn)
     }
-}
-
-pub(super) fn ensure<'a>(slot: &'a mut Option<Conn>, workspace: &Path) -> Result<&'a mut Conn> {
-    if slot.is_none() {
-        *slot = Some(Conn::spawn(workspace)?);
-    }
-    slot.as_mut()
-        .ok_or_else(|| Error::Tool("language server is missing".to_string()))
 }
 
 #[cfg(test)]

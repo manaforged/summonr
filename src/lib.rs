@@ -1,3 +1,4 @@
+mod child;
 mod command;
 mod config;
 pub mod diff;
@@ -15,7 +16,9 @@ mod endpoint;
 mod error;
 mod goal;
 mod hashline;
+mod herdr;
 mod jobs;
+mod language;
 mod policy;
 mod prompt;
 mod provider;
@@ -57,11 +60,16 @@ pub use session::{
     resolve_id as resolve_session, set_name as name_session, short as short_session,
 };
 pub use tools::{Event, attach};
-pub use verify::{Outcome, check_commands};
+pub use verify::{Outcome, Receipt, check_commands};
 pub use worktree::{
     Status as WorktreeStatus, Tree, add as add_worktree, finish as finish_worktree, in_git,
     list as list_worktrees, status as worktree_status, sweep as sweep_worktrees,
 };
+
+#[must_use]
+pub fn revision() -> &'static str {
+    option_env!("SUMMON_REVISION").unwrap_or("unknown")
+}
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

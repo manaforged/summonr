@@ -14,11 +14,11 @@ impl ToolRegistry {
             write_file(),
             list_dir(),
             grep(),
-            diagnostics(),
-            definition(),
             skill(),
-            run_command(),
         ];
+        if self.verification {
+            all.extend([diagnostics(), definition(), run_command()]);
+        }
         if self.search.is_some() {
             all.extend([web_search(), web_fetch()]);
         }
@@ -27,9 +27,11 @@ impl ToolRegistry {
 
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
-            "read_file" | "list_dir" | "grep" | "diagnostics" | "definition" | "skill" => true,
+            "read_file" | "list_dir" | "grep" | "skill" => true,
+            "diagnostics" | "definition" => self.verification,
             "edit_file" | "replace_text" | "replace_texts" | "replace_lines" | "insert_after"
-            | "delete_lines" | "write_file" | "run_command" => !self.policy.is_read_only(),
+            | "delete_lines" | "write_file" => !self.policy.is_read_only(),
+            "run_command" => self.verification && !self.policy.is_read_only(),
             "web_search" | "web_fetch" => self.search.is_some(),
             _ => false,
         }
@@ -230,7 +232,7 @@ fn grep() -> ToolDefinition {
 fn diagnostics() -> ToolDefinition {
     tool(
         "diagnostics",
-        "Type errors and lint from the workspace language server. After edits, pass the file you changed. Plug in Biome, ESLint LSP, Ruff, rust-analyzer, … with [lsp] command in .mage/config.toml.",
+        "Type errors and lint from the curated Rust, TypeScript/JavaScript, Python, or Go language module for this file. After edits, pass the file you changed.",
         serde_json::json!({
             "type": "object",
             "properties": {"path": {"type": "string"}},

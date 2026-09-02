@@ -8,7 +8,7 @@ impl Search {
             allowed: Vec::new(),
             excluded: Vec::new(),
             origin: Some(origin.to_string()),
-            brave: None,
+            backend: Backend::Bing,
         })
     }
 }
@@ -30,6 +30,19 @@ fn search_rss_becomes_numbered_hits() {
 }
 
 #[test]
+fn duckduckgo_html_becomes_direct_numbered_hits() {
+    let html = r#"<div class="result results_links">
+        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fworld&amp;rut=x"><b>Persistent</b> worlds</a>
+        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2Fworld&amp;rut=x">An <b>LLM</b> game state framework.</a>
+    </div>"#;
+    let hits = parse_duckduckgo(html);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].title, "Persistent worlds");
+    assert_eq!(hits[0].url, "https://example.com/world");
+    assert_eq!(hits[0].snippet, "An LLM game state framework.");
+}
+
+#[test]
 fn empty_hits_say_zero() {
     assert_eq!(format_hits("nope", &[]), "web_search  0 hits  `nope`");
 }
@@ -37,12 +50,18 @@ fn empty_hits_say_zero() {
 #[tokio::test]
 #[ignore = "live network smoke check"]
 async fn live_native_search_returns_links() -> Result<()> {
-    let search = Search::native_for_test(SEARCH_URL)?;
+    let mut search = Search::native_for_test(DUCKDUCKGO_URL)?;
+    search.backend = Backend::DuckDuckGo;
     let output = search
-        .search("tokio.rs runtime Builder current_thread", Some(3), None)
+        .search(
+            "LLM game master persistent world state framework",
+            Some(5),
+            None,
+        )
         .await?;
-    assert!(output.contains("web_search  3 hits"));
-    assert!(output.contains("https://"));
+    assert!(output.contains("web_search  5 hits"));
+    assert!(output.contains("arxiv.org") || output.contains("github.com"));
+    assert!(output.to_ascii_lowercase().contains("persistent"));
     Ok(())
 }
 
@@ -72,15 +91,19 @@ fn html_keeps_links_and_headings() {
 
 #[test]
 fn unset_backend_uses_brave_when_a_key_is_set() {
-    assert_eq!(
-        select_brave(None, Some("k".into())).expect("none"),
-        Some("k".into())
-    );
-    assert_eq!(
-        select_brave(Some("bing"), Some("k".into())).expect("bing"),
-        None
-    );
-    drop(select_brave(Some("brave"), None).unwrap_err());
+    assert!(matches!(
+        select_backend(None, Some("k".into())).expect("none"),
+        Backend::Brave(key) if key == "k"
+    ));
+    assert!(matches!(
+        select_backend(None, None).expect("none"),
+        Backend::DuckDuckGo
+    ));
+    assert!(matches!(
+        select_backend(Some("bing"), Some("k".into())).expect("bing"),
+        Backend::Bing
+    ));
+    drop(select_backend(Some("brave"), None).unwrap_err());
 }
 
 #[test]

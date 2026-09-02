@@ -5,6 +5,8 @@ Summoner is a local coding harness. You point it at a model. OpenAI
 config). Anthropic Messages and Gemini use their native APIs. Auth is
 an API key or an OAuth2 token that becomes a bearer. `summon` is the command that starts Summoner with a specific model; a bare `summoner` uses your default.
 
+![Summoner starfield splash screen with DeepSeek V4 Flash selected](docs/assets/summoner-splash.png)
+
 What it actually does: it holds the job so the model does not have to.
 That job is Work. Plan, execute, verify. You keep the objective. The
 model edits this directory (hash-anchored, cannot leave the workspace).
@@ -25,7 +27,8 @@ summon -V
 summoner -V
 ```
 
-Expect `summoner 0.1.0` (the same binary as `summon`). Build fails without Sigil.
+Expect `summoner 0.1.0 (<git revision>)` (the same binary as `summon`).
+Build fails without Sigil.
 
 ## Usage
 
@@ -92,6 +95,9 @@ summon --steps PLAN.md
 `summon --name TEXT` (or `/name TEXT`) names a session; `--session`
 takes a name or an id prefix, `summon sessions` lists both, and
 `summon export [ID|NAME]` prints the transcript as Markdown.
+`summon logs` lists the last 20 per-run diagnostic logs. `summon doctor`
+prints the running binary path and reports crashed or incomplete runs.
+Logs older than 14 days are removed unless their process is still active.
 
 `--goal` keeps one objective until `.mage/check.toml` is green and a
 judge says stop. The judge answers `done`, `continue`, `stalled`, or
@@ -115,8 +121,8 @@ uncommitted files is kept and named, and the exit code is 1.
 In plan mode the model reads and proposes; nothing runs. Toggle plan
 mode off and the next message accepts the selected plan — the
 transcript and the model both see `plan accepted`; `/plan reject`
-discards it instead. `diagnostics` and `definition` talk to one
-language server (`definition` also lists references and applies rename).
+discards it instead. `diagnostics` and `definition` route each file to its
+language module (`definition` also lists references and applies rename).
 
 ### Workflows
 
@@ -216,33 +222,65 @@ touches. With a `review` seat, a turn whose checks passed is read by
 the reviewer before it completes; a rejection sends the findings back
 as the next instruction and counts against the same three-attempt
 limit as a failed check.
+The `task` tool delegates work to fresh child sessions. A model can emit
+up to four `task` calls in one response. Summoner runs them concurrently.
+Each `implement` child edits a separate Git worktree from the same tracked
+`HEAD`. The parent tracked files must be clean before the batch starts.
+Implement children get file tools, but no shell or language-server tools.
+They cannot start builds, tests, formatters, or background jobs. Summoner
+combines their patches before it changes the parent checkout. A conflict
+keeps the child worktrees and leaves the parent unchanged. After a clean
+apply, Summoner removes the child worktrees. The parent verifies once and
+commits. Outside Git, only one implement child can write the current
+workspace.
+
+A `research` child reads the parent workspace without a worktree and cannot
+write or run commands. Each child uses the endpoint context window and can
+run four provider rounds. If the parent has a token budget, the children
+share its remaining tokens. A 300-second deadline covers each child. Children
+have no web tools or another `task` tool.
 `grep` takes `glob`, honors `.gitignore`, and lists matching files
 when the pattern is empty.
-`web_search` reads Bing RSS without a key; `[search] backend = "brave"`
-with `api_key` (or `BRAVE_API_KEY`) uses the Brave Search API and every
-result says which backend answered. Defaults pick
-the first popular binary on PATH for the tree
-(Biome before tsserver on a Node repo, Ruff before pyright on Python).
-Set `[lsp] command` in `.mage/config.toml` to plug in anything else.
+`web_search` reads DuckDuckGo HTML without a key. `[search] backend = "bing"`
+keeps the Bing RSS compatibility path; `[search] backend = "brave"` with
+`api_key` (or `BRAVE_API_KEY`) uses the Brave Search API. Every result says
+which backend answered. Language modules cover Rust,
+TypeScript/JavaScript, Python, and Go. They select the server from the file and
+a project marker, then keep one connection per module in a polyglot checkout.
+Rust passes initialization options that disable check-on-save, build scripts,
+proc macros, and `cargo --all-targets`. Explicit Cargo commands still run
+through `run_command`.
+
+A workspace `.mage/config.toml` may force a built-in module:
+
+```toml
+[lsp]
+module = "rust"
+```
+
+Repository config cannot supply executable argv. A trusted
+`~/.mage/config.toml` may use `[lsp] command = ["server", "--stdio"]` when a
+built-in module does not fit.
 
 Unknown flags exit 1. A red verify gate exits 2. A run that stops
 short — a budget breach, a stalled or impossible goal, or an aborted
 turn — exits 3.
+JSON turn receipts keep model text separate from the changed-path list
+and every configured completion check.
 
 ## Limits
 
-- File tools cannot leave the workspace. `run_command` is a string
-  policy unless you pass `--sandbox` (Seatbelt or bubblewrap). Missing
-  sandbox backend is a hard stop, not an open run.
+- File tools cannot leave the workspace. Commands run under Seatbelt or
+  bubblewrap with network denied. `--net` allows sockets. `--no-sandbox`
+  disables process containment. A missing sandbox backend is a hard stop.
 - Home is still `~/.mage`. Env is still `MAGE_*`.
 - Not crates.io. No Sigil SSH, no build.
 - An older `mage` binary may still be on `PATH`. Use `summon`.
-- No MCP client, plugin, or hook API. The tool set is the built-in
-  one. A CLI with a README is a tool the model already knows how to
-  run through `run_command`; a skill under `~/.mage/skills` or
-  `.mage/skills` carries instructions; the bus carries mail between
-  sessions. An extension door waits for a feature the built-ins cannot
-  reach.
+- No MCP client, hook API, or runtime plugin loader. Language modules are
+  compiled in and reviewed with Summoner. A CLI with a README is a tool the
+  model already knows how to run through `run_command`; a skill under
+  `~/.mage/skills` or `.mage/skills` carries instructions; the bus carries
+  mail between sessions.
 
 ## Docs
 

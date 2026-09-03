@@ -382,7 +382,11 @@ async fn run_login(args: &Args) -> Result<()> {
 
 pub(super) async fn run() -> Result<i32> {
     let args = cli::parse()?;
-    let log = diagnostics::Log::start();
+    let log = if args.room.is_some() {
+        None
+    } else {
+        diagnostics::Log::start()
+    };
     let result = route(args, log.as_ref()).await;
     let (code, error) = match &result {
         Ok(code) => (*code, None),
@@ -400,6 +404,9 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     }
     if args.doctor {
         return diagnostics::doctor(log.map(diagnostics::Log::path));
+    }
+    if let Some(words) = &args.room {
+        return summoner::room::run(words, &std::env::current_dir()?).await;
     }
     let adopted = adopt(&args)?;
     if args.login {
@@ -433,6 +440,13 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     }
     if args.list_workflows {
         return print_workflows().map(|()| 0);
+    }
+    if args.list_modules {
+        println!(
+            "{}",
+            summoner::modules::Switches::load(&workspace()?)?.table()
+        );
+        return Ok(0);
     }
     if args.list_worktrees {
         return manage_worktrees(&args).map(|()| 0);
@@ -592,7 +606,8 @@ fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let prompt = system_prompt_with(workspace, args.trust);
+    let switches = summoner::modules::Switches::load(workspace)?;
+    let prompt = system_prompt_with(workspace, args.trust, switches.enabled("skills"));
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
     let mut loop_ = match action {
         SessionAction::Create => Loop::new(provider, endpoint.model.clone(), workspace, prompt)?,
@@ -617,6 +632,7 @@ fn build(
     loop_.set_effort(args.effort.or(endpoint.effort));
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
+    loop_.set_modules(&switches);
     configure(loop_, args, check)
 }
 

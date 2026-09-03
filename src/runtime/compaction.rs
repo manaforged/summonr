@@ -2,28 +2,36 @@ use super::*;
 use crate::workflow;
 
 pub(super) fn force_compact(messages: &mut [Message]) -> bool {
-    let target = messages
+    let live: Vec<usize> = messages
         .iter()
-        .filter(|message| message.role == Role::Tool)
-        .map(|message| message.content.len())
+        .enumerate()
+        .filter(|(_, message)| {
+            message.role == Role::Tool && !message.content.starts_with("[cleared")
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let target = live
+        .iter()
+        .map(|index| messages[*index].content.len())
         .sum::<usize>()
         .div_ceil(2);
+    let keep = live.len().saturating_sub(KEEP_TAIL).max(1).min(live.len());
     let mut reclaimed = 0;
     let mut changed = false;
-    for message in messages.iter_mut().rev() {
-        if message.role == Role::Tool && !message.content.starts_with("[cleared") {
-            reclaimed += message.content.len();
-            message.content = format!("[cleared {} chars]", message.content.len());
-            changed = true;
-            if reclaimed >= target {
-                break;
-            }
+    for index in live.into_iter().take(keep) {
+        let message = &mut messages[index];
+        reclaimed += message.content.len();
+        message.content = format!("[cleared {} chars]", message.content.len());
+        changed = true;
+        if reclaimed >= target {
+            break;
         }
     }
     changed
 }
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
+const KEEP_TAIL: usize = 2;
 const COMPACT_PERCENT: usize = 80;
 const RESERVE_TOKENS: u32 = 16_384;
 const DEFAULT_COMPACT_CHARS: usize = 400_000;
@@ -50,7 +58,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         system: &Message,
         slice: &[Message],
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
     ) -> Result<Option<(AssistantMessage, String)>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
         request_messages.push(system.clone());
@@ -60,7 +68,7 @@ impl<P: Provider> Loop<P> {
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: tools.to_vec(),
-            max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
             emit_deltas: false,
             effort: self.effort_for(workflow::Role::Summary),
         };
@@ -110,11 +118,14 @@ impl<P: Provider> Loop<P> {
     pub(super) async fn auto_compact(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
+        if self.summary_failed {
+            return Ok(());
+        }
         let chars: usize = messages.iter().map(message_chars).sum();
         let estimated_tokens = self.estimated_prompt_tokens(messages, tools);
         let pressure = self
@@ -146,11 +157,13 @@ impl<P: Provider> Loop<P> {
             .summarize(&messages[0], &messages[1..keep_from], tools)
             .await?
         else {
+            self.summary_failed = true;
             self.push_event(
                 events,
                 emit,
                 Event::Note {
-                    text: "auto-compaction failed — keeping the live context".to_string(),
+                    text: "auto-compaction failed — keeping the live context until the next turn"
+                        .to_string(),
                 },
             )?;
             return Ok(());
@@ -198,7 +211,7 @@ impl<P: Provider> Loop<P> {
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: Vec::new(),
-            max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
             emit_deltas: false,
             effort: self.effort_for(workflow::Role::Summary),
         };

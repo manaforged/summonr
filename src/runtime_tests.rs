@@ -43,6 +43,7 @@ async fn observed_mail_keeps_its_envelope_limit_and_replay_state() -> Result<()>
     let mut loop_ = Loop::with_session(Capture(requests.clone()), "test", &workspace, "system")?;
     for index in 0..6 {
         loop_.mail.push_back(crate::bus::Mail {
+            kind: "summoner".to_string(),
             ts: index,
             from: "peer".to_string(),
             text: format!("message {index}"),

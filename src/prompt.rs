@@ -18,14 +18,14 @@ pub fn mage_home() -> Result<PathBuf> {
 }
 
 pub fn system_prompt(workspace: &Path) -> String {
-    compose(workspace, mage_home().ok().as_deref(), false)
+    compose(workspace, mage_home().ok().as_deref(), false, true)
 }
 
-pub fn system_prompt_with(workspace: &Path, trust: bool) -> String {
-    compose(workspace, mage_home().ok().as_deref(), trust)
+pub fn system_prompt_with(workspace: &Path, trust: bool, skills: bool) -> String {
+    compose(workspace, mage_home().ok().as_deref(), trust, skills)
 }
 
-pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool) -> String {
+pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills: bool) -> String {
     if let Ok(prompt) = std::env::var("MAGE_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
     {
@@ -42,7 +42,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool) -> Str
     if parts.is_empty() {
         parts.push(default_prompt());
     }
-    if let Some(catalog) = crate::skills::catalog(workspace) {
+    if skills && let Some(catalog) = crate::skills::catalog(workspace) {
         parts.push(catalog);
     }
     parts.join("\n\n")

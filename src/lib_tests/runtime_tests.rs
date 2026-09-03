@@ -1260,3 +1260,127 @@ async fn the_turn_after_a_plan_announces_the_accept() -> Result<()> {
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
+
+#[tokio::test]
+async fn failed_auto_compaction_is_not_retried_every_round() -> Result<()> {
+    struct Refusing {
+        calls: AtomicUsize,
+        summaries: AtomicUsize,
+    }
+    impl Provider for Refusing {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let summary = request
+                    .messages
+                    .last()
+                    .is_some_and(|message| message.content.contains("Summarize this session"));
+                let read = || AssistantMessage {
+                    content: None,
+                    tool_calls: vec![ToolCall {
+                        id: "c".to_string(),
+                        kind: ToolKind::Function,
+                        function: ToolFunction {
+                            name: "read_file".to_string(),
+                            arguments: r#"{"path":"note.txt"}"#.to_string(),
+                        },
+                    }],
+                    ..Default::default()
+                };
+                if summary {
+                    self.summaries.fetch_add(1, Ordering::SeqCst);
+                    return Ok(read());
+                }
+                match self.calls.fetch_add(1, Ordering::SeqCst) {
+                    0..=2 => Ok(read()),
+                    _ => Ok(AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..Default::default()
+                    }),
+                }
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let provider = Refusing {
+        calls: AtomicUsize::new(0),
+        summaries: AtomicUsize::new(0),
+    };
+    let bulky = "Y".repeat(20_000);
+    let mut history = Vec::new();
+    for round in 0..4 {
+        history.push(Message::user(format!("round {round}")));
+        history.push(Message::tool("c", bulky.clone()));
+    }
+    let mut loop_ =
+        Loop::with_session(provider, "test-model", &workspace, "test")?.restore(history);
+    loop_.set_context_window(Some(2_000));
+
+    let turn = loop_.turn("continue").await?;
+
+    let failures = turn
+        .events
+        .iter()
+        .filter(|event| matches!(event, Event::Note { text } if text.starts_with("auto-compaction failed")))
+        .count();
+    assert_eq!(failures, 1, "one failure note for the whole turn");
+    assert!(
+        turn.rounds >= 4,
+        "the turn kept working after the failed summary"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[test]
+fn module_switches_drop_their_tools_from_the_schema() -> Result<()> {
+    struct Silent;
+    impl Provider for Silent {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("ok".to_string()),
+                    ..Default::default()
+                })
+            })
+        }
+
+        fn child(&self) -> Option<Self> {
+            Some(Self)
+        }
+
+        fn supports_children(&self) -> bool {
+            true
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Silent, "test-model", &workspace, "test")?;
+    let before = loop_.tool_names();
+    assert!(before.iter().any(|name| name == "diagnostics"));
+    assert!(before.iter().any(|name| name == "run_command"));
+
+    let user = std::collections::BTreeMap::from([
+        ("lsp".to_string(), false),
+        ("search".to_string(), false),
+        ("task".to_string(), false),
+    ]);
+    let switches = crate::modules::Switches::from_maps(&user, &std::collections::BTreeMap::new());
+    loop_.set_modules(&switches);
+
+    let after = loop_.tool_names();
+    assert!(
+        after.iter().all(|name| !matches!(
+            name.as_str(),
+            "diagnostics" | "definition" | "web_search" | "web_fetch" | "task"
+        )),
+        "{after:?}"
+    );
+    assert!(after.iter().any(|name| name == "run_command"));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}

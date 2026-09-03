@@ -509,7 +509,7 @@ fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-fn dirty(path: &Path) -> Result<bool> {
+pub(crate) fn dirty(path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }

@@ -149,6 +149,7 @@ impl<P: Provider> Loop<P> {
             effort: None,
             turn_started: 0,
             accepted: false,
+            summary_failed: false,
             workspace: workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
@@ -157,6 +158,9 @@ impl<P: Provider> Loop<P> {
             steer: std::collections::VecDeque::new(),
             steer_shared: None,
             depth,
+            tasks: true,
+            spawned: BTreeMap::new(),
+            mailbox: tokio::sync::mpsc::unbounded_channel(),
         })
     }
 
@@ -175,6 +179,19 @@ impl<P: Provider> Loop<P> {
         source: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>,
     ) {
         self.steer_shared = Some(source);
+    }
+
+    pub fn set_modules(&mut self, switches: &crate::modules::Switches) {
+        self.tools.set_modules(
+            switches.enabled("search"),
+            switches.enabled("lsp"),
+            switches.enabled("jobs"),
+        );
+        self.tasks = switches.enabled("task");
+        if !switches.enabled("bus") {
+            self.bus = None;
+        }
+        self.schema = None;
     }
 
     pub fn set_env(&mut self, env: impl IntoIterator<Item = (String, String)>) {
@@ -432,6 +449,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn adopt(&mut self, session: SessionDriver, replay: crate::session::Replay) {
+        self.forget_children();
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
         self.history = replay.history;
@@ -510,7 +528,15 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn abort_note(&mut self, reason: &str) -> Result<()> {
+        self.forget_children();
         self.session.abort(reason).map_err(super::session_err)
+    }
+
+    fn forget_children(&mut self) {
+        for spawned in self.spawned.values() {
+            spawned.abort();
+        }
+        self.spawned.clear();
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {

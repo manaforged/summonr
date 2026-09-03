@@ -156,6 +156,18 @@ fn print_live(event: &Event) {
         }
         Event::Receipt { receipt } => println!("\n{}", receipt.text),
         Event::Aborted { reason } => eprintln!("\n{reason}"),
+        Event::Child { id, event } => {
+            let tag: String = id.chars().take(8).collect();
+            match &**event {
+                Event::ToolCall { name, .. } => eprintln!("  [{tag}] → {name}"),
+                Event::ToolResult { success: false, .. } => eprintln!("  [{tag}] (failed)"),
+                Event::Assistant { text } => {
+                    eprintln!("  [{tag}] {}", text.lines().next().unwrap_or_default());
+                }
+                Event::Aborted { reason } => eprintln!("  [{tag}] {reason}"),
+                _ => {}
+            }
+        }
         _ => {}
     }
 }

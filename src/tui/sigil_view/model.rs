@@ -233,7 +233,35 @@ impl Model {
                 cost,
             ),
             Event::Delta { .. } => {}
+            Event::Child { id, event } => self.apply_child(&id, *event),
         }
+    }
+
+    fn apply_child(&mut self, id: &str, event: Event) {
+        let tag: String = id.chars().take(8).collect();
+        let line = match event {
+            Event::ToolCall {
+                name, arguments, ..
+            } => {
+                format!("child {tag} → {name} {}", tool_arg(&arguments))
+            }
+            Event::ToolResult {
+                success: false,
+                output,
+                ..
+            } => {
+                format!("child {tag} ✗ {}", last_line(&output))
+            }
+            Event::Assistant { text } => format!("child {tag}: {}", last_line(&text)),
+            Event::Note { text } | Event::Aborted { reason: text } => {
+                format!("child {tag}: {text}")
+            }
+            Event::Verify { command, passed } => {
+                format!("child {tag} {} {command}", if passed { "✓" } else { "✗" })
+            }
+            _ => return,
+        };
+        self.entries.push(Entry::System(line));
     }
 
     fn start_tool(&mut self, id: String, name: String, arguments: String) {

@@ -70,6 +70,7 @@ impl Worker {
             Some(crate::SlashCommand::Effort) => self.effort(argument(line)),
             Some(crate::SlashCommand::Fork) => self.fork(),
             Some(crate::SlashCommand::Agents) => self.agents(),
+            Some(crate::SlashCommand::Modules) => self.modules(argument(line)),
             Some(_) => self.unknown(line).unwrap_or(true),
             None if line.starts_with('/') => self.unknown(line).unwrap_or(true),
             _ => false,
@@ -161,6 +162,39 @@ impl Worker {
             Ok(id) => self.system(&format!(
                 "forked to session {id} — this branch continues here"
             )),
+            Err(error) => self.fail(&error.to_string()),
+        }
+        true
+    }
+
+    fn modules(&mut self, argument: Option<&str>) -> bool {
+        let workspace = self.loop_.workspace().to_path_buf();
+        if let Some(argument) = argument {
+            let mut words = argument.split_whitespace();
+            let (Some(name), Some(state)) = (words.next(), words.next()) else {
+                self.system("/modules NAME on|off");
+                return true;
+            };
+            let on = match state {
+                "on" => true,
+                "off" => false,
+                _ => {
+                    self.system("/modules NAME on|off");
+                    return true;
+                }
+            };
+            if let Err(error) = crate::modules::set(name, on) {
+                self.fail(&error.to_string());
+                return true;
+            }
+        }
+        match crate::modules::Switches::load(&workspace) {
+            Ok(switches) => {
+                if argument.is_some() {
+                    self.loop_.set_modules(&switches);
+                }
+                self.system(&switches.table());
+            }
             Err(error) => self.fail(&error.to_string()),
         }
         true

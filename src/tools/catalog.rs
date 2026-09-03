@@ -16,9 +16,10 @@ impl ToolRegistry {
             grep(),
             skill(),
         ];
-        if self.verification {
-            all.extend([diagnostics(), definition(), run_command()]);
+        if self.language {
+            all.extend([diagnostics(), definition()]);
         }
+        all.push(run_command());
         if self.search.is_some() {
             all.extend([web_search(), web_fetch()]);
         }
@@ -28,10 +29,10 @@ impl ToolRegistry {
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
             "read_file" | "list_dir" | "grep" | "skill" => true,
-            "diagnostics" | "definition" => self.verification,
+            "diagnostics" | "definition" => self.language,
             "edit_file" | "replace_text" | "replace_texts" | "replace_lines" | "insert_after"
             | "delete_lines" | "write_file" => !self.policy.is_read_only(),
-            "run_command" => self.verification && !self.policy.is_read_only(),
+            "run_command" => !self.policy.is_read_only(),
             "web_search" | "web_fetch" => self.search.is_some(),
             _ => false,
         }

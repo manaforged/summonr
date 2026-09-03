@@ -449,7 +449,7 @@ pub struct FunctionDefinition {
     async_fn_in_trait,
     reason = "Provider is an application-owned trait with no public Send contract"
 )]
-pub trait Provider {
+pub trait Provider: Send + Sync + 'static {
     fn complete<'a>(
         &'a self,
         request: &'a CompletionRequest,

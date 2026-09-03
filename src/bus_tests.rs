@@ -7,6 +7,7 @@ fn home(tag: &str) -> PathBuf {
 fn bus_at(dir: &Path, id: &str) -> Bus {
     Bus {
         id: id.to_string(),
+        kind: "summoner".to_string(),
         dir: dir.to_path_buf(),
         cursor: 0,
         last_beat: 0,
@@ -39,6 +40,7 @@ fn heartbeat_makes_and_expires_presence() {
     assert_eq!(roster[0].status, "idle");
     let stale = Agent {
         id: "ghost".to_string(),
+        kind: "summoner".to_string(),
         model: "glm".to_string(),
         cwd: cwd.display().to_string(),
         pid: 1,
@@ -175,6 +177,7 @@ fn ancient_records_are_swept() {
     let mut a = bus_at(&dir, "a");
     a.heartbeat("glm", &cwd, "idle");
     let ancient = Agent {
+        kind: "summoner".to_string(),
         id: "old".to_string(),
         model: "glm".to_string(),
         cwd: cwd.display().to_string(),

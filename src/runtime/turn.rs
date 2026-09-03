@@ -4,11 +4,14 @@ use crate::ProviderFailureKind;
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
+use std::time::Duration;
 
-#[cfg(not(test))]
-const JOB_WAIT_SECS: u64 = 120;
-#[cfg(test)]
-const JOB_WAIT_SECS: u64 = 1;
+use crate::bus::{envelope, is_bus_tool};
+use crate::prompt::harness_section;
+use crate::provider::StopReason;
+use crate::session::decorate;
+use crate::tools::{ToolOutput, readonly};
+use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
 
 impl<P: Provider> Loop<P> {
     fn take_mail(
@@ -38,7 +41,7 @@ impl<P: Provider> Loop<P> {
         }
         let (mail, overflow) = self.take_bus_mail(5)?;
         for mail in mail {
-            let text = crate::bus::envelope(&mail.from, &mail.text);
+            let text = envelope(&mail);
             self.session.steer(&text).map_err(super::session_err)?;
             messages.push(Message::user(text.clone()));
             injected = true;
@@ -71,7 +74,7 @@ impl<P: Provider> Loop<P> {
     async fn complete_retry(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, String, usize, Attempt, u64)>> {
@@ -184,7 +187,7 @@ impl<P: Provider> Loop<P> {
                             ),
                         },
                     )?;
-                    tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                    tokio::time::sleep(Duration::from_secs(wait)).await;
                     wait *= 2;
                 }
             }
@@ -195,13 +198,13 @@ impl<P: Provider> Loop<P> {
         &self,
         role: workflow::Role,
         messages: &[Message],
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
     ) -> CompletionRequest {
         CompletionRequest {
             model: self.seat(role).1.to_string(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
-            max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
             emit_deltas: true,
             effort: self.effort_for(role),
         }
@@ -210,7 +213,7 @@ impl<P: Provider> Loop<P> {
     pub(super) fn estimated_prompt_tokens(
         &self,
         messages: &[Message],
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
     ) -> usize {
         let chars = request_chars(messages, tools);
         super::compaction::estimate(chars, self.context_sample)
@@ -300,7 +303,7 @@ impl<P: Provider> Loop<P> {
             let message = assistant.into_message();
             let calls = message.tool_calls.clone();
             messages.push(message.clone());
-            if stop_reason == crate::provider::StopReason::Length && calls.is_empty() {
+            if stop_reason == StopReason::Length && calls.is_empty() {
                 self.session
                     .finish_provider(durable_attempt, &message.content, &reasoning, meter)
                     .map_err(super::session_err)?;
@@ -368,6 +371,7 @@ impl<P: Provider> Loop<P> {
             .await?;
         }
         self.abort_turn(abort_reason, events, emit, usage, reached)
+            .await
     }
 
     async fn scout(
@@ -383,7 +387,7 @@ impl<P: Provider> Loop<P> {
         }
         let objective = self.session.objective().map_err(super::session_err)?;
         let before = usage.clone();
-        let brief = crate::scout::brief(self, &objective, usage).await;
+        let brief = scout::brief(self, &objective, usage).await;
         self.seat_usage(workflow::Role::Scout, &before, usage, events, emit)?;
         let brief = match brief {
             Ok(brief) => brief,
@@ -398,7 +402,7 @@ impl<P: Provider> Loop<P> {
             }
         };
         self.session.set_brief(&brief).map_err(super::session_err)?;
-        let note = crate::scout::note(&brief);
+        let note = scout::note(&brief);
         self.session.steer(&note).map_err(super::session_err)?;
         messages.push(Message::user(note));
         self.commit(messages);
@@ -417,6 +421,7 @@ impl<P: Provider> Loop<P> {
         }
         let child_read_only = self.depth > 0 && self.tools.is_read_only();
         self.tools.set_read_only(self.plan || child_read_only);
+        self.summary_failed = false;
         self.turn_started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
@@ -438,7 +443,7 @@ impl<P: Provider> Loop<P> {
                 "\n\nHarness: the selected plan is now accepted; /plan reject discards it.",
             );
         }
-        input.text = crate::session::decorate(&harness, &input.text);
+        input.text = decorate(&harness, &input.text);
         let queued = self
             .session
             .start_input(&input.text, &input.images)
@@ -455,15 +460,14 @@ impl<P: Provider> Loop<P> {
         self.budget.breach(self.spent_tokens, self.elapsed_secs())
     }
 
-    fn harness_note(&self, progress: &crate::WorkProgress) -> String {
-        let mut note =
-            crate::prompt::harness_section(self.plan, self.verify.as_deref().unwrap_or_default());
+    fn harness_note(&self, progress: &WorkProgress) -> String {
+        let mut note = harness_section(self.plan, self.verify.as_deref().unwrap_or_default());
         if self.plan {
             note.push_str("\n\nHarness: Work remains in Plan until you select and accept it.");
-        } else if progress.kind != crate::WorkKind::Single {
+        } else if progress.kind != WorkKind::Single {
             note.push_str("\n\nHarness: the Steps or Goal runner owns this Work.");
         }
-        if progress.kind == crate::WorkKind::Goal && progress.max_turns > 0 {
+        if progress.kind == WorkKind::Goal && progress.max_turns > 0 {
             note.push_str(&format!(
                 "\n\nHarness: goal round {} of {}.",
                 progress.rounds + 1,
@@ -487,13 +491,14 @@ impl<P: Provider> Loop<P> {
     async fn prepare_round(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[crate::provider::ToolDefinition],
+        tools: &[ToolDefinition],
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         self.bus_heartbeat("working");
         self.take_mail(messages, events, emit)?;
+        self.drain(events, emit);
         self.auto_compact(messages, tools, usage, events, emit)
             .await
     }
@@ -628,11 +633,11 @@ impl<P: Provider> Loop<P> {
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
         let (text, checks, receipt) = if self.session.stage() == Some(Stage::Execute) {
-            let (mut checks, running) = self.await_jobs(&mut events, &mut emit).await?;
+            let (mut checks, mut running) = self.await_jobs(&mut events, &mut emit).await?;
+            running.extend(self.await_children(&mut events, &mut emit).await?);
             if !running.is_empty() {
                 let note = format!(
-                    "[summon: background job{} still running — {} — wait for it with the job id, or kill it, before you report done]",
-                    if running.len() == 1 { "" } else { "s" },
+                    "[summon: background work still running — {} — wait for it with the job or child id, or kill it, before you report done]",
                     running.join("; ")
                 );
                 if self.session.defer(&note).map_err(super::session_err)? {
@@ -665,6 +670,19 @@ impl<P: Provider> Loop<P> {
                     });
                 }
             }
+            let killed = self.kill_spawned("the parent turn ended").await?;
+            if !killed.is_empty() {
+                self.push_event(
+                    &mut events,
+                    &mut emit,
+                    Event::Note {
+                        text: format!(
+                            "stopped {} background child(ren) the turn left running",
+                            killed.len()
+                        ),
+                    },
+                )?;
+            }
             let paths = self.session.enter_verify().map_err(super::session_err)?;
             checks.extend(self.run_verify(&mut events, &mut emit).await?);
             let mut verdict = self
@@ -692,9 +710,9 @@ impl<P: Provider> Loop<P> {
             if verdict.passed && self.seat_model(workflow::Role::Review).is_some() {
                 self.session.enter_review().map_err(super::session_err)?;
                 let objective = self.session.objective().map_err(super::session_err)?;
-                let evidence = crate::verify::summary(&paths, &checks);
+                let evidence = verify::summary(&paths, &checks);
                 let before = usage.clone();
-                let reviewed = crate::review::outcome(
+                let reviewed = review::outcome(
                     self,
                     &objective,
                     &message.content,
@@ -745,13 +763,13 @@ impl<P: Provider> Loop<P> {
                     }
                 }
             }
-            let receipt = crate::Receipt::new(paths, checks.clone());
+            let receipt = Receipt::new(paths, checks.clone());
             let decision = if verdict.passed {
                 if let Some(objective) =
                     self.session.goal_objective().map_err(super::session_err)?
                 {
                     let before = usage.clone();
-                    let decision = crate::goal::decision(
+                    let decision = goal::decision(
                         self,
                         &objective,
                         &message.content,
@@ -773,7 +791,7 @@ impl<P: Provider> Loop<P> {
             } else {
                 Decision::Automatic
             };
-            let context = crate::verify::context(&message.content, &receipt);
+            let context = verify::context(&message.content, &receipt);
             match rejected {
                 Some(findings) => self
                     .session
@@ -825,7 +843,7 @@ impl<P: Provider> Loop<P> {
             self.push_event(events, emit, event)?;
         }
         let outputs = if calls.iter().all(|call| call.function.name == "task") {
-            self.tasks_execute(&calls)
+            self.tasks_execute(&calls, events, emit)
                 .await
                 .into_iter()
                 .map(|result| match result {
@@ -837,10 +855,7 @@ impl<P: Provider> Loop<P> {
                     Err(error) => (Err(error), 0, None),
                 })
                 .collect()
-        } else if calls
-            .iter()
-            .all(|call| crate::tools::readonly(&call.function.name))
-        {
+        } else if calls.iter().all(|call| readonly(&call.function.name)) {
             let tools = &self.tools;
             futures::future::join_all(calls.iter().map(|call| async move {
                 let started = Instant::now();
@@ -856,13 +871,13 @@ impl<P: Provider> Loop<P> {
             for call in &calls {
                 let started = Instant::now();
                 let (output, child_usage) = if call.function.name == "task" {
-                    match self.task_execute(call).await {
+                    match self.task_execute(call, events, emit).await {
                         Ok(execution) => (Ok(execution.output), Some(execution.usage)),
                         Err(error) => (Err(error), None),
                     }
-                } else if crate::bus::is_bus_tool(&call.function.name) {
+                } else if is_bus_tool(&call.function.name) {
                     (
-                        self.bus_execute(call).map(|text| crate::tools::ToolOutput {
+                        self.bus_execute(call).map(|text| ToolOutput {
                             text,
                             success: true,
                             mutated: false,
@@ -927,9 +942,8 @@ impl<P: Provider> Loop<P> {
         let mut outcomes = Vec::new();
         let mut running = Vec::new();
         let session = self.session.id().to_string();
-        let mut latest: std::collections::BTreeMap<String, crate::jobs::Record> =
-            std::collections::BTreeMap::new();
-        for record in crate::jobs::since(&self.workspace, self.turn_started, Some(&session)) {
+        let mut latest: BTreeMap<String, jobs::Record> = BTreeMap::new();
+        for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
             latest.insert(record.command.clone(), record);
         }
         for record in latest.into_values() {
@@ -938,7 +952,7 @@ impl<P: Provider> Loop<P> {
             let mut wait = 1_u64;
             let mut announced = false;
             let status = loop {
-                let status = crate::jobs::status(&self.workspace, &record.id)?;
+                let status = jobs::status(&self.workspace, &record.id)?;
                 if !status.running || started.elapsed().as_secs() >= JOB_WAIT_SECS {
                     break status;
                 }
@@ -952,7 +966,7 @@ impl<P: Provider> Loop<P> {
                         },
                     )?;
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+                tokio::time::sleep(Duration::from_secs(wait)).await;
                 wait = (wait * 2).min(10);
             };
             if status.killed {
@@ -1018,7 +1032,7 @@ impl<P: Provider> Loop<P> {
                 },
                 Some(Observation::Stdout(expected)) => {
                     let result = self.tools.execute_outcome(&verify_call(&command)).await;
-                    let mut outcome = crate::verify::outcome(&command, &result);
+                    let mut outcome = verify::outcome(&command, &result);
                     if outcome.passed && !outcome.output.contains(expected.as_str()) {
                         outcome.passed = false;
                         outcome.output.push_str(&format!(
@@ -1030,7 +1044,7 @@ impl<P: Provider> Loop<P> {
                 }
                 None => {
                     let result = self.tools.execute_outcome(&verify_call(&command)).await;
-                    crate::verify::outcome(&command, &result)
+                    verify::outcome(&command, &result)
                 }
             };
             self.push_event(
@@ -1050,7 +1064,7 @@ impl<P: Provider> Loop<P> {
         Ok(checks)
     }
 
-    fn abort_turn(
+    async fn abort_turn(
         &mut self,
         abort_reason: Option<String>,
         mut events: Vec<Event>,
@@ -1067,6 +1081,7 @@ impl<P: Provider> Loop<P> {
                 reason: reason.clone(),
             },
         )?;
+        drop(self.kill_spawned(&reason).await?);
         self.session.abort(&reason).map_err(super::session_err)?;
         Ok(Turn {
             text: reason,
@@ -1098,7 +1113,7 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-fn request_chars(messages: &[Message], tools: &[crate::provider::ToolDefinition]) -> usize {
+fn request_chars(messages: &[Message], tools: &[ToolDefinition]) -> usize {
     messages
         .iter()
         .map(super::compaction::message_chars)

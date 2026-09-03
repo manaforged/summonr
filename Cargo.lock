@@ -20,21 +20,21 @@ checksum = "366ffbaa4442f4684d91e2cd7c5ea7c4ed8add41959a31447066e279e432b618"
 
 [[package]]
 name = "accesskit"
-version = "0.24.1"
+version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3b7f7f85a7e5f68090000ed7622545829afd484d210358702ae4cb97dd0c320"
+checksum = "438a7081a65b95c668db56591a4fef9bc5dad275f448bd6223fc6949d823db38"
 dependencies = [
  "uuid",
 ]
 
 [[package]]
 name = "accesskit_atspi_common"
-version = "0.18.1"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e8c61bee90b42a772d39d06a740207dc71a4e780004ace1db8d99fb1baaa954"
+checksum = "c9d47ad644916f6cb7e432a5ca0dbd7cc78281a9772881057bb72d4aadb93257"
 dependencies = [
  "accesskit",
- "accesskit_consumer 0.36.0",
+ "accesskit_consumer",
  "atspi-common",
  "phf",
  "serde",
@@ -43,43 +43,37 @@ dependencies = [
 
 [[package]]
 name = "accesskit_consumer"
-version = "0.35.0"
+version = "0.39.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "53cf47daed85312e763fbf85ceca136e0d7abc68e0a7e12abe11f48172bc3b10"
+checksum = "cc882fa0c9c24c53649e256311b51046cf36eca9a8f7e54ff4ef682160b0cb27"
 dependencies = [
  "accesskit",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
 ]
 
 [[package]]
-name = "accesskit_consumer"
-version = "0.36.0"
+name = "accesskit_ios"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25e0d7e25d06f4dc21d1774d67146e9e80d6789216cbd4d1e88185b0095dba60"
+checksum = "d5e9b29c6ba5f4d2e0662e9c562484f061ffc58f658479c538ecca8299ada1e9"
 dependencies = [
  "accesskit",
- "hashbrown 0.16.1",
-]
-
-[[package]]
-name = "accesskit_consumer"
-version = "0.38.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5d10a236f96f87d70732e44520046785431ef01d5bcd6b041317bfadd2f88245"
-dependencies = [
- "accesskit",
- "hashbrown 0.16.1",
+ "accesskit_consumer",
+ "hashbrown 0.17.1",
+ "objc2 0.5.2",
+ "objc2-foundation 0.2.2",
+ "objc2-ui-kit",
 ]
 
 [[package]]
 name = "accesskit_macos"
-version = "0.26.3"
+version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce02dc63b43f0c9296af9ac946312a2dc8814427d7a64d2d600971dac55b6076"
+checksum = "a3f278988416e5fb600f24d0cfffe31a249ebbff980fb9c5a3b5fbed2c579f73"
 dependencies = [
  "accesskit",
- "accesskit_consumer 0.38.0",
- "hashbrown 0.16.1",
+ "accesskit_consumer",
+ "hashbrown 0.17.1",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
  "objc2-foundation 0.2.2",
@@ -87,9 +81,9 @@ dependencies = [
 
 [[package]]
 name = "accesskit_unix"
-version = "0.21.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b016ca8db0ea0ea2ceff29a9d6240391492d960716aa471967c00e8cc8cb197c"
+checksum = "665c9079b7325a8168a6793437a172dda44b19a05af8ed52d7e32abaada996fe"
 dependencies = [
  "accesskit",
  "accesskit_atspi_common",
@@ -103,13 +97,13 @@ dependencies = [
 
 [[package]]
 name = "accesskit_windows"
-version = "0.32.1"
+version = "0.35.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eff7009f1a532e917d66970a1e80c965140c6cfbbabbdde3d64e5431e6c78e21"
+checksum = "a59e8d7160cbac991c1345c99153783ab96423644ccb1f20617cf80c97596aa1"
 dependencies = [
  "accesskit",
- "accesskit_consumer 0.35.0",
- "hashbrown 0.16.1",
+ "accesskit_consumer",
+ "hashbrown 0.17.1",
  "static_assertions",
  "windows",
  "windows-core",
@@ -117,11 +111,12 @@ dependencies = [
 
 [[package]]
 name = "accesskit_winit"
-version = "0.32.2"
+version = "0.34.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fe9a94394896352cc4660ca2288bd4ef883d83238853c038b44070c8f134313"
+checksum = "1eb960a51582305f94b3884a7ff54b3462abe38f0de95a9e7e04dd7ab7b757da"
 dependencies = [
  "accesskit",
+ "accesskit_ios",
  "accesskit_macos",
  "accesskit_unix",
  "accesskit_windows",
@@ -468,9 +463,9 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
 name = "bit-set"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34ddef2995421ab6a5c779542c81ee77c115206f4ad9d5a8e05f4ff49716a3dd"
+checksum = "09ec2f926cc3060f09db9ebc5b52823d85268d24bb917e472c0c4bea35780a7d"
 dependencies = [
  "bit-vec",
 ]
@@ -645,7 +640,7 @@ dependencies = [
  "maybe-owned",
  "rustix 1.1.4",
  "rustix-linux-procfs",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "winx",
 ]
 
@@ -899,15 +894,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "core_maths"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77745e017f5edba1a9c1d854f6f3a52dac8a12dd5af5d2f54aecf61e43d80d30"
-dependencies = [
- "libm",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -961,15 +947,17 @@ checksum = "61803da095bee82a81bb1a452ecc25d3b2f1416d1897eb86430c6159ef717c17"
 
 [[package]]
 name = "crossterm"
-version = "0.28.1"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "829d955a0bb380ef178a640b91779e3987da38c9aea133b20614cfed8cdea9c6"
+checksum = "d8b9f2e4c67f833b660cdb0a3523065869fb35570177239812ed4c905aeff87b"
 dependencies = [
  "bitflags 2.13.1",
  "crossterm_winapi",
+ "derive_more",
+ "document-features",
  "mio",
  "parking_lot",
- "rustix 0.38.44",
+ "rustix 1.1.4",
  "signal-hook",
  "signal-hook-mio",
  "winapi",
@@ -999,6 +987,15 @@ dependencies = [
  "generic-array",
  "rand_core",
  "typenum",
+]
+
+[[package]]
+name = "ctor"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83cf0d42651b16c6dfe68685716d18480d18a9c39c62d76e8cf3eb6ed5d8bcbf"
+dependencies = [
+ "dtor",
 ]
 
 [[package]]
@@ -1229,6 +1226,52 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d8b14ccef22fc6f5a8f4d7d768562a182c04ce9a3b3157b91390b52ddfdf1a76"
 
 [[package]]
+name = "drm"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "80bc8c5c6c2941f70a55c15f8d9f00f9710ebda3ffda98075f996a0e6c92756f"
+dependencies = [
+ "bitflags 2.13.1",
+ "bytemuck",
+ "drm-ffi",
+ "drm-fourcc",
+ "libc",
+ "rustix 0.38.44",
+]
+
+[[package]]
+name = "drm-ffi"
+version = "0.9.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51a91c9b32ac4e8105dec255e849e0d66e27d7c34d184364fb93e469db08f690"
+dependencies = [
+ "drm-sys",
+ "rustix 1.1.4",
+]
+
+[[package]]
+name = "drm-fourcc"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0aafbcdb8afc29c1a7ee5fbe53b5d62f4565b35a042a662ca9fecd0b54dae6f4"
+
+[[package]]
+name = "drm-sys"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ecc8e1361066d91f5ffccff060a3c3be9c3ecde15be2959c1937595f7a82a9f8"
+dependencies = [
+ "libc",
+ "linux-raw-sys 0.9.4",
+]
+
+[[package]]
+name = "dtor"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "edf234dd1594d6dd434a8fb8cada51ddbbc593e40e4a01556a0b31c62da2775b"
+
+[[package]]
 name = "dwrote"
 version = "0.11.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1295,7 +1338,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1395,21 +1438,15 @@ checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
 
 [[package]]
 name = "foldhash"
-version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
-
-[[package]]
-name = "foldhash"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
 name = "font-types"
-version = "0.11.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5b38ad915f6dadd993ced50848a8291a543bd41ca62bc10740d5e64e2ab4cfd7"
+checksum = "e64eb721ca85a34323425f4041adc5d82704d3782d5f8f03793bc012419dce23"
 dependencies = [
  "bytemuck",
 ]
@@ -1484,7 +1521,7 @@ checksum = "94e7099f6313ecacbe1256e8ff9d617b75d1bcb16a6fddef94866d225a01a14a"
 dependencies = [
  "io-lifetimes 2.0.4",
  "rustix 1.1.4",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1747,26 +1784,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gpu-descriptor"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b89c83349105e3732062a895becfc71a8f921bb71ecbbdd8ff99263e3b53a0ca"
-dependencies = [
- "bitflags 2.13.1",
- "gpu-descriptor-types",
- "hashbrown 0.15.5",
-]
-
-[[package]]
-name = "gpu-descriptor-types"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fdf242682df893b86f33a73828fb09ca4b2d3bb6cc95249707fc684d27484b91"
-dependencies = [
- "bitflags 2.13.1",
-]
-
-[[package]]
 name = "h2"
 version = "0.4.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1799,13 +1816,13 @@ dependencies = [
 
 [[package]]
 name = "harfrust"
-version = "0.6.2"
+version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "551ed25397e4b444e89686602877d5cf3a7f6e3d548dcac37a8357d1e195f4df"
+checksum = "948d0741125ba89cd3e1c23e5642415b6ade7e1d29d67ba25fb925b533e989d6"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
- "core_maths",
+ "once_cell",
  "read-fonts",
  "smallvec",
 ]
@@ -1818,22 +1835,13 @@ checksum = "8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888"
 
 [[package]]
 name = "hashbrown"
-version = "0.15.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1"
-dependencies = [
- "foldhash 0.1.5",
-]
-
-[[package]]
-name = "hashbrown"
 version = "0.16.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "841d1cc9bed7f9236f321df977030373f4a4163ae1a7dbfe1a51a2c1a51d9100"
 dependencies = [
  "allocator-api2",
  "equivalent",
- "foldhash 0.2.0",
+ "foldhash",
 ]
 
 [[package]]
@@ -1841,6 +1849,9 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "foldhash",
+]
 
 [[package]]
 name = "heck"
@@ -1859,12 +1870,6 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
-
-[[package]]
-name = "hexf-parse"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfa686283ad6dd069f105e5ab091b04c62850d3e4cf5d67debad1933f55023df"
 
 [[package]]
 name = "hkdf"
@@ -2163,7 +2168,7 @@ dependencies = [
  "image-webp",
  "moxcms",
  "num-traits",
- "png 0.18.1",
+ "png",
  "zune-core",
  "zune-jpeg",
 ]
@@ -2180,9 +2185,9 @@ dependencies = [
 
 [[package]]
 name = "imagesize"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09e54e57b4c48b40f7aec75635392b12b3421fa26fe8b4332e63138ed278459c"
+checksum = "65b27460c2c92b037f3f94c538ed9a3342f3fdf923606781629ccb35f82d042a"
 
 [[package]]
 name = "indexmap"
@@ -2532,6 +2537,12 @@ checksum = "d26c52dbd32dccf2d10cac7725f8eae5296885fb5703b261f7d0a0739ec807ab"
 
 [[package]]
 name = "linux-raw-sys"
+version = "0.9.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cd945864f07fe9f5371a27ad7b52a172b4b499999f1d97574c9fa68373937e12"
+
+[[package]]
+name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
@@ -2660,9 +2671,9 @@ dependencies = [
 
 [[package]]
 name = "naga"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2bf919621e7975acb27d881bae2fb993e0d45c8e0446e85e6272971e00dc8df"
+checksum = "a616d2fb8c89516ac2723a581f69d6c18576046bed761bd6b305e5618e6ae130"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -2671,17 +2682,29 @@ dependencies = [
  "cfg_aliases",
  "codespan-reporting",
  "half",
- "hashbrown 0.16.1",
- "hexf-parse",
+ "hashbrown 0.17.1",
  "indexmap 2.14.0",
  "libm",
  "log",
+ "naga-types",
  "num-traits",
  "once_cell",
  "rustc-hash",
  "spirv",
  "thiserror 2.0.20",
  "unicode-ident",
+]
+
+[[package]]
+name = "naga-types"
+version = "30.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "590afbf58a6f4f62873cd5cff4468061844bafa1cdf399cc954537c22d768d49"
+dependencies = [
+ "hashbrown 0.17.1",
+ "indexmap 2.14.0",
+ "rustc-hash",
+ "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -3118,6 +3141,7 @@ dependencies = [
  "bitflags 2.13.1",
  "objc2 0.6.4",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "objc2-metal 0.3.2",
 ]
@@ -3338,9 +3362,9 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "phf"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c1562dc717473dbaa4c1f85a36410e03c047b2e7df7f45ee938fbef64ae7fadf"
+checksum = "010378780309880b08997fae13be7834dba947d36393bd372f2b1556deb2a2f6"
 dependencies = [
  "phf_macros",
  "phf_shared",
@@ -3349,9 +3373,9 @@ dependencies = [
 
 [[package]]
 name = "phf_codegen"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49aa7f9d80421bca176ca8dbfebe668cc7a2684708594ec9f3c0db0805d5d6e1"
+checksum = "41b585a510fb76fdebead6897982ef2a03a21d8e6cbcca904999742a4afc6ffe"
 dependencies = [
  "phf_generator",
  "phf_shared",
@@ -3359,9 +3383,9 @@ dependencies = [
 
 [[package]]
 name = "phf_generator"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "135ace3a761e564ec88c03a77317a7c6b80bb7f7135ef2544dbe054243b89737"
+checksum = "aeb62e0959d5a1bebc965f4d15d9e2b7cea002b6b0f5ba8cde6cc26738467100"
 dependencies = [
  "fastrand",
  "phf_shared",
@@ -3369,9 +3393,9 @@ dependencies = [
 
 [[package]]
 name = "phf_macros"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "812f032b54b1e759ccd5f8b6677695d5268c588701effba24601f6932f8269ef"
+checksum = "5fa8d0ca26d424d27630da600c6624696e7dec8bf7b3b492b383c5dc49e5e085"
 dependencies = [
  "phf_generator",
  "phf_shared",
@@ -3382,9 +3406,9 @@ dependencies = [
 
 [[package]]
 name = "phf_shared"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e57fef6bc5981e38c2ce2d63bfa546861309f875b8a75f092d1d54ae2d64f266"
+checksum = "c6fd9027e2d9319be6349febd1db4e8d02aa544921200c9b777720ac34a3aa89"
 dependencies = [
  "siphasher",
 ]
@@ -3446,19 +3470,6 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "png"
-version = "0.17.16"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82151a2fc869e011c153adc57cf2789ccb8d9906ce52c0b39a6b5697749d7526"
-dependencies = [
- "bitflags 1.3.2",
- "crc32fast",
- "fdeflate",
- "flate2",
- "miniz_oxide",
-]
-
-[[package]]
-name = "png"
 version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "60769b8b31b2a9f263dae2776c37b1b28ae246943cf719eb6946a1db05128a61"
@@ -3486,9 +3497,9 @@ dependencies = [
 
 [[package]]
 name = "pollster"
-version = "0.4.0"
+version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f3a9f18d041e6d0e102a0a46750538147e5e8992d3b4873aaafee2520b00ce3"
+checksum = "bc6355899e1c9462875b6757c79f3caa011a1fdae12bbb1a2e72dd1f234f8336"
 
 [[package]]
 name = "poly1305"
@@ -3677,12 +3688,13 @@ dependencies = [
 
 [[package]]
 name = "read-fonts"
-version = "0.39.2"
+version = "0.43.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4ed38b89c2c77ff968c524145ad65fb010f38af5c7a224b53b81d47ac2daa81"
+checksum = "005c8acf251756c478b0bf402885bfd88a1476020c4c7e6060edc1aa68da38ea"
 dependencies = [
  "bytemuck",
  "font-types",
+ "once_cell",
 ]
 
 [[package]]
@@ -3869,7 +3881,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3882,7 +3894,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4004,7 +4016,7 @@ dependencies = [
  "log",
  "memmap2",
  "smithay-client-toolkit",
- "tiny-skia",
+ "tiny-skia 0.11.4",
 ]
 
 [[package]]
@@ -4203,7 +4215,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-a11y"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "accesskit",
  "crossbeam-channel",
@@ -4214,7 +4226,7 @@ dependencies = [
 [[package]]
 name = "sigil-actions"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "sigil-actions-macros",
  "smallvec",
@@ -4223,22 +4235,22 @@ dependencies = [
 [[package]]
 name = "sigil-actions-macros"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn 2.0.119",
+ "syn 3.0.3",
 ]
 
 [[package]]
 name = "sigil-animation"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 
 [[package]]
 name = "sigil-animation-runtime"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "sigil-animation",
  "sigil-reactive",
@@ -4248,11 +4260,12 @@ dependencies = [
 [[package]]
 name = "sigil-app"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "accesskit",
  "crossbeam-channel",
  "notify",
+ "raw-window-handle",
  "sigil-a11y",
  "sigil-animation-runtime",
  "sigil-events",
@@ -4266,7 +4279,7 @@ dependencies = [
  "sigil-style",
  "sigil-tasks",
  "sigil-text",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.5+spec-1.1.0",
  "tracing",
  "unicode-width",
  "windows-core",
@@ -4275,7 +4288,7 @@ dependencies = [
 [[package]]
 name = "sigil-bidi"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "unicode-bidi",
 ]
@@ -4283,7 +4296,7 @@ dependencies = [
 [[package]]
 name = "sigil-events"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "accesskit",
  "sigil-hal",
@@ -4295,7 +4308,7 @@ dependencies = [
 [[package]]
 name = "sigil-hal"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "keyboard-types",
  "smol_str 0.3.6",
@@ -4304,7 +4317,7 @@ dependencies = [
 [[package]]
 name = "sigil-icons"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "lyon_geom",
  "smallvec",
@@ -4314,19 +4327,19 @@ dependencies = [
 [[package]]
 name = "sigil-ide-core"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "crossbeam-channel",
  "ignore",
  "notify",
  "smallvec",
- "toml 0.9.12+spec-1.1.0",
+ "toml 1.1.5+spec-1.1.0",
 ]
 
 [[package]]
 name = "sigil-kernel"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "accesskit",
  "ahash",
@@ -4339,7 +4352,7 @@ dependencies = [
 [[package]]
 name = "sigil-layout"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "ahash",
  "sigil-hal",
@@ -4354,12 +4367,12 @@ dependencies = [
 [[package]]
 name = "sigil-profile"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 
 [[package]]
 name = "sigil-reactive"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "sigil-actions",
  "smallvec",
@@ -4369,7 +4382,7 @@ dependencies = [
 [[package]]
 name = "sigil-renderer"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -4384,15 +4397,18 @@ dependencies = [
  "sigil-text",
  "skrifa",
  "smallvec",
+ "softbuffer",
+ "tiny-skia 0.12.0",
  "tracing",
  "wgpu",
  "windows-core",
+ "zeno",
 ]
 
 [[package]]
 name = "sigil-shell"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4405,7 +4421,7 @@ dependencies = [
 [[package]]
 name = "sigil-style"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "phf",
  "sigil-hal",
@@ -4420,20 +4436,20 @@ dependencies = [
 [[package]]
 name = "sigil-style-macros"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "phf",
  "phf_codegen",
  "proc-macro2",
  "quote",
- "syn 2.0.119",
- "toml 0.8.23",
+ "syn 3.0.3",
+ "toml 1.1.5+spec-1.1.0",
 ]
 
 [[package]]
 name = "sigil-tasks"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "sigil-hal",
  "sigil-reactive",
@@ -4443,7 +4459,7 @@ dependencies = [
 [[package]]
 name = "sigil-text"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "ahash",
  "core-text",
@@ -4465,7 +4481,7 @@ dependencies = [
 [[package]]
 name = "sigil-tui"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "crossterm",
  "sigil-animation-runtime",
@@ -4483,7 +4499,7 @@ dependencies = [
 [[package]]
 name = "sigil-ui"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "arboard",
  "sigil-actions",
@@ -4502,7 +4518,7 @@ dependencies = [
 [[package]]
 name = "sigil-widgets"
 version = "0.1.0-alpha.1"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc#5c74ed9fb2aad49bfdb3b12205c221fd4c8c28fc"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=aa30e4780f89f57c283806a3fd3c0043a166e908#aa30e4780f89f57c283806a3fd3c0043a166e908"
 dependencies = [
  "sigil-animation-runtime",
  "sigil-bidi",
@@ -4512,7 +4528,8 @@ dependencies = [
  "sigil-profile",
  "sigil-reactive",
  "sigil-style",
- "tiny-skia",
+ "tiny-skia 0.12.0",
+ "tracing",
 ]
 
 [[package]]
@@ -4585,9 +4602,9 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
 name = "skrifa"
-version = "0.42.1"
+version = "0.46.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c34617370ae968efb7161bb2beb517d9084659aae19e24b89e3db25b46e4564"
+checksum = "d4febebda507fb889c545a37a135517769d1391941013561292897961d1887d6"
 dependencies = [
  "bytemuck",
  "read-fonts",
@@ -4661,7 +4678,39 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
+ "windows-sys 0.60.2",
+]
+
+[[package]]
+name = "softbuffer"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aac18da81ebbf05109ab275b157c22a653bb3c12cf884450179942f81bcbf6c3"
+dependencies = [
+ "as-raw-xcb-connection",
+ "bytemuck",
+ "drm",
+ "fastrand",
+ "js-sys",
+ "memmap2",
+ "ndk",
+ "objc2 0.6.4",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-quartz-core 0.3.2",
+ "raw-window-handle",
+ "redox_syscall 0.5.18",
+ "rustix 1.1.4",
+ "tiny-xlib",
+ "tracing",
+ "wasm-bindgen",
+ "wayland-backend",
+ "wayland-client",
+ "wayland-sys",
+ "web-sys",
  "windows-sys 0.61.2",
+ "x11rb",
 ]
 
 [[package]]
@@ -4839,7 +4888,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4932,8 +4981,22 @@ dependencies = [
  "bytemuck",
  "cfg-if",
  "log",
- "png 0.17.16",
  "tiny-skia-path 0.11.4",
+]
+
+[[package]]
+name = "tiny-skia"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47ffee5eaaf5527f630fb0e356b90ebdec84d5d18d937c5e440350f88c5a91ea"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "bytemuck",
+ "cfg-if",
+ "log",
+ "png",
+ "tiny-skia-path 0.12.0",
 ]
 
 [[package]]
@@ -4956,6 +5019,19 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "strict-num",
+]
+
+[[package]]
+name = "tiny-xlib"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a90a0ca3ee6a69f2ad28fd11621a4c3f03b371f366be500b64df260c4ffbafb4"
+dependencies = [
+ "as-raw-xcb-connection",
+ "ctor",
+ "libloading",
+ "pkg-config",
+ "tracing",
 ]
 
 [[package]]
@@ -5069,15 +5145,17 @@ dependencies = [
 
 [[package]]
 name = "toml"
-version = "0.9.12+spec-1.1.0"
+version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf92845e79fc2e2def6a5d828f0801e29a2f8acc037becc5ab08595c7d5e9863"
+checksum = "12c0ba9680044b4ce98d391a62094047eada0d64860b80166c39f4a6b5640785"
 dependencies = [
+ "indexmap 2.14.0",
  "serde_core",
  "serde_spanned 1.1.1",
- "toml_datetime 0.7.5+spec-1.1.0",
+ "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
- "winnow 0.7.15",
+ "toml_writer",
+ "winnow 1.0.4",
 ]
 
 [[package]]
@@ -5087,15 +5165,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "22cddaf88f4fbc13c51aebbf5f8eceb5c7c5a9da2ac40a13519eb5b0a0e8f11c"
 dependencies = [
  "serde",
-]
-
-[[package]]
-name = "toml_datetime"
-version = "0.7.5+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92e1cfed4a3038bc5a127e35a2d360f145e1f4b971b551a2ba5fd7aedf7e1347"
-dependencies = [
- "serde_core",
 ]
 
 [[package]]
@@ -5147,6 +5216,12 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
+
+[[package]]
+name = "toml_writer"
+version = "1.1.2+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tower"
@@ -5255,7 +5330,7 @@ checksum = "f2f6fb2847f6742cd76af783a2a2c49e9375d0a111c7bef6f71cd9e738c72d6e"
 dependencies = [
  "memoffset",
  "tempfile",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5336,13 +5411,11 @@ dependencies = [
 
 [[package]]
 name = "usvg"
-version = "0.47.0"
+version = "0.48.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d46cf96c5f498d36b7a9693bc6a7075c0bb9303189d61b2249b0dc3d309c07de"
+checksum = "977d0a4abdef933f424a99fe09f95576e089b90aebc6f016a3bc813762493e91"
 dependencies = [
- "base64",
  "data-url",
- "flate2",
  "imagesize",
  "kurbo",
  "log",
@@ -5353,7 +5426,6 @@ dependencies = [
  "strict-num",
  "svgtypes",
  "tiny-skia-path 0.12.0",
- "xmlwriter",
 ]
 
 [[package]]
@@ -5636,9 +5708,9 @@ checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
 
 [[package]]
 name = "wgpu"
-version = "29.0.4"
+version = "30.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "76e8840e1ba2881d4cbb18d2147627a56af426ff064c0401eb0c8410c6325d07"
+checksum = "6d8f4bd44d92da5270f03409dba9f952dab24f128e05d6a554926101d1bf9114"
 dependencies = [
  "arrayvec",
  "bitflags 2.13.1",
@@ -5646,7 +5718,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
  "js-sys",
  "log",
  "naga",
@@ -5666,9 +5738,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f519832254e56965a9940c4af57dcb75f702b6f6fa4a0b172f685395843a4d7"
+checksum = "14c018fce9b6270aa203c2fdd56f3cce996713534bd757e4ea58c8560b121f14"
 dependencies = [
  "arrayvec",
  "bit-set",
@@ -5677,10 +5749,11 @@ dependencies = [
  "bytemuck",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
  "indexmap 2.14.0",
  "log",
  "naga",
+ "naga-types",
  "once_cell",
  "parking_lot",
  "portable-atomic",
@@ -5699,36 +5772,36 @@ dependencies = [
 
 [[package]]
 name = "wgpu-core-deps-apple"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5e39e26c4c0e07589e67d18546cf79ff45383659fc72fca4dd293358a0347f3"
+checksum = "061f3d319a40d39d00b1ecc2c33b89fe21d4e6fe01859df3500a3a8ecccd6b68"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-core-deps-emscripten"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01e09be551dc939498bdd5f6b2c66e55ab275dad25825267a08605a80fc9f0af"
+checksum = "d98b86cf4abf524a902dd35f18ca6a3f08fc2ae9847c8f10b48e30491b1f0b86"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-core-deps-windows-linux-android"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4e592c1bbef6ad047647ae6e666ebd8cee7a32bb4544d9700ec96cbf73230257"
+checksum = "7586165fd5f6d881cb9ce4bb71f40d6caab2c0f1837e3fc1d9788a197fb6004f"
 dependencies = [
  "wgpu-hal",
 ]
 
 [[package]]
 name = "wgpu-hal"
-version = "29.0.4"
+version = "30.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97ace1c17727311c22a46e4e3faf56ea6de81af99dcc839bdfb54857b94d448d"
+checksum = "cf765132d8d5f50e192e7880464890c13f4e7457aafe8e5466e8174586e9f101"
 dependencies = [
  "android_system_properties",
  "arrayvec",
@@ -5742,17 +5815,18 @@ dependencies = [
  "glow",
  "glutin_wgl_sys",
  "gpu-allocator",
- "gpu-descriptor",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
  "js-sys",
  "khronos-egl",
  "libc",
  "libloading",
  "log",
  "naga",
+ "naga-types",
  "ndk-sys",
  "objc2 0.6.4",
  "objc2-core-foundation",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
  "objc2-metal 0.3.2",
  "objc2-quartz-core 0.3.2",
@@ -5767,6 +5841,7 @@ dependencies = [
  "raw-window-metal",
  "renderdoc-sys",
  "smallvec",
+ "static_assertions",
  "thiserror 2.0.20",
  "wasm-bindgen",
  "wayland-sys",
@@ -5780,9 +5855,9 @@ dependencies = [
 
 [[package]]
 name = "wgpu-naga-bridge"
-version = "29.0.4"
+version = "30.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95226013f547544b223281cd16a4fb549aa9dcb562adbda0faae4c73ffbbc161"
+checksum = "d2f62e73117bb7a62bfd9c5a5841438a823f6566c6442a808ee269d2d055c081"
 dependencies = [
  "naga",
  "wgpu-types",
@@ -5790,15 +5865,17 @@ dependencies = [
 
 [[package]]
 name = "wgpu-types"
-version = "29.0.4"
+version = "30.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84bf84cd9ca8ca45e2b223a3868f1adf9bfc0c66aeac212e76ee7e40fdadf8f5"
+checksum = "1a9c93c2b35edde326df60ffdee4c0f5864eac3011d6768b70d43f028ad93565"
 dependencies = [
  "bitflags 2.13.1",
  "bytemuck",
  "js-sys",
  "log",
+ "naga-types",
  "raw-window-handle",
+ "static_assertions",
  "web-sys",
 ]
 
@@ -5824,7 +5901,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
@@ -6262,7 +6339,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f3fd376f71958b862e7afb20cfe5a22830e1963462f3a17f49d82a6c1d1f42d"
 dependencies = [
  "bitflags 2.13.1",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -6358,12 +6435,6 @@ name = "xml-rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
-
-[[package]]
-name = "xmlwriter"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "yeslogic-fontconfig-sys"
@@ -6585,6 +6656,12 @@ dependencies = [
  "winapi",
  "yeslogic-fontconfig-sys",
 ]
+
+[[package]]
+name = "zeno"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df3dc4292935e51816d896edcd52aa30bc297907c26167fec31e2b0c6a32524"
 
 [[package]]
 name = "zerocopy"

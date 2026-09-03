@@ -667,6 +667,10 @@ impl SessionDriver {
         }
     }
 
+    pub(crate) fn child(&self, id: SessionId) -> Option<crate::child::ChildRecord> {
+        self.state.children.get(&id).cloned()
+    }
+
     #[cfg(test)]
     pub(crate) fn children(&self) -> Vec<crate::child::ChildRecord> {
         self.state.children.values().cloned().collect()

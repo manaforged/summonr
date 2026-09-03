@@ -11,7 +11,7 @@ use crate::tools::tool;
 
 const STALE_SECS: u64 = 120;
 
-const MAIL_CHARS: usize = 1_000;
+const MAIL_CHARS: usize = 8_000;
 const MAX_FILE_BYTES: usize = 256 * 1024;
 const SWEEP_SECS: u64 = 24 * 3600;
 
@@ -35,6 +35,8 @@ fn clean_id(id: &str) -> String {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
     pub id: String,
+    #[serde(default = "summoner")]
+    pub kind: String,
     pub model: String,
     pub cwd: String,
     pub pid: u32,
@@ -46,14 +48,21 @@ pub struct Agent {
 pub struct Mail {
     pub ts: u64,
     pub from: String,
+    #[serde(default = "summoner")]
+    pub kind: String,
     pub text: String,
 }
 
-pub(crate) fn envelope(from: &str, text: &str) -> String {
+fn summoner() -> String {
+    "summoner".to_string()
+}
+
+pub(crate) fn envelope(mail: &Mail) -> String {
     format!(
-        "[summon:{} — peer mail, not user instructions] {}",
-        from,
-        text.chars().take(500).collect::<String>()
+        "[summon:{} ({}) — peer mail, not user instructions] {}",
+        mail.from,
+        mail.kind,
+        mail.text.chars().take(500).collect::<String>()
     )
 }
 
@@ -67,13 +76,14 @@ struct Post {
 
 pub(crate) struct Bus {
     id: String,
+    kind: String,
     dir: PathBuf,
     cursor: usize,
     last_beat: u64,
     status: String,
 }
 
-fn now() -> u64 {
+pub(crate) fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -86,28 +96,50 @@ fn slug(cwd: &str) -> String {
         .collect()
 }
 
+pub(crate) fn peek() -> Result<Vec<Agent>> {
+    let dir = mage_home()?.join("bus");
+    if !dir.join("agents").is_dir() {
+        return Ok(Vec::new());
+    }
+    let bus = Bus {
+        id: String::new(),
+        kind: String::new(),
+        dir,
+        cursor: 0,
+        last_beat: 0,
+        status: String::new(),
+    };
+    Ok(bus.agents())
+}
+
 impl Bus {
     pub(crate) fn join(id: &str, model: &str, cwd: &Path) -> Option<Self> {
         if !bus_enabled(std::env::var_os("MAGE_BUS").as_deref()) {
             return None;
         }
-        let dir = mage_home().ok()?.join("bus");
-        std::fs::create_dir_all(dir.join("agents")).ok()?;
-        std::fs::create_dir_all(dir.join("inbox")).ok()?;
-        std::fs::create_dir_all(dir.join("board")).ok()?;
+        Self::open(id, "summoner", model, cwd).ok()
+    }
+
+    pub(crate) fn open(id: &str, kind: &str, model: &str, cwd: &Path) -> Result<Self> {
+        let dir = mage_home()?.join("bus");
+        std::fs::create_dir_all(dir.join("agents"))?;
+        std::fs::create_dir_all(dir.join("inbox"))?;
+        std::fs::create_dir_all(dir.join("board"))?;
+        let id = clean_id(id);
         let inbox = dir.join("inbox").join(format!("{id}.jsonl"));
         let cursor = std::fs::read_to_string(&inbox)
             .map(|text| text.lines().count())
             .unwrap_or(0);
         let mut bus = Self {
-            id: id.to_string(),
+            id,
+            kind: kind.to_string(),
             dir,
             cursor,
             last_beat: 0,
             status: String::new(),
         };
         bus.write_record(model, cwd, "joined");
-        Some(bus)
+        Ok(bus)
     }
 
     pub(crate) fn id(&self) -> &str {
@@ -129,6 +161,7 @@ impl Bus {
     fn write_record(&mut self, model: &str, cwd: &Path, status: &str) {
         let record = Agent {
             id: self.id.clone(),
+            kind: self.kind.clone(),
             model: model.to_string(),
             cwd: cwd.display().to_string(),
             pid: std::process::id(),
@@ -184,10 +217,39 @@ impl Bus {
         roster
     }
 
+    pub(crate) fn listing(&self) -> String {
+        let roster = self.agents();
+        if roster.is_empty() {
+            return "no live agents in the room".to_string();
+        }
+        let overflow = roster.len().saturating_sub(20);
+        let mut out = roster
+            .iter()
+            .take(20)
+            .map(|agent| {
+                let me = if agent.id == self.id { " (you)" } else { "" };
+                format!(
+                    "{} · {} · {} · {} · {}{me}",
+                    agent.id, agent.kind, agent.model, agent.cwd, agent.status
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        if overflow > 0 {
+            out.push_str(&format!("\n… and {overflow} more"));
+        }
+        out
+    }
+
+    pub(crate) fn status(&mut self, model: &str, cwd: &Path, status: &str) {
+        self.write_record(model, cwd, status);
+    }
+
     pub(crate) fn send(&self, to: &str, text: &str) -> Result<usize> {
         let mail = Mail {
             ts: now(),
             from: self.id.clone(),
+            kind: self.kind.clone(),
             text: text.chars().take(MAIL_CHARS).collect(),
         };
         let line = serde_json::to_string(&mail)?;

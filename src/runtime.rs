@@ -1,20 +1,29 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+
+use crate::bus::{Bus, Mail};
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::Usage as Meter;
 use crate::error::{Error, Result};
+use crate::herdr::Reporter;
 use crate::policy::Policy;
 use crate::provider::{
-    AssistantMessage, CompletionRequest, Message, Provider, Role, ToolCall, ToolDefinition,
-    ToolFunction, ToolKind, Usage, UserInput,
+    AssistantMessage, CompletionRequest, Effort, Message, Price, Provider, Role, ToolCall,
+    ToolDefinition, ToolFunction, ToolKind, Usage, UserInput,
 };
 use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
 
 const DEFAULT_MAX_ROUNDS: usize = 64;
+#[cfg(not(test))]
+pub(crate) const JOB_WAIT_SECS: u64 = 120;
+#[cfg(test)]
+pub(crate) const JOB_WAIT_SECS: u64 = 1;
 pub(crate) const DEFAULT_ROUND_OUTPUT_TOKENS: u32 = 8_192;
 pub(crate) const JUDGE_OUTPUT_TOKENS: u32 = 512;
 
@@ -63,20 +72,14 @@ pub struct Loop<P> {
     provider: P,
     model: String,
     seats: BTreeMap<workflow::Role, (P, String)>,
-    tuning: BTreeMap<
-        workflow::Role,
-        (
-            Option<crate::provider::Effort>,
-            Option<crate::provider::Price>,
-        ),
-    >,
-    price: Option<crate::provider::Price>,
+    tuning: BTreeMap<workflow::Role, (Option<Effort>, Option<Price>)>,
+    price: Option<Price>,
     system_prompt: String,
     plan: bool,
     tools: ToolRegistry,
     schema: Option<Vec<ToolDefinition>>,
     history: Vec<Message>,
-    herdr: crate::herdr::Reporter,
+    herdr: Reporter,
     session: SessionDriver,
     max_rounds: usize,
     verify: Option<Vec<String>>,
@@ -84,15 +87,19 @@ pub struct Loop<P> {
     spent_tokens: u64,
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
-    effort: Option<crate::provider::Effort>,
+    effort: Option<Effort>,
     turn_started: u64,
     accepted: bool,
+    summary_failed: bool,
     workspace: PathBuf,
-    bus: Option<crate::bus::Bus>,
-    mail: std::collections::VecDeque<crate::bus::Mail>,
-    steer: std::collections::VecDeque<UserInput>,
-    steer_shared: Option<std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>>,
+    bus: Option<Bus>,
+    mail: VecDeque<Mail>,
+    steer: VecDeque<UserInput>,
+    steer_shared: Option<Arc<Mutex<VecDeque<UserInput>>>>,
     depth: u8,
+    tasks: bool,
+    spawned: BTreeMap<String, child::Spawned>,
+    mailbox: (UnboundedSender<Event>, UnboundedReceiver<Event>),
 }
 
 mod aside;
@@ -110,14 +117,14 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<crate::provider::Effort> {
+    pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
         self.tuning
             .get(&role)
             .and_then(|(effort, _)| *effort)
             .or(self.effort)
     }
 
-    pub(crate) fn price_for(&self, role: workflow::Role) -> Option<crate::provider::Price> {
+    pub(crate) fn price_for(&self, role: workflow::Role) -> Option<Price> {
         self.tuning
             .get(&role)
             .and_then(|(_, price)| *price)

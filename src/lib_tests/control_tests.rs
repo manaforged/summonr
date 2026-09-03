@@ -1025,11 +1025,11 @@ fn agents_md_loads_only_when_trusted() -> Result<()> {
     let home = workspace.join("home");
     std::fs::create_dir_all(&home)?;
     std::fs::write(home.join("SYSTEM.md"), "HOME_SYSTEM_MARK")?;
-    let closed = crate::prompt::compose(&workspace, Some(&home), false);
+    let closed = crate::prompt::compose(&workspace, Some(&home), false, true);
     assert!(closed.contains("HOME_SYSTEM_MARK"));
     assert!(closed.contains("LOCAL_SYSTEM_MARK"));
     assert!(!closed.contains("UNIQUE_AGENTS_MARK"));
-    let open = crate::prompt::compose(&workspace, Some(&home), true);
+    let open = crate::prompt::compose(&workspace, Some(&home), true, true);
     assert!(open.contains("UNIQUE_AGENTS_MARK"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())

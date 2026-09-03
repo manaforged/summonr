@@ -225,20 +225,40 @@ limit as a failed check.
 The `task` tool delegates work to fresh child sessions. A model can emit
 up to four `task` calls in one response. Summoner runs them concurrently.
 Each `implement` child edits a separate Git worktree from the same tracked
-`HEAD`. The parent tracked files must be clean before the batch starts.
-Implement children get file tools, but no shell or language-server tools.
-They cannot start builds, tests, formatters, or background jobs. Summoner
-combines their patches before it changes the parent checkout. A conflict
+`HEAD`. Implement children get the parent's file, shell, and language-server
+tools inside that worktree; background commands stay with the parent.
+Summoner applies every child patch in one child worktree first. A conflict
 keeps the child worktrees and leaves the parent unchanged. After a clean
 apply, Summoner removes the child worktrees. The parent verifies once and
 commits. Outside Git, only one implement child can write the current
-workspace.
+directory at a time.
 
 A `research` child reads the parent workspace without a worktree and cannot
 write or run commands. Each child uses the endpoint context window and can
-run four provider rounds. If the parent has a token budget, the children
-share its remaining tokens. A 300-second deadline covers each child. Children
-have no web tools or another `task` tool.
+run 32 provider rounds. If the parent has a token budget, the children
+share its remaining tokens; otherwise rounds and a 15-minute deadline bound
+each child. Children have no web tools or another `task` tool. Every child
+tool call, result, and answer streams into the parent transcript under the
+child id, and Esc during a batch removes child worktrees that hold no
+change.
+
+`task` with `background: true` starts the child and returns its id at
+once. `task` with `child: ID` reports its state, elapsed time, and last
+action while it runs, and its full result once it finishes; `kill: true`
+stops it. A turn does not end while a background child runs: Summoner
+waits, then defers the turn the way it does for a background command, and
+after the third deferral stops the child. Background implement children
+need a Git repository.
+## Modules
+
+Every optional capability is a module compiled into the binary: `search`,
+`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `summon modules` lists
+them with their state; `/modules NAME on|off` in the interface switches one
+and writes `[modules]` in `~/.mage/config.toml`. A workspace
+`.mage/config.toml` may turn a module off for that project but cannot turn
+one on. Summoner runs no third-party code inside the harness; modules read
+declarative files under `.mage` where they need user input.
+
 `grep` takes `glob`, honors `.gitignore`, and lists matching files
 when the pattern is empty.
 `web_search` reads DuckDuckGo HTML without a key. `[search] backend = "bing"`
@@ -267,6 +287,42 @@ short — a budget breach, a stalled or impossible goal, or an aborted
 turn — exits 3.
 JSON turn receipts keep model text separate from the changed-path list
 and every configured completion check.
+
+## Room
+
+`summon room` puts several coding agents on this machine in one
+conversation. The room is the `bus` module's files under `~/.mage/bus`: a
+roster, one inbox per agent, and one blackboard per workspace. Summoner
+sessions join it natively. Claude Code and Codex join through
+`summon room serve`, a stdio MCP server over the same files with the
+tools `join`, `agents`, `send`, `inbox`, `wait`, `board`, `status`, and
+`leave`. Mail is peer text, never user instructions, and each session's
+own permissions still apply.
+
+```
+summon room setup claude     # installs the /summon-room skill and the .mcp.json entry here
+claude --dangerously-load-development-channels server:summon-room
+/summon-room reviewer
+```
+
+The skill joins the room, starts Codex as a peer when none is present,
+and lays out the split: claims on the board, one brief per peer, `wait`
+only when blocked, then reconcile against the proving command.
+
+`summon room host codex [--cwd PATH] [--id NAME] [--read-only]` runs
+Codex as a peer that answers mail. It spawns `codex mcp-server` on
+Codex's own login, keeps one thread, and sends each answer back to the
+sender. Codex cannot receive a push into a live session, so this is how
+Codex takes part without a second terminal polling `wait`.
+`summon room setup codex` installs the same skill and the
+`~/.codex/config.toml` entry for an interactive Codex session.
+
+Delivery: `wait` blocks until mail arrives or the deadline passes;
+`inbox` returns at once. When the client is Claude Code, the server also
+pushes each mail as a `notifications/claude/channel` event. The push is a
+copy, so a mail that the client did not surface is still in the inbox.
+`MAGE_ROOM_PUSH=off` in the server's env block turns the push off.
+`summon room` alone prints the roster.
 
 ## Limits
 

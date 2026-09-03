@@ -83,11 +83,20 @@ already gone. `--here` skips isolation. Interactive sessions stay in
 cwd unless you pass `--worktree`.
 
 Concurrent `implement` children use the same linked-worktree directory.
-Each child starts from the parent's tracked `HEAD` and has file tools only.
+Each child starts from the parent's tracked `HEAD` with the parent's file,
+shell, and language-server tools; background commands stay with the parent.
 Summoner first applies every child patch in one child worktree. If the patches
 conflict, the parent stays unchanged and the worktrees remain for inspection.
 If they combine cleanly, Summoner applies one patch to the parent and removes
 the child worktrees. The parent runs verification after reconciliation.
+
+A background child (`task` with `background`) runs as a Tokio task while
+the parent keeps working. `Loop::spawned` holds its handle; child events
+arrive through `Loop::mailbox` and drain before every round, on every
+poll, and on the interface tick. `task` with `child` polls or kills it.
+`await_children` runs before Verify: it settles finished children, waits
+up to the job window, defers the turn if any still run, and
+`kill_spawned` stops the rest when the deferral limit is reached.
 
 ## Language modules
 

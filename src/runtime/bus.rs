@@ -102,27 +102,7 @@ fn bus_text(args: &serde_json::Value) -> &str {
 }
 
 fn agents(bus: &crate::bus::Bus) -> Result<String> {
-    let roster = bus.agents();
-    if roster.is_empty() {
-        return Ok("no live summoner sessions".to_string());
-    }
-    let overflow = roster.len().saturating_sub(20);
-    let mut out = roster
-        .iter()
-        .take(20)
-        .map(|agent| {
-            let me = if agent.id == bus.id() { " (you)" } else { "" };
-            format!(
-                "{} · {} · {} · {}{me}",
-                agent.id, agent.model, agent.cwd, agent.status
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    if overflow > 0 {
-        out.push_str(&format!("\n… and {overflow} more"));
-    }
-    Ok(out)
+    Ok(bus.listing())
 }
 
 fn inbox(mail: Vec<crate::bus::Mail>) -> String {
@@ -130,7 +110,7 @@ fn inbox(mail: Vec<crate::bus::Mail>) -> String {
         return "no new mail".to_string();
     }
     mail.iter()
-        .map(|mail| crate::bus::envelope(&mail.from, &mail.text))
+        .map(crate::bus::envelope)
         .collect::<Vec<_>>()
         .join("\n")
 }

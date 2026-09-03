@@ -41,7 +41,7 @@ fn context_pressure_starts_at_80_percent() {
 }
 
 #[test]
-fn overflow_recovery_preserves_the_oldest_tool_prefix() {
+fn overflow_recovery_clears_the_oldest_and_keeps_the_newest_tool_results() {
     let mut messages = vec![
         Message::system("system"),
         Message::tool("one", "a".repeat(20)),
@@ -51,8 +51,28 @@ fn overflow_recovery_preserves_the_oldest_tool_prefix() {
     ];
 
     assert!(force_compact(&mut messages));
-    assert_eq!(messages[1].content, "a".repeat(20));
+    assert!(messages[1].content.starts_with("[cleared"));
+    assert!(messages[2].content.starts_with("[cleared"));
+    assert_eq!(messages[3].content, "c".repeat(20));
+    assert_eq!(messages[4].content, "d".repeat(20));
+}
+
+#[test]
+fn overflow_recovery_always_leaves_one_result_to_clear() {
+    let mut messages = vec![
+        Message::system("system"),
+        Message::tool("one", "a".repeat(20)),
+        Message::tool("two", "b".repeat(20)),
+    ];
+
+    assert!(force_compact(&mut messages));
+    assert!(messages[1].content.starts_with("[cleared"));
     assert_eq!(messages[2].content, "b".repeat(20));
-    assert!(messages[3].content.starts_with("[cleared"));
-    assert!(messages[4].content.starts_with("[cleared"));
+
+    let mut single = vec![
+        Message::system("system"),
+        Message::tool("one", "a".repeat(20)),
+    ];
+    assert!(force_compact(&mut single));
+    assert!(single[1].content.starts_with("[cleared"));
 }

@@ -252,6 +252,9 @@ impl Worker {
     }
 
     fn tick(&mut self) {
+        for event in self.loop_.child_events() {
+            drop(self.ui.send(Msg::Event(event)));
+        }
         self.loop_.bus_heartbeat("idle");
         let peers = self
             .loop_

@@ -34,6 +34,8 @@ pub(crate) struct File {
     pub workflow: Option<String>,
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
+    #[serde(default)]
+    pub modules: BTreeMap<String, bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -144,6 +146,9 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
     if let Some(module) = file.lsp.module.as_deref() {
         crate::language::named(module)?;
     }
+    for name in file.modules.keys() {
+        crate::modules::named(name)?;
+    }
     if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
         return Err(Error::Config(
             "config.toml: [lsp] command must not be empty".to_string(),
@@ -210,6 +215,15 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     document["workflows"][workflow.name.as_str()] = toml_edit::Item::Table(table);
     if let Some(parent) = document["workflows"].as_table_mut() {
         parent.set_implicit(true);
+    }
+    persist(path, &document)
+}
+
+pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
+    let mut document = read_document(path)?;
+    document["modules"][name] = value(on);
+    if let Some(table) = document["modules"].as_table_mut() {
+        table.set_implicit(true);
     }
     persist(path, &document)
 }

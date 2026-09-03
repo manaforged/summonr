@@ -1,5 +1,24 @@
 # Changelog
 
+## Unreleased
+
+- `task` children keep the parent's shell and language-server tools, run
+  up to 32 rounds under a 15-minute deadline, and stream every tool call,
+  result, and answer into the parent transcript under the child id.
+  Cancelling a batch removes child worktrees that hold no change.
+  `task` also takes `background`, `child`, and `kill`: start a child and
+  return its id, poll its state and last action, or stop it. A turn defers
+  while a background child runs and stops it at the deferral limit.
+- Context overflow recovery clears the oldest tool results first and keeps
+  the newest two. A failed auto-compaction is not retried until the next
+  turn.
+- `summon room`: Claude Code and Codex join the bus through
+  `summon room serve`, a stdio MCP server with join, agents, send, inbox,
+  wait, board, status, and leave. `summon room host codex` runs Codex as a
+  peer that answers mail on one thread. `summon room setup claude|codex`
+  installs the `/summon-room` skill and the MCP entry. Roster records and
+  mail carry the agent kind.
+
 ## 0.1.0 - 2026-08-23
 
 First alpha of the Mage harness under the Summoner name.

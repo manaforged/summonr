@@ -9,9 +9,8 @@ pub(crate) const ASSIGNMENT_MAX_CHARS: usize = 4_000;
 pub(crate) const RESULT_MAX_CHARS: usize = 4_000;
 pub(crate) const PATHS_MAX: usize = 100;
 pub(crate) const PATH_MAX_CHARS: usize = 512;
-pub(crate) const MAX_ROUNDS: usize = 4;
-pub(crate) const MAX_TOKENS: u64 = 32_768;
-pub(crate) const MAX_SECS: u64 = 300;
+pub(crate) const MAX_ROUNDS: usize = 32;
+pub(crate) const MAX_SECS: u64 = 900;
 pub(crate) const MAX_PARALLEL: usize = 4;
 pub(crate) const MAX_PER_PARENT: usize = 64;
 

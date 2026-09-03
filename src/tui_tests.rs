@@ -23,7 +23,7 @@ fn slash_table_is_unique_and_filters_prefixes() {
             .iter()
             .map(|(name, _)| *name)
             .collect::<Vec<_>>(),
-        vec!["/model"]
+        vec!["/model", "/modules"]
     );
     assert_eq!(matching_commands("/mdl")[0].0, "/model");
     assert_eq!(matching_commands("/active")[0].0, "/model");

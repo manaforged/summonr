@@ -77,6 +77,10 @@ pub enum Event {
     Work {
         progress: crate::WorkProgress,
     },
+    Child {
+        id: String,
+        event: Box<Event>,
+    },
 }
 
 pub(crate) struct ToolRegistry {
@@ -86,7 +90,7 @@ pub(crate) struct ToolRegistry {
     env: Vec<(String, String)>,
     sandbox: Option<sandbox::Sandbox>,
     background: bool,
-    verification: bool,
+    language: bool,
     recent: std::sync::Mutex<Option<Recent>>,
     writes: std::sync::atomic::AtomicU64,
     history: std::sync::Mutex<std::collections::VecDeque<String>>,
@@ -142,13 +146,21 @@ impl ToolRegistry {
             env: Vec::new(),
             sandbox: None,
             background: true,
-            verification: true,
+            language: true,
             recent: std::sync::Mutex::new(None),
             writes: std::sync::atomic::AtomicU64::new(0),
             history: std::sync::Mutex::new(std::collections::VecDeque::new()),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
         })
+    }
+
+    pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool) {
+        if !search {
+            self.search = None;
+        }
+        self.language = lsp;
+        self.background = jobs;
     }
 
     pub(crate) fn set_strict(&mut self) {
@@ -159,7 +171,6 @@ impl ToolRegistry {
         let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
         child.env.clone_from(&self.env);
         child.background = false;
-        child.verification = false;
         child.set_session(session);
         Ok(child)
     }

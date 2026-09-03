@@ -84,3 +84,22 @@ fn lsp_accepts_one_curated_module_or_global_command() {
         "{unknown}"
     );
 }
+
+#[test]
+fn modules_accept_known_names_only() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(&path, "[modules]\nsearch = false\nbus = true\n").expect("seed config");
+    let file = load_from(&path).expect("load config");
+    assert_eq!(file.modules.get("search"), Some(&false));
+    assert_eq!(file.modules.get("bus"), Some(&true));
+
+    std::fs::write(&path, "[modules]\nplugin = true\n").expect("seed config");
+    let error = load_from(&path).expect_err("unknown module").to_string();
+    assert!(error.contains("unknown module `plugin`"), "{error}");
+
+    std::fs::write(&path, "").expect("reset config");
+    save_module(&path, "task", false).expect("save");
+    let file = load_from(&path).expect("reload");
+    assert_eq!(file.modules.get("task"), Some(&false));
+}

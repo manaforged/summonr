@@ -1,10 +1,12 @@
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 
 const AGENT: &str = "summoner";
 const SOURCE: &str = "summoner:lifecycle";
+const DISPLAY: &str = "summoner:display";
 
 pub(crate) struct Reporter {
     target: Option<Arc<Target>>,
@@ -18,19 +20,27 @@ struct Target {
     bin: OsString,
     pane: OsString,
     socket: OsString,
-    session: String,
+    session: Mutex<String>,
+    model: Mutex<String>,
+    title: Mutex<String>,
+    life: AtomicU64,
+    meta: AtomicU64,
 }
 
 impl Reporter {
-    pub(crate) fn discover(session: &str, depth: u8) -> Self {
+    pub(crate) fn discover(session: &str, model: &str, depth: u8) -> Self {
         let target = (depth == 0)
             .then(|| std::env::current_exe().ok())
             .flatten()
             .and_then(|executable| {
-                target(session, product(&executable), |key| std::env::var_os(key)).map(Arc::new)
+                target(session, model, product(&executable), |key| {
+                    std::env::var_os(key)
+                })
+                .map(Arc::new)
             });
         if let Some(target) = &target {
             target.report("idle");
+            target.metadata();
         }
         Self { target }
     }
@@ -41,6 +51,21 @@ impl Reporter {
         }
         Turn {
             target: self.target.clone(),
+        }
+    }
+
+    pub(crate) fn label(&self, title: &str) {
+        if let Some(target) = &self.target {
+            target.set_title(title);
+            target.metadata();
+        }
+    }
+
+    pub(crate) fn retarget(&self, session: &str) {
+        if let Some(target) = &self.target {
+            target.set_session(session);
+            target.report("idle");
+            target.metadata();
         }
     }
 }
@@ -63,11 +88,30 @@ impl Drop for Turn {
 
 impl Target {
     fn report(&self, state: &str) {
-        self.run(report_args(&self.pane, state, &self.session));
+        let seq = self.life.fetch_add(1, Ordering::Relaxed) + 1;
+        self.run(report_args(&self.pane, state, &held(&self.session), seq));
+    }
+
+    fn metadata(&self) {
+        let seq = self.meta.fetch_add(1, Ordering::Relaxed) + 1;
+        let title = held(&self.title);
+        let session = held(&self.session);
+        let model = held(&self.model);
+        let shown = if title.is_empty() { &session } else { &title };
+        self.run(metadata_args(&self.pane, shown, &model, &session, seq));
+    }
+
+    fn set_title(&self, title: &str) {
+        store(&self.title, cap(title));
+    }
+
+    fn set_session(&self, session: &str) {
+        store(&self.session, session.to_string());
     }
 
     fn release(&self) {
-        self.run(release_args(&self.pane));
+        let seq = self.life.fetch_add(1, Ordering::Relaxed) + 1;
+        self.run(release_args(&self.pane, seq));
     }
 
     fn run(&self, args: Vec<OsString>) {
@@ -84,6 +128,7 @@ impl Target {
 
 fn target(
     session: &str,
+    model: &str,
     executable: Option<&OsStr>,
     env: impl Fn(&str) -> Option<OsString>,
 ) -> Option<Target> {
@@ -99,8 +144,31 @@ fn target(
         bin,
         pane,
         socket,
-        session: session.to_string(),
+        session: Mutex::new(session.to_string()),
+        model: Mutex::new(cap(model)),
+        title: Mutex::new(String::new()),
+        life: AtomicU64::new(0),
+        meta: AtomicU64::new(0),
     })
+}
+
+fn held(value: &Mutex<String>) -> String {
+    value
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+}
+
+fn store(value: &Mutex<String>, next: String) {
+    let mut slot = value
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    slot.clear();
+    slot.push_str(&next);
+}
+
+fn cap(text: &str) -> String {
+    text.trim().chars().take(80).collect()
 }
 
 fn product(executable: &Path) -> Option<&OsStr> {
@@ -116,7 +184,7 @@ fn present(value: Option<OsString>) -> Option<OsString> {
     value.filter(|value| !value.is_empty())
 }
 
-fn report_args(pane: &OsStr, state: &str, session: &str) -> Vec<OsString> {
+fn report_args(pane: &OsStr, state: &str, session: &str, seq: u64) -> Vec<OsString> {
     [
         OsString::from("pane"),
         OsString::from("report-agent"),
@@ -129,11 +197,38 @@ fn report_args(pane: &OsStr, state: &str, session: &str) -> Vec<OsString> {
         OsString::from(state),
         OsString::from("--agent-session-id"),
         OsString::from(session),
+        OsString::from("--seq"),
+        OsString::from(seq.to_string()),
     ]
     .into()
 }
 
-fn release_args(pane: &OsStr) -> Vec<OsString> {
+fn metadata_args(pane: &OsStr, title: &str, model: &str, session: &str, seq: u64) -> Vec<OsString> {
+    [
+        OsString::from("pane"),
+        OsString::from("report-metadata"),
+        pane.to_os_string(),
+        OsString::from("--source"),
+        OsString::from(DISPLAY),
+        OsString::from("--agent"),
+        OsString::from(AGENT),
+        OsString::from("--title"),
+        OsString::from(cap(title)),
+        OsString::from("--display-agent"),
+        OsString::from(AGENT),
+        OsString::from("--token"),
+        OsString::from(format!("model={}", cap(model))),
+        OsString::from("--token"),
+        OsString::from(format!("session={}", cap(session))),
+        OsString::from("--token"),
+        OsString::from(format!("summary={}", cap(title))),
+        OsString::from("--seq"),
+        OsString::from(seq.to_string()),
+    ]
+    .into()
+}
+
+fn release_args(pane: &OsStr, seq: u64) -> Vec<OsString> {
     [
         OsString::from("pane"),
         OsString::from("release-agent"),
@@ -142,6 +237,8 @@ fn release_args(pane: &OsStr) -> Vec<OsString> {
         OsString::from(SOURCE),
         OsString::from("--agent"),
         OsString::from(AGENT),
+        OsString::from("--seq"),
+        OsString::from(seq.to_string()),
     ]
     .into()
 }

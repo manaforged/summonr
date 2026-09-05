@@ -19,6 +19,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
         drop((
             screen.transcript.get(),
             screen.status.get(),
+            screen.select.get(),
             screen.draft.get(),
             screen.caret.get(),
             screen.viewport.get(),

@@ -49,7 +49,12 @@ fn turn_receipt_does_not_duplicate_the_streamed_reply() {
         apply(
             &app,
             Msg::Event(Event::Receipt {
-                receipt: crate::Receipt::new(Vec::new(), Vec::new()),
+                receipt: crate::Receipt::new(
+                    Vec::new(),
+                    Vec::new(),
+                    "non-Git workspace".to_string(),
+                    &[],
+                ),
             }),
         );
         apply(
@@ -70,6 +75,83 @@ fn turn_receipt_does_not_duplicate_the_streamed_reply() {
             })
             .collect();
         assert_eq!(replies, vec![("Hello world", true)]);
+    });
+}
+
+#[test]
+fn copy_hotkey_uses_the_last_reply() {
+    sigil::reactive::Runtime::scope("mage-copy-reply-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "first reply".to_string(),
+            }),
+        );
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "latest reply".to_string(),
+            }),
+        );
+
+        assert!(app.route_hotkey('y'));
+        assert_eq!(app.copy.peek().as_deref(), Some("latest reply"));
+    });
+}
+
+#[test]
+fn copy_all_uses_the_full_transcript() {
+    sigil::reactive::Runtime::scope("mage-copy-transcript-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "first reply".to_string(),
+            }),
+        );
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "latest reply".to_string(),
+            }),
+        );
+
+        app.replace("/copy all".to_string());
+        app.submit();
+        let copied = app.copy.peek().unwrap_or_default();
+        assert!(copied.contains("first reply"), "{copied}");
+        assert!(copied.contains("latest reply"), "{copied}");
+    });
+}
+
+#[test]
+fn copy_reports_when_there_is_no_reply() {
+    sigil::reactive::Runtime::scope("mage-copy-empty-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+
+        app.replace("/copy".to_string());
+        app.submit();
+
+        assert!(app.transcript.peek().contains("there is no reply to copy"));
+        assert!(app.copy.peek().is_none());
+    });
+}
+
+#[test]
+fn copy_rejects_an_unknown_scope() {
+    sigil::reactive::Runtime::scope("mage-copy-scope-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+
+        app.replace("/copy turn".to_string());
+        app.submit();
+
+        assert!(app.transcript.peek().contains("usage: /copy [all]"));
+        assert!(app.copy.peek().is_none());
     });
 }
 

@@ -4,8 +4,6 @@ use crate::verify::Outcome;
 use crate::workflow::Role;
 
 pub(crate) const CHECK: &str = "review";
-const CONTEXT_CHARS: usize = 4_000;
-const RAW_CHARS: usize = 600;
 
 const SYSTEM: &str = "You review one code change against its objective. Read the changed \
 files with the tools; they are read-only. Reply with one line of JSON: {\"pass\": true|false, \
@@ -42,14 +40,6 @@ pub(crate) async fn outcome<P: Provider>(
 }
 
 fn user(objective: &str, reply: &str, evidence: &str, paths: &[String]) -> String {
-    let tail: String = reply
-        .chars()
-        .rev()
-        .take(CONTEXT_CHARS)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
     let changed = if paths.is_empty() {
         "none".to_string()
     } else {
@@ -60,7 +50,7 @@ fn user(objective: &str, reply: &str, evidence: &str, paths: &[String]) -> Strin
             .join("\n")
     };
     format!(
-        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nChanged paths:\n{changed}\n\nAgent's latest response:\n{tail}"
+        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nChanged paths:\n{changed}\n\nAgent's latest response:\n{reply}"
     )
 }
 
@@ -73,7 +63,7 @@ fn parse(reply: &str) -> Verdict {
     let trimmed = reply.trim();
     let raw = || Verdict {
         pass: false,
-        findings: trimmed.chars().take(RAW_CHARS).collect(),
+        findings: trimmed.to_string(),
     };
     let (Some(start), Some(end)) = (trimmed.find('{'), trimmed.rfind('}')) else {
         return raw();

@@ -149,25 +149,18 @@ fn hostile_ids_cannot_escape_the_bus_dir() {
 }
 
 #[test]
-fn mail_truncates_and_oversized_inboxes_rotate() {
+fn mail_preserves_long_messages() {
     let (dir, cwd) = setup("caps");
     let mut a = bus_at(&dir, "a");
     let mut b = bus_at(&dir, "b");
     a.heartbeat("glm", &cwd, "idle");
     b.heartbeat("glm", &cwd, "idle");
-    let long = "x".repeat(MAIL_CHARS * 3);
+    let long = "x".repeat(24_000);
     a.send("b", &long)
         .unwrap_or_else(|error| panic!("send long message: {error}"));
     let mail = b.poll().unwrap_or_else(|error| panic!("poll: {error}"));
     assert_eq!(mail.len(), 1);
-    assert_eq!(mail[0].text.chars().count(), MAIL_CHARS);
-    let path = dir.join("inbox/b.jsonl");
-    let fat = format!("{}\n", "junk\n".repeat(120_000));
-    std::fs::write(&path, &fat).unwrap_or_else(|error| panic!("write oversized inbox: {error}"));
-    assert!(std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0) > MAX_FILE_BYTES as u64);
-    drop(b.poll().expect("rotating poll"));
-    let shrunk = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    assert!(shrunk < MAX_FILE_BYTES as u64, "rotated below the cap");
+    assert_eq!(mail[0].text, long);
     drop(std::fs::remove_dir_all(&dir));
 }
 

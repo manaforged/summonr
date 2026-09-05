@@ -47,6 +47,17 @@ fn root_wipe_is_still_blocked_outright() {
 }
 
 #[test]
+fn unrestricted_policy_allows_commands_outside_the_workspace() {
+    let mut policy = Policy::builtin().with_write(&["src/**"]);
+    policy.set_unrestricted();
+    policy.command_ws("tee /etc/example").unwrap();
+    policy.write_path("README.md").unwrap();
+
+    policy.set_read_only(true);
+    assert!(policy.write_path("README.md").is_err());
+}
+
+#[test]
 fn redirects_and_cd_are_contained() {
     let policy = Policy::builtin();
     policy.command_ws("echo hi > out.txt").unwrap();
@@ -150,12 +161,12 @@ fn write_globs() {
 }
 
 #[test]
-fn plan_mode_denies_everything_even_when_allowed() {
+fn plan_mode_leaves_allowed_commands_to_the_sandbox() {
     let mut policy = Policy::builtin();
     policy.allow = vec!["cargo".to_string()];
     policy.write = vec!["src/**".to_string()];
     policy.set_read_only(true);
-    assert!(policy.command_ws("cargo test").is_err());
+    policy.command_ws("cargo test").unwrap();
     assert!(policy.command_ws("echo hi").is_err());
     assert!(policy.write_path("src/a.rs").is_err());
     assert!(policy.write_path("anywhere.txt").is_err());

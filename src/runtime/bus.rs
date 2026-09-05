@@ -194,20 +194,11 @@ fn board_list(bus: &crate::bus::Bus, workspace: &Path) -> Result<String> {
     if board.is_empty() {
         return Ok("the board is empty".to_string());
     }
-    let overflow = board.len().saturating_sub(50);
-    let mut out = board
+    Ok(board
         .iter()
-        .take(50)
-        .map(|(key, value, from)| {
-            let value: String = value.chars().take(200).collect();
-            format!("{key} = {value} (from {from})")
-        })
+        .map(|(key, value, from)| format!("{key} = {value} (from {from})"))
         .collect::<Vec<_>>()
-        .join("\n");
-    if overflow > 0 {
-        out.push_str(&format!("\n… and {overflow} more"));
-    }
-    Ok(out)
+        .join("\n"))
 }
 
 #[cfg(test)]

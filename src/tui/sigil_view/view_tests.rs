@@ -226,6 +226,17 @@ fn composer_hotkeys_keep_completion_queue_settings_and_editor_distinct() {
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         assert!(!app.settings_open.peek());
 
+        let selected = screen
+            .frame(&mut host, &mut router, [ctrl('t')], (80, 24))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"))
+            .clone();
+        assert!(app.select.peek());
+        assert!(selected.text().contains("select on · mouse to terminal"));
+        screen
+            .frame(&mut host, &mut router, [ctrl('t')], (80, 24))
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(!app.select.peek());
+
         screen
             .frame(&mut host, &mut router, [ctrl('g')], (80, 24))
             .unwrap_or_else(|error| panic!("layout failed: {error}"));

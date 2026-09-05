@@ -27,6 +27,9 @@ fn prose_without_json_is_a_rejection_carrying_the_text() {
     let reversed = parse("nope } more to do {");
     assert!(!reversed.pass);
     assert_eq!(reversed.findings, "nope } more to do {");
+
+    let long = "finding ".repeat(1_000);
+    assert_eq!(parse(&long).findings, long.trim());
 }
 
 #[test]
@@ -42,4 +45,7 @@ fn the_reviewer_sees_objective_evidence_paths_and_the_tail() {
     assert!(text.contains("Changed paths:\n- a.rs\n- b.rs\n"));
     assert!(text.ends_with("Agent's latest response:\ndone"));
     assert!(user("x", "y", "z", &[]).contains("Changed paths:\nnone"));
+
+    let long = "evidence ".repeat(1_000);
+    assert!(user("x", &long, "z", &[]).ends_with(&long));
 }

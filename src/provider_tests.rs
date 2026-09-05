@@ -5,7 +5,7 @@ fn request(messages: Vec<Message>) -> CompletionRequest {
         model: "m".to_string(),
         messages,
         tools: Vec::new(),
-        max_output_tokens: crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS,
+        max_output_tokens: None,
         emit_deltas: true,
         effort: None,
     }
@@ -217,16 +217,13 @@ fn body_table_overlays_the_request() -> Result<()> {
     assert_eq!(client.url, "http://h/v1/chat/completions");
     assert_eq!(body["temperature"], 0.6);
     assert_eq!(body["chat_template_kwargs"]["reasoning_effort"], "low");
-    assert_eq!(
-        body["max_tokens"],
-        crate::runtime::DEFAULT_ROUND_OUTPUT_TOKENS
-    );
+    assert!(body.get("max_tokens").is_none());
     assert_eq!(body["stream_options"]["include_usage"], true);
     Ok(())
 }
 
 #[test]
-fn endpoint_can_override_the_default_round_output_limit() -> Result<()> {
+fn endpoint_can_set_a_round_output_limit() -> Result<()> {
     let mut client = Client::new("k", "http://h/v1")?;
     client.body = Some(json!({"max_tokens": 4096}));
     let body = client.request_body(&request(vec![Message::user("hi")]), false)?;
@@ -245,10 +242,18 @@ fn body_extras_reject_provider_owned_fields() {
             Vec::new(),
             crate::endpoint::Wire::Completions,
             None,
-            IDLE_TIMEOUT,
+            None,
         );
         assert!(error.is_err(), "reserved key {key} was accepted");
     }
+}
+
+#[test]
+fn model_request_timeout_is_opt_in() -> Result<()> {
+    assert_eq!(request_timeout(None)?, None);
+    assert_eq!(request_timeout(Some(600))?, Some(Duration::from_secs(600)));
+    request_timeout(Some(0)).unwrap_err();
+    Ok(())
 }
 
 #[test]
@@ -376,16 +381,11 @@ fn effort_parses_the_four_levels_and_price_prices_fresh_cached_and_output() {
 }
 
 #[test]
-fn effort_none_leaves_the_wire_field_out_and_off_parses_in_config() -> Result<()> {
+fn effort_none_disables_reasoning_and_off_parses_in_config() -> Result<()> {
     let client = Client::new("k", "http://h/v1/")?;
     let mut req = request(vec![Message::user("hi")]);
     req.effort = Some(Effort::None);
-    assert!(
-        client
-            .request_body(&req, true)?
-            .get("reasoning_effort")
-            .is_none()
-    );
+    assert_eq!(client.request_body(&req, true)?["reasoning_effort"], "none");
     let parsed: Effort = serde_json::from_str("\"off\"")?;
     assert_eq!(parsed, Effort::None);
     drop(serde_json::from_str::<Effort>("\"turbo\"").unwrap_err());

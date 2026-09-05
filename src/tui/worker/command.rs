@@ -413,10 +413,7 @@ impl Worker {
             }
             return true;
         }
-        if let Err(error) = self
-            .loop_
-            .select_goal(objective, &gates, crate::DEFAULT_MAX_TURNS)
-        {
+        if let Err(error) = self.loop_.select_goal(objective, &gates, 0) {
             self.fail(&error.to_string());
             return true;
         }

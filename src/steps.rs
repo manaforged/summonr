@@ -188,16 +188,7 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
 
 #[must_use]
 pub fn retry_prompt(check: &str, output: &str) -> String {
-    let tail: String = output
-        .lines()
-        .rev()
-        .take(40)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join("\n");
-    format!("The check `{check}` failed. Fix the cause, then run it again.\n\n{tail}\n")
+    format!("The check `{check}` failed. Fix the cause, then run it again.\n\n{output}\n")
 }
 
 #[must_use]

@@ -182,7 +182,7 @@ impl SessionDriver {
                 round: None,
                 calls: Vec::new(),
             });
-            self.abort("process stopped before the turn finished")?;
+            self.abort("process stopped before the turn finished", None)?;
             if let Some(work) = &mut self.work
                 && !work.terminal()
             {
@@ -452,15 +452,7 @@ impl SessionDriver {
         Ok(())
     }
 
-    pub(crate) fn mark_edit(&mut self) -> Result<(), DriverError> {
-        if let Some(work) = self.work.as_mut().filter(|work| !work.terminal()) {
-            work.mark_edit();
-            self.checkpoint()?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn defer(&mut self, note: &str) -> Result<bool, DriverError> {
+    pub(crate) fn defer(&mut self, note: &str, jobs: Vec<String>) -> Result<bool, DriverError> {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
@@ -468,12 +460,18 @@ impl SessionDriver {
             .work
             .as_mut()
             .ok_or(DriverError::NoWork)?
-            .defer(note.to_string())?;
+            .defer(note.to_string(), jobs)?;
         if deferred {
             self.checkpoint()?;
             self.close()?;
         }
         Ok(deferred)
+    }
+
+    pub(crate) fn jobs(&self) -> Vec<String> {
+        self.active()
+            .map(|work| work.jobs.clone())
+            .unwrap_or_default()
     }
 
     pub(crate) fn enter_verify(&mut self) -> Result<Vec<String>, DriverError> {
@@ -490,17 +488,14 @@ impl SessionDriver {
         Ok(paths)
     }
 
-    pub(crate) fn prepare_verdict(&mut self, passed: bool) -> Result<Verdict, DriverError> {
+    pub(crate) fn prepare_verdict(&self, passed: bool) -> Result<Verdict, DriverError> {
         let now = self.snapshot()?;
         let stable = self
             .work
             .as_ref()
             .and_then(|work| work.candidate.as_ref())
-            .is_some_and(|candidate| candidate.snapshot.matches(&now, &candidate.paths));
+            .is_some_and(|candidate| candidate.snapshot == now);
         if stable {
-            if let Some(candidate) = self.work.as_mut().and_then(|work| work.candidate.as_mut()) {
-                candidate.snapshot = now;
-            }
             return Ok(Verdict {
                 passed,
                 diagnostic: None,
@@ -572,9 +567,17 @@ impl SessionDriver {
         Ok(())
     }
 
-    pub(crate) fn abort(&mut self, reason: &str) -> Result<(), DriverError> {
+    pub(crate) fn abort(&mut self, reason: &str, receipt: Option<&str>) -> Result<(), DriverError> {
         if self.turn.is_none() {
             return Ok(());
+        }
+        if let Some(attempt) = self
+            .turn
+            .as_ref()
+            .and_then(|turn| turn.round.as_ref())
+            .map(|round| round.attempt)
+        {
+            self.fail_provider(attempt, reason, 0)?;
         }
         for call in self.state.unanswered.clone() {
             self.append(Line::Tool {
@@ -582,6 +585,11 @@ impl SessionDriver {
                 text: "aborted".to_string(),
                 success: false,
                 millis: 0,
+            })?;
+        }
+        if let Some(text) = receipt {
+            self.append(Line::Receipt {
+                text: text.to_string(),
             })?;
         }
         self.append(Line::Close {
@@ -614,27 +622,11 @@ impl SessionDriver {
             || record.depth != self.depth().saturating_add(1)
             || !workspace
             || record.assignment.trim().is_empty()
-            || record.assignment.chars().count() > crate::child::ASSIGNMENT_MAX_CHARS
             || record.model.trim().is_empty()
         {
             return Err(DriverError::State(
                 "child identity does not match the parent session".to_string(),
             ));
-        }
-        if self.state.child_total >= crate::child::MAX_PER_PARENT {
-            return Err(DriverError::State(format!(
-                "a session can create at most {} children",
-                crate::child::MAX_PER_PARENT
-            )));
-        }
-        let running = self
-            .state
-            .children
-            .values()
-            .filter(|child| !child.state.terminal())
-            .count();
-        if running >= crate::child::MAX_PARALLEL {
-            return Err(DriverError::Busy);
         }
         self.append(Line::Child { record })
     }
@@ -864,6 +856,7 @@ impl SessionDriver {
         reasoning: &str,
         usage: Usage,
         commands: &[String],
+        receipt: &str,
     ) -> Result<(), DriverError> {
         self.finish_provider(attempt, markdown, reasoning, usage)?;
         self.work
@@ -871,6 +864,9 @@ impl SessionDriver {
             .ok_or(DriverError::NoWork)?
             .select(markdown, commands)?;
         self.checkpoint()?;
+        self.append(Line::Receipt {
+            text: receipt.to_string(),
+        })?;
         self.close()
     }
 
@@ -951,7 +947,7 @@ impl SessionDriver {
                 .ok_or(DriverError::NoWork)?
                 .select(objective, commands)?;
         }
-        let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
         if work.policy == Policy::Single
             && work
                 .checks
@@ -959,10 +955,11 @@ impl SessionDriver {
                 .map(|check| check.command.as_str())
                 .ne(commands.iter().map(String::as_str))
         {
-            return Err(DriverError::State(
-                "completion checks changed while Work was active".to_string(),
-            ));
+            let plan = work.plan.clone().unwrap_or_else(|| work.objective.clone());
+            work.select(&plan, commands)?;
+            self.checkpoint()?;
         }
+        let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
         match work.stage() {
             Some(Stage::Plan) if work.policy == Policy::Single && work.plan.is_none() => {
                 if let Some(work) = self.work.as_mut() {

@@ -54,7 +54,6 @@ impl Worker {
                         }
                         Some(Cmd::SetBus(on)) => {
                             self.auto_reply = on;
-                            if on { self.auto_turns = 0; }
                         }
                         Some(Cmd::Steer(text)) => {
                             if let Ok(mut queue) = self.steering.lock() { queue.push_back(text); }

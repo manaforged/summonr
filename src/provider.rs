@@ -302,7 +302,7 @@ pub struct CompletionRequest {
     pub model: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
-    pub max_output_tokens: u32,
+    pub max_output_tokens: Option<u32>,
     pub emit_deltas: bool,
     pub effort: Option<Effort>,
 }
@@ -396,7 +396,7 @@ impl CompletionRequest {
             model: &'a str,
             messages: Vec<DurableMessage<'a>>,
             tools: &'a [ToolDefinition],
-            max_output_tokens: u32,
+            max_output_tokens: Option<u32>,
         }
 
         let messages = self
@@ -469,11 +469,17 @@ pub trait Provider: Send + Sync + 'static {
 
 type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
 
-const ROUND_TIMEOUT: Duration = Duration::from_secs(3000);
-
-const IDLE_TIMEOUT: Duration = Duration::from_secs(120);
-
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
+    match seconds {
+        Some(0) => Err(Error::Config(
+            "endpoint idle_timeout_secs must be at least 1".to_string(),
+        )),
+        Some(seconds) => Ok(Some(Duration::from_secs(seconds))),
+        None => Ok(None),
+    }
+}
 
 #[derive(Clone)]
 pub struct Client {
@@ -502,7 +508,7 @@ impl Client {
             Vec::new(),
             Wire::Completions,
             None,
-            IDLE_TIMEOUT,
+            None,
         )
     }
 
@@ -520,17 +526,19 @@ impl Client {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
-        let genai = Self::native_kind(endpoint.wire)
-            .map(|kind| genai::Client::builder().with_adapter_kind(kind).build());
-        let idle_timeout = match endpoint.idle_timeout_secs {
-            Some(0) => {
-                return Err(Error::Config(
-                    "endpoint idle_timeout_secs must be at least 1".to_string(),
-                ));
-            }
-            Some(seconds) => Duration::from_secs(seconds),
-            None => IDLE_TIMEOUT,
-        };
+        let idle_timeout = request_timeout(endpoint.idle_timeout_secs)?;
+        let genai = Self::native_kind(endpoint.wire).map(|kind| {
+            let builder = genai::Client::builder().with_adapter_kind(kind);
+            let builder = if let Some(timeout) = idle_timeout {
+                builder.with_web_config(genai::WebConfig {
+                    read_timeout: Some(timeout),
+                    ..genai::WebConfig::default()
+                })
+            } else {
+                builder
+            };
+            builder.build()
+        });
         Self::build(
             base,
             Auth::from_endpoint(endpoint)?,
@@ -562,7 +570,7 @@ impl Client {
         headers: Vec<(String, String)>,
         wire: Wire,
         genai: Option<genai::Client>,
-        idle_timeout: Duration,
+        idle_timeout: Option<Duration>,
     ) -> Result<Self> {
         if let Some(extra) = &body {
             let map = extra
@@ -576,10 +584,11 @@ impl Client {
                 }
             }
         }
-        let http = reqwest::Client::builder()
-            .timeout(ROUND_TIMEOUT)
-            .connect_timeout(Duration::from_secs(20))
-            .read_timeout(idle_timeout)
+        let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(20));
+        if let Some(timeout) = idle_timeout {
+            builder = builder.read_timeout(timeout);
+        }
+        let http = builder
             .build()
             .map_err(|error| Error::Config(error.to_string()))?;
         Ok(Self {
@@ -694,15 +703,17 @@ impl Client {
             "model": request.model,
             "messages": messages,
             "stream": stream,
-            "max_tokens": request.max_output_tokens,
         });
+        if let Some(max) = request.max_output_tokens {
+            body["max_tokens"] = json!(max);
+        }
         if !request.tools.is_empty() {
             body["tools"] = serde_json::to_value(&request.tools)?;
         }
         if stream {
             body["stream_options"] = json!({ "include_usage": true });
         }
-        if let Some(effort) = request.effort.filter(|effort| *effort != Effort::None) {
+        if let Some(effort) = request.effort {
             body["reasoning_effort"] = json!(effort.as_str());
         }
         if self.url.contains("api.openai.com") {

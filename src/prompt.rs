@@ -2,6 +2,12 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
+const REVIEW: &str = "For a review, lead with verified findings in severity order. Cite the \
+file and line, explain the concrete failure, and distinguish evidence from inference. A failed \
+command proves nothing; report the failure. Do not list an inference as a finding; put it under \
+unverified risks. Put each repository count next to the command that produced it. Do not rank the \
+codebase against other codebases. If no findings remain, say so.";
+
 pub fn mage_home() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("MAGE_HOME") {
         if path.is_empty() {
@@ -51,9 +57,13 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
 #[must_use]
 pub fn harness_section(plan: bool, checks: &[String]) -> String {
     let mut parts = vec![if plan {
-        "Harness state: plan mode is active. Tools are read-only. Explore, analyze, and report; propose concrete changes as diffs in your answer.".to_string()
+        format!(
+            "Harness state: plan mode is active. The workspace is read-only. You can run inspection commands. Explore, analyze, and report; propose concrete changes as diffs in your answer. {REVIEW}"
+        )
     } else {
-        "Harness state: implementation mode is active.".to_string()
+        format!(
+            "Harness state: Auto mode is active. Match the work to the request. For an answer, explanation, review, diagnosis, or status report, inspect the evidence and report without changing files or repository state. {REVIEW} For a requested change or build, implement it and run the narrowest useful check."
+        )
     }];
     if checks.is_empty() {
         parts.push("Harness: no completion check is configured.".to_string());
@@ -79,9 +89,12 @@ fn push_file(parts: &mut Vec<String>, path: &Path) {
 }
 
 fn default_prompt() -> String {
-    "Complete the user's engineering task in the current workspace. Keep reasoning brief. \
-     Inspect only the relevant code and tests, make the smallest complete edit, and run the \
-     narrowest useful check. Batch independent calls. Do not repeat a read, search, or check \
-     without new evidence. Stop when the task is proved. Do not claim work that you did not do."
+    "Complete the user's task in the current workspace. Keep reasoning brief. Match your \
+     actions to the request. \
+     For an answer, explanation, review, diagnosis, or status report, inspect the relevant \
+     evidence and report without changing files or repository state. For a requested change \
+     or build, make the smallest complete edit and run the narrowest useful check. Batch \
+     independent calls. Do not repeat a read, search, or check without new evidence. Stop \
+     when the task is proved. Do not claim work that you did not do."
         .to_string()
 }

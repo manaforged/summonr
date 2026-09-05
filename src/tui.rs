@@ -118,7 +118,7 @@ impl Round {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Snapshot {
     pub model: String,
     pub relay: Option<String>,
@@ -131,18 +131,11 @@ pub struct Snapshot {
     pub workflow: Option<String>,
 }
 
-impl Default for Snapshot {
-    fn default() -> Self {
-        Self {
-            model: String::new(),
-            relay: None,
-            plan: false,
-            verify: None,
-            max_rounds: 64,
-            strict: false,
-            endpoint: String::new(),
-            workflow: None,
-            context_window: None,
+impl Snapshot {
+    pub fn rounds_label(&self) -> String {
+        match self.max_rounds {
+            0 => "unlimited".to_string(),
+            rounds => rounds.to_string(),
         }
     }
 }
@@ -333,6 +326,7 @@ fn help_text() -> String {
          in a pane: ↑↓ move · ←→ collapse/expand or hunks/list · enter attach @path or view hunks · right-click menu · esc back\n\
          view: → on a file or /view PATH · ↑↓ scroll · o open in $EDITOR · esc back\n\
          diff: t last turn only · c copy the patch\n\
+         copy: ctrl+y last reply · /copy all transcript · ctrl+t select text\n\
          edit: e in the view pane · type, enter, arrows · ctrl+s save · esc leave (twice to discard)\n\
          ctrl+shift+←/→ resize the split\n\
          settings: enter on model lists every ready seat\n\

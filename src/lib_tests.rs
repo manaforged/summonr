@@ -36,11 +36,18 @@ impl Provider for TruncatedProvider {
                     ..AssistantMessage::default()
                 });
             }
-            assert!(request.messages.last().is_some_and(|message| {
-                message
-                    .content
-                    .contains("previous round reached its output limit")
-            }));
+            assert!(
+                request
+                    .messages
+                    .last()
+                    .is_some_and(|message| { message.content.contains("previous round") })
+            );
+            assert!(
+                request
+                    .messages
+                    .last()
+                    .is_some_and(|message| message.content.starts_with("/no_think"))
+            );
             Ok(AssistantMessage {
                 content: Some("done".to_string()),
                 ..AssistantMessage::default()
@@ -295,11 +302,8 @@ async fn output_limited_reasoning_continues_as_an_append_only_suffix() -> Result
         replayed.history[1].reasoning.as_deref(),
         Some("long thought")
     );
-    assert!(
-        replayed.history[2]
-            .content
-            .contains("previous round reached its output limit")
-    );
+    assert!(replayed.history[2].content.contains("previous round"));
+    assert!(replayed.history[2].content.starts_with("/no_think"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

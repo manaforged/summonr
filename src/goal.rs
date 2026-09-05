@@ -3,8 +3,7 @@ use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::{Error, ProviderFailureKind, Result};
 
-pub const DEFAULT_MAX_TURNS: usize = 20;
-const JUDGE_CONTEXT_CHARS: usize = 4_000;
+const REPAIRS: usize = 2;
 
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
 line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"reason\": \
@@ -20,33 +19,25 @@ pub(crate) async fn decision<P: Provider>(
     evidence: &str,
     usage: &mut crate::provider::Usage,
 ) -> Decision {
-    let (reply, judge_usage) = match loop_
-        .judge(JUDGE_SYSTEM, &judge_user(objective, reply, evidence))
-        .await
-    {
-        Ok(reply) => reply,
-        Err(error) => return Decision::GoalContinue(format!("judge unavailable: {error}")),
-    };
-    usage.add(&judge_usage);
-    let verdict = match parse_verdict(&reply) {
-        Ok(verdict) => verdict,
-        Err(first) => {
-            let (reply, judge_usage) = match loop_.judge(JUDGE_SYSTEM, &repair_user(&reply)).await {
-                Ok(reply) => reply,
-                Err(error) => {
-                    return Decision::GoalContinue(format!(
-                        "judge repair unavailable after {first}: {error}"
-                    ));
-                }
-            };
-            usage.add(&judge_usage);
-            match parse_verdict(&reply) {
-                Ok(verdict) => verdict,
-                Err(error) => {
-                    return Decision::GoalContinue(format!(
-                        "goal judge remained malformed after one repair: {error}"
-                    ));
-                }
+    let evidence = judge_user(objective, reply, evidence);
+    let mut prompt = evidence.clone();
+    let mut repairs = 0;
+    let verdict = loop {
+        let (reply, judge_usage) = match loop_.judge(JUDGE_SYSTEM, &prompt).await {
+            Ok(reply) => reply,
+            Err(error) => return Decision::GoalContinue(format!("judge unavailable: {error}")),
+        };
+        usage.add(&judge_usage);
+        match parse_verdict(&reply) {
+            Ok(verdict) => break verdict,
+            Err(error) if repairs >= REPAIRS => {
+                return Decision::GoalContinue(format!(
+                    "goal judge stayed malformed after {REPAIRS} repairs: {error}"
+                ));
+            }
+            Err(_) => {
+                repairs += 1;
+                prompt = format!("{evidence}\n\n{}", repair_user(&reply));
             }
         }
     };
@@ -81,24 +72,15 @@ ask questions you can resolve yourself:\n\n{objective}\n"
 }
 
 fn judge_user(objective: &str, reply: &str, evidence: &str) -> String {
-    let tail: String = reply
-        .chars()
-        .rev()
-        .take(JUDGE_CONTEXT_CHARS)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect();
     format!(
-        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nAgent's latest response:\n{tail}"
+        "Objective:\n{objective}\n\nHarness evidence:\n{evidence}\n\nAgent's latest response:\n{reply}"
     )
 }
 
 fn repair_user(reply: &str) -> String {
     format!(
         "The previous response was invalid. Return exactly one verdict JSON object and no other \
-         text. Previous response:\n{}",
-        reply.chars().take(JUDGE_CONTEXT_CHARS).collect::<String>()
+         text. Previous response:\n{reply}"
     )
 }
 

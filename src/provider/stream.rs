@@ -7,8 +7,6 @@ use super::{
 };
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
-const MAX_TOOL_CALLS: usize = 64;
-
 impl Client {
     pub(super) async fn complete_stream(
         &self,
@@ -28,8 +26,7 @@ impl Client {
             })?;
             state.push(self, &chunk)?;
         }
-        state.flush(self);
-        finish(state.message())
+        state.complete(self)
     }
 }
 
@@ -43,6 +40,8 @@ struct Stream {
     announced: Vec<bool>,
     usage: Usage,
     stop_reason: StopReason,
+    output_started: bool,
+    finished: bool,
 }
 
 impl Stream {
@@ -56,7 +55,7 @@ impl Stream {
             let bytes: Vec<u8> = self.buffer.drain(..end).collect();
             self.buffer.drain(..delimiter);
             let event = std::str::from_utf8(&bytes).map_err(|error| {
-                Error::provider(
+                self.provider_error(
                     ProviderFailureKind::Malformed,
                     format!("invalid SSE UTF-8: {error}"),
                 )
@@ -72,18 +71,23 @@ impl Stream {
         let Some(data) = line.strip_prefix("data:").map(str::trim) else {
             return Ok(());
         };
-        if data.is_empty() || data == "[DONE]" {
+        if data.is_empty() {
             return Ok(());
         }
-        let chunk: Chunk = serde_json::from_str(data)
-            .map_err(|error| Error::provider(ProviderFailureKind::Malformed, error.to_string()))?;
+        if data == "[DONE]" {
+            self.finished = true;
+            return Ok(());
+        }
+        let chunk: Chunk = serde_json::from_str(data).map_err(|error| {
+            self.provider_error(ProviderFailureKind::Malformed, error.to_string())
+        })?;
         if let Some(failure) = chunk.error {
             let message = if failure.message.is_empty() {
                 "provider reported an error mid-stream".to_string()
             } else {
                 failure.message
             };
-            return Err(Error::provider(ProviderFailureKind::Server, message));
+            return Err(self.provider_error(ProviderFailureKind::Server, message));
         }
         if let Some(usage) = chunk.usage {
             self.usage = usage;
@@ -91,6 +95,7 @@ impl Stream {
         if let Some(choice) = chunk.choices.into_iter().next() {
             if let Some(reason) = choice.finish_reason {
                 self.stop_reason = reason;
+                self.finished = true;
             }
             self.delta(client, choice.delta);
         }
@@ -98,10 +103,31 @@ impl Stream {
     }
 
     fn has_output(&self) -> bool {
-        !self.text.is_empty() || !self.reasoning.is_empty() || !self.calls.is_empty()
+        self.output_started
+            || !self.text.is_empty()
+            || !self.reasoning.is_empty()
+            || !self.calls.is_empty()
+    }
+
+    fn provider_error(&self, kind: ProviderFailureKind, message: impl Into<String>) -> Error {
+        Error::Provider(ProviderFailure {
+            kind,
+            status: None,
+            message: message.into(),
+            partial_output: self.has_output(),
+        })
     }
 
     fn delta(&mut self, client: &Client, delta: Delta) {
+        self.output_started |= delta
+            .reasoning_content
+            .as_deref()
+            .is_some_and(|part| !part.is_empty())
+            || delta
+                .content
+                .as_deref()
+                .is_some_and(|part| !part.is_empty())
+            || !delta.tool_calls.is_empty();
         if let Some(part) = delta.reasoning_content.filter(|text| !text.is_empty()) {
             self.push_reason(client, &part);
         }
@@ -166,6 +192,30 @@ impl Stream {
         self.push_reason(client, &thought);
     }
 
+    fn complete(mut self, client: &Client) -> Result<AssistantMessage> {
+        if !self.finished {
+            return Err(self.provider_error(
+                ProviderFailureKind::Malformed,
+                "stream ended before a finish reason or [DONE] marker",
+            ));
+        }
+        if self.buffer.iter().any(|byte| !byte.is_ascii_whitespace()) {
+            return Err(self.provider_error(
+                ProviderFailureKind::Malformed,
+                "stream ended with an incomplete SSE frame",
+            ));
+        }
+        self.flush(client);
+        let partial = self.has_output();
+        finish(self.message()).map_err(|error| match error {
+            Error::Provider(mut failure) => {
+                failure.partial_output |= partial;
+                Error::Provider(failure)
+            }
+            error => error,
+        })
+    }
+
     fn message(self) -> AssistantMessage {
         AssistantMessage {
             content: (!self.text.is_empty()).then_some(self.text),
@@ -191,10 +241,10 @@ fn frame_end(bytes: &[u8]) -> Option<(usize, usize)> {
 
 pub(super) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
     let index = part.index.unwrap_or(calls.len().saturating_sub(1));
-    if index >= MAX_TOOL_CALLS {
+    if index > calls.len() {
         return;
     }
-    while calls.len() <= index {
+    if calls.len() == index {
         calls.push(ToolCall {
             id: String::new(),
             kind: ToolKind::Function,

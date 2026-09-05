@@ -8,9 +8,6 @@ use thiserror::Error;
 
 use super::tree::{Snapshot, changed};
 
-const REPAIR_LIMIT: u16 = 3;
-const STALL_LIMIT: u16 = 3;
-const DEFER_LIMIT: u16 = 3;
 const LEDGER_WIDTH: usize = 72;
 const LEDGER_MAX: usize = 40;
 const DECISION: &str = "Goal Work requires a completion decision";
@@ -48,6 +45,7 @@ pub(crate) enum Status {
     Active(Stage),
     Completed,
     Abandoned(String),
+    Failed(String),
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -125,13 +123,11 @@ pub(crate) struct Work {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) brief: Option<String>,
     #[serde(default)]
-    pub(crate) idle: u16,
-    #[serde(default)]
-    pub(crate) edited: bool,
-    #[serde(default)]
     pub(crate) deferred: u16,
     #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
     pub(crate) touched: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) jobs: Vec<String>,
 }
 
 impl Work {
@@ -152,17 +148,16 @@ impl Work {
             candidate: None,
             pending: Vec::new(),
             brief: None,
-            idle: 0,
-            edited: false,
             deferred: 0,
             touched: BTreeSet::new(),
+            jobs: Vec::new(),
         }
     }
 
     pub(crate) fn stage(&self) -> Option<Stage> {
         match &self.status {
             Status::Active(stage) => Some(*stage),
-            Status::Completed | Status::Abandoned(_) => None,
+            Status::Completed | Status::Abandoned(_) | Status::Failed(_) => None,
         }
     }
 
@@ -224,13 +219,8 @@ impl Work {
             .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
         let paths = changed(base, &capture);
         self.touched.extend(paths.iter().cloned());
-        self.idle = if paths.is_empty() && !self.edited {
-            self.idle.saturating_add(1)
-        } else {
-            0
-        };
-        self.edited = false;
         self.deferred = 0;
+        self.jobs.clear();
         self.candidate = Some(Candidate {
             paths: paths.clone(),
             snapshot: capture,
@@ -305,13 +295,7 @@ impl Work {
                 self.status = Status::Abandoned(reason);
             }
             (Policy::Goal { max_turns }, Decision::GoalContinue(reason)) => {
-                if self.idle >= STALL_LIMIT {
-                    step.state = StepState::Blocked;
-                    self.active = None;
-                    self.status = Status::Abandoned(format!(
-                        "stalled: no workspace change in {STALL_LIMIT} turns"
-                    ));
-                } else if step.rounds < max_turns {
+                if max_turns == 0 || step.rounds < max_turns {
                     step.state = StepState::Active;
                     self.status = Status::Active(Stage::Execute);
                     self.rebase();
@@ -332,15 +316,13 @@ impl Work {
         Ok(())
     }
 
-    pub(crate) fn defer(&mut self, note: String) -> Result<bool, WorkError> {
+    pub(crate) fn defer(&mut self, note: String, jobs: Vec<String>) -> Result<bool, WorkError> {
         if self.stage() != Some(Stage::Execute) {
             return Err(WorkError("a deferral requires Execute".to_string()));
         }
-        if self.deferred >= DEFER_LIMIT {
-            return Ok(false);
-        }
-        self.deferred += 1;
+        self.deferred = self.deferred.saturating_add(1);
         self.pending.push(note);
+        self.jobs = jobs;
         Ok(true)
     }
 
@@ -355,34 +337,28 @@ impl Work {
         let active = self
             .active
             .ok_or_else(|| WorkError("Verify has no active item".to_string()))?;
-        let policy = self.policy;
         let step = self
             .steps
             .get_mut(active)
             .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
-        if matches!(policy, Policy::Goal { .. }) && self.idle >= STALL_LIMIT {
+        if let Policy::Goal { max_turns } = self.policy
+            && max_turns > 0
+            && step.rounds >= max_turns
+        {
             step.state = StepState::Blocked;
             self.active = None;
-            self.status = Status::Abandoned(format!(
-                "stalled: no workspace change in {STALL_LIMIT} turns"
+            self.status = Status::Failed(format!(
+                "completion checks still failing at the {max_turns} turn limit"
             ));
-        } else if policy != Policy::Single && step.attempts >= REPAIR_LIMIT {
-            step.state = StepState::Blocked;
-            self.active = None;
-            self.status = Status::Abandoned("completion checks failed three times".to_string());
-        } else {
-            step.state = StepState::Active;
-            self.status = Status::Active(Stage::Execute);
-            self.rebase();
-            self.pending.push(continuation);
+            return Ok(());
         }
+        step.state = StepState::Active;
+        self.status = Status::Active(Stage::Execute);
+        self.rebase();
+        self.pending.push(continuation);
         Ok(())
-    }
-
-    pub(crate) fn mark_edit(&mut self) {
-        self.edited = true;
     }
 
     fn rebase(&mut self) {
@@ -438,7 +414,9 @@ impl Work {
             Status::Active(Stage::Verify) => (WorkPhase::Verify, None),
             Status::Active(Stage::Review) => (WorkPhase::Review, None),
             Status::Completed => (WorkPhase::Completed, None),
-            Status::Abandoned(reason) => (WorkPhase::Failed, Some(reason.clone())),
+            Status::Abandoned(reason) | Status::Failed(reason) => {
+                (WorkPhase::Failed, Some(reason.clone()))
+            }
         };
         let current = self.active.or_else(|| {
             self.steps
@@ -448,7 +426,9 @@ impl Work {
         let step = current.and_then(|index| self.steps.get(index));
         WorkProgress {
             kind,
+            objective: self.objective.clone(),
             phase,
+            checks_failed: matches!(self.status, Status::Failed(_)),
             current: (kind == WorkKind::Steps)
                 .then(|| current.map(|index| index + 1))
                 .flatten(),
@@ -650,7 +630,11 @@ impl Display for WorkPhase {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub struct WorkProgress {
     pub kind: WorkKind,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub objective: String,
     pub phase: WorkPhase,
+    #[serde(default)]
+    pub checks_failed: bool,
     pub current: Option<usize>,
     pub total: usize,
     pub attempts: u16,
@@ -673,14 +657,7 @@ impl WorkProgress {
     pub fn exit_code(&self) -> Option<i32> {
         match self.phase {
             WorkPhase::Completed => Some(0),
-            WorkPhase::Failed
-                if self
-                    .reason
-                    .as_deref()
-                    .is_some_and(|reason| reason.contains("completion checks")) =>
-            {
-                Some(2)
-            }
+            WorkPhase::Failed if self.checks_failed => Some(2),
             WorkPhase::Failed => Some(3),
             WorkPhase::Plan | WorkPhase::Execute | WorkPhase::Verify | WorkPhase::Review => None,
         }

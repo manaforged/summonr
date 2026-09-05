@@ -168,12 +168,12 @@ fn resume_interrupts_a_running_child_record() {
 }
 
 #[test]
-fn parent_runs_at_most_four_children() {
+fn parent_accepts_more_than_four_concurrent_children() {
     let (home, workspace) = home();
     let mut parent = open(home.path(), &workspace);
     let workspace = workspace.canonicalize().expect("canonical workspace");
     let mut records = Vec::new();
-    for index in 0..crate::child::MAX_PARALLEL {
+    for index in 0..5 {
         let record = ChildRecord {
             version: 1,
             id: SessionId::from_u128(index as u128 + 1),
@@ -188,22 +188,7 @@ fn parent_runs_at_most_four_children() {
         parent.start_child(record.clone()).expect("start child");
         records.push(record);
     }
-    let overflow = ChildRecord {
-        version: 1,
-        id: SessionId::from_u128(u128::MAX),
-        parent: parent.id(),
-        assignment: "overflow".to_string(),
-        model: "child-model".to_string(),
-        workspace,
-        depth: 1,
-        access: crate::child::Access::Research,
-        state: ChildState::Running,
-    };
-
-    assert!(matches!(
-        parent.start_child(overflow),
-        Err(DriverError::Busy)
-    ));
+    assert_eq!(parent.children().len(), 5);
     for record in records {
         parent
             .finish_child(record.interrupt("done"))
@@ -212,10 +197,10 @@ fn parent_runs_at_most_four_children() {
 }
 
 #[test]
-fn parent_child_count_is_bounded() {
+fn parent_retains_completed_children_without_a_lifetime_quota() {
     let (home, workspace) = home();
     let mut parent = open(home.path(), &workspace);
-    for index in 0..crate::child::MAX_PER_PARENT {
+    for index in 0..65 {
         let record = ChildRecord {
             version: 1,
             id: SessionId::from_u128(index as u128 + 1),
@@ -244,7 +229,11 @@ fn parent_child_count_is_bounded() {
         state: ChildState::Running,
     };
 
-    assert!(parent.start_child(overflow).is_err());
+    parent.start_child(overflow.clone()).expect("start child");
+    parent
+        .finish_child(overflow.interrupt("done"))
+        .expect("finish child");
+    assert_eq!(parent.children().len(), 66);
 }
 
 #[test]
@@ -344,16 +333,29 @@ fn verdict_writes_the_receipt_and_closes_the_turn() {
 }
 
 #[test]
-fn untouched_file_churn_during_verify_keeps_the_verdict() {
-    let (home, workspace) = home();
-    let mut driver = open(home.path(), &workspace);
-    start(&mut driver, "write");
-    answer(&mut driver, "done");
-    driver.enter_verify().expect("capture");
-    std::fs::write(workspace.join("Cargo.lock"), b"regenerated").expect("gate write");
-    let verdict = driver.prepare_verdict(true).expect("verdict");
-    assert!(verdict.passed, "untouched churn must not fail the verdict");
-    assert!(verdict.diagnostic.is_none());
+fn changes_outside_the_candidate_paths_reject_verification() {
+    for action in ["add", "change", "delete"] {
+        let (home, workspace) = home();
+        let mut driver = open(home.path(), &workspace);
+        start(&mut driver, "write");
+        answer(&mut driver, "done");
+        assert!(driver.enter_verify().expect("capture").is_empty());
+        match action {
+            "add" => {
+                std::fs::write(workspace.join("new.rs"), b"generated source").expect("add source")
+            }
+            "change" => {
+                std::fs::write(workspace.join("src.txt"), b"new contents").expect("change source")
+            }
+            _ => std::fs::remove_file(workspace.join("src.txt")).expect("delete source"),
+        }
+        let verdict = driver.prepare_verdict(true).expect("verdict");
+        assert!(!verdict.passed, "{action} must invalidate verification");
+        assert_eq!(
+            verdict.diagnostic.as_deref(),
+            Some("workspace changed after candidate capture")
+        );
+    }
 }
 
 #[test]
@@ -371,6 +373,23 @@ fn a_changed_candidate_file_during_verify_fails_the_verdict() {
         verdict.diagnostic.as_deref(),
         Some("workspace changed after candidate capture")
     );
+}
+
+#[test]
+fn ignored_build_output_does_not_change_the_candidate() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "check");
+    answer(&mut driver, "done");
+    driver.enter_verify().expect("capture");
+    std::fs::create_dir(workspace.join("target")).expect("build directory");
+    std::fs::write(workspace.join("target/result"), "built").expect("build output");
+    let verdict = driver.prepare_verdict(true).expect("verdict");
+    assert!(
+        verdict.passed,
+        "excluded build output changed the candidate"
+    );
+    assert_eq!(verdict.diagnostic, None);
 }
 
 #[test]
@@ -466,16 +485,23 @@ fn compact_rebases_on_the_open_turn_and_clear_needs_idle() {
 fn abort_is_idempotent_and_records_its_reason() {
     let (home, workspace) = home();
     let mut driver = open(home.path(), &workspace);
-    driver.abort("nothing open").expect("idle abort is fine");
+    driver
+        .abort("nothing open", None)
+        .expect("idle abort is fine");
     start(&mut driver, "read");
     driver
         .start_provider("test-model", exposure())
         .expect("provider");
-    driver.abort("cancelled by user").expect("abort");
+    driver
+        .abort("cancelled by user", Some("Turn receipt"))
+        .expect("abort");
     assert!(!driver.busy());
     let log = std::fs::read_to_string(driver.path()).expect("log");
     assert!(log.contains("cancelled by user"));
-    assert_eq!(driver.replay().spent_tokens, 0);
+    assert!(log.contains(r#""kind":"receipt""#));
+    assert_eq!(driver.replay().spent_tokens, 100);
+    driver.abort("already aborted", None).expect("repeat abort");
+    assert_eq!(driver.replay().spent_tokens, 100);
     start(&mut driver, "next");
 }
 
@@ -596,6 +622,7 @@ fn a_turn_needs_work_and_a_plan_must_be_accepted_first() {
             "",
             usage(1, 1, 1),
             &["true".to_string()],
+            "# Plan\n\n1. Do it\n\nTurn receipt",
         )
         .expect("finish plan");
     assert!(!driver.busy());
@@ -607,9 +634,12 @@ fn a_turn_needs_work_and_a_plan_must_be_accepted_first() {
         WorkPhase::Execute
     );
     assert!(driver.accept_plan().is_err(), "nothing left to accept");
+    driver
+        .prepare_turn_work("implement", &[])
+        .expect("changed checks are re-selected, not refused");
     assert!(
-        driver.prepare_turn_work("implement", &[]).is_err(),
-        "changed checks are refused"
+        driver.completion_checks().expect("checks").is_empty(),
+        "the new check list is live"
     );
 }
 
@@ -737,7 +767,7 @@ fn a_resumed_interrupted_turn_tells_the_model_it_was_interrupted() {
 }
 
 #[test]
-fn the_next_base_is_taken_after_the_gates_ran() {
+fn a_gate_change_requires_recapture_before_the_next_base() {
     let (home, workspace) = home();
     let mut driver = open(home.path(), &workspace);
     driver
@@ -749,16 +779,15 @@ fn the_next_base_is_taken_after_the_gates_ran() {
     assert_eq!(paths, vec!["edit.txt"]);
     std::fs::write(workspace.join("stamp.txt"), "gate\n").expect("gate write");
     let verdict = driver.prepare_verdict(true).expect("verdict");
-    assert!(verdict.passed, "{:?}", verdict.diagnostic);
+    assert!(!verdict.passed, "the gate changed an uncaptured file");
     driver
-        .commit_verdict(verdict, Decision::GoalContinue("more".to_string()), None)
-        .expect("continue");
+        .commit_verdict(verdict, Decision::Automatic, None)
+        .expect("reject");
     driver.start_input("again", &[]).expect("start");
     let paths = driver.enter_verify().expect("capture");
-    assert!(
-        paths.is_empty(),
-        "the gate's file is already in the base: {paths:?}"
-    );
+    assert_eq!(paths, vec!["stamp.txt"]);
+    let verdict = driver.prepare_verdict(true).expect("rechecked verdict");
+    assert!(verdict.passed, "the new candidate is stable");
 }
 
 #[test]

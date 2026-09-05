@@ -37,7 +37,6 @@ struct Worker {
     check: Option<Vec<String>>,
     auto_reply: bool,
     pending_mail: bool,
-    auto_turns: u32,
     last_auto: Instant,
     steering: Arc<Mutex<VecDeque<UserInput>>>,
     deferred: VecDeque<Cmd>,
@@ -80,7 +79,6 @@ impl Worker {
             check,
             auto_reply: info.prefs.bus,
             pending_mail: false,
-            auto_turns: 0,
             last_auto: Instant::now(),
             steering,
             deferred: VecDeque::new(),
@@ -120,15 +118,9 @@ impl Worker {
             Cmd::Tick if self.pending_mail && self.last_auto.elapsed().as_secs() >= 10 => {
                 self.pending_mail = false;
                 self.last_auto = Instant::now();
-                self.auto_turns += 1;
                 Some(Cmd::Mail)
             }
-            command => {
-                if matches!(&command, Cmd::Submit(_)) {
-                    self.auto_turns = 0;
-                }
-                Some(command)
-            }
+            command => Some(command),
         }
     }
 
@@ -294,21 +286,14 @@ impl Worker {
     }
 
     fn queue_mail(&mut self) {
-        if self.auto_turns >= 8 {
-            self.auto_reply = false;
-            self.auto_turns = 0;
-            self.pending_mail = false;
-            self.system("bus auto-reply paused after 8 consecutive mail turns — /bus re-enables");
-        } else if self.auto_reply {
+        if self.auto_reply {
             self.pending_mail = true;
         }
     }
 
     fn set_bus(&mut self, on: bool) {
         self.auto_reply = on;
-        if on {
-            self.auto_turns = 0;
-        } else {
+        if !on {
             self.pending_mail = false;
         }
     }

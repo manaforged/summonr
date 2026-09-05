@@ -13,10 +13,10 @@ pub(crate) struct Sandbox {
     backend: Backend,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     workspace: PathBuf,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    deny_network: bool,
     #[cfg(target_os = "linux")]
     temp: PathBuf,
-    #[cfg(target_os = "linux")]
-    deny_network: bool,
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -26,6 +26,7 @@ enum Backend {
     Mac {
         executable: PathBuf,
         profile: String,
+        read_profile: String,
     },
     #[cfg(target_os = "linux")]
     Linux { executable: PathBuf },
@@ -61,13 +62,16 @@ impl Sandbox {
                             .to_string(),
                     )
                 })?;
-                let profile = mac_profile(&workspace, &temp, deny_network)?;
+                let profile = mac_profile(&workspace, &temp, deny_network, false)?;
+                let read_profile = mac_profile(&workspace, &temp, deny_network, true)?;
                 let sandbox = Self {
                     backend: Backend::Mac {
                         executable,
                         profile,
+                        read_profile,
                     },
                     workspace,
+                    deny_network,
                 };
                 sandbox.probe()?;
                 Ok(sandbox)
@@ -95,12 +99,45 @@ impl Sandbox {
         }
     }
 
+    pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            Self::discover(workspace, self.deny_network)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        {
+            let _ = self;
+            Self::discover(workspace, false)
+        }
+    }
+
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     pub(crate) fn command_line(
         &self,
         program: &str,
         args: &[&str],
         cwd: &Path,
+    ) -> (PathBuf, Vec<OsString>) {
+        self.command_line_with(program, args, cwd, false)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    pub(crate) fn read_command_line(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+    ) -> (PathBuf, Vec<OsString>) {
+        self.command_line_with(program, args, cwd, true)
+    }
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    fn command_line_with(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        read_only: bool,
     ) -> (PathBuf, Vec<OsString>) {
         #[cfg(target_os = "macos")]
         let _ = cwd;
@@ -109,7 +146,9 @@ impl Sandbox {
             Backend::Mac {
                 executable,
                 profile,
+                read_profile,
             } => {
+                let profile = if read_only { read_profile } else { profile };
                 let mut command = vec!["-p".into(), profile.clone().into(), program.into()];
                 command.extend(args.iter().map(|arg| (*arg).into()));
                 (executable.clone(), command)
@@ -120,13 +159,26 @@ impl Sandbox {
                     "--ro-bind".into(),
                     "/".into(),
                     "/".into(),
-                    "--bind".into(),
-                    self.workspace.as_os_str().to_os_string(),
-                    self.workspace.as_os_str().to_os_string(),
+                    "--dev-bind".into(),
+                    "/dev/null".into(),
+                    "/dev/null".into(),
                     "--bind".into(),
                     self.temp.as_os_str().to_os_string(),
                     self.temp.as_os_str().to_os_string(),
                 ];
+                if read_only {
+                    command.extend([
+                        "--ro-bind".into(),
+                        self.workspace.as_os_str().to_os_string(),
+                        self.workspace.as_os_str().to_os_string(),
+                    ]);
+                } else {
+                    command.extend([
+                        "--bind".into(),
+                        self.workspace.as_os_str().to_os_string(),
+                        self.workspace.as_os_str().to_os_string(),
+                    ]);
+                }
                 if self.deny_network {
                     command.push("--unshare-net".into());
                 }
@@ -149,6 +201,16 @@ impl Sandbox {
     ) -> (PathBuf, Vec<OsString>) {
         let _ = (self, program, args, cwd);
         unreachable!("sandbox backend is unavailable")
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    pub(crate) fn read_command_line(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+    ) -> (PathBuf, Vec<OsString>) {
+        self.command_line(program, args, cwd)
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -174,6 +236,14 @@ impl Sandbox {
 
     pub(crate) fn command(&self, program: &str, args: &[&str], cwd: &Path) -> Command {
         let (executable, args) = self.command_line(program, args, cwd);
+        let mut command = Command::new(executable);
+        command.args(args);
+        command.current_dir(cwd);
+        command
+    }
+
+    pub(crate) fn read_command(&self, program: &str, args: &[&str], cwd: &Path) -> Command {
+        let (executable, args) = self.read_command_line(program, args, cwd);
         let mut command = Command::new(executable);
         command.args(args);
         command.current_dir(cwd);
@@ -207,7 +277,12 @@ fn is_executable(path: &Path) -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn mac_profile(workspace: &Path, temp: &Path, deny_network: bool) -> Result<String> {
+fn mac_profile(
+    workspace: &Path,
+    temp: &Path,
+    deny_network: bool,
+    read_only: bool,
+) -> Result<String> {
     let workspace = profile_path(workspace)?;
     let temp = profile_path(temp)?;
     let network_rule = if deny_network {
@@ -215,15 +290,25 @@ fn mac_profile(workspace: &Path, temp: &Path, deny_network: bool) -> Result<Stri
     } else {
         String::new()
     };
+    let (workspace_rule, workspace_deny) = if read_only {
+        (
+            String::new(),
+            format!("(deny file-write* (subpath \"{workspace}\"))\n"),
+        )
+    } else {
+        (format!("    (subpath \"{workspace}\")\n"), String::new())
+    };
     Ok(format!(
         "(version 1)\n\
 (allow default)\n\
 {network_rule}\
 (deny file-write*)\n\
 (allow file-write*\n\
-    (subpath \"{workspace}\")\n\
+    (literal \"/dev/null\")\n\
+{workspace_rule}\
     (subpath \"{temp}\")\n\
-)\n"
+ )\n\
+{workspace_deny}"
     ))
 }
 

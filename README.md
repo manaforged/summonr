@@ -1,7 +1,7 @@
 # Summoner
 
 Summoner is a local coding harness. You point it at a model. OpenAI
-`POST /v1/chat/completions` hosts work (glm, kimi, grok, llama.cpp,
+`POST /v1/chat/completions` hosts work (Z.ai, Kimi, xAI, llama.cpp,
 config). Anthropic Messages and Gemini use their native APIs. Auth is
 an API key or an OAuth2 token that becomes a bearer. `summon` is the command that starts Summoner with a specific model; a bare `summoner` uses your default.
 
@@ -30,6 +30,15 @@ summoner -V
 Expect `summoner 0.1.0 (<git revision>)` (the same binary as `summon`).
 Build fails without Sigil.
 
+## Herdr
+
+When `summon` runs inside a [Herdr](https://herdr.dev) pane, it reports
+lifecycle state through Herdr's CLI (`pane report-agent`). `idle` is the
+prompt; `working` is a turn. The Summoner session id is the native session
+reference. `/name TEXT` becomes the pane title and `$summary` token.
+Child sessions do not report, so a nested `task` does not steal the pane.
+Herdr has no built-in `summoner` kind. This reporter is the integration.
+
 ## Usage
 
 ```sh
@@ -55,15 +64,17 @@ prices every round in `/stats` and the footer. A workflow seat keeps
 its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say. `summon endpoints` probes `GET /models` for each
 name so a dead host fails before the first tool round. `summon login NAME`
-runs RFC 8628 device-code login when that row has `device_url`.
+prompts for an API key, or runs RFC 8628 device-code login when that row
+has `device_url`.
 
 Keys live in `~/.mage/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
 32-byte item in the OS store (`summoner` / `seal`), not a file next to
 the blob. `cat` of the file does not show keys. File mode still needs
 that OS item: a locked keychain is an error, not a plaintext leftover
-in `config.toml`. `summon login NAME --key` prompts for a key (echo
-off) and stores it; `summon logout NAME` forgets it and any login
+in `config.toml`. The key prompt disables echo and stores the key;
+`summon login NAME --key` forces it for a device-login endpoint.
+`summon logout NAME` forgets the key and any login
 token. A plaintext `api_key` in `config.toml` is moved into that file
 the first time Summoner runs, and it says so once. Resolution order is
 the host's environment variable, the store, then `api_key` in
@@ -78,7 +89,7 @@ Credential Manager and Linux the Secret Service, one entry per secret.
 A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
-Built-ins: chat/completions seats `glm`, `glm-intl`, `qwen`, `kimi`,
+Built-ins: chat/completions seats `zai`, `zai-cn`, `qwen`, `kimi`,
 `grok`, `copilot`, `openai`, `openrouter`; native wires `anthropic`
 (Messages) and `gemini`. `summon login copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
@@ -101,12 +112,17 @@ Logs older than 14 days are removed unless their process is still active.
 
 `--goal` keeps one objective until `.mage/check.toml` is green and a
 judge says stop. The judge answers `done`, `continue`, `stalled`, or
-`impossible`; the last two end the goal with the reason, and three
-turns without a workspace change end it as stalled. `--steps` hands
+`impossible`; the last two end the goal with the reason. A goal has no
+built-in turn cap. `--max-turns N` bounds it: a goal that is still red
+or still `continue` at turn N stops, exit 2 when the checks were red
+and exit 3 when the judge said continue. `--max-tokens` and
+`--max-secs` bound every mode. Every goal turn restates the objective
+to the model, so a compacted context cannot lose it. `--steps` hands
 the model one numbered item at a time. A turn that ends while a
 background command it started is still running is deferred — no
-verdict, no repair strike, up to three times — until the job exits or
-the model kills it. A `### Heading` under
+verdict, no repair strike — until the job exits or the model kills
+it. The harness remembers that job across turns; a later turn cannot
+complete while it runs. A `### Heading` under
 `## Steps` groups the items that follow it into a phase. Every turn
 carries the ledger — phases as Roman numerals, `[x]` done, `[/]` this
 step, `[ ]` later, `[!]` blocked — to the model and to the transcript.
@@ -118,7 +134,11 @@ removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
 `--here` stays put.
 
-In plan mode the model reads and proposes; nothing runs. Toggle plan
+Auto mode follows the request. Reviews, explanations, and diagnoses inspect
+the workspace without changing it. Change requests can edit and run checks.
+
+Plan mode adds a read-only workspace boundary. The model can run inspection
+commands, but commands cannot change workspace or repository state. Toggle plan
 mode off and the next message accepts the selected plan — the
 transcript and the model both see `plan accepted`; `/plan reject`
 discards it instead. `diagnostics` and `definition` route each file to its
@@ -136,7 +156,7 @@ workflow = "cheap-scout"      # optional default
 
 [workflows.cheap-scout]
 plan = "grok"
-review = { endpoint = "glm", model = "glm-5.3" }
+review = "zai"
 judge = "grok"
 ```
 
@@ -201,6 +221,11 @@ header says `· last turn`), `c` copies the patch on show to the clipboard
 `summon diff --turn N` (or `--turn last`) is the same filter for the
 latest session in this directory.
 
+`ctrl+y` copies the latest assistant reply. `/copy all` copies the full
+transcript. Both use OSC 52 in the terminal and the system clipboard in the
+window. `ctrl+t` releases the mouse to the terminal so you can select and copy
+any transcript span; press it again to restore mouse interaction.
+
 `/pane worktrees` lists the `summon/*` worktrees of this repository:
 branch, commits ahead of the base, dirty or clean, the session that ran
 there, and the directory. Enter or `→` opens that worktree's diff (`esc`
@@ -220,8 +245,8 @@ With a `scout` seat, a `--steps`, `--goal`, or plan-mode job opens with
 a read-only brief of the files, conventions, and helpers the objective
 touches. With a `review` seat, a turn whose checks passed is read by
 the reviewer before it completes; a rejection sends the findings back
-as the next instruction and counts against the same three-attempt
-limit as a failed check.
+as the next instruction and counts as a failed check against
+`--max-turns`.
 The `task` tool delegates work to fresh child sessions. A model can emit
 up to four `task` calls in one response. Summoner runs them concurrently.
 Each `implement` child edits a separate Git worktree from the same tracked
@@ -246,9 +271,9 @@ change.
 once. `task` with `child: ID` reports its state, elapsed time, and last
 action while it runs, and its full result once it finishes; `kill: true`
 stops it. A turn does not end while a background child runs: Summoner
-waits, then defers the turn the way it does for a background command, and
-after the third deferral stops the child. Background implement children
-need a Git repository.
+waits, then defers the turn the way it does for a background command,
+until the child finishes or the model kills it. Background implement
+children need a Git repository.
 ## Modules
 
 Every optional capability is a module compiled into the binary: `search`,
@@ -282,11 +307,14 @@ Repository config cannot supply executable argv. A trusted
 `~/.mage/config.toml` may use `[lsp] command = ["server", "--stdio"]` when a
 built-in module does not fit.
 
-Unknown flags exit 1. A red verify gate exits 2. A run that stops
-short — a budget breach, a stalled or impossible goal, or an aborted
-turn — exits 3.
+Unknown flags exit 1. A red verify gate exits 2 (`-p`, or a bounded
+goal that ends red). A run that stops short — a budget breach, a
+stalled or impossible goal, a bounded goal the judge did not accept,
+or an aborted turn — exits 3.
 JSON turn receipts keep model text separate from the changed-path list
-and every configured completion check.
+and every configured completion check. `verified` on a receipt is true
+only when at least one check ran and every check passed; a turn with no
+configured check completes with `verified: false`.
 
 ## Room
 
@@ -329,6 +357,8 @@ copy, so a mail that the client did not surface is still in the inbox.
 - File tools cannot leave the workspace. Commands run under Seatbelt or
   bubblewrap with network denied. `--net` allows sockets. `--no-sandbox`
   disables process containment. A missing sandbox backend is a hard stop.
+- Contained shell commands can write only inside the workspace. Plan mode
+  makes the workspace read-only and rejects background commands.
 - Home is still `~/.mage`. Env is still `MAGE_*`.
 - Not crates.io. No Sigil SSH, no build.
 - An older `mage` binary may still be on `PATH`. Use `summon`.

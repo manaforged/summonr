@@ -1,6 +1,70 @@
 use super::*;
 
 #[test]
+fn zai_builtins_match_the_coding_plan_regions() {
+    let global = builtin("zai").expect("global Z.ai builtin");
+    assert_eq!(global.base_url.as_deref(), Some(GLM_INTL));
+    assert_eq!(global.model, "glm-5.3-flash");
+    assert!(
+        preset("zai")
+            .expect("global preset")
+            .env_keys
+            .contains(&"ZAI_API_KEY")
+    );
+
+    let china = builtin("zai-cn").expect("China Z.ai builtin");
+    assert_eq!(china.base_url.as_deref(), Some(GLM_CN));
+    assert_eq!(china.model, "glm-5.3-flash");
+    assert!(
+        preset("zai-cn")
+            .expect("China preset")
+            .env_keys
+            .contains(&"ZAI_CODING_CN_API_KEY")
+    );
+}
+
+#[test]
+fn environment_key_scopes_are_isolated() {
+    const CASE: &str = "SUMMON_ENDPOINT_ENV_CASE";
+    if let Ok(case) = std::env::var(CASE) {
+        match case.as_str() {
+            "named" => {
+                let endpoint = fill_key(builtin("grok").expect("grok preset"), false)
+                    .expect("resolve named key");
+                assert!(endpoint.api_key.is_none());
+            }
+            "generic" => {
+                let endpoint = resolve_inner(None, None, true).expect("resolve generic key");
+                assert_eq!(endpoint.api_key.as_deref(), Some("legacy-glm-key"));
+            }
+            other => panic!("unknown endpoint environment test case: {other}"),
+        }
+        return;
+    }
+
+    let home = tempfile::tempdir().expect("temporary MAGE_HOME");
+    for case in ["named", "generic"] {
+        let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"));
+        child
+            .args([
+                "endpoint::tests::environment_key_scopes_are_isolated",
+                "--exact",
+            ])
+            .env_clear()
+            .env(CASE, case)
+            .env("MAGE_HOME", home.path());
+        if case == "named" {
+            child.env("MAGE_API_KEY", "generic-key");
+        } else {
+            child
+                .env("MAGE_BASE_URL", "https://example.invalid/v1")
+                .env("GLM_API_KEY", "legacy-glm-key");
+        }
+        assert!(child.status().expect("run isolated key test").success());
+    }
+}
+
+#[test]
 fn glm_builtin_points_at_coding_plan_cn() {
     let Some(endpoint) = builtin("glm") else {
         panic!("glm builtin missing");
@@ -75,7 +139,7 @@ fn kimi_missing_key_does_not_offer_device_login() {
     let row = preset("kimi").expect("kimi");
     assert!(row.oauth.is_none());
     assert!(row.missing.contains("kimi-code"));
-    assert!(!row.missing.contains("login"));
+    assert!(row.missing.contains("login"));
 }
 
 #[test]
@@ -92,6 +156,8 @@ fn auth_info_does_not_expose_keys() {
     assert!(!info.device_login);
     assert!(info.configured);
     assert!(info.setup.contains("ZAI_CODING_API_KEY"));
+    assert!(info.setup.contains("summon login glm"));
+    assert!(!info.setup.contains("NAME"));
     assert!(!info.setup.contains("secret-that-must-not-appear"));
     let copilot = auth_info_from(&File::default(), "copilot", false).expect("copilot auth info");
     assert!(copilot.device_login);

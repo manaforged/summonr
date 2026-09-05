@@ -213,17 +213,9 @@ fn a_client_without_push_reads_mail_from_inbox() {
         &[("MAGE_BUS_ID", "lead"), ("MAGE_ROOM_PUSH", "off")],
     );
     b.initialize("claude-code");
+    assert!(b.tool("agents", json!({})).contains("lead · claude"));
     a.tool("send", json!({"to": "lead", "text": "hello"}));
-    let deadline = Instant::now() + WAIT;
-    loop {
-        let mail = b.tool("inbox", json!({}));
-        if mail.contains("hello") {
-            assert_eq!(mail, "[worker (codex)] hello");
-            break;
-        }
-        assert!(Instant::now() < deadline, "mail never arrived");
-        pause(100);
-    }
+    assert_eq!(b.tool("inbox", json!({})), "[worker (codex)] hello");
     assert_eq!(b.tool("wait", json!({"secs": 1})), "no mail in 1s");
     a.close();
     b.close();

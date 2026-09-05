@@ -1,4 +1,4 @@
-use summoner::{Client, Event, Loop, Result, Turn, UserInput};
+use summoner::{Client, Event, Loop, Result, Turn, UserInput, WorkPhase, WorkProgress};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -21,7 +21,8 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
     if !args.json {
         println!();
     }
-    Ok(exit(&turn))
+    let progress = loop_.work_progress()?;
+    Ok(exit(&turn, &progress))
 }
 
 pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str) -> Result<i32> {
@@ -86,9 +87,7 @@ pub(super) async fn goal(
     objective: &str,
     gates: Vec<String>,
 ) -> Result<i32> {
-    let max_turns = args
-        .max_turns
-        .map_or(summoner::DEFAULT_MAX_TURNS, |value| value as usize);
+    let max_turns = args.max_turns.map_or(0, |value| value as usize);
     loop_.select_goal(objective, &gates, max_turns)?;
     let code = drive_goal(&mut loop_, objective, &gates, args.json).await?;
     if !args.json {
@@ -135,7 +134,7 @@ fn slash(prompt: &str) -> Option<&str> {
     line.split_whitespace().next()
 }
 
-fn print_json(event: &Event) {
+pub(super) fn print_json(event: &Event) {
     match serde_json::to_string(event) {
         Ok(line) => println!("{line}"),
         Err(error) => eprintln!("cannot encode event: {error}"),
@@ -172,13 +171,15 @@ fn print_live(event: &Event) {
     }
 }
 
-fn exit(turn: &Turn) -> i32 {
+fn exit(turn: &Turn, progress: &WorkProgress) -> i32 {
     if turn.checks.iter().any(|check| !check.passed) {
         2
     } else if turn.aborted {
         3
-    } else {
+    } else if progress.phase == WorkPhase::Plan {
         0
+    } else {
+        progress.exit_code().unwrap_or(3)
     }
 }
 

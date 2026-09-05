@@ -1,3 +1,4 @@
+use super::turn::WaitError;
 use super::*;
 use crate::workflow;
 
@@ -68,7 +69,7 @@ impl<P: Provider> Loop<P> {
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: tools.to_vec(),
-            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: None,
             emit_deltas: false,
             effort: self.effort_for(workflow::Role::Summary),
         };
@@ -76,18 +77,33 @@ impl<P: Provider> Loop<P> {
         let durable = request
             .durable_bytes()
             .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
         let attempt = self
             .session
             .start_summary(&request.model, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
-        match self
-            .seat(workflow::Role::Summary)
-            .0
-            .complete(&request)
-            .await
-        {
-            Ok(message)
+        let completion = self.seat(workflow::Role::Summary).0.complete(&request);
+        let reply = match self.wait(completion).await {
+            Ok(reply) => reply,
+            Err(wait_error) => {
+                let millis = wait_error.millis(started);
+                let deadline = matches!(wait_error, WaitError::Deadline(_));
+                let error = wait_error.error();
+                self.session
+                    .fail_provider(attempt, &error.to_string(), millis)
+                    .map_err(super::session_err)?;
+                self.spent_tokens = self.session.replay().spent_tokens;
+                if deadline {
+                    return Err(error);
+                }
+                return Ok(None);
+            }
+        };
+        match reply {
+            message
                 if message.tool_calls.is_empty()
                     && message
                         .content
@@ -101,7 +117,7 @@ impl<P: Provider> Loop<P> {
                     .map_err(super::session_err)?;
                 Ok(Some((message, prefix_hash)))
             }
-            Ok(_) | Err(_) => {
+            _ => {
                 self.session
                     .fail_provider(
                         attempt,
@@ -146,13 +162,10 @@ impl<P: Provider> Loop<P> {
                     .unwrap_or(chars / 4)
                     .max(1)
             });
-        let mut keep_from = tail_start(messages, tail_chars);
-        while keep_from > 1 && messages[keep_from].role != Role::User {
-            keep_from -= 1;
-        }
-        if keep_from <= 1 {
+        let Some(keep_from) = compact_boundary(messages, tail_chars) else {
             return Ok(());
-        }
+        };
+        let started = std::time::Instant::now();
         let Some((summary, prefix_hash)) = self
             .summarize(&messages[0], &messages[1..keep_from], tools)
             .await?
@@ -172,10 +185,14 @@ impl<P: Provider> Loop<P> {
             &summary,
             prefix_hash,
             workflow::Role::Summary,
+            Some(super::elapsed_millis(started)),
             usage,
             events,
             emit,
         )?;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
         let summary = summary.content.unwrap_or_default();
         self.session
             .compact(&summary, &messages[keep_from..])
@@ -211,15 +228,41 @@ impl<P: Provider> Loop<P> {
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: Vec::new(),
-            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: None,
             emit_deltas: false,
             effort: self.effort_for(workflow::Role::Summary),
         };
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
+        let started = Instant::now();
         let reply = self
-            .seat(workflow::Role::Summary)
-            .0
-            .complete(&request)
-            .await?;
+            .wait(self.seat(workflow::Role::Summary).0.complete(&request))
+            .await;
+        let reply = match reply {
+            Ok(reply) => reply,
+            Err(wait_error) => {
+                self.session
+                    .charge(
+                        super::meter(&Usage::default(), wait_error.millis(started)),
+                        "manual compaction failed",
+                        &request.model,
+                    )
+                    .map_err(super::session_err)?;
+                return Err(wait_error.error());
+            }
+        };
+        self.session
+            .charge(
+                super::meter(&reply.usage, super::elapsed_millis(started)),
+                "manual compaction",
+                &request.model,
+            )
+            .map_err(super::session_err)?;
+        self.spent_tokens = self.session.replay().spent_tokens;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
         if !reply.tool_calls.is_empty() {
             return Err(Error::Config(
                 "the compaction summary tried to call a tool; the context is unchanged".to_string(),
@@ -229,10 +272,6 @@ impl<P: Provider> Loop<P> {
             .content
             .filter(|text| !text.trim().is_empty())
             .ok_or_else(|| Error::Config("the compaction summary was empty".to_string()))?;
-        let model = request.model.clone();
-        self.session
-            .charge(super::meter(&reply.usage, 0), "manual compaction", &model)
-            .map_err(super::session_err)?;
         self.session
             .compact(&summary, &messages[keep_from..])
             .map_err(super::session_err)?;
@@ -260,6 +299,14 @@ fn tail_start(messages: &[Message], target_chars: usize) -> usize {
         chars += message_chars(&messages[start]);
     }
     start
+}
+
+fn compact_boundary(messages: &[Message], target_chars: usize) -> Option<usize> {
+    let mut start = tail_start(messages, target_chars);
+    while start > 1 && messages[start].role == Role::Tool {
+        start -= 1;
+    }
+    (start > 1).then_some(start)
 }
 
 #[cfg(test)]

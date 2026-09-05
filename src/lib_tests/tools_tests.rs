@@ -45,6 +45,182 @@ fn sandbox_command_wraps_the_existing_payload() -> Result<()> {
 }
 
 #[tokio::test]
+async fn plan_commands_can_inspect_but_cannot_change_the_workspace() -> Result<()> {
+    let workspace = test_workspace()?;
+    let Some(_) = sandbox_for_test(&workspace)? else {
+        std::fs::remove_dir_all(workspace)?;
+        return Ok(());
+    };
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.enable_sandbox(true)?;
+    tools.set_read_only(true);
+
+    let read = tools
+        .execute(&call(
+            "run_command",
+            r#"{"command":"cat note.txt >/dev/null && printf inspected"}"#,
+        ))
+        .await?;
+    assert!(read.contains("inspected"), "{read}");
+
+    let write = tools
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf changed > note.txt"}"#,
+        ))
+        .await?;
+    assert!(write.contains("exit 1"), "{write}");
+    assert!(write.contains("Operation not permitted"), "{write}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("note.txt"))?,
+        "hello\nworld"
+    );
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn contained_commands_can_write_only_inside_the_workspace() -> Result<()> {
+    let workspace = test_workspace()?;
+    let Some(_) = sandbox_for_test(&workspace)? else {
+        std::fs::remove_dir_all(workspace)?;
+        return Ok(());
+    };
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.enable_sandbox(true)?;
+
+    let written = tools
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf changed > note.txt"}"#,
+        ))
+        .await?;
+    assert!(written.starts_with("exit 0"), "{written}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("note.txt"))?,
+        "changed"
+    );
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn plan_mode_ignores_the_old_write_hint_and_stays_read_only() -> Result<()> {
+    let workspace = test_workspace()?;
+    let Some(_) = sandbox_for_test(&workspace)? else {
+        std::fs::remove_dir_all(workspace)?;
+        return Ok(());
+    };
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.enable_sandbox(true)?;
+    tools.set_read_only(true);
+
+    let output = tools
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf changed > note.txt","write":true}"#,
+        ))
+        .await?;
+    assert!(!output.starts_with("exit 0"), "{output}");
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("note.txt"))?,
+        "hello\nworld"
+    );
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn plan_commands_require_the_command_sandbox() -> Result<()> {
+    let workspace = test_workspace()?;
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.set_read_only(true);
+
+    let error = tools
+        .execute(&call("run_command", r#"{"command":"cat note.txt"}"#))
+        .await
+        .expect_err("Plan mode must not run an uncontained shell")
+        .to_string();
+    assert!(error.contains("requires the command sandbox"), "{error}");
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn plan_commands_reject_background_work() -> Result<()> {
+    let workspace = test_workspace()?;
+    let Some(_) = sandbox_for_test(&workspace)? else {
+        std::fs::remove_dir_all(workspace)?;
+        return Ok(());
+    };
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.enable_sandbox(true)?;
+    tools.set_read_only(true);
+
+    let error = tools
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf inspected","background":true}"#,
+        ))
+        .await
+        .expect_err("Plan mode must not leave a background process")
+        .to_string();
+    assert!(error.contains("does not permit background"), "{error}");
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn dropping_a_foreground_command_kills_its_process_group() -> Result<()> {
+    let workspace = test_workspace()?;
+    let pid_path = workspace.join("leader.pid");
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let task = tokio::spawn(async move {
+        tools
+            .execute(&call(
+                "run_command",
+                r#"{"command":"echo $$ > leader.pid; sleep 30 & wait"}"#,
+            ))
+            .await
+    });
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while !pid_path.is_file() {
+        if tokio::time::Instant::now() >= deadline {
+            task.abort();
+            return Err(Error::Tool("command did not publish its pid".to_string()));
+        }
+        tokio::task::yield_now().await;
+    }
+    let pid = std::fs::read_to_string(&pid_path)?.trim().to_string();
+    task.abort();
+    drop(task.await);
+
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::process::Command::new("kill")
+        .args(["-0", &format!("-{pid}")])
+        .status()
+        .is_ok_and(|status| status.success())
+    {
+        if tokio::time::Instant::now() >= deadline {
+            return Err(Error::Tool(format!(
+                "process group {pid} survived command cancellation"
+            )));
+        }
+        tokio::task::yield_now().await;
+    }
+
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn edit_file_replaces_by_tag_and_rejects_stale_hash() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
@@ -197,10 +373,176 @@ async fn edit_file_replace_text_rejects_unsafe_matches_before_writing() -> Resul
 async fn read_file_rejects_paths_outside_workspace() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
-    let result = tools
+    let relative = tools
         .execute(&call("read_file", r#"{"path":"../outside.txt"}"#))
         .await;
-    result.unwrap_err();
+    relative.unwrap_err();
+    let args = serde_json::json!({"path": workspace.canonicalize()?.parent()});
+    let absolute = tools
+        .execute(&call("read_file", &serde_json::to_string(&args)?))
+        .await;
+    absolute.unwrap_err();
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_accepts_an_absolute_workspace_path() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let args = serde_json::json!({"path": workspace.canonicalize()?.join("note.txt")});
+    let result = tools
+        .execute(&call("read_file", &serde_json::to_string(&args)?))
+        .await?;
+    assert!(result.contains("hello"), "{result}");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn unrestricted_tools_read_and_write_outside_the_workspace() -> Result<()> {
+    let workspace = test_workspace()?;
+    let outside = outside_fixture(&workspace, "unrestricted-tools");
+    let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools.set_unrestricted();
+    let write = serde_json::json!({"path": &outside, "content": "outside\n"});
+    tools
+        .execute(&call("write_file", &serde_json::to_string(&write)?))
+        .await?;
+    let read = serde_json::json!({"path": &outside});
+    let result = tools
+        .execute(&call("read_file", &serde_json::to_string(&read)?))
+        .await?;
+    assert!(result.contains("outside"), "{result}");
+    std::fs::remove_file(outside)?;
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_keeps_normal_window_output() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::write(workspace.join("small.txt"), "one\ntwo\nthree\n")?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call(
+            "read_file",
+            r#"{"path":"small.txt","offset":2,"limit":1}"#,
+        ))
+        .await?;
+    assert!(out.starts_with("small.txt  lines 2-2/3"), "{out}");
+    assert!(
+        out.contains(&format!("2:{}|two", line_hash("two"))),
+        "{out}"
+    );
+    assert!(!out.contains("unknown"), "{out}");
+    std::fs::write(workspace.join("small.txt"), "one\ntwo")?;
+    let out = tools
+        .execute(&call("read_file", r#"{"path":"small.txt","offset":2}"#))
+        .await?;
+    assert_eq!(
+        out,
+        format!("small.txt  lines 2-2/2\n2:{}|two", line_hash("two"))
+    );
+    std::fs::write(workspace.join("small.txt"), b"unfinished \xc3")?;
+    let error = tools
+        .execute(&call("read_file", r#"{"path":"small.txt"}"#))
+        .await
+        .expect_err("invalid UTF-8 at EOF must not be treated as a read limit");
+    assert!(error.to_string().contains("not valid UTF-8"));
+    std::fs::write(workspace.join("empty.txt"), "")?;
+    let empty = tools
+        .execute(&call("read_file", r#"{"path":"empty.txt"}"#))
+        .await?;
+    assert_eq!(empty, "empty.txt  lines 0-0/0");
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_never_renumbers_lines_after_a_clipped_window() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::write(
+        workspace.join("window.txt"),
+        format!("first\n{}\ntail\n", "x".repeat(2 * 1024 * 1024)),
+    )?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let out = tools
+        .execute(&call("read_file", r#"{"path":"window.txt"}"#))
+        .await?;
+    assert!(
+        out.contains("lines 1-1/3"),
+        "{}",
+        &out[..out.len().min(100)]
+    );
+    assert!(!out.contains("|tail"));
+    assert!(out.contains("continue with offset 2"));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_file_bounds_large_prefix_and_reports_unknown_total() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::write(
+        workspace.join("large.txt"),
+        format!("first\n{}", "x".repeat(9 * 1024 * 1024)),
+    )?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let head = tools
+        .execute(&call(
+            "read_file",
+            r#"{"path":"large.txt","offset":1,"limit":1}"#,
+        ))
+        .await?;
+    assert!(head.contains("lines 1-1/unknown"), "{head}");
+    assert!(head.contains("total line count unknown"), "{head}");
+    assert!(
+        head.len() < 1000,
+        "the selected short line is bounded: {}",
+        head.len()
+    );
+
+    let giant = tools
+        .execute(&call(
+            "read_file",
+            r#"{"path":"large.txt","offset":2,"limit":1}"#,
+        ))
+        .await?;
+    assert!(giant.contains("line clipped"), "{giant}");
+    assert!(giant.contains("lines 2-2/unknown"), "{giant}");
+    assert!(giant.len() < 2_200_000, "{} bytes", giant.len());
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn write_file_preserves_mode_and_ignores_prepared_temp_symlink() -> Result<()> {
+    let workspace = test_workspace()?;
+    let target = workspace.join("script.sh");
+    std::fs::write(&target, "old\n")?;
+    let mut permissions = std::fs::metadata(&target)?.permissions();
+    std::os::unix::fs::PermissionsExt::set_mode(&mut permissions, 0o751);
+    std::fs::set_permissions(&target, permissions)?;
+
+    let outside = tempfile::tempdir()?;
+    let sentinel = outside.path().join("sentinel.txt");
+    std::fs::write(&sentinel, "sentinel\n")?;
+    std::os::unix::fs::symlink(&sentinel, workspace.join("script.sh.mage-tmp"))?;
+
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    tools
+        .execute(&call(
+            "write_file",
+            r#"{"path":"script.sh","content":"new\n"}"#,
+        ))
+        .await?;
+
+    assert_eq!(std::fs::read_to_string(&target)?, "new\n");
+    let mode = std::os::unix::fs::PermissionsExt::mode(&std::fs::metadata(&target)?.permissions());
+    assert_eq!(mode & 0o777, 0o751);
+    assert_eq!(std::fs::read_to_string(&sentinel)?, "sentinel\n");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -369,17 +711,22 @@ async fn run_command_echoes_and_force_push_is_denied() -> Result<()> {
 }
 
 #[tokio::test]
-async fn run_command_preserves_a_failed_pipeline_status() -> Result<()> {
+async fn run_command_uses_the_last_pipeline_status() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
-    let outcome = tools
+    let stopped = tools
         .execute_outcome(&call(
             "run_command",
-            r#"{"command":"printf failure | grep failure; false | true"}"#,
+            r#"{"command":"yes | head -n 1 >/dev/null && echo after"}"#,
         ))
         .await?;
-    assert!(!outcome.success);
-    assert!(outcome.text.contains("exit 1"));
+    assert!(stopped.success);
+    assert!(stopped.text.contains("after"));
+    let failed = tools
+        .execute_outcome(&call("run_command", r#"{"command":"true | false"}"#))
+        .await?;
+    assert!(!failed.success);
+    assert!(failed.text.contains("exit 1"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -537,28 +884,23 @@ async fn sandbox_no_net_blocks_a_real_connection() -> Result<()> {
 }
 
 #[tokio::test]
-async fn repeated_command_is_not_rerun_until_something_changes() -> Result<()> {
+async fn repeated_command_runs_again() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let first = tools
-        .execute(&call("run_command", r#"{"command":"echo once"}"#))
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf x >> count.txt; wc -c < count.txt"}"#,
+        ))
         .await?;
     let second = tools
-        .execute(&call("run_command", r#"{"command":"echo once"}"#))
+        .execute(&call(
+            "run_command",
+            r#"{"command":"printf x >> count.txt; wc -c < count.txt"}"#,
+        ))
         .await?;
-    assert!(!first.contains("result repeated"));
-    assert!(second.contains("result repeated"), "{second}");
-    assert!(second.contains("once"));
-    tools
-        .execute(&call("write_file", r#"{"path":"touch.txt","content":"x"}"#))
-        .await?;
-    let third = tools
-        .execute(&call("run_command", r#"{"command":"echo once"}"#))
-        .await?;
-    assert!(
-        !third.contains("result repeated"),
-        "an edit invalidates the repeat"
-    );
+    assert!(first.ends_with('1'), "{first}");
+    assert!(second.ends_with('2'), "{second}");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -653,6 +995,15 @@ fn editing_tools_advertise_flat_operation_shapes() -> Result<()> {
     assert_eq!(
         replace.function.parameters["properties"]["tag"]["type"],
         "string"
+    );
+    let batch = definitions
+        .iter()
+        .find(|tool| tool.function.name == "replace_texts")
+        .expect("replace_texts definition");
+    assert!(
+        batch.function.parameters["properties"]["edits"]
+            .get("maxItems")
+            .is_none()
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -1219,18 +1570,20 @@ async fn run_command_times_out() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let result = tools
-        .execute(&call(
+        .execute_outcome(&call(
             "run_command",
             r#"{"command":"sleep 5","timeout_secs":1}"#,
         ))
-        .await;
-    result.unwrap_err();
+        .await?;
+    assert!(!result.success);
+    assert!(result.mutated);
+    assert!(result.text.contains("command timed out after 1s"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
 
 #[tokio::test]
-async fn run_command_streams_large_output_to_a_job_log() -> Result<()> {
+async fn run_command_streams_large_output_without_workspace_state() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let out = tools
@@ -1244,7 +1597,7 @@ async fn run_command_streams_large_output_to_a_job_log() -> Result<()> {
     assert!(out.contains("line-7999"));
     assert!(!out.contains(".mage/jobs/"));
     assert!(out.contains("lines captured"));
-    assert!(workspace.join(".mage/jobs").read_dir()?.next().is_some());
+    assert!(!workspace.join(".mage").exists());
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1428,20 +1781,27 @@ async fn replace_text_counts_overlap_as_one_placement() -> Result<()> {
 }
 
 #[tokio::test]
-async fn replace_texts_rejects_more_than_the_cap() -> Result<()> {
+async fn replace_texts_has_no_fixed_batch_limit() -> Result<()> {
     let workspace = test_workspace()?;
     let path = workspace.join("big.txt");
-    std::fs::write(&path, "x\n")?;
+    let original = (0..17)
+        .map(|i| format!("line-{i:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(&path, &original)?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let edits: Vec<_> = (0..17)
-        .map(|i| serde_json::json!({"old": format!("l{i}"), "new": "y"}))
+        .map(|i| serde_json::json!({"old": format!("line-{i:02}"), "new": format!("done-{i:02}")}))
         .collect();
     let args = serde_json::json!({"path": "big.txt", "edits": edits});
-    let out = tools
+    tools
         .execute(&call("replace_texts", &serde_json::to_string(&args)?))
-        .await;
-    assert!(out.is_err(), "expected the edit cap to reject 17 edits");
-    assert_eq!(std::fs::read_to_string(&path)?, "x\n");
+        .await?;
+    let expected = (0..17)
+        .map(|i| format!("done-{i:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(std::fs::read_to_string(&path)?, expected);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

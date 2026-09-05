@@ -1,9 +1,11 @@
 use super::compaction::force_compact;
 use super::*;
 use crate::ProviderFailureKind;
+use crate::durable::driver::Verdict;
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
+use std::future::Future;
 use std::time::Duration;
 
 use crate::bus::{envelope, is_bus_tool};
@@ -12,6 +14,34 @@ use crate::provider::StopReason;
 use crate::session::decorate;
 use crate::tools::{ToolOutput, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
+
+const RETRY_LIMIT: usize = 6;
+const RETRY_BASE_SECS: u64 = 2;
+const RETRY_MAX_SECS: u64 = 60;
+
+pub(super) enum WaitError {
+    Deadline(Duration),
+    Provider(Error),
+}
+
+impl WaitError {
+    pub(super) fn millis(&self, started: Instant) -> u64 {
+        let elapsed = super::elapsed_millis(started);
+        match self {
+            Self::Deadline(remaining) => {
+                elapsed.max(u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX))
+            }
+            Self::Provider(_) => elapsed,
+        }
+    }
+
+    pub(super) fn error(self) -> Error {
+        match self {
+            Self::Deadline(_) => Error::Config("work-time limit reached".to_string()),
+            Self::Provider(error) => error,
+        }
+    }
+}
 
 impl<P: Provider> Loop<P> {
     fn take_mail(
@@ -78,11 +108,9 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, String, usize, Attempt, u64)>> {
-        let mut attempt = 0_u32;
-        let mut overflowed = false;
-        let mut repaired = false;
-        let mut wait = 2_u64;
         let role = self.round_role();
+        let mut retries = 0_usize;
+        let mut repairs = 0_usize;
         loop {
             let request = self.completion_request(role, messages, tools);
             let prefix_hash = request.prefix_hash();
@@ -95,7 +123,9 @@ impl<P: Provider> Loop<P> {
                 .start_provider(&request.model, super::exposure(&request, &durable))
                 .map_err(super::session_err)?;
             let started = Instant::now();
-            match self.seat(role).0.complete(&request).await {
+            let completion = self.seat(role).0.complete(&request);
+            let reply = self.wait(completion).await;
+            match reply {
                 Ok(message) => {
                     return Ok(Some((
                         message,
@@ -105,7 +135,15 @@ impl<P: Provider> Loop<P> {
                         super::elapsed_millis(started),
                     )));
                 }
-                Err(error) => {
+                Err(error @ WaitError::Deadline(_)) => {
+                    let millis = error.millis(started);
+                    self.session
+                        .fail_provider(durable_attempt, "work-time limit reached", millis)
+                        .map_err(super::session_err)?;
+                    self.spent_tokens = self.session.replay().spent_tokens;
+                    return Ok(None);
+                }
+                Err(WaitError::Provider(error)) => {
                     self.session
                         .fail_provider(
                             durable_attempt,
@@ -119,13 +157,14 @@ impl<P: Provider> Loop<P> {
                     }
                     let text = error.to_string();
                     let failure = error.provider_failure();
-                    if !repaired
-                        && failure.is_some_and(|failure| {
-                            !failure.partial_output
-                                && failure.kind == ProviderFailureKind::MalformedToolCall
-                        })
-                    {
-                        repaired = true;
+                    if failure.is_some_and(|failure| {
+                        !failure.partial_output
+                            && failure.kind == ProviderFailureKind::MalformedToolCall
+                    }) {
+                        if repairs >= RETRY_LIMIT {
+                            return Err(error);
+                        }
+                        repairs += 1;
                         let input = UserInput::from(
                             "[summon control: the provider rejected the previous tool call because \
                              its arguments were invalid JSON. Retry that action with one valid tool \
@@ -139,21 +178,18 @@ impl<P: Provider> Loop<P> {
                             events,
                             emit,
                             Event::Note {
-                                text: "malformed tool-call JSON — requesting one repaired call"
+                                text: "malformed tool-call JSON — requesting a repaired call"
                                     .to_string(),
                             },
                         )?;
                         continue;
                     }
-                    if !overflowed
-                        && failure.is_some_and(|failure| {
-                            failure.kind == ProviderFailureKind::ContextOverflow
-                        })
+                    if failure
+                        .is_some_and(|failure| failure.kind == ProviderFailureKind::ContextOverflow)
                     {
                         if !force_compact(messages) {
                             return Err(error);
                         }
-                        overflowed = true;
                         self.push_event(
                             events,
                             emit,
@@ -173,22 +209,22 @@ impl<P: Provider> Loop<P> {
                                     | ProviderFailureKind::Transport
                             )
                     });
-                    if attempt >= 3 || !retryable {
+                    if !retryable || retries >= RETRY_LIMIT {
                         return Err(error);
                     }
-                    attempt += 1;
+                    let wait = (RETRY_BASE_SECS << retries).min(RETRY_MAX_SECS);
+                    retries += 1;
                     self.push_event(
                         events,
                         emit,
                         Event::Note {
                             text: format!(
-                                "provider error — retry {attempt}/3 in {wait}s: {}",
+                                "provider error — retrying in {wait}s ({retries}/{RETRY_LIMIT}): {}",
                                 text.lines().next().unwrap_or("unknown")
                             ),
                         },
                     )?;
                     tokio::time::sleep(Duration::from_secs(wait)).await;
-                    wait *= 2;
                 }
             }
         }
@@ -204,9 +240,33 @@ impl<P: Provider> Loop<P> {
             model: self.seat(role).1.to_string(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
-            max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
+            max_output_tokens: None,
             emit_deltas: true,
             effort: self.effort_for(role),
+        }
+    }
+
+    fn remaining_time(&self) -> Option<Duration> {
+        let limit = self.budget.max_secs?.saturating_mul(1_000);
+        Some(Duration::from_millis(
+            limit.saturating_sub(self.session.replay().elapsed_millis),
+        ))
+    }
+
+    pub(super) async fn wait<F>(
+        &self,
+        completion: F,
+    ) -> std::result::Result<AssistantMessage, WaitError>
+    where
+        F: Future<Output = Result<AssistantMessage>> + Send,
+    {
+        if let Some(remaining) = self.remaining_time() {
+            tokio::time::timeout(remaining, completion)
+                .await
+                .map_err(|_elapsed| WaitError::Deadline(remaining))?
+                .map_err(WaitError::Provider)
+        } else {
+            completion.await.map_err(WaitError::Provider)
         }
     }
 
@@ -226,11 +286,59 @@ impl<P: Provider> Loop<P> {
     pub async fn turn_with(
         &mut self,
         input: impl Into<UserInput>,
-        emit: impl FnMut(&Event),
+        mut emit: impl FnMut(&Event),
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
+        let snapshot = crate::diff::snapshot(&self.workspace);
         let messages = self.begin_turn(input.into())?;
-        self.run_turn(messages, emit).await
+        let mut events = Vec::new();
+        let mut usage = Usage::default();
+        let mut rounds = 0;
+        let remaining = self.remaining_time();
+        let before = self.session.replay().elapsed_millis;
+        let started = Instant::now();
+        let turn = self.run_turn(
+            messages,
+            snapshot.clone(),
+            &mut emit,
+            &mut events,
+            &mut usage,
+            &mut rounds,
+        );
+        let result = match remaining {
+            Some(remaining) => tokio::time::timeout(remaining, turn)
+                .await
+                .map_err(|_elapsed| ()),
+            None => Ok(turn.await),
+        };
+        let accounted = self.session.replay().elapsed_millis.saturating_sub(before);
+        let millis = super::elapsed_millis(started).saturating_sub(accounted);
+        if millis > 0 {
+            self.session
+                .charge(
+                    Meter {
+                        millis,
+                        ..Meter::default()
+                    },
+                    "active turn time",
+                    &self.model,
+                )
+                .map_err(super::session_err)?;
+        }
+        match result {
+            Ok(result) => result,
+            Err(()) => {
+                self.abort_turn(
+                    Some("work-time limit reached".to_string()),
+                    &mut events,
+                    &mut emit,
+                    &mut usage,
+                    rounds,
+                    snapshot,
+                )
+                .await
+            }
+        }
     }
 
     pub async fn turn_mail_with(&mut self, emit: impl FnMut(&Event)) -> Result<Turn> {
@@ -247,39 +355,55 @@ impl<P: Provider> Loop<P> {
     async fn run_turn(
         &mut self,
         mut messages: Vec<Message>,
+        snapshot: String,
         mut emit: impl FnMut(&Event),
+        events: &mut Vec<Event>,
+        usage: &mut Usage,
+        reached: &mut usize,
     ) -> Result<Turn> {
-        let mut events = Vec::new();
-        let mut usage = Usage::default();
         let mut abort_reason = None;
         let tools = self.advertised_tools().to_vec();
         if std::mem::take(&mut self.accepted) {
             self.push_event(
-                &mut events,
+                events,
                 &mut emit,
                 Event::Note {
                     text: "plan accepted — /plan reject to discard".to_string(),
                 },
             )?;
         }
-        self.scout(&mut messages, &mut usage, &mut events, &mut emit)
-            .await?;
+        self.scout(&mut messages, usage, events, &mut emit).await?;
 
-        let mut reached = self.max_rounds;
-        for round in 1..=self.max_rounds {
-            reached = round;
+        loop {
+            while self.budget.max_tokens.is_some() && self.child_budget_reserved() > 0 {
+                self.await_children(events, &mut emit, usage).await?;
+            }
+            if self.max_rounds > 0 && *reached >= self.max_rounds {
+                break;
+            }
+            *reached = reached.saturating_add(1);
+            let round = *reached;
             if let Some(reason) = self.round_abort() {
                 abort_reason = Some(reason);
                 break;
             }
-            self.prepare_round(&mut messages, &tools, &mut usage, &mut events, &mut emit)
-                .await?;
+            let round_tools = tools.as_slice();
+            if let Err(error) = self
+                .prepare_round(&mut messages, round_tools, usage, events, &mut emit)
+                .await
+            {
+                if let Some(reason) = self.round_abort() {
+                    abort_reason = Some(reason);
+                    break;
+                }
+                return Err(error);
+            }
             if let Some(reason) = self.round_abort() {
                 abort_reason = Some(reason);
                 break;
             }
             let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
-                .complete_retry(&mut messages, &tools, &mut events, &mut emit)
+                .complete_retry(&mut messages, round_tools, events, &mut emit)
                 .await?
             else {
                 abort_reason = self.round_abort();
@@ -293,8 +417,9 @@ impl<P: Provider> Loop<P> {
                 &assistant,
                 prefix_hash,
                 role,
-                &mut usage,
-                &mut events,
+                Some(live_millis),
+                usage,
+                events,
                 &mut emit,
             )?;
             let stop_reason = assistant.stop_reason;
@@ -307,16 +432,23 @@ impl<P: Provider> Loop<P> {
                 self.session
                     .finish_provider(durable_attempt, &message.content, &reasoning, meter)
                     .map_err(super::session_err)?;
-                let control = UserInput::from(
-                    "[summon control: the previous round reached its output limit. Continue from \
-                     that reasoning, keep the rest brief, and take the next concrete action.]",
-                );
+                let control = if message.content.trim().is_empty() && !reasoning.is_empty() {
+                    UserInput::from(
+                        "/no_think [summon control: the previous round used its output on \
+                         reasoning. Stop reasoning and give the concise final answer now.]",
+                    )
+                } else {
+                    UserInput::from(
+                        "[summon control: the previous round reached its output limit. Continue \
+                         briefly from the partial answer.]",
+                    )
+                };
                 self.session
                     .steer(&control.text)
                     .map_err(super::session_err)?;
                 messages.push(Message::user(control));
                 self.push_event(
-                    &mut events,
+                    events,
                     &mut emit,
                     Event::Note {
                         text: "round output limit reached — continuing with the same context"
@@ -338,6 +470,7 @@ impl<P: Provider> Loop<P> {
                         durable_attempt,
                         reasoning,
                         meter,
+                        snapshot,
                     )
                     .await;
             }
@@ -360,17 +493,10 @@ impl<P: Provider> Loop<P> {
                         .collect::<Vec<_>>(),
                 )
                 .map_err(super::session_err)?;
-            self.execute_calls(
-                planned,
-                calls,
-                &mut messages,
-                &mut events,
-                &mut emit,
-                &mut usage,
-            )
-            .await?;
+            self.execute_calls(planned, calls, &mut messages, events, &mut emit, usage)
+                .await?;
         }
-        self.abort_turn(abort_reason, events, emit, usage, reached)
+        self.abort_turn(abort_reason, events, emit, usage, *reached, snapshot)
             .await
     }
 
@@ -456,7 +582,7 @@ impl<P: Provider> Loop<P> {
         Ok(messages)
     }
 
-    fn round_abort(&self) -> Option<String> {
+    pub(super) fn round_abort(&self) -> Option<String> {
         self.budget.breach(self.spent_tokens, self.elapsed_secs())
     }
 
@@ -466,6 +592,12 @@ impl<P: Provider> Loop<P> {
             note.push_str("\n\nHarness: Work remains in Plan until you select and accept it.");
         } else if progress.kind != WorkKind::Single {
             note.push_str("\n\nHarness: the Steps or Goal runner owns this Work.");
+        }
+        if progress.kind == WorkKind::Goal {
+            note.push_str(&format!(
+                "\n\nHarness objective (verbatim, this is what must be met):\n{}",
+                progress.objective
+            ));
         }
         if progress.kind == WorkKind::Goal && progress.max_turns > 0 {
             note.push_str(&format!(
@@ -497,6 +629,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         self.bus_heartbeat("working");
+        self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
         self.auto_compact(messages, tools, usage, events, emit)
@@ -529,6 +662,7 @@ impl<P: Provider> Loop<P> {
                     .reasoning_tokens
                     .saturating_sub(before.reasoning_tokens),
                 cached_tokens: cached,
+                millis: None,
                 prefix_hash: format!("{role:?}").to_lowercase(),
                 cost: self.price_for(role).map(|price| {
                     price.cost(u64::from(prompt), u64::from(completion), u64::from(cached))
@@ -537,11 +671,16 @@ impl<P: Provider> Loop<P> {
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "records one provider usage event with its durable and live sinks"
+    )]
     pub(super) fn record_usage(
         &mut self,
         assistant: &AssistantMessage,
         prefix_hash: String,
         role: workflow::Role,
+        millis: Option<u64>,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -558,6 +697,7 @@ impl<P: Provider> Loop<P> {
                     completion_tokens: assistant.usage.completion_tokens,
                     reasoning_tokens: assistant.usage.reasoning_tokens,
                     cached_tokens: assistant.usage.cached_tokens,
+                    millis,
                     prefix_hash,
                     cost: self.price_for(role).map(|price| {
                         price.cost(
@@ -580,13 +720,14 @@ impl<P: Provider> Loop<P> {
         &mut self,
         message: Message,
         messages: Vec<Message>,
-        mut events: Vec<Event>,
+        events: &mut Vec<Event>,
         mut emit: impl FnMut(&Event),
         round: usize,
-        mut usage: Usage,
+        usage: &mut Usage,
         attempt: Attempt,
         reasoning: String,
         meter: Meter,
+        snapshot: String,
     ) -> Result<Turn> {
         if message.content.trim().is_empty() {
             self.session
@@ -602,6 +743,8 @@ impl<P: Provider> Loop<P> {
             ));
         }
         if self.plan {
+            let receipt = Receipt::new(Vec::new(), Vec::new(), snapshot, events);
+            let context = verify::context(&message.content, &receipt);
             self.session
                 .finish_plan(
                     attempt,
@@ -609,22 +752,20 @@ impl<P: Provider> Loop<P> {
                     &reasoning,
                     meter,
                     self.verify.as_deref().unwrap_or_default(),
+                    &context,
                 )
                 .map_err(super::session_err)?;
             self.commit(&messages);
             let progress = self.work_progress()?;
-            self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+            self.push_event(events, &mut emit, Event::Work { progress })?;
+            self.push_event(events, &mut emit, Event::Receipt { receipt })?;
             let text = message.content;
-            self.push_event(
-                &mut events,
-                &mut emit,
-                Event::Assistant { text: text.clone() },
-            )?;
+            self.push_event(events, &mut emit, Event::Assistant { text: text.clone() })?;
             return Ok(Turn {
                 text,
-                events,
+                events: std::mem::take(events),
                 rounds: round,
-                usage,
+                usage: std::mem::take(usage),
                 checks: Vec::new(),
                 aborted: false,
             });
@@ -633,19 +774,31 @@ impl<P: Provider> Loop<P> {
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
         let (text, checks, receipt) = if self.session.stage() == Some(Stage::Execute) {
-            let (mut checks, mut running) = self.await_jobs(&mut events, &mut emit).await?;
-            running.extend(self.await_children(&mut events, &mut emit).await?);
+            let (mut checks, mut running, unsettled) = self.await_jobs(events, &mut emit).await?;
+            let before_children = self.spent_tokens;
+            running.extend(self.await_children(events, &mut emit, usage).await?);
+            if self.spent_tokens > before_children
+                && let Some(reason) = self.round_abort()
+            {
+                return self
+                    .abort_turn(Some(reason), events, emit, usage, round, snapshot)
+                    .await;
+            }
             if !running.is_empty() {
                 let note = format!(
                     "[summon: background work still running — {} — wait for it with the job or child id, or kill it, before you report done]",
                     running.join("; ")
                 );
-                if self.session.defer(&note).map_err(super::session_err)? {
+                if self
+                    .session
+                    .defer(&note, unsettled)
+                    .map_err(super::session_err)?
+                {
                     self.commit(&messages);
                     let progress = self.work_progress()?;
-                    self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+                    self.push_event(events, &mut emit, Event::Work { progress })?;
                     self.push_event(
-                        &mut events,
+                        events,
                         &mut emit,
                         Event::Note {
                             text: format!(
@@ -655,25 +808,21 @@ impl<P: Provider> Loop<P> {
                         },
                     )?;
                     let text = message.content;
-                    self.push_event(
-                        &mut events,
-                        &mut emit,
-                        Event::Assistant { text: text.clone() },
-                    )?;
+                    self.push_event(events, &mut emit, Event::Assistant { text: text.clone() })?;
                     return Ok(Turn {
                         text,
-                        events,
+                        events: std::mem::take(events),
                         rounds: round,
-                        usage,
+                        usage: std::mem::take(usage),
                         checks: Vec::new(),
                         aborted: false,
                     });
                 }
             }
-            let killed = self.kill_spawned("the parent turn ended").await?;
+            let killed = self.kill_spawned("the parent turn ended", usage).await?;
             if !killed.is_empty() {
                 self.push_event(
-                    &mut events,
+                    events,
                     &mut emit,
                     Event::Note {
                         text: format!(
@@ -684,54 +833,22 @@ impl<P: Provider> Loop<P> {
                 )?;
             }
             let paths = self.session.enter_verify().map_err(super::session_err)?;
-            checks.extend(self.run_verify(&mut events, &mut emit).await?);
-            let mut verdict = self
-                .session
-                .prepare_verdict(checks.iter().all(|check| check.passed))
-                .map_err(super::session_err)?;
-            if let Some(output) = verdict.diagnostic.clone() {
-                let outcome = Outcome {
-                    command: "workspace candidate unchanged".to_string(),
-                    passed: false,
-                    output,
-                };
-                self.push_event(
-                    &mut events,
-                    &mut emit,
-                    Event::Verify {
-                        command: outcome.command.clone(),
-                        passed: false,
-                    },
-                )?;
-                checks.push(outcome);
-                verdict.passed = false;
-            }
+            checks.extend(self.run_verify(events, &mut emit).await?);
+            let mut verdict = self.verdict(&mut checks, events, &mut emit)?;
             let mut rejected = None;
             if verdict.passed && self.seat_model(workflow::Role::Review).is_some() {
                 self.session.enter_review().map_err(super::session_err)?;
                 let objective = self.session.objective().map_err(super::session_err)?;
                 let evidence = verify::summary(&paths, &checks);
                 let before = usage.clone();
-                let reviewed = review::outcome(
-                    self,
-                    &objective,
-                    &message.content,
-                    &evidence,
-                    &paths,
-                    &mut usage,
-                )
-                .await;
-                self.seat_usage(
-                    workflow::Role::Review,
-                    &before,
-                    &usage,
-                    &mut events,
-                    &mut emit,
-                )?;
+                let reviewed =
+                    review::outcome(self, &objective, &message.content, &evidence, &paths, usage)
+                        .await;
+                self.seat_usage(workflow::Role::Review, &before, usage, events, &mut emit)?;
                 match reviewed {
                     Ok(review) => {
                         self.push_event(
-                            &mut events,
+                            events,
                             &mut emit,
                             Event::Verify {
                                 command: review.command.clone(),
@@ -741,49 +858,54 @@ impl<P: Provider> Loop<P> {
                         if !review.passed {
                             verdict.passed = false;
                             rejected = Some(review.output.clone());
-                            let findings: String = review.output.chars().take(600).collect();
                             self.push_event(
-                                &mut events,
+                                events,
                                 &mut emit,
                                 Event::Note {
-                                    text: format!("review findings:\n{findings}"),
+                                    text: format!("review findings:\n{}", review.output),
                                 },
                             )?;
                         }
                         checks.push(review);
                     }
                     Err(why) => {
+                        let review = Outcome {
+                            command: review::CHECK.to_string(),
+                            passed: false,
+                            output: why,
+                        };
                         self.push_event(
-                            &mut events,
+                            events,
+                            &mut emit,
+                            Event::Verify {
+                                command: review.command.clone(),
+                                passed: false,
+                            },
+                        )?;
+                        let why = review.output.clone();
+                        verdict.passed = false;
+                        rejected = Some(why.clone());
+                        checks.push(review);
+                        self.push_event(
+                            events,
                             &mut emit,
                             Event::Note {
-                                text: format!("review skipped — {why}"),
+                                text: format!("review unavailable — {why}"),
                             },
                         )?;
                     }
                 }
             }
-            let receipt = Receipt::new(paths, checks.clone());
+            let receipt = Receipt::new(paths, checks.clone(), snapshot, events);
             let decision = if verdict.passed {
                 if let Some(objective) =
                     self.session.goal_objective().map_err(super::session_err)?
                 {
                     let before = usage.clone();
-                    let decision = goal::decision(
-                        self,
-                        &objective,
-                        &message.content,
-                        &receipt.text,
-                        &mut usage,
-                    )
-                    .await;
-                    self.seat_usage(
-                        workflow::Role::Judge,
-                        &before,
-                        &usage,
-                        &mut events,
-                        &mut emit,
-                    )?;
+                    let decision =
+                        goal::decision(self, &objective, &message.content, &receipt.text, usage)
+                            .await;
+                    self.seat_usage(workflow::Role::Judge, &before, usage, events, &mut emit)?;
                     decision
                 } else {
                     Decision::Automatic
@@ -791,6 +913,10 @@ impl<P: Provider> Loop<P> {
             } else {
                 Decision::Automatic
             };
+            if verdict.passed {
+                verdict = self.verdict(&mut checks, events, &mut emit)?;
+            }
+            let receipt = Receipt::new(receipt.changes, checks.clone(), receipt.snapshot, events);
             let context = verify::context(&message.content, &receipt);
             match rejected {
                 Some(findings) => self
@@ -809,20 +935,49 @@ impl<P: Provider> Loop<P> {
         };
         self.commit(&messages);
         let progress = self.work_progress()?;
-        self.push_event(&mut events, &mut emit, Event::Work { progress })?;
+        self.push_event(events, &mut emit, Event::Work { progress })?;
         if let Some(receipt) = receipt {
-            self.push_event(&mut events, &mut emit, Event::Receipt { receipt })?;
+            self.push_event(events, &mut emit, Event::Receipt { receipt })?;
         }
         let event = Event::Assistant { text: text.clone() };
-        self.push_event(&mut events, &mut emit, event)?;
+        self.push_event(events, &mut emit, event)?;
         Ok(Turn {
             text,
-            events,
+            events: std::mem::take(events),
             rounds: round,
-            usage,
+            usage: std::mem::take(usage),
             checks,
             aborted: false,
         })
+    }
+
+    fn verdict(
+        &mut self,
+        checks: &mut Vec<Outcome>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Verdict> {
+        let verdict = self
+            .session
+            .prepare_verdict(checks.iter().all(|check| check.passed))
+            .map_err(super::session_err)?;
+        if let Some(output) = &verdict.diagnostic {
+            let command = "workspace candidate unchanged".to_string();
+            self.push_event(
+                events,
+                emit,
+                Event::Verify {
+                    command: command.clone(),
+                    passed: false,
+                },
+            )?;
+            checks.push(Outcome {
+                command,
+                passed: false,
+                output: output.clone(),
+            });
+        }
+        Ok(verdict)
     }
 
     async fn execute_calls(
@@ -867,17 +1022,16 @@ impl<P: Provider> Loop<P> {
             }))
             .await
         } else {
-            let mut outputs = Vec::with_capacity(calls.len());
-            for call in &calls {
+            for (planned, call) in planned.into_iter().zip(calls) {
                 let started = Instant::now();
                 let (output, child_usage) = if call.function.name == "task" {
-                    match self.task_execute(call, events, emit).await {
+                    match self.task_execute(&call, events, emit).await {
                         Ok(execution) => (Ok(execution.output), Some(execution.usage)),
                         Err(error) => (Err(error), None),
                     }
                 } else if is_bus_tool(&call.function.name) {
                     (
-                        self.bus_execute(call).map(|text| ToolOutput {
+                        self.bus_execute(&call).map(|text| ToolOutput {
                             text,
                             success: true,
                             mutated: false,
@@ -885,52 +1039,60 @@ impl<P: Provider> Loop<P> {
                         None,
                     )
                 } else {
-                    (self.tools.execute_outcome(call).await, None)
+                    (self.tools.execute_outcome(&call).await, None)
                 };
-                outputs.push((output, super::elapsed_millis(started), child_usage));
+                if let Some(child_usage) = child_usage {
+                    usage.add(&child_usage);
+                }
+                self.finish_call(
+                    planned,
+                    call,
+                    (output, super::elapsed_millis(started)),
+                    messages,
+                    events,
+                    emit,
+                )?;
             }
-            outputs
+            self.commit(messages);
+            return Ok(());
         };
-        let mut finished = Vec::new();
-        let mut results = Vec::new();
         for ((planned, call), (output, millis, child_usage)) in
             planned.into_iter().zip(calls).zip(outputs)
         {
             if let Some(child_usage) = child_usage {
                 usage.add(&child_usage);
             }
-            let (success, mutated, text) = match output {
-                Ok(output) => (output.success, output.mutated, output.text),
-                Err(error) => (false, false, error.to_string()),
-            };
-            finished.push((planned, text.clone(), success, millis));
-            results.push((call.id, success, mutated, text));
-        }
-        self.session
-            .finish_tools(
-                &finished
-                    .iter()
-                    .map(|(id, text, success, millis)| (*id, text.as_str(), *success, *millis))
-                    .collect::<Vec<_>>(),
-            )
-            .map_err(super::session_err)?;
-        if results
-            .iter()
-            .any(|(_, success, mutated, _)| *success && *mutated)
-        {
-            self.session.mark_edit().map_err(super::session_err)?;
-        }
-        for (id, success, mutated, text) in results {
-            let event = Event::ToolResult {
-                id: id.clone(),
-                success,
-                mutated,
-                output: text.clone(),
-            };
-            self.push_event(events, emit, event)?;
-            messages.push(Message::tool(id, text));
+            self.finish_call(planned, call, (output, millis), messages, events, emit)?;
         }
         self.commit(messages);
+        Ok(())
+    }
+
+    fn finish_call(
+        &mut self,
+        planned: Call,
+        call: ToolCall,
+        result: (Result<ToolOutput>, u64),
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let (output, millis) = result;
+        let (success, mutated, text) = match output {
+            Ok(output) => (output.success, output.mutated, output.text),
+            Err(error) => (false, false, error.to_string()),
+        };
+        self.session
+            .finish_tools(&[(planned, text.as_str(), success, millis)])
+            .map_err(super::session_err)?;
+        let event = Event::ToolResult {
+            id: call.id.clone(),
+            success,
+            mutated,
+            output: text.clone(),
+        };
+        self.push_event(events, emit, event)?;
+        messages.push(Message::tool(call.id, text));
         Ok(())
     }
 
@@ -938,15 +1100,21 @@ impl<P: Provider> Loop<P> {
         &mut self,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<(Vec<Outcome>, Vec<String>)> {
+    ) -> Result<(Vec<Outcome>, Vec<String>, Vec<String>)> {
         let mut outcomes = Vec::new();
         let mut running = Vec::new();
+        let mut unsettled = Vec::new();
         let session = self.session.id().to_string();
-        let mut latest: BTreeMap<String, jobs::Record> = BTreeMap::new();
-        for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
-            latest.insert(record.command.clone(), record);
+        let mut owned: BTreeMap<String, jobs::Record> = BTreeMap::new();
+        for id in self.session.jobs() {
+            if let Ok(record) = jobs::load(&self.workspace, &id) {
+                owned.insert(record.id.clone(), record);
+            }
         }
-        for record in latest.into_values() {
+        for record in jobs::since(&self.workspace, self.turn_started, Some(&session)) {
+            owned.insert(record.id.clone(), record);
+        }
+        for record in owned.into_values() {
             let label = format!("job {} `{}`", record.id, record.command);
             let started = Instant::now();
             let mut wait = 1_u64;
@@ -974,6 +1142,7 @@ impl<P: Provider> Loop<P> {
             }
             if status.running {
                 running.push(label.clone());
+                unsettled.push(record.id.clone());
             }
             let outcome = Outcome {
                 command: label,
@@ -997,7 +1166,7 @@ impl<P: Provider> Loop<P> {
             )?;
             outcomes.push(outcome);
         }
-        Ok((outcomes, running))
+        Ok((outcomes, running, unsettled))
     }
 
     async fn run_verify(
@@ -1067,27 +1236,41 @@ impl<P: Provider> Loop<P> {
     async fn abort_turn(
         &mut self,
         abort_reason: Option<String>,
-        mut events: Vec<Event>,
+        events: &mut Vec<Event>,
         mut emit: impl FnMut(&Event),
-        usage: Usage,
+        usage: &mut Usage,
         reached: usize,
+        snapshot: String,
     ) -> Result<Turn> {
         let reason =
             abort_reason.unwrap_or_else(|| format!("stopped after {} rounds", self.max_rounds));
         self.push_event(
-            &mut events,
+            events,
             &mut emit,
             Event::Aborted {
                 reason: reason.clone(),
             },
         )?;
-        drop(self.kill_spawned(&reason).await?);
-        self.session.abort(&reason).map_err(super::session_err)?;
+        let receipt = Receipt::aborted(snapshot, events);
+        self.push_event(
+            events,
+            &mut emit,
+            Event::Receipt {
+                receipt: receipt.clone(),
+            },
+        )?;
+        drop(self.kill_spawned(&reason, usage).await?);
+        self.tools.stop_jobs()?;
+        self.session
+            .abort(&reason, Some(&receipt.text))
+            .map_err(super::session_err)?;
+        self.spent_tokens = self.session.replay().spent_tokens;
+        self.hydrate();
         Ok(Turn {
             text: reason,
-            events,
+            events: std::mem::take(events),
             rounds: reached,
-            usage,
+            usage: std::mem::take(usage),
             checks: Vec::new(),
             aborted: true,
         })

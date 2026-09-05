@@ -167,6 +167,7 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         app.caret.peek(),
         app.ticks.peek(),
         editing.as_deref(),
+        app.select.peek(),
     );
     write_line_at(
         &mut cells,
@@ -277,6 +278,10 @@ fn header(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
     join(left, right, width)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "renders one prompt row from the current chat view state"
+)]
 fn prompt_rows(
     cells: &mut [Cell],
     area: [usize; 4],
@@ -285,6 +290,7 @@ fn prompt_rows(
     caret_position: usize,
     ticks: u64,
     editing: Option<&str>,
+    selecting: bool,
 ) {
     let [stride, origin, width, top] = area;
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
@@ -352,7 +358,8 @@ fn prompt_rows(
         ],
     );
     let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
-    let hint = composer_hint(busy, width, &options);
+    let select = selecting.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+    let hint = composer_hint(busy, width, &options, select.as_deref());
     let hint_width = UnicodeWidthStr::width(hint.as_str());
     let dash = width.saturating_sub(hint_width + 2);
     write_line_at(
@@ -370,9 +377,16 @@ fn prompt_rows(
     );
 }
 
-pub(super) fn composer_hint(busy: bool, width: usize, options: &str) -> String {
+pub(super) fn composer_hint(
+    busy: bool,
+    width: usize,
+    options: &str,
+    select: Option<&str>,
+) -> String {
     let available = width.saturating_sub(2);
-    let choices = if busy {
+    let choices = if let Some(key) = select {
+        vec![format!(" select on · mouse to terminal · {key} off ")]
+    } else if busy {
         vec![
             " esc cancel · enter steer · tab queue ".to_string(),
             " ↵ steer · tab queue · esc cancel ".to_string(),

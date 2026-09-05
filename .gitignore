@@ -7,4 +7,3 @@ docs/reviews/
 /.cargo/config.toml
 .DS_Store
 __pycache__/
-scripts/summoner_harbor_smoke.json

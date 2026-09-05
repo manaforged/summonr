@@ -41,6 +41,52 @@ async fn max_rounds_keeps_history() -> Result<()> {
 }
 
 #[tokio::test]
+async fn default_rounds_continue_past_the_old_limit() -> Result<()> {
+    struct RepeatRead(AtomicUsize);
+    impl Provider for RepeatRead {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let round = self.0.fetch_add(1, Ordering::SeqCst);
+                if round < 65 {
+                    return Ok(AssistantMessage {
+                        tool_calls: vec![ToolCall {
+                            id: format!("c{round}"),
+                            kind: ToolKind::Function,
+                            function: ToolFunction {
+                                name: "read_file".to_string(),
+                                arguments: r#"{"path":"note.txt"}"#.to_string(),
+                            },
+                        }],
+                        ..AssistantMessage::default()
+                    });
+                }
+                Ok(AssistantMessage {
+                    content: Some("finished".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        RepeatRead(AtomicUsize::new(0)),
+        "test-model",
+        &workspace,
+        "test",
+    )?;
+    let turn = loop_.turn("keep reading").await?;
+    assert_eq!(turn.rounds, 66);
+    assert_eq!(turn.text, "finished");
+    assert!(!turn.aborted);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
     let workspace = test_workspace()?;
     struct Planner;
@@ -59,25 +105,91 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
     }
     let mut loop_ = Loop::with_session(Planner, "test-model", &workspace, "test")?.with_plan();
     let names = loop_.tool_names();
-    assert!(names.iter().any(|name| name == "write_file"));
+    assert!(!names.iter().any(|name| name == "write_file"));
     let turn = loop_.turn("plan something").await?;
     assert_eq!(turn.text, "here is the plan");
+    assert!(
+        turn.events
+            .iter()
+            .any(|event| matches!(event, Event::Receipt { .. }))
+    );
     assert!(
         !workspace.join(".mage/plan.md").is_file(),
         "plan mode must not own .mage/plan.md"
     );
-    assert_eq!(
+    assert!(
         loop_
             .replay_session()
             .history
             .last()
-            .map(|message| message.content.as_str()),
-        Some("here is the plan")
+            .is_some_and(|message| message
+                .content
+                .starts_with("here is the plan\n\nTurn receipt"))
     );
     let denied = loop_
         .execute_tool(&call("write_file", r#"{"path":"x.rs","content":"no"}"#))
         .await;
     denied.unwrap_err();
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn plan_inspection_can_recover_after_eight_calls() -> Result<()> {
+    struct Inspector {
+        rounds: AtomicUsize,
+    }
+    impl Provider for Inspector {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                if round == 8 {
+                    assert!(request.messages.last().is_some_and(|message| {
+                        message.content.contains("unknown tool `missing`")
+                    }));
+                }
+                if round == 10 {
+                    return Ok(AssistantMessage {
+                        content: Some("final review".to_string()),
+                        ..AssistantMessage::default()
+                    });
+                }
+                Ok(AssistantMessage {
+                    content: None,
+                    tool_calls: vec![ToolCall {
+                        id: format!("call-{round}"),
+                        kind: ToolKind::Function,
+                        function: ToolFunction {
+                            name: if round == 7 { "missing" } else { "list_dir" }.to_string(),
+                            arguments: r#"{"path":"."}"#.to_string(),
+                        },
+                    }],
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        Inspector {
+            rounds: AtomicUsize::new(0),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_plan();
+
+    let turn = loop_.turn("review").await?;
+
+    assert_eq!(turn.text, "final review");
+    assert_eq!(turn.rounds, 11);
+    assert_eq!(turn_receipt(&turn).searches, 9);
+    assert_eq!(turn_receipt(&turn).failures.len(), 1);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -360,6 +472,157 @@ async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()>
 }
 
 #[tokio::test]
+async fn restricted_shells_are_read_only_while_file_tools_use_the_write_list() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::create_dir_all(workspace.join(".mage"))?;
+    std::fs::write(
+        workspace.join(".mage/policy.toml"),
+        "write = [\"allowed.txt\"]\n",
+    )?;
+    std::fs::write(workspace.join("forbidden.txt"), "original\n")?;
+    let policy = crate::policy::Policy::discover(&workspace)?;
+    let Some(_) = sandbox_for_test(&workspace)? else {
+        std::fs::remove_dir_all(workspace)?;
+        return Ok(());
+    };
+    let mut tools = crate::tools::ToolRegistry::with_policy_and_search(&workspace, policy, None)?;
+    tools.enable_sandbox(false)?;
+
+    let redirect = tools
+        .execute_outcome(&call(
+            "run_command",
+            r#"{"command":"printf changed > forbidden.txt"}"#,
+        ))
+        .await?;
+    assert!(!redirect.success);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("forbidden.txt"))?,
+        "original\n"
+    );
+
+    let interpreter = tools
+        .execute_outcome(&call(
+            "run_command",
+            r#"{"command":"python3 -c \"open('forbidden.txt','w').write('changed')\""}"#,
+        ))
+        .await?;
+    assert!(!interpreter.success);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("forbidden.txt"))?,
+        "original\n"
+    );
+
+    let read = tools
+        .execute_outcome(&call("run_command", r#"{"command":"cat forbidden.txt"}"#))
+        .await?;
+    assert!(read.success);
+    assert!(read.text.contains("original"));
+
+    tools
+        .execute(&call(
+            "write_file",
+            r#"{"path":"allowed.txt","content":"file tool\n"}"#,
+        ))
+        .await?;
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("allowed.txt"))?,
+        "file tool\n"
+    );
+    let background = match tools
+        .execute_outcome(&call(
+            "run_command",
+            r#"{"command":"sleep 1","background":true}"#,
+        ))
+        .await
+    {
+        Ok(_) => {
+            return Err(Error::Tool(
+                "restricted shells started a background job".to_string(),
+            ));
+        }
+        Err(error) => error.to_string(),
+    };
+    assert!(
+        background.contains("restricted write policy"),
+        "{background}"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn restricted_shells_fail_closed_without_a_sandbox() -> Result<()> {
+    let workspace = test_workspace()?;
+    std::fs::create_dir_all(workspace.join(".mage"))?;
+    std::fs::write(
+        workspace.join(".mage/policy.toml"),
+        "write = [\"allowed.txt\"]\n",
+    )?;
+    let policy = crate::policy::Policy::discover(&workspace)?;
+    let mut tools = crate::tools::ToolRegistry::with_policy_and_search(&workspace, policy, None)?;
+    let error = match tools
+        .execute_outcome(&call("run_command", r#"{"command":"cat note.txt"}"#))
+        .await
+    {
+        Ok(_) => {
+            return Err(Error::Tool(
+                "restricted shell ran without a sandbox".to_string(),
+            ));
+        }
+        Err(error) => error.to_string(),
+    };
+    assert!(error.contains("requires the command sandbox"), "{error}");
+    tools.set_unrestricted();
+    let output = tools
+        .execute_outcome(&call(
+            "run_command",
+            r#"{"command":"printf override > outside-list.txt"}"#,
+        ))
+        .await?;
+    assert!(output.success);
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("outside-list.txt"))?,
+        "override"
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn timed_out_commands_keep_output_and_mark_partial_effects() -> Result<()> {
+    let workspace = test_workspace()?;
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let result = tools
+        .execute_outcome(&call(
+            "run_command",
+            r#"{"command":"printf timeout-diagnostic; printf partial > partial.txt; (sleep 2; printf late > late.txt) & wait","timeout_secs":1}"#,
+        ))
+        .await?;
+    assert!(!result.success);
+    assert!(result.mutated);
+    assert!(
+        result.text.contains("timeout-diagnostic"),
+        "{}",
+        result.text
+    );
+    assert!(
+        result
+            .text
+            .contains("may have changed workspace files before timeout"),
+        "{}",
+        result.text
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("partial.txt"))?,
+        "partial"
+    );
+    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+    assert!(!workspace.join("late.txt").exists());
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn consecutive_ordinary_turns_complete_separate_work() -> Result<()> {
     struct Done;
     impl Provider for Done {
@@ -471,7 +734,7 @@ async fn external_steps_turn_stays_attached_to_durable_work() -> Result<()> {
 }
 
 #[tokio::test]
-async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
+async fn failed_external_steps_keep_the_same_work_active() -> Result<()> {
     let workspace = test_workspace()?;
     let mut loop_ = Loop::with_session(
         FakeProvider {
@@ -484,7 +747,7 @@ async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
     .with_verify(vec!["false".to_string()]);
     loop_.select_steps("## Steps\n\n1. Fail the check", &["false".to_string()])?;
 
-    for attempt in 1..=3 {
+    for attempt in 1..=5 {
         let turn = loop_
             .turn(&format!("implement step 1, attempt {attempt}"))
             .await?;
@@ -492,14 +755,8 @@ async fn failed_external_steps_abandon_the_same_work() -> Result<()> {
     }
 
     let progress = loop_.work_progress()?;
-    assert_eq!(progress.phase, crate::WorkPhase::Failed);
-    assert!(
-        progress
-            .reason
-            .as_deref()
-            .is_some_and(|reason| reason.contains("three times")),
-        "{progress:?}"
-    );
+    assert_eq!(progress.phase, crate::WorkPhase::Execute);
+    assert_eq!(progress.attempts, 5);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -577,7 +834,7 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
         "test",
     )?
     .with_verify(checks.clone());
-    loop_.select_goal(objective, &checks, crate::DEFAULT_MAX_TURNS)?;
+    loop_.select_goal(objective, &checks, 0)?;
     let turn = loop_
         .turn(&crate::goal_prompt(objective, &checks, 0))
         .await?;
@@ -609,7 +866,7 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
 }
 
 #[tokio::test]
-async fn malformed_goal_judge_repairs_once() -> Result<()> {
+async fn malformed_goal_judge_keeps_repairing() -> Result<()> {
     struct MalformedJudge {
         rounds: AtomicUsize,
     }
@@ -617,10 +874,24 @@ async fn malformed_goal_judge_repairs_once() -> Result<()> {
     impl Provider for MalformedJudge {
         fn complete<'a>(
             &'a self,
-            _request: &'a CompletionRequest,
+            request: &'a CompletionRequest,
         ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
             Box::pin(async move {
-                Ok(match self.rounds.fetch_add(1, Ordering::SeqCst) {
+                let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+                if round >= 2 {
+                    let prompt = &request.messages[1].content;
+                    assert!(
+                        prompt.contains("Objective:\nfinish the objective"),
+                        "{prompt}"
+                    );
+                    assert!(
+                        prompt.contains("Harness evidence:\nTurn receipt"),
+                        "{prompt}"
+                    );
+                    assert!(prompt.contains("goal.txt"), "{prompt}");
+                    assert!(prompt.contains("implemented and verified"), "{prompt}");
+                }
+                Ok(match round {
                     0 => AssistantMessage {
                         tool_calls: vec![call(
                             "write_file",
@@ -632,7 +903,7 @@ async fn malformed_goal_judge_repairs_once() -> Result<()> {
                         content: Some("implemented and verified".to_string()),
                         ..AssistantMessage::default()
                     },
-                    2 => AssistantMessage {
+                    2 | 3 => AssistantMessage {
                         content: Some("looks good".to_string()),
                         ..AssistantMessage::default()
                     },
@@ -658,7 +929,7 @@ async fn malformed_goal_judge_repairs_once() -> Result<()> {
         "test",
     )?
     .with_verify(checks.clone());
-    loop_.select_goal("finish the objective", &checks, crate::DEFAULT_MAX_TURNS)?;
+    loop_.select_goal("finish the objective", &checks, 0)?;
 
     let turn = loop_.turn("finish the objective").await?;
 
@@ -667,8 +938,208 @@ async fn malformed_goal_judge_repairs_once() -> Result<()> {
     assert_eq!(progress.phase, crate::WorkPhase::Completed);
     assert_eq!(progress.exit_code(), Some(0));
     let log = std::fs::read_to_string(loop_.session_path())?;
-    assert_eq!(log.matches(r#""note":"goal judge""#).count(), 2);
+    assert_eq!(log.matches(r#""note":"goal judge""#).count(), 3);
     std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn candidate_changes_during_review_or_judging_require_rechecking() -> Result<()> {
+    struct Changing {
+        path: PathBuf,
+        rounds: AtomicUsize,
+    }
+    impl Provider for Changing {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let text = match request.model.as_str() {
+                    "review" => r#"{"pass":true,"findings":""}"#,
+                    "judge" => r#"{"verdict":"done","reason":"complete"}"#,
+                    _ => {
+                        return Ok(AssistantMessage {
+                            content: Some("done".to_string()),
+                            ..AssistantMessage::default()
+                        });
+                    }
+                };
+                tokio::task::yield_now().await;
+                if self.rounds.fetch_add(1, Ordering::SeqCst) == 0 {
+                    std::fs::write(&self.path, "changed during decision\n")?;
+                }
+                Ok(AssistantMessage {
+                    content: Some(text.to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    for (role, model) in [
+        (workflow::Role::Review, "review"),
+        (workflow::Role::Judge, "judge"),
+    ] {
+        let workspace = test_workspace()?;
+        let path = workspace.join("untouched.rs");
+        std::fs::write(&path, "original\n")?;
+        let provider = || Changing {
+            path: path.clone(),
+            rounds: AtomicUsize::new(0),
+        };
+        let mut agent = Loop::with_session(provider(), "implement", &workspace, "system")?;
+        agent.set_seat(role, provider(), model, None, None);
+        if role == workflow::Role::Judge {
+            agent.select_goal("finish the change", &[], 3)?;
+        }
+        let rejected = agent.turn("finish the change").await?;
+        assert_eq!(agent.work_progress()?.phase, WorkPhase::Execute);
+        assert!(
+            rejected.checks.iter().any(|check| !check.passed
+                && check
+                    .output
+                    .contains("workspace changed after candidate capture")),
+            "{rejected:?}"
+        );
+        assert!(rejected.events.iter().any(|event| matches!(event, Event::Receipt { receipt } if receipt.text.contains("workspace candidate unchanged") && receipt.text.contains("failed"))));
+        let accepted = agent.turn("recheck the changed candidate").await?;
+        assert!(!accepted.aborted);
+        assert_eq!(agent.work_progress()?.phase, WorkPhase::Completed);
+        std::fs::remove_dir_all(workspace)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn work_deadline_stops_commands_checks_and_background_jobs() -> Result<()> {
+    struct CommandDeadline {
+        calls: Arc<AtomicUsize>,
+        command: String,
+        background: bool,
+        verify: bool,
+    }
+    impl Provider for CommandDeadline {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                if self.calls.fetch_add(1, Ordering::SeqCst) == 0 && !self.verify {
+                    let mut write = call(
+                        "write_file",
+                        r#"{"path":"kept.txt","content":"completed edit\n"}"#,
+                    );
+                    write.id = "write".to_string();
+                    return Ok(AssistantMessage {
+                        tool_calls: vec![
+                            write,
+                            call(
+                                "run_command",
+                                &serde_json::json!({
+                                    "command": self.command,
+                                    "background": self.background,
+                                })
+                                .to_string(),
+                            ),
+                        ],
+                        usage: Usage {
+                            prompt_tokens: 3,
+                            completion_tokens: 2,
+                            ..Usage::default()
+                        },
+                        ..AssistantMessage::default()
+                    });
+                }
+                Ok(AssistantMessage {
+                    content: Some("done".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    for (verify, background) in [(false, false), (true, false), (false, true)] {
+        let workspace = test_workspace()?;
+        let calls = Arc::new(AtomicUsize::new(0));
+        let command =
+            "echo $$ > command.pid; printf started > started.txt; sleep 30; printf late > late.txt";
+        let provider = || CommandDeadline {
+            calls: calls.clone(),
+            command: command.to_string(),
+            background,
+            verify,
+        };
+        let mut agent = Loop::with_session(provider(), "test-model", &workspace, "system")?
+            .with_budget(Budget {
+                max_tokens: None,
+                max_secs: Some(1),
+            })?;
+        if verify {
+            agent = agent.with_verify(vec![command.to_string()]);
+        }
+        let turn = tokio::time::timeout(
+            std::time::Duration::from_secs(4),
+            agent.turn("bounded work"),
+        )
+        .await
+        .expect("the Work deadline must settle the turn")?;
+        assert!(turn.aborted, "{turn:?}");
+        assert!(turn.text.contains("work-time limit"));
+        assert_eq!(agent.work_progress()?.phase, WorkPhase::Execute);
+        assert!(agent.elapsed_secs() >= 1);
+        assert!(
+            workspace.join("started.txt").exists(),
+            "the command must have executed"
+        );
+        assert!(!workspace.join("late.txt").exists());
+        if !verify {
+            assert_eq!(
+                std::fs::read_to_string(workspace.join("kept.txt"))?,
+                "completed edit\n"
+            );
+            assert!(turn.events.iter().any(|event| matches!(event, Event::ToolResult { id, success: true, mutated: true, .. } if id == "write")), "completed results must survive later cancellation: {turn:?}");
+            assert_eq!(turn.usage.prompt_tokens, 3);
+            assert_eq!(turn.usage.completion_tokens, 2);
+            assert!(turn.events.iter().any(
+                |event| matches!(event, Event::ToolCall { name, .. } if name == "run_command")
+            ));
+        }
+        let pid: u32 = std::fs::read_to_string(workspace.join("command.pid"))?
+            .trim()
+            .parse()
+            .expect("shell pid");
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let state = std::process::Command::new("ps")
+                    .args(["-o", "stat=", "-p", &pid.to_string()])
+                    .output()?;
+                let state = String::from_utf8_lossy(&state.stdout);
+                if state.trim().is_empty() || state.trim().starts_with('Z') {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+            }
+            Ok::<(), std::io::Error>(())
+        })
+        .await
+        .expect("the cancelled shell must exit")?;
+        let path = agent.session_path().to_path_buf();
+        let count = calls.load(Ordering::SeqCst);
+        drop(agent);
+        let mut resumed = Loop::resume_path(provider(), "test-model", &workspace, "system", &path)?;
+        if verify {
+            resumed = resumed.with_verify(vec![command.to_string()]);
+        }
+        assert!(resumed.turn("resume").await?.aborted);
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            count,
+            "resume must not regain the spent time"
+        );
+        std::fs::remove_dir_all(workspace)?;
+    }
     Ok(())
 }
 
@@ -926,7 +1397,17 @@ async fn resumed_time_budget_uses_durable_live_time() -> Result<()> {
         max_secs: Some(1),
     })?;
     let path = first.session_path().to_path_buf();
-    drop(first.turn("first").await?);
+    let started = std::time::Instant::now();
+    let stopped = first.turn("first").await?;
+    assert!(stopped.aborted);
+    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    assert!(
+        stopped
+            .events
+            .iter()
+            .any(|event| { matches!(event, Event::Receipt { receipt } if receipt.aborted) })
+    );
+    assert!(std::fs::read_to_string(&path)?.contains(r#""kind":"receipt""#));
     drop(first);
 
     let mut resumed = Loop::resume_path(
@@ -1036,7 +1517,7 @@ fn agents_md_loads_only_when_trusted() -> Result<()> {
 }
 
 #[tokio::test]
-async fn set_plan_keeps_schema_and_enforces_policy() -> Result<()> {
+async fn set_plan_switches_schema_and_enforces_policy() -> Result<()> {
     let workspace = test_workspace()?;
     struct Idle;
     impl Provider for Idle {
@@ -1055,11 +1536,11 @@ async fn set_plan_keeps_schema_and_enforces_policy() -> Result<()> {
     let mut loop_ = Loop::with_session(Idle, "test-model", &workspace, "test")?;
     assert!(!loop_.is_plan());
     assert!(loop_.tool_names().contains(&"write_file".to_string()));
-    let automatic = loop_.tool_names();
     loop_.set_plan(true);
     assert!(loop_.is_plan());
     let names = loop_.tool_names();
-    assert_eq!(names, automatic);
+    assert!(!names.contains(&"write_file".to_string()));
+    assert!(names.contains(&"run_command".to_string()));
     loop_.set_plan(false);
     assert!(loop_.tool_names().contains(&"write_file".to_string()));
     std::fs::remove_dir_all(workspace)?;
@@ -1118,11 +1599,8 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
             .iter()
             .all(|request| request.messages[0].content == "BASE\n\nSKILLS-SNAPSHOT")
     );
-    assert!(
-        requests
-            .iter()
-            .all(|request| request.prefix_hash() == requests[0].prefix_hash())
-    );
+    assert_eq!(requests[0].prefix_hash(), requests[2].prefix_hash());
+    assert_ne!(requests[0].prefix_hash(), requests[1].prefix_hash());
     assert!(requests[0].messages.last().is_some_and(|message| {
         message.content.contains("completion check") && !message.content.contains("plan mode")
     }));
@@ -1294,6 +1772,88 @@ async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
 }
 
 #[tokio::test]
+async fn an_unavailable_review_fails_completion_and_keeps_work_resumable() -> Result<()> {
+    enum Part {
+        Implementer(AtomicUsize),
+        Reviewer,
+    }
+    struct ReviewProvider(Part);
+    impl Provider for ReviewProvider {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                match &self.0 {
+                    Part::Implementer(rounds) => {
+                        if rounds.fetch_add(1, Ordering::SeqCst) == 0 {
+                            Ok(AssistantMessage {
+                                tool_calls: vec![call(
+                                    "write_file",
+                                    r#"{"path":"reviewed.txt","content":"done\n"}"#,
+                                )],
+                                ..AssistantMessage::default()
+                            })
+                        } else {
+                            Ok(AssistantMessage {
+                                content: Some("done".to_string()),
+                                ..AssistantMessage::default()
+                            })
+                        }
+                    }
+                    Part::Reviewer => Err(Error::provider(
+                        ProviderFailureKind::Authentication,
+                        "HTTP 401",
+                    )),
+                }
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(
+        ReviewProvider(Part::Implementer(AtomicUsize::new(0))),
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_verify(vec!["true".to_string()]);
+    loop_.set_seat(
+        crate::workflow::Role::Review,
+        ReviewProvider(Part::Reviewer),
+        "review-model",
+        None,
+        None,
+    );
+
+    let turn = loop_.turn("write the file").await?;
+    let review = turn
+        .checks
+        .last()
+        .ok_or_else(|| Error::Config("unavailable review did not produce a check".to_string()))?;
+    assert_eq!(review.command, "review");
+    assert!(!review.passed);
+    assert!(review.output.contains("review unavailable"));
+    assert!(turn.events.iter().any(
+        |event| matches!(event, Event::Verify { command, passed: false } if command == "review")
+    ));
+    assert!(turn_receipt(&turn).text.contains("`review` failed"));
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Execute);
+    assert!(!loop_.work_progress()?.terminal());
+    assert!(workspace.join("reviewed.txt").is_file());
+    let retry = loop_.turn("continue").await?;
+    assert!(
+        retry
+            .checks
+            .last()
+            .is_some_and(|check| check.command == "review" && !check.passed)
+    );
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Execute);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> {
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum Part {
@@ -1447,5 +2007,72 @@ async fn resume_binds_tools_to_the_recorded_workspace() -> Result<()> {
     );
     std::fs::remove_dir_all(workspace)?;
     std::fs::remove_dir_all(elsewhere)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn goal_continuation_turns_restate_the_objective() -> Result<()> {
+    struct Continue(Arc<Mutex<Vec<CompletionRequest>>>);
+
+    impl Provider for Continue {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                let judge = request.messages[0].content.starts_with("You judge");
+                if !judge {
+                    self.0
+                        .lock()
+                        .map_err(|_error| Error::Tool("capture is poisoned".to_string()))?
+                        .push(request.clone());
+                }
+                Ok(AssistantMessage {
+                    content: Some(if judge {
+                        r#"{"verdict":"continue","reason":"more to do"}"#.to_string()
+                    } else {
+                        "worked on it".to_string()
+                    }),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let objective = "EXACT-OBJECTIVE-4821: make the widget spin";
+    let checks = vec!["true".to_string()];
+    let mut loop_ =
+        Loop::with_session(Continue(requests.clone()), "test-model", &workspace, "test")?
+            .with_verify(checks.clone());
+    loop_.select_goal(objective, &checks, 0)?;
+    loop_
+        .turn(&crate::goal_prompt(objective, &checks, 0))
+        .await?;
+    let rounds = loop_.work_progress()?.rounds;
+    loop_
+        .turn(&crate::goal_prompt(objective, &checks, rounds))
+        .await?;
+    let captured = requests
+        .lock()
+        .map_err(|_error| Error::Tool("capture is poisoned".to_string()))?
+        .clone();
+    assert_eq!(captured.len(), 2);
+    let second = &captured[1];
+    let opener = second
+        .messages
+        .iter()
+        .rev()
+        .find(|message| {
+            message.role == Role::User && message.content.contains("[summon goal: continue")
+        })
+        .expect("the continuation opener");
+    assert!(
+        opener.content.contains("EXACT-OBJECTIVE-4821"),
+        "the harness note restates the objective: {}",
+        opener.content
+    );
+    std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

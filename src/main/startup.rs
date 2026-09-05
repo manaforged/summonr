@@ -1,5 +1,7 @@
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use summoner::workflow;
 use summoner::{
@@ -360,14 +362,14 @@ async fn run_login(args: &Args) -> Result<()> {
             "login needs an endpoint name, for example `summon login copilot`; `summon endpoints` lists them".to_string(),
         ));
     }
-    if args.key {
-        let name = args.endpoint.as_deref().unwrap_or_default();
-        if !args.prompt.is_empty() {
-            return Err(summoner::Error::Config(
-                "do not put the key on the command line — `summon login NAME --key` asks for it"
-                    .to_string(),
-            ));
-        }
+    let name = args.endpoint.as_deref().unwrap_or_default();
+    if !args.prompt.is_empty() {
+        return Err(summoner::Error::Config(
+            "do not put credentials on the command line — `summon login NAME` asks for them"
+                .to_string(),
+        ));
+    }
+    if key_login(name, args.key)? {
         let key = read_secret(&format!("key for {name}: "))?;
         let source = summoner::save_key(name, key.trim())?;
         println!("key for {name} stored in {}", source.label());
@@ -378,6 +380,10 @@ async fn run_login(args: &Args) -> Result<()> {
     summoner::Client::login(&endpoint, |line| println!("{line}")).await?;
     println!("ok");
     Ok(())
+}
+
+fn key_login(name: &str, force: bool) -> Result<bool> {
+    Ok(force || !summoner::auth_info(name)?.device_login)
 }
 
 pub(super) async fn run() -> Result<i32> {
@@ -478,7 +484,7 @@ async fn launch_once(
 ) -> Result<Launch> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
-    let mut endpoint = if use_tui(args) {
+    let endpoint = if use_tui(args) {
         summoner::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
     } else {
         summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
@@ -497,9 +503,11 @@ async fn launch_once(
     }
     let ui = channels(use_tui(args));
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
-    if endpoint.context_window.is_none() {
-        endpoint.context_window = provider.context(&endpoint.model).await;
-    }
+    let probe = endpoint.context_window.is_none().then(|| {
+        let client = provider.clone();
+        let model = endpoint.model.clone();
+        tokio::spawn(async move { client.context(&model).await })
+    });
     let checks = if args.no_verify {
         None
     } else {
@@ -507,6 +515,9 @@ async fn launch_once(
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
+    if let Some(probe) = probe {
+        loop_.set_context_probe(probe);
+    }
     let workflow = workflow_name(args, &loop_)?;
     if !use_tui(args)
         && let Some(name) = &workflow
@@ -643,6 +654,8 @@ fn configure(
 ) -> Result<Loop<Client>> {
     if !args.no_sandbox {
         loop_ = loop_.with_sandbox(!args.network)?;
+    } else {
+        loop_ = loop_.with_unrestricted_commands();
     }
     if args.plan {
         loop_ = loop_.with_plan();
@@ -770,10 +783,33 @@ fn provider(
         provider = provider.on_reasoning(move |delta| {
             drop(reasoning.send(summoner::tui::Msg::Thinking(delta.to_string())));
         });
-    } else if !json {
+    } else if json {
         provider = provider.on_delta(|text| {
+            modes::print_json(&summoner::Event::Delta {
+                text: text.to_string(),
+            });
+        });
+        provider = provider.on_reasoning(|text| {
+            modes::print_json(&summoner::Event::Reasoning {
+                text: text.to_string(),
+            });
+        });
+    } else {
+        let thinking = Arc::new(AtomicBool::new(false));
+        let text_state = thinking.clone();
+        provider = provider.on_delta(move |text| {
+            text_state.store(false, Ordering::Relaxed);
             print!("{text}");
             drop(std::io::stdout().flush());
+        });
+        let reasoning_state = thinking.clone();
+        provider = provider.on_reasoning(move |_| {
+            if !reasoning_state.swap(true, Ordering::Relaxed) {
+                eprintln!("\n… reasoning");
+            }
+        });
+        provider = provider.on_tool(move |_| {
+            thinking.store(false, Ordering::Relaxed);
         });
     }
     Ok(provider)
@@ -821,9 +857,7 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
         }
     }
     if let Some(objective) = args.goal.as_deref() {
-        let max_turns = args
-            .max_turns
-            .map_or(summoner::DEFAULT_MAX_TURNS, |turns| turns as usize);
+        let max_turns = args.max_turns.map_or(0, |turns| turns as usize);
         let roots = candidates(workspace);
         if let Some(info) = list_sessions()?.into_iter().rev().find(|info| {
             roots

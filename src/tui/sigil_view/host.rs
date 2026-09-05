@@ -95,6 +95,7 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     router.focus_next(host.cx());
     term.paint(&mut screen)?;
     let mut pointer = Point::new(0.0, 0.0);
+    let mut selecting = false;
     let mut status_at = Instant::now();
     loop {
         let mut incoming = Vec::new();
@@ -130,11 +131,16 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
         }
         app.tick();
         frame(&mut screen, &mut host, &mut router, incoming, (cols, rows))?;
+        let next = app.select.peek();
+        if next != selecting {
+            term.select(next)?;
+            selecting = next;
+        }
         if let Some(path) = app.open_file.peek() {
             app.open_file.set(None);
             term.suspend()?;
             let opened = open_external(&app.workspace.join(&path));
-            term.resume()?;
+            term.resume(selecting)?;
             screen.invalidate();
             if let Err(error) = opened {
                 app.model
@@ -153,7 +159,7 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
             app.editor_requested.set(false);
             term.suspend()?;
             let edited = edit_external(&app.draft.peek());
-            term.resume()?;
+            term.resume(selecting)?;
             screen.invalidate();
             match edited {
                 Ok(draft) => app.replace(draft),
@@ -203,7 +209,8 @@ fn read_event(
         }
         TermEvent::Paste(text) => {
             if !app.paste(&text) {
-                incoming.push(sigil_tui::paste(&text));
+                app.insert(&text);
+                term.redraw = true;
             }
         }
         TermEvent::FocusGained | TermEvent::FocusLost => {}
@@ -262,13 +269,22 @@ impl Terminal {
         Ok(())
     }
 
-    /// Puts `text` on the clipboard through OSC 52; the terminal decides
-    /// whether to honour it.
+    /// Puts `text` on the clipboard: `pbcopy` on macOS when it is present,
+    /// else OSC 52, where the terminal decides whether to honour it.
     fn copy(&mut self, text: &str) -> Result<()> {
+        if pbcopy(text) {
+            return Ok(());
+        }
         use base64::Engine as _;
         let encoded = base64::engine::general_purpose::STANDARD.encode(text.as_bytes());
         queue!(self.out, Print(format!("\x1b]52;c;{encoded}\x07")))?;
         self.out.flush()?;
+        Ok(())
+    }
+
+    fn select(&mut self, on: bool) -> Result<()> {
+        mouse(&mut self.out, on)?;
+        self.redraw = true;
         Ok(())
     }
 
@@ -278,18 +294,23 @@ impl Terminal {
         Ok(())
     }
 
-    fn resume(&mut self) -> Result<()> {
+    fn resume(&mut self, selecting: bool) -> Result<()> {
         enable_raw_mode()?;
-        execute!(
-            self.out,
-            EnterAlternateScreen,
-            EnableMouseCapture,
-            EnableBracketedPaste,
-            cursor::Hide
-        )?;
+        execute!(self.out, EnterAlternateScreen)?;
+        mouse(&mut self.out, selecting)?;
+        execute!(self.out, EnableBracketedPaste, cursor::Hide)?;
         self.redraw = true;
         Ok(())
     }
+}
+
+fn mouse(out: &mut impl Write, selecting: bool) -> std::io::Result<()> {
+    if selecting {
+        queue!(out, DisableMouseCapture)?;
+    } else {
+        queue!(out, EnableMouseCapture)?;
+    }
+    out.flush()
 }
 
 fn open_external(path: &std::path::Path) -> Result<()> {
@@ -371,3 +392,22 @@ fn guard() {
 #[cfg(test)]
 #[path = "host_tests.rs"]
 mod tests;
+
+fn pbcopy(text: &str) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    let Ok(mut child) = std::process::Command::new("/usr/bin/pbcopy")
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    else {
+        return false;
+    };
+    let written = child
+        .stdin
+        .take()
+        .is_some_and(|mut stdin| std::io::Write::write_all(&mut stdin, text.as_bytes()).is_ok());
+    child.wait().is_ok_and(|status| status.success()) && written
+}

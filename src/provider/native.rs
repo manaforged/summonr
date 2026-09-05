@@ -8,9 +8,10 @@ use genai::resolver::{AuthData, Endpoint as GenaiEndpoint, ProviderConfig};
 use genai::{ModelIden, ServiceTarget};
 
 use crate::endpoint::Wire;
-use crate::error::{Error, ProviderFailureKind, Result};
+use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 use crate::provider::{
     AssistantMessage, CompletionRequest, Role, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
+    response_failure,
 };
 
 use super::Client;
@@ -66,25 +67,28 @@ impl Client {
         let mut reasoning = String::new();
         let mut tool_calls = Vec::new();
         let mut usage = Usage::default();
-        let mut stop = StopReason::default();
+        let mut stop = None;
+        let mut output_started = false;
         let mut stream = streamed.stream;
         while let Some(event) = stream.next().await {
-            let event = event.map_err(map_genai)?;
+            let event = event.map_err(|error| native_error(error, output_started))?;
             match event {
                 ChatStreamEvent::Chunk(chunk) => {
+                    output_started |= !chunk.content.is_empty();
                     if let Some(emit) = &self.on_delta {
                         emit(&chunk.content);
                     }
                     content.push_str(&chunk.content);
                 }
                 ChatStreamEvent::ReasoningChunk(chunk) => {
+                    output_started |= !chunk.content.is_empty();
                     if let Some(emit) = &self.on_reasoning {
                         emit(&chunk.content);
                     }
                     reasoning.push_str(&chunk.content);
                 }
-                ChatStreamEvent::ToolCallChunk(chunk) => {
-                    tool_calls.push(from_genai_call(chunk.tool_call));
+                ChatStreamEvent::ToolCallChunk(_) => {
+                    output_started = true;
                 }
                 ChatStreamEvent::End(end) => {
                     if let Some(captured) = end.captured_content {
@@ -93,13 +97,11 @@ impl Client {
                         {
                             content = text.to_string();
                         }
-                        if tool_calls.is_empty() {
-                            tool_calls = captured
-                                .into_tool_calls()
-                                .into_iter()
-                                .map(from_genai_call)
-                                .collect();
-                        }
+                        tool_calls = captured
+                            .into_tool_calls()
+                            .into_iter()
+                            .map(from_genai_call)
+                            .collect();
                     }
                     if reasoning.is_empty()
                         && let Some(text) = end.captured_reasoning_content
@@ -110,12 +112,21 @@ impl Client {
                         usage = from_genai_usage(&genai_usage);
                     }
                     if let Some(reason) = end.captured_stop_reason {
-                        stop = from_genai_stop(&reason);
+                        stop = Some(reason);
                     }
                 }
                 ChatStreamEvent::Start | ChatStreamEvent::ThoughtSignatureChunk(_) => {}
             }
         }
+        let Some(stop) = stop else {
+            return Err(Error::Provider(ProviderFailure {
+                kind: ProviderFailureKind::Malformed,
+                status: None,
+                message: "native stream ended without a terminal stop reason".to_string(),
+                partial_output: output_started,
+            }));
+        };
+        let stop = from_genai_stop(&stop, output_started)?;
         Ok(AssistantMessage {
             content: (!content.is_empty()).then_some(content),
             tool_calls,
@@ -160,27 +171,22 @@ impl Client {
     }
 }
 
-const THINKING_ROOM: u32 = 32_768;
-
 fn chat_options(
     headers: &[(String, String)],
-    max_tokens: u32,
+    max_tokens: Option<u32>,
     effort: Option<crate::provider::Effort>,
 ) -> ChatOptions {
     use crate::provider::Effort;
     use genai::chat::ReasoningEffort;
-    let max_tokens = if effort.is_some_and(|effort| effort != Effort::None) {
-        max_tokens.max(THINKING_ROOM)
-    } else {
-        max_tokens
-    };
     let mut options = ChatOptions::default()
-        .with_max_tokens(max_tokens)
         .with_capture_content(true)
         .with_capture_tool_calls(true)
         .with_capture_usage(true)
         .with_capture_reasoning_content(true)
         .with_normalize_reasoning_content(true);
+    if let Some(max) = max_tokens {
+        options = options.with_max_tokens(max);
+    }
     if !headers.is_empty() {
         let extra: std::collections::HashMap<String, String> = headers.iter().cloned().collect();
         options = options.with_extra_headers(extra);
@@ -290,11 +296,16 @@ fn from_response(response: genai::chat::ChatResponse) -> Result<AssistantMessage
     let content = response.first_text().map(str::to_string);
     let reasoning_content = response.reasoning_content.clone();
     let usage = from_genai_usage(&response.usage);
-    let stop_reason = response
-        .stop_reason
-        .as_ref()
-        .map(from_genai_stop)
-        .unwrap_or_default();
+    let stop_reason = response.stop_reason.as_ref().ok_or_else(|| {
+        Error::provider(
+            ProviderFailureKind::Malformed,
+            "native response has no terminal stop reason",
+        )
+    })?;
+    let stop_reason = from_genai_stop(
+        stop_reason,
+        content.is_some() || !response.tool_calls().is_empty(),
+    )?;
     let tool_calls = response
         .into_tool_calls()
         .into_iter()
@@ -328,10 +339,25 @@ fn from_genai_usage(usage: &genai::chat::Usage) -> Usage {
     }
 }
 
-fn from_genai_stop(reason: &genai::chat::StopReason) -> StopReason {
+fn from_genai_stop(reason: &genai::chat::StopReason, partial_output: bool) -> Result<StopReason> {
     match reason {
-        genai::chat::StopReason::ToolCall(_) => StopReason::ToolCalls,
-        _ => StopReason::Stop,
+        genai::chat::StopReason::ToolCall(_) => Ok(StopReason::ToolCalls),
+        genai::chat::StopReason::MaxTokens(_) => Ok(StopReason::Length),
+        genai::chat::StopReason::Completed(_) | genai::chat::StopReason::StopSequence(_) => {
+            Ok(StopReason::Stop)
+        }
+        genai::chat::StopReason::ContentFilter(reason) => Err(Error::Provider(ProviderFailure {
+            kind: ProviderFailureKind::Http,
+            status: None,
+            message: format!("native response was blocked by the provider: {reason}"),
+            partial_output,
+        })),
+        genai::chat::StopReason::Other(reason) => Err(Error::Provider(ProviderFailure {
+            kind: ProviderFailureKind::Malformed,
+            status: None,
+            message: format!("native response ended with an unsupported stop reason: {reason}"),
+            partial_output,
+        })),
     }
 }
 
@@ -341,13 +367,43 @@ mod tests;
 
 fn map_genai(error: genai::Error) -> Error {
     let text = error.to_string();
-    let lower = text.to_lowercase();
-    let kind = if lower.contains("401") || lower.contains("auth") || lower.contains("api key") {
-        ProviderFailureKind::Authentication
-    } else if lower.contains("429") || lower.contains("rate") {
-        ProviderFailureKind::RateLimited
-    } else {
-        ProviderFailureKind::Http
+    let kind = match error {
+        genai::Error::RequiresApiKey { .. }
+        | genai::Error::NoAuthResolver { .. }
+        | genai::Error::NoAuthData { .. } => ProviderFailureKind::Authentication,
+        genai::Error::StreamParse { .. }
+        | genai::Error::ChatResponseGeneration { .. }
+        | genai::Error::InvalidJsonResponseElement { .. }
+        | genai::Error::NoChatResponse { .. }
+        | genai::Error::SerdeJson(_)
+        | genai::Error::JsonValueExt(_) => ProviderFailureKind::Malformed,
+        genai::Error::ChatResponse { .. } => ProviderFailureKind::Server,
+        genai::Error::WebStream { error, .. } => match error.downcast::<genai::Error>() {
+            Ok(error) => return map_genai(*error),
+            Err(_transport) => ProviderFailureKind::Transport,
+        },
+        genai::Error::WebAdapterCall { webc_error, .. }
+        | genai::Error::WebModelCall { webc_error, .. } => match webc_error {
+            genai::webc::Error::ResponseFailedStatus { status, body, .. } => {
+                return response_failure(status.as_u16(), &body);
+            }
+            genai::webc::Error::Reqwest(_) => ProviderFailureKind::Transport,
+            _ => ProviderFailureKind::Malformed,
+        },
+        genai::Error::HttpError { status, body, .. } => {
+            return response_failure(status.as_u16(), &body);
+        }
+        _ => ProviderFailureKind::Http,
     };
     Error::provider(kind, text)
+}
+
+fn native_error(error: genai::Error, partial_output: bool) -> Error {
+    match map_genai(error) {
+        Error::Provider(mut failure) => {
+            failure.partial_output = partial_output;
+            Error::Provider(failure)
+        }
+        error => error,
+    }
 }

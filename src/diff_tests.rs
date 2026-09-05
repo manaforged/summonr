@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use super::{Diff, Stat, edited, hunk_header, hunks, numstat_row, patch, stats, turns};
+use super::{Diff, Stat, edited, hunk_header, hunks, numstat_row, patch, snapshot, stats, turns};
 
 fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -76,6 +76,8 @@ fn stats_count_edits_and_untracked_files_against_head() {
 #[test]
 fn a_clean_tree_has_no_files() {
     let dir = repo();
+    let state = snapshot(dir.path());
+    assert!(state.contains("(HEAD), worktree clean"), "{state}");
     assert_eq!(
         stats(dir.path()).expect("stats"),
         Diff {
@@ -84,6 +86,16 @@ fn a_clean_tree_has_no_files() {
         }
     );
     assert_eq!(patch(dir.path(), None).expect("patch"), "");
+}
+
+#[test]
+fn snapshot_names_dirty_and_non_git_workspaces() {
+    let dir = repo();
+    std::fs::write(dir.path().join("b.txt"), "new\n").expect("write");
+    assert!(snapshot(dir.path()).ends_with("1 file dirty"));
+
+    let plain = tempfile::tempdir().expect("tempdir");
+    assert_eq!(snapshot(plain.path()), "non-Git workspace");
 }
 
 #[test]

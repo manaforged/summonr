@@ -1,4 +1,5 @@
-use std::path::{Path, PathBuf};
+use std::io::{BufReader, Read, Write};
+use std::path::Path;
 
 use regex::Regex;
 use serde_json::Value;
@@ -12,10 +13,10 @@ use crate::provider::{Image, UserInput};
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_string, object_usize, parse_args};
 use crate::SKIP_DIRS;
 
-const MAX_EDITS: usize = 16;
 const READ_DEFAULT_LIMIT: usize = 300;
 const READ_MAX_LIMIT: usize = 1000;
 const READ_MAX_BYTES: usize = 2 * 1024 * 1024;
+const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 const SMALL_FILE_LINES: usize = 80;
 const LIST_MAX: usize = 200;
 const GREP_DEFAULT: usize = 50;
@@ -25,7 +26,6 @@ pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
     pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
-        use std::io::BufRead;
         let args: Value = parse_args("read_file", arguments)?;
         let path = object_string(&args, "path")?;
         let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
@@ -36,58 +36,75 @@ impl ToolRegistry {
         let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         let first = offset.saturating_sub(1);
-        let mut total = 0_usize;
         let mut window: Vec<String> = Vec::new();
-        let mut bytes = 0_usize;
-        let mut clipped = false;
-        for raw in std::io::BufReader::new(file).split(b'\n') {
-            let mut raw =
-                raw.map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-            let index = total;
-            total += 1;
-            if index < first || window.len() >= limit || bytes > READ_MAX_BYTES {
-                continue;
+        let mut window_bytes = 0_usize;
+        let mut output_truncated = false;
+        let mut line_clipped = false;
+        let file_bytes = file.metadata()?.len();
+        let mut bytes = Vec::with_capacity(file_bytes.min(READ_MAX_WORK_BYTES as u64) as usize);
+        BufReader::new(file)
+            .take(READ_MAX_WORK_BYTES as u64 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+        let total_unknown = bytes.len() > READ_MAX_WORK_BYTES;
+        bytes.truncate(READ_MAX_WORK_BYTES);
+        let ends_newline = bytes.last() == Some(&b'\n');
+        let mut total = 0_usize;
+        let mut lines = bytes.split(|byte| *byte == b'\n').peekable();
+        while let Some(raw) = lines.next() {
+            let final_segment = lines.peek().is_none();
+            if raw.is_empty() && final_segment && (ends_newline || bytes.is_empty()) {
+                break;
             }
-            if raw.last() == Some(&b'\r') {
-                raw.pop();
-            }
-            let mut line = String::from_utf8(raw).map_err(|error| {
-                Error::Tool(format!(
-                    "`{path}` is not valid UTF-8 at line {}: {error}",
-                    index + 1
-                ))
-            })?;
-            if line.len() > READ_MAX_BYTES {
-                let mut cut = READ_MAX_BYTES;
-                while !line.is_char_boundary(cut) {
-                    cut -= 1;
+            let partial = total_unknown && !ends_newline && final_segment;
+            if !output_truncated && total >= first && total < first.saturating_add(limit) {
+                let (line, clipped) = decode(path, total, raw, partial)?;
+                let size = line.len().saturating_add(1);
+                if window.is_empty() || window_bytes.saturating_add(size) <= READ_MAX_BYTES {
+                    window_bytes = window_bytes.saturating_add(size);
+                    line_clipped |= clipped;
+                    window.push(line);
+                } else {
+                    output_truncated = true;
                 }
-                line.truncate(cut);
-                line.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
-                clipped = true;
             }
-            bytes += line.len() + 1;
-            if bytes > READ_MAX_BYTES && !window.is_empty() {
-                continue;
-            }
-            window.push(line);
+            total += 1;
         }
-        if total == 0 {
+        if total == 0 && !total_unknown {
             return Ok(format!("{path}  lines 0-0/0"));
         }
-        if first >= total {
+        if first >= total && !total_unknown {
             return Err(Error::Tool(format!(
                 "`{path}` has {total} lines; offset {offset} is past the end"
             )));
         }
         let shown = window.len();
+        if shown == 0 && total_unknown {
+            return Err(Error::Tool(format!(
+                "cannot reach offset {offset} within {READ_MAX_WORK_BYTES} bytes; total line count is unknown"
+            )));
+        }
         let body = tagged_lines(&window, first, total);
-        if (shown < limit || clipped) && first + shown < total {
-            return Ok(format!(
-                "{path}  {body}\n[truncated at {READ_MAX_BYTES} bytes after line {}; continue with offset {}]",
-                first + shown,
-                first + shown + 1
-            ));
+        let body = if total_unknown {
+            body.replacen(&format!("/{total}"), "/unknown", 1)
+        } else {
+            body
+        };
+        if total_unknown || output_truncated || (line_clipped && first + shown < total) {
+            let notice = if total_unknown {
+                format!(
+                    "[truncated at {} bytes; total line count unknown; continue with offset {}]",
+                    bytes.len(),
+                    first + shown + 1
+                )
+            } else {
+                format!(
+                    "[truncated at {READ_MAX_BYTES} bytes after line {}; continue with offset {}]",
+                    first + shown,
+                    first + shown + 1
+                )
+            };
+            return Ok(format!("{path}  {body}\n{notice}"));
         }
         Ok(format!("{path}  {body}"))
     }
@@ -120,14 +137,6 @@ impl ToolRegistry {
         }
         let endings = terminators(&raw);
         let original = raw.replace("\r\n", "\n");
-        if let Some(ops) = args.get("edits").and_then(Value::as_array)
-            && ops.len() > MAX_EDITS
-        {
-            return Err(Error::Tool(format!(
-                "too many edits: {} exceeds the {MAX_EDITS} the tool accepts",
-                ops.len()
-            )));
-        }
         let edited = match args.get("edits").and_then(Value::as_array) {
             Some(ops) if !ops.is_empty() && name == "replace_texts" => {
                 apply_sequence(&original, ops)?
@@ -139,8 +148,6 @@ impl ToolRegistry {
         };
         let edited = restore(&endings, &original, &edited);
         atomic_write(&dest, path, &edited)?;
-        self.writes
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut out = format!("edited {path}\n{}", edit_view(&original, &edited));
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
@@ -167,8 +174,6 @@ impl ToolRegistry {
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
         }
         atomic_write(&dest, path, content)?;
-        self.writes
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let lines = content.lines().count();
         let view = if lines <= SMALL_FILE_LINES {
             tagged_text(content)
@@ -374,13 +379,61 @@ fn format_directory(path: &str, dir: &Path) -> Result<String> {
 }
 
 pub(super) fn atomic_write(dest: &Path, display: &str, content: &str) -> Result<()> {
-    let mut tmp = dest.as_os_str().to_os_string();
-    tmp.push(".mage-tmp");
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, content)
+    let parent = dest
+        .parent()
+        .ok_or_else(|| Error::Tool(format!("cannot write `{display}` without a parent")))?;
+    let existing_mode = match std::fs::metadata(dest) {
+        Ok(metadata) => Some(metadata.permissions()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => {
+            return Err(Error::Tool(format!(
+                "cannot inspect `{display}` permissions: {error}"
+            )));
+        }
+    };
+    let mut temp = tempfile::Builder::new()
+        .prefix(".mage-tmp-")
+        .tempfile_in(parent)
+        .map_err(|error| Error::Tool(format!("cannot prepare `{display}`: {error}")))?;
+    temp.write_all(content.as_bytes())
         .map_err(|error| Error::Tool(format!("cannot write `{display}`: {error}")))?;
-    std::fs::rename(&tmp, dest)
+    if let Some(permissions) = existing_mode {
+        temp.as_file()
+            .set_permissions(permissions)
+            .map_err(|error| {
+                Error::Tool(format!("cannot preserve `{display}` permissions: {error}"))
+            })?;
+    }
+    temp.persist(dest)
+        .map(|_| ())
         .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))
+}
+
+fn decode(path: &str, index: usize, raw: &[u8], partial: bool) -> Result<(String, bool)> {
+    let mut raw = raw;
+    if raw.last() == Some(&b'\r') {
+        raw = &raw[..raw.len() - 1];
+    }
+    let clipped = partial || raw.len() > READ_MAX_BYTES;
+    let prefix = &raw[..raw.len().min(READ_MAX_BYTES)];
+    let decoded = match std::str::from_utf8(prefix) {
+        Err(error) if clipped && error.error_len().is_none() => {
+            std::str::from_utf8(&prefix[..error.valid_up_to()])
+        }
+        result => result,
+    };
+    let mut text = decoded
+        .map_err(|error| {
+            Error::Tool(format!(
+                "`{path}` is not valid UTF-8 at line {}: {error}",
+                index + 1
+            ))
+        })?
+        .to_owned();
+    if clipped {
+        text.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
+    }
+    Ok((text, clipped))
 }
 
 pub(super) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {

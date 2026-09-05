@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
 use std::process::Command;
 
@@ -71,16 +73,16 @@ fn git_listing_honours_gitignore() {
 }
 
 #[test]
-fn a_same_size_edit_with_the_old_timestamp_still_counts_as_a_change() {
+fn a_large_same_size_edit_with_the_old_timestamp_still_counts_as_a_change() {
     let dir = tempfile::tempdir().expect("tempdir");
     let file = dir.path().join("a.txt");
-    std::fs::write(&file, "aaaa").expect("write");
+    std::fs::write(&file, vec![b'a'; 300 * 1024]).expect("write");
     let modified = std::fs::metadata(&file)
         .expect("meta")
         .modified()
         .expect("mtime");
     let before = snapshot(dir.path(), None).expect("snapshot");
-    std::fs::write(&file, "bbbb").expect("rewrite");
+    std::fs::write(&file, vec![b'b'; 300 * 1024]).expect("rewrite");
     std::fs::File::options()
         .write(true)
         .open(&file)
@@ -89,4 +91,36 @@ fn a_same_size_edit_with_the_old_timestamp_still_counts_as_a_change() {
         .expect("set mtime");
     let after = snapshot(dir.path(), None).expect("snapshot");
     assert_eq!(changed(&before, &after), vec!["a.txt"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn snapshot_detects_executable_mode_changes() {
+    let root = tempfile::tempdir().expect("workspace");
+    let file = root.path().join("script.sh");
+    touch(&file, "echo hello\n");
+    let permissions = std::fs::Permissions::from_mode(0o644);
+    std::fs::set_permissions(&file, permissions).expect("plain file");
+    let before = snapshot(root.path(), None).expect("snapshot");
+    std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755))
+        .expect("make executable");
+    let after = snapshot(root.path(), None).expect("snapshot");
+    assert_eq!(changed(&before, &after), vec!["script.sh"]);
+}
+
+#[cfg(unix)]
+#[test]
+fn snapshot_tracks_symlink_targets_without_following_them() {
+    let root = tempfile::tempdir().expect("workspace");
+    let link = root.path().join("link");
+    symlink("missing-one", &link).expect("dangling link");
+    let before = snapshot(root.path(), None).expect("snapshot dangling link");
+    std::fs::remove_file(&link).expect("remove link");
+    symlink("missing-two", &link).expect("retarget link");
+    let after = snapshot(root.path(), None).expect("snapshot retargeted link");
+    assert_eq!(changed(&before, &after), vec!["link"]);
+    std::fs::remove_file(&link).expect("remove link");
+    touch(&link, "missing-two");
+    let file = snapshot(root.path(), None).expect("snapshot replacement file");
+    assert_eq!(changed(&after, &file), vec!["link"]);
 }

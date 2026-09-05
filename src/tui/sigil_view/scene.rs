@@ -419,7 +419,11 @@ fn prompt(
     }
     write(cells, cols, x + width.saturating_sub(1), y + 1, "│", border);
     let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
-    let hint = super::chat::composer_hint(busy, usize::from(width), &options);
+    let select = app
+        .select
+        .peek()
+        .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+    let hint = super::chat::composer_hint(busy, usize::from(width), &options, select.as_deref());
     let dash = usize::from(width).saturating_sub(UnicodeWidthStr::width(hint.as_str()) + 2);
     write(
         cells,

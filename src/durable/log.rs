@@ -109,7 +109,6 @@ pub(crate) struct State {
     pub(crate) millis: Option<u64>,
     pub(crate) workflow: Option<String>,
     pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
-    pub(crate) child_total: usize,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,
     pub(crate) elapsed: u64,
@@ -141,16 +140,7 @@ impl State {
             }
             Line::Workflow { name } => self.workflow = name,
             Line::Child { record } => {
-                if !self.children.contains_key(&record.id) {
-                    self.child_total = self.child_total.saturating_add(1);
-                }
                 self.children.insert(record.id, record);
-                while self.children.len() > crate::child::MAX_PER_PARENT {
-                    let Some(oldest) = self.children.keys().next().cloned() else {
-                        break;
-                    };
-                    self.children.remove(&oldest);
-                }
             }
             Line::User {
                 text,

@@ -716,7 +716,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             .to_string(),
         ),
         ("verify", verify),
-        ("rounds", model.snapshot.max_rounds.to_string()),
+        ("rounds", model.snapshot.rounds_label()),
         ("endpoint", endpoint),
         ("model", model.snapshot.model.clone()),
         (
@@ -945,6 +945,8 @@ const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
         Hotkey::Files => "toggle files",
         Hotkey::Ledger => "toggle ledger",
         Hotkey::Diff => "toggle diff",
+        Hotkey::Copy => "copy last reply",
+        Hotkey::Select => "select transcript text",
         Hotkey::Pane => "hide/show pane",
     }
 }

@@ -5,15 +5,6 @@ use serde::{Deserialize, Serialize};
 use crate::durable::id::SessionId;
 use crate::provider::Usage;
 
-pub(crate) const ASSIGNMENT_MAX_CHARS: usize = 4_000;
-pub(crate) const RESULT_MAX_CHARS: usize = 4_000;
-pub(crate) const PATHS_MAX: usize = 100;
-pub(crate) const PATH_MAX_CHARS: usize = 512;
-pub(crate) const MAX_ROUNDS: usize = 32;
-pub(crate) const MAX_SECS: u64 = 900;
-pub(crate) const MAX_PARALLEL: usize = 4;
-pub(crate) const MAX_PER_PARENT: usize = 64;
-
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Access {
@@ -63,7 +54,7 @@ impl ChildRecord {
             usage: Usage::default(),
             billed_tokens: 0,
             elapsed_millis: 0,
-            diagnostic: Some(bounded(reason, RESULT_MAX_CHARS)),
+            diagnostic: Some(reason.to_string()),
         });
         record
     }

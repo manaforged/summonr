@@ -52,7 +52,7 @@ pub use endpoint::{
     resolve_unauthed as resolve_endpoint_unauthed, save_key,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
-pub use goal::{DEFAULT_MAX_TURNS, prompt as goal_prompt};
+pub use goal::prompt as goal_prompt;
 pub use hashline::{line_hash, tagged_text};
 pub use jobs::live as live_jobs;
 pub use prompt::{harness_section, mage_home, system_prompt, system_prompt_with};

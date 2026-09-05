@@ -1,9 +1,10 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::error::{Error, Result};
-use crate::tools::ToolOutput;
+use crate::tools::{Event, ToolOutput};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Outcome {
@@ -16,18 +17,55 @@ pub struct Outcome {
 pub struct Receipt {
     pub changes: Vec<String>,
     pub checks: Vec<Outcome>,
+    #[serde(default)]
+    pub snapshot: String,
+    #[serde(default)]
+    pub reads: usize,
+    #[serde(default)]
+    pub searches: usize,
+    #[serde(default)]
+    pub commands: usize,
+    #[serde(default)]
+    pub failures: Vec<String>,
+    #[serde(default)]
+    pub aborted: bool,
+    #[serde(default)]
+    pub verified: bool,
     pub text: String,
 }
 
 impl Receipt {
     #[must_use]
-    pub(crate) fn new(changes: Vec<String>, checks: Vec<Outcome>) -> Self {
-        let text = summary(&changes, &checks);
-        Self {
+    pub(crate) fn new(
+        changes: Vec<String>,
+        checks: Vec<Outcome>,
+        snapshot: String,
+        events: &[Event],
+    ) -> Self {
+        let verified = !checks.is_empty() && checks.iter().all(|check| check.passed);
+        let mut receipt = Self {
             changes,
             checks,
-            text,
-        }
+            snapshot,
+            reads: 0,
+            searches: 0,
+            commands: 0,
+            failures: Vec::new(),
+            aborted: false,
+            verified,
+            text: String::new(),
+        };
+        tally(events, &mut receipt);
+        receipt.text = render(&receipt);
+        receipt
+    }
+
+    #[must_use]
+    pub(crate) fn aborted(snapshot: String, events: &[Event]) -> Self {
+        let mut receipt = Self::new(Vec::new(), Vec::new(), snapshot, events);
+        receipt.aborted = true;
+        receipt.text = render(&receipt);
+        receipt
     }
 }
 
@@ -132,6 +170,93 @@ pub(crate) fn summary(changes: &[String], checks: &[Outcome]) -> String {
         while text.ends_with('\n') {
             text.pop();
         }
+    }
+    text
+}
+
+fn tally(events: &[Event], receipt: &mut Receipt) {
+    let mut reads = BTreeSet::new();
+    let mut calls = BTreeMap::new();
+    let mut read_calls = BTreeMap::new();
+    for event in events {
+        match event {
+            Event::ToolCall {
+                id,
+                name,
+                arguments,
+            } => {
+                calls.insert(id.as_str(), name.as_str());
+                if name == "read_file"
+                    && let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments)
+                    && let Some(path) = value.get("path").and_then(serde_json::Value::as_str)
+                {
+                    read_calls.insert(id.as_str(), path.to_string());
+                }
+                if matches!(
+                    name.as_str(),
+                    "grep" | "list_dir" | "web_search" | "web_fetch"
+                ) {
+                    receipt.searches += 1;
+                } else if name == "run_command" {
+                    receipt.commands += 1;
+                }
+            }
+            Event::ToolResult {
+                id, success: true, ..
+            } => {
+                if let Some(path) = read_calls.get(id.as_str()) {
+                    reads.insert(path.clone());
+                }
+            }
+            Event::ToolResult {
+                id,
+                success: false,
+                output,
+                ..
+            } => {
+                let name = calls.get(id.as_str()).copied().unwrap_or("tool");
+                let reason = output
+                    .lines()
+                    .find(|line| !line.trim().is_empty())
+                    .unwrap_or("failed")
+                    .to_string();
+                receipt.failures.push(format!("{name}: {reason}"));
+            }
+            _ => {}
+        }
+    }
+    receipt.reads = reads.len();
+}
+
+fn render(receipt: &Receipt) -> String {
+    let mut text = if receipt.aborted {
+        "Turn receipt\n- Changed: not captured before abort\n- Verification: not run".to_string()
+    } else {
+        summary(&receipt.changes, &receipt.checks)
+    };
+    let file = if receipt.reads == 1 { "file" } else { "files" };
+    let search = if receipt.searches == 1 {
+        "search"
+    } else {
+        "searches"
+    };
+    let command = if receipt.commands == 1 {
+        "command"
+    } else {
+        "commands"
+    };
+    let header = format!(
+        "Turn receipt\n- Started at: {}\n- Inspected: {} {file} read, {} {search}, {} {command}",
+        receipt.snapshot, receipt.reads, receipt.searches, receipt.commands
+    );
+    text.replace_range(.."Turn receipt".len(), &header);
+    if !receipt.failures.is_empty() {
+        let shown = receipt.failures.join("; ");
+        let at = text.find("\n- Changed:").unwrap_or(text.len());
+        text.insert_str(
+            at,
+            &format!("\n- Failed: {} — {shown}", receipt.failures.len()),
+        );
     }
     text
 }

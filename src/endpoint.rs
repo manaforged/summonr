@@ -97,10 +97,7 @@ pub fn names() -> Result<Vec<String>> {
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let file = config::load()?;
-    let process_key = named_env_key(name)
-        .or_else(|| env_key(&["MAGE_API_KEY"]))
-        .is_some()
-        || secret::get(name)?.is_some();
+    let process_key = named_env_key(name).is_some() || secret::get(name)?.is_some();
     auth_info_from(&file, name, process_key)
 }
 
@@ -179,10 +176,9 @@ fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo
         .is_some_and(|key| !key.trim().is_empty());
     let default_key = builtin.and_then(|preset| preset.default_key).is_some();
     let setup = builtin
-        .map(|preset| preset.missing)
+        .map(|preset| preset.missing.replace("NAME", name))
         .filter(|text| !text.is_empty())
-        .unwrap_or("put api_key in ~/.mage/config.toml")
-        .to_string();
+        .unwrap_or_else(|| format!("put api_key in ~/.mage/config.toml, or `summon login {name}`"));
     Ok(AuthInfo {
         name: name.to_string(),
         device_login: false,
@@ -247,7 +243,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
                 .or_else(|| std::env::var("MAGE_MODEL").ok())
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| "glm-5.3".to_string()),
-            api_key: env_key(&["MAGE_API_KEY"]).or_else(glm_key),
+            api_key: env_key(&["MAGE_API_KEY"]).or_else(|| named_env_key("glm-intl")),
             source: None,
             oauth: None,
             body: None,
@@ -276,7 +272,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
         .filter(|value| !value.trim().is_empty());
 
     let fallback = chosen.is_none();
-    let chosen = chosen.unwrap_or_else(|| "glm".to_string());
+    let chosen = chosen.unwrap_or_else(|| "zai".to_string());
     let mut endpoint = builtin(&chosen).or_else(|| from_file(&file, &chosen));
 
     if let Some(ref mut endpoint) = endpoint
@@ -287,7 +283,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
 
     let mut endpoint = endpoint.ok_or_else(|| {
         Error::Config(format!(
-            "unknown endpoint `{chosen}` — try glm, kimi, grok, qwen, copilot, openai, openrouter, anthropic, gemini, or a name from ~/.mage/config.toml"
+            "unknown endpoint `{chosen}` — try zai, zai-cn, kimi, grok, qwen, copilot, openai, openrouter, anthropic, gemini, or a name from ~/.mage/config.toml"
         ))
     })?;
 
@@ -312,7 +308,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
             .collect::<Vec<_>>()
             .join(", ");
         Error::Config(format!(
-            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.mage/config.toml, run `summon login NAME` for device login, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (glm: {error})"
+            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.mage/config.toml, run `summon login NAME`, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (zai: {error})"
         ))
     })
 }
@@ -394,6 +390,30 @@ struct Preset {
 
 const PRESETS: &[Preset] = &[
     Preset {
+        name: "zai",
+        base_url: GLM_INTL,
+        model: "glm-5.3-flash",
+        env_keys: &["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"],
+        default_key: None,
+        missing: "set ZAI_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "zai-cn",
+        base_url: GLM_CN,
+        model: "glm-5.3-flash",
+        env_keys: &["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"],
+        default_key: None,
+        missing: "set ZAI_CODING_CN_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
         name: "glm",
         base_url: GLM_CN,
         model: "glm-5.3",
@@ -404,7 +424,7 @@ const PRESETS: &[Preset] = &[
             "GLM_API_KEY",
         ],
         default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME --key`",
+        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -421,7 +441,7 @@ const PRESETS: &[Preset] = &[
             "GLM_API_KEY",
         ],
         default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME --key`",
+        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -445,7 +465,7 @@ const PRESETS: &[Preset] = &[
         model: "k3",
         env_keys: &["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"],
         default_key: None,
-        missing: "set KIMI_CODING_API_KEY or KIMI_API_KEY, or put a token in ~/.kimi-code/credentials/kimi-code.json",
+        missing: "set KIMI_CODING_API_KEY or KIMI_API_KEY, put a token in ~/.kimi-code/credentials/kimi-code.json, or `summon login NAME`",
         aliases: &[
             ("kimi-k3", "k3"),
             ("k3", "k3"),
@@ -463,7 +483,7 @@ const PRESETS: &[Preset] = &[
         model: "grok-4.6",
         env_keys: &["XAI_API_KEY", "GROK_API_KEY"],
         default_key: None,
-        missing: "set XAI_API_KEY, or `summon login NAME --key`",
+        missing: "set XAI_API_KEY, or `summon login NAME`",
         aliases: &[
             ("grok", "grok-4.6"),
             ("grok-4-6", "grok-4.6"),
@@ -495,7 +515,7 @@ const PRESETS: &[Preset] = &[
         model: "gpt-4o",
         env_keys: &["OPENAI_API_KEY"],
         default_key: None,
-        missing: "set OPENAI_API_KEY, or `summon login NAME --key`",
+        missing: "set OPENAI_API_KEY, or `summon login NAME`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -507,7 +527,7 @@ const PRESETS: &[Preset] = &[
         model: "openai/gpt-4o",
         env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
         default_key: None,
-        missing: "set OPENROUTER_API_KEY, or `summon login NAME --key`",
+        missing: "set OPENROUTER_API_KEY, or `summon login NAME`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -519,7 +539,7 @@ const PRESETS: &[Preset] = &[
         model: "claude-sonnet-4-5",
         env_keys: &["ANTHROPIC_API_KEY"],
         default_key: None,
-        missing: "set ANTHROPIC_API_KEY, or `summon login NAME --key`",
+        missing: "set ANTHROPIC_API_KEY, or `summon login NAME`",
         aliases: &[
             ("sonnet", "claude-sonnet-4-5"),
             ("claude", "claude-sonnet-4-5"),
@@ -534,7 +554,7 @@ const PRESETS: &[Preset] = &[
         model: "gemini-2.5-flash",
         env_keys: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
         default_key: None,
-        missing: "set GEMINI_API_KEY or GOOGLE_API_KEY, or `summon login NAME --key`",
+        missing: "set GEMINI_API_KEY or GOOGLE_API_KEY, or `summon login NAME`",
         aliases: &[("flash", "gemini-2.5-flash"), ("pro", "gemini-2.5-pro")],
         oauth: None,
         headers: &[],
@@ -563,7 +583,7 @@ fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     if endpoint.oauth.is_some() {
         return Ok(endpoint);
     }
-    if let Some(key) = named_env_key(&endpoint.name).or_else(|| env_key(&["MAGE_API_KEY"])) {
+    if let Some(key) = named_env_key(&endpoint.name) {
         endpoint.api_key = Some(key);
         endpoint.source = Some(Source::Env);
         return Ok(endpoint);
@@ -583,10 +603,7 @@ fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
             return Ok(endpoint);
         }
         if require_key && !row.missing.is_empty() {
-            return Err(Error::Config(format!(
-                "{} — or `summon login {} --key`",
-                row.missing, endpoint.name
-            )));
+            return Err(Error::Config(row.missing.replace("NAME", &endpoint.name)));
         }
     }
     Ok(endpoint)
@@ -663,10 +680,6 @@ fn kimi_cli_token() -> Option<String> {
         .and_then(serde_json::Value::as_str)
         .filter(|token| !token.trim().is_empty())
         .map(str::to_string)
-}
-
-fn glm_key() -> Option<String> {
-    named_env_key("glm")
 }
 
 fn env_key(names: &[&str]) -> Option<String> {

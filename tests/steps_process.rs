@@ -57,6 +57,24 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
         fs::read_to_string(fixture.stderr("second")).unwrap_or_default()
     );
     let resumed_output = fs::read_to_string(fixture.stdout("second"))?;
+    let events: Vec<Value> = resumed_output
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    assert!(
+        events.iter().any(|event| {
+            event.get("type").and_then(Value::as_str) == Some("reasoning")
+                && event.get("text").and_then(Value::as_str) == Some("checking")
+        }),
+        "headless JSON omitted streamed reasoning: {resumed_output}"
+    );
+    assert!(
+        events.iter().any(|event| {
+            event.get("type").and_then(Value::as_str) == Some("delta")
+                && event.get("text").and_then(Value::as_str) == Some("done")
+        }),
+        "headless JSON omitted streamed text: {resumed_output}"
+    );
     assert!(
         resumed_output.contains("true # step-one"),
         "{resumed_output}"
@@ -332,6 +350,13 @@ fn serve(
                 .map_err(|error| format!("context response: {error}"))?;
             continue;
         };
+        let request: Value =
+            serde_json::from_str(&body).map_err(|error| format!("decode request: {error}"))?;
+        if request.get("stream").and_then(Value::as_bool) != Some(true) {
+            return Err(format!(
+                "headless JSON request did not enable streaming: {body}"
+            ));
+        }
         let prompt = last_user_prompt(&body).map_err(|error| format!("decode request: {error}"))?;
         requests.push(prompt.clone());
         match requests.len() {
@@ -443,11 +468,14 @@ fn write_response(
     completion_tokens: u64,
 ) -> io::Result<()> {
     let body = format!(
-        "{{\"choices\":[{{\"message\":{{\"content\":\"done\"}}}}],\"usage\":{{\"prompt_tokens\":{prompt_tokens},\"completion_tokens\":{completion_tokens}}}}}"
+        "data: {{\"choices\":[{{\"delta\":{{\"reasoning_content\":\"checking\"}}}}]}}\n\n\
+         data: {{\"choices\":[{{\"delta\":{{\"content\":\"done\"}},\"finish_reason\":\"stop\"}}]}}\n\n\
+         data: {{\"choices\":[],\"usage\":{{\"prompt_tokens\":{prompt_tokens},\"completion_tokens\":{completion_tokens}}}}}\n\n\
+         data: [DONE]\n\n"
     );
     write!(
         stream,
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         body.len(),
         body
     )

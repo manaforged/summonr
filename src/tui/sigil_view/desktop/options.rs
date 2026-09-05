@@ -30,7 +30,7 @@ pub(super) fn main(app: App) -> NodeBuilder {
             .to_string(),
         ),
         ("verify", verify),
-        ("rounds", model.snapshot.max_rounds.to_string()),
+        ("rounds", model.snapshot.rounds_label()),
         ("endpoint", endpoint),
         ("model", model.snapshot.model.clone()),
         (

@@ -1,12 +1,12 @@
 # Copy to ~/.mage/config.toml and edit.
 # A workspace `.mage/config.toml` may select an [lsp] module only.
 # Do not put secrets in the git repo. Keys belong in the sealed store:
-# `summon login NAME --key`; `summon endpoints` shows where each key lives.
+# `summon login NAME`; `summon endpoints` shows where each key lives.
 #
 # Completions seats: base_url + model, optional [endpoint.NAME.body].
 # Native seats set wire = "anthropic" or wire = "gemini".
 
-default = "glm"
+default = "zai"
 
 # Interface preferences. The settings modal (ctrl+o or /settings) writes
 # these; edit them here if you prefer.
@@ -27,10 +27,10 @@ default = "glm"
 # [lsp]
 # command = ["vscode-eslint-language-server", "--stdio"]
 
-[endpoint.glm]
-base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
-model = "glm-5.3"
-# api_key = "…"   # plaintext; prefer `summon login glm --key` or ZAI_CODING_API_KEY
+[endpoint.zai]
+base_url = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3-flash"
+# api_key = "…"   # plaintext; prefer `summon login zai` or ZAI_API_KEY
 # context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
 # effort = "low"            # reasoning effort: none, low, medium, high
 #                           # (chat/completions `reasoning_effort`; Anthropic and
@@ -38,9 +38,9 @@ model = "glm-5.3"
 # price = { input = 0.6, output = 2.2, cached = 0.11 }   # USD per million tokens;
 #                           # turns /stats and the footer into dollars
 
-[endpoint.glm-intl]
-base_url = "https://api.z.ai/api/coding/paas/v4"
-model = "glm-5.3"
+[endpoint.zai-cn]
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+model = "glm-5.3-flash"
 
 [endpoint.qwen]
 # llama-server on this machine. Override base_url for a remote server.
@@ -123,6 +123,6 @@ model = "grok-4.6"
 # scout = "kimi"                                   # read-only reconnaissance
 # plan = "grok"                                    # plan-mode rounds
 # # implement unset → the driving seat
-# review = { endpoint = "glm", model = "glm-5.3" } # read-only review after the gates
+# review = "zai"                                    # read-only review after the gates
 # judge = "grok"                                   # goal continue/stop
 # summary = "qwen"                                 # compaction

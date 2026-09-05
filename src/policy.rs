@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 pub(crate) struct Policy {
     pub strict: bool,
     read_only: bool,
+    unrestricted: bool,
     deny: Vec<String>,
     allow: Vec<String>,
     write: Vec<String>,
@@ -67,7 +68,22 @@ impl Policy {
     }
 
     pub(crate) fn set_strict(&mut self) {
+        self.unrestricted = false;
         self.strict = true;
+    }
+
+    pub(crate) fn set_unrestricted(&mut self) {
+        self.unrestricted = true;
+    }
+
+    #[must_use]
+    pub(crate) fn is_unrestricted(&self) -> bool {
+        self.unrestricted
+    }
+
+    #[must_use]
+    pub(crate) fn restricts_writes(&self) -> bool {
+        !self.unrestricted && !self.write.is_empty()
     }
 
     pub(crate) fn set_read_only(&mut self, on: bool) {
@@ -84,10 +100,8 @@ impl Policy {
         if command.is_empty() {
             return Err(Error::Denied("command is empty".to_string()));
         }
-        if self.read_only {
-            return Err(Error::Denied(
-                "plan mode is read-only — no commands run".to_string(),
-            ));
+        if self.unrestricted {
+            return Ok(());
         }
         if builtin_deny(command) {
             return Err(Error::Denied(format!("blocked command `{command}`")));
@@ -121,6 +135,9 @@ impl Policy {
             return Err(Error::Denied(
                 "plan mode is read-only — no file writes".to_string(),
             ));
+        }
+        if self.unrestricted {
+            return Ok(());
         }
         if self.write.is_empty() {
             return Ok(());

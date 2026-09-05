@@ -44,6 +44,8 @@ pub enum Event {
         #[serde(default)]
         reasoning_tokens: u32,
         cached_tokens: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        millis: Option<u64>,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         prefix_hash: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -62,6 +64,9 @@ pub enum Event {
         files: Vec<String>,
     },
     Delta {
+        text: String,
+    },
+    Reasoning {
         text: String,
     },
     Note {
@@ -91,19 +96,12 @@ pub(crate) struct ToolRegistry {
     sandbox: Option<sandbox::Sandbox>,
     background: bool,
     language: bool,
-    recent: std::sync::Mutex<Option<Recent>>,
-    writes: std::sync::atomic::AtomicU64,
+    skills: bool,
     history: std::sync::Mutex<std::collections::VecDeque<String>>,
-    lsp: std::sync::Mutex<std::collections::BTreeMap<String, lsp::Conn>>,
+    lsp: std::sync::Mutex<
+        std::collections::BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>>,
+    >,
     session: std::sync::Mutex<Option<String>>,
-}
-
-struct Recent {
-    command: String,
-    at: std::time::Instant,
-    writes: u64,
-    output: String,
-    success: bool,
 }
 
 pub(crate) struct ToolOutput {
@@ -147,30 +145,41 @@ impl ToolRegistry {
             sandbox: None,
             background: true,
             language: true,
-            recent: std::sync::Mutex::new(None),
-            writes: std::sync::atomic::AtomicU64::new(0),
+            skills: true,
             history: std::sync::Mutex::new(std::collections::VecDeque::new()),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
         })
     }
 
-    pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool) {
+    pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool, skills: bool) {
         if !search {
             self.search = None;
         }
         self.language = lsp;
         self.background = jobs;
+        self.skills = skills;
     }
 
     pub(crate) fn set_strict(&mut self) {
         self.policy.set_strict();
     }
 
+    pub(crate) fn set_unrestricted(&mut self) {
+        self.policy.set_unrestricted();
+    }
+
     pub(crate) fn child_at(&self, workspace: &Path, session: &str) -> Result<Self> {
         let mut child = Self::with_policy_and_search(workspace, self.policy.clone(), None)?;
         child.env.clone_from(&self.env);
+        child.sandbox = self
+            .sandbox
+            .as_ref()
+            .map(|sandbox| sandbox.at(&child.workspace))
+            .transpose()?;
         child.background = false;
+        child.language = self.language;
+        child.skills = self.skills;
         child.set_session(session);
         Ok(child)
     }
@@ -241,9 +250,6 @@ impl ToolRegistry {
     }
 
     fn note_call(&self, name: &str, arguments: &str) -> usize {
-        if arguments.contains("\"fresh\":true") {
-            return 1;
-        }
         let signature = format!("{name}\u{0}{arguments}");
         let Ok(mut history) = self.history.lock() else {
             return 1;
@@ -295,6 +301,9 @@ impl ToolRegistry {
 
     fn resolve_write(&self, path: &str) -> Result<PathBuf> {
         let dest = self.lexical(path)?;
+        if self.policy.is_unrestricted() {
+            return Ok(dest);
+        }
         if dest.exists() {
             return self.resolve_existing(path);
         }
@@ -323,10 +332,16 @@ impl ToolRegistry {
         if path.trim().is_empty() {
             return Err(Error::Tool("path is empty".to_string()));
         }
+        if self.policy.is_unrestricted() {
+            return Ok(if relative.is_absolute() {
+                relative.to_path_buf()
+            } else {
+                self.workspace.join(relative)
+            });
+        }
         if relative.is_absolute() {
-            return Err(Error::Tool(
-                "tools accept workspace-relative paths".to_string(),
-            ));
+            self.ensure_inside(relative)?;
+            return Ok(relative.to_path_buf());
         }
         let mut out = self.workspace.clone();
         for component in relative.components() {
@@ -350,7 +365,7 @@ impl ToolRegistry {
     }
 
     fn ensure_inside(&self, path: &Path) -> Result<()> {
-        if path.starts_with(&self.workspace) {
+        if self.policy.is_unrestricted() || path.starts_with(&self.workspace) {
             Ok(())
         } else {
             Err(Error::Tool("path leaves the workspace".to_string()))
@@ -358,6 +373,9 @@ impl ToolRegistry {
     }
 
     fn relative(&self, path: &Path) -> Result<String> {
+        if self.policy.is_unrestricted() {
+            return Ok(path.to_string_lossy().into_owned());
+        }
         path.strip_prefix(&self.workspace)
             .map(|relative| relative.to_string_lossy().into_owned())
             .map_err(|error| Error::Tool(format!("path leaves the workspace: {error}")))

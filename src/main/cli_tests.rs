@@ -29,6 +29,15 @@ fn first_token_named_endpoint_is_the_target() {
 }
 
 #[test]
+fn zai_regions_are_direct_commands() {
+    for name in ["zai", "zai-cn"] {
+        let parsed = args(&[name]);
+        assert_eq!(parsed.endpoint.as_deref(), Some(name));
+        assert!(parsed.prompt.is_empty());
+    }
+}
+
+#[test]
 fn anthropic_token_is_a_named_seat() {
     let parsed = args(&["anthropic", "-p", "hi"]);
     assert_eq!(parsed.endpoint.as_deref(), Some("anthropic"));
@@ -85,7 +94,7 @@ fn diagnostics_subcommands_are_not_prompts() {
     let doctor = args(&["doctor"]);
     assert!(doctor.doctor);
     assert!(doctor.endpoint.is_none());
-    assert!(parse_from(["logs", "extra"].map(str::to_string)).is_err());
+    parse_from(["logs", "extra"].map(str::to_string)).expect_err("logs reject extra arguments");
 }
 
 #[test]
@@ -148,6 +157,27 @@ fn a_bare_unknown_name_before_goal_or_steps_is_an_error() {
 }
 
 #[test]
+fn steps_requires_a_real_plan_path() {
+    let missing = parse_from(["--steps"].map(str::to_string))
+        .expect_err("missing path")
+        .to_string();
+    assert!(
+        missing.contains("--steps requires a plan path"),
+        "{missing}"
+    );
+
+    let option = parse_from(["--steps", "--plan"].map(str::to_string))
+        .expect_err("option is not a path")
+        .to_string();
+    assert!(option.contains("not option `--plan`"), "{option}");
+
+    assert_eq!(
+        args(&["--steps", "PLAN.md"]).steps.as_deref(),
+        Some("PLAN.md")
+    );
+}
+
+#[test]
 fn help_lists_every_interactive_command() {
     let text = super::interactive();
     for spec in summoner::command_specs() {
@@ -173,11 +203,8 @@ fn export_and_name_parse() {
 }
 
 #[test]
-fn max_turns_zero_is_refused() {
-    let error = parse_from(["--goal", "x", "--max-turns", "0"].map(str::to_string))
-        .expect_err("zero")
-        .to_string();
-    assert!(error.contains("at least 1"), "{error}");
+fn max_turns_zero_means_unlimited() {
+    assert_eq!(args(&["--max-turns", "0"]).max_turns, Some(0));
     assert_eq!(args(&["--max-turns", "3"]).max_turns, Some(3));
 }
 

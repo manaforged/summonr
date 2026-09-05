@@ -19,14 +19,10 @@ use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
 
-const DEFAULT_MAX_ROUNDS: usize = 64;
 #[cfg(not(test))]
 pub(crate) const JOB_WAIT_SECS: u64 = 120;
 #[cfg(test)]
 pub(crate) const JOB_WAIT_SECS: u64 = 1;
-pub(crate) const DEFAULT_ROUND_OUTPUT_TOKENS: u32 = 8_192;
-pub(crate) const JUDGE_OUTPUT_TOKENS: u32 = 512;
-
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
     pub max_tokens: Option<u64>,
@@ -87,6 +83,7 @@ pub struct Loop<P> {
     spent_tokens: u64,
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
+    probe: Option<tokio::task::JoinHandle<Option<u32>>>,
     effort: Option<Effort>,
     turn_started: u64,
     accepted: bool,
@@ -156,7 +153,7 @@ pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
 pub(super) fn exposure(request: &CompletionRequest, bytes: &[u8]) -> Exposure {
     Exposure {
         max_input_tokens: u64::try_from(bytes.len() / 4).unwrap_or(u64::MAX),
-        max_output_tokens: u64::from(request.max_output_tokens),
+        max_output_tokens: request.max_output_tokens.map_or(0, u64::from),
     }
 }
 

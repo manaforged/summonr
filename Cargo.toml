@@ -21,7 +21,6 @@ path = "src/summoner.rs"
 
 [dependencies]
 base64 = "0.22"
-cap-std = "4.0.2"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -31,7 +30,7 @@ tempfile = "3"
 toml = "0.8"
 toml_edit = "0.22"
 unicode-width = "0.2"
-tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls"] }
 genai = { version = "0.6.5", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
@@ -51,6 +50,7 @@ gui = ["sigil/clipboard", "sigil/desktop"]
 keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
 
 [target.'cfg(windows)'.dependencies]
+process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
 winapi-util = "0.1"
 
 [lints.rust]

@@ -95,7 +95,8 @@ async fn native_web_search_hits_and_curl_is_allowed() -> Result<()> {
         .map(|tool| tool.function.name)
         .collect();
     assert!(plan.iter().any(|n| n == "web_search"));
-    assert!(plan.iter().any(|n| n == "write_file"));
+    assert!(!plan.iter().any(|n| n == "write_file"));
+    assert!(!plan.iter().any(|n| n == "read_file"));
     tools
         .execute(&call("write_file", r#"{"path":"no","content":"no"}"#))
         .await
@@ -543,6 +544,20 @@ async fn a_turn_with_a_job_still_running_is_deferred_not_judged() -> Result<()> 
         "the Work stays open"
     );
     assert_eq!(progress.attempts, 0, "no repair strike");
+    let again = loop_.turn("is it done?").await?;
+    assert!(
+        again.checks.is_empty(),
+        "the job from the first turn still gates"
+    );
+    assert!(
+        again.events.iter().any(|event| matches!(
+            event,
+            Event::Note { text } if text.starts_with("turn deferred")
+        )),
+        "{:?}",
+        again.events
+    );
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Execute);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

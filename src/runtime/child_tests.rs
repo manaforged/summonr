@@ -7,6 +7,8 @@ use std::sync::{Arc, Mutex};
 use super::*;
 use crate::provider::{AssistantMessage, Role, ToolFunction, ToolKind};
 
+const CHILDREN: usize = 5;
+
 #[derive(Clone)]
 struct Script {
     child: bool,
@@ -115,6 +117,22 @@ fn task_call(id: usize, assignment: &str, access: Access) -> ToolCall {
             arguments: serde_json::json!({
                 "assignment": assignment,
                 "access": access,
+            })
+            .to_string(),
+        },
+    }
+}
+
+fn background_task_call(id: usize, assignment: &str, access: Access) -> ToolCall {
+    ToolCall {
+        id: format!("task-call-{id}"),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "task".to_string(),
+            arguments: serde_json::json!({
+                "assignment": assignment,
+                "access": access,
+                "background": true,
             })
             .to_string(),
         },
@@ -242,7 +260,7 @@ impl Provider for Concurrent {
             if !self.child {
                 return match self.parent_calls.fetch_add(1, Ordering::SeqCst) {
                     0 => Ok(AssistantMessage {
-                        tool_calls: (0..MAX_PARALLEL)
+                        tool_calls: (0..CHILDREN)
                             .map(|index| {
                                 task_call(index, &format!("research {index}"), Access::Research)
                             })
@@ -261,7 +279,7 @@ impl Provider for Concurrent {
             self.peak.fetch_max(active, Ordering::SeqCst);
             self.arrived.fetch_add(1, Ordering::SeqCst);
             std::future::poll_fn(|context| {
-                if self.arrived.load(Ordering::SeqCst) == MAX_PARALLEL {
+                if self.arrived.load(Ordering::SeqCst) == CHILDREN {
                     std::task::Poll::Ready(())
                 } else {
                     context.waker().wake_by_ref();
@@ -286,7 +304,7 @@ impl Provider for Concurrent {
 }
 
 #[tokio::test]
-async fn four_research_children_run_concurrently() -> Result<()> {
+async fn more_than_four_research_children_run_concurrently() -> Result<()> {
     let home = tempfile::tempdir()?;
     let provider = Concurrent::new();
     let peak = provider.peak.clone();
@@ -295,8 +313,8 @@ async fn four_research_children_run_concurrently() -> Result<()> {
     let turn = loop_.turn("research four questions").await?;
 
     assert!(turn.text.starts_with("parent finished"));
-    assert_eq!(peak.load(Ordering::SeqCst), MAX_PARALLEL);
-    assert_eq!(loop_.session.children().len(), MAX_PARALLEL);
+    assert_eq!(peak.load(Ordering::SeqCst), CHILDREN);
+    assert_eq!(loop_.session.children().len(), CHILDREN);
     assert!(loop_.session.children().iter().all(|record| {
         record.access == Access::Research && matches!(record.state, ChildState::Completed(_))
     }));
@@ -402,7 +420,7 @@ impl Provider for Writers {
             if !self.child {
                 return match self.parent_calls.fetch_add(1, Ordering::SeqCst) {
                     0 => Ok(AssistantMessage {
-                        tool_calls: (0..MAX_PARALLEL)
+                        tool_calls: (0..CHILDREN)
                             .map(|index| {
                                 task_call(index, &format!("writer {index}"), Access::Implement)
                             })
@@ -432,7 +450,7 @@ impl Provider for Writers {
             self.peak.fetch_max(active, Ordering::SeqCst);
             self.arrived.fetch_add(1, Ordering::SeqCst);
             std::future::poll_fn(|context| {
-                if self.arrived.load(Ordering::SeqCst) == MAX_PARALLEL {
+                if self.arrived.load(Ordering::SeqCst) == CHILDREN {
                     std::task::Poll::Ready(())
                 } else {
                     context.waker().wake_by_ref();
@@ -441,7 +459,7 @@ impl Provider for Writers {
             })
             .await;
             self.active.fetch_sub(1, Ordering::SeqCst);
-            let index = (0..MAX_PARALLEL)
+            let index = (0..CHILDREN)
                 .find(|index| {
                     request
                         .messages
@@ -479,7 +497,7 @@ impl Provider for Writers {
 }
 
 #[tokio::test]
-async fn four_implement_children_reconcile_without_leftover_trees() -> Result<()> {
+async fn more_than_four_implement_children_reconcile_without_leftover_trees() -> Result<()> {
     let workspace = repository();
     let provider = Writers::new();
     let peak = provider.peak.clone();
@@ -489,15 +507,15 @@ async fn four_implement_children_reconcile_without_leftover_trees() -> Result<()
     let turn = loop_.turn("implement four files").await?;
 
     assert!(turn.text.starts_with("parent finished"));
-    assert_eq!(peak.load(Ordering::SeqCst), MAX_PARALLEL);
-    for index in 0..MAX_PARALLEL {
+    assert_eq!(peak.load(Ordering::SeqCst), CHILDREN);
+    for index in 0..CHILDREN {
         assert_eq!(
             std::fs::read_to_string(workspace.path().join(format!("child-{index}.txt")))?,
             format!("child {index}\n")
         );
     }
     let records = loop_.session.children();
-    assert_eq!(records.len(), MAX_PARALLEL);
+    assert_eq!(records.len(), CHILDREN);
     assert!(records.iter().all(|record| {
         record.access == Access::Implement
             && matches!(record.state, ChildState::Completed(_))
@@ -535,7 +553,7 @@ async fn conflicting_implement_children_leave_parent_unchanged_and_keep_worktree
     assert!(turn.text.starts_with("parent finished"));
     assert!(!workspace.path().join("shared.txt").exists());
     let records = loop_.session.children();
-    assert_eq!(records.len(), MAX_PARALLEL);
+    assert_eq!(records.len(), CHILDREN);
     assert!(records.iter().all(|record| {
         record.workspace.exists()
             && matches!(
@@ -548,7 +566,7 @@ async fn conflicting_implement_children_leave_parent_unchanged_and_keep_worktree
             )
     }));
     let trees = crate::worktree::list(workspace.path())?;
-    assert_eq!(trees.len(), MAX_PARALLEL);
+    assert_eq!(trees.len(), CHILDREN);
     for tree in trees {
         crate::worktree::remove_child(&tree)?;
     }
@@ -559,18 +577,340 @@ async fn conflicting_implement_children_leave_parent_unchanged_and_keep_worktree
 fn child_budget_is_a_share_of_the_parent_cap_or_unbounded() -> Result<()> {
     let home = tempfile::tempdir()?;
     let loop_ = Loop::with_session(Script::new(), "test-model", home.path(), "system")?;
-    let budget = loop_.task_budget(MAX_PARALLEL)?;
+    let budget = loop_.task_budget(CHILDREN)?;
     assert_eq!(budget.max_tokens, None);
-    assert_eq!(budget.max_secs, Some(MAX_SECS));
+    assert_eq!(budget.max_secs, None);
 
     let capped = Loop::with_session(Script::new(), "test-model", home.path(), "system")?
         .with_budget(Budget {
             max_tokens: Some(40_000),
             max_secs: Some(60),
         })?;
-    let budget = capped.task_budget(MAX_PARALLEL)?;
-    assert_eq!(budget.max_tokens, Some(10_000));
+    let budget = capped.task_budget(CHILDREN)?;
+    assert_eq!(budget.max_tokens, Some(40_000 / CHILDREN as u64));
     assert_eq!(budget.max_secs, Some(60));
+    Ok(())
+}
+
+#[derive(Clone)]
+struct BudgetProbe {
+    child: bool,
+    parent_calls: Arc<AtomicUsize>,
+}
+
+impl Provider for BudgetProbe {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            if self.child {
+                return Ok(message_with_tool(
+                    "read_file",
+                    r#"{"path":"missing.txt"}"#,
+                    6,
+                    4,
+                ));
+            }
+            if self.parent_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                return Ok(AssistantMessage {
+                    tool_calls: vec![
+                        background_task_call(0, "research one", Access::Research),
+                        background_task_call(1, "research two", Access::Research),
+                    ],
+                    ..AssistantMessage::default()
+                });
+            }
+            Ok(message("parent finished", 0, 0))
+        })
+    }
+
+    fn child(&self) -> Option<Self> {
+        Some(Self {
+            child: true,
+            parent_calls: self.parent_calls.clone(),
+        })
+    }
+
+    fn supports_children(&self) -> bool {
+        true
+    }
+}
+
+#[tokio::test]
+async fn background_children_share_the_remaining_token_allocation() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let provider = BudgetProbe {
+        child: false,
+        parent_calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let parent_calls = provider.parent_calls.clone();
+    let mut loop_ = Loop::with_session(provider, "test-model", home.path(), "system")?
+        .with_budget(Budget {
+            max_tokens: Some(15),
+            max_secs: None,
+        })?;
+
+    let turn = loop_.turn("delegate two children").await?;
+
+    assert!(turn.aborted, "the parent budget must stop after settlement");
+    assert_eq!(parent_calls.load(Ordering::SeqCst), 1);
+    assert_eq!(turn.usage.prompt_tokens, 12);
+    assert_eq!(turn.usage.completion_tokens, 8);
+    let children = loop_.session.children();
+    assert_eq!(children.len(), 2);
+    assert!(children.iter().all(|record| {
+        matches!(
+            &record.state,
+            ChildState::Aborted(result)
+                if result.text.contains("7 token limit")
+        )
+    }));
+    Ok(())
+}
+
+#[derive(Clone)]
+struct MixedAllocationProbe {
+    child: bool,
+    child_calls: Arc<AtomicUsize>,
+}
+
+impl Provider for MixedAllocationProbe {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.child {
+                return Ok(message("parent", 0, 0));
+            }
+            match self.child_calls.fetch_add(1, Ordering::SeqCst) {
+                0 => Ok(message_with_tool(
+                    "read_file",
+                    r#"{"path":"missing.txt"}"#,
+                    6,
+                    0,
+                )),
+                1 => Ok(message("foreground finished", 0, 4)),
+                2 => Ok(message_with_tool(
+                    "read_file",
+                    r#"{"path":"missing.txt"}"#,
+                    6,
+                    0,
+                )),
+                _ => Ok(message("background finished", 0, 1)),
+            }
+        })
+    }
+
+    fn child(&self) -> Option<Self> {
+        Some(Self {
+            child: true,
+            child_calls: self.child_calls.clone(),
+        })
+    }
+
+    fn supports_children(&self) -> bool {
+        true
+    }
+}
+
+#[tokio::test]
+async fn mixed_task_batches_allocate_background_children_after_foreground_spend() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let provider = MixedAllocationProbe {
+        child: false,
+        child_calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let mut loop_ = Loop::with_session(provider, "test-model", home.path(), "system")?
+        .with_budget(Budget {
+            max_tokens: Some(15),
+            max_secs: None,
+        })?;
+    let calls = vec![
+        task_call(0, "foreground", Access::Research),
+        background_task_call(1, "background", Access::Research),
+    ];
+    let results = loop_
+        .tasks_execute(&calls, &mut Vec::new(), &mut |_: &Event| {})
+        .await;
+    assert!(results.iter().all(|result| result.is_ok()));
+    let foreground = results
+        .first()
+        .and_then(|result| result.as_ref().ok())
+        .map(|execution| execution.usage.clone())
+        .ok_or_else(|| Error::Config("foreground result is missing".to_string()))?;
+    let mut usage = foreground;
+    let mut events = Vec::new();
+    let mut emit = |_: &Event| {};
+    loop_
+        .await_children(&mut events, &mut emit, &mut usage)
+        .await?;
+    let records = loop_.session.children();
+    assert_eq!(records.len(), 2);
+    assert!(matches!(
+        &records[0].state,
+        ChildState::Completed(result) if result.rounds == 2
+    ));
+    assert!(matches!(
+        &records[1].state,
+        ChildState::Aborted(result) if result.text.contains("5 token limit")
+    ));
+    assert_eq!((usage.prompt_tokens, usage.completion_tokens), (12, 4));
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum SettlementMode {
+    Automatic,
+    Poll,
+    Cancel,
+}
+
+#[derive(Clone)]
+struct SettlementProbe {
+    child: bool,
+    mode: SettlementMode,
+    parent_calls: Arc<AtomicUsize>,
+    child_calls: Arc<AtomicUsize>,
+}
+
+impl Provider for SettlementProbe {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            if !self.child {
+                if self.parent_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                    return Ok(AssistantMessage {
+                        tool_calls: vec![background_task_call(0, "settle child", Access::Research)],
+                        ..AssistantMessage::default()
+                    });
+                }
+                return Ok(message("parent finished", 0, 0));
+            }
+            match self.mode {
+                SettlementMode::Automatic => Ok(message("child finished", 6, 4)),
+                SettlementMode::Poll => {
+                    tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
+                    Ok(message("child finished", 6, 4))
+                }
+                SettlementMode::Cancel => {
+                    if self.child_calls.fetch_add(1, Ordering::SeqCst) == 0 {
+                        Ok(message_with_tool(
+                            "read_file",
+                            r#"{"path":"missing.txt"}"#,
+                            6,
+                            4,
+                        ))
+                    } else {
+                        std::future::pending().await
+                    }
+                }
+            }
+        })
+    }
+
+    fn child(&self) -> Option<Self> {
+        Some(Self {
+            child: true,
+            mode: self.mode,
+            parent_calls: self.parent_calls.clone(),
+            child_calls: self.child_calls.clone(),
+        })
+    }
+
+    fn supports_children(&self) -> bool {
+        true
+    }
+}
+
+fn settlement_loop(mode: SettlementMode) -> Result<(tempfile::TempDir, Loop<SettlementProbe>)> {
+    let home = tempfile::tempdir()?;
+    let provider = SettlementProbe {
+        child: false,
+        mode,
+        parent_calls: Arc::new(AtomicUsize::new(0)),
+        child_calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let loop_ = Loop::with_session(provider, "test-model", home.path(), "system")?;
+    Ok((home, loop_))
+}
+
+fn child_settlement_call(id: &str, kill: bool) -> ToolCall {
+    ToolCall {
+        id: "settle-child".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "task".to_string(),
+            arguments: serde_json::json!({"child": id, "kill": kill}).to_string(),
+        },
+    }
+}
+
+#[tokio::test]
+async fn child_usage_is_reported_once_for_automatic_poll_and_cancel_settlement() -> Result<()> {
+    let (_automatic_home, mut automatic) = settlement_loop(SettlementMode::Automatic)?;
+    let automatic_turn = automatic.turn("delegate").await?;
+    assert_eq!(
+        (
+            automatic_turn.usage.prompt_tokens,
+            automatic_turn.usage.completion_tokens
+        ),
+        (6, 4)
+    );
+
+    let (_polled_home, mut polled) = settlement_loop(SettlementMode::Poll)?;
+    let first = polled.turn("delegate").await?;
+    assert!(!first.aborted);
+    let child = polled
+        .session
+        .children()
+        .first()
+        .ok_or_else(|| Error::Config("poll child is missing".to_string()))?
+        .id
+        .to_string();
+    tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+    let polled_execution = polled
+        .task_execute(
+            &child_settlement_call(&child, false),
+            &mut Vec::new(),
+            &mut |_: &Event| {},
+        )
+        .await?;
+    assert_eq!(
+        (
+            polled_execution.usage.prompt_tokens,
+            polled_execution.usage.completion_tokens
+        ),
+        (6, 4)
+    );
+
+    let (_cancelled_home, mut cancelled) = settlement_loop(SettlementMode::Cancel)?;
+    let first = cancelled.turn("delegate").await?;
+    assert!(!first.aborted);
+    let child = cancelled
+        .session
+        .children()
+        .first()
+        .ok_or_else(|| Error::Config("cancel child is missing".to_string()))?
+        .id
+        .to_string();
+    let cancelled_execution = cancelled
+        .task_execute(
+            &child_settlement_call(&child, true),
+            &mut Vec::new(),
+            &mut |_: &Event| {},
+        )
+        .await?;
+    assert_eq!(
+        (
+            cancelled_execution.usage.prompt_tokens,
+            cancelled_execution.usage.completion_tokens
+        ),
+        (6, 4)
+    );
     Ok(())
 }
 
@@ -698,13 +1038,16 @@ async fn task_deadline_aborts_and_journals_the_child() -> Result<()> {
         .collect::<Vec<_>>();
     assert!(matches!(
         states.as_slice(),
-        [ChildState::Running, ChildState::Aborted(_)]
+        [
+            ChildState::Running,
+            ChildState::Aborted(_) | ChildState::Interrupted(_)
+        ]
     ));
     Ok(())
 }
 
 #[tokio::test]
-async fn task_rejects_an_oversized_assignment_before_starting_a_child() -> Result<()> {
+async fn task_accepts_a_large_assignment() -> Result<()> {
     let home = tempfile::tempdir()?;
     let mut loop_ = Loop::with_session(Script::new(), "test-model", home.path(), "system")?;
     let call = ToolCall {
@@ -713,19 +1056,17 @@ async fn task_rejects_an_oversized_assignment_before_starting_a_child() -> Resul
         function: ToolFunction {
             name: "task".to_string(),
             arguments: serde_json::json!({
-                "assignment": "x".repeat(ASSIGNMENT_MAX_CHARS + 1)
+                "assignment": "x".repeat(8_000)
             })
             .to_string(),
         },
     };
 
-    assert!(
-        loop_
-            .task_execute(&call, &mut Vec::new(), &mut |_: &Event| {})
-            .await
-            .is_err()
-    );
-    assert_eq!(crate::session::list_in(home.path())?.len(), 1);
+    let output = loop_
+        .task_execute(&call, &mut Vec::new(), &mut |_: &Event| {})
+        .await?;
+    assert!(output.output.success);
+    assert_eq!(crate::session::list_in(home.path())?.len(), 2);
     Ok(())
 }
 
@@ -752,6 +1093,7 @@ async fn child_tools_keep_commands_and_inherit_restrictions() -> Result<()> {
             .iter()
             .any(|tool| tool.function.name == "run_command")
     );
+    assert_eq!(child.definitions().len(), 2);
     let writable =
         crate::tools::ToolRegistry::with_policy_and_search(home.path(), Policy::builtin(), None)?
             .child_at(home.path(), "child")?;
@@ -987,7 +1329,7 @@ impl Provider for Leaver {
 }
 
 #[tokio::test]
-async fn a_turn_defers_while_a_background_child_runs_then_stops_it() -> Result<()> {
+async fn turns_defer_while_a_background_child_runs_until_explicitly_stopped() -> Result<()> {
     let home = tempfile::tempdir()?;
     let provider = Leaver {
         child: false,
@@ -1008,12 +1350,28 @@ async fn a_turn_defers_while_a_background_child_runs_then_stops_it() -> Result<(
             .all(|record| matches!(record.state, ChildState::Running))
     );
 
-    for _ in 0..3 {
+    for _ in 0..5 {
         drop(loop_.turn("continue").await?);
     }
 
     let records = loop_.session.children();
     assert_eq!(records.len(), 1);
+    assert!(matches!(&records[0].state, ChildState::Running));
+    let id = records[0].id.to_string();
+    let call = ToolCall {
+        id: "stop-child".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "task".to_string(),
+            arguments: serde_json::json!({"child": id, "kill": true}).to_string(),
+        },
+    };
+    drop(
+        loop_
+            .task_execute(&call, &mut Vec::new(), &mut |_: &Event| {})
+            .await?,
+    );
+    let records = loop_.session.children();
     assert!(
         matches!(&records[0].state, ChildState::Aborted(_)),
         "{records:?}"

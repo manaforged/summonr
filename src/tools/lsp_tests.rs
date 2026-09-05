@@ -1,14 +1,13 @@
-use std::io::{BufReader, Read, Write, pipe};
-use std::sync::mpsc;
-use std::thread;
+use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt, BufReader, duplex, split};
+use tokio::time::Duration;
 
 use serde_json::{Value, json};
 
 use super::*;
 
-fn reply_loop(reader: impl Read, mut writer: impl Write) {
+async fn reply_loop(reader: impl AsyncRead + Unpin, mut writer: impl AsyncWrite + Unpin) {
     let mut reader = BufReader::new(reader);
-    while let Ok(msg) = read_msg(&mut reader) {
+    while let Ok(msg) = read_msg(&mut reader).await {
         if msg.get("method").and_then(Value::as_str) == Some("exit") {
             break;
         }
@@ -16,10 +15,13 @@ fn reply_loop(reader: impl Read, mut writer: impl Write) {
             continue;
         };
         if msg.get("method").and_then(Value::as_str) == Some("initialize") {
-            drop(write_msg(
-                &mut writer,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {} } }),
-            ));
+            drop(
+                write_msg(
+                    &mut writer,
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {} } }),
+                )
+                .await,
+            );
             continue;
         }
         if msg.get("method").and_then(Value::as_str) == Some("textDocument/diagnostic") {
@@ -37,41 +39,48 @@ fn reply_loop(reader: impl Read, mut writer: impl Write) {
                         }]
                     }
                 }),
-            ));
+            )
+            .await);
             continue;
         }
         if msg.get("method").and_then(Value::as_str) == Some("textDocument/definition") {
-            drop(write_msg(
-                &mut writer,
-                &json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "uri": "file:///tmp/lib.rs",
-                        "range": { "start": { "line": 9, "character": 4 } }
-                    }
-                }),
-            ));
+            drop(
+                write_msg(
+                    &mut writer,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "uri": "file:///tmp/lib.rs",
+                            "range": { "start": { "line": 9, "character": 4 } }
+                        }
+                    }),
+                )
+                .await,
+            );
             continue;
         }
         if msg.get("method").and_then(Value::as_str) == Some("textDocument/references") {
-            drop(write_msg(
-                &mut writer,
-                &json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": [
-                        {
-                            "uri": "file:///tmp/lib.rs",
-                            "range": { "start": { "line": 9, "character": 4 } }
-                        },
-                        {
-                            "uri": "file:///tmp/main.rs",
-                            "range": { "start": { "line": 0, "character": 7 } }
-                        }
-                    ]
-                }),
-            ));
+            drop(
+                write_msg(
+                    &mut writer,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": [
+                            {
+                                "uri": "file:///tmp/lib.rs",
+                                "range": { "start": { "line": 9, "character": 4 } }
+                            },
+                            {
+                                "uri": "file:///tmp/main.rs",
+                                "range": { "start": { "line": 0, "character": 7 } }
+                            }
+                        ]
+                    }),
+                )
+                .await,
+            );
             continue;
         }
         if msg.get("method").and_then(Value::as_str) == Some("textDocument/rename") {
@@ -79,38 +88,48 @@ fn reply_loop(reader: impl Read, mut writer: impl Write) {
                 .pointer("/params/textDocument/uri")
                 .and_then(Value::as_str)
                 .unwrap_or("file:///tmp/lib.rs");
-            drop(write_msg(
-                &mut writer,
-                &json!({
-                    "jsonrpc": "2.0",
-                    "id": id,
-                    "result": {
-                        "changes": {
-                            uri: [{
-                                "range": {
-                                    "start": { "line": 0, "character": 3 },
-                                    "end": { "line": 0, "character": 7 }
-                                },
-                                "newText": "renamed"
-                            }]
+            drop(
+                write_msg(
+                    &mut writer,
+                    &json!({
+                        "jsonrpc": "2.0",
+                        "id": id,
+                        "result": {
+                            "changes": {
+                                uri: [{
+                                    "range": {
+                                        "start": { "line": 0, "character": 3 },
+                                        "end": { "line": 0, "character": 7 }
+                                    },
+                                    "newText": "renamed"
+                                }]
+                            }
                         }
-                    }
-                }),
-            ));
+                    }),
+                )
+                .await,
+            );
             continue;
         }
         if msg.get("method").is_some() {
-            drop(write_msg(
-                &mut writer,
-                &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
-            ));
+            drop(
+                write_msg(
+                    &mut writer,
+                    &json!({ "jsonrpc": "2.0", "id": id, "result": null }),
+                )
+                .await,
+            );
         }
     }
 }
 
-fn initialization_loop(reader: impl Read, mut writer: impl Write, sender: mpsc::Sender<Value>) {
+async fn initialization_loop(
+    reader: impl AsyncRead + Unpin,
+    mut writer: impl AsyncWrite + Unpin,
+    mut sender: Option<tokio::sync::oneshot::Sender<Value>>,
+) {
     let mut reader = BufReader::new(reader);
-    while let Ok(message) = read_msg(&mut reader) {
+    while let Ok(message) = read_msg(&mut reader).await {
         let method = message.get("method").and_then(Value::as_str);
         if method == Some("exit") {
             break;
@@ -118,71 +137,143 @@ fn initialization_loop(reader: impl Read, mut writer: impl Write, sender: mpsc::
         if method != Some("initialize") {
             continue;
         }
-        sender.send(message.clone()).expect("capture initialize");
+        sender
+            .take()
+            .expect("capture initialize once")
+            .send(message.clone())
+            .expect("capture initialize");
         let id = message.get("id").cloned().expect("initialize id");
         write_msg(
             &mut writer,
             &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {} } }),
         )
+        .await
         .expect("reply initialize");
     }
 }
 
-#[test]
-fn content_length_round_trips() -> Result<()> {
-    let (reader, mut writer) = pipe()?;
-    write_msg(&mut writer, &json!({"ok": true}))?;
-    drop(writer);
+#[tokio::test]
+async fn content_length_round_trips() -> Result<()> {
+    let (mut writer, reader) = duplex(1024);
+    write_msg(&mut writer, &json!({"ok": true})).await?;
+    writer.shutdown().await?;
     let mut buf = BufReader::new(reader);
-    let value = read_msg(&mut buf)?;
+    let value = read_msg(&mut buf).await?;
     assert_eq!(value["ok"], true);
     Ok(())
 }
 
-#[test]
-fn fake_server_reports_diagnostics_and_definition() -> Result<()> {
+#[tokio::test]
+async fn fake_server_reports_diagnostics_and_definition() -> Result<()> {
     let dir = tempfile::tempdir()?;
     let file = dir.path().join("main.rs");
     std::fs::write(&file, "fn main() {}\n")?;
-    let (server_read, client_write) = pipe()?;
-    let (client_read, server_write) = pipe()?;
-    let server = thread::spawn(move || reply_loop(server_read, server_write));
-    let mut conn = Conn::from_io(client_read, client_write, dir.path())?;
-    let diags = conn.diagnostics(&file)?;
+    let (client, server_side) = duplex(64 * 1024);
+    let (client_read, client_write) = split(client);
+    let (server_read, server_write) = split(server_side);
+    let server = tokio::spawn(reply_loop(server_read, server_write));
+    let mut conn = Conn::from_io(client_read, client_write, dir.path()).await?;
+    let diags = conn.diagnostics(&file).await?;
     assert!(diags.contains("error 4:1: missing semicolon"), "{diags}");
-    let def = conn.definition(&file, 1, 1)?;
+    let def = conn.definition(&file, 1, 1).await?;
     assert!(def.contains("/tmp/lib.rs:10:5"), "{def}");
-    let refs = conn.references(&file, 1, 1)?;
+    let refs = conn.references(&file, 1, 1).await?;
     assert!(refs.contains("/tmp/lib.rs:10:5"), "{refs}");
     assert!(refs.contains("/tmp/main.rs:1:8"), "{refs}");
-    let edit = conn.rename(&file, 1, 1, "renamed")?;
+    let edit = conn.rename(&file, 1, 1, "renamed").await?;
     assert_eq!(
         edit["changes"].as_object().map(serde_json::Map::len),
         Some(1)
     );
     drop(conn);
-    drop(server.join());
+    drop(server.await);
     Ok(())
 }
 
-#[test]
-fn initialization_includes_module_options() -> Result<()> {
+#[tokio::test]
+async fn a_cancelled_tool_drops_the_connection_and_skips_future_checks() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    std::fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"fixture\"\n",
+    )?;
+    let file = dir.path().join("main.rs");
+    std::fs::write(&file, "fn main() {}\n")?;
+    let (client, server_side) = duplex(64 * 1024);
+    let (client_read, client_write) = split(client);
+    let (server_read, mut server_write) = split(server_side);
+    let server = tokio::spawn(async move {
+        let mut reader = BufReader::new(server_read);
+        let initialize = read_msg(&mut reader).await?;
+        let id = initialize["id"].clone();
+        write_msg(
+            &mut server_write,
+            &json!({ "jsonrpc": "2.0", "id": id, "result": { "capabilities": {} } }),
+        )
+        .await?;
+        drop(read_msg(&mut reader).await?);
+        drop(read_msg(&mut reader).await?);
+        let request = read_msg(&mut reader).await?;
+        assert_eq!(request["method"], "textDocument/diagnostic");
+        tokio::time::sleep(Duration::from_secs(60)).await;
+        Ok::<(), Error>(())
+    });
+    let conn = Conn::from_io(client_read, client_write, dir.path()).await?;
+    let tools = ToolRegistry::new(dir.path())?;
+    let slot = Arc::new(tokio::sync::Mutex::new(Some(conn)));
+    tools
+        .lsp
+        .lock()
+        .expect("lsp map lock")
+        .insert("rust".to_string(), slot.clone());
+
+    let started = std::time::Instant::now();
+    let output = tools
+        .write_file(r#"{"path":"main.rs","content":"fn changed() {}\n"}"#)
+        .await?;
+    assert!(output.success);
+    assert!(output.mutated);
+    assert!(output.text.starts_with("wrote main.rs"), "{}", output.text);
+    assert!(started.elapsed() < std::time::Duration::from_secs(7));
+    assert!(
+        slot.lock().await.is_none(),
+        "timed out connection was reused"
+    );
+    assert_eq!(std::fs::read_to_string(&file)?, "fn changed() {}\n");
+
+    let started = std::time::Instant::now();
+    let output = tools
+        .write_file(r#"{"path":"main.rs","content":"fn changed_again() {}\n"}"#)
+        .await?;
+    assert!(output.success);
+    assert!(output.mutated);
+    assert!(!output.text.contains("diagnostics:"), "{}", output.text);
+    assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    assert_eq!(std::fs::read_to_string(&file)?, "fn changed_again() {}\n");
+    server.abort();
+    drop(server.await);
+    Ok(())
+}
+
+#[tokio::test]
+async fn initialization_includes_module_options() -> Result<()> {
     let directory = tempfile::tempdir()?;
     let options = language::options(language::named("rust")?);
-    let (server_read, client_write) = pipe()?;
-    let (client_read, server_write) = pipe()?;
-    let (sender, receiver) = mpsc::channel();
-    let server = thread::spawn(move || initialization_loop(server_read, server_write, sender));
-    let conn = Conn::from_io_with(client_read, client_write, directory.path(), &options)?;
+    let (client, server_side) = duplex(64 * 1024);
+    let (client_read, client_write) = split(client);
+    let (server_read, server_write) = split(server_side);
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let server = tokio::spawn(initialization_loop(server_read, server_write, Some(sender)));
+    let conn = Conn::from_io_with(client_read, client_write, directory.path(), &options).await?;
     let initialize = receiver
-        .recv()
+        .await
         .map_err(|error| Error::Tool(format!("cannot receive initialize message: {error}")))?;
 
     assert_eq!(initialize["params"]["initializationOptions"], options);
     drop(conn);
     server
-        .join()
-        .map_err(|_panic| Error::Tool("initialization server panicked".to_string()))?;
+        .await
+        .map_err(|_error| Error::Tool("initialization server panicked".to_string()))?;
     Ok(())
 }
 

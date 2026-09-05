@@ -65,6 +65,37 @@ pub fn base(root: &Path) -> String {
         .map_or_else(|| "HEAD".to_string(), |tree| tree.base)
 }
 
+pub(crate) fn snapshot(root: &Path) -> String {
+    if !root.ancestors().any(|path| path.join(".git").exists()) {
+        return "non-Git workspace".to_string();
+    }
+    let Ok(head) = git(root, &["rev-parse", "--short=12", "HEAD"]) else {
+        return "Git state unavailable".to_string();
+    };
+    let base = base(root);
+    match stats(root) {
+        Ok(diff) if diff.files.is_empty() => {
+            format!("{} ({}), worktree clean", head.trim(), short(&base))
+        }
+        Ok(diff) => format!(
+            "{} ({}), {} file{} dirty",
+            head.trim(),
+            short(&base),
+            diff.files.len(),
+            if diff.files.len() == 1 { "" } else { "s" }
+        ),
+        Err(error) => format!(
+            "{} ({}), worktree state unavailable: {error}",
+            head.trim(),
+            short(&base)
+        ),
+    }
+}
+
+fn short(value: &str) -> &str {
+    value.get(..12).unwrap_or(value)
+}
+
 /// Per-file line counts for every change in `root` against [`base`],
 /// untracked files included.
 pub fn stats(root: &Path) -> Result<Diff> {

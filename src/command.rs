@@ -17,6 +17,7 @@ pub enum SlashCommand {
     Pane,
     Layout,
     Diff,
+    Copy,
     View,
     Agents,
     Modules,
@@ -64,6 +65,11 @@ const SPECS: &[CommandSpec] = &[
         "/diff",
         "changes against the base in a pane; /diff PATH shows one file's hunks",
         SlashCommand::Diff,
+    ),
+    spec(
+        "/copy",
+        "copy the last reply; /copy all copies the transcript",
+        SlashCommand::Copy,
     ),
     spec(
         "/view",

@@ -1,15 +1,17 @@
 use std::collections::BTreeMap;
-use std::io;
+use std::fs::{File, Metadata, read_link};
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::io::{self, Read};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
-const FINGERPRINT_MAX: u64 = 256 * 1024;
-
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct Entry(u64, u64, u32);
+pub(crate) struct Entry(u64, u64, u64);
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Snapshot(BTreeMap<String, Entry>);
@@ -21,10 +23,12 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
         if exclude.is_some_and(|exclude| path.starts_with(exclude)) {
             continue;
         }
-        let Ok(metadata) = path.symlink_metadata() else {
-            continue;
+        let metadata = match path.symlink_metadata() {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
         };
-        if !metadata.is_file() {
+        if !metadata.is_file() && !metadata.is_symlink() {
             continue;
         }
         let modified = metadata
@@ -32,22 +36,35 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .unwrap_or_default();
-        let mark = if metadata.len() <= FINGERPRINT_MAX {
-            std::fs::read(&path).map_or(modified.subsec_nanos(), |bytes| {
-                use std::hash::{Hash, Hasher};
-                let mut hasher = std::collections::hash_map::DefaultHasher::new();
-                bytes.hash(&mut hasher);
-                hasher.finish() as u32
-            })
-        } else {
-            modified.subsec_nanos()
-        };
+        let mark = fingerprint(&path, &metadata)?;
         files.insert(
             relative.to_string_lossy().replace('\\', "/"),
             Entry(metadata.len(), modified.as_secs(), mark),
         );
     }
     Ok(Snapshot(files))
+}
+
+fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
+    let mut hasher = DefaultHasher::new();
+    metadata.is_symlink().hash(&mut hasher);
+    #[cfg(unix)]
+    metadata.permissions().mode().hash(&mut hasher);
+    #[cfg(not(unix))]
+    metadata.permissions().readonly().hash(&mut hasher);
+    if metadata.is_symlink() {
+        read_link(path)?.hash(&mut hasher);
+        return Ok(hasher.finish());
+    }
+    let mut file = File::open(path)?;
+    let mut buffer = [0; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(hasher.finish());
+        }
+        hasher.write(&buffer[..read]);
+    }
 }
 
 impl Snapshot {
@@ -60,12 +77,6 @@ impl Snapshot {
                 .map(|(index, path)| ((*path).to_string(), Entry(index as u64 + 1, 0, 0)))
                 .collect(),
         )
-    }
-
-    pub(crate) fn matches(&self, other: &Snapshot, paths: &[String]) -> bool {
-        paths
-            .iter()
-            .all(|path| self.0.get(path) == other.0.get(path))
     }
 }
 
@@ -130,7 +141,7 @@ fn walk(root: &Path, dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
                 continue;
             }
             walk(root, &path, found)?;
-        } else if kind.is_file()
+        } else if (kind.is_file() || kind.is_symlink())
             && let Ok(relative) = path.strip_prefix(root)
         {
             found.push(relative.to_path_buf());

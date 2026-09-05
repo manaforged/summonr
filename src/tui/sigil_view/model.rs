@@ -222,6 +222,7 @@ impl Model {
                 completion_tokens,
                 reasoning_tokens,
                 cached_tokens,
+                millis: _,
                 prefix_hash,
                 cost,
             } => self.record_usage(
@@ -232,7 +233,7 @@ impl Model {
                 prefix_hash,
                 cost,
             ),
-            Event::Delta { .. } => {}
+            Event::Delta { .. } | Event::Reasoning { .. } => {}
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
     }

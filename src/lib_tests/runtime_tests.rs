@@ -35,7 +35,42 @@ fn schema_loop(
 }
 
 #[tokio::test]
-async fn snapped_schema_survives_plan_toggle() -> Result<()> {
+async fn usage_records_provider_time() -> Result<()> {
+    struct Timed;
+    impl Provider for Timed {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                Ok(AssistantMessage {
+                    content: Some("done".to_string()),
+                    usage: Usage {
+                        prompt_tokens: 1,
+                        completion_tokens: 1,
+                        ..Usage::default()
+                    },
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Timed, "test-model", &workspace, "system")?;
+    let turn = loop_.turn("work").await?;
+    assert!(
+        turn.events.iter().any(
+            |event| matches!(event, Event::Usage { millis: Some(millis), .. } if *millis >= 5)
+        )
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn tool_schema_tracks_plan_mode() -> Result<()> {
     let workspace = test_workspace()?;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let mut loop_ = schema_loop(&workspace, requests.clone())?;
@@ -49,16 +84,36 @@ async fn snapped_schema_survives_plan_toggle() -> Result<()> {
 
     let requests = captured(&requests)?;
     assert_eq!(requests.len(), 3);
-    let schemas = requests
+    let names = requests
         .iter()
-        .map(|request| serde_json::to_vec(&request.tools))
-        .collect::<serde_json::Result<Vec<_>>>()?;
-    assert!(schemas.iter().all(|schema| schema == &schemas[0]));
+        .map(|request| {
+            request
+                .tools
+                .iter()
+                .map(|tool| tool.function.name.clone())
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    assert!(names[0].iter().any(|name| name == "write_file"));
+    assert!(!names[1].iter().any(|name| name == "write_file"));
+    assert_eq!(names[0], names[2]);
     assert!(
         requests
             .iter()
             .all(|request| request.messages[0] == requests[0].messages[0])
     );
+    let verification = requests
+        .iter()
+        .map(|request| {
+            request
+                .messages
+                .iter()
+                .rev()
+                .find(|message| message.role == Role::User)
+                .is_some_and(|message| message.content.contains("narrowest useful check"))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(verification, vec![true, false, true]);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -88,8 +143,15 @@ fn harness_section_lists_plan_and_check() {
     let both = crate::prompt::harness_section(true, &["cargo test".to_string()]);
     assert!(both.contains("plan mode"));
     assert!(both.contains("cargo test"));
+    assert!(both.contains("verified findings in severity order"));
+    assert!(both.contains("A failed command proves nothing"));
+    assert!(both.contains("Do not list an inference as a finding"));
     let automatic = crate::prompt::harness_section(false, &[]);
-    assert!(automatic.contains("implementation mode"));
+    assert!(automatic.contains("Auto mode"));
+    assert!(automatic.contains("review"));
+    assert!(automatic.contains("verified findings in severity order"));
+    assert!(automatic.contains("Do not rank the codebase"));
+    assert!(automatic.contains("without changing files or repository state"));
     assert!(automatic.contains("no completion check"));
 }
 
@@ -349,7 +411,7 @@ async fn transient_provider_error_retries_with_note() -> Result<()> {
     assert!(
         live.iter().any(|event| matches!(
             event,
-            Event::Note { text } if text.contains("retry 1/3")
+            Event::Note { text } if text.contains("retrying in 2s")
         )),
         "the retry is visible: {live:?}"
     );
@@ -429,7 +491,7 @@ async fn permanent_error_does_not_retry() -> Result<()> {
 }
 
 #[tokio::test]
-async fn malformed_tool_call_gets_one_repair_prompt() -> Result<()> {
+async fn malformed_tool_call_gets_a_repair_prompt() -> Result<()> {
     struct Broken {
         calls: AtomicUsize,
         requests: Arc<Mutex<Vec<CompletionRequest>>>,
@@ -476,7 +538,7 @@ async fn malformed_tool_call_gets_one_repair_prompt() -> Result<()> {
     assert_work_receipt(&turn, "recovered");
     assert!(turn.events.iter().any(|event| matches!(
         event,
-        Event::Note { text } if text.contains("requesting one repaired call")
+        Event::Note { text } if text.contains("requesting a repaired call")
     )));
     let requests = captured(&requests)?;
     assert_eq!(requests.len(), 2);
@@ -835,6 +897,227 @@ async fn auto_compact_summarizes_and_records() -> Result<()> {
             .any(|message| message.content.starts_with("u8\n\nHarness state:")),
         "replay retains the active request"
     );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn auto_compact_summarizes_one_long_autonomous_turn() -> Result<()> {
+    struct LongTurn {
+        rounds: AtomicUsize,
+        summaries: Arc<AtomicUsize>,
+    }
+    impl Provider for LongTurn {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            let summary = request
+                .messages
+                .last()
+                .is_some_and(|message| message.content.contains("Summarize this session"));
+            if summary {
+                self.summaries.fetch_add(1, Ordering::SeqCst);
+                return Box::pin(async {
+                    Ok(AssistantMessage {
+                        content: Some("SUMMARY-CONTENT".to_string()),
+                        ..Default::default()
+                    })
+                });
+            }
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async move {
+                assert!(
+                    request.messages.iter().any(|message| {
+                        message.role == Role::User
+                            && message
+                                .content
+                                .contains("inspect the note repeatedly; preserve note.txt")
+                    }),
+                    "compaction lost the original objective and constraint"
+                );
+                if round < 12 {
+                    Ok(AssistantMessage {
+                        tool_calls: vec![ToolCall {
+                            id: format!("c{round}"),
+                            kind: ToolKind::Function,
+                            function: ToolFunction {
+                                name: "read_file".to_string(),
+                                arguments: r#"{"path":"note.txt"}"#.to_string(),
+                            },
+                        }],
+                        ..Default::default()
+                    })
+                } else {
+                    Ok(AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..Default::default()
+                    })
+                }
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let summaries = Arc::new(AtomicUsize::new(0));
+    let mut loop_ = Loop::with_session(
+        LongTurn {
+            rounds: AtomicUsize::new(0),
+            summaries: summaries.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?;
+    loop_.set_context_window(Some(256));
+    let turn = loop_
+        .turn("inspect the note repeatedly; preserve note.txt")
+        .await?;
+    assert_work_receipt(&turn, "done");
+    assert!(
+        summaries.load(Ordering::SeqCst) > 0,
+        "summary was requested"
+    );
+    let replay = loop_.replay_session();
+    assert!(
+        replay
+            .history
+            .iter()
+            .any(|message| message.content == "SUMMARY-CONTENT")
+    );
+    for (index, message) in replay.history.iter().enumerate() {
+        if message.role != Role::Tool {
+            continue;
+        }
+        let paired = replay.history[..index].iter().any(|assistant| {
+            assistant.role == Role::Assistant
+                && assistant
+                    .tool_calls
+                    .iter()
+                    .any(|call| Some(call.id.as_str()) == message.tool_call_id.as_deref())
+        });
+        assert!(paired, "tool result retained without its assistant call");
+    }
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn aside_rounds_stop_at_the_configured_token_budget() -> Result<()> {
+    struct RepeatingAside {
+        calls: Arc<AtomicUsize>,
+    }
+    impl Provider for RepeatingAside {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            if request.model != "review" {
+                return Box::pin(async {
+                    Ok(AssistantMessage {
+                        content: Some("done".to_string()),
+                        ..Default::default()
+                    })
+                });
+            }
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    tool_calls: vec![ToolCall {
+                        id: "inspect".to_string(),
+                        kind: ToolKind::Function,
+                        function: ToolFunction {
+                            name: "read_file".to_string(),
+                            arguments: r#"{"path":"note.txt"}"#.to_string(),
+                        },
+                    }],
+                    usage: Usage {
+                        prompt_tokens: 5,
+                        completion_tokens: 5,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let calls = Arc::new(AtomicUsize::new(0));
+    let provider = RepeatingAside {
+        calls: calls.clone(),
+    };
+    let mut loop_ = Loop::with_session(
+        RepeatingAside {
+            calls: calls.clone(),
+        },
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_budget(Budget {
+        max_tokens: Some(15),
+        max_secs: None,
+    })?;
+    loop_.set_seat(
+        crate::workflow::Role::Review,
+        provider,
+        "review",
+        None,
+        None,
+    );
+    let turn = loop_.turn("inspect the note").await?;
+    assert!(
+        turn.checks
+            .iter()
+            .any(|check| !check.passed && check.output.contains("token limit")),
+        "{:?}",
+        turn.checks
+    );
+    assert!(!loop_.work_progress()?.terminal());
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn aside_provider_timeout_uses_the_configured_work_deadline() -> Result<()> {
+    struct SlowAside;
+    impl Provider for SlowAside {
+        fn complete<'a>(
+            &'a self,
+            request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async move {
+                if request.model == "review" {
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                }
+                Ok(AssistantMessage {
+                    content: Some("late".to_string()),
+                    ..Default::default()
+                })
+            })
+        }
+    }
+
+    let workspace = test_workspace()?;
+    let mut loop_ =
+        Loop::with_session(SlowAside, "test-model", &workspace, "test")?.with_budget(Budget {
+            max_tokens: None,
+            max_secs: Some(1),
+        })?;
+    loop_.set_seat(
+        crate::workflow::Role::Review,
+        SlowAside,
+        "review",
+        None,
+        None,
+    );
+    let turn = loop_.turn("inspect the note").await?;
+    assert!(turn.aborted, "{turn:?}");
+    assert!(turn.text.contains("work-time limit"), "{turn:?}");
+    assert!(loop_.elapsed_secs() >= 1);
+    assert!(!loop_.work_progress()?.terminal());
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1367,6 +1650,7 @@ fn module_switches_drop_their_tools_from_the_schema() -> Result<()> {
     let user = std::collections::BTreeMap::from([
         ("lsp".to_string(), false),
         ("search".to_string(), false),
+        ("skills".to_string(), false),
         ("task".to_string(), false),
     ]);
     let switches = crate::modules::Switches::from_maps(&user, &std::collections::BTreeMap::new());
@@ -1376,11 +1660,29 @@ fn module_switches_drop_their_tools_from_the_schema() -> Result<()> {
     assert!(
         after.iter().all(|name| !matches!(
             name.as_str(),
-            "diagnostics" | "definition" | "web_search" | "web_fetch" | "task"
+            "diagnostics" | "definition" | "skill" | "web_search" | "web_fetch" | "task"
         )),
         "{after:?}"
     );
     assert!(after.iter().any(|name| name == "run_command"));
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_context_probe_settles_before_a_later_round_without_blocking() -> Result<()> {
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = schema_loop(&workspace, requests)?;
+    assert_eq!(loop_.context_window(), None);
+    loop_.set_context_probe(tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        Some(4096)
+    }));
+    loop_.turn("hi").await?;
+    tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+    loop_.turn("again").await?;
+    assert_eq!(loop_.context_window(), Some(4096));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

@@ -1,7 +1,7 @@
 use super::*;
 use crate::workflow::Role;
 
-const ROUNDS: usize = 8;
+const ASIDE_ROUNDS: usize = 32;
 
 impl<P: Provider> Loop<P> {
     pub(crate) async fn aside(
@@ -30,12 +30,20 @@ impl<P: Provider> Loop<P> {
             Message::user(user.to_string()),
         ];
         let mut usage = Usage::default();
-        for _ in 0..ROUNDS {
+        for round in 0.. {
+            if round >= ASIDE_ROUNDS {
+                return Err(Error::Config(format!(
+                    "{role} exceeded {ASIDE_ROUNDS} rounds without an answer"
+                )));
+            }
+            if let Some(reason) = self.round_abort() {
+                return Err(Error::Config(reason));
+            }
             let request = CompletionRequest {
                 model: self.seat(role).1.to_string(),
                 messages: messages.clone(),
                 tools: tools.to_vec(),
-                max_output_tokens: DEFAULT_ROUND_OUTPUT_TOKENS,
+                max_output_tokens: None,
                 emit_deltas: false,
                 effort: self.effort_for(role),
             };
@@ -47,11 +55,14 @@ impl<P: Provider> Loop<P> {
                 .start_aside(role, &request.model, super::exposure(&request, &durable))
                 .map_err(super::session_err)?;
             let started = Instant::now();
-            let assistant = match self.seat(role).0.complete(&request).await {
+            let completion = self.seat(role).0.complete(&request);
+            let assistant = match self.wait(completion).await {
                 Ok(assistant) => assistant,
-                Err(error) => {
+                Err(wait_error) => {
+                    let millis = wait_error.millis(started);
+                    let error = wait_error.error();
                     self.session
-                        .fail_provider(attempt, &error.to_string(), super::elapsed_millis(started))
+                        .fail_provider(attempt, &error.to_string(), millis)
                         .map_err(super::session_err)?;
                     self.spent_tokens = self.session.replay().spent_tokens;
                     return Err(error);
@@ -69,6 +80,9 @@ impl<P: Provider> Loop<P> {
                     .prompt_tokens
                     .saturating_add(assistant.usage.completion_tokens),
             ));
+            if let Some(reason) = self.round_abort() {
+                return Err(Error::Config(reason));
+            }
             let message = assistant.into_message();
             let calls = message.tool_calls.clone();
             messages.push(message);
@@ -83,8 +97,6 @@ impl<P: Provider> Loop<P> {
                 messages.push(Message::tool(call.id, output));
             }
         }
-        Err(Error::Config(format!(
-            "the {role} seat gave no answer in {ROUNDS} rounds"
-        )))
+        Err(Error::Config(format!("{role} produced no answer")))
     }
 }

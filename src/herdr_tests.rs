@@ -18,7 +18,7 @@ fn target_uses_the_herdr_binary_when_old_servers_do_not_export_one() {
         ("HERDR_SOCKET_PATH", "/tmp/herdr.sock"),
     ]);
 
-    let target = target("session-1", Some(OsStr::new("summon")), |key| {
+    let target = target("session-1", "grok-4", Some(OsStr::new("summon")), |key| {
         env.get(key).cloned()
     })
     .expect("a Summoner process in a Herdr pane should report");
@@ -26,7 +26,7 @@ fn target_uses_the_herdr_binary_when_old_servers_do_not_export_one() {
     assert_eq!(target.bin, OsStr::new("herdr"));
     assert_eq!(target.pane, OsStr::new("w1:p2"));
     assert_eq!(target.socket, OsStr::new("/tmp/herdr.sock"));
-    assert_eq!(target.session, "session-1");
+    assert_eq!(held(&target.session), "session-1");
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn target_prefers_the_binary_path_exported_by_newer_servers() {
         ("HERDR_BIN_PATH", "/opt/homebrew/bin/herdr"),
     ]);
 
-    let target = target("session-1", Some(OsStr::new("summoner")), |key| {
+    let target = target("session-1", "grok-4", Some(OsStr::new("summoner")), |key| {
         env.get(key).cloned()
     })
     .expect("a Summoner process in a Herdr pane should report");
@@ -54,15 +54,18 @@ fn target_ignores_other_processes_and_incomplete_herdr_environments() {
         ("HERDR_SOCKET_PATH", "/tmp/herdr.sock"),
     ]);
     assert!(
-        target("session-1", Some(OsStr::new("summoner-tests")), |key| {
-            complete.get(key).cloned()
-        })
+        target(
+            "session-1",
+            "grok-4",
+            Some(OsStr::new("summoner-tests")),
+            |key| complete.get(key).cloned(),
+        )
         .is_none()
     );
 
     let incomplete = values(&[("HERDR_ENV", "1"), ("HERDR_PANE_ID", "w1:p2")]);
     assert!(
-        target("session-1", Some(OsStr::new("summon")), |key| {
+        target("session-1", "grok-4", Some(OsStr::new("summon")), |key| {
             incomplete.get(key).cloned()
         })
         .is_none()
@@ -72,7 +75,7 @@ fn target_ignores_other_processes_and_incomplete_herdr_environments() {
 #[test]
 fn product_ignores_test_artifacts_named_like_the_real_binary() {
     assert_eq!(
-        product(Path::new("/home/user/.cargo/bin/summoner")),
+        product(Path::new("/usr/local/bin/summoner")),
         Some(OsStr::new("summoner"))
     );
     assert_eq!(
@@ -87,7 +90,7 @@ fn product_ignores_test_artifacts_named_like_the_real_binary() {
 
 #[test]
 fn lifecycle_arguments_carry_state_and_session_identity() {
-    let report = report_args(OsStr::new("w1:p2"), "working", "session-1");
+    let report = report_args(OsStr::new("w1:p2"), "working", "session-1", 3);
     assert_eq!(
         report,
         vec![
@@ -102,10 +105,12 @@ fn lifecycle_arguments_carry_state_and_session_identity() {
             "working",
             "--agent-session-id",
             "session-1",
+            "--seq",
+            "3",
         ]
     );
 
-    let release = release_args(OsStr::new("w1:p2"));
+    let release = release_args(OsStr::new("w1:p2"), 4);
     assert_eq!(
         release,
         vec![
@@ -116,6 +121,37 @@ fn lifecycle_arguments_carry_state_and_session_identity() {
             "summoner:lifecycle",
             "--agent",
             "summoner",
+            "--seq",
+            "4",
+        ]
+    );
+}
+
+#[test]
+fn display_arguments_carry_title_and_tokens() {
+    let args = metadata_args(OsStr::new("w1:p2"), "auth review", "grok-4", "session-1", 2);
+    assert_eq!(
+        args,
+        vec![
+            "pane",
+            "report-metadata",
+            "w1:p2",
+            "--source",
+            "summoner:display",
+            "--agent",
+            "summoner",
+            "--title",
+            "auth review",
+            "--display-agent",
+            "summoner",
+            "--token",
+            "model=grok-4",
+            "--token",
+            "session=session-1",
+            "--token",
+            "summary=auth review",
+            "--seq",
+            "2",
         ]
     );
 }

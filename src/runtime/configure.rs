@@ -29,7 +29,6 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
-        loop_.tools.set_session(&loop_.session.id().to_string());
         loop_.join_bus();
         Ok(loop_)
     }
@@ -78,7 +77,6 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
-        loop_.tools.set_session(&loop_.session.id().to_string());
         loop_.join_bus();
         Ok(loop_)
     }
@@ -122,7 +120,11 @@ impl<P: Provider> Loop<P> {
         let (max_tokens, max_live_millis) = session.budget_limits();
         let depth = session.depth();
         let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
-        let herdr = crate::herdr::Reporter::discover(&session.id().to_string(), depth);
+        tools.set_session(&session.id().to_string());
+        let herdr = crate::herdr::Reporter::discover(&session.id().to_string(), &model, depth);
+        if let Some(name) = crate::session::catalog_name(session.path()) {
+            herdr.label(&name);
+        }
         Ok(Self {
             provider,
             model,
@@ -136,7 +138,7 @@ impl<P: Provider> Loop<P> {
             history: Vec::new(),
             herdr,
             session,
-            max_rounds: DEFAULT_MAX_ROUNDS,
+            max_rounds: 0,
             verify: None,
             budget: Budget {
                 max_tokens,
@@ -146,6 +148,7 @@ impl<P: Provider> Loop<P> {
             spent_tokens: 0,
             context_sample: None,
             context_window: None,
+            probe: None,
             effort: None,
             turn_started: 0,
             accepted: false,
@@ -186,6 +189,7 @@ impl<P: Provider> Loop<P> {
             switches.enabled("search"),
             switches.enabled("lsp"),
             switches.enabled("jobs"),
+            switches.enabled("skills"),
         );
         self.tasks = switches.enabled("task");
         if !switches.enabled("bus") {
@@ -205,6 +209,25 @@ impl<P: Provider> Loop<P> {
 
     pub fn set_context_window(&mut self, window: Option<u32>) {
         self.context_window = window;
+    }
+
+    pub fn set_context_probe(&mut self, probe: tokio::task::JoinHandle<Option<u32>>) {
+        self.probe = Some(probe);
+    }
+
+    pub(crate) async fn settle_probe(&mut self) {
+        if self.context_window.is_some() {
+            self.probe = None;
+        }
+        if self
+            .probe
+            .as_ref()
+            .is_some_and(tokio::task::JoinHandle::is_finished)
+            && let Some(probe) = self.probe.take()
+            && let Ok(Some(window)) = probe.await
+        {
+            self.context_window = Some(window);
+        }
     }
 
     pub fn set_effort(&mut self, effort: Option<crate::provider::Effort>) {
@@ -228,6 +251,12 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
+    pub fn with_unrestricted_commands(mut self) -> Self {
+        self.tools.set_unrestricted();
+        self
+    }
+
+    #[must_use]
     pub fn with_plan(mut self) -> Self {
         self.set_plan(true);
         self
@@ -239,6 +268,7 @@ impl<P: Provider> Loop<P> {
         }
         self.plan = plan;
         self.tools.set_read_only(plan);
+        self.schema = None;
     }
 
     #[must_use]
@@ -330,7 +360,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn set_max_rounds(&mut self, max: usize) {
-        self.max_rounds = max.max(1);
+        self.max_rounds = max;
     }
 
     #[must_use]
@@ -357,7 +387,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn with_max_rounds(mut self, max_rounds: usize) -> Self {
-        self.max_rounds = max_rounds.max(1);
+        self.max_rounds = max_rounds;
         self
     }
 
@@ -372,7 +402,9 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn set_name(&self, name: &str) -> Result<()> {
-        crate::session::set_name(self.session.path(), name)
+        crate::session::set_name(self.session.path(), name)?;
+        self.herdr.label(name);
+        Ok(())
     }
 
     #[must_use]
@@ -400,11 +432,14 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub fn goal_status(&self) -> Option<String> {
         let (objective, progress) = self.active_goal().ok().flatten()?;
+        let round = if progress.max_turns == 0 {
+            progress.rounds.to_string()
+        } else {
+            format!("{}/{}", progress.rounds, progress.max_turns)
+        };
         let mut text = format!(
-            "goal active — {}\nround {}/{} · {} tokens · {}",
+            "goal active — {}\nround {round} · {} tokens · {}",
             truncate_line(&objective, 80),
-            progress.rounds,
-            progress.max_turns,
             self.spent_tokens(),
             progress.phase,
         );
@@ -457,6 +492,10 @@ impl<P: Provider> Loop<P> {
         self.bus = None;
         self.join_bus();
         self.schema = None;
+        self.herdr.retarget(&self.session.id().to_string());
+        if let Some(name) = crate::session::catalog_name(self.session.path()) {
+            self.herdr.label(&name);
+        }
     }
 
     #[must_use]
@@ -472,19 +511,23 @@ impl<P: Provider> Loop<P> {
                 Message::user(user.to_string()),
             ],
             tools: Vec::new(),
-            max_output_tokens: JUDGE_OUTPUT_TOKENS,
+            max_output_tokens: None,
             emit_deltas: false,
             effort: self.effort_for(workflow::Role::Judge),
         };
         let durable = request
             .durable_bytes()
             .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
         let attempt = self
             .session
             .start_judge(&request.model, super::exposure(&request, &durable))
             .map_err(super::session_err)?;
         let started = Instant::now();
-        match self.seat(workflow::Role::Judge).0.complete(&request).await {
+        let completion = self.seat(workflow::Role::Judge).0.complete(&request);
+        match self.wait(completion).await {
             Ok(message) => {
                 let usage = message.usage.clone();
                 let text = message.content.unwrap_or_default();
@@ -495,11 +538,16 @@ impl<P: Provider> Loop<P> {
                 self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
                     usage.prompt_tokens.saturating_add(usage.completion_tokens),
                 ));
+                if let Some(reason) = self.round_abort() {
+                    return Err(Error::Config(reason));
+                }
                 Ok((text, usage))
             }
-            Err(error) => {
+            Err(wait_error) => {
+                let millis = wait_error.millis(started);
+                let error = wait_error.error();
                 self.session
-                    .fail_provider(attempt, &error.to_string(), super::elapsed_millis(started))
+                    .fail_provider(attempt, &error.to_string(), millis)
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.session.replay().spent_tokens;
                 Err(error)
@@ -529,7 +577,7 @@ impl<P: Provider> Loop<P> {
 
     pub fn abort_note(&mut self, reason: &str) -> Result<()> {
         self.forget_children();
-        self.session.abort(reason).map_err(super::session_err)
+        self.session.abort(reason, None).map_err(super::session_err)
     }
 
     fn forget_children(&mut self) {

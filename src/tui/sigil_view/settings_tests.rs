@@ -67,7 +67,7 @@ fn autocomplete_and_settings_keep_the_overlays() {
         screen
             .frame(&mut host, &mut router, [increase], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
-        assert!(matches!(rx.try_recv(), Ok(Cmd::SetRounds(72))));
+        assert!(matches!(rx.try_recv(), Ok(Cmd::SetRounds(8))));
         let typed = sigil_tui::map_key(&TerminalKeyEvent::new(
             KeyCode::Char('x'),
             KeyModifiers::NONE,
@@ -678,7 +678,7 @@ fn clicks_select_and_act_on_settings_rows() {
                 .unwrap_or_else(|error| panic!("layout failed: {error}"));
         }
         assert!(
-            matches!(rx.try_recv(), Ok(Cmd::SetRounds(72))),
+            matches!(rx.try_recv(), Ok(Cmd::SetRounds(8))),
             "a second click acts on the selected row"
         );
     });

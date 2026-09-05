@@ -95,8 +95,10 @@ the parent keeps working. `Loop::spawned` holds its handle; child events
 arrive through `Loop::mailbox` and drain before every round, on every
 poll, and on the interface tick. `task` with `child` polls or kills it.
 `await_children` runs before Verify: it settles finished children, waits
-up to the job window, defers the turn if any still run, and
-`kill_spawned` stops the rest when the deferral limit is reached.
+up to the job window, and defers the turn if any still run. There is no
+deferral cap; the model kills the child, or a user budget ends the run.
+Deferred background commands are recorded on Work by job id, so the next
+turn waits for the same jobs before it can verify.
 
 ## Language modules
 

@@ -1,21 +1,19 @@
 use std::path::PathBuf;
 use std::process::Stdio;
 
-use tokio::process::{Child, Command};
+#[cfg(windows)]
+use process_wrap::tokio::{ChildWrapper, CommandWrap, JobObject};
+#[cfg(unix)]
+use tokio::process::Child;
+use tokio::process::Command;
 
 use crate::error::{Error, Result};
 
 use super::sandbox::Sandbox;
-use super::{
-    Recent, ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args,
-};
+use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 const TAIL_LINES: usize = 60;
-const SHELL_DEFAULT_SECS: u64 = 120;
-const SHELL_MAX_SECS: u64 = 600;
-
-const REPEAT_SECS: u64 = 45;
 
 pub(crate) fn exit_code(output: &str) -> Option<i32> {
     output
@@ -29,24 +27,85 @@ struct StartedCommand {
     pid: u32,
     log_path: PathBuf,
     exit_path: PathBuf,
-    child: Child,
+    child: CommandChild,
+    temp: Option<tempfile::TempDir>,
+}
+
+#[cfg(unix)]
+type CommandChild = Child;
+
+#[cfg(windows)]
+struct CommandChild {
+    child: Box<dyn ChildWrapper>,
+    kill_on_drop: bool,
+}
+
+#[cfg(windows)]
+impl CommandChild {
+    fn id(&self) -> Option<u32> {
+        self.child.id()
+    }
+
+    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+        self.child.wait().await
+    }
+
+    fn start_kill(&mut self) -> std::io::Result<()> {
+        self.child.start_kill()
+    }
+}
+
+#[cfg(windows)]
+impl Drop for CommandChild {
+    fn drop(&mut self) {
+        if self.kill_on_drop {
+            drop(self.child.start_kill());
+        }
+    }
+}
+
+struct ProcessGroup {
+    pid: u32,
+    armed: bool,
+}
+
+impl ProcessGroup {
+    fn new(pid: u32) -> Self {
+        Self { pid, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for ProcessGroup {
+    fn drop(&mut self) {
+        if self.armed {
+            kill_group(self.pid);
+        }
+    }
 }
 
 impl ToolRegistry {
     pub(super) async fn run_command(&self, arguments: &str) -> Result<ToolOutput> {
         let args: serde_json::Value = parse_args("run_command", arguments)?;
+        let plan = self.policy.is_read_only();
+        let restricted = self.policy.restricts_writes();
+        let read_only = plan || restricted;
         if let Some(id) = args
             .get("job")
             .and_then(serde_json::Value::as_str)
             .filter(|id| !id.is_empty())
         {
+            if plan {
+                return Err(Error::Denied(
+                    "Plan mode does not control background commands".to_string(),
+                ));
+            }
             if object_bool(&args, "kill") {
                 let record = crate::jobs::load(&self.workspace, id)?;
-                kill_group(record.pid);
-                let exit = crate::jobs::exit_path(&self.workspace, id);
-                if !exit.is_file() {
-                    crate::jobs::write_killed(&exit)?;
-                }
+                stop_job(&self.workspace, &record)?;
             }
             let status = crate::jobs::status(&self.workspace, id)?;
             return Ok(ToolOutput {
@@ -58,58 +117,83 @@ impl ToolRegistry {
         let command = object_string(&args, "command")?;
         self.check_command(command)?;
         let background = object_bool(&args, "background");
+        if read_only && self.sandbox.is_none() {
+            return Err(Error::Denied(
+                if plan {
+                    "Plan mode requires the command sandbox for shell inspection"
+                } else {
+                    "a restricted write policy requires the command sandbox for shell inspection"
+                }
+                .to_string(),
+            ));
+        }
+        if read_only && background {
+            return Err(Error::Denied(
+                if plan {
+                    "Plan mode does not permit background commands"
+                } else {
+                    "restricted write policy does not permit background commands"
+                }
+                .to_string(),
+            ));
+        }
         if background && !self.background {
             return Err(Error::Denied(
                 "background commands are unavailable in child sessions".to_string(),
             ));
         }
-        let fresh = object_bool(&args, "fresh");
-        let writes = self.writes.load(std::sync::atomic::Ordering::Relaxed);
-        if !background
-            && !fresh
-            && let Some(output) = self.repeated(command, writes)
-        {
-            return Ok(output);
-        }
-        let started = self.start_command(command, background)?;
+        let started = self.start_command(command, background, read_only)?;
         if background {
             return Ok(background_result(started));
         }
-        let timeout = object_usize(&args, "timeout_secs")
-            .map(|secs| u64::try_from(secs).unwrap_or(SHELL_DEFAULT_SECS))
-            .unwrap_or(SHELL_DEFAULT_SECS)
-            .clamp(1, SHELL_MAX_SECS);
-        self.wait_command(started, command, writes, timeout).await
+        let timeout = object_usize(&args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
+        self.wait_command(started, command, timeout, read_only)
+            .await
+    }
+
+    pub(crate) fn stop_jobs(&self) -> Result<()> {
+        let session = self
+            .session
+            .lock()
+            .map_err(|error| Error::Tool(format!("cannot read tool session: {error}")))?;
+        let Some(session) = session.clone() else {
+            return Ok(());
+        };
+        for record in crate::jobs::since(&self.workspace, 0, None)
+            .into_iter()
+            .filter(|record| record.session.as_deref() == Some(&session))
+        {
+            if crate::jobs::status(&self.workspace, &record.id)?.running {
+                stop_job(&self.workspace, &record)?;
+            }
+        }
+        Ok(())
     }
 
     fn check_command(&self, command: &str) -> Result<()> {
         self.policy.command(command, &self.workspace)
     }
 
-    fn repeated(&self, command: &str, writes: u64) -> Option<ToolOutput> {
-        let recent = self.recent.lock().ok()?;
-        let last = recent.as_ref()?;
-        if last.command == command
-            && last.writes == writes
-            && last.at.elapsed().as_secs() < REPEAT_SECS
-        {
-            Some(ToolOutput {
-                text: format!(
-                    "(same command {}s ago, no edits since — result repeated, not re-run)\n{}",
-                    last.at.elapsed().as_secs(),
-                    last.output
-                ),
-                success: last.success,
-                mutated: false,
-            })
-        } else {
+    fn start_command(
+        &self,
+        command: &str,
+        background: bool,
+        read_only: bool,
+    ) -> Result<StartedCommand> {
+        let temp = if background {
             None
-        }
-    }
-
-    fn start_command(&self, command: &str, background: bool) -> Result<StartedCommand> {
-        let (id, rec_path, log_path, exit_path) = crate::jobs::prepare(&self.workspace)?;
-        let script = crate::jobs::wrap(command, &exit_path);
+        } else {
+            Some(tempfile::tempdir()?)
+        };
+        let job_workspace = temp
+            .as_ref()
+            .map_or(self.workspace.as_path(), tempfile::TempDir::path);
+        let (id, rec_path, log_path, exit_path) = crate::jobs::prepare(job_workspace)?;
+        let script = if background {
+            crate::jobs::wrap(command, &exit_path)
+        } else {
+            command.to_string()
+        };
         let child = spawn_command(
             &self.workspace,
             &self.env,
@@ -117,27 +201,31 @@ impl ToolRegistry {
             &script,
             &log_path,
             background,
+            read_only,
         )?;
         let pid = child
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
-        crate::jobs::write(
-            &rec_path,
-            &crate::jobs::stamp(
-                &id,
-                pid,
-                command,
-                &self.workspace,
-                background,
-                self.session.lock().ok().and_then(|session| session.clone()),
-            )?,
-        )?;
+        if background {
+            crate::jobs::write(
+                &rec_path,
+                &crate::jobs::stamp(
+                    &id,
+                    pid,
+                    command,
+                    &self.workspace,
+                    true,
+                    self.session.lock().ok().and_then(|session| session.clone()),
+                )?,
+            )?;
+        }
         Ok(StartedCommand {
             id,
             pid,
             log_path,
             exit_path,
             child,
+            temp,
         })
     }
 
@@ -145,8 +233,8 @@ impl ToolRegistry {
         &self,
         started: StartedCommand,
         command: &str,
-        writes: u64,
-        timeout: u64,
+        timeout: Option<u64>,
+        read_only: bool,
     ) -> Result<ToolOutput> {
         let StartedCommand {
             id: _,
@@ -154,32 +242,63 @@ impl ToolRegistry {
             log_path,
             exit_path,
             mut child,
+            temp: _temp,
         } = started;
-        match tokio::time::timeout(std::time::Duration::from_secs(timeout), child.wait()).await {
+        let mut group = ProcessGroup::new(pid);
+        let waited = match timeout {
+            Some(seconds) => {
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(seconds),
+                    wait_shell(&mut child),
+                )
+                .await
+            }
+            None => Ok(wait_shell(&mut child).await),
+        };
+        match waited {
             Ok(Ok(status)) => {
+                stop_command(&mut child, pid).map_err(|error| {
+                    Error::Tool(format!("command descendant cleanup failed: {error}"))
+                })?;
+                settle_command(&mut child).await.map_err(|error| {
+                    Error::Tool(format!("command descendant cleanup failed: {error}"))
+                })?;
+                group.disarm();
                 let code = status.code().unwrap_or(-1);
                 crate::jobs::write_exit(&exit_path, code)?;
                 let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
                 let output = format!("exit {code}\n{}", super::digest(command, &raw));
-                if let Ok(mut recent) = self.recent.lock() {
-                    *recent = Some(Recent {
-                        command: command.to_string(),
-                        at: std::time::Instant::now(),
-                        writes,
-                        output: output.clone(),
-                        success: code == 0,
-                    });
-                }
                 Ok(ToolOutput {
                     text: output,
                     success: code == 0,
-                    mutated: code == 0 && !readonly_verb(command),
+                    mutated: !read_only && code == 0 && !readonly_verb(command),
                 })
             }
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
             Err(_) => {
-                kill_group(pid);
-                Err(Error::Tool(format!("command timed out after {timeout}s")))
+                stop_command(&mut child, pid)
+                    .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
+                let status = child
+                    .wait()
+                    .await
+                    .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
+                group.disarm();
+                crate::jobs::write_exit(&exit_path, status.code().unwrap_or(-1))?;
+                let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
+                let timeout = timeout.map_or_else(
+                    || "command timed out".to_string(),
+                    |seconds| format!("command timed out after {seconds}s"),
+                );
+                let warning = if read_only {
+                    "workspace writes were restricted by the command sandbox"
+                } else {
+                    "the command may have changed workspace files before timeout"
+                };
+                Ok(ToolOutput {
+                    text: format!("{timeout}\n{warning}\n{}", super::digest(command, &raw)),
+                    success: false,
+                    mutated: !read_only,
+                })
             }
         }
     }
@@ -192,18 +311,22 @@ fn spawn_command(
     script: &str,
     log_path: &std::path::Path,
     background: bool,
-) -> Result<Child> {
+    read_only: bool,
+) -> Result<CommandChild> {
     let log = std::fs::File::create(log_path)
         .map_err(|error| Error::Tool(format!("cannot create job log: {error}")))?;
     let err = log
         .try_clone()
         .map_err(|error| Error::Tool(format!("cannot clone job log: {error}")))?;
     let mut cmd = if let Some(sandbox) = sandbox {
-        sandbox.command("bash", &["-o", "pipefail", "-c", script], workspace)
+        if read_only {
+            sandbox.read_command("bash", &["-c", script], workspace)
+        } else {
+            sandbox.command("bash", &["-c", script], workspace)
+        }
     } else {
         let mut cmd = Command::new("bash");
-        cmd.args(["-o", "pipefail", "-c", script])
-            .current_dir(workspace);
+        cmd.args(["-c", script]).current_dir(workspace);
         cmd
     };
     cmd.env_clear()
@@ -217,8 +340,23 @@ fn spawn_command(
     {
         cmd.process_group(0);
     }
-    cmd.spawn()
-        .map_err(|error| Error::Tool(format!("cannot start command: {error}")))
+    #[cfg(unix)]
+    let child = cmd.spawn();
+    #[cfg(windows)]
+    let child = if background {
+        cmd.spawn().map(|child| CommandChild {
+            child: Box::new(child),
+            kill_on_drop: false,
+        })
+    } else {
+        let mut command = CommandWrap::from(cmd);
+        command.wrap(JobObject);
+        command.spawn().map(|child| CommandChild {
+            child,
+            kill_on_drop: true,
+        })
+    };
+    child.map_err(|error| Error::Tool(format!("cannot start command: {error}")))
 }
 
 fn background_result(started: StartedCommand) -> ToolOutput {
@@ -394,6 +532,58 @@ fn kill_group(pid: u32) {
                 .status(),
         );
     }
-    #[cfg(not(unix))]
-    let _ = pid;
+    #[cfg(windows)]
+    drop(
+        std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/PID", &pid.to_string()])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status(),
+    );
+}
+
+fn stop_command(child: &mut CommandChild, pid: u32) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = child;
+        kill_group(pid);
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        let _ = pid;
+        child.start_kill()
+    }
+}
+
+async fn wait_shell(child: &mut CommandChild) -> std::io::Result<std::process::ExitStatus> {
+    #[cfg(unix)]
+    {
+        child.wait().await
+    }
+    #[cfg(windows)]
+    {
+        child.child.inner_mut().wait().await
+    }
+}
+
+async fn settle_command(child: &mut CommandChild) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let _ = child;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        child.wait().await.map(drop)
+    }
+}
+
+fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
+    kill_group(record.pid);
+    let exit = crate::jobs::exit_path(workspace, &record.id);
+    if !exit.is_file() {
+        crate::jobs::write_killed(&exit)?;
+    }
+    Ok(())
 }

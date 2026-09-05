@@ -97,6 +97,7 @@ pub(super) struct App {
     view_saved: Signal<String>,
     discard_armed: Signal<bool>,
     pub(super) copy: Signal<Option<String>>,
+    pub(super) select: Signal<bool>,
     copy_pending: Signal<bool>,
     pub(super) open_file: Signal<Option<String>>,
     pub(super) resume: Rc<RefCell<Option<String>>>,
@@ -183,6 +184,7 @@ impl App {
             view_saved: signal(String::new()),
             discard_armed: signal(false),
             copy: signal(None),
+            select: signal(false),
             copy_pending: signal(false),
             open_file: signal(None),
             resume: Rc::new(RefCell::new(None)),
@@ -478,6 +480,22 @@ impl App {
         self.draft.set(draft.to_string());
     }
 
+    pub(super) fn insert(&self, text: &str) {
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        if text.is_empty() {
+            return;
+        }
+        let mut draft = self.draft.peek();
+        let mut caret = self.caret.peek().min(draft.len());
+        while caret > 0 && !draft.is_char_boundary(caret) {
+            caret -= 1;
+        }
+        draft.insert_str(caret, &text);
+        self.commands.change(&draft);
+        self.caret.set(caret + text.len());
+        self.draft.set(draft);
+    }
+
     pub(super) fn newline(&self) {
         let mut draft = self.draft.peek();
         let mut caret = self.caret.peek().min(draft.len());
@@ -579,6 +597,7 @@ impl App {
             Some(crate::SlashCommand::Pane) => self.pane_command(argument(line)),
             Some(crate::SlashCommand::Layout) => self.layout_command(argument(line)),
             Some(crate::SlashCommand::Diff) => self.diff_command(argument(line)),
+            Some(crate::SlashCommand::Copy) => self.copy_chat(argument(line)),
             Some(crate::SlashCommand::View) => self.view_command(argument(line)),
             Some(crate::SlashCommand::Bus) => self.toggle_bus(),
             _ => return false,
@@ -600,7 +619,7 @@ impl App {
 
     pub(super) fn adjust_rounds(&self, delta: isize) {
         let current = self.model.borrow().snapshot.max_rounds;
-        let next = current.saturating_add_signed(delta).clamp(8, 512);
+        let next = current.saturating_add_signed(delta);
         drop(self.cmd.send(Cmd::SetRounds(next)));
     }
 
@@ -759,6 +778,8 @@ impl App {
             Hotkey::Files => self.toggle_pane(Pane::Files),
             Hotkey::Ledger => self.toggle_pane(Pane::Ledger),
             Hotkey::Diff => self.toggle_pane(Pane::Diff),
+            Hotkey::Copy => self.copy_chat(None),
+            Hotkey::Select => self.select.set(!self.select.peek()),
             Hotkey::Pane => self.toggle_side(),
         }
         true
@@ -1629,10 +1650,43 @@ impl App {
         self.refresh();
     }
 
+    fn copy_chat(&self, scope: Option<&str>) {
+        let text = match scope {
+            None => self
+                .model
+                .borrow()
+                .entries
+                .iter()
+                .rev()
+                .find_map(|entry| match entry {
+                    Entry::Assistant { text, .. } if !text.trim().is_empty() => Some(text.clone()),
+                    _ => None,
+                }),
+            Some("all") => Some(self.transcript.peek()),
+            Some(_) => {
+                self.model
+                    .borrow_mut()
+                    .entries
+                    .push(Entry::System("usage: /copy [all]".to_string()));
+                self.refresh();
+                return;
+            }
+        };
+        match text.filter(|text| !text.trim().is_empty()) {
+            Some(text) => self.copy.set(Some(text)),
+            None => self
+                .model
+                .borrow_mut()
+                .entries
+                .push(Entry::System("there is no reply to copy".to_string())),
+        }
+        self.refresh();
+    }
+
     pub(super) fn copied(&self, text: &str) {
         let lines = text.lines().count();
         self.model.borrow_mut().entries.push(Entry::System(format!(
-            "copied the patch: {lines} line{}",
+            "copied {lines} line{} to the clipboard",
             if lines == 1 { "" } else { "s" }
         )));
         self.refresh();

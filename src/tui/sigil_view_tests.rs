@@ -192,7 +192,9 @@ fn a_run_layout_paints_the_ledger_beside_the_chat() {
             Msg::Event(crate::Event::Work {
                 progress: crate::WorkProgress {
                     kind: crate::WorkKind::Steps,
+                    objective: String::new(),
                     phase: crate::WorkPhase::Execute,
+                    checks_failed: false,
                     current: Some(2),
                     total: 3,
                     attempts: 0,
@@ -783,5 +785,24 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
         );
         assert!(app.edit_stop() && app.edit_stop(), "two escapes discard");
         assert!(!app.view_edit.peek());
+    });
+}
+
+#[test]
+fn a_multi_line_paste_lands_in_the_draft_at_the_caret() {
+    sigil::reactive::Runtime::scope("mage-paste-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.prefs.splash = false;
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(120, 40);
+        app.replace("fix ".to_string());
+        app.insert("line one\r\nline two\n");
+        assert_eq!(app.draft.peek(), "fix line one\nline two\n");
+        assert_eq!(app.caret.peek(), "fix line one\nline two\n".len());
+        app.caret.set(0);
+        app.insert("> ");
+        assert_eq!(app.draft.peek(), "> fix line one\nline two\n");
+        assert_eq!(app.caret.peek(), 2);
     });
 }

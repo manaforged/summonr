@@ -2,13 +2,28 @@
 
 ## Unreleased
 
+- The tool schema sent every round is smaller. Descriptions are one or
+  two sentences. `diagnostics` and `definition` appear only when a
+  language server for the workspace is on PATH or configured; `skill`
+  appears only when a skill catalog exists. Every tool still runs when
+  called.
+- Herdr panes show the Summoner session name and model, and ordered
+  lifecycle reports. A live fork retargets the pane to the new session
+  id.
 - `task` children keep the parent's shell and language-server tools, run
   up to 32 rounds under a 15-minute deadline, and stream every tool call,
   result, and answer into the parent transcript under the child id.
   Cancelling a batch removes child worktrees that hold no change.
   `task` also takes `background`, `child`, and `kill`: start a child and
   return its id, poll its state and last action, or stop it. A turn defers
-  while a background child runs and stops it at the deferral limit.
+  while a background child runs.
+- Work remembers deferred background jobs by id across turns; a later
+  turn cannot complete while one still runs. `--max-turns` also bounds a
+  goal whose checks keep failing (exit 2). Every goal turn restates the
+  objective. Goal-judge repairs, provider retries (exponential backoff),
+  and reviewer/scout tool rounds have fixed caps. Receipts carry
+  `verified`. Changing `.mage/check.toml` mid-turn re-selects the checks
+  instead of blocking the session.
 - Context overflow recovery clears the oldest tool results first and keeps
   the newest two. A failed auto-compaction is not retried until the next
   turn.

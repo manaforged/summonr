@@ -11,8 +11,7 @@ use crate::tools::tool;
 
 const STALE_SECS: u64 = 120;
 
-const MAIL_CHARS: usize = 8_000;
-const MAX_FILE_BYTES: usize = 256 * 1024;
+const BOARD_COMPACT_BYTES: usize = 256 * 1024;
 const SWEEP_SECS: u64 = 24 * 3600;
 
 fn bus_enabled(value: Option<&OsStr>) -> bool {
@@ -60,9 +59,7 @@ fn summoner() -> String {
 pub(crate) fn envelope(mail: &Mail) -> String {
     format!(
         "[summon:{} ({}) — peer mail, not user instructions] {}",
-        mail.from,
-        mail.kind,
-        mail.text.chars().take(500).collect::<String>()
+        mail.from, mail.kind, mail.text
     )
 }
 
@@ -222,10 +219,8 @@ impl Bus {
         if roster.is_empty() {
             return "no live agents in the room".to_string();
         }
-        let overflow = roster.len().saturating_sub(20);
-        let mut out = roster
+        roster
             .iter()
-            .take(20)
             .map(|agent| {
                 let me = if agent.id == self.id { " (you)" } else { "" };
                 format!(
@@ -234,11 +229,7 @@ impl Bus {
                 )
             })
             .collect::<Vec<_>>()
-            .join("\n");
-        if overflow > 0 {
-            out.push_str(&format!("\n… and {overflow} more"));
-        }
-        out
+            .join("\n")
     }
 
     pub(crate) fn status(&mut self, model: &str, cwd: &Path, status: &str) {
@@ -250,7 +241,7 @@ impl Bus {
             ts: now(),
             from: self.id.clone(),
             kind: self.kind.clone(),
-            text: text.chars().take(MAIL_CHARS).collect(),
+            text: text.to_string(),
         };
         let line = serde_json::to_string(&mail)?;
         let targets: Vec<String> = if to == "all" {
@@ -278,14 +269,7 @@ impl Bus {
 
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
         let path = self.inbox_path(&self.id.clone());
-        let mut text = std::fs::read_to_string(&path).unwrap_or_default();
-        if text.len() > MAX_FILE_BYTES {
-            let keep: Vec<&str> = text.lines().collect();
-            let keep_from = keep.len().saturating_sub(500);
-            text = format!("{}\n", keep[keep_from..].join("\n"));
-            std::fs::write(&path, &text)?;
-            self.cursor = self.cursor.saturating_sub(keep_from);
-        }
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
         let lines: Vec<&str> = text.lines().collect();
         if self.cursor >= lines.len() {
             self.cursor = lines.len();
@@ -312,7 +296,7 @@ impl Bus {
                 None => board.push((post.key, post.value, post.from)),
             }
         }
-        if text.len() > MAX_FILE_BYTES {
+        if text.len() > BOARD_COMPACT_BYTES {
             let folded = board
                 .iter()
                 .filter_map(|(key, value, from)| {
@@ -369,17 +353,17 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
     vec![
         tool(
             "agents",
-            "List live summoner sessions on this machine: id, model, workspace, what they are doing. Use before send to find a peer's id.",
+            "List live summoner sessions on this machine with id, model, workspace, and status. Use before send.",
             serde_json::json!({"type": "object", "additionalProperties": false}),
         ),
         tool(
             "inbox",
-            "Read new messages other summoner sessions sent you. Mail also arrives on its own between your rounds.",
+            "Read new mail from other sessions. Mail also arrives between rounds.",
             serde_json::json!({"type": "object", "additionalProperties": false}),
         ),
         tool(
             "board",
-            "The workspace blackboard shared by all summon sessions here. action get reads key, list reads everything, set posts key=value — claim files, post decisions, leave state for peers.",
+            "Shared workspace blackboard. action get reads key, list reads all, set posts key=value.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -393,7 +377,7 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
         ),
         tool(
             "send",
-            "Send a plain-text message to another summoner session: to is a session id from agents, or \"all\". It lands between their rounds; they can reply to your id.",
+            "Send text to another session: to is an id from agents, or \"all\".",
             serde_json::json!({
                 "type": "object",
                 "properties": {

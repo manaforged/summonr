@@ -7,7 +7,7 @@ impl<P: Provider> Loop<P> {
 }
 
 #[tokio::test]
-async fn observed_mail_keeps_its_envelope_limit_and_replay_state() -> Result<()> {
+async fn observed_mail_is_paged_without_losing_replay_state() -> Result<()> {
     #[derive(Clone)]
     struct Capture(std::sync::Arc<std::sync::Mutex<Vec<Vec<Message>>>>);
 
@@ -123,5 +123,26 @@ async fn a_turn_resets_a_leaked_read_only_policy() -> Result<()> {
         !loop_.tools.is_read_only(),
         "a non-plan turn must clear a leaked read-only policy"
     );
+    Ok(())
+}
+
+#[test]
+fn the_default_schema_stays_under_budget_and_hides_idle_tools() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let tools = crate::tools::ToolRegistry::new(workspace.path())?;
+    let mut definitions = tools.definitions();
+    definitions.push(child::definition());
+    let names: Vec<&str> = definitions
+        .iter()
+        .map(|tool| tool.function.name.as_str())
+        .collect();
+    let bytes = serde_json::to_string(&definitions)?.len();
+    assert!(!names.contains(&"diagnostics"), "{names:?}");
+    assert!(!names.contains(&"definition"), "{names:?}");
+    assert_eq!(
+        names.contains(&"skill"),
+        crate::skills::catalog(workspace.path()).is_some()
+    );
+    assert!(bytes <= 4_600, "schema is {bytes} bytes: {names:?}");
     Ok(())
 }

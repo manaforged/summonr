@@ -1,8 +1,12 @@
-use std::io::{BufRead, BufReader, Read, Write};
+use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+use std::pin::Pin;
+use std::process::Stdio;
+use std::sync::Arc;
 
 use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
 
 use crate::error::{Error, Result};
 use crate::language;
@@ -11,10 +15,12 @@ use super::{
     ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args, workspace,
 };
 
+const LSP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 pub(super) struct Conn {
     child: Option<Child>,
-    reader: BufReader<Box<dyn Read + Send>>,
-    writer: Box<dyn Write + Send>,
+    reader: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
+    writer: Box<dyn AsyncWrite + Send + Unpin>,
     next_id: i64,
     root: String,
 }
@@ -27,13 +33,14 @@ pub(super) struct Launch {
 }
 
 impl Conn {
-    pub(super) fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
+    pub(super) async fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
         let mut child = Command::new(&launch.argv[0])
             .args(&launch.argv[1..])
             .current_dir(workspace)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
+            .kill_on_drop(true)
             .spawn()
             .map_err(|error| Error::Tool(format!("cannot start {}: {error}", launch.argv[0])))?;
         let stdout = child
@@ -51,23 +58,23 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace),
         };
-        conn.handshake(&launch.options)?;
+        conn.handshake(&launch.options).await?;
         Ok(conn)
     }
 
     #[cfg(test)]
-    pub(super) fn from_io(
-        reader: impl Read + Send + 'static,
-        writer: impl Write + Send + 'static,
+    pub(super) async fn from_io(
+        reader: impl AsyncRead + Send + Unpin + 'static,
+        writer: impl AsyncWrite + Send + Unpin + 'static,
         root: &Path,
     ) -> Result<Self> {
-        Self::from_io_with(reader, writer, root, &json!({}))
+        Self::from_io_with(reader, writer, root, &json!({})).await
     }
 
     #[cfg(test)]
-    pub(super) fn from_io_with(
-        reader: impl Read + Send + 'static,
-        writer: impl Write + Send + 'static,
+    pub(super) async fn from_io_with(
+        reader: impl AsyncRead + Send + Unpin + 'static,
+        writer: impl AsyncWrite + Send + Unpin + 'static,
         root: &Path,
         options: &Value,
     ) -> Result<Self> {
@@ -78,43 +85,47 @@ impl Conn {
             next_id: 1,
             root: file_uri(root),
         };
-        conn.handshake(options)?;
+        conn.handshake(options).await?;
         Ok(conn)
     }
 
-    fn handshake(&mut self, options: &Value) -> Result<()> {
-        let result = self.request(
-            "initialize",
-            json!({
-                "processId": null,
-                "rootUri": self.root,
-                "workspaceFolders": [{ "uri": self.root, "name": "workspace" }],
-                "initializationOptions": options,
-                "capabilities": {
-                    "workspace": { "workspaceFolders": true, "configuration": true },
-                    "window": { "workDoneProgress": true },
-                    "textDocument": {
-                        "publishDiagnostics": {},
-                        "definition": {},
-                        "references": {},
-                        "rename": {},
-                        "diagnostic": {}
+    async fn handshake(&mut self, options: &Value) -> Result<()> {
+        let result = self
+            .request(
+                "initialize",
+                json!({
+                    "processId": null,
+                    "rootUri": self.root,
+                    "workspaceFolders": [{ "uri": self.root, "name": "workspace" }],
+                    "initializationOptions": options,
+                    "capabilities": {
+                        "workspace": { "workspaceFolders": true, "configuration": true },
+                        "window": { "workDoneProgress": true },
+                        "textDocument": {
+                            "publishDiagnostics": {},
+                            "definition": {},
+                            "references": {},
+                            "rename": {},
+                            "diagnostic": {}
+                        }
                     }
-                }
-            }),
-        )?;
+                }),
+            )
+            .await?;
         drop(result);
-        self.notify("initialized", json!({}))?;
+        self.notify("initialized", json!({})).await?;
         Ok(())
     }
 
-    pub(super) fn diagnostics(&mut self, path: &Path) -> Result<String> {
-        self.did_open(path)?;
+    pub(super) async fn diagnostics(&mut self, path: &Path) -> Result<String> {
+        self.did_open(path).await?;
         let uri = file_uri(path);
-        let result = self.request(
-            "textDocument/diagnostic",
-            json!({ "textDocument": { "uri": uri } }),
-        )?;
+        let result = self
+            .request(
+                "textDocument/diagnostic",
+                json!({ "textDocument": { "uri": uri } }),
+            )
+            .await?;
         let items = diagnostic_items(&result);
         if items.is_empty() {
             return Ok("no diagnostics".to_string());
@@ -122,8 +133,15 @@ impl Conn {
         Ok(items.join("\n"))
     }
 
-    pub(super) fn definition(&mut self, path: &Path, line: u32, character: u32) -> Result<String> {
-        let result = self.at(path, line, character, "textDocument/definition")?;
+    pub(super) async fn definition(
+        &mut self,
+        path: &Path,
+        line: u32,
+        character: u32,
+    ) -> Result<String> {
+        let result = self
+            .at(path, line, character, "textDocument/definition")
+            .await?;
         let locations = locations(&result);
         if locations.is_empty() {
             return Ok("no definition".to_string());
@@ -131,19 +149,26 @@ impl Conn {
         Ok(locations.join("\n"))
     }
 
-    pub(super) fn references(&mut self, path: &Path, line: u32, character: u32) -> Result<String> {
-        self.did_open(path)?;
+    pub(super) async fn references(
+        &mut self,
+        path: &Path,
+        line: u32,
+        character: u32,
+    ) -> Result<String> {
+        self.did_open(path).await?;
         let uri = file_uri(path);
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
-        let result = self.request(
-            "textDocument/references",
-            json!({
-                "textDocument": { "uri": uri },
-                "position": { "line": line, "character": character },
-                "context": { "includeDeclaration": true }
-            }),
-        )?;
+        let result = self
+            .request(
+                "textDocument/references",
+                json!({
+                    "textDocument": { "uri": uri },
+                    "position": { "line": line, "character": character },
+                    "context": { "includeDeclaration": true }
+                }),
+            )
+            .await?;
         let locations = locations(&result);
         if locations.is_empty() {
             return Ok("no references".to_string());
@@ -151,14 +176,14 @@ impl Conn {
         Ok(locations.join("\n"))
     }
 
-    pub(super) fn rename(
+    pub(super) async fn rename(
         &mut self,
         path: &Path,
         line: u32,
         character: u32,
         new_name: &str,
     ) -> Result<Value> {
-        self.did_open(path)?;
+        self.did_open(path).await?;
         let uri = file_uri(path);
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
@@ -170,10 +195,11 @@ impl Conn {
                 "newName": new_name
             }),
         )
+        .await
     }
 
-    fn at(&mut self, path: &Path, line: u32, character: u32, method: &str) -> Result<Value> {
-        self.did_open(path)?;
+    async fn at(&mut self, path: &Path, line: u32, character: u32, method: &str) -> Result<Value> {
+        self.did_open(path).await?;
         let uri = file_uri(path);
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
@@ -184,9 +210,10 @@ impl Conn {
                 "position": { "line": line, "character": character }
             }),
         )
+        .await
     }
 
-    fn did_open(&mut self, path: &Path) -> Result<()> {
+    async fn did_open(&mut self, path: &Path) -> Result<()> {
         let text = std::fs::read_to_string(path)
             .map_err(|error| Error::Tool(format!("cannot read {}: {error}", path.display())))?;
         self.notify(
@@ -200,9 +227,10 @@ impl Conn {
                 }
             }),
         )
+        .await
     }
 
-    fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+    async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
         write_msg(
@@ -213,11 +241,12 @@ impl Conn {
                 "method": method,
                 "params": params
             }),
-        )?;
-        self.pump(id)
+        )
+        .await?;
+        self.pump(id).await
     }
 
-    fn notify(&mut self, method: &str, params: Value) -> Result<()> {
+    async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
         write_msg(
             &mut self.writer,
             &json!({
@@ -226,13 +255,14 @@ impl Conn {
                 "params": params
             }),
         )
+        .await
     }
 
-    fn pump(&mut self, want: i64) -> Result<Value> {
+    async fn pump(&mut self, want: i64) -> Result<Value> {
         loop {
-            let msg = read_msg(&mut self.reader)?;
+            let msg = read_msg(&mut self.reader).await?;
             if msg.get("method").is_some() && msg.get("id").is_some() {
-                self.reply_server(&msg)?;
+                self.reply_server(&msg).await?;
                 continue;
             }
             if msg.get("id") == Some(&Value::from(want)) {
@@ -244,7 +274,7 @@ impl Conn {
         }
     }
 
-    fn reply_server(&mut self, msg: &Value) -> Result<()> {
+    async fn reply_server(&mut self, msg: &Value) -> Result<()> {
         let id = msg.get("id").cloned().unwrap_or(Value::Null);
         let method = msg.get("method").and_then(Value::as_str).unwrap_or("");
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
@@ -265,15 +295,19 @@ impl Conn {
             &mut self.writer,
             &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
         )
+        .await
+    }
+
+    fn kill(&mut self) {
+        if let Some(child) = self.child.as_mut() {
+            drop(child.start_kill());
+        }
     }
 }
 
 impl Drop for Conn {
     fn drop(&mut self) {
-        drop(self.notify("exit", json!({})));
-        if let Some(mut child) = self.child.take() {
-            drop(child.kill());
-        }
+        self.kill();
     }
 }
 
@@ -289,6 +323,26 @@ pub(super) fn detect(workspace: &Path, path: &Path) -> Result<Launch> {
         return built(language::named(&module)?);
     }
     from_tree(workspace, path)
+}
+
+/// Reports whether a language server can serve this workspace: a configured
+/// command, or a curated module whose project marker sits at the root or one
+/// level down and whose server is on PATH.
+pub(super) fn available(workspace: &Path) -> bool {
+    if let Ok(Some(module)) = workspace_module(workspace) {
+        return language::named(&module).is_ok_and(|module| built(module).is_ok());
+    }
+    if let Ok(config) = crate::config::load() {
+        if config.lsp.command.is_some() {
+            return true;
+        }
+        if let Some(module) = config.lsp.module {
+            return language::named(&module).is_ok_and(|module| built(module).is_ok());
+        }
+    }
+    language::present(workspace)
+        .into_iter()
+        .any(|module| built(module).is_ok())
 }
 
 fn from_tree(workspace: &Path, path: &Path) -> Result<Launch> {
@@ -623,25 +677,31 @@ fn format_location(item: &Value) -> Option<String> {
     Some(format!("{path}:{line}:{col}"))
 }
 
-pub(super) fn write_msg(writer: &mut impl Write, value: &Value) -> Result<()> {
+pub(super) async fn write_msg(writer: &mut (impl AsyncWrite + Unpin), value: &Value) -> Result<()> {
     let body = serde_json::to_vec(value)?;
-    write!(writer, "Content-Length: {}\r\n\r\n", body.len())
+    let header = format!("Content-Length: {}\r\n\r\n", body.len());
+    writer
+        .write_all(header.as_bytes())
+        .await
         .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
     writer
         .write_all(&body)
+        .await
         .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
     writer
         .flush()
+        .await
         .map_err(|error| Error::Tool(format!("lsp write: {error}")))?;
     Ok(())
 }
 
-pub(super) fn read_msg(reader: &mut BufReader<impl Read>) -> Result<Value> {
+pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> Result<Value> {
     let mut length = None;
     loop {
         let mut line = String::new();
         let n = reader
             .read_line(&mut line)
+            .await
             .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
         if n == 0 {
             return Err(Error::Tool("language server closed".to_string()));
@@ -662,6 +722,7 @@ pub(super) fn read_msg(reader: &mut BufReader<impl Read>) -> Result<Value> {
     let mut body = vec![0_u8; length];
     reader
         .read_exact(&mut body)
+        .await
         .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
     serde_json::from_slice(&body).map_err(|error| Error::Tool(format!("lsp json: {error}")))
 }
@@ -671,8 +732,12 @@ impl ToolRegistry {
         let args = parse_args("diagnostics", arguments)?;
         let path = nonempty_path(&args, "diagnostics")?;
         let file = self.resolve_existing(path)?;
-        let text =
-            tokio::task::block_in_place(|| self.with_lsp(&file, |conn| conn.diagnostics(&file)))?;
+        let request_path = file.clone();
+        let text = self
+            .with_lsp(&file, move |conn| {
+                Box::pin(async move { conn.diagnostics(&request_path).await })
+            })
+            .await?;
         Ok(ToolOutput::ok(text))
     }
 
@@ -694,31 +759,45 @@ impl ToolRegistry {
                 ));
             }
             let name = new_name.to_string();
-            let edit = tokio::task::block_in_place(|| {
-                self.with_lsp(&file, |conn| conn.rename(&file, line, character, &name))
-            })?;
+            let request_path = file.clone();
+            let edit = self
+                .with_lsp(&file, move |conn| {
+                    Box::pin(
+                        async move { conn.rename(&request_path, line, character, &name).await },
+                    )
+                })
+                .await?;
             return self.apply_workspace_edit(&edit);
         }
         let refs = object_bool(&args, "references");
-        let text = tokio::task::block_in_place(|| {
-            self.with_lsp(&file, |conn| {
-                if refs {
-                    conn.references(&file, line, character)
-                } else {
-                    conn.definition(&file, line, character)
-                }
+        let request_path = file.clone();
+        let text = self
+            .with_lsp(&file, move |conn| {
+                Box::pin(async move {
+                    if refs {
+                        conn.references(&request_path, line, character).await
+                    } else {
+                        conn.definition(&request_path, line, character).await
+                    }
+                })
             })
-        })?;
+            .await?;
         Ok(ToolOutput::ok(text))
     }
 
     pub(super) async fn check_after_edit(&self, dest: &Path) -> Option<ToolOutput> {
         let key = detect(&self.workspace, dest).ok()?.key;
-        let live = self.lsp.lock().ok()?.contains_key(&key);
-        if !live {
+        let slot = self.lsp.lock().ok()?.get(&key).cloned()?;
+        if slot.lock().await.is_none() {
             return None;
         }
-        let text = self.with_lsp(dest, |conn| conn.diagnostics(dest)).ok()?;
+        let request_path = dest.to_path_buf();
+        let text = self
+            .with_lsp(dest, move |conn| {
+                Box::pin(async move { conn.diagnostics(&request_path).await })
+            })
+            .await
+            .ok()?;
         Some(ToolOutput {
             text: format!("diagnostics: {text}"),
             success: !text.starts_with("error "),
@@ -791,8 +870,6 @@ impl ToolRegistry {
                     names.push(self.relative(&dest)?);
                 }
             }
-            self.writes
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(ToolOutput {
             text: format!("renamed {}", names.join(", ")),
@@ -826,21 +903,40 @@ impl ToolRegistry {
         Ok(path)
     }
 
-    fn with_lsp<T>(&self, path: &Path, f: impl FnOnce(&mut Conn) -> Result<T>) -> Result<T> {
+    async fn with_lsp<T>(
+        &self,
+        path: &Path,
+        f: impl for<'a> FnOnce(&'a mut Conn) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>,
+    ) -> Result<T> {
         let launch = detect(&self.workspace, path)?;
         let key = launch.key.clone();
-        let mut slots = self
-            .lsp
-            .lock()
-            .map_err(|_poison| Error::Tool("lsp lock poisoned".to_string()))?;
-        if !slots.contains_key(&key) {
-            let conn = Conn::spawn(&self.workspace, &launch)?;
-            slots.insert(key.clone(), conn);
+        let slot = {
+            let mut slots = self
+                .lsp
+                .lock()
+                .map_err(|_poison| Error::Tool("lsp lock poisoned".to_string()))?;
+            slots
+                .entry(key)
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(None)))
+                .clone()
+        };
+        let mut state = slot.lock().await;
+        let mut conn = match state.take() {
+            Some(conn) => conn,
+            None => tokio::time::timeout(LSP_TIMEOUT, Conn::spawn(&self.workspace, &launch))
+                .await
+                .map_err(|_elapsed| {
+                    Error::Tool("language server initialization timed out".to_string())
+                })??,
+        };
+        match tokio::time::timeout(LSP_TIMEOUT, f(&mut conn)).await {
+            Ok(Ok(value)) => {
+                *state = Some(conn);
+                Ok(value)
+            }
+            Ok(Err(error)) => Err(error),
+            Err(_elapsed) => Err(Error::Tool("language server request timed out".to_string())),
         }
-        let conn = slots
-            .get_mut(&key)
-            .ok_or_else(|| Error::Tool("language server is missing".to_string()))?;
-        f(conn)
     }
 }
 

@@ -112,6 +112,31 @@ pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
     )))
 }
 
+/// Returns the modules whose project marker sits at the workspace root or
+/// in one of its direct subdirectories.
+pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
+    let mut roots = vec![workspace.to_path_buf()];
+    if let Ok(entries) = std::fs::read_dir(workspace) {
+        roots.extend(
+            entries
+                .flatten()
+                .map(|entry| entry.path())
+                .filter(|path| path.is_dir()),
+        );
+    }
+    MODULES
+        .iter()
+        .filter(|module| {
+            roots.iter().any(|root| {
+                module
+                    .markers
+                    .iter()
+                    .any(|marker| root.join(marker).is_file())
+            })
+        })
+        .collect()
+}
+
 /// Returns initialization options for the module's language server.
 pub(crate) fn options(module: &Module) -> Value {
     match module.id {

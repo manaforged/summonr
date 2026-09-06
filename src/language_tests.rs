@@ -50,3 +50,19 @@ fn unknown_module_is_rejected() {
 
     assert!(error.to_string().contains("unknown language module `java`"));
 }
+
+#[test]
+fn present_finds_markers_at_the_root_and_one_level_down() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    std::fs::write(workspace.path().join("go.mod"), "module x\n")?;
+    std::fs::create_dir(workspace.path().join("api"))?;
+    std::fs::write(workspace.path().join("api/Cargo.toml"), "[package]\n")?;
+    std::fs::create_dir_all(workspace.path().join("deep/er"))?;
+    std::fs::write(workspace.path().join("deep/er/package.json"), "{}")?;
+    let ids: Vec<&str> = present(workspace.path())
+        .iter()
+        .map(|module| module.id)
+        .collect();
+    assert_eq!(ids, ["rust", "go"]);
+    Ok(())
+}

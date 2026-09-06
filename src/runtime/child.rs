@@ -7,10 +7,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
 use super::*;
-use crate::child::{
-    ASSIGNMENT_MAX_CHARS, Access, ChildRecord, ChildResult, ChildState, MAX_PARALLEL, MAX_ROUNDS,
-    MAX_SECS, PATH_MAX_CHARS, PATHS_MAX, RESULT_MAX_CHARS, bounded,
-};
+use crate::child::{Access, ChildRecord, ChildResult, ChildState, bounded};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, State, Usage as Meter};
 use crate::tools::{ToolOutput, tool};
@@ -46,6 +43,7 @@ pub(super) struct Spawned {
     handle: JoinHandle<Done>,
     started: Instant,
     last: String,
+    reserved_tokens: u64,
 }
 
 impl Spawned {
@@ -59,7 +57,7 @@ struct Run<P: Provider> {
     record: ChildRecord,
     guard: Guard,
     assignment: String,
-    deadline: Duration,
+    deadline: Option<Duration>,
     started: Instant,
 }
 
@@ -96,32 +94,15 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one bounded assignment to a fresh child session with the same tools except task. Emit up to four task calls together; the batch returns when every child finishes. Set background true to return at once with a child id, then pass child to poll it or child plus kill true to stop it. Implement children edit isolated Git worktrees and may build and test there; research children are read-only. The parent reconciles changes, verifies once, and commits.",
+        "Delegate one assignment to a child session with the same tools except task. Calls in one response run together and return when every child finishes. background true returns a child id: pass child to poll it, kill true to stop it. implement children edit an isolated worktree; research children are read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {
-                "assignment": {
-                    "type": "string",
-                    "maxLength": ASSIGNMENT_MAX_CHARS
-                },
-                "access": {
-                    "type": "string",
-                    "enum": ["implement", "research"],
-                    "default": "implement",
-                    "description": "Implement edits an isolated worktree and can run commands there. Research is read-only."
-                },
-                "background": {
-                    "type": "boolean",
-                    "description": "Start the child and return its id without waiting."
-                },
-                "child": {
-                    "type": "string",
-                    "description": "A child id from a background start. Returns its state, last action, and result when finished."
-                },
-                "kill": {
-                    "type": "boolean",
-                    "description": "With child: stop that child now."
-                }
+                "assignment": {"type": "string"},
+                "access": {"type": "string", "enum": ["implement", "research"], "default": "implement"},
+                "background": {"type": "boolean"},
+                "child": {"type": "string"},
+                "kill": {"type": "boolean"}
             },
             "additionalProperties": false
         }),
@@ -131,6 +112,13 @@ pub(super) fn definition() -> ToolDefinition {
 impl<P: Provider> Loop<P> {
     pub(super) fn task_available(&self) -> bool {
         self.tasks && self.depth == 0 && self.seat(self.round_role()).0.supports_children()
+    }
+
+    pub(super) fn child_budget_reserved(&self) -> u64 {
+        self.spawned
+            .values()
+            .map(|spawned| spawned.reserved_tokens)
+            .fold(0, u64::saturating_add)
     }
 
     pub(super) async fn task_execute(
@@ -157,12 +145,6 @@ impl<P: Provider> Loop<P> {
         if self.depth != 0 {
             return rejected(calls.len(), "child sessions cannot delegate another task");
         }
-        if calls.len() > MAX_PARALLEL {
-            return rejected(
-                calls.len(),
-                &format!("a task batch can contain at most {MAX_PARALLEL} assignments"),
-            );
-        }
         let mut args = Vec::with_capacity(calls.len());
         for call in calls {
             match task_args(call) {
@@ -176,11 +158,16 @@ impl<P: Provider> Loop<P> {
         {
             return self.task_batch(args, events, emit).await;
         }
-        let mut results = Vec::with_capacity(args.len());
-        for args in args {
+        let mut background = Vec::new();
+        let mut results: Vec<Option<Result<Execution>>> =
+            std::iter::repeat_with(|| None).take(args.len()).collect();
+        for (index, args) in args.into_iter().enumerate() {
+            if args.child.is_none() && args.background {
+                background.push((index, args));
+                continue;
+            }
             let result = match args.child.clone() {
                 Some(id) => self.task_poll(&id, args.kill, events, emit).await,
-                None if args.background => self.task_spawn(args),
                 None => self
                     .task_batch(vec![args], events, emit)
                     .await
@@ -191,9 +178,38 @@ impl<P: Provider> Loop<P> {
                         ))
                     }),
             };
-            results.push(result);
+            results[index] = Some(result);
+        }
+        if !background.is_empty() {
+            let budget = match self.task_budget(background.len()) {
+                Ok(budget) => budget,
+                Err(error) => {
+                    let message = error.to_string();
+                    for (index, _) in background {
+                        results[index] = Some(Err(Error::Config(message.clone())));
+                    }
+                    return results
+                        .into_iter()
+                        .map(|result| {
+                            result.unwrap_or_else(|| {
+                                Err(Error::Config("task result was not recorded".to_string()))
+                            })
+                        })
+                        .collect();
+                }
+            };
+            for (index, args) in background {
+                results[index] = Some(self.task_spawn(args, &budget));
+            }
         }
         results
+            .into_iter()
+            .map(|result| {
+                result.unwrap_or_else(|| {
+                    Err(Error::Config("task result was not recorded".to_string()))
+                })
+            })
+            .collect()
     }
 
     async fn task_batch(
@@ -266,13 +282,7 @@ impl<P: Provider> Loop<P> {
         results
     }
 
-    fn task_spawn(&mut self, args: Args) -> Result<Execution> {
-        if self.spawned.len() >= MAX_PARALLEL {
-            return Err(Error::Denied(format!(
-                "at most {MAX_PARALLEL} children run at once; poll or kill one first"
-            )));
-        }
-        let budget = self.task_budget(1)?;
+    fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
         let tree = if args.access != Access::Implement {
             None
         } else if worktree::in_git(&self.workspace) {
@@ -282,7 +292,7 @@ impl<P: Provider> Loop<P> {
                 "background implement children require a Git repository".to_string(),
             ));
         };
-        let run = self.task_start(args, &budget, tree)?;
+        let run = self.task_start(args, budget, tree)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
@@ -295,6 +305,7 @@ impl<P: Provider> Loop<P> {
                 handle,
                 started: Instant::now(),
                 last: String::new(),
+                reserved_tokens: budget.max_tokens.unwrap_or_default(),
             },
         );
         Ok(Execution {
@@ -340,7 +351,7 @@ impl<P: Provider> Loop<P> {
             let Some(spawned) = self.spawned.remove(id) else {
                 return Err(Error::Tool(format!("unknown child `{id}`")));
             };
-            let done = killed(spawned, &self.workspace, "killed by the parent").await;
+            let done = killed(spawned, &self.workspace, "killed by the parent").await?;
             return self.task_settle(done);
         }
         let finished = self
@@ -407,6 +418,7 @@ impl<P: Provider> Loop<P> {
         &mut self,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
     ) -> Result<Vec<String>> {
         let started = Instant::now();
         let mut announced = false;
@@ -424,18 +436,12 @@ impl<P: Provider> Loop<P> {
                 };
                 let done = self.finished(spawned).await;
                 let execution = self.task_settle(done)?;
-                if execution.output.mutated {
-                    self.session.mark_edit().map_err(super::session_err)?;
-                }
+                usage.add(&execution.usage);
                 self.push_event(
                     events,
                     emit,
                     Event::Note {
-                        text: format!(
-                            "child {} finished: {}",
-                            short(&id),
-                            bounded(&execution.output.text, RESULT_MAX_CHARS)
-                        ),
+                        text: format!("child {} finished: {}", short(&id), execution.output.text),
                     },
                 )?;
             }
@@ -467,16 +473,20 @@ impl<P: Provider> Loop<P> {
             .collect())
     }
 
-    pub(super) async fn kill_spawned(&mut self, reason: &str) -> Result<Vec<ChildRecord>> {
+    pub(super) async fn kill_spawned(
+        &mut self,
+        reason: &str,
+        usage: &mut Usage,
+    ) -> Result<Vec<ChildRecord>> {
         let mut records = Vec::new();
         let ids: Vec<String> = self.spawned.keys().cloned().collect();
         for id in ids {
             let Some(spawned) = self.spawned.remove(&id) else {
                 continue;
             };
-            let done = killed(spawned, &self.workspace, reason).await;
+            let done = killed(spawned, &self.workspace, reason).await?;
             records.push(done.record.clone());
-            drop(self.task_settle(done)?);
+            usage.add(&self.task_settle(done)?.usage);
         }
         Ok(records)
     }
@@ -572,7 +582,6 @@ impl<P: Provider> Loop<P> {
         }
         child.depth = 1;
         child.plan = self.plan;
-        child.max_rounds = MAX_ROUNDS;
         child.context_window = self.context_window;
         child.context_sample = self.context_sample;
         child.effort = self.effort_for(role);
@@ -598,7 +607,7 @@ impl<P: Provider> Loop<P> {
             record,
             guard: Guard { tree },
             assignment: args.assignment,
-            deadline: Duration::from_secs(budget.max_secs.unwrap_or(MAX_SECS)),
+            deadline: budget.max_secs.map(Duration::from_secs),
             started: Instant::now(),
         })
     }
@@ -703,24 +712,24 @@ impl<P: Provider> Loop<P> {
         if children == 0 {
             return Err(Error::Config("task batch is empty".to_string()));
         }
-        let tokens = self
-            .budget
-            .max_tokens
-            .map(|limit| limit.saturating_sub(self.spent_tokens) / children);
+        let tokens = self.budget.max_tokens.map(|limit| {
+            limit
+                .saturating_sub(self.spent_tokens)
+                .saturating_sub(self.child_budget_reserved())
+                / children
+        });
         let secs = self
             .budget
             .max_secs
-            .map(|limit| limit.saturating_sub(self.elapsed_secs()))
-            .unwrap_or(MAX_SECS)
-            .min(MAX_SECS);
-        if tokens == Some(0) || secs == 0 {
+            .map(|limit| limit.saturating_sub(self.elapsed_secs()));
+        if tokens == Some(0) || secs == Some(0) {
             return Err(Error::Denied(
                 "the parent budget has no capacity for a child".to_string(),
             ));
         }
         Ok(Budget {
             max_tokens: tokens,
-            max_secs: Some(secs),
+            max_secs: secs,
         })
     }
 
@@ -739,18 +748,14 @@ impl<P: Provider> Loop<P> {
         let total = paths.len();
         let replay = self.session.replay();
         ChildResult {
-            text: bounded(text, RESULT_MAX_CHARS),
-            changed_paths: paths
-                .into_iter()
-                .take(PATHS_MAX)
-                .map(|path| bounded(&path, PATH_MAX_CHARS))
-                .collect(),
+            text: text.to_string(),
+            changed_paths: paths,
             changed_paths_total: total,
             rounds,
             usage,
             billed_tokens: replay.spent_tokens,
             elapsed_millis: replay.elapsed_millis,
-            diagnostic: diagnostic.map(|text| bounded(text, RESULT_MAX_CHARS)),
+            diagnostic: diagnostic.map(str::to_string),
         }
     }
 }
@@ -764,11 +769,16 @@ impl<P: Provider> Run<P> {
                 event: Box::new(event.clone()),
             }));
         };
-        let outcome = tokio::time::timeout(
-            self.deadline,
-            Box::pin(self.child.turn_with(self.assignment.as_str(), emit)),
-        )
-        .await;
+        let outcome = match self.deadline {
+            Some(deadline) => {
+                tokio::time::timeout(
+                    deadline,
+                    Box::pin(self.child.turn_with(self.assignment.as_str(), emit)),
+                )
+                .await
+            }
+            None => Ok(self.child.turn_with(self.assignment.as_str(), emit).await),
+        };
         let access = self.record.access;
         let (state, usage) = match outcome {
             Ok(Ok(turn)) => {
@@ -808,7 +818,10 @@ impl<P: Provider> Run<P> {
                 )
             }
             Err(_) => {
-                let reason = format!("child deadline reached after {}s", self.deadline.as_secs());
+                let reason = self.deadline.map_or_else(
+                    || "child deadline reached".to_string(),
+                    |deadline| format!("child deadline reached after {}s", deadline.as_secs()),
+                );
                 let diagnostic = match self.child.abort_note(&reason) {
                     Ok(()) => reason,
                     Err(error) => format!("{reason}; cannot close child turn: {error}"),
@@ -841,12 +854,12 @@ impl<P: Provider> Run<P> {
     }
 }
 
-async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Done {
+async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
     spawned.handle.abort();
     let mut record = spawned.record;
     let mut diagnostic = reason.to_string();
     if let Ok(done) = spawned.handle.await {
-        return done;
+        return Ok(done);
     }
     if record.access == Access::Implement && record.workspace != parent && record.workspace.exists()
     {
@@ -855,26 +868,44 @@ async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Done {
             record.workspace.display()
         ));
     }
-    let billed = spent_at(&spawned.path);
+    let (billed, usage) = accounting_at(&spawned.path)?;
     let mut result = empty(Some(&diagnostic));
     result.billed_tokens = billed;
+    result.usage = usage.clone();
     record.state = ChildState::Aborted(result);
-    Done {
+    Ok(Done {
         record,
         tree: None,
         paths: Vec::new(),
-        usage: Usage::default(),
+        usage,
         billed,
         millis: super::elapsed_millis(spawned.started),
-    }
+    })
 }
 
-fn spent_at(path: &Path) -> u64 {
+fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
     let mut state = State::default();
-    for line in log::read(path).unwrap_or_default() {
+    let mut usage = Usage::default();
+    let lines = log::read(path)
+        .map_err(|error| Error::Config(format!("cannot read child session log: {error}")))?;
+    for line in lines {
+        match &line {
+            log::Line::Assistant { usage: meter, .. } | log::Line::Charge { usage: meter, .. } => {
+                usage.prompt_tokens = usage
+                    .prompt_tokens
+                    .saturating_add(u32::try_from(meter.input).unwrap_or(u32::MAX));
+                usage.completion_tokens = usage
+                    .completion_tokens
+                    .saturating_add(u32::try_from(meter.output).unwrap_or(u32::MAX));
+                usage.cached_tokens = usage
+                    .cached_tokens
+                    .saturating_add(u32::try_from(meter.cached).unwrap_or(u32::MAX));
+            }
+            _ => {}
+        }
         state.apply(line);
     }
-    state.spent
+    Ok((state.spent, usage))
 }
 
 fn empty(diagnostic: Option<&str>) -> ChildResult {
@@ -886,7 +917,7 @@ fn empty(diagnostic: Option<&str>) -> ChildResult {
         usage: Usage::default(),
         billed_tokens: 0,
         elapsed_millis: 0,
-        diagnostic: diagnostic.map(|text| bounded(text, RESULT_MAX_CHARS)),
+        diagnostic: diagnostic.map(str::to_string),
     }
 }
 
@@ -903,7 +934,7 @@ fn access_name(access: Access) -> &'static str {
 
 fn note_record(record: &mut ChildRecord, diagnostic: &str) {
     if let Some(result) = result_mut(&mut record.state) {
-        result.diagnostic = Some(bounded(diagnostic, RESULT_MAX_CHARS));
+        result.diagnostic = Some(diagnostic.to_string());
     }
 }
 
@@ -916,7 +947,7 @@ fn fail_record(record: &mut ChildRecord, diagnostic: &str) {
         | ChildState::Interrupted(result) => result,
         ChildState::Running => return,
     };
-    result.diagnostic = Some(bounded(diagnostic, RESULT_MAX_CHARS));
+    result.diagnostic = Some(diagnostic.to_string());
     record.state = ChildState::Failed(result);
 }
 
@@ -950,11 +981,6 @@ fn task_args(call: &ToolCall) -> Result<Args> {
     let assignment = args.assignment.trim();
     if assignment.is_empty() {
         return Err(Error::Tool("task requires assignment".to_string()));
-    }
-    if assignment.chars().count() > ASSIGNMENT_MAX_CHARS {
-        return Err(Error::Tool(format!(
-            "task assignment exceeds {ASSIGNMENT_MAX_CHARS} characters"
-        )));
     }
     args.assignment = assignment.to_string();
     Ok(args)

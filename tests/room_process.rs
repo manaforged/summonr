@@ -247,10 +247,17 @@ for line in sys.stdin:
 "#,
     )
     .expect("fake codex");
-    let wrapper = cwd.join("codex");
+    let wrapper = cwd.join(if cfg!(windows) { "codex.cmd" } else { "codex" });
     std::fs::write(
         &wrapper,
-        format!("#!/bin/sh\nexec python3 {} \"$@\"\n", fake.display()),
+        if cfg!(windows) {
+            format!("@echo off\r\npython \"{}\" %*\r\n", fake.display())
+        } else {
+            format!(
+                "#!/bin/sh\nexec python3 '{}' \"$@\"\n",
+                fake.display().to_string().replace('\'', "'\\''")
+            )
+        },
     )
     .expect("wrapper");
     #[cfg(unix)]

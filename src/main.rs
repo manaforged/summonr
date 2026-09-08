@@ -7,13 +7,26 @@ mod modes;
 #[path = "main/startup.rs"]
 mod startup;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     #[cfg(windows)]
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "--sandbox-exec")
     {
-        eprintln!("summon: Windows is unsupported; run it under WSL");
-        std::process::exit(1);
+        let args: Vec<_> = std::env::args_os().skip(2).collect();
+        match summoner::sandbox_entry(&args) {
+            Ok(code) => std::process::exit(code),
+            Err(error) => {
+                eprintln!("summon: {error}");
+                std::process::exit(1);
+            }
+        }
     }
+    run();
+}
+
+#[tokio::main]
+async fn run() {
     match startup::run().await {
         Ok(code) => std::process::exit(code),
         Err(error) => {

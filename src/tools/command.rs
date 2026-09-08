@@ -38,6 +38,7 @@ type CommandChild = Child;
 struct CommandChild {
     child: Box<dyn ChildWrapper>,
     kill_on_drop: bool,
+    sandbox: bool,
 }
 
 #[cfg(windows)]
@@ -51,6 +52,12 @@ impl CommandChild {
     }
 
     fn start_kill(&mut self) -> std::io::Result<()> {
+        if self.sandbox {
+            return self
+                .child
+                .id()
+                .map_or(Ok(()), super::sandbox::windows::stop);
+        }
         self.child.start_kill()
     }
 }
@@ -58,8 +65,10 @@ impl CommandChild {
 #[cfg(windows)]
 impl Drop for CommandChild {
     fn drop(&mut self) {
-        if self.kill_on_drop {
-            drop(self.child.start_kill());
+        if self.kill_on_drop
+            && let Err(error) = self.start_kill()
+        {
+            eprintln!("command cleanup failed: {error}");
         }
     }
 }
@@ -67,11 +76,16 @@ impl Drop for CommandChild {
 struct ProcessGroup {
     pid: u32,
     armed: bool,
+    sandbox: bool,
 }
 
 impl ProcessGroup {
-    fn new(pid: u32) -> Self {
-        Self { pid, armed: true }
+    fn new(pid: u32, sandbox: bool) -> Self {
+        Self {
+            pid,
+            armed: true,
+            sandbox,
+        }
     }
 
     fn disarm(&mut self) {
@@ -82,7 +96,7 @@ impl ProcessGroup {
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
         if self.armed {
-            kill_group(self.pid);
+            kill_group(self.pid, self.sandbox);
         }
     }
 }
@@ -190,7 +204,7 @@ impl ToolRegistry {
             .map_or(self.workspace.as_path(), tempfile::TempDir::path);
         let (id, rec_path, log_path, exit_path) = crate::jobs::prepare(job_workspace)?;
         let script = if background {
-            crate::jobs::wrap(command, &exit_path)
+            crate::shell::wrap(command, &exit_path, &self.workspace)
         } else {
             command.to_string()
         };
@@ -207,17 +221,16 @@ impl ToolRegistry {
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
         if background {
-            crate::jobs::write(
-                &rec_path,
-                &crate::jobs::stamp(
-                    &id,
-                    pid,
-                    command,
-                    &self.workspace,
-                    true,
-                    self.session.lock().ok().and_then(|session| session.clone()),
-                )?,
+            let mut record = crate::jobs::stamp(
+                &id,
+                pid,
+                command,
+                &self.workspace,
+                true,
+                self.session.lock().ok().and_then(|session| session.clone()),
             )?;
+            record.sandbox = self.sandbox.is_some();
+            crate::jobs::write(&rec_path, &record)?;
         }
         Ok(StartedCommand {
             id,
@@ -244,7 +257,7 @@ impl ToolRegistry {
             mut child,
             temp: _temp,
         } = started;
-        let mut group = ProcessGroup::new(pid);
+        let mut group = ProcessGroup::new(pid, self.sandbox.is_some());
         let waited = match timeout {
             Some(seconds) => {
                 tokio::time::timeout(
@@ -318,15 +331,18 @@ fn spawn_command(
     let err = log
         .try_clone()
         .map_err(|error| Error::Tool(format!("cannot clone job log: {error}")))?;
+    let shell = crate::shell::program()?;
+    let args = crate::shell::arguments(script, workspace);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut cmd = if let Some(sandbox) = sandbox {
         if read_only {
-            sandbox.read_command("bash", &["-c", script], workspace)
+            sandbox.read_command(&shell, &args, workspace)
         } else {
-            sandbox.command("bash", &["-c", script], workspace)
+            sandbox.command(&shell, &args, workspace)
         }
     } else {
-        let mut cmd = Command::new("bash");
-        cmd.args(["-c", script]).current_dir(workspace);
+        let mut cmd = Command::new(&shell);
+        cmd.args(&args).current_dir(workspace);
         cmd
     };
     cmd.env_clear()
@@ -343,10 +359,15 @@ fn spawn_command(
     #[cfg(unix)]
     let child = cmd.spawn();
     #[cfg(windows)]
-    let child = if background {
+    let child = if background || sandbox.is_some() {
+        cmd.kill_on_drop(false);
+        if background && sandbox.is_some() {
+            cmd.env("SUMMONER_SANDBOX_DETACHED", "1");
+        }
         cmd.spawn().map(|child| CommandChild {
             child: Box::new(child),
-            kill_on_drop: false,
+            kill_on_drop: !background,
+            sandbox: sandbox.is_some(),
         })
     } else {
         let mut command = CommandWrap::from(cmd);
@@ -354,6 +375,7 @@ fn spawn_command(
         command.spawn().map(|child| CommandChild {
             child,
             kill_on_drop: true,
+            sandbox: false,
         })
     };
     child.map_err(|error| Error::Tool(format!("cannot start command: {error}")))
@@ -479,6 +501,14 @@ fn command_env() -> Vec<(String, String)> {
         "CARGO_HOME",
         "RUSTUP_HOME",
         "CARGO_TARGET_DIR",
+        "SystemRoot",
+        "ComSpec",
+        "PATHEXT",
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
     ];
     KEEP.iter()
         .filter_map(|key| {
@@ -510,9 +540,10 @@ fn readonly_verb(command: &str) -> bool {
     }
 }
 
-fn kill_group(pid: u32) {
+fn kill_group(pid: u32, sandbox: bool) {
     #[cfg(unix)]
     {
+        let _ = sandbox;
         let silent = |args: &[&str]| {
             drop(
                 std::process::Command::new("kill")
@@ -522,7 +553,7 @@ fn kill_group(pid: u32) {
                     .status(),
             );
         };
-        silent(&["-KILL", &format!("-{pid}")]);
+        silent(&["-KILL", "--", &format!("-{pid}")]);
         silent(&["-KILL", &pid.to_string()]);
         drop(
             std::process::Command::new("pkill")
@@ -533,20 +564,28 @@ fn kill_group(pid: u32) {
         );
     }
     #[cfg(windows)]
-    drop(
-        std::process::Command::new("taskkill")
-            .args(["/F", "/T", "/PID", &pid.to_string()])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status(),
-    );
+    {
+        if sandbox {
+            if let Err(error) = super::sandbox::windows::stop(pid) {
+                eprintln!("sandbox cleanup failed: {error}");
+            }
+            return;
+        }
+        drop(
+            std::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status(),
+        );
+    }
 }
 
 fn stop_command(child: &mut CommandChild, pid: u32) -> std::io::Result<()> {
     #[cfg(unix)]
     {
         let _ = child;
-        kill_group(pid);
+        kill_group(pid, false);
         Ok(())
     }
     #[cfg(windows)]
@@ -580,7 +619,14 @@ async fn settle_command(child: &mut CommandChild) -> std::io::Result<()> {
 }
 
 fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
-    kill_group(record.pid);
+    #[cfg(windows)]
+    if record.sandbox {
+        super::sandbox::windows::stop(record.pid)?;
+    } else {
+        kill_group(record.pid, false);
+    }
+    #[cfg(not(windows))]
+    kill_group(record.pid, record.sandbox);
     let exit = crate::jobs::exit_path(workspace, &record.id);
     if !exit.is_file() {
         crate::jobs::write_killed(&exit)?;

@@ -1,6 +1,9 @@
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
-use super::{SEAL, Source, Store, backend};
+#[cfg(unix)]
+use super::SEAL;
+use super::{Source, Store, backend};
 
 /// A stand-in for /usr/bin/security that keeps items in one directory.
 #[cfg(unix)]
@@ -17,7 +20,8 @@ if [ "$1" = "-i" ]; then read -r line; set -- $line; fi
 cmd="$1"; shift
 while [ $# -gt 0 ]; do
   case "$1" in
-    -s) shift;; -a) account="$2"; shift;; -w) shift; secret="$(printf '%s' "$1" | tr -d '"')";;
+    -s) shift;; -a) account="$2"; shift;;
+    -w) if [ "$cmd" = "add-generic-password" ]; then shift; secret="$(printf '%s' "$1" | tr -d '"')"; fi;;
   esac
   shift
 done

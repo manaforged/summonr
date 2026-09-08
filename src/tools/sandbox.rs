@@ -1,27 +1,32 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 use std::process::Stdio;
 
 use tokio::process::Command;
 
 use crate::error::{Error, Result};
 
+#[cfg(windows)]
+pub(crate) mod windows;
+
 #[derive(Clone, Debug)]
 pub(crate) struct Sandbox {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     backend: Backend,
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     workspace: PathBuf,
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     deny_network: bool,
     #[cfg(target_os = "linux")]
     temp: PathBuf,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(any(target_os = "macos", target_os = "linux", windows))]
 #[derive(Clone, Debug)]
 enum Backend {
+    #[cfg(windows)]
+    Windows { executable: PathBuf },
     #[cfg(target_os = "macos")]
     Mac {
         executable: PathBuf,
@@ -34,7 +39,7 @@ enum Backend {
 
 impl Sandbox {
     pub(crate) fn discover(workspace: &Path, deny_network: bool) -> Result<Self> {
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
             let _ = (workspace, deny_network);
             Err(Error::Config(
@@ -43,16 +48,37 @@ impl Sandbox {
             ))
         }
 
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         {
             let workspace = workspace.canonicalize().map_err(|error| {
                 Error::Config(format!("cannot open sandbox workspace: {error}"))
             })?;
+            #[cfg(any(target_os = "macos", target_os = "linux"))]
             let temp = std::env::temp_dir().canonicalize().map_err(|error| {
                 Error::Config(format!(
                     "cannot open the system temp directory for sandbox: {error}"
                 ))
             })?;
+
+            #[cfg(windows)]
+            {
+                let executable = std::env::current_exe()?;
+                #[cfg(test)]
+                let executable = executable
+                    .parent()
+                    .and_then(Path::parent)
+                    .ok_or_else(|| {
+                        Error::Config("cannot locate the sandbox test executable".to_string())
+                    })?
+                    .join("summon.exe");
+                let sandbox = Self {
+                    backend: Backend::Windows { executable },
+                    workspace,
+                    deny_network,
+                };
+                sandbox.probe()?;
+                Ok(sandbox)
+            }
 
             #[cfg(target_os = "macos")]
             {
@@ -100,18 +126,18 @@ impl Sandbox {
     }
 
     pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {
-        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         {
             Self::discover(workspace, self.deny_network)
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
             let _ = self;
             Self::discover(workspace, false)
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     pub(crate) fn command_line(
         &self,
         program: &str,
@@ -121,7 +147,7 @@ impl Sandbox {
         self.command_line_with(program, args, cwd, false)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     pub(crate) fn read_command_line(
         &self,
         program: &str,
@@ -131,7 +157,7 @@ impl Sandbox {
         self.command_line_with(program, args, cwd, true)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn command_line_with(
         &self,
         program: &str,
@@ -142,6 +168,20 @@ impl Sandbox {
         #[cfg(target_os = "macos")]
         let _ = cwd;
         let (executable, args) = match &self.backend {
+            #[cfg(windows)]
+            Backend::Windows { executable } => {
+                let mut command = vec![
+                    "--sandbox-exec".into(),
+                    self.workspace.as_os_str().to_owned(),
+                    cwd.as_os_str().to_owned(),
+                    read_only.to_string().into(),
+                    self.deny_network.to_string().into(),
+                    std::process::id().to_string().into(),
+                    program.into(),
+                ];
+                command.extend(args.iter().map(|arg| (*arg).into()));
+                (executable.clone(), command)
+            }
             #[cfg(target_os = "macos")]
             Backend::Mac {
                 executable,
@@ -192,7 +232,7 @@ impl Sandbox {
         (executable, args)
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     pub(crate) fn command_line(
         &self,
         program: &str,
@@ -203,7 +243,7 @@ impl Sandbox {
         unreachable!("sandbox backend is unavailable")
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     pub(crate) fn read_command_line(
         &self,
         program: &str,
@@ -213,9 +253,12 @@ impl Sandbox {
         self.command_line(program, args, cwd)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     fn probe(&self) -> Result<()> {
-        let (executable, args) = self.command_line("true", &[], &self.workspace);
+        let shell = crate::shell::program()?;
+        let args = crate::shell::arguments("exit 0", &self.workspace);
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (executable, args) = self.command_line(&shell, &args, &self.workspace);
         let status = std::process::Command::new(executable)
             .args(args)
             .current_dir(&self.workspace)

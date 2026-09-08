@@ -43,7 +43,6 @@ struct Worker {
     followups: VecDeque<UserInput>,
     last_turn: Option<crate::Turn>,
     bus_error: Option<String>,
-    named: Option<String>,
     workflow: Workflow,
     dial: Option<crate::Effort>,
     home: Option<std::path::PathBuf>,
@@ -85,17 +84,17 @@ impl Worker {
             followups: VecDeque::new(),
             last_turn: None,
             bus_error: None,
-            named: info.workflow,
             last_diff: None,
-            workflow: Workflow::default(),
+            workflow: info.workflow.unwrap_or_default(),
             dial: None,
         }
     }
 
     async fn run(mut self) {
-        if let Some(name) = self.named.take() {
-            self.apply_workflow(&name);
+        if let Some(name) = self.loop_.workflow() {
+            self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }
+        self.send_workflow();
         self.remember_seat();
         self.send_settings();
         self.reader.watch();

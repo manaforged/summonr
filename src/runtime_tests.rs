@@ -1,4 +1,92 @@
 use super::*;
+use crate::endpoint::{Endpoint, Wire};
+use crate::provider::Client;
+use crate::workflow::{Role as WorkflowRole, Seat, Workflow};
+use tempfile::tempdir;
+
+#[tokio::test]
+async fn workflow_activation_preserves_previous_roles_on_error() -> Result<()> {
+    let workspace = tempdir()?;
+    let endpoint = Endpoint {
+        name: "fixture".to_string(),
+        model: "review-model".to_string(),
+        base_url: Some("http://127.0.0.1:1/v1".to_string()),
+        api_key: None,
+        source: None,
+        oauth: None,
+        body: None,
+        context_window: None,
+        idle_timeout_secs: None,
+        effort: Some(Effort::High),
+        price: None,
+        env: Default::default(),
+        headers: Default::default(),
+        wire: Wire::Completions,
+    };
+    let seat = Seat {
+        endpoint: "fixture".to_string(),
+        model: None,
+    };
+    let mut loop_ = Loop::with_session(
+        Client::new("", "http://127.0.0.1:1/v1")?,
+        "driver",
+        workspace.path(),
+        "system",
+    )?;
+    let original = Workflow {
+        name: "original".to_string(),
+        seats: [
+            (WorkflowRole::Review, seat.clone()),
+            (WorkflowRole::Judge, seat.clone()),
+        ]
+        .into(),
+    };
+    loop_.apply_workflow(&original, |_| {
+        Ok((Client::connect(&endpoint)?, endpoint.clone()))
+    })?;
+    let before = std::fs::read(loop_.session_path())?;
+    let replacement = Workflow {
+        name: "replacement".to_string(),
+        seats: [
+            (WorkflowRole::Plan, seat.clone()),
+            (WorkflowRole::Review, seat),
+        ]
+        .into(),
+    };
+    let mut resolved = 0;
+    let result = loop_.apply_workflow(&replacement, |_| {
+        resolved += 1;
+        if resolved == 2 {
+            return Err(Error::Config("review endpoint unavailable".to_string()));
+        }
+        Ok((Client::connect(&endpoint)?, endpoint.clone()))
+    });
+    assert!(matches!(result, Err(Error::Config(message)) if message.contains("review seat")));
+    assert_eq!(resolved, 2);
+    assert_eq!(loop_.workflow().as_deref(), Some("original"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Review), Some("review-model"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Judge), Some("review-model"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Plan), None);
+    assert_eq!(
+        loop_.tuning.get(&WorkflowRole::Review),
+        Some(&(Some(Effort::High), None))
+    );
+    assert_eq!(std::fs::read(loop_.session_path())?, before);
+
+    let mut next = endpoint;
+    next.model = "next-model".to_string();
+    next.effort = None;
+    loop_.apply_workflow(&replacement, |_| {
+        Ok((Client::connect(&next)?, next.clone()))
+    })?;
+    assert_eq!(loop_.workflow().as_deref(), Some("replacement"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Review), Some("next-model"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Plan), Some("next-model"));
+    assert_eq!(loop_.seat_model(WorkflowRole::Judge), None);
+    assert!(!loop_.tuning.contains_key(&WorkflowRole::Judge));
+    assert_eq!(loop_.tuning.get(&WorkflowRole::Review), Some(&(None, None)));
+    Ok(())
+}
 
 impl<P: Provider> Loop<P> {
     pub(crate) async fn execute_tool(&self, call: &ToolCall) -> Result<String> {

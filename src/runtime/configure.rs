@@ -347,6 +347,26 @@ impl<P: Provider> Loop<P> {
         self.session.set_workflow(name).map_err(super::session_err)
     }
 
+    pub fn apply_workflow(
+        &mut self,
+        workflow: &workflow::Workflow,
+        mut resolve: impl FnMut(&workflow::Seat) -> Result<(P, crate::endpoint::Endpoint)>,
+    ) -> Result<()> {
+        let mut seats = BTreeMap::new();
+        let mut tuning = BTreeMap::new();
+        for (role, seat) in &workflow.seats {
+            let (provider, endpoint) = resolve(seat).map_err(|error| {
+                Error::Config(format!("{}: {role} seat {seat}: {error}", workflow.name))
+            })?;
+            seats.insert(*role, (provider, endpoint.model));
+            tuning.insert(*role, (endpoint.effort, endpoint.price));
+        }
+        self.set_workflow(Some(&workflow.name))?;
+        self.seats = seats;
+        self.tuning = tuning;
+        Ok(())
+    }
+
     #[must_use]
     pub fn workflow(&self) -> Option<String> {
         self.session.workflow().map(str::to_string)

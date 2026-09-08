@@ -151,7 +151,7 @@ pub struct Info {
     pub plan: bool,
     pub strict: bool,
     pub workspace: String,
-    pub workflow: Option<String>,
+    pub workflow: Option<crate::workflow::Workflow>,
     pub config: Option<std::path::PathBuf>,
 }
 

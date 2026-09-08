@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde::Deserialize;
 
@@ -10,8 +10,8 @@ pub(crate) struct Policy {
     read_only: bool,
     unrestricted: bool,
     deny: Vec<String>,
-    allow: Vec<String>,
-    write: Vec<String>,
+    allow: Vec<Vec<String>>,
+    write: Vec<Vec<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -59,11 +59,11 @@ impl Policy {
                 self.deny.push(item);
             }
         }
-        if !file.allow.is_empty() {
-            self.allow = file.allow;
+        if file.strict || !file.allow.is_empty() {
+            self.allow.push(file.allow);
         }
         if !file.write.is_empty() {
-            self.write = file.write;
+            self.write.push(file.write);
         }
     }
 
@@ -116,16 +116,15 @@ impl Policy {
                 return Err(Error::Denied(format!("denied by policy `{pattern}`")));
             }
         }
-        if self.strict || !self.allow.is_empty() {
-            let allowed = self
+        if (self.strict && self.allow.is_empty())
+            || self
                 .allow
                 .iter()
-                .any(|pattern| matches_allow(command, pattern));
-            if !allowed {
-                return Err(Error::Denied(format!(
-                    "command `{command}` is not on the allow list"
-                )));
-            }
+                .any(|list| !list.iter().any(|pattern| matches_allow(command, pattern)))
+        {
+            return Err(Error::Denied(format!(
+                "command `{command}` is not on every configured allow list"
+            )));
         }
         Ok(())
     }
@@ -143,11 +142,15 @@ impl Policy {
             return Ok(());
         }
         let relative = relative.replace('\\', "/");
-        if self.write.iter().any(|glob| path_matches(&relative, glob)) {
+        if self
+            .write
+            .iter()
+            .all(|list| list.iter().any(|glob| path_matches(&relative, glob)))
+        {
             return Ok(());
         }
         Err(Error::Denied(format!(
-            "write to `{relative}` is not in the write list"
+            "write to `{relative}` is not in every configured write list"
         )))
     }
 }
@@ -162,13 +165,25 @@ fn expands_to_shell(var: &str) -> bool {
         return true;
     }
     match std::env::var(&name) {
-        Ok(value) => {
-            let program = value.split_whitespace().next().unwrap_or_default();
-            let program = program.rsplit('/').next().unwrap_or(program);
-            matches!(program, "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish")
-        }
+        Ok(value) => shell(&value),
         Err(_) => true,
     }
+}
+
+fn shell(program: &str) -> bool {
+    let name = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(program)
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .trim_matches(['\'', '"'])
+        .to_ascii_lowercase();
+    matches!(
+        name.strip_suffix(".exe").unwrap_or(&name),
+        "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish" | "cmd" | "powershell" | "pwsh"
+    )
 }
 
 fn pipes_to_shell(command: &str) -> bool {
@@ -206,10 +221,7 @@ fn pipes_to_shell(command: &str) -> bool {
                 let name = bare
                     .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
                     .to_ascii_lowercase();
-                matches!(
-                    name.as_str(),
-                    "sh" | "bash" | "zsh" | "dash" | "ksh" | "fish"
-                ) || word.starts_with('`')
+                shell(&name) || word.starts_with('`')
             })
     })
 }
@@ -329,7 +341,7 @@ fn split_segments(command: &str) -> Vec<String> {
 fn in_temp(word: &str) -> bool {
     let temp = std::env::temp_dir();
     let target = Path::new(word.trim_end_matches('*'));
-    word.starts_with('/')
+    target.has_root()
         && [temp.clone(), temp.canonicalize().unwrap_or_default()]
             .iter()
             .any(|root| !root.as_os_str().is_empty() && target.starts_with(root))
@@ -342,7 +354,7 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
     if word.starts_with('~') || word.starts_with('$') {
         return true;
     }
-    if word.starts_with('/') {
+    if Path::new(word).has_root() {
         let target = Path::new(word);
         let temp = std::env::temp_dir();
         let roots = [
@@ -359,15 +371,16 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
         return true;
     }
     let mut depth: i64 = 0;
-    for part in word.split('/') {
+    for part in Path::new(word).components() {
         match part {
-            "" | "." => {}
-            ".." => {
+            Component::CurDir => {}
+            Component::ParentDir => {
                 depth -= 1;
                 if depth < 0 {
                     return true;
                 }
             }
+            Component::Prefix(_) => return true,
             _ => depth += 1,
         }
     }

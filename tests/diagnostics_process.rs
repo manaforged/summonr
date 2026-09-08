@@ -5,7 +5,7 @@ use std::time::Duration;
 #[cfg(unix)]
 use std::os::unix::process::ExitStatusExt;
 use tokio::process::Command;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 fn log(home: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
     fs::read_dir(home.join("logs"))?
@@ -53,6 +53,53 @@ async fn failed_command_records_error() -> std::io::Result<()> {
     assert!(text.contains("\"event\":\"exit\""), "{text}");
     assert!(text.contains("\"code\":1"), "{text}");
     assert!(text.contains("no session `missing`"), "{text}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_workflow_records_error_without_activation() -> Result<(), Box<dyn std::error::Error>>
+{
+    let home = tempfile::tempdir()?;
+    let workspace = tempfile::tempdir()?;
+    fs::write(
+        home.path().join("config.toml"),
+        "[endpoint.fixture]\nbase_url = 'http://127.0.0.1:1/v1'\nmodel = 'fixture'\n\
+         [workflows.broken]\nreview = 'missing-reviewer-endpoint'\n",
+    )?;
+    let output = timeout(
+        Duration::from_secs(15),
+        Command::new(env!("CARGO_BIN_EXE_summoner"))
+            .args([
+                "fixture",
+                "--here",
+                "--no-sandbox",
+                "-w",
+                "broken",
+                "-p",
+                "hello",
+            ])
+            .current_dir(workspace.path())
+            .env("MAGE_HOME", home.path())
+            .env("MAGE_API_KEY", "fixture")
+            .env("MAGE_BUS", "off")
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await??;
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("unknown endpoint `missing-reviewer-endpoint`")
+    );
+    let text = fs::read_to_string(log(home.path())?)?;
+    assert!(text.contains("\"code\":1"), "{text}");
+    for entry in fs::read_dir(home.path().join("sessions"))? {
+        let path = entry?.path().join("session.jsonl");
+        if path.is_file() {
+            let session = fs::read_to_string(path)?;
+            assert!(!session.contains("\"kind\":\"workflow\""), "{session}");
+        }
+    }
     Ok(())
 }
 

@@ -126,22 +126,19 @@ fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
     workflow::default_name()
 }
 
-fn apply_workflow(loop_: &mut Loop<Client>, name: &str, json: bool) -> Result<()> {
+fn apply_workflow(
+    loop_: &mut Loop<Client>,
+    name: &str,
+    ui: Option<&UnboundedSender<summoner::tui::Msg>>,
+    json: bool,
+) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
-    for (role, seat) in &workflow.seats {
-        let endpoint = resolve_endpoint(Some(&seat.endpoint), seat.model.as_deref())
-            .map_err(|error| summoner::Error::Config(format!("{name}: {role} seat: {error}")))?;
-        let client = provider(&endpoint, None, json)?;
-        loop_.set_seat(
-            *role,
-            client,
-            endpoint.model,
-            endpoint.effort,
-            endpoint.price,
-        );
-    }
-    loop_.set_workflow(Some(name))?;
-    Ok(())
+    loop_.apply_workflow(&workflow, |seat| {
+        let endpoint = resolve_endpoint(Some(&seat.endpoint), seat.model.as_deref())?;
+        let client = provider(&endpoint, ui, json)?;
+        Ok((client, endpoint))
+    })?;
+    Ok(workflow)
 }
 
 fn workspace() -> Result<PathBuf> {
@@ -518,12 +515,9 @@ async fn launch_once(
     if let Some(probe) = probe {
         loop_.set_context_probe(probe);
     }
-    let workflow = workflow_name(args, &loop_)?;
-    if !use_tui(args)
-        && let Some(name) = &workflow
-    {
-        apply_workflow(&mut loop_, name, args.json)?;
-    }
+    let workflow = workflow_name(args, &loop_)?
+        .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
+        .transpose()?;
     let session = loop_.session_id();
     let session_path = loop_.session_path().to_path_buf();
     if let Some(log) = log {
@@ -695,7 +689,7 @@ async fn dispatch(
     workspace: PathBuf,
     ui: Ui,
     goal_checks: Vec<String>,
-    workflow: Option<String>,
+    workflow: Option<workflow::Workflow>,
 ) -> Result<summoner::tui::Exit> {
     let model = endpoint.model.as_str();
     let session = loop_.session_id();

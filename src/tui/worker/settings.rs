@@ -90,7 +90,8 @@ impl Worker {
     }
 
     pub(super) async fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
-        match endpoint.and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)))
+        match endpoint
+            .and_then(|endpoint| Self::client(&self.ui, &endpoint).map(|client| (endpoint, client)))
         {
             Ok((mut endpoint, provider)) => {
                 if endpoint.context_window.is_none() {
@@ -103,10 +104,10 @@ impl Worker {
         self.send_settings();
     }
 
-    fn client(&self, endpoint: &Endpoint) -> crate::Result<Client> {
-        let delta = self.ui.clone();
-        let thinking = self.ui.clone();
-        let calling = self.ui.clone();
+    fn client(ui: &UnboundedSender<Msg>, endpoint: &Endpoint) -> crate::Result<Client> {
+        let delta = ui.clone();
+        let thinking = ui.clone();
+        let calling = ui.clone();
         Ok(Client::connect(endpoint)?
             .on_delta(move |text| drop(delta.send(Msg::Delta(text.to_string()))))
             .on_reasoning(move |text| {
@@ -168,8 +169,9 @@ impl Worker {
     }
 
     pub(super) fn seat_role(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
-        let resolved = crate::endpoint::resolve(Some(endpoint), model)
-            .and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)));
+        let resolved = crate::endpoint::resolve(Some(endpoint), model).and_then(|endpoint| {
+            Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
+        });
         match resolved {
             Ok((endpoint, client)) => {
                 self.loop_.set_seat(
@@ -269,27 +271,16 @@ impl Worker {
             Ok(workflow) => workflow,
             Err(error) => return self.fail(&error.to_string()),
         };
-        for role in Role::ALL {
-            self.loop_.clear_seat(role);
+        let ui = &self.ui;
+        let applied = self.loop_.apply_workflow(&workflow, |seat| {
+            let endpoint = crate::endpoint::resolve(Some(&seat.endpoint), seat.model.as_deref())?;
+            let client = Self::client(ui, &endpoint)?;
+            Ok((client, endpoint))
+        });
+        if let Err(error) = applied {
+            return self.fail(&error.to_string());
         }
-        for (role, seat) in &workflow.seats {
-            let client = crate::endpoint::resolve(Some(&seat.endpoint), seat.model.as_deref())
-                .and_then(|endpoint| self.client(&endpoint).map(|client| (endpoint, client)));
-            match client {
-                Ok((endpoint, client)) => self.loop_.set_seat(
-                    *role,
-                    client,
-                    endpoint.model,
-                    endpoint.effort,
-                    endpoint.price,
-                ),
-                Err(error) => self.fail(&format!("{name}: {role} seat {seat}: {error}")),
-            }
-        }
-        match self.loop_.set_workflow(Some(name)) {
-            Ok(()) => self.system(&format!("workflow {name} · {}", workflow.summary())),
-            Err(error) => self.fail(&error.to_string()),
-        }
+        self.system(&format!("workflow {name} · {}", workflow.summary()));
         self.workflow = workflow;
         self.send_workflow();
         self.send_settings();

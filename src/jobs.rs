@@ -17,6 +17,8 @@ pub(crate) struct Record {
     pub workspace: String,
     pub started: u64,
     pub background: bool,
+    #[serde(default)]
+    pub sandbox: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
 }
@@ -183,13 +185,6 @@ pub(crate) fn preview(path: &Path, cap: usize) -> Result<String> {
     ))
 }
 
-pub(crate) fn wrap(command: &str, exit: &Path) -> String {
-    format!(
-        "trap '' HUP\n(\n{command}\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{}'\nexit \"$code\"",
-        exit.display()
-    )
-}
-
 pub(crate) fn stamp(
     id: &str,
     pid: u32,
@@ -209,6 +204,7 @@ pub(crate) fn stamp(
         workspace: workspace.display().to_string(),
         started,
         background,
+        sandbox: false,
         session,
     })
 }
@@ -224,23 +220,31 @@ pub(crate) fn exit_path(workspace: &Path, id: &str) -> PathBuf {
 }
 
 pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
-    if !alive(pid) {
-        return false;
+    #[cfg(windows)]
+    {
+        windows::started(pid).is_some_and(|created| created <= started.saturating_add(5))
     }
-    let elapsed = std::process::Command::new("ps")
-        .args(["-o", "etime=", "-p", &pid.to_string()])
-        .output()
-        .ok()
-        .and_then(|output| elapsed_secs(String::from_utf8_lossy(&output.stdout).trim()));
-    let Some(elapsed) = elapsed else {
-        return true;
-    };
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
-    now.saturating_sub(elapsed) <= started.saturating_add(5)
+    #[cfg(unix)]
+    {
+        if !alive(pid) {
+            return false;
+        }
+        let elapsed = std::process::Command::new("ps")
+            .args(["-o", "etime=", "-p", &pid.to_string()])
+            .output()
+            .ok()
+            .and_then(|output| elapsed_secs(String::from_utf8_lossy(&output.stdout).trim()));
+        let Some(elapsed) = elapsed else {
+            return true;
+        };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
+        now.saturating_sub(elapsed) <= started.saturating_add(5)
+    }
 }
 
+#[cfg(any(unix, test))]
 pub(crate) fn elapsed_secs(etime: &str) -> Option<u64> {
     let (days, clock) = match etime.split_once('-') {
         Some((days, clock)) => (days.parse::<u64>().ok()?, clock),
@@ -259,6 +263,7 @@ pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
     Ok(())
 }
 
+#[cfg(unix)]
 pub(crate) fn alive(pid: u32) -> bool {
     std::process::Command::new("kill")
         .arg("-0")
@@ -269,6 +274,10 @@ pub(crate) fn alive(pid: u32) -> bool {
         .map(|status| status.success())
         .unwrap_or(false)
 }
+
+#[cfg(windows)]
+#[path = "jobs/windows.rs"]
+mod windows;
 
 fn check_id(id: &str) -> Result<&str> {
     if id.is_empty() || id.len() > ID_MAX {

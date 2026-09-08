@@ -4,6 +4,7 @@ use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 
+use reqwest::Url;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
@@ -56,7 +57,7 @@ impl Conn {
             reader: BufReader::new(Box::new(stdout)),
             writer: Box::new(stdin),
             next_id: 1,
-            root: file_uri(workspace),
+            root: file_uri(workspace)?,
         };
         conn.handshake(&launch.options).await?;
         Ok(conn)
@@ -83,7 +84,7 @@ impl Conn {
             reader: BufReader::new(Box::new(reader)),
             writer: Box::new(writer),
             next_id: 1,
-            root: file_uri(root),
+            root: file_uri(root)?,
         };
         conn.handshake(options).await?;
         Ok(conn)
@@ -119,7 +120,7 @@ impl Conn {
 
     pub(super) async fn diagnostics(&mut self, path: &Path) -> Result<String> {
         self.did_open(path).await?;
-        let uri = file_uri(path);
+        let uri = file_uri(path)?;
         let result = self
             .request(
                 "textDocument/diagnostic",
@@ -156,7 +157,7 @@ impl Conn {
         character: u32,
     ) -> Result<String> {
         self.did_open(path).await?;
-        let uri = file_uri(path);
+        let uri = file_uri(path)?;
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
         let result = self
@@ -184,7 +185,7 @@ impl Conn {
         new_name: &str,
     ) -> Result<Value> {
         self.did_open(path).await?;
-        let uri = file_uri(path);
+        let uri = file_uri(path)?;
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
         self.request(
@@ -200,7 +201,7 @@ impl Conn {
 
     async fn at(&mut self, path: &Path, line: u32, character: u32, method: &str) -> Result<Value> {
         self.did_open(path).await?;
-        let uri = file_uri(path);
+        let uri = file_uri(path)?;
         let line = line.saturating_sub(1);
         let character = character.saturating_sub(1);
         self.request(
@@ -220,7 +221,7 @@ impl Conn {
             "textDocument/didOpen",
             json!({
                 "textDocument": {
-                    "uri": file_uri(path),
+                    "uri": file_uri(path)?,
                     "languageId": language::language_id(path),
                     "version": 1,
                     "text": text
@@ -411,12 +412,18 @@ fn on_path(name: &str) -> bool {
     let Ok(path) = std::env::var("PATH") else {
         return false;
     };
-    std::env::split_paths(&path).any(|dir| dir.join(name).is_file())
+    std::env::split_paths(&path).any(|dir| {
+        dir.join(name).is_file()
+            || (cfg!(windows)
+                && Path::new(name).extension().is_none()
+                && dir.join(format!("{name}.exe")).is_file())
+    })
 }
 
-fn file_uri(path: &Path) -> String {
-    let raw = path.to_string_lossy();
-    format!("file://{}", raw.replace(' ', "%20"))
+fn file_uri(path: &Path) -> Result<String> {
+    Url::from_file_path(path)
+        .map(String::from)
+        .map_err(|()| Error::Tool(format!("cannot convert {} to a file URI", path.display())))
 }
 
 fn diagnostic_items(value: &Value) -> Vec<String> {
@@ -879,11 +886,10 @@ impl ToolRegistry {
     }
 
     fn uri_path(&self, uri: &str) -> Result<PathBuf> {
-        let raw = uri
-            .strip_prefix("file://")
-            .unwrap_or(uri)
-            .replace("%20", " ");
-        let path = PathBuf::from(raw);
+        let path = Url::parse(uri)
+            .map_err(|error| Error::Tool(format!("invalid file URI `{uri}`: {error}")))?
+            .to_file_path()
+            .map_err(|()| Error::Tool(format!("URI `{uri}` is not a local file")))?;
         if path.exists() {
             let canonical = path
                 .canonicalize()

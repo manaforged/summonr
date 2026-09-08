@@ -8,6 +8,7 @@ fn record(dir: &std::path::Path, id: &str, started: u64, session: Option<&str>) 
         workspace: dir.display().to_string(),
         started,
         background: true,
+        sandbox: false,
         session: session.map(str::to_string),
     };
     let root = super::dir(dir);

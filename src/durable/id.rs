@@ -1,19 +1,15 @@
 use std::fmt;
 use std::str::FromStr;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use uuid::Uuid;
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct SessionId(u128);
 
 impl SessionId {
     pub(crate) fn new() -> Self {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        Self(nanos ^ u128::from(std::process::id()))
+        Self(Uuid::now_v7().as_u128())
     }
 
     #[cfg(test)]

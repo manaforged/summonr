@@ -116,7 +116,13 @@ async fn the_watch_reports_a_changed_file_once_the_burst_settles() {
         if let Ok(Some(Msg::Changed(paths))) =
             tokio::time::timeout(Duration::from_millis(700), rx.recv()).await
         {
-            changed = Some(paths);
+            assert!(
+                !paths.iter().any(|path| path.starts_with("target/")),
+                "{paths:?}"
+            );
+            if paths.contains(&"src/lib.rs".to_string()) {
+                changed = Some(paths);
+            }
         }
     }
     let paths = changed.unwrap_or_else(|| panic!("no change reported within 60s"));

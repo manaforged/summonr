@@ -31,6 +31,7 @@ mod runtime;
 mod scout;
 pub mod secret;
 mod session;
+mod shell;
 mod skills;
 mod tools;
 mod verify;
@@ -62,6 +63,8 @@ pub use session::{
     Replay, SessionInfo, export as export_session, last_for, list as list_sessions,
     resolve_id as resolve_session, set_name as name_session, short as short_session,
 };
+#[cfg(windows)]
+pub use tools::sandbox::windows::entry as sandbox_entry;
 pub use tools::{Event, attach};
 pub use verify::{Outcome, Receipt, check_commands};
 pub use worktree::{

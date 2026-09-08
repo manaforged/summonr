@@ -5,6 +5,22 @@ use serde_json::{Value, json};
 
 use super::*;
 
+#[test]
+fn file_uris_encode_native_paths_for_the_language_server() -> Result<()> {
+    #[cfg(windows)]
+    let (path, expected) = (
+        r"C:\work tree\a#% café.rs",
+        "file:///C:/work%20tree/a%23%25%20caf%C3%A9.rs",
+    );
+    #[cfg(not(windows))]
+    let (path, expected) = (
+        "/work tree/a#% café.rs",
+        "file:///work%20tree/a%23%25%20caf%C3%A9.rs",
+    );
+    assert_eq!(file_uri(Path::new(path))?, expected);
+    Ok(())
+}
+
 async fn reply_loop(reader: impl AsyncRead + Unpin, mut writer: impl AsyncWrite + Unpin) {
     let mut reader = BufReader::new(reader);
     while let Ok(msg) = read_msg(&mut reader).await {
@@ -280,10 +296,14 @@ async fn initialization_includes_module_options() -> Result<()> {
 #[test]
 fn workspace_edit_rewrites_a_workspace_file() -> Result<()> {
     let dir = tempfile::tempdir()?;
-    let file = dir.path().join("a.rs");
+    let file = dir.path().join("a # % café.rs");
     std::fs::write(&file, "fn old() {}\n")?;
     let tools = ToolRegistry::new(dir.path())?;
-    let uri = format!("file://{}", file.display());
+    let uri = Url::from_directory_path(dir.path())
+        .map_err(|()| Error::Tool("fixture directory is not absolute".to_string()))?
+        .join("a%20%23%20%25%20caf%C3%A9.rs")
+        .map_err(|error| Error::Tool(error.to_string()))?
+        .to_string();
     let mut changes = serde_json::Map::new();
     changes.insert(
         uri,
@@ -298,7 +318,7 @@ fn workspace_edit_rewrites_a_workspace_file() -> Result<()> {
     let edit = json!({ "changes": changes });
     let out = tools.apply_workspace_edit(&edit)?;
     assert!(out.mutated);
-    assert!(out.text.contains("a.rs"), "{}", out.text);
+    assert!(out.text.contains("a # % café.rs"), "{}", out.text);
     assert_eq!(std::fs::read_to_string(&file)?, "fn new() {}\n");
     Ok(())
 }
@@ -311,7 +331,9 @@ fn workspace_edit_is_denied_in_plan_mode() -> Result<()> {
     let mut policy = crate::policy::Policy::builtin();
     policy.set_read_only(true);
     let tools = ToolRegistry::with_policy(dir.path(), policy)?;
-    let uri = format!("file://{}", file.display());
+    let uri = Url::from_file_path(&file)
+        .map_err(|()| Error::Tool("fixture file is not absolute".to_string()))?
+        .to_string();
     let mut changes = serde_json::Map::new();
     changes.insert(
         uri,
@@ -342,11 +364,11 @@ fn workspace_edit_creates_renames_and_deletes() -> Result<()> {
     let created = dir.path().join("b.rs");
     let edit = json!({
         "documentChanges": [
-            { "kind": "create", "uri": format!("file://{}", created.display()) },
+            { "kind": "create", "uri": Url::from_file_path(&created).map_err(|()| Error::Tool("fixture file is not absolute".to_string()))?.to_string() },
             {
                 "kind": "rename",
-                "oldUri": format!("file://{}", src.display()),
-                "newUri": format!("file://{}", dir.path().join("c.rs").display())
+                "oldUri": Url::from_file_path(&src).map_err(|()| Error::Tool("fixture file is not absolute".to_string()))?.to_string(),
+                "newUri": Url::from_file_path(dir.path().join("c.rs")).map_err(|()| Error::Tool("fixture file is not absolute".to_string()))?.to_string()
             }
         ]
     });
@@ -358,7 +380,7 @@ fn workspace_edit_creates_renames_and_deletes() -> Result<()> {
     let gone = dir.path().join("c.rs");
     let delete = json!({
         "documentChanges": [
-            { "kind": "delete", "uri": format!("file://{}", gone.display()) }
+            { "kind": "delete", "uri": Url::from_file_path(&gone).map_err(|()| Error::Tool("fixture file is not absolute".to_string()))?.to_string() }
         ]
     });
     tools.apply_workspace_edit(&delete)?;

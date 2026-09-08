@@ -59,7 +59,8 @@ for line in sys.stdin:
     std::fs::create_dir_all(&dir).expect("dir");
     let path = dir.join("server.py");
     std::fs::write(&path, script).expect("script");
-    let mut client = Client::spawn("python3", &[&path.display().to_string()], &dir).expect("spawn");
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let mut client = Client::spawn(python, &[&path.display().to_string()], &dir).expect("spawn");
     client.initialize("test").await.expect("initialize");
     let mut notes = Vec::new();
     let result = client

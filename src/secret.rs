@@ -6,6 +6,7 @@
 //! putting every secret in the OS store with `secrets = "keychain"` or
 //! `MAGE_SECRETS=keychain`. Neither mode falls back to the other.
 
+#[cfg(unix)]
 use std::fs::File;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
@@ -22,12 +23,12 @@ use toml_edit::{DocumentMut, value};
 use crate::error::{Error, Result};
 
 const SERVICE: &str = "summoner";
+#[cfg(any(target_os = "macos", all(test, unix)))]
 const ACCOUNT: &str = "credentials";
 const SEAL: &str = "seal";
 const MAGIC: &[u8] = b"MAGE1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
-#[cfg(not(test))]
 const FILE: &str = "credentials.toml";
 /// How long one `security` call may take before it counts as a locked or
 /// unreachable keychain.
@@ -62,6 +63,7 @@ impl Source {
 enum Backend {
     File,
     /// The `security` tool; the path is a test seam.
+    #[cfg(any(target_os = "macos", all(test, unix)))]
     Security(PathBuf),
     #[cfg(not(target_os = "macos"))]
     Native,
@@ -92,10 +94,9 @@ impl Store {
 
     #[cfg(test)]
     pub(crate) fn discover() -> Result<Self> {
-        let file = std::env::temp_dir().join(format!(
-            "summon-test-{}-credentials.toml",
-            std::process::id()
-        ));
+        let file = std::env::temp_dir()
+            .join(format!("summon-test-{}", std::process::id()))
+            .join(FILE);
         Ok(Self::file_with_seal(file.clone(), test_seal(&file)))
     }
 
@@ -116,7 +117,7 @@ impl Store {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn file_via_security(file: PathBuf, security: PathBuf) -> Self {
         Self {
             file,
@@ -126,7 +127,7 @@ impl Store {
         }
     }
 
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn with_security(file: PathBuf, security: PathBuf) -> Self {
         Self {
             file,
@@ -141,6 +142,7 @@ impl Store {
             Backend::File => self.locked(|| {
                 Ok(lookup(&self.read_file()?, name).map(|secret| (secret, Source::File)))
             }),
+            #[cfg(any(target_os = "macos", all(test, unix)))]
             Backend::Security(tool) => {
                 if let Some(secret) = lookup(&self.read_blob(tool)?, name) {
                     return Ok(Some((secret, Source::Keychain)));
@@ -174,6 +176,7 @@ impl Store {
                 self.write_file(&document)?;
                 Ok(Source::File)
             }),
+            #[cfg(any(target_os = "macos", all(test, unix)))]
             Backend::Security(tool) => self.locked(|| {
                 let mut blob = self.read_blob(tool)?;
                 blob[name] = value(secret);
@@ -200,6 +203,7 @@ impl Store {
                 self.write_file(&document)?;
                 Ok(true)
             }),
+            #[cfg(any(target_os = "macos", all(test, unix)))]
             Backend::Security(tool) => self.locked(|| {
                 let mut blob = self.read_blob(tool)?;
                 if blob.remove(name).is_none() {
@@ -239,6 +243,7 @@ impl Store {
         outcome
     }
 
+    #[cfg(any(target_os = "macos", all(test, unix)))]
     fn read_blob(&self, tool: &Path) -> Result<DocumentMut> {
         let Some(encoded) = find(tool, ACCOUNT)? else {
             return Ok(DocumentMut::new());
@@ -249,6 +254,7 @@ impl Store {
         parse(&String::from_utf8_lossy(&bytes))
     }
 
+    #[cfg(any(target_os = "macos", all(test, unix)))]
     fn write_blob(&self, tool: &Path, blob: &DocumentMut) -> Result<()> {
         let encoded = BASE64.encode(blob.to_string().as_bytes());
         let line = format!("add-generic-password -U -s {SERVICE} -a {ACCOUNT} -w \"{encoded}\"\n");
@@ -409,36 +415,32 @@ fn parse(text: &str) -> Result<DocumentMut> {
 }
 
 /// Puts a credentials file back to owner-only if anything loosened it.
-fn tighten(path: &Path) -> Result<()> {
+fn tighten(_path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(path)
+        if let Ok(meta) = std::fs::metadata(_path)
             && meta.is_file()
             && meta.permissions().mode() & 0o077 != 0
         {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
+            std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o600))?;
         }
     }
-    #[cfg(not(unix))]
-    drop(path);
     Ok(())
 }
 
 /// Keeps the directory that holds the credentials file owner-only.
-fn tighten_dir(path: &Path) -> Result<()> {
+fn tighten_dir(_path: &Path) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(path)
+        if let Ok(meta) = std::fs::metadata(_path)
             && meta.is_dir()
             && meta.permissions().mode() & 0o077 != 0
         {
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+            std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o700))?;
         }
     }
-    #[cfg(not(unix))]
-    drop(path);
     Ok(())
 }
 

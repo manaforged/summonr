@@ -76,11 +76,11 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
         "headless JSON omitted streamed text: {resumed_output}"
     );
     assert!(
-        resumed_output.contains("true # step-one"),
+        resumed_output.contains("exit 0 # step-one"),
         "{resumed_output}"
     );
     assert!(
-        resumed_output.contains("true # step-two"),
+        resumed_output.contains("exit 0 # step-two"),
         "{resumed_output}"
     );
 
@@ -160,7 +160,7 @@ impl Fixture {
         let plan = workspace.join("PLAN.md");
         fs::write(
             &plan,
-            "## Steps\n\n1. Complete the first step. Run `true # step-one`.\n2. Complete the second step. Run `true # step-two`.\n",
+            "## Steps\n\n1. Complete the first step. Run `exit 0 # step-one`.\n2. Complete the second step. Run `exit 0 # step-two`.\n",
         )?;
         Ok(Self {
             step_two_first: root.join("step-two-first-requested"),

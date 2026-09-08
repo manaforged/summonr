@@ -1,3 +1,5 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
 
@@ -8,6 +10,7 @@ use super::{
 
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
+        .current_dir(repo)
         .args(["-C"])
         .arg(repo)
         .args(args)
@@ -21,6 +24,7 @@ fn repo() -> tempfile::TempDir {
     git(dir.path(), &["init", "-b", "main"]);
     git(dir.path(), &["config", "user.email", "summon@test"]);
     git(dir.path(), &["config", "user.name", "Summoner"]);
+    git(dir.path(), &["config", "core.autocrlf", "false"]);
     std::fs::write(dir.path().join("README"), "root\n").expect("write");
     git(dir.path(), &["add", "README"]);
     git(dir.path(), &["commit", "-m", "root"]);
@@ -35,7 +39,10 @@ fn add_creates_a_linked_checkout_on_a_summon_branch() {
     assert!(tree.branch.starts_with("summon/"));
     assert_eq!(tree.base, "main");
     assert_eq!(
-        primary(&tree.path).expect("primary"),
+        primary(&tree.path)
+            .expect("primary")
+            .canonicalize()
+            .expect("canonical primary"),
         dir.path().canonicalize().expect("canonical")
     );
     assert_eq!(list(dir.path()).expect("list").len(), 1);
@@ -226,7 +233,6 @@ fn finish_refuses_when_the_primary_moved_to_another_branch() {
 
 #[test]
 fn finish_keeps_a_tree_a_commit_hook_dirtied() {
-    use std::os::unix::fs::PermissionsExt;
     let dir = repo();
     let tree = add(dir.path()).expect("add");
     let hooks = dir.path().join("hooks");
@@ -241,6 +247,7 @@ fn finish_keeps_a_tree_a_commit_hook_dirtied() {
     );
     let hook = hooks.join("post-commit");
     std::fs::write(&hook, "#!/bin/sh\necho generated > hook.txt\n").expect("hook");
+    #[cfg(unix)]
     std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     std::fs::write(tree.path.join("work.txt"), "from worktree\n").expect("edit");
     let error =

@@ -558,6 +558,7 @@ fn git(repo: &Path, args: &[&str]) -> Result<String> {
 
 fn git_bytes(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let output = Command::new("git")
+        .current_dir(repo)
         .args(["-C"])
         .arg(repo)
         .args(args)
@@ -576,6 +577,7 @@ fn git_bytes(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
 
 fn git_input(repo: &Path, args: &[&str], input: &[u8]) -> Result<()> {
     let mut child = Command::new("git")
+        .current_dir(repo)
         .args(["-C"])
         .arg(repo)
         .args(args)

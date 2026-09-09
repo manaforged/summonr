@@ -7,91 +7,27 @@ use super::chat::{BLACK, RED, YELLOW, accent, draft_view, ellipsize, row, write_
 use super::hit::{self, Target};
 
 pub(super) fn settings_layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let cells = settings_grid(&app, usize::from(cols), usize::from(rows));
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for line in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(line));
-    }
-    container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
-        .child(text_field(signal(String::new())).class("w-full h-full"))
-        .child(hit::wire(&app, layer))
+    let input = text_field(signal(String::new())).class("w-full h-full");
+    layer(app, settings_grid, input)
 }
 
 pub(super) fn hotkeys_layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let cells = hotkeys_grid(&app, usize::from(cols), usize::from(rows));
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for line in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(line));
-    }
-    container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
-        .child(text_field(signal(String::new())).class("w-full h-full"))
-        .child(hit::wire(&app, layer))
+    let input = text_field(signal(String::new())).class("w-full h-full");
+    layer(app, hotkeys_grid, input)
 }
 
 pub(super) fn model_picker_layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let cells = model_picker_grid(&app, usize::from(cols), usize::from(rows));
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for line in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(line));
-    }
-    container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
-        .child(
-            text_edit(app.model_draft)
-                .caret_position(app.model_caret)
-                .class("w-full h-full"),
-        )
-        .child(hit::wire(&app, layer))
+    let input = text_edit(app.model_draft)
+        .caret_position(app.model_caret)
+        .class("w-full h-full");
+    layer(app, model_picker_grid, input)
 }
 
 pub(super) fn workflow_layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let cells = workflow_grid(&app, usize::from(cols), usize::from(rows));
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for line in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(line));
-    }
-    container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
-        .child(
-            text_edit(app.workflow_draft)
-                .caret_position(app.workflow_caret)
-                .class("w-full h-full"),
-        )
-        .child(hit::wire(&app, layer))
+    let input = text_edit(app.workflow_draft)
+        .caret_position(app.workflow_caret)
+        .class("w-full h-full");
+    layer(app, workflow_grid, input)
 }
 
 fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
@@ -266,27 +202,10 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
 }
 
 pub(super) fn auth_layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let cells = auth_grid(&app, usize::from(cols), usize::from(rows));
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for line in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(line));
-    }
-    container()
-        .layout(LayoutStyle::block().fill_width().fill_height())
-        .child(
-            text_edit(app.auth_key)
-                .caret_position(app.auth_caret)
-                .class("w-full h-full"),
-        )
-        .child(hit::wire(&app, layer))
+    let input = text_edit(app.auth_key)
+        .caret_position(app.auth_caret)
+        .class("w-full h-full");
+    layer(app, auth_grid, input)
 }
 
 fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
@@ -356,7 +275,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             width,
             left + 3,
             top + 8,
-            "Saved to ~/.mage/config.toml. The key is not added to the session.",
+            "Saves in the credential store",
             DIM,
         );
         let hint = " enter save · esc back ";
@@ -400,11 +319,18 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             width,
             left + 3,
             top + 2 + offset,
-            &format!("{marker} {:<14} {status}", choice.name),
+            &ellipsize(
+                &format!("{marker} {:<14} {status}", choice.name),
+                card_width.saturating_sub(6),
+            ),
             if index == selected { TEXT } else { DIM },
         );
     }
-    let hint = " ↑↓ select · enter configure/login · esc close ";
+    let hint = if card_width >= 50 {
+        " ↑↓ select · enter configure/login · esc close "
+    } else {
+        " ↑↓ · enter · esc "
+    };
     write_at(
         &mut cells,
         width,
@@ -566,10 +492,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                     }
                     ModelRow::Seat(index) => {
                         let choice = &choices[*index];
-                        let current = match choice.split_once('\t') {
-                            Some((name, _)) => name == model.snapshot.endpoint,
-                            None => choice == &model.model,
-                        };
+                        let current = model.is_model(choice);
                         let marker = if *index == selected { '›' } else { ' ' };
                         let active = if current { '●' } else { ' ' };
                         let label = match choice.split_once('\t') {
@@ -665,7 +588,15 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         &format!("╭{}╮", "─".repeat(card_width - 2)),
         accent,
     );
-    write_at(&mut cells, width, left + 1, top, " ⚙ options ", accent);
+    let title = if expanded {
+        " ⚙ options "
+    } else if app.settings_sel.peek() < 6 {
+        " ⚙ options · not saved "
+    } else {
+        " ⚙ options · auto-save "
+    };
+    let title = ellipsize(title, card_width.saturating_sub(2));
+    write_at(&mut cells, width, left + 1, top, &title, accent);
     for y in top + 1..top + card_height - 1 {
         write_at(&mut cells, width, left, y, "│", accent);
         write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
@@ -770,8 +701,13 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         rows.len()
     };
     if expanded {
-        for (offset, label) in [(1, "session"), (6, "provider"), (11, "interface")] {
-            write_at(&mut cells, width, left + 2, top + offset, label, DIM);
+        for (offset, label) in [
+            (1, "session · not saved"),
+            (6, "provider · not saved"),
+            (11, "interface · auto-save"),
+        ] {
+            let label = ellipsize(label, card_width.saturating_sub(4));
+            write_at(&mut cells, width, left + 2, top + offset, &label, DIM);
         }
     }
     let positions = [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18];
@@ -822,7 +758,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let selected = app.hotkey_sel.peek().min(Hotkey::ALL.len() - 1);
     let model = app.model.borrow();
-    if width < 28 || height < 13 {
+    if width < 28 || height < Hotkey::ALL.len() + 4 {
         let action = Hotkey::ALL[selected];
         write_at(&mut cells, width, 1, 0, "hotkeys", GRAY);
         write_at(
@@ -841,7 +777,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let accent = accent(&model.prefs.theme);
     let card_width = 64.min(width.saturating_sub(4));
-    let card_height = 13;
+    let card_height = Hotkey::ALL.len() + 4;
     let left = width.saturating_sub(card_width) / 2;
     let top = height.saturating_sub(card_height) / 2;
     for y in top..top + card_height {
@@ -948,9 +884,40 @@ const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
         Hotkey::Copy => "copy last reply",
         Hotkey::Select => "select transcript text",
         Hotkey::Pane => "hide/show pane",
+        Hotkey::Search => "search conversation",
+        Hotkey::History => "search saved prompts",
     }
 }
 
 const fn on_off(value: bool) -> &'static str {
     if value { "on" } else { "off" }
+}
+
+pub(super) fn layer(
+    app: App,
+    grid: fn(&App, usize, usize) -> Vec<Cell>,
+    input: impl IntoNode + 'static,
+) -> NodeBuilder {
+    let paint = app.clone();
+    let overlay = container()
+        .layout(
+            LayoutStyle::flex_column()
+                .position(Position::Absolute)
+                .inset(0.0)
+                .fill_width()
+                .fill_height()
+                .gap(0.0),
+        )
+        .children_reactive(move || {
+            super::view::watch(&paint);
+            let (cols, rows) = paint.viewport.get();
+            grid(&paint, usize::from(cols), usize::from(rows))
+                .chunks(usize::from(cols).max(1))
+                .map(row)
+                .collect::<Vec<_>>()
+        });
+    container()
+        .layout(LayoutStyle::block().fill_width().fill_height())
+        .child(input)
+        .child(hit::wire(&app, overlay))
 }

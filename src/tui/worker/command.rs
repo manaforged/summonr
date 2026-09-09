@@ -1,5 +1,7 @@
 use super::{Cmd, Msg, Worker, set_mode};
+use crate::durable::log::{self, Line};
 use crate::provider::UserInput;
+use crate::tui::Activity;
 
 impl Worker {
     pub(super) async fn submit(&mut self, input: UserInput) -> bool {
@@ -32,8 +34,7 @@ impl Worker {
             }
             Some(crate::SlashCommand::Login) => {
                 let name = argument(line).unwrap_or(&self.endpoint).to_string();
-                self.login(&name);
-                true
+                return Some(self.login(&name).await);
             }
             Some(crate::SlashCommand::Workflow) => {
                 self.workflow(argument(line));
@@ -63,6 +64,7 @@ impl Worker {
             }
             Some(crate::SlashCommand::Session) => self.session(),
             Some(crate::SlashCommand::Resume) => self.resume(argument(line)),
+            Some(crate::SlashCommand::Retry) => return Some(self.retry().await),
             Some(crate::SlashCommand::Name) => self.name(argument(line)),
             Some(crate::SlashCommand::Steps) => {
                 return Some(self.steps(argument(line).unwrap_or_default()).await);
@@ -84,6 +86,31 @@ impl Worker {
             Err(error) => self.fail(&error.to_string()),
         }
         true
+    }
+
+    async fn retry(&mut self) -> bool {
+        let lines = match log::read(self.loop_.session_path()) {
+            Ok(lines) => lines,
+            Err(error) => {
+                self.fail(&format!("Cannot read the last turn: {error}"));
+                return true;
+            }
+        };
+        let interrupted = lines.iter().rev().find_map(|line| match line {
+            Line::Close { reason } => Some(reason.is_some()),
+            Line::Clear | Line::User { start: true, .. } => Some(false),
+            _ => None,
+        });
+        if interrupted != Some(true) {
+            self.system("No failed or cancelled turn to retry.");
+            return true;
+        }
+        self.system("Continuing the interrupted turn from its saved results.");
+        self.turn(
+            "Continue the interrupted request from the current conversation and workspace. Use recorded tool results to avoid repeating completed actions."
+                .into(),
+        )
+        .await
     }
 
     fn accept_plan(&mut self) -> bool {
@@ -159,11 +186,37 @@ impl Worker {
 
     fn fork(&mut self) -> bool {
         match self.loop_.fork_live() {
-            Ok(id) => self.system(&format!(
-                "forked to session {id} — this branch continues here"
-            )),
+            Ok(id) => {
+                self.system(&format!(
+                    "Forked to session {id}. This branch continues here."
+                ));
+                drop(self.ui.send(Msg::Session(id)));
+            }
             Err(error) => self.fail(&error.to_string()),
         }
+        true
+    }
+
+    pub(super) fn branch(&mut self, session: &str, turn: usize) -> bool {
+        if self.loop_.session_id() != session {
+            self.fail("The active session changed. Open /branch again.");
+            drop(self.ui.send(Msg::Busy(None)));
+            return true;
+        }
+        match self.loop_.fork_at(Some(turn)) {
+            Ok(id) => {
+                self.last_turn = None;
+                drop(self.ui.send(Msg::Reset));
+                self.replay();
+                drop(self.ui.send(Msg::Session(id)));
+                self.system(&format!(
+                    "Branched after turn {}. Workspace files are unchanged. Use /tree to return to the parent.",
+                    turn + 1
+                ));
+            }
+            Err(error) => self.fail(&error.to_string()),
+        }
+        drop(self.ui.send(Msg::Busy(None)));
         true
     }
 
@@ -232,38 +285,60 @@ impl Worker {
         }
     }
 
-    pub(super) fn login(&self, name: &str) {
+    pub(super) async fn login(&mut self, name: &str) -> bool {
         let info = match crate::endpoint::auth_info(name) {
             Ok(info) => info,
             Err(error) => {
                 self.fail(&error.to_string());
-                return;
+                return true;
             }
         };
         if !info.device_login {
             self.auth(name);
-            return;
+            return true;
         }
         let endpoint = match crate::endpoint::resolve(Some(name), None) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.fail(&error.to_string());
-                return;
+                return true;
             }
         };
-        let ui = self.ui.clone();
-        let name = name.to_string();
-        drop(tokio::spawn(async move {
-            let notice = ui.clone();
-            let result = crate::provider::Client::login(&endpoint, move |line| {
-                drop(notice.send(Msg::System(line.to_string())));
-            })
-            .await;
-            match result {
-                Ok(()) => drop(ui.send(Msg::System(format!("{name}: login complete")))),
-                Err(error) => drop(ui.send(Msg::Failed(error.to_string()))),
+        let notice = self.ui.clone();
+        let login = crate::provider::Client::login(&endpoint, move |line| {
+            drop(notice.send(Msg::System(line.to_string())));
+        });
+        tokio::pin!(login);
+        self.system(&format!("{name}: signing in. Press Escape to cancel."));
+        drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
+        let running = loop {
+            tokio::select! {
+                result = &mut login => {
+                    match result {
+                        Ok(()) => self.system(&format!("{name}: login complete")),
+                        Err(error) => {
+                            self.fail(&format!("{error}. Use /login {name} to try again."));
+                            self.recover();
+                        }
+                    }
+                    break true;
+                }
+                command = self.cmd.recv() => match command {
+                    Some(Cmd::Cancel) => {
+                        self.system(&format!("{name}: sign-in cancelled. Use /login {name} to try again."));
+                        self.recover();
+                        break true;
+                    }
+                    Some(Cmd::Quit) | None => break false,
+                    Some(Cmd::Tick) => {}
+                    Some(command @ Cmd::ListPrompts(_)) => self.reader.run(command).await,
+                    Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => self.followups.push_back(input),
+                    Some(command) => self.deferred.push_back(command),
+                }
             }
-        }));
+        };
+        drop(self.ui.send(Msg::Busy(None)));
+        running
     }
 
     fn unknown(&self, line: &str) -> Option<bool> {
@@ -275,10 +350,37 @@ impl Worker {
     }
 
     async fn compact(&mut self) -> bool {
-        match self.loop_.compact().await {
-            Ok(true) => self.system("context compacted — earlier turns summarized"),
-            Ok(false) => self.system("nothing to compact yet"),
-            Err(error) => self.fail(&error.to_string()),
+        self.system("Compacting context. Press Escape to cancel.");
+        drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
+        let (result, quit) = {
+            let compact = self.loop_.compact();
+            tokio::pin!(compact);
+            loop {
+                tokio::select! {
+                    result = &mut compact => break (Some(result), false),
+                    command = self.cmd.recv() => match command {
+                        Some(Cmd::Cancel) => break (None, false),
+                        Some(Cmd::Quit) | None => break (None, true),
+                        Some(Cmd::Tick) => {}
+                    Some(command @ Cmd::ListPrompts(_)) => self.reader.run(command).await,
+                        Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => self.followups.push_back(input),
+                        Some(command) => self.deferred.push_back(command),
+                    }
+                }
+            }
+        };
+        if result.as_ref().is_none_or(Result::is_err) {
+            self.recover();
+        }
+        drop(self.ui.send(Msg::Busy(None)));
+        if quit {
+            return false;
+        }
+        match result {
+            Some(Ok(true)) => self.system("context compacted — earlier turns summarized"),
+            Some(Ok(false)) => self.system("nothing to compact yet"),
+            Some(Err(error)) => self.fail(&error.to_string()),
+            None => self.system("Compaction cancelled. The conversation is unchanged."),
         }
         true
     }
@@ -489,7 +591,12 @@ impl Worker {
             .loop_
             .effort()
             .map_or("endpoint default", crate::Effort::as_str);
-        self.system(&format!("effort: {current}"));
+        let scope = if self.dial.is_some() {
+            " · not saved"
+        } else {
+            ""
+        };
+        self.system(&format!("effort: {current}{scope}"));
         true
     }
 

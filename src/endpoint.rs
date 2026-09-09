@@ -188,8 +188,13 @@ fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo
 }
 
 pub(crate) fn ready() -> Vec<String> {
-    names()
-        .unwrap_or_default()
+    let mut names = names().unwrap_or_default();
+    if let Ok(endpoint) = resolve(None, None)
+        && !names.contains(&endpoint.name)
+    {
+        names.insert(0, endpoint.name);
+    }
+    names
         .into_iter()
         .filter(|name| resolve(Some(name), None).is_ok())
         .collect()
@@ -233,7 +238,7 @@ pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpo
 fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("MAGE_BASE_URL")
         && !base.trim().is_empty()
-        && name.is_none()
+        && matches!(name, None | Some("env"))
     {
         return Ok(Endpoint {
             name: "env".to_string(),

@@ -1,7 +1,9 @@
 # Copy to ~/.mage/policy.toml and/or <workspace>/.mage/policy.toml.
-# Project file overrides allow and write; deny lists are unioned.
+# Each nonempty allow/write list must permit the action; deny lists accumulate.
+# Project policy can narrow user permissions, never widen them.
 
 # When true, only `allow` commands run (also set by `summon --strict`).
+# A policy file with strict = true and an empty allow list denies all commands.
 strict = false
 
 # Extra deny patterns (substring / prefix, case-insensitive).

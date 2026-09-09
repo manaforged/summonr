@@ -246,6 +246,7 @@ pub(super) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
     }
     if calls.len() == index {
         calls.push(ToolCall {
+            continuation: None,
             id: String::new(),
             kind: ToolKind::Function,
             function: ToolFunction {

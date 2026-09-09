@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 #[tokio::test]
 async fn write_glob_denies_other_paths() -> Result<()> {
@@ -85,7 +86,10 @@ async fn native_web_search_hits_and_curl_is_allowed() -> Result<()> {
     assert!(out.contains("Tokio"));
     assert!(out.contains("https://tokio.rs"));
     let curl = tools
-        .execute(&call("run_command", r#"{"command":"curl --version"}"#))
+        .execute(&call(
+            "run_command",
+            &command("curl --version", "curl.exe --version"),
+        ))
         .await?;
     assert!(curl.contains("exit 0"));
     tools.set_read_only(true);
@@ -194,7 +198,10 @@ impl Provider for CommandProvider {
             let round = self.rounds.fetch_add(1, Ordering::SeqCst);
             Ok(match round {
                 0 => AssistantMessage {
-                    tool_calls: vec![call("run_command", r#"{"command":"printf guarded"}"#)],
+                    tool_calls: vec![call(
+                        "run_command",
+                        &command("printf guarded", "[Console]::Write('guarded')"),
+                    )],
                     ..AssistantMessage::default()
                 },
                 _ => AssistantMessage {
@@ -246,7 +253,9 @@ impl Provider for JobProvider {
                 0 => AssistantMessage {
                     tool_calls: vec![call(
                         "run_command",
-                        r#"{"command":"sleep 0.3; echo built > done.txt","background":true}"#,
+                        &json!({"command": if cfg!(windows) {
+                            "Start-Sleep -Milliseconds 300; [IO.File]::WriteAllText('done.txt', \"built`n\")"
+                        } else { "sleep 0.3; echo built > done.txt" }, "background": true}).to_string(),
                     )],
                     ..AssistantMessage::default()
                 },
@@ -307,10 +316,12 @@ impl Provider for TwoReads {
                 0 => AssistantMessage {
                     tool_calls: vec![
                         ToolCall {
+                            continuation: None,
                             id: "first".to_string(),
                             ..call("grep", r#"{"pattern":"hello"}"#)
                         },
                         ToolCall {
+                            continuation: None,
                             id: "second".to_string(),
                             ..call("read_file", r#"{"path":"note.txt"}"#)
                         },
@@ -405,7 +416,7 @@ async fn a_background_job_that_already_failed_fails_the_turn() -> Result<()> {
         &workspace,
         "system",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
     let turn = loop_.turn("build it").await?;
     assert!(
         turn.checks.iter().any(|check| !check.passed),
@@ -423,6 +434,7 @@ async fn a_background_job_that_already_failed_fails_the_turn() -> Result<()> {
 
 struct Retry {
     rounds: AtomicUsize,
+    workspace: PathBuf,
 }
 
 impl Provider for Retry {
@@ -433,27 +445,49 @@ impl Provider for Retry {
         Box::pin(async move {
             let round = self.rounds.fetch_add(1, Ordering::SeqCst);
             Ok(match round {
-                0 => AssistantMessage {
+                0 | 2 => AssistantMessage {
                     tool_calls: vec![call(
                         "run_command",
-                        r#"{"command":"test -f ok.txt","background":true}"#,
+                        &json!({
+                            "command": if cfg!(windows) {
+                                "if (Test-Path -LiteralPath ok.txt) { exit 0 } else { exit 1 }"
+                            } else {
+                                "test -f ok.txt"
+                            },
+                            "background": true,
+                        })
+                        .to_string(),
                     )],
                     ..AssistantMessage::default()
                 },
-                1 => AssistantMessage {
-                    tool_calls: vec![call(
-                        "write_file",
-                        r#"{"path":"ok.txt","content":"fixed\n"}"#,
-                    )],
-                    ..AssistantMessage::default()
-                },
-                2 => AssistantMessage {
-                    tool_calls: vec![call(
-                        "run_command",
-                        r#"{"command":"test -f ok.txt","background":true}"#,
-                    )],
-                    ..AssistantMessage::default()
-                },
+                1 => {
+                    let record = crate::jobs::since(&self.workspace, 0, None)
+                        .pop()
+                        .expect("first job");
+                    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+                        loop {
+                            let status = crate::jobs::status(&self.workspace, &record.id)?;
+                            if !status.running {
+                                assert_eq!(
+                                    status.exit_code,
+                                    Some(1),
+                                    "first attempt must fail before the repair"
+                                );
+                                break Ok::<(), Error>(());
+                            }
+                            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                        }
+                    })
+                    .await
+                    .expect("first job exceeded ten seconds")?;
+                    AssistantMessage {
+                        tool_calls: vec![call(
+                            "write_file",
+                            r#"{"path":"ok.txt","content":"fixed\n"}"#,
+                        )],
+                        ..AssistantMessage::default()
+                    }
+                }
                 _ => AssistantMessage {
                     content: Some("fixed and rebuilt".to_string()),
                     ..AssistantMessage::default()
@@ -469,13 +503,14 @@ async fn a_rerun_of_the_same_command_supersedes_its_failed_first_try() -> Result
     let mut loop_ = Loop::with_session(
         Retry {
             rounds: AtomicUsize::new(0),
+            workspace: workspace.clone(),
         },
         "test-model",
         &workspace,
         "system",
     )?;
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     let turn = loop_.turn("build it").await?;
+    assert_eq!(turn.checks.len(), 1, "only the latest attempt should count");
     assert!(
         !turn
             .events
@@ -558,6 +593,15 @@ async fn a_turn_with_a_job_still_running_is_deferred_not_judged() -> Result<()> 
         again.events
     );
     assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Execute);
+    let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    for record in crate::jobs::since(&workspace, 0, None) {
+        tools
+            .execute(&call(
+                "run_command",
+                &json!({"job": record.id, "kill": true}).to_string(),
+            ))
+            .await?;
+    }
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

@@ -172,6 +172,21 @@ pub struct ToolCall {
     #[serde(rename = "type", default)]
     pub kind: ToolKind,
     pub function: ToolFunction,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<Continuation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "provider", rename_all = "snake_case")]
+pub enum Continuation {
+    Anthropic {
+        model: String,
+        blocks: Vec<Value>,
+    },
+    Gemini {
+        model: String,
+        signatures: Vec<String>,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -527,18 +542,21 @@ impl Client {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
         let idle_timeout = request_timeout(endpoint.idle_timeout_secs)?;
-        let genai = Self::native_kind(endpoint.wire).map(|kind| {
-            let builder = genai::Client::builder().with_adapter_kind(kind);
-            let builder = if let Some(timeout) = idle_timeout {
-                builder.with_web_config(genai::WebConfig {
-                    read_timeout: Some(timeout),
-                    ..genai::WebConfig::default()
-                })
-            } else {
-                builder
-            };
-            builder.build()
-        });
+        let genai = Self::native_kind(endpoint.wire)
+            .map(|kind| {
+                let builder = genai::Client::builder().with_adapter_kind(kind);
+                let builder = if let Some(timeout) = idle_timeout {
+                    builder.with_web_config(genai::WebConfig {
+                        read_timeout: Some(timeout),
+                        ..genai::WebConfig::default()
+                    })
+                } else {
+                    builder
+                };
+                builder.build()
+            })
+            .transpose()
+            .map_err(native::map_genai)?;
         Self::build(
             base,
             Auth::from_endpoint(endpoint)?,
@@ -875,6 +893,13 @@ fn response_failure(code: u16, text: &str) -> Error {
 
 fn message_value(message: &Message) -> Result<Value> {
     let mut value = serde_json::to_value(message)?;
+    if let Some(calls) = value.get_mut("tool_calls").and_then(Value::as_array_mut) {
+        for call in calls {
+            if let Some(call) = call.as_object_mut() {
+                call.remove("continuation");
+            }
+        }
+    }
     if message.images.is_empty() {
         return Ok(value);
     }

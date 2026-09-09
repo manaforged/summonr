@@ -39,6 +39,7 @@ fn assistant(text: &str, calls: &[&str]) -> Line {
         tool_calls: calls
             .iter()
             .map(|id| ToolCall {
+                continuation: None,
                 id: (*id).to_string(),
                 kind: ToolKind::Function,
                 function: ToolFunction {
@@ -248,9 +249,10 @@ fn session_ids_are_32_hex_digits() {
     assert_eq!(text.parse::<SessionId>().expect("parse"), id);
     "abc".parse::<SessionId>().unwrap_err();
     "g".repeat(32).parse::<SessionId>().unwrap_err();
+    let ids: Vec<_> = (0..256).map(|_| SessionId::new()).collect();
     assert!(
-        SessionId::new() != SessionId::new() || true,
-        "ids are time based"
+        ids.windows(2).all(|pair| pair[0] < pair[1]),
+        "session IDs must sort by creation"
     );
 }
 

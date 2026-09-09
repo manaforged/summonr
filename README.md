@@ -9,20 +9,27 @@ an API key or an OAuth2 token that becomes a bearer. `summon` is the command tha
 
 What it actually does: it holds the job so the model does not have to.
 That job is Work. Plan, execute, verify. You keep the objective. The
-model edits this directory (hash-anchored, cannot leave the workspace).
+model edits this directory with hash-anchored tools. File access stays inside
+the workspace unless you enable full access.
 A check command you named is the pass. Model prose is not.
 
 0.1.0 alpha. Private git. Not on crates.io.
 
 ## Requirements
 
-Rust 1.90. macOS or Linux. SSH to `ThomGardiner/sigil` (TUI crates).
-Windows is unsupported.
+macOS or Linux, with Git and Bash on PATH. Linux also needs bubblewrap
+and permission to create user namespaces. Source builds use the Rust
+1.98.1 toolchain pinned in this checkout and require SSH access to
+`ThomGardiner/sigil` for the TUI crates.
+
+Native Windows is experimental. It uses Windows PowerShell and AppContainer.
+File tools and contained PowerShell commands work, but the default sandbox
+cannot yet run Git for Windows or user-installed Rust toolchains reliably.
 
 ## Install
 
 ```sh
-cargo install --path . --force
+cargo install --path . --locked --force
 summon -V
 summoner -V
 ```
@@ -306,6 +313,11 @@ module = "rust"
 Repository config cannot supply executable argv. A trusted
 `~/.mage/config.toml` may use `[lsp] command = ["server", "--stdio"]` when a
 built-in module does not fit.
+Language servers run as trusted host processes with the inherited environment,
+outside the command sandbox. They can access files and network resources with
+your account's permissions. Rename edits returned to Summoner still pass through
+its file policy. Disable the `lsp` module when you do not trust the server or
+the project configuration it reads.
 
 Unknown flags exit 1. A red verify gate exits 2 (`-p`, or a bounded
 goal that ends red). A run that stops short — a budget breach, a
@@ -354,11 +366,32 @@ copy, so a mail that the client did not surface is still in the inbox.
 
 ## Limits
 
-- File tools cannot leave the workspace. Commands run under Seatbelt or
-  bubblewrap with network denied. `--net` allows sockets. `--no-sandbox`
-  disables process containment. A missing sandbox backend is a hard stop.
-- Contained shell commands can write only inside the workspace. Plan mode
-  makes the workspace read-only and rejects background commands.
+The following modes apply when each flag is used alone:
+
+| Mode | File tools | Shell commands | Shell network |
+| --- | --- | --- | --- |
+| Default | Workspace only; write policy applies | Contained; workspace and temporary storage writable | Denied |
+| `--plan` | Workspace reads; writes denied | Contained inspection; workspace read-only; no background jobs | Denied |
+| `--no-sandbox` | Full access with your account's permissions | Uncontained; command policy bypassed | Your account's access |
+
+Commands use Seatbelt, bubblewrap, or experimental Windows AppContainer.
+A missing backend is a hard stop. `--net` allows sockets inside the sandbox;
+it does not change file permissions. Model requests and language servers use
+host networking separately from shell commands.
+
+`--no-sandbox` also bypasses file allow/write restrictions and permits file tools
+outside the workspace. `--plan` still denies file writes when combined with it,
+and refuses shell commands because read-only inspection requires a sandbox.
+`--strict` reapplies policy restrictions but does not restore process containment.
+
+User policy is `~/.mage/policy.toml`; repository policy is `.mage/policy.toml`.
+An action must match every configured nonempty allow/write list. Deny lists
+accumulate. Empty lists add no restriction, except that `strict = true` with an
+empty allow list denies all commands. Repository policy can narrow user
+permissions, never widen them. Children inherit these restrictions.
+A restricted write list makes contained shell commands read-only and disables
+background commands; file tools still use the list.
+
 - Home is still `~/.mage`. Env is still `MAGE_*`.
 - Not crates.io. No Sigil SSH, no build.
 - An older `mage` binary may still be on `PATH`. Use `summon`.

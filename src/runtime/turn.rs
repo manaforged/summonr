@@ -481,16 +481,7 @@ impl<P: Provider> Loop<P> {
                     &message.content,
                     &reasoning,
                     meter,
-                    &calls
-                        .iter()
-                        .map(|call| {
-                            (
-                                call.function.name.as_str(),
-                                call.function.arguments.as_str(),
-                                call.id.as_str(),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
+                    &calls,
                 )
                 .map_err(super::session_err)?;
             self.execute_calls(planned, calls, &mut messages, events, &mut emit, usage)
@@ -1101,7 +1092,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<(Vec<Outcome>, Vec<String>, Vec<String>)> {
-        let mut outcomes = Vec::new();
+        let mut outcomes = BTreeMap::new();
         let mut running = Vec::new();
         let mut unsettled = Vec::new();
         let session = self.session.id().to_string();
@@ -1156,6 +1147,9 @@ impl<P: Provider> Loop<P> {
                     status.text
                 },
             };
+            outcomes.insert(record.command, outcome);
+        }
+        for outcome in outcomes.values() {
             self.push_event(
                 events,
                 emit,
@@ -1164,9 +1158,8 @@ impl<P: Provider> Loop<P> {
                     passed: outcome.passed,
                 },
             )?;
-            outcomes.push(outcome);
         }
-        Ok((outcomes, running, unsettled))
+        Ok((outcomes.into_values().collect(), running, unsettled))
     }
 
     async fn run_verify(
@@ -1306,6 +1299,7 @@ fn request_chars(messages: &[Message], tools: &[ToolDefinition]) -> usize {
 
 fn verify_call(command: &str) -> ToolCall {
     ToolCall {
+        continuation: None,
         id: "completion-check".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {

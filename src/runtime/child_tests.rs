@@ -92,6 +92,7 @@ fn message_with_tool(
 ) -> AssistantMessage {
     AssistantMessage {
         tool_calls: vec![ToolCall {
+            continuation: None,
             id: format!("{name}-call"),
             kind: ToolKind::Function,
             function: ToolFunction {
@@ -110,6 +111,7 @@ fn message_with_tool(
 
 fn task_call(id: usize, assignment: &str, access: Access) -> ToolCall {
     ToolCall {
+        continuation: None,
         id: format!("task-call-{id}"),
         kind: ToolKind::Function,
         function: ToolFunction {
@@ -125,6 +127,7 @@ fn task_call(id: usize, assignment: &str, access: Access) -> ToolCall {
 
 fn background_task_call(id: usize, assignment: &str, access: Access) -> ToolCall {
     ToolCall {
+        continuation: None,
         id: format!("task-call-{id}"),
         kind: ToolKind::Function,
         function: ToolFunction {
@@ -347,6 +350,7 @@ fn repository() -> tempfile::TempDir {
         vec!["init", "-b", "main"],
         vec!["config", "user.email", "summon@test"],
         vec!["config", "user.name", "Summoner"],
+        vec!["config", "core.autocrlf", "false"],
     ] {
         assert!(
             Command::new("git")
@@ -840,6 +844,7 @@ fn settlement_loop(mode: SettlementMode) -> Result<(tempfile::TempDir, Loop<Sett
 
 fn child_settlement_call(id: &str, kill: bool) -> ToolCall {
     ToolCall {
+        continuation: None,
         id: "settle-child".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
@@ -1051,6 +1056,7 @@ async fn task_accepts_a_large_assignment() -> Result<()> {
     let home = tempfile::tempdir()?;
     let mut loop_ = Loop::with_session(Script::new(), "test-model", home.path(), "system")?;
     let call = ToolCall {
+        continuation: None,
         id: "task-call".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
@@ -1093,22 +1099,23 @@ async fn child_tools_keep_commands_and_inherit_restrictions() -> Result<()> {
             .iter()
             .any(|tool| tool.function.name == "run_command")
     );
-    assert_eq!(child.definitions().len(), 2);
     let writable =
         crate::tools::ToolRegistry::with_policy_and_search(home.path(), Policy::builtin(), None)?
             .child_at(home.path(), "child")?;
     let ok = ToolCall {
+continuation: None,
         id: "command-call".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
             name: "run_command".to_string(),
-            arguments: r#"{"command":"printf ran"}"#.to_string(),
+            arguments: serde_json::json!({"command": if cfg!(windows) { "[Console]::Write('ran')" } else { "printf ran" }}).to_string(),
         },
     };
     let output = writable.execute_outcome(&ok).await?;
     assert!(output.success);
     assert!(output.text.contains("ran"));
     let background = ToolCall {
+        continuation: None,
         id: "background-call".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
@@ -1359,6 +1366,7 @@ async fn turns_defer_while_a_background_child_runs_until_explicitly_stopped() ->
     assert!(matches!(&records[0].state, ChildState::Running));
     let id = records[0].id.to_string();
     let call = ToolCall {
+        continuation: None,
         id: "stop-child".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {

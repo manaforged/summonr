@@ -233,6 +233,7 @@ async fn two_tool_round_journals_every_call() -> Result<()> {
                         content: None,
                         tool_calls: vec![
                             ToolCall {
+                                continuation: None,
                                 id: "c1".to_string(),
                                 kind: ToolKind::Function,
                                 function: ToolFunction {
@@ -241,6 +242,7 @@ async fn two_tool_round_journals_every_call() -> Result<()> {
                                 },
                             },
                             ToolCall {
+                                continuation: None,
                                 id: "c2".to_string(),
                                 kind: ToolKind::Function,
                                 function: ToolFunction {
@@ -320,6 +322,7 @@ async fn steering_lands_before_the_next_round() -> Result<()> {
                     Ok(AssistantMessage {
                         content: None,
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: "c".to_string(),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -606,6 +609,7 @@ async fn overflow_compacts_tool_results_and_retries() -> Result<()> {
                     0 => Ok(AssistantMessage {
                         content: None,
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: "c".to_string(),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -705,6 +709,7 @@ async fn long_tool_results_stay_until_window_compaction() -> Result<()> {
             content: String::new(),
             images: Vec::new(),
             tool_calls: vec![ToolCall {
+                continuation: None,
                 id: "c".to_string(),
                 kind: ToolKind::Function,
                 function: ToolFunction {
@@ -759,6 +764,7 @@ async fn one_turn_advertises_one_tool_schema() -> Result<()> {
                     0 => Ok(AssistantMessage {
                         content: None,
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: "c".to_string(),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -939,6 +945,7 @@ async fn auto_compact_summarizes_one_long_autonomous_turn() -> Result<()> {
                 if round < 12 {
                     Ok(AssistantMessage {
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: format!("c{round}"),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -1024,6 +1031,7 @@ async fn aside_rounds_stop_at_the_configured_token_budget() -> Result<()> {
             Box::pin(async {
                 Ok(AssistantMessage {
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "inspect".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -1231,7 +1239,7 @@ async fn roles_run_on_their_own_seats() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
     loop_.set_seat(
         Step::Plan,
         Tagged::new("plan", &calls),
@@ -1265,7 +1273,7 @@ async fn roles_run_on_their_own_seats() -> Result<()> {
         None,
         None,
     );
-    let gates = vec!["true".to_string()];
+    let gates = vec!["exit 0".to_string()];
     loop_.select_goal("finish", &gates, 3)?;
     let goal = loop_.turn(&crate::goal_prompt("finish", &gates, 0)).await?;
     assert!(goal.text.starts_with("reply from impl"));
@@ -1563,6 +1571,7 @@ async fn failed_auto_compaction_is_not_retried_every_round() -> Result<()> {
                 let read = || AssistantMessage {
                     content: None,
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "c".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -1644,7 +1653,7 @@ fn module_switches_drop_their_tools_from_the_schema() -> Result<()> {
     let workspace = test_workspace()?;
     let mut loop_ = Loop::with_session(Silent, "test-model", &workspace, "test")?;
     let before = loop_.tool_names();
-    assert!(before.iter().any(|name| name == "diagnostics"));
+    assert!(before.iter().any(|name| name == "task"));
     assert!(before.iter().any(|name| name == "run_command"));
 
     let user = std::collections::BTreeMap::from([

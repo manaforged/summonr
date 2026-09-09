@@ -1,10 +1,12 @@
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use super::SessionInfo;
+use super::{Prompt, SessionInfo, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
+use crate::prompt::mage_home;
 
 pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
     last_in(&crate::prompt::mage_home()?, workspace)
@@ -49,7 +51,7 @@ pub(crate) fn last_in(home: &Path, workspace: &Path) -> Result<Option<PathBuf>> 
     Ok(matches.pop().map(|info| info.path))
 }
 
-fn roots(workspace: &Path) -> Vec<String> {
+pub(crate) fn roots(workspace: &Path) -> Vec<String> {
     let mut want = vec![workspace.display().to_string()];
     let Ok(canonical) = workspace.canonicalize() else {
         return want;
@@ -78,12 +80,7 @@ pub fn short(id: &str) -> &str {
 }
 
 pub(crate) fn preview(text: &str) -> String {
-    text.split("\n\nHarness state:")
-        .next()
-        .unwrap_or(text)
-        .chars()
-        .take(72)
-        .collect()
+    user_text(text).chars().take(72).collect()
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {
@@ -124,9 +121,14 @@ pub fn export(path: &Path) -> Result<String> {
                 }
                 out.push('\n');
             }
-            Line::User { text, start, .. } => {
+            Line::User {
+                text,
+                source,
+                start,
+                ..
+            } => {
                 if start {
-                    let text = text.split("\n\nHarness state:").next().unwrap_or(&text);
+                    let text = source.as_deref().unwrap_or_else(|| user_text(&text));
                     out.push_str(&format!("## You\n\n{text}\n\n"));
                 } else {
                     out.push_str(&format!("> {}\n\n", text.lines().next().unwrap_or("")));
@@ -213,6 +215,64 @@ pub fn list() -> Result<Vec<SessionInfo>> {
     list_in(&crate::prompt::mage_home()?)
 }
 
+pub(crate) fn prompts(scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
+    prompts_in(&mage_home()?, scope)
+}
+
+pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
+    let mut prompts = Vec::new();
+    let mut skipped = Vec::new();
+    let sessions = match scope {
+        Some(id) => {
+            let id = id
+                .parse()
+                .map_err(|error| Error::Config(format!("Invalid session ID: {error}")))?;
+            vec![info(log::session_path(home, id))]
+        }
+        None => list_in(home)?,
+    };
+    for session in sessions.into_iter().rev().filter(|info| info.depth == 0) {
+        let lines = match log::read(&session.path) {
+            Ok(lines) => lines,
+            Err(error) => {
+                let error = format!("Cannot read session {}: {error}", session.path.display());
+                if scope.is_some() {
+                    return Err(Error::Config(error));
+                }
+                skipped.push(error);
+                continue;
+            }
+        };
+        let session = Arc::new(session);
+        let mut saved: Vec<Prompt> = Vec::new();
+        for line in lines {
+            match line {
+                Line::User {
+                    text,
+                    source,
+                    images,
+                    start: true,
+                } => saved.push(Prompt {
+                    session: Arc::clone(&session),
+                    turn: saved.len(),
+                    text: source.unwrap_or_else(|| user_text(&text).to_string()),
+                    images: images.len(),
+                    closed: false,
+                }),
+                Line::Close { .. } => {
+                    if let Some(prompt) = saved.last_mut() {
+                        prompt.closed = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        saved.reverse();
+        prompts.extend(saved);
+    }
+    Ok((prompts, skipped))
+}
+
 pub(crate) fn list_in(home: &Path) -> Result<Vec<SessionInfo>> {
     let dir = log::sessions_dir(home);
     if !dir.is_dir() {
@@ -273,8 +333,14 @@ fn peek(path: &Path) -> (Option<String>, Option<String>, String, Option<String>,
                 parent = recorded_parent.map(|id| id.to_string());
                 depth = recorded_depth;
             }
-            Ok(Line::User { text, .. }) if !text.is_empty() => {
-                return (cwd, model, preview(&text), parent, depth);
+            Ok(Line::User { text, source, .. }) if !text.is_empty() => {
+                return (
+                    cwd,
+                    model,
+                    preview(source.as_deref().unwrap_or(&text)),
+                    parent,
+                    depth,
+                );
             }
             _ => {}
         }

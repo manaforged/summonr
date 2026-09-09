@@ -16,10 +16,12 @@ pub enum Hotkey {
     Copy,
     Select,
     Pane,
+    Search,
+    History,
 }
 
 impl Hotkey {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 11] = [
         Self::Options,
         Self::Newline,
         Self::Editor,
@@ -29,6 +31,8 @@ impl Hotkey {
         Self::Copy,
         Self::Select,
         Self::Pane,
+        Self::Search,
+        Self::History,
     ];
 
     #[must_use]
@@ -43,6 +47,8 @@ impl Hotkey {
             Self::Copy => "copy",
             Self::Select => "select",
             Self::Pane => "pane",
+            Self::Search => "search",
+            Self::History => "history",
         }
     }
 
@@ -63,7 +69,7 @@ pub struct Hotkeys {
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
-            keys: ['o', 'j', 'g', 'e', 'l', 'x', 'y', 't', 'p'],
+            keys: ['o', 'j', 'g', 'e', 'l', 'x', 'y', 't', 'p', 'f', 'r'],
         }
     }
 }
@@ -80,6 +86,25 @@ impl Hotkeys {
                 ))
             })?;
             hotkeys.keys[action.index()] = key;
+        }
+        for action in [Hotkey::Search, Hotkey::History] {
+            let index = action.index();
+            if !rows.contains_key(action.name())
+                && hotkeys
+                    .keys
+                    .iter()
+                    .enumerate()
+                    .any(|(other, key)| other != index && *key == hotkeys.keys[index])
+            {
+                hotkeys.keys[index] = Self::default()
+                    .keys
+                    .into_iter()
+                    .chain('a'..='z')
+                    .find(|key| available(*key) && !hotkeys.keys.contains(key))
+                    .ok_or_else(|| {
+                        Error::Config(format!("no available {} hotkey", action.name()))
+                    })?;
+            }
         }
         for (index, key) in hotkeys.keys.iter().enumerate() {
             if hotkeys.keys[..index].contains(key) {
@@ -129,7 +154,7 @@ impl Hotkeys {
 
 #[must_use]
 pub const fn available(key: char) -> bool {
-    key.is_ascii_lowercase() && !matches!(key, 'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'z')
+    key.is_ascii_lowercase() && !matches!(key, 'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'v' | 'z')
 }
 
 fn parse(binding: &str) -> Option<char> {
@@ -145,6 +170,22 @@ pub enum ToolOutput {
 }
 
 impl ToolOutput {
+    pub(crate) fn text(self, output: &str) -> &str {
+        if self == Self::Full {
+            return output;
+        }
+        let line = output
+            .lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("");
+        let end = line
+            .char_indices()
+            .nth(120)
+            .map_or(line.len(), |(index, _)| index);
+        &line[..end]
+    }
+
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {

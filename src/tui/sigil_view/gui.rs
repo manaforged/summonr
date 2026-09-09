@@ -3,11 +3,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use sigil::prelude::Cx;
+use sigil::prelude::{Cx, signal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::super::{Cmd, Exit, Info, Msg, worker};
-use super::app::App;
+use super::app::{App, CopyStatus};
 use super::desktop::root;
 use super::host::start_tick;
 use super::model::Entry;
@@ -39,6 +39,7 @@ pub(crate) fn run(
     let opened = tokio::task::block_in_place(|| {
         sigil::launch(window(), move |cx: &mut Cx| {
             let mut app = App::new(info, workspace, commands);
+            app.extent = signal(1.0);
             app.resume = requested;
             app.resize(160, 50);
             app.refresh();
@@ -90,7 +91,7 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     app.tick();
     if let Some(path) = app.open_file.peek() {
         app.open_file.set(None);
-        if let Err(error) = reveal(&app.workspace.join(&path)) {
+        if let Err(error) = reveal(&path) {
             app.model
                 .borrow_mut()
                 .entries
@@ -101,7 +102,7 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     if let Some(text) = app.copy.peek() {
         app.copy.set(None);
         match sigil::clipboard::copy(&text) {
-            Ok(()) => app.copied(&text),
+            Ok(()) => app.copied(&text, CopyStatus::Confirmed),
             Err(error) => {
                 app.model
                     .borrow_mut()

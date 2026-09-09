@@ -56,7 +56,7 @@ impl<P: Provider> Loop<P> {
         source: &Path,
     ) -> Result<Self> {
         let parent = resume_driver(workspace.as_ref(), source)?;
-        let child = parent.fork().map_err(super::session_err)?;
+        let child = parent.fork(None).map_err(super::session_err)?;
         Self::resume_path(provider, model, workspace, system_prompt, &child)
     }
 
@@ -495,7 +495,16 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn fork_live(&mut self) -> Result<String> {
-        let path = self.session.fork().map_err(super::session_err)?;
+        self.fork_at(None)
+    }
+
+    pub(crate) fn fork_at(&mut self, turn: Option<usize>) -> Result<String> {
+        if !self.spawned.is_empty() {
+            return Err(Error::Config(
+                "Collect or stop background agents before branching".to_string(),
+            ));
+        }
+        let path = self.session.fork(turn).map_err(super::session_err)?;
         let child = resume_driver(&self.workspace, &path)?;
         let replay = child.replay();
         let id = child.id().to_string();
@@ -597,7 +606,11 @@ impl<P: Provider> Loop<P> {
 
     pub fn abort_note(&mut self, reason: &str) -> Result<()> {
         self.forget_children();
-        self.session.abort(reason, None).map_err(super::session_err)
+        self.session
+            .abort(reason, None)
+            .map_err(super::session_err)?;
+        self.hydrate();
+        Ok(())
     }
 
     fn forget_children(&mut self) {

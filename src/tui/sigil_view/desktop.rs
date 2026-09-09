@@ -8,6 +8,7 @@ use sigil::prelude::*;
 use super::super::Cmd;
 use super::app::App;
 use super::pane::Pane;
+use super::view::shell;
 
 mod icons;
 mod options;
@@ -18,45 +19,72 @@ mod thread;
 pub(super) fn root(app: App) -> NodeBuilder {
     drop(app.cmd.send(Cmd::Diff(None)));
     let screen = app.clone();
-    super::view::shell(&app)
+    container()
+        .layout(LayoutStyle::block().fill())
         .theme(Theme::dark())
         .children_reactive(move || {
-            drop((
-                screen.status.get(),
-                screen.layout.get(),
-                screen.panes.get(),
-                screen.pane_focus.get(),
-                screen.settings_open.get(),
-                screen.settings_sel.get(),
-                screen.hotkeys_open.get(),
-                screen.hotkey_sel.get(),
-                screen.hotkey_recording.get(),
-                screen.hotkey_note.get(),
-                screen.editing_model.get(),
-                screen.model_draft.get(),
-                screen.model_choices.get(),
-                screen.model_sel.get(),
-                screen.model_loading.get(),
-                screen.model_error.get(),
-                screen.workflow_open.get(),
-                screen.workflow_name.get(),
-                screen.workflow_names.get(),
-                screen.workflow_seats.get(),
-                screen.workflow_sel.get(),
-                screen.workflow_naming.get(),
-                screen.workflow_draft.get(),
-                screen.diff_view.get(),
-                screen.view_edit.get(),
-            ));
+            if screen.auth_open.get() {
+                return vec![options::auth(screen.clone())];
+            }
+            if screen.search.open.get() {
+                return vec![shell(&screen).child(super::search::desktop(screen.clone()))];
+            }
+            if screen.sessions.open.get() {
+                return vec![shell(&screen).child(super::sessions::desktop(screen.clone()))];
+            }
+            let navigation = screen.clone();
+            let panel = screen.clone();
+            let sidebar = container()
+                .layout(LayoutStyle::block().fill_height().shrink(0.0))
+                .children_reactive(move || {
+                    drop((
+                        panel.status.get(),
+                        panel.layout.get(),
+                        panel.panes.get(),
+                        panel.pane_focus.get(),
+                        panel.settings_open.get(),
+                        panel.settings_sel.get(),
+                        panel.hotkeys_open.get(),
+                        panel.hotkey_sel.get(),
+                        panel.hotkey_recording.get(),
+                        panel.hotkey_note.get(),
+                        panel.editing_model.get(),
+                        panel.model_draft.get(),
+                        panel.model_choices.get(),
+                        panel.model_sel.get(),
+                        panel.model_loading.get(),
+                        panel.model_error.get(),
+                        panel.workflow_open.get(),
+                        panel.workflow_name.get(),
+                        panel.workflow_names.get(),
+                        panel.workflow_seats.get(),
+                        panel.workflow_sel.get(),
+                        panel.workflow_naming.get(),
+                        panel.workflow_draft.get(),
+                        panel.diff_view.get(),
+                        panel.view_edit.get(),
+                    ));
+                    vec![side::slot(panel.clone())]
+                });
             vec![
-                container()
-                    .role(Role::Application)
-                    .label("Summoner")
-                    .layout(LayoutStyle::flex_row().fill())
-                    .class(classes!("bg-gray-1"))
-                    .child(rail::rail(screen.clone()))
-                    .child(thread::main_col(screen.clone()))
-                    .child(side::slot(screen.clone())),
+                shell(&screen).child(
+                    container()
+                        .role(Role::Application)
+                        .label("Summoner")
+                        .layout(LayoutStyle::flex_row().fill())
+                        .class(classes!("bg-gray-1"))
+                        .child(
+                            container()
+                                .layout(LayoutStyle::block().fill_height().shrink(0.0))
+                                .children_reactive(move || {
+                                    let _updates =
+                                        (navigation.panes.get(), navigation.layout.get());
+                                    vec![rail::rail(navigation.clone())]
+                                }),
+                        )
+                        .child(thread::main_col(screen.clone()))
+                        .child(sidebar),
+                ),
             ]
         })
 }
@@ -77,7 +105,7 @@ fn hairline() -> NodeBuilder {
 }
 
 /// A clickable row or button; `on` paints it selected.
-fn hit(name: String, on: bool, act: impl Fn() + 'static) -> NodeBuilder {
+pub(super) fn hit(name: String, on: bool, act: impl Fn() + 'static) -> NodeBuilder {
     container()
         .role(Role::Button)
         .label(name)

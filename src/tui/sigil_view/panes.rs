@@ -13,48 +13,52 @@ const SPLIT: usize = 80;
 type Line = (String, Rgba8);
 
 pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
-    // The pane text comes from the model, so the refresh counter is its subscription.
-    let _version = app.panes.get();
-    let mut column = container().layout(
-        LayoutStyle::flex_column()
-            .width(f32::from(cols) * super::canvas::cell().w)
-            .fill_height()
-            .gap(0.0),
-    );
-    let width = usize::from(cols);
-    app.hits.clear();
-    let mut lines: Vec<Vec<Line>> = match pane {
-        Pane::Ledger => single(ledger(app)),
-        Pane::Files => single(files(app, usize::from(rows))),
-        Pane::Diff => diff(app, width, usize::from(rows)),
-        Pane::Worktrees => single(trees(app, usize::from(rows))),
-        Pane::View => single(view(app, usize::from(rows))),
-        Pane::Chat => Vec::new(),
-    };
-    close_header(&mut lines, width);
-    let left = usize::from(app.chat_cols()) + 1;
-    app.hits.add(
-        0,
-        left + width.saturating_sub(1),
-        left + width,
-        super::hit::Target::Close,
-    );
-    let caret = (pane == Pane::View && app.view_edit.get()).then(|| {
-        let body = usize::from(rows).saturating_sub(2);
-        let window = super::editor::window(
-            &app.view_text.get(),
-            app.view_caret.get(),
-            app.view_scroll.get(),
-            body,
-        );
-        (window.line - window.start + 2, 7 + window.col)
-    });
-    for index in 0..usize::from(rows) {
-        let spans: &[Line] = lines.get(index).map_or(&[], Vec::as_slice);
-        let at = caret.filter(|(row, _)| *row == index).map(|(_, col)| col);
-        column = column.child(row(&cells(spans, width, at)));
-    }
-    column
+    let app = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .width(f32::from(cols) * super::canvas::cell().w)
+                .fill_height()
+                .gap(0.0),
+        )
+        .children_reactive(move || {
+            let _version = app.panes.get();
+            let mut children = Vec::new();
+            let width = usize::from(cols);
+            app.hits.clear();
+            let mut lines: Vec<Vec<Line>> = match pane {
+                Pane::Ledger => single(ledger(&app)),
+                Pane::Files => single(files(&app, usize::from(rows))),
+                Pane::Diff => diff(&app, width, usize::from(rows)),
+                Pane::Worktrees => single(trees(&app, usize::from(rows))),
+                Pane::View => single(view(&app, usize::from(rows))),
+                Pane::Chat => Vec::new(),
+            };
+            close_header(&mut lines, width);
+            let left = usize::from(app.chat_cols()) + 1;
+            app.hits.add(
+                0,
+                left + width.saturating_sub(1),
+                left + width,
+                super::hit::Target::Close,
+            );
+            let caret = (pane == Pane::View && app.view_edit.get()).then(|| {
+                let body = usize::from(rows).saturating_sub(2);
+                let window = super::editor::window(
+                    &app.view_text.get(),
+                    app.view_caret.get(),
+                    app.view_scroll.get(),
+                    body,
+                );
+                (window.line - window.start + 2, 7 + window.col)
+            });
+            for index in 0..usize::from(rows) {
+                let spans: &[Line] = lines.get(index).map_or(&[], Vec::as_slice);
+                let at = caret.filter(|(row, _)| *row == index).map(|(_, col)| col);
+                children.push(row(&cells(spans, width, at)));
+            }
+            children
+        })
 }
 
 fn single(lines: Vec<Line>) -> Vec<Vec<Line>> {

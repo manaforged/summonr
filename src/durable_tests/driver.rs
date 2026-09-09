@@ -5,7 +5,7 @@ use crate::durable::driver::{DriverError, Exposure, SessionDriver, active_at, wo
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line, Usage};
 use crate::durable::work::{Decision, Policy, Stage, Work, WorkPhase};
-use crate::provider::{Role, ToolCall, ToolFunction, ToolKind};
+use crate::provider::{Image, Role, Source, ToolCall, ToolFunction, ToolKind, UserInput};
 
 fn home() -> (tempfile::TempDir, PathBuf) {
     let home = tempfile::tempdir().expect("tempdir");
@@ -42,7 +42,7 @@ fn usage(input: u64, output: u64, millis: u64) -> Usage {
 
 fn start(driver: &mut SessionDriver, text: &str) {
     driver.prepare_turn_work(text, &[]).expect("work");
-    driver.start_input(text, &[]).expect("start");
+    driver.start_input(&text.into()).expect("start");
 }
 
 fn answer(driver: &mut SessionDriver, text: &str) {
@@ -302,7 +302,9 @@ fn resume_returns_an_interrupted_verify_to_execute() {
     driver
         .prepare_turn_work("change the source", &["true".to_string()])
         .expect("work");
-    driver.start_input("change the source", &[]).expect("start");
+    driver
+        .start_input(&"change the source".into())
+        .expect("start");
     answer(&mut driver, "done");
     std::fs::write(workspace.join("src.txt"), b"changed").expect("edit");
     let paths = driver.enter_verify().expect("capture");
@@ -325,7 +327,7 @@ fn verdict_writes_the_receipt_and_closes_the_turn() {
     driver
         .prepare_turn_work("write", &["true".to_string()])
         .expect("work");
-    driver.start_input("write", &[]).expect("start");
+    driver.start_input(&"write".into()).expect("start");
     assert_eq!(driver.stage(), Some(Stage::Execute));
     answer(&mut driver, "done");
     std::fs::write(workspace.join("new.txt"), b"x").expect("edit");
@@ -458,12 +460,27 @@ fn steer_survives_resume_and_needs_an_open_turn() {
     let (home, workspace) = home();
     let mut driver = open(home.path(), &workspace);
     let path = driver.path().to_path_buf();
-    assert!(matches!(driver.steer("early"), Err(DriverError::NoTurn)));
-    start(&mut driver, "implement");
-    driver.steer("prefer the short path").expect("steer");
-    assert!(matches!(driver.steer("   "), Err(DriverError::Empty)));
     assert!(matches!(
-        driver.start_input("again", &[]),
+        driver.steer(&"early".into()),
+        Err(DriverError::NoTurn)
+    ));
+    start(&mut driver, "implement");
+    let image = Image::encode("image/png", b"\x89PNG\r\n\x1a\n");
+    let input = UserInput {
+        text: "prefer the short path\n\n--- route.txt ---\nvia north\n".to_string(),
+        images: vec![image.clone()],
+        source: Some(Source {
+            text: "prefer the short path @route.txt".to_string(),
+            images: 0,
+        }),
+    };
+    driver.steer(&input).expect("steer");
+    assert!(matches!(
+        driver.steer(&"   ".into()),
+        Err(DriverError::Empty)
+    ));
+    assert!(matches!(
+        driver.start_input(&"again".into()),
         Err(DriverError::Busy)
     ));
     drop(driver);
@@ -471,7 +488,9 @@ fn steer_survives_resume_and_needs_an_open_turn() {
     let resumed = resume(home.path(), &path, &workspace);
     let history = resumed.replay().history;
     assert_eq!(history[0].content, "implement");
-    assert_eq!(history[1].content, "prefer the short path");
+    assert_eq!(history[1].content, input.text);
+    assert_eq!(history[1].images, [image]);
+    assert!(log::read(&path).expect("journal").iter().any(|line| matches!(line, Line::User { source: Some(text), start: false, .. } if text == "prefer the short path @route.txt")));
 }
 
 #[test]
@@ -541,7 +560,7 @@ fn fork_copies_the_conversation_but_not_the_work() {
     start(&mut driver, "first");
     answer(&mut driver, "done");
     driver.close().expect("close");
-    let child_path = driver.fork().expect("fork");
+    let child_path = driver.fork(None).expect("fork");
     assert_ne!(child_path, driver.path());
     let child = resume(home.path(), &child_path, &workspace);
     assert_ne!(child.id(), driver.id());
@@ -551,6 +570,70 @@ fn fork_copies_the_conversation_but_not_the_work() {
         log::header(&child_path).expect("header"),
         Line::Session { parent, .. } if parent == Some(driver.id())
     ));
+}
+
+#[test]
+fn earlier_branch_preserves_the_closed_turn_and_parent_bytes() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    let image = Image::encode("image/png", b"saved image bytes");
+    driver.prepare_turn_work("first", &[]).expect("work");
+    driver
+        .start_input(&UserInput {
+            text: "first".to_string(),
+            images: vec![image.clone()],
+            source: None,
+        })
+        .expect("first input");
+    let attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    let tool = ToolCall {
+        id: "read-first".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "read_file".to_string(),
+            arguments: r#"{"path":"src.txt"}"#.to_string(),
+        },
+        continuation: None,
+    };
+    let calls = driver
+        .finish_provider_with_tools(attempt, "", "", usage(10, 5, 100), &[tool])
+        .expect("tool call");
+    driver
+        .finish_tools(&[(calls[0], "hello", true, 1)])
+        .expect("tool result");
+    answer(&mut driver, "first done");
+    driver.close().expect("close first");
+    let prefix = log::read(driver.path()).expect("first journal");
+    let expected = driver.replay().history;
+    driver.clear().expect("clear after first");
+    start(&mut driver, "later");
+    answer(&mut driver, "later done");
+    driver.close().expect("close later");
+    let parent = std::fs::read(driver.path()).expect("parent bytes");
+    let child_path = driver.fork(Some(0)).expect("earlier branch");
+    let child_lines = log::read(&child_path).expect("child journal");
+    assert_eq!(&child_lines[1..], &prefix[1..]);
+    assert_eq!(
+        std::fs::read(driver.path()).expect("unchanged parent"),
+        parent
+    );
+    assert_eq!(
+        std::fs::read(workspace.join("src.txt")).expect("workspace"),
+        b"hello"
+    );
+    let child = resume(home.path(), &child_path, &workspace);
+    assert_eq!(child.replay().history, expected);
+    assert_eq!(child.replay().history[0].images, [image]);
+    assert!(matches!(child.work_progress(), Err(DriverError::NoWork)));
+    assert!(
+        matches!(log::header(&child_path).expect("header"), Line::Session { parent: Some(id), .. } if id == driver.id())
+    );
+    driver.fork(Some(9)).expect_err("missing turn");
+    start(&mut driver, "still active");
+    assert!(matches!(driver.fork(Some(0)), Err(DriverError::Busy)));
+    assert!(matches!(driver.fork(None), Err(DriverError::Busy)));
 }
 
 #[test]
@@ -617,17 +700,17 @@ fn a_turn_needs_work_and_a_plan_must_be_accepted_first() {
     let (home, workspace) = home();
     let mut driver = open(home.path(), &workspace);
     assert!(matches!(
-        driver.start_input("hi", &[]),
+        driver.start_input(&"hi".into()),
         Err(DriverError::NoWork)
     ));
     assert!(matches!(
-        driver.start_input("  ", &[]),
+        driver.start_input(&"  ".into()),
         Err(DriverError::Empty)
     ));
     assert!(driver.accept_plan().is_err());
 
     driver.prepare_plan_work("plan it").expect("plan work");
-    driver.start_input("plan it", &[]).expect("start");
+    driver.start_input(&"plan it".into()).expect("start");
     let attempt = driver
         .start_provider("test-model", exposure())
         .expect("provider");
@@ -685,7 +768,7 @@ fn queued_continuations_land_before_the_next_input() {
     driver
         .prepare_turn_work("fix", &["false".to_string()])
         .expect("work");
-    driver.start_input("fix", &[]).expect("start");
+    driver.start_input(&"fix".into()).expect("start");
     answer(&mut driver, "tried");
     driver.enter_verify().expect("capture");
     let verdict = driver.prepare_verdict(false).expect("verdict");
@@ -696,7 +779,7 @@ fn queued_continuations_land_before_the_next_input() {
     driver
         .prepare_turn_work("again", &["false".to_string()])
         .expect("same work");
-    let queued = driver.start_input("again", &[]).expect("start");
+    let queued = driver.start_input(&"again".into()).expect("start");
     assert_eq!(
         queued,
         vec!["Repair the failed completion check.".to_string()]
@@ -768,14 +851,14 @@ fn a_resumed_interrupted_turn_tells_the_model_it_was_interrupted() {
     let mut driver = open(home.path(), &workspace);
     let path = driver.path().to_path_buf();
     driver.prepare_turn_work("do it", &[]).expect("work");
-    driver.start_input("do it", &[]).expect("start");
+    driver.start_input(&"do it".into()).expect("start");
     let _attempt = driver
         .start_provider("test-model", exposure())
         .expect("provider");
     drop(driver);
     let mut resumed = resume(home.path(), &path, &workspace);
     resumed.prepare_turn_work("do it", &[]).expect("work again");
-    let queued = resumed.start_input("do it", &[]).expect("start again");
+    let queued = resumed.start_input(&"do it".into()).expect("start again");
     assert!(
         queued.iter().any(|text| text.contains("was interrupted")),
         "{queued:?}"
@@ -789,7 +872,7 @@ fn a_gate_change_requires_recapture_before_the_next_base() {
     driver
         .prepare_external_work("keep going", Policy::Goal { max_turns: 5 }, &[])
         .expect("goal");
-    driver.start_input("go", &[]).expect("start");
+    driver.start_input(&"go".into()).expect("start");
     std::fs::write(workspace.join("edit.txt"), "model\n").expect("model edit");
     let paths = driver.enter_verify().expect("capture");
     assert_eq!(paths, vec!["edit.txt"]);
@@ -799,7 +882,7 @@ fn a_gate_change_requires_recapture_before_the_next_base() {
     driver
         .commit_verdict(verdict, Decision::Automatic, None)
         .expect("reject");
-    driver.start_input("again", &[]).expect("start");
+    driver.start_input(&"again".into()).expect("start");
     let paths = driver.enter_verify().expect("capture");
     assert_eq!(paths, vec!["stamp.txt"]);
     let verdict = driver.prepare_verdict(true).expect("rechecked verdict");
@@ -812,7 +895,7 @@ fn a_finished_session_resumes_from_anywhere_after_its_tree_is_gone() {
     let mut driver = open(home.path(), &workspace);
     let path = driver.path().to_path_buf();
     driver.prepare_turn_work("ship it", &[]).expect("work");
-    driver.start_input("ship it", &[]).expect("start");
+    driver.start_input(&"ship it".into()).expect("start");
     driver.enter_verify().expect("capture");
     let verdict = driver.prepare_verdict(true).expect("verdict");
     driver

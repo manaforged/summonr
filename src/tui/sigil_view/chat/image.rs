@@ -1,7 +1,8 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use sigil::prelude::Rgba8;
+use image::{ImageBuffer, Rgba};
+use sigil::prelude::{ImageSource, Rgba8};
 
 use super::{BASE, Line, Span};
 
@@ -11,12 +12,12 @@ thread_local! {
     static CACHE: RefCell<HashMap<(u64, usize), Vec<Line>>> = RefCell::new(HashMap::new());
 }
 
-pub(super) fn render_cached(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
-    let key = (identity(bytes), width);
+pub(super) fn render_cached(source: &ImageSource, width: usize) -> Result<Vec<Line>, String> {
+    let key = (source.id(), width);
     if let Some(hit) = CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
         return Ok(hit);
     }
-    let rows = render(bytes, width)?;
+    let rows = render(source, width)?;
     CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         if cache.len() >= 32 {
@@ -27,25 +28,13 @@ pub(super) fn render_cached(bytes: &[u8], width: usize) -> Result<Vec<Line>, Str
     Ok(rows)
 }
 
-fn identity(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64 ^ bytes.len() as u64;
-    for byte in bytes.iter().take(512) {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
-pub(super) fn render(bytes: &[u8], width: usize) -> Result<Vec<Line>, String> {
+pub(super) fn render(source: &ImageSource, width: usize) -> Result<Vec<Line>, String> {
     if width == 0 {
         return Ok(Vec::new());
     }
-    let image = image::load_from_memory(bytes).map_err(|error| error.to_string())?;
-    let rgba = image.to_rgba8();
+    let rgba = ImageBuffer::<Rgba<u8>, _>::from_raw(source.width(), source.height(), source.rgba())
+        .ok_or_else(|| "image has invalid pixels".to_string())?;
     let (source_width, source_height) = rgba.dimensions();
-    if source_width == 0 || source_height == 0 {
-        return Err("image has no pixels".to_string());
-    }
     let source_width = usize::try_from(source_width).unwrap_or(usize::MAX);
     let source_height = usize::try_from(source_height).unwrap_or(usize::MAX);
 

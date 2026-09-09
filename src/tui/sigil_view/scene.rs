@@ -62,32 +62,35 @@ const NEAR_RIDGE: &[(f32, f32)] = &[
 ];
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let (cols, rows) = app.viewport.get();
-    let name = app.theme_name.get();
-    let ticks = if app.model.borrow().prefs.animations {
-        app.ticks.get()
-    } else {
-        0
-    };
-    let mut cells = if name == "fantasy" {
-        fantasy(cols, rows, ticks)
-    } else {
-        space(cols, rows, ticks)
-    };
-    compose(&mut cells, cols, rows, &app, ticks);
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    let width = usize::from(cols);
-    for line in cells.chunks(width.max(1)) {
-        layer = layer.child(scene_row(line));
-    }
-    layer
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .position(Position::Absolute)
+                .inset(0.0)
+                .fill_width()
+                .fill_height()
+                .gap(0.0),
+        )
+        .children_reactive(move || {
+            super::view::watch(&app);
+            let (cols, rows) = app.viewport.get();
+            let name = app.theme_name.get();
+            let ticks = if app.model.borrow().prefs.animations {
+                app.ticks.get()
+            } else {
+                0
+            };
+            let mut cells = if name == "fantasy" {
+                fantasy(cols, rows, ticks)
+            } else {
+                space(cols, rows, ticks)
+            };
+            compose(&mut cells, cols, rows, &app, ticks);
+            cells
+                .chunks(usize::from(cols).max(1))
+                .map(scene_row)
+                .collect::<Vec<_>>()
+        })
 }
 
 fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App, ticks: u64) {
@@ -207,8 +210,9 @@ fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
     let mut facts = vec![
         ("summoner", app.info.version.clone()),
         ("model", shown_model),
-        ("session", short_session(&app.info.session)),
+        ("session", short_session(&model.session)),
         ("workdir", app.info.workspace.clone()),
+        ("setup", "/auth · /model · /help".to_string()),
     ];
     if model.snapshot.plan {
         facts.push(("mode", "plan · read-only".to_string()));
@@ -423,7 +427,12 @@ fn prompt(
         .select
         .peek()
         .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-    let hint = super::chat::composer_hint(busy, usize::from(width), &options, select.as_deref());
+    let hint = super::chat::composer_hint(
+        model.busy_since.map(|(activity, _)| activity),
+        usize::from(width),
+        &options,
+        select.as_deref(),
+    );
     let dash = usize::from(width).saturating_sub(UnicodeWidthStr::width(hint.as_str()) + 2);
     write(
         cells,

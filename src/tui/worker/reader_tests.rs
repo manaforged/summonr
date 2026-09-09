@@ -63,16 +63,22 @@ fn save_writes_the_file_and_reports_the_line_count() {
     let dir = repo();
     let (tx, mut rx) = unbounded_channel();
     let reader = Reader::new(dir.path().to_path_buf(), tx);
-    reader.serve(Cmd::Save("src/lib.rs".to_string(), "a\nb\n".to_string()));
-    assert!(matches!(rx.try_recv(), Ok(Msg::System(text)) if text == "saved src/lib.rs · 2 lines"));
+    reader.serve(Cmd::Save(
+        dir.path().join("src/lib.rs"),
+        "a\nb\n".to_string(),
+    ));
+    assert!(
+        matches!(rx.try_recv(), Ok(Msg::Saved { result: Ok(()), text, .. }) if text == "a\nb\n")
+    );
     assert_eq!(
         std::fs::read_to_string(dir.path().join("src/lib.rs")).expect("read"),
         "a\nb\n"
     );
-    reader.serve(Cmd::Save("missing/dir/x".to_string(), String::new()));
-    assert!(
-        matches!(rx.try_recv(), Ok(Msg::System(text)) if text.starts_with("cannot save missing/dir/x"))
-    );
+    reader.serve(Cmd::Save(dir.path().join("missing/dir/x"), String::new()));
+    assert!(matches!(
+        rx.try_recv(),
+        Ok(Msg::Saved { result: Err(_), .. })
+    ));
 }
 
 #[test]
@@ -83,8 +89,14 @@ fn view_reads_the_file_and_its_added_lines() {
     let reader = Reader::new(dir.path().to_path_buf(), tx);
     reader.serve(Cmd::View(None, "src/lib.rs".to_string()));
     match rx.try_recv() {
-        Ok(Msg::View { path, rope, added }) => {
+        Ok(Msg::View {
+            path,
+            file,
+            rope,
+            added,
+        }) => {
             assert_eq!(path, "src/lib.rs");
+            assert_eq!(file, dir.path().join("src/lib.rs"));
             assert_eq!(rope.to_string_lossy(), "fn a() {}\nfn b() {}\n");
             assert_eq!(added, vec![(2, 1)]);
         }
@@ -93,6 +105,38 @@ fn view_reads_the_file_and_its_added_lines() {
     reader.serve(Cmd::View(None, "missing.rs".to_string()));
     assert!(
         matches!(rx.try_recv(), Ok(Msg::System(text)) if text.starts_with("cannot view missing.rs"))
+    );
+}
+
+#[tokio::test]
+async fn saving_a_view_preserves_its_root() {
+    let primary = repo();
+    let secondary = repo();
+    let (tx, mut rx) = unbounded_channel();
+    let reader = Reader::new(primary.path().to_path_buf(), tx);
+    reader
+        .run(Cmd::View(
+            Some(secondary.path().to_path_buf()),
+            "src/lib.rs".to_string(),
+        ))
+        .await;
+    let Msg::View { file, .. } = rx.recv().await.expect("view response") else {
+        panic!("expected a view");
+    };
+    reader
+        .run(Cmd::Save(file, "secondary edits".to_string()))
+        .await;
+    assert!(matches!(
+        rx.recv().await,
+        Some(Msg::Saved { result: Ok(()), .. })
+    ));
+    assert_eq!(
+        std::fs::read_to_string(primary.path().join("src/lib.rs")).expect("primary"),
+        "fn a() {}\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(secondary.path().join("src/lib.rs")).expect("secondary"),
+        "secondary edits"
     );
 }
 

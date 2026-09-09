@@ -1174,13 +1174,24 @@ async fn work_deadline_stops_commands_checks_and_background_jobs() -> Result<()>
 
 #[tokio::test]
 async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Result<()> {
-    struct SlowTool;
+    struct SlowTool(AtomicUsize);
     impl Provider for SlowTool {
         fn complete<'a>(
             &'a self,
-            _request: &'a CompletionRequest,
+            request: &'a CompletionRequest,
         ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async {
+            Box::pin(async move {
+                if self.0.fetch_add(1, Ordering::SeqCst) > 0 {
+                    assert!(request.messages.iter().any(|message| {
+                        message.role == Role::Tool
+                            && message.tool_call_id.as_deref() == Some("slow")
+                            && message.content == "aborted"
+                    }));
+                    return Ok(AssistantMessage {
+                        content: Some("recovered".to_string()),
+                        ..AssistantMessage::default()
+                    });
+                }
                 Ok(AssistantMessage {
                     tool_calls: vec![ToolCall {
                         continuation: None,
@@ -1198,7 +1209,12 @@ async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Re
     }
 
     let workspace = test_workspace()?;
-    let mut loop_ = Loop::with_session(SlowTool, "test-model", &workspace, "test")?;
+    let mut loop_ = Loop::with_session(
+        SlowTool(AtomicUsize::new(0)),
+        "test-model",
+        &workspace,
+        "test",
+    )?;
     let mut turn = Box::pin(loop_.turn("cancel me"));
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(100), &mut turn)
@@ -1207,6 +1223,7 @@ async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Re
         "the command should still be running"
     );
     drop(turn);
+    loop_.abort_note("cancelled by user")?;
 
     let replayed = loop_.replay_session();
     assert!(!replayed.history.is_empty());
@@ -1216,6 +1233,7 @@ async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Re
             .iter()
             .any(|message| message.content.contains("cancel me"))
     );
+    assert_eq!(loop_.turn("continue").await?.text, "recovered");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

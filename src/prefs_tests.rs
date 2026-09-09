@@ -1,5 +1,13 @@
 use super::*;
 
+#[test]
+fn compact_output_preserves_utf8_and_full_output_preserves_bytes() {
+    let output = format!("early error\n{}\n\n", "界".repeat(121));
+    assert_eq!(ToolOutput::Compact.text(&output), "界".repeat(120));
+    assert_eq!(ToolOutput::Full.text(&output), output);
+    assert_eq!(ToolOutput::Compact.text("\n  \n"), "");
+}
+
 fn tmp(name: &str) -> std::path::PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "mage-prefs-{}-{}-{name}",
@@ -68,6 +76,32 @@ fn hotkeys_load_overrides_and_reject_conflicts() {
         .to_string();
     assert!(error.contains("assigned more than once"), "{error}");
     drop(std::fs::remove_file(&path));
+}
+
+#[test]
+fn adding_search_preserves_an_existing_ctrl_f_binding() {
+    let mut configured = BTreeMap::from([("options".to_string(), "ctrl+f".to_string())]);
+    let keys = Hotkeys::configured(&configured).expect("existing settings load");
+    assert_eq!(keys.action('f'), Some(Hotkey::Options));
+    assert_ne!(keys.key(Hotkey::Search), 'f');
+    assert_eq!(keys.action(keys.key(Hotkey::Search)), Some(Hotkey::Search));
+    assert_eq!(keys.key(Hotkey::Search), 'o');
+    configured.insert("search".to_string(), "ctrl+f".to_string());
+    assert!(
+        Hotkeys::configured(&configured)
+            .expect_err("explicit conflict")
+            .to_string()
+            .contains("assigned more than once")
+    );
+}
+
+#[test]
+fn adding_history_preserves_an_existing_ctrl_r_binding() {
+    let configured = BTreeMap::from([("copy".to_string(), "ctrl+r".to_string())]);
+    let keys = Hotkeys::configured(&configured).expect("existing settings load");
+    assert_eq!(keys.action('r'), Some(Hotkey::Copy));
+    assert_eq!(keys.key(Hotkey::History), 'y');
+    assert_eq!(keys.action('a'), None, "migration preserves select all");
 }
 
 #[test]

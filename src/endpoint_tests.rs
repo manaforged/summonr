@@ -36,6 +36,17 @@ fn environment_key_scopes_are_isolated() {
             "generic" => {
                 let endpoint = resolve_inner(None, None, true).expect("resolve generic key");
                 assert_eq!(endpoint.api_key.as_deref(), Some("legacy-glm-key"));
+                let changed = resolve_inner(Some(&endpoint.name), Some("alternate-model"), true)
+                    .expect("change the environment endpoint model");
+                assert_eq!(changed.name, endpoint.name);
+                assert_eq!(changed.base_url, endpoint.base_url);
+                assert_eq!(changed.api_key, endpoint.api_key);
+                assert_eq!(changed.model, "alternate-model");
+                assert_eq!(ready().iter().filter(|name| *name == "env").count(), 1);
+                let named = resolve_inner(Some("grok"), None, false).expect("named endpoint");
+                assert_eq!(named.name, "grok");
+                assert_ne!(named.base_url, endpoint.base_url);
+                assert!(named.api_key.is_none());
             }
             other => panic!("unknown endpoint environment test case: {other}"),
         }

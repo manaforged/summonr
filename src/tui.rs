@@ -7,6 +7,7 @@ use crate::prefs::Prefs;
 use crate::provider::Client;
 use crate::provider::UserInput;
 use crate::runtime::Loop;
+use crate::session::Prompt;
 use crate::tools::Event;
 
 mod sigil_view;
@@ -15,14 +16,20 @@ mod worker;
 use worker::worker;
 
 pub enum Msg {
+    User(String),
+    Image(crate::provider::Image),
+    Receipt(String),
     Delta(String),
     Thinking(String),
     Calling(String),
     Event(Event),
-    Busy(bool),
+    Busy(Option<Activity>),
     Failed(String),
+    Restored(Vec<UserInput>),
     System(String),
+    Session(String),
     Cleared,
+    Reset,
     Mode(bool),
     OpenSettings,
     Settings(Snapshot),
@@ -35,6 +42,11 @@ pub enum Msg {
         recent: usize,
     },
     ModelsFailed(String),
+    Sessions(std::result::Result<Vec<(crate::session::SessionInfo, bool)>, String>),
+    Prompts {
+        session: Option<String>,
+        result: std::result::Result<(Vec<Prompt>, Vec<String>), String>,
+    },
     Workflow {
         name: Option<String>,
         names: Vec<String>,
@@ -52,8 +64,14 @@ pub enum Msg {
     Edited(Vec<String>),
     View {
         path: String,
+        file: PathBuf,
         rope: sigil_ide_core::buffer::Rope,
         added: Vec<(usize, usize)>,
+    },
+    Saved {
+        file: PathBuf,
+        text: String,
+        result: std::result::Result<(), String>,
     },
     Patch {
         path: String,
@@ -61,6 +79,25 @@ pub enum Msg {
     },
     Resume(String),
     Bye,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Activity {
+    Turn,
+    Login,
+    Compact,
+    Branch,
+}
+
+impl Activity {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Turn => "working",
+            Self::Login => "signing in",
+            Self::Compact => "compacting",
+            Self::Branch => "branching",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -84,12 +121,15 @@ enum Cmd {
     SetModel(String),
     SetSeat(String, String),
     ListModels,
+    ListSessions,
+    ListPrompts(Option<String>),
+    Branch { session: String, turn: usize },
     ListFiles,
     Diff(Option<std::path::PathBuf>),
     Patch(Option<std::path::PathBuf>, String),
     Trees,
     View(Option<std::path::PathBuf>, String),
-    Save(String, String),
+    Save(PathBuf, String),
     Merge(std::path::PathBuf),
     Discard(std::path::PathBuf),
     SeatRole(crate::workflow::Role, String, String),
@@ -293,23 +333,6 @@ fn tool_arg(arguments: &str) -> String {
     }
 }
 
-fn last_line(output: &str) -> String {
-    output
-        .lines()
-        .rev()
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or("")
-        .chars()
-        .take(120)
-        .collect()
-}
-
-fn tail_lines(output: &str, n: usize) -> String {
-    let lines: Vec<&str> = output.lines().map(str::trim_end).collect();
-    let start = lines.len().saturating_sub(n);
-    lines[start..].join("\n")
-}
-
 fn help_text() -> String {
     let commands = crate::command_specs()
         .iter()
@@ -318,9 +341,11 @@ fn help_text() -> String {
         .join(" · ");
     format!(
         "{commands}\n\
-         @path attach text or an image\n\
+         @path attach text or an image · ↑↓ recall prompts at first/last line\n\
          keys: enter send/steer · tab complete/queue · shift+tab mode\n\
          options: ctrl+o by default · hotkeys are editable there\n\
+         search: ctrl+f by default · /search TEXT finds conversation text\n\
+         history: ctrl+r by default · /history TEXT inserts saved prompt text\n\
          pgup/pgdn or wheel scroll\n\
          panes: ctrl+e files · ctrl+l ledger · ctrl+x diff · /pane worktrees · ctrl+p hide/show · ctrl+→ focus pane · ctrl+← composer\n\
          in a pane: ↑↓ move · ←→ collapse/expand or hunks/list · enter attach @path or view hunks · right-click menu · esc back\n\

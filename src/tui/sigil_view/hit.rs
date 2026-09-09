@@ -11,6 +11,8 @@ pub(super) enum Target {
     Setting(usize),
     Hotkey(usize),
     Model(usize),
+    Session(usize),
+    Search(usize),
     Auth(usize),
     Role(usize),
     Saved(String),

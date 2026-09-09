@@ -191,6 +191,7 @@ fn images_use_openai_content_parts_without_changing_text_messages() -> Result<()
 
     let input = UserInput {
         text: "describe this".to_string(),
+        source: None,
         images: vec![Image::encode("image/png", b"\x89PNG\r\n\x1a\n")],
     };
     let body = client.request_body(&request(vec![Message::user(input)]), false)?;

@@ -36,10 +36,10 @@ reqwest = { version = "0.13", default-features = false, features = ["form", "jso
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "aa30e4780f89f57c283806a3fd3c0043a166e908", default-features = false, features = ["tui"] }
-sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "aa30e4780f89f57c283806a3fd3c0043a166e908" }
-sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "aa30e4780f89f57c283806a3fd3c0043a166e908" }
-sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "aa30e4780f89f57c283806a3fd3c0043a166e908" }
+sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87", default-features = false, features = ["tui", "clipboard-image"] }
+sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
+sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
+sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
 chacha20poly1305 = "0.10"
 
 [features]

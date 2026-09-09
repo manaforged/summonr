@@ -1,8 +1,10 @@
 use std::io::Cursor;
 
+use super::super::super::model::preview;
 use super::render;
+use sigil::prelude::ImageSource;
 
-fn png(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
+fn png(pixels: &[[u8; 4]], width: u32, height: u32) -> ImageSource {
     let raw: Vec<u8> = pixels
         .iter()
         .flat_map(|pixel| pixel.iter().copied())
@@ -13,7 +15,7 @@ fn png(pixels: &[[u8; 4]], width: u32, height: u32) -> Vec<u8> {
     dynamic
         .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
         .expect("PNG must encode");
-    bytes
+    preview(&bytes).expect("image preview")
 }
 
 #[test]
@@ -70,9 +72,24 @@ fn render_caps_a_tall_image_to_a_bounded_block() {
 }
 
 #[test]
-fn render_rejects_undecodable_bytes() {
-    assert!(render(b"not an image", 40).is_err());
-    assert!(render(b"", 40).is_err());
+fn preview_rejects_undecodable_bytes() {
+    assert!(
+        preview(b"not an image")
+            .expect_err("invalid bytes")
+            .contains("invalid image")
+    );
+    assert!(
+        preview(b"")
+            .expect_err("empty bytes")
+            .contains("invalid image")
+    );
+}
+
+#[test]
+fn preview_bounds_retained_pixels_without_changing_color_or_aspect() {
+    let source = png(&vec![[40, 80, 120, 255]; 1120 * 672], 1120, 672);
+    assert_eq!((source.width(), source.height()), (560, 336));
+    assert_eq!(source.rgba(), [40, 80, 120, 255].repeat(560 * 336));
 }
 
 #[test]

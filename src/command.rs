@@ -9,6 +9,11 @@ pub enum SlashCommand {
     Theme,
     Session,
     Resume,
+    Search,
+    History,
+    Branch,
+    Tree,
+    Retry,
     Stats,
     Effort,
     Compact,
@@ -78,9 +83,24 @@ const SPECS: &[CommandSpec] = &[
     ),
     spec("/session", "session id and log path", SlashCommand::Session),
     spec(
+        "/search",
+        "find text in this conversation",
+        SlashCommand::Search,
+    ),
+    spec(
+        "/history",
+        "find saved prompt text across sessions",
+        SlashCommand::History,
+    ),
+    spec(
         "/resume",
-        "resume the previous session here, or /resume ID|NAME",
+        "choose a session, or /resume ID|NAME",
         SlashCommand::Resume,
+    ),
+    spec(
+        "/retry",
+        "continue a failed or cancelled turn from its saved results (F5)",
+        SlashCommand::Retry,
     ),
     spec(
         "/name",
@@ -114,7 +134,13 @@ const SPECS: &[CommandSpec] = &[
     ),
     spec("/bus", "toggle bus auto-reply", SlashCommand::Bus),
     spec("/fork", "branch this session", SlashCommand::Fork),
+    spec(
+        "/branch",
+        "branch after an earlier turn",
+        SlashCommand::Branch,
+    ),
     spec("/clear", "reset conversation history", SlashCommand::Clear),
+    spec("/tree", "navigate related sessions", SlashCommand::Tree),
     spec(
         "/compact",
         "summarize earlier turns, keep the latest",

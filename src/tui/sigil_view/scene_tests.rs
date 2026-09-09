@@ -51,6 +51,7 @@ fn splash_is_one_compact_terminal_composition() {
             first_logo + crate::splash::logo().len() + 1
         );
         assert_eq!(row("model    glm-5.3"), row("summoner 0.1.0") + 1);
+        assert_eq!(row("setup    /auth · /model · /help"), row("workdir") + 1);
         assert!(row("╭ ● auto") > row("policy   strict"));
         assert!(!frame.contains("Enter Mage"), "redundant button:\n{frame}");
         assert!(
@@ -169,7 +170,7 @@ fn busy_composer_names_steer_queue_and_cancel() {
     sigil::reactive::Runtime::scope("mage-busy-composer-hints-test", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-        app.model.borrow_mut().busy_since = Some(Instant::now());
+        app.model.borrow_mut().busy_since = Some((Activity::Turn, Instant::now()));
         app.resize(80, 24);
         app.refresh();
         let tree = app.clone();
@@ -191,6 +192,53 @@ fn busy_composer_names_steer_queue_and_cancel() {
             "incorrect action remains:\n{frame}"
         );
     });
+}
+
+#[test]
+fn login_and_compaction_name_the_operation_and_queue_input() {
+    for (activity, label) in [
+        (Activity::Login, "signing in"),
+        (Activity::Compact, "compacting"),
+    ] {
+        for width in [40, 80] {
+            sigil::reactive::Runtime::scope("summoner-operation-controls", || {
+                let (cmd, mut rx) = unbounded_channel();
+                let app = App::new(info(), PathBuf::from("."), cmd);
+                app.resize(width, 16);
+                app.splash.set(false);
+                app.update(Msg::Busy(Some(activity)));
+                app.refresh();
+                let tree = app.clone();
+                let frame =
+                    sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, 16, &[])
+                        .expect("busy operation frame");
+                assert!(frame.contains("queue"), "{frame}");
+                assert!(frame.contains("esc cancel"), "{frame}");
+                assert!(frame.contains(label), "{frame}");
+                assert!(!frame.contains("steer"), "{frame}");
+                assert!(!app.status.peek().contains(" · r1"));
+                app.replace("next task".to_string());
+                app.submit();
+                assert!(
+                    matches!(rx.try_recv(), Ok(Cmd::Queue(input)) if input.text == "next task")
+                );
+                assert!(
+                    app.model
+                        .borrow()
+                        .transcript()
+                        .contains("queued for the next turn")
+                );
+                app.update(Msg::Busy(None));
+                app.refresh();
+                let tree = app.clone();
+                let idle =
+                    sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, 16, &[])
+                        .expect("idle frame");
+                assert!(idle.contains("send"), "{idle}");
+                assert!(!idle.contains("esc cancel"), "{idle}");
+            });
+        }
+    }
 }
 
 #[test]
@@ -235,7 +283,7 @@ fn chat_chrome_keeps_a_horizontal_gutter() {
     sigil::reactive::Runtime::scope("mage-chat-gutter-test", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-        app.model.borrow_mut().busy_since = Some(Instant::now());
+        app.model.borrow_mut().busy_since = Some((Activity::Turn, Instant::now()));
         app.resize(40, 12);
         app.refresh();
         let tree = app.clone();
@@ -253,7 +301,7 @@ fn chat_chrome_keeps_a_horizontal_gutter() {
             "chat content needs left padding:\n{frame}"
         );
         assert!(
-            lines[1].contains("ask anything · @file · !cmd · /help"),
+            lines[1].contains("ask anything · /auth · @file · /help"),
             "empty hint was clipped mid-label:\n{frame}"
         );
         assert!(
@@ -287,7 +335,7 @@ fn narrow_chat_keeps_the_complete_busy_status() {
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         {
             let mut model = app.model.borrow_mut();
-            model.busy_since = Some(Instant::now());
+            model.busy_since = Some((Activity::Turn, Instant::now()));
             model.rounds = 2;
         }
         app.resize(40, 12);
@@ -315,7 +363,7 @@ fn narrow_busy_status_keeps_time_ahead_of_tool_detail() {
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
         {
             let mut model = app.model.borrow_mut();
-            model.busy_since = Some(Instant::now());
+            model.busy_since = Some((Activity::Turn, Instant::now()));
             model.rounds = 3;
             model.live_tool = Some((
                 "run_command".to_string(),

@@ -7,7 +7,7 @@ use super::log::{self, Line, Log, State, Usage};
 use super::tree::{self, Snapshot};
 use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
 use crate::WorkProgress;
-use crate::provider::{Image, Message, ToolCall};
+use crate::provider::{Message, ToolCall, UserInput};
 use crate::session::Replay;
 use crate::workflow::Role;
 
@@ -203,12 +203,8 @@ impl SessionDriver {
         Ok(())
     }
 
-    pub(crate) fn start_input(
-        &mut self,
-        text: &str,
-        images: &[Image],
-    ) -> Result<Vec<String>, DriverError> {
-        if text.trim().is_empty() {
+    pub(crate) fn start_input(&mut self, input: &UserInput) -> Result<Vec<String>, DriverError> {
+        if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(DriverError::Empty);
         }
         if self.turn.is_some() {
@@ -227,13 +223,15 @@ impl SessionDriver {
         for text in &queued {
             self.append(Line::User {
                 text: text.clone(),
+                source: None,
                 images: Vec::new(),
                 start: false,
             })?;
         }
         self.append(Line::User {
-            text: text.to_string(),
-            images: images.to_vec(),
+            text: input.text.clone(),
+            source: input.source.as_ref().map(|source| source.text.clone()),
+            images: input.images.clone(),
             start: true,
         })?;
         self.turn = Some(Turn {
@@ -244,16 +242,17 @@ impl SessionDriver {
         Ok(queued)
     }
 
-    pub(crate) fn steer(&mut self, text: &str) -> Result<(), DriverError> {
-        if text.trim().is_empty() {
+    pub(crate) fn steer(&mut self, input: &UserInput) -> Result<(), DriverError> {
+        if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(DriverError::Empty);
         }
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
         self.append(Line::User {
-            text: text.to_string(),
-            images: Vec::new(),
+            text: input.text.clone(),
+            source: input.source.as_ref().map(|source| source.text.clone()),
+            images: input.images.clone(),
             start: false,
         })
     }
@@ -698,7 +697,26 @@ impl SessionDriver {
         self.append(Line::Clear)
     }
 
-    pub(crate) fn fork(&self) -> Result<PathBuf, DriverError> {
+    pub(crate) fn fork(&self, turn: Option<usize>) -> Result<PathBuf, DriverError> {
+        if self.turn.is_some() {
+            return Err(DriverError::Busy);
+        }
+        let mut lines = log::read(self.log.path())?;
+        if let Some(turn) = turn {
+            let start = lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| matches!(line, Line::User { start: true, .. }))
+                .nth(turn)
+                .map(|(index, _)| index)
+                .ok_or_else(|| DriverError::State("Selected turn no longer exists".to_string()))?;
+            let close = lines[start + 1..]
+                .iter()
+                .take_while(|line| !matches!(line, Line::User { start: true, .. }))
+                .position(|line| matches!(line, Line::Close { .. }))
+                .ok_or_else(|| DriverError::State("Selected turn has not ended".to_string()))?;
+            lines.truncate(start + close + 2);
+        }
         let home = log::home_of(self.log.path())
             .ok_or_else(|| DriverError::State("session log has no home".to_string()))?;
         let child = SessionId::new();
@@ -712,7 +730,7 @@ impl SessionDriver {
             parent: self.state.id,
             depth: 0,
         })?;
-        for line in log::read(self.log.path())? {
+        for line in lines {
             if !matches!(line, Line::Session { .. }) {
                 log.append(&line)?;
             }

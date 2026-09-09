@@ -1,10 +1,13 @@
 use std::collections::HashMap;
 use std::time::Instant;
 
+use image::load_from_memory;
+use sigil::prelude::ImageSource;
+
 use crate::prefs::{Prefs, ToolOutput};
 use crate::tools::Event;
 
-use super::super::{Info, Msg, Round, Snapshot, ToolState, last_line, tail_lines, tool_arg};
+use super::super::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
 
 #[derive(Clone, Debug)]
 pub(super) enum Entry {
@@ -18,7 +21,7 @@ pub(super) enum Entry {
         name: String,
         arg: String,
         state: ToolState,
-        tail: String,
+        output: String,
     },
     Verify {
         command: String,
@@ -33,7 +36,7 @@ pub(super) enum Entry {
     Error(String),
     Chart(Vec<Round>),
     Image {
-        bytes: Vec<u8>,
+        source: ImageSource,
         label: String,
     },
 }
@@ -42,12 +45,14 @@ pub(super) enum Entry {
 #[derive(Clone)]
 pub(super) struct View {
     pub(super) path: String,
+    pub(super) file: std::path::PathBuf,
     pub(super) rope: sigil_ide_core::buffer::Rope,
     pub(super) added: Vec<(usize, usize)>,
 }
 
 #[derive(Clone)]
 pub(super) struct Model {
+    pub(super) session: String,
     pub(super) entries: Vec<Entry>,
     pub(super) ledger: Vec<String>,
     pub(super) files: Vec<String>,
@@ -64,7 +69,7 @@ pub(super) struct Model {
     pub(super) cached_tokens: u64,
     pub(super) rounds: usize,
     pub(super) spinner: usize,
-    pub(super) busy_since: Option<Instant>,
+    pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) live_tool: Option<(String, String)>,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
@@ -74,8 +79,18 @@ pub(super) struct Model {
 }
 
 impl Model {
+    pub(super) fn is_model(&self, choice: &str) -> bool {
+        match choice.split_once('\t') {
+            Some((endpoint, name)) => {
+                endpoint == self.snapshot.endpoint && name == self.snapshot.model
+            }
+            None => choice == self.model,
+        }
+    }
+
     pub(super) fn new(info: &Info) -> Self {
         Self {
+            session: info.session.clone(),
             entries: Vec::new(),
             ledger: Vec::new(),
             files: Vec::new(),
@@ -111,6 +126,16 @@ impl Model {
 
     pub(super) fn apply(&mut self, msg: Msg) -> bool {
         match msg {
+            Msg::Session(id) => self.session = id,
+            Msg::User(text) => self.entries.push(Entry::User(text)),
+            Msg::Image(image) => self.entries.push(match preview(&image.bytes) {
+                Ok(source) => Entry::Image {
+                    label: format!("Attached image · {}", image.media_type),
+                    source,
+                },
+                Err(error) => Entry::Error(format!("cannot show attached image: {error}")),
+            }),
+            Msg::Receipt(text) => self.receipt(&text),
             Msg::Bye => return false,
             Msg::Thinking(_) if !self.prefs.reasoning => {
                 self.live_tool = Some(("thinking".to_string(), String::new()));
@@ -133,11 +158,25 @@ impl Model {
             Msg::Event(event) => self.apply_event(event),
             Msg::Busy(busy) => self.set_busy(busy),
             Msg::Failed(text) => {
-                self.set_busy(false);
+                self.set_busy(None);
                 self.entries.push(Entry::Error(text));
             }
+            Msg::Restored(_) => {}
             Msg::System(text) => self.entries.push(Entry::System(text)),
             Msg::Cleared => self.clear(),
+            Msg::Reset => {
+                self.entries.clear();
+                self.tools.clear();
+                self.ledger.clear();
+                self.recent.clear();
+                self.usage.clear();
+                self.prompt_tokens = 0;
+                self.completion_tokens = 0;
+                self.reasoning_tokens = 0;
+                self.cached_tokens = 0;
+                self.rounds = 0;
+                self.live_tool = None;
+            }
             Msg::Mode(plan) => self.snapshot.plan = plan,
             Msg::OpenSettings => {}
             Msg::Settings(snapshot) => self.snapshot = snapshot,
@@ -145,7 +184,11 @@ impl Model {
                 self.model = model;
                 self.relay = relay;
             }
-            Msg::Models { .. } | Msg::ModelsFailed(_) | Msg::Workflow { .. } => {}
+            Msg::Models { .. }
+            | Msg::ModelsFailed(_)
+            | Msg::Sessions(_)
+            | Msg::Prompts { .. }
+            | Msg::Workflow { .. } => {}
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
             Msg::Files(files) => self.files = files,
@@ -153,20 +196,45 @@ impl Model {
             Msg::Trees(trees) => self.trees = trees,
             Msg::Changed(_) => {}
             Msg::Edited(paths) => self.recent = paths,
-            Msg::View { path, rope, added } => self.view = Some(View { path, rope, added }),
+            Msg::View {
+                path,
+                file,
+                rope,
+                added,
+            } => {
+                self.view = Some(View {
+                    path,
+                    file,
+                    rope,
+                    added,
+                })
+            }
+            Msg::Saved { .. } => {}
             Msg::Patch { path, text } => self.patch = Some((path, text)),
             Msg::Resume(_) => {}
         }
         true
     }
 
-    fn set_busy(&mut self, busy: bool) {
-        self.busy_since = busy.then(Instant::now);
-        if busy {
+    fn set_busy(&mut self, activity: Option<Activity>) {
+        self.busy_since = activity.map(|activity| (activity, Instant::now()));
+        if activity.is_some() {
             self.rounds = 0;
             self.spinner = 0;
         } else {
             self.live_tool = None;
+        }
+    }
+
+    fn receipt(&mut self, text: &str) {
+        let receipt = match self.entries.last() {
+            Some(Entry::Assistant { text: body, .. }) => {
+                text.strip_prefix(body).map(str::trim_start).unwrap_or(text)
+            }
+            _ => text,
+        };
+        if !receipt.is_empty() {
+            self.entries.push(Entry::System(receipt.to_string()));
         }
     }
 
@@ -190,7 +258,7 @@ impl Model {
                 output,
                 ..
             } => {
-                self.finish_tool(&id, success, &output);
+                self.finish_tool(&id, success, output);
             }
             Event::Assistant { text } => self.finish_assistant(text),
             Event::Aborted { reason } => self.entries.push(Entry::Aborted(reason)),
@@ -251,9 +319,11 @@ impl Model {
                 output,
                 ..
             } => {
-                format!("child {tag} ✗ {}", last_line(&output))
+                format!("child {tag} ✗ {}", ToolOutput::Compact.text(&output))
             }
-            Event::Assistant { text } => format!("child {tag}: {}", last_line(&text)),
+            Event::Assistant { text } => {
+                format!("child {tag}: {}", ToolOutput::Compact.text(&text))
+            }
             Event::Note { text } | Event::Aborted { reason: text } => {
                 format!("child {tag}: {text}")
             }
@@ -272,25 +342,25 @@ impl Model {
             name: name.clone(),
             arg: arg.clone(),
             state: ToolState::Running,
-            tail: String::new(),
+            output: String::new(),
         });
         self.live_tool = Some((name, arg));
     }
 
-    fn finish_tool(&mut self, id: &str, success: bool, output: &str) {
+    fn finish_tool(&mut self, id: &str, success: bool, output: String) {
         if let Some(index) = self.tools.remove(id)
-            && let Some(Entry::Tool { state, tail, .. }) = self.entries.get_mut(index)
+            && let Some(Entry::Tool {
+                state,
+                output: stored,
+                ..
+            }) = self.entries.get_mut(index)
         {
             *state = if success {
                 ToolState::Ok
             } else {
                 ToolState::Failed
             };
-            *tail = if self.prefs.tools == ToolOutput::Full {
-                tail_lines(output, 12)
-            } else {
-                last_line(output)
-            };
+            *stored = output;
         }
         self.live_tool = None;
     }
@@ -351,7 +421,7 @@ impl Model {
     }
 }
 
-fn entry_markdown(entry: &Entry) -> String {
+pub(super) fn entry_markdown(entry: &Entry) -> String {
     match entry {
         Entry::User(text) => format!("### You\n{text}"),
         Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
@@ -360,8 +430,8 @@ fn entry_markdown(entry: &Entry) -> String {
             name,
             arg,
             state,
-            tail,
-        } => tool_markdown(name, arg, state, tail),
+            output,
+        } => tool_markdown(name, arg, state, output),
         Entry::Verify { command, passed } => {
             format!("{} **verify** `{command}`", if *passed { "✓" } else { "✗" })
         }
@@ -376,15 +446,24 @@ fn entry_markdown(entry: &Entry) -> String {
     }
 }
 
-fn tool_markdown(name: &str, arg: &str, state: &ToolState, tail: &str) -> String {
+pub(super) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {
+    let image = load_from_memory(bytes).map_err(|error| format!("invalid image: {error}"))?;
+    let rgba = image
+        .thumbnail(image.width().min(560), image.height().min(336))
+        .into_rgba8();
+    ImageSource::from_rgba8(rgba.width(), rgba.height(), rgba.into_raw())
+        .ok_or_else(|| "image has no pixels".to_string())
+}
+
+fn tool_markdown(name: &str, arg: &str, state: &ToolState, output: &str) -> String {
     let mark = match state {
         ToolState::Running => "⏳",
         ToolState::Ok => "✓",
         ToolState::Failed => "✗",
     };
-    if tail.is_empty() {
+    if output.is_empty() {
         format!("{mark} **{name}** `{arg}`")
     } else {
-        format!("{mark} **{name}** `{arg}`\n```text\n{tail}\n```")
+        format!("{mark} **{name}** `{arg}`\n```text\n{output}\n```")
     }
 }

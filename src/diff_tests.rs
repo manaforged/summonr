@@ -160,6 +160,7 @@ fn turns_collect_each_turns_edited_paths_from_the_journal() {
     };
     let user = |text: &str, start: bool| Line::User {
         text: text.to_string(),
+        source: None,
         images: Vec::new(),
         start,
     };

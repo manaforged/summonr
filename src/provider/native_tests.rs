@@ -91,6 +91,7 @@ async fn conversation(
         agent.set_effort(Some(crate::provider::Effort::High));
         let input = UserInput {
             text: "inspect image".into(),
+            source: None,
             images: vec![Image::encode(
                 "image/png",
                 &STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1S0AAAAASUVORK5CYII=")?,

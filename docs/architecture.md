@@ -1,12 +1,17 @@
 # Work
 
-This is the Mage harness. Summoner is the product name. `summon` is
-the command — `summon MODEL` starts it with a specific model, and a
-bare `summoner` uses your default. The connector owns HTTP and SSE (`src/provider.rs`) and
-credentials (`src/provider/auth.rs`: API key or OAuth token). CoT is
-one field (`reasoning_content`): open-weight `<think>` tags hoist
-into it; frontier hosts that never send it omit it on the next POST.
-The provider is any HTTP `chat/completions` host.
+Summoner is a local coding harness. `summon NAME` selects a configured
+endpoint; `summoner` uses your default. The connector owns HTTP and SSE
+(`src/provider.rs`) and credentials (`src/provider/auth.rs`). It supports
+OpenAI-compatible `chat/completions`, Anthropic Messages, and Gemini.
+The native adapters live in `src/provider/native.rs`.
+
+Reasoning text uses `reasoning_content`. Provider continuation data stays
+on the tool call in the session log. Anthropic tool turns preserve their
+ordered content blocks, including signed thinking and redacted thinking.
+Gemini tool calls retain their thought signatures. Native continuation data
+is reused only for the matching wire and model and is omitted from
+Completions requests. User images are sent through all three wires.
 
 Work is how that harness holds a coding job so the model does not
 have to (`src/durable/work.rs`).
@@ -30,20 +35,20 @@ the tools. Summoner re-reads the rest.
 
 ## Why that helps an agent run
 
-A model given a twelve-step plan in one prompt stops looking at step
-7. Summoner keeps the plan. Each turn is "do this item" plus whatever
-check you put in the plan as ``Run `command` ``.
+Summoner keeps the plan between turns. Each turn receives the current item
+and any check you put in the plan as ``Run `command` ``.
 
-A model asked "are we done?" will say yes. Summoner does not ask it
-that for the gate. `.mage/check.toml` is a process. Exit 0 or not.
+Commands in `.mage/check.toml` determine whether checks pass, using their
+exit status.
 In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
 
 Crash the process. Run the same command. Resume reads the session
 log back into the conversation and `work.json` back into Work, then
 aborts the turn the dead process left open (`src/durable/driver.rs`).
-If the plan text, workspace, or gate list changed, Summoner refuses
-to guess.
+Resume checks the saved plan and workspace against the requested job.
+If the gate list changes during a turn, Summoner selects the current checks
+before verification.
 
 That is the agentic loop this repo is built around: you name the job,
 the harness keeps it, the model edits, commands prove it, two files
@@ -56,7 +61,7 @@ are the resume program.
 | Work, Plan, stages, `work.json` | `src/durable/work.rs` |
 | Session driver: the one seam `Loop` talks to | `src/durable/driver.rs` |
 | Conversation log, `session.jsonl` | `src/durable/log.rs` |
-| Changed files (git read-only, `(size, mtime)` fallback) | `src/durable/tree.rs` |
+| Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
 | Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
 | Standing goal + judge | `src/goal.rs` |
@@ -65,8 +70,9 @@ are the resume program.
 
 A session is `~/.mage/sessions/<id>/session.jsonl` (append-only
 messages) plus `work.json` (the job, rewritten atomically after every
-transition). Git is read for the changed-file manifest and never
-written; a non-git workspace gets a `(size, mtime)` walk instead.
+transition). The changed-file manifest reads Git without writing it. Outside
+Git, it walks the directory. Both paths fingerprint file content, permissions,
+and symlink targets in addition to recording size and modification time.
 
 On disk you still see Mage names: `~/.mage/sessions/`, `.mage/jobs/`,
 `MAGE_*`. Same harness.

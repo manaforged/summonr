@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+- Native Anthropic and Gemini requests include user images. Gemini tool
+  calls retain thought signatures. Anthropic tool turns retain ordered
+  content, including signed and redacted thinking, across streamed responses
+  and session replay. Continuation data stays scoped to its wire and model.
+- Repository policy intersects user allow and write rules. Children inherit
+  both sets of restrictions.
+- Workflow changes resolve every seat before activation. A failed seat
+  leaves the previous workflow and session log unchanged.
+- Experimental Windows command execution uses PowerShell, AppContainer,
+  and Job Objects. Cancellation stops descendants and removes temporary
+  workspace permissions. Git for Windows and user-installed toolchains
+  remain blocked in the default sandbox.
+- Linux command cancellation now kills the process group, including
+  descendants that outlive their parent command.
+- Language-server file URIs encode Windows paths and special characters.
+- New session IDs preserve creation order within a process. Background
+  verification uses the latest completed attempt of a repeated command,
+  while unfinished attempts still prevent completion.
 - The tool schema sent every round is smaller. Descriptions are one or
   two sentences. `diagnostics` and `definition` appear only when a
   language server for the workspace is on PATH or configured; `skill`

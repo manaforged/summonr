@@ -89,6 +89,7 @@ async fn child_tools_rebuild_the_parent_sandbox_for_the_child_workspace() -> Res
     let listener = std::net::TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
     let write = ToolCall {
+        continuation: None,
         id: "write".to_string(),
         kind: ToolKind::Function,
         function: crate::provider::ToolFunction {
@@ -101,6 +102,7 @@ async fn child_tools_rebuild_the_parent_sandbox_for_the_child_workspace() -> Res
     };
     let result = child.execute_outcome(&write).await?;
     let network = ToolCall {
+continuation: None,
         id: "network".to_string(),
         kind: ToolKind::Function,
         function: crate::provider::ToolFunction {
@@ -132,8 +134,22 @@ async fn foreground_commands_kill_successful_and_failed_descendants() -> Result<
     for exit in [0, 7] {
         let workspace = tempfile::tempdir()?;
         let tools = ToolRegistry::new(workspace.path())?;
-        let command = format!("(sleep 1; printf late > late.txt) & exit {exit}");
+        let command = if cfg!(windows) {
+            let arguments = crate::shell::arguments(
+                "[IO.File]::WriteAllText('ready.txt', 'ready'); Start-Sleep -Seconds 2; [IO.File]::WriteAllText('late.txt', 'late')",
+                workspace.path(),
+            );
+            format!(
+                "$child = Start-Process (Join-Path $PSHOME 'powershell.exe') -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -PassThru; $deadline = [DateTime]::UtcNow.AddSeconds(5); while (!(Test-Path ready.txt)) {{ if ($child.HasExited -or [DateTime]::UtcNow -gt $deadline) {{ exit 99 }}; Start-Sleep -Milliseconds 20 }}; exit {exit}",
+                arguments.last().expect("encoded command")
+            )
+        } else {
+            format!(
+                "(printf ready > ready.txt; sleep 2; printf late > late.txt) & while [ ! -f ready.txt ]; do sleep 0.02; done; exit {exit}"
+            )
+        };
         let call = ToolCall {
+            continuation: None,
             id: format!("exit-{exit}"),
             kind: ToolKind::Function,
             function: crate::provider::ToolFunction {
@@ -144,7 +160,11 @@ async fn foreground_commands_kill_successful_and_failed_descendants() -> Result<
 
         let result = tools.execute_outcome(&call).await?;
         assert_eq!(result.success, exit == 0, "{}", result.text);
-        tokio::time::sleep(std::time::Duration::from_millis(1_200)).await;
+        assert_eq!(
+            std::fs::read_to_string(workspace.path().join("ready.txt"))?,
+            "ready"
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         assert!(!workspace.path().join("late.txt").exists());
     }
     Ok(())
@@ -158,6 +178,7 @@ async fn stopping_session_jobs_does_not_stop_another_session() -> Result<()> {
     first.set_session("first");
     second.set_session("second");
     let start = |id: &str| ToolCall {
+        continuation: None,
         id: id.to_string(),
         kind: ToolKind::Function,
         function: crate::provider::ToolFunction {

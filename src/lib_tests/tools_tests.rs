@@ -1,3 +1,8 @@
+#[cfg(unix)]
+use std::os::unix::fs::symlink;
+#[cfg(windows)]
+use std::os::windows::fs::symlink_file as symlink;
+
 use super::*;
 
 #[test]
@@ -58,19 +63,25 @@ async fn plan_commands_can_inspect_but_cannot_change_the_workspace() -> Result<(
     let read = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"cat note.txt >/dev/null && printf inspected"}"#,
+            &command(
+                "cat note.txt >/dev/null && printf inspected",
+                "Get-Content -LiteralPath note.txt -ErrorAction Stop | Out-Null; [Console]::Write('inspected')",
+            ),
         ))
         .await?;
-    assert!(read.contains("inspected"), "{read}");
+    assert!(read.starts_with("exit 0"), "{read}");
+    assert!(read.ends_with("inspected"), "{read}");
 
     let write = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"printf changed > note.txt"}"#,
+            &command(
+                "printf changed > note.txt",
+                "[System.IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'note.txt'), 'changed')",
+            ),
         ))
         .await?;
     assert!(write.contains("exit 1"), "{write}");
-    assert!(write.contains("Operation not permitted"), "{write}");
     assert_eq!(
         std::fs::read_to_string(workspace.join("note.txt"))?,
         "hello\nworld"
@@ -93,7 +104,10 @@ async fn contained_commands_can_write_only_inside_the_workspace() -> Result<()> 
     let written = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"printf changed > note.txt"}"#,
+            &command(
+                "printf changed > note.txt",
+                "[System.IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'note.txt'), 'changed')",
+            ),
         ))
         .await?;
     assert!(written.starts_with("exit 0"), "{written}");
@@ -120,7 +134,15 @@ async fn plan_mode_ignores_the_old_write_hint_and_stays_read_only() -> Result<()
     let output = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"printf changed > note.txt","write":true}"#,
+            &serde_json::json!({
+                "command": if cfg!(windows) {
+                    "[System.IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'note.txt'), 'changed')"
+                } else {
+                    "printf changed > note.txt"
+                },
+                "write": true,
+            })
+            .to_string(),
         ))
         .await?;
     assert!(!output.starts_with("exit 0"), "{output}");
@@ -717,13 +739,22 @@ async fn run_command_uses_the_last_pipeline_status() -> Result<()> {
     let stopped = tools
         .execute_outcome(&call(
             "run_command",
-            r#"{"command":"yes | head -n 1 >/dev/null && echo after"}"#,
+            &command(
+                "yes | head -n 1 >/dev/null && echo after",
+                "'input' | Select-Object -First 1 | Out-Null; [Console]::Write('after')",
+            ),
         ))
         .await?;
     assert!(stopped.success);
     assert!(stopped.text.contains("after"));
     let failed = tools
-        .execute_outcome(&call("run_command", r#"{"command":"true | false"}"#))
+        .execute_outcome(&call(
+            "run_command",
+            &command(
+                "true | false",
+                "'input' | ForEach-Object { throw 'pipeline failed' }",
+            ),
+        ))
         .await?;
     assert!(!failed.success);
     assert!(failed.text.contains("exit 1"));
@@ -737,7 +768,13 @@ async fn run_command_sees_the_seat_env() -> Result<()> {
     let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
     tools.set_env([("MAGE_SEAT_VAR".to_string(), "clean-toolchain".to_string())]);
     let out = tools
-        .execute(&call("run_command", r#"{"command":"echo $MAGE_SEAT_VAR"}"#))
+        .execute(&call(
+            "run_command",
+            &command(
+                "echo $MAGE_SEAT_VAR",
+                "[Console]::Write($env:MAGE_SEAT_VAR)",
+            ),
+        ))
         .await?;
     assert!(out.contains("clean-toolchain"));
     std::fs::remove_dir_all(workspace)?;
@@ -753,17 +790,25 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
     };
     let mut tools = crate::tools::ToolRegistry::new(&workspace)?;
     tools.enable_sandbox(false)?;
+    #[cfg(unix)]
     let outside = outside_fixture(&workspace, "foreground");
+    #[cfg(unix)]
     let outside_background = outside_fixture(&workspace, "background");
+    #[cfg(windows)]
+    let outside_dir = tempfile::tempdir()?;
+    #[cfg(windows)]
+    let outside = outside_dir.path().join("foreground.txt");
+    #[cfg(windows)]
+    let outside_background = outside_dir.path().join("background.txt");
     assert!(!outside.exists());
     assert!(!outside_background.exists());
 
     tools
         .execute(&call(
             "run_command",
-            &format!(
-                r#"{{"command":"printf inside > {}"}}"#,
-                shell_arg(std::path::Path::new("inside.txt"))
+            &command(
+                "printf inside > inside.txt",
+                "[System.IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'inside.txt'), 'inside')",
             ),
         ))
         .await?;
@@ -775,7 +820,13 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
     let blocked = tools
         .execute(&call(
             "run_command",
-            &format!(r#"{{"command":"touch {}"}}"#, shell_arg(&outside)),
+            &command(
+                &format!("touch {}", shell_arg(&outside)),
+                &format!(
+                    "[System.IO.File]::WriteAllText('{}', 'outside')",
+                    outside.to_string_lossy().replace('\'', "''")
+                ),
+            ),
         ))
         .await?;
     assert!(blocked.starts_with("exit "), "{blocked}");
@@ -785,10 +836,14 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
     let started = tools
         .execute(&call(
             "run_command",
-            &format!(
-                r#"{{"command":"printf background > {}","background":true}}"#,
-                shell_arg(std::path::Path::new("background.txt"))
-            ),
+            &serde_json::json!({
+                "command": if cfg!(windows) {
+                    "[System.IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'background.txt'), 'background')"
+                } else {
+                    "printf background > background.txt"
+                },
+                "background": true,
+            }).to_string(),
         ))
         .await?;
     let id = started
@@ -796,14 +851,14 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
         .find_map(|line| line.strip_prefix("started job "))
         .ok_or_else(|| Error::Tool("missing sandbox job id".to_string()))?;
     let poll = format!(r#"{{"job":"{id}"}}"#);
-    let mut state = String::new();
-    for _ in 0..20 {
-        state = tools.execute(&call("run_command", &poll)).await?;
+    for _ in 0..100 {
+        let state = crate::jobs::status(&workspace, id)?.text;
         if state.contains("state: exit") {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    let state = tools.execute(&call("run_command", &poll)).await?;
     assert!(state.contains("state: exit 0"), "{state}");
     assert_eq!(
         std::fs::read_to_string(workspace.join("background.txt"))?,
@@ -813,10 +868,14 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
     let started = tools
         .execute(&call(
             "run_command",
-            &format!(
-                r#"{{"command":"touch {}","background":true}}"#,
-                shell_arg(&outside_background)
-            ),
+            &serde_json::json!({
+                "command": if cfg!(windows) {
+                    format!("[System.IO.File]::WriteAllText('{}', 'outside')", outside_background.to_string_lossy().replace('\'', "''"))
+                } else {
+                    format!("touch {}", shell_arg(&outside_background))
+                },
+                "background": true,
+            }).to_string(),
         ))
         .await?;
     let id = started
@@ -824,14 +883,14 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
         .find_map(|line| line.strip_prefix("started job "))
         .ok_or_else(|| Error::Tool("missing sandbox background job id".to_string()))?;
     let poll = format!(r#"{{"job":"{id}"}}"#);
-    let mut state = String::new();
-    for _ in 0..20 {
-        state = tools.execute(&call("run_command", &poll)).await?;
+    for _ in 0..100 {
+        let state = crate::jobs::status(&workspace, id)?.text;
         if state.contains("state: exit") {
             break;
         }
-        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
+    let state = tools.execute(&call("run_command", &poll)).await?;
     assert!(state.contains("state: exit"), "{state}");
     assert!(!state.contains("state: exit 0"), "{state}");
     assert!(!outside_background.exists());
@@ -843,6 +902,7 @@ async fn sandbox_contains_foreground_and_background_writes() -> Result<()> {
 #[tokio::test]
 async fn sandbox_no_net_blocks_a_real_connection() -> Result<()> {
     let workspace = test_workspace()?;
+    #[cfg(unix)]
     let Some(allowed) = sandbox_for_test_with(&workspace, false)? else {
         std::fs::remove_dir_all(workspace)?;
         return Ok(());
@@ -853,12 +913,30 @@ async fn sandbox_no_net_blocks_a_real_connection() -> Result<()> {
     };
     let listener = TcpListener::bind("127.0.0.1:0")?;
     let port = listener.local_addr()?.port();
+    #[cfg(unix)]
     let script = format!(
         "import socket; socket.create_connection(('127.0.0.1', {port}), timeout=2).close()"
     );
 
+    #[cfg(unix)]
     let allowed_output = allowed
         .command("/usr/bin/env", &["python3", "-c", &script], &workspace)
+        .output()
+        .await?;
+    #[cfg(windows)]
+    let shell = crate::shell::program()?;
+    #[cfg(windows)]
+    let args = crate::shell::arguments(
+        &format!(
+            "$socket = [System.Net.Sockets.TcpClient]::new(); $pending = $socket.BeginConnect('127.0.0.1', {port}, $null, $null); if (!$pending.AsyncWaitHandle.WaitOne(2000)) {{ exit 1 }}; $socket.EndConnect($pending); $socket.Close()"
+        ),
+        &workspace,
+    );
+    #[cfg(windows)]
+    let allowed_output = tokio::process::Command::new(&shell)
+        .args(&args)
+        .current_dir(&workspace)
+        .kill_on_drop(true)
         .output()
         .await?;
     assert!(
@@ -866,14 +944,25 @@ async fn sandbox_no_net_blocks_a_real_connection() -> Result<()> {
         "network control failed: {}",
         String::from_utf8_lossy(&allowed_output.stderr)
     );
+    listener.set_nonblocking(true)?;
     let _ = listener.accept()?;
 
+    #[cfg(unix)]
     let denied_output = denied
         .command("/usr/bin/env", &["python3", "-c", &script], &workspace)
         .output()
         .await?;
+    #[cfg(windows)]
+    let denied_output = denied
+        .command(
+            &shell,
+            &args.iter().map(String::as_str).collect::<Vec<_>>(),
+            &workspace,
+        )
+        .kill_on_drop(true)
+        .output()
+        .await?;
     assert!(!denied_output.status.success());
-    listener.set_nonblocking(true)?;
     let error = listener
         .accept()
         .err()
@@ -890,13 +979,13 @@ async fn repeated_command_runs_again() -> Result<()> {
     let first = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"printf x >> count.txt; wc -c < count.txt"}"#,
+            &command("printf x >> count.txt; wc -c < count.txt", "[System.IO.File]::AppendAllText((Join-Path $PWD.ProviderPath 'count.txt'), 'x'); [Console]::Write((Get-Item -LiteralPath count.txt).Length)"),
         ))
         .await?;
     let second = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"printf x >> count.txt; wc -c < count.txt"}"#,
+            &command("printf x >> count.txt; wc -c < count.txt", "[System.IO.File]::AppendAllText((Join-Path $PWD.ProviderPath 'count.txt'), 'x'); [Console]::Write((Get-Item -LiteralPath count.txt).Length)"),
         ))
         .await?;
     assert!(first.ends_with('1'), "{first}");
@@ -1520,6 +1609,7 @@ async fn nonzero_command_emits_a_failed_tool_result() -> Result<()> {
                 match self.0.fetch_add(1, Ordering::SeqCst) {
                     0 => Ok(AssistantMessage {
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: "exit".to_string(),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -1589,7 +1679,10 @@ async fn run_command_streams_large_output_without_workspace_state() -> Result<()
     let out = tools
         .execute(&call(
             "run_command",
-            r#"{"command":"awk 'BEGIN{for(i=0;i<8000;i++) print \"line-\" i}'"}"#,
+            &command(
+                "awk 'BEGIN{for(i=0;i<8000;i++) print \"line-\" i}'",
+                "0..7999 | ForEach-Object { [Console]::WriteLine('line-' + $_) }",
+            ),
         ))
         .await?;
     assert!(out.contains("exit 0"));
@@ -1898,7 +1991,7 @@ async fn grep_skips_symlinks_and_searches_an_ignored_path_on_request() -> Result
     }
     let outside = tempfile::tempdir()?;
     std::fs::write(outside.path().join("secret.txt"), "needle outside\n")?;
-    std::os::unix::fs::symlink(outside.path().join("secret.txt"), workspace.join("leak"))?;
+    symlink(outside.path().join("secret.txt"), workspace.join("leak"))?;
     std::fs::write(workspace.join(".gitignore"), "vendor/\n")?;
     std::fs::create_dir_all(workspace.join("vendor"))?;
     std::fs::write(workspace.join("vendor/lib.py"), "needle vendored\n")?;
@@ -1968,7 +2061,13 @@ async fn a_writing_command_counts_as_a_mutation_and_a_reading_one_does_not() -> 
         .await?;
     assert!(!read.mutated);
     let write = tools
-        .execute_outcome(&call("run_command", r#"{"command":"touch made.txt"}"#))
+        .execute_outcome(&call(
+            "run_command",
+            &command(
+                "touch made.txt",
+                "New-Item -ItemType File -Path made.txt -ErrorAction Stop | Out-Null",
+            ),
+        ))
         .await?;
     assert!(write.mutated);
     let git = tools

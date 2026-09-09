@@ -7,7 +7,7 @@ use super::log::{self, Line, Log, State, Usage};
 use super::tree::{self, Snapshot};
 use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
 use crate::WorkProgress;
-use crate::provider::{Image, Message, ToolCall, ToolFunction, ToolKind};
+use crate::provider::{Image, Message, ToolCall};
 use crate::session::Replay;
 use crate::workflow::Role;
 
@@ -377,7 +377,7 @@ impl SessionDriver {
         text: &str,
         reasoning: &str,
         usage: Usage,
-        tools: &[(&str, &str, &str)],
+        tools: &[ToolCall],
     ) -> Result<Vec<Call>, DriverError> {
         let round = self.end_round(attempt)?;
         if round.purpose != Purpose::Agent {
@@ -385,23 +385,12 @@ impl SessionDriver {
         }
         let planned: Vec<(Call, String)> = tools
             .iter()
-            .map(|(_, _, id)| (Call(self.take()), (*id).to_string()))
-            .collect();
-        let tool_calls = tools
-            .iter()
-            .map(|(name, arguments, id)| ToolCall {
-                id: (*id).to_string(),
-                kind: ToolKind::Function,
-                function: ToolFunction {
-                    name: (*name).to_string(),
-                    arguments: (*arguments).to_string(),
-                },
-            })
+            .map(|call| (Call(self.take()), call.id.clone()))
             .collect();
         self.append(Line::Assistant {
             text: text.to_string(),
             reasoning: reasoning.to_string(),
-            tool_calls,
+            tool_calls: tools.to_vec(),
             usage,
             model: round.model,
         })?;

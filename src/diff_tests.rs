@@ -143,6 +143,7 @@ fn turns_collect_each_turns_edited_paths_from_the_journal() {
     use crate::durable::log::{Line, Usage};
     use crate::provider::{ToolCall, ToolFunction, ToolKind};
     let call = |name: &str, path: &str| ToolCall {
+        continuation: None,
         id: "1".to_string(),
         kind: ToolKind::default(),
         function: ToolFunction {

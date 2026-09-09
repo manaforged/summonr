@@ -5,7 +5,7 @@ use crate::durable::driver::{DriverError, Exposure, SessionDriver, active_at, wo
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line, Usage};
 use crate::durable::work::{Decision, Policy, Stage, Work, WorkPhase};
-use crate::provider::Role;
+use crate::provider::{Role, ToolCall, ToolFunction, ToolKind};
 
 fn home() -> (tempfile::TempDir, PathBuf) {
     let home = tempfile::tempdir().expect("tempdir");
@@ -258,8 +258,24 @@ fn resume_aborts_the_open_turn_and_answers_its_tool_calls() {
             "",
             usage(1, 1, 1),
             &[
-                ("read_file", r#"{"path":"a"}"#, "c1"),
-                ("read_file", r#"{"path":"b"}"#, "c2"),
+                ToolCall {
+                    continuation: None,
+                    id: "c1".into(),
+                    kind: ToolKind::Function,
+                    function: ToolFunction {
+                        name: "read_file".into(),
+                        arguments: r#"{"path":"a"}"#.into(),
+                    },
+                },
+                ToolCall {
+                    continuation: None,
+                    id: "c2".into(),
+                    kind: ToolKind::Function,
+                    function: ToolFunction {
+                        name: "read_file".into(),
+                        arguments: r#"{"path":"b"}"#.into(),
+                    },
+                },
             ],
         )
         .expect("plan tools");

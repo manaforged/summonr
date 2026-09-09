@@ -1,4 +1,5 @@
 use super::*;
+use serde_json::json;
 
 #[tokio::test]
 async fn max_rounds_keeps_history() -> Result<()> {
@@ -15,6 +16,7 @@ async fn max_rounds_keeps_history() -> Result<()> {
                 Ok(AssistantMessage {
                     content: None,
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "c".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -53,6 +55,7 @@ async fn default_rounds_continue_past_the_old_limit() -> Result<()> {
                 if round < 65 {
                     return Ok(AssistantMessage {
                         tool_calls: vec![ToolCall {
+                            continuation: None,
                             id: format!("c{round}"),
                             kind: ToolKind::Function,
                             function: ToolFunction {
@@ -160,6 +163,7 @@ async fn plan_inspection_can_recover_after_eight_calls() -> Result<()> {
                 Ok(AssistantMessage {
                     content: None,
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: format!("call-{round}"),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -237,7 +241,7 @@ async fn accepted_plan_executes_inside_the_selected_work() -> Result<()> {
         "test",
     )?
     .with_plan()
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
 
     drop(loop_.turn("plan the change").await?);
     loop_.accept_plan()?;
@@ -314,7 +318,7 @@ impl Provider for WriteThenText {
 async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
     let workspace = test_workspace()?;
     std::fs::create_dir_all(workspace.join(".mage"))?;
-    std::fs::write(workspace.join(".mage/check.toml"), "check = \"false\"")?;
+    std::fs::write(workspace.join(".mage/check.toml"), "check = \"exit 1\"")?;
     let mut loop_ = Loop::with_session(
         WriteThenText {
             rounds: AtomicUsize::new(0),
@@ -323,7 +327,7 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["false".to_string()]);
+    .with_verify(vec!["exit 1".to_string()]);
     let journal = loop_.session_path().to_path_buf();
     let mut closed_before_assistant = false;
     let turn = loop_
@@ -336,10 +340,10 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         .await?;
     assert!(closed_before_assistant);
     let verify = turn.checks.last().expect("mutating turn must verify");
-    assert_eq!(verify.command, "false");
+    assert_eq!(verify.command, "exit 1");
     assert!(!verify.passed);
     assert!(turn.events.iter().any(
-        |event| matches!(event, Event::Verify { command, passed: false } if command == "false")
+        |event| matches!(event, Event::Verify { command, passed: false } if command == "exit 1")
     ));
     assert!(turn.text.contains("done"));
     let receipt = turn_receipt(&turn);
@@ -359,7 +363,7 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
         .lines()
         .find(|line| line.contains(r#""kind":"receipt""#))
         .expect("verdict must record its visible receipt");
-    assert!(receipt.contains("`false` failed"), "{receipt}");
+    assert!(receipt.contains("`exit 1` failed"), "{receipt}");
     assert_eq!(
         log.lines()
             .filter(|line| line.contains(r#""kind":"close""#))
@@ -385,7 +389,7 @@ async fn ordinary_turn_completes_durable_work() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
 
     let turn = loop_.turn("write the plan").await?;
 
@@ -417,7 +421,10 @@ async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()>
                     AssistantMessage {
                         tool_calls: vec![call(
                             "run_command",
-                            r#"{"command":"printf shell > shell.txt"}"#,
+                            &command(
+                                "printf shell > shell.txt",
+                                "[IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'shell.txt'), 'shell')",
+                            ),
                         )],
                         ..AssistantMessage::default()
                     }
@@ -442,14 +449,18 @@ async fn shell_writes_are_verified_and_failed_work_queues_repair() -> Result<()>
         &workspace,
         "test",
     )?
-    .with_verify(vec!["false".to_string()]);
+    .with_verify(vec!["exit 1".to_string()]);
 
     let turn = loop_.turn("write through the shell").await?;
 
     assert!(
         turn.events
             .iter()
-            .any(|event| { matches!(event, Event::ToolResult { mutated: false, .. }) })
+            .any(|event| { matches!(event, Event::ToolResult { success: true, .. }) })
+    );
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("shell.txt"))?,
+        "shell"
     );
     assert!(turn.checks.iter().any(|check| !check.passed));
     assert!(turn_receipt(&turn).text.contains("shell.txt"));
@@ -576,7 +587,10 @@ async fn restricted_shells_fail_closed_without_a_sandbox() -> Result<()> {
     let output = tools
         .execute_outcome(&call(
             "run_command",
-            r#"{"command":"printf override > outside-list.txt"}"#,
+            &command(
+                "printf override > outside-list.txt",
+                "[IO.File]::WriteAllText((Join-Path $PWD.ProviderPath 'outside-list.txt'), 'override')",
+            ),
         ))
         .await?;
     assert!(output.success);
@@ -592,10 +606,22 @@ async fn restricted_shells_fail_closed_without_a_sandbox() -> Result<()> {
 async fn timed_out_commands_keep_output_and_mark_partial_effects() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
+    let script = if cfg!(windows) {
+        let arguments = crate::shell::arguments(
+            "Start-Sleep -Seconds 5; [IO.File]::WriteAllText('late.txt', 'late')",
+            &workspace,
+        );
+        format!(
+            "[Console]::Write('timeout-diagnostic'); [IO.File]::WriteAllText('partial.txt', 'partial'); $child = Start-Process (Join-Path $PSHOME 'powershell.exe') -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -PassThru; $child.WaitForExit()",
+            arguments.last().expect("encoded command")
+        )
+    } else {
+        "printf timeout-diagnostic; printf partial > partial.txt; (sleep 5; printf late > late.txt) & wait".to_string()
+    };
     let result = tools
         .execute_outcome(&call(
             "run_command",
-            r#"{"command":"printf timeout-diagnostic; printf partial > partial.txt; (sleep 2; printf late > late.txt) & wait","timeout_secs":1}"#,
+            &json!({"command": script, "timeout_secs": 3}).to_string(),
         ))
         .await?;
     assert!(!result.success);
@@ -663,7 +689,7 @@ async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string(), "true".to_string()]);
+    .with_verify(vec!["exit 0".to_string(), "exit 0".to_string()]);
 
     let turn = loop_.turn("write the plan").await?;
 
@@ -676,9 +702,12 @@ async fn mutating_turn_runs_every_green_completion_check() -> Result<()> {
             .count(),
         2
     );
-    assert_eq!(turn_receipt(&turn).text.matches("`true` passed").count(), 2);
+    assert_eq!(
+        turn_receipt(&turn).text.matches("`exit 0` passed").count(),
+        2
+    );
     let log = std::fs::read_to_string(loop_.session_path())?;
-    assert_eq!(log.matches("`true` passed").count(), 2);
+    assert_eq!(log.matches("`exit 0` passed").count(), 2);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -694,14 +723,14 @@ async fn unchanged_turn_runs_completion_checks_and_records_receipt() -> Result<(
         &workspace,
         "test",
     )?
-    .with_verify(vec!["false".to_string()]);
+    .with_verify(vec!["exit 1".to_string()]);
 
     let turn = loop_.turn("read the note").await?;
 
     assert!(turn.checks.iter().any(|check| !check.passed));
     let receipt = turn_receipt(&turn);
     assert!(receipt.text.contains("Changed: none"));
-    assert!(receipt.text.contains("`false` failed"));
+    assert!(receipt.text.contains("`exit 1` failed"));
     let log = std::fs::read_to_string(loop_.session_path())?;
     assert!(log.contains(r#""kind":"receipt""#));
     std::fs::remove_dir_all(workspace)?;
@@ -719,8 +748,8 @@ async fn external_steps_turn_stays_attached_to_durable_work() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
-    loop_.select_steps("## Steps\n\n1. Write the file", &["true".to_string()])?;
+    .with_verify(vec!["exit 0".to_string()]);
+    loop_.select_steps("## Steps\n\n1. Write the file", &["exit 0".to_string()])?;
 
     let turn = loop_.turn("implement step 1").await?;
 
@@ -744,8 +773,8 @@ async fn failed_external_steps_keep_the_same_work_active() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["false".to_string()]);
-    loop_.select_steps("## Steps\n\n1. Fail the check", &["false".to_string()])?;
+    .with_verify(vec!["exit 1".to_string()]);
+    loop_.select_steps("## Steps\n\n1. Fail the check", &["exit 1".to_string()])?;
 
     for attempt in 1..=5 {
         let turn = loop_
@@ -804,7 +833,7 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
                             .content;
                         assert!(input.contains("Harness evidence:\nTurn receipt"));
                         assert!(input.contains("Changed: `goal.txt`"));
-                        assert!(input.contains("Verification: `true` passed"));
+                        assert!(input.contains("Verification: `exit 0` passed"));
                         AssistantMessage {
                             content: Some(
                                 r#"{"done":true,"reason":"the requested file exists"}"#.to_string(),
@@ -824,7 +853,7 @@ async fn goal_turn_and_terminal_result_share_durable_work() -> Result<()> {
 
     let workspace = test_workspace()?;
     let objective = "create goal.txt";
-    let checks = vec!["true".to_string()];
+    let checks = vec!["exit 0".to_string()];
     let mut loop_ = Loop::with_session(
         GoalProvider {
             rounds: AtomicUsize::new(0),
@@ -919,7 +948,7 @@ async fn malformed_goal_judge_keeps_repairing() -> Result<()> {
     }
 
     let workspace = test_workspace()?;
-    let checks = vec!["true".to_string()];
+    let checks = vec!["exit 0".to_string()];
     let mut loop_ = Loop::with_session(
         MalformedJudge {
             rounds: AtomicUsize::new(0),
@@ -1154,6 +1183,7 @@ async fn cancelling_a_running_tool_keeps_live_and_replayed_history_equal() -> Re
             Box::pin(async {
                 Ok(AssistantMessage {
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "slow".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -1202,6 +1232,7 @@ async fn token_budget_aborts_and_persists() -> Result<()> {
                 Ok(AssistantMessage {
                     content: None,
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "c".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -1581,7 +1612,7 @@ async fn mode_notes_preserve_the_request_prefix() -> Result<()> {
         &workspace,
         "BASE\n\nSKILLS-SNAPSHOT",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
 
     let first = loop_.turn("auto one").await?;
     loop_.set_plan(true);
@@ -1694,7 +1725,7 @@ async fn a_review_seat_gates_the_turn_and_sends_findings_back() -> Result<()> {
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
     loop_.set_seat(
         crate::workflow::Role::Review,
         Cast {
@@ -1817,7 +1848,7 @@ async fn an_unavailable_review_fails_completion_and_keeps_work_resumable() -> Re
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
     loop_.set_seat(
         crate::workflow::Role::Review,
         ReviewProvider(Part::Reviewer),
@@ -1905,7 +1936,7 @@ async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> 
         &workspace,
         "test",
     )?
-    .with_verify(vec!["true".to_string()]);
+    .with_verify(vec!["exit 0".to_string()]);
     loop_.set_seat(
         crate::workflow::Role::Scout,
         Cast {
@@ -1921,7 +1952,7 @@ async fn a_scout_seat_briefs_job_work_once_and_never_chat_turns() -> Result<()> 
     drop(loop_.turn("just chat").await?);
     assert_eq!(scouted.load(Ordering::SeqCst), 0, "chat turns never scout");
 
-    loop_.select_steps("## Steps\n\n1. First.\n2. Second.", &["true".to_string()])?;
+    loop_.select_steps("## Steps\n\n1. First.\n2. Second.", &["exit 0".to_string()])?;
     let first = loop_.turn("implement step 1").await?;
     assert_eq!(scouted.load(Ordering::SeqCst), 1);
     assert!(
@@ -2042,7 +2073,7 @@ async fn goal_continuation_turns_restate_the_objective() -> Result<()> {
     let workspace = test_workspace()?;
     let requests = Arc::new(Mutex::new(Vec::new()));
     let objective = "EXACT-OBJECTIVE-4821: make the widget spin";
-    let checks = vec!["true".to_string()];
+    let checks = vec!["exit 0".to_string()];
     let mut loop_ =
         Loop::with_session(Continue(requests.clone()), "test-model", &workspace, "test")?
             .with_verify(checks.clone());

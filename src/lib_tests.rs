@@ -87,6 +87,7 @@ impl Provider for FakeProvider {
                 Ok(AssistantMessage {
                     content: None,
                     tool_calls: vec![ToolCall {
+                        continuation: None,
                         id: "call-1".to_string(),
                         kind: ToolKind::Function,
                         function: ToolFunction {
@@ -124,6 +125,10 @@ fn test_workspace() -> Result<PathBuf> {
     std::fs::create_dir_all(&workspace)?;
     std::fs::write(workspace.join("note.txt"), "hello\nworld")?;
     Ok(workspace)
+}
+
+fn command(unix: &str, windows: &str) -> String {
+    serde_json::json!({"command": if cfg!(windows) { windows } else { unix }}).to_string()
 }
 
 fn assert_work_receipt(turn: &Turn, provider_text: &str) {
@@ -173,10 +178,16 @@ fn outside_fixture(workspace: &std::path::Path, name: &str) -> PathBuf {
         .file_name()
         .map(|name| name.to_string_lossy())
         .unwrap_or_default();
-    PathBuf::from("/var/tmp").join(format!("mage-sandbox-{name}-{id}"))
+    let root = if cfg!(windows) {
+        std::env::temp_dir()
+    } else {
+        PathBuf::from("/var/tmp")
+    };
+    root.join(format!("mage-sandbox-{name}-{id}"))
 }
 
 fn read_http_request(stream: &mut TcpStream) -> std::io::Result<String> {
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(5)))?;
     let mut request = Vec::new();
     let mut buffer = [0_u8; 4096];
     let header_end = loop {
@@ -193,8 +204,10 @@ fn read_http_request(stream: &mut TcpStream) -> std::io::Result<String> {
     let length = headers
         .lines()
         .find_map(|line| {
-            line.strip_prefix("Content-Length:")
-                .and_then(|value| value.trim().parse::<usize>().ok())
+            let (name, value) = line.split_once(':')?;
+            name.eq_ignore_ascii_case("content-length")
+                .then(|| value.trim().parse::<usize>().ok())
+                .flatten()
         })
         .unwrap_or(0);
     while request.len() < header_end + length {
@@ -405,6 +418,7 @@ async fn openai_provider_completes_a_tool_round() -> Result<()> {
 
 fn call(name: &str, arguments: &str) -> ToolCall {
     ToolCall {
+        continuation: None,
         id: "t".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {

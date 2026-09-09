@@ -1,5 +1,326 @@
 use super::*;
 use crate::provider::{FunctionDefinition, Provider, ToolDefinition, ToolKind};
+use crate::provider::{Image, Message, UserInput};
+use crate::runtime::Loop;
+use serde_json::{Value, json};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
+use tokio::time::{Duration, timeout};
+
+#[tokio::test]
+async fn native_images_and_tool_signatures_survive_the_loop_and_replay()
+-> std::result::Result<(), Box<dyn std::error::Error>> {
+    for wire in [Wire::Anthropic, Wire::Gemini] {
+        for streaming in [false, true] {
+            conversation(wire, streaming).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn conversation(
+    wire: Wire,
+    streaming: bool,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
+    let workspace = tempfile::tempdir()?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let model = if wire == Wire::Gemini {
+        "gemini-3-pro-preview"
+    } else {
+        "claude-sonnet-4-5"
+    };
+    let endpoint = crate::endpoint::Endpoint {
+        name: "fixture".into(),
+        model: model.into(),
+        base_url: Some(format!("http://{address}/v1")),
+        api_key: Some("fixture".into()),
+        source: None,
+        oauth: None,
+        body: None,
+        context_window: None,
+        idle_timeout_secs: Some(2),
+        effort: None,
+        price: None,
+        env: Default::default(),
+        headers: Default::default(),
+        wire,
+    };
+    let mut client = Client::connect(&endpoint)?;
+    if streaming {
+        client = client.on_delta(|_| {});
+    }
+    let server = async {
+        let mut requests = Vec::new();
+        for first in [true, false, false] {
+            let (mut stream, _) = listener.accept().await?;
+            let mut bytes = Vec::new();
+            let mut byte = [0];
+            while !bytes.ends_with(b"\r\n\r\n") {
+                stream.read_exact(&mut byte).await?;
+                bytes.push(byte[0]);
+            }
+            let length = String::from_utf8_lossy(&bytes)
+                .lines()
+                .find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    key.eq_ignore_ascii_case("content-length").then(|| {
+                        value
+                            .trim()
+                            .parse::<usize>()
+                            .expect("request content length")
+                    })
+                })
+                .expect("request body length");
+            let mut body = vec![0; length];
+            stream.read_exact(&mut body).await?;
+            requests.push(serde_json::from_slice::<Value>(&body)?);
+            let body = reply(wire, streaming, first);
+            let content_type = if streaming {
+                "text/event-stream"
+            } else {
+                "application/json"
+            };
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).as_bytes()).await?;
+        }
+        Ok::<_, Box<dyn std::error::Error>>(requests)
+    };
+    let turn = async {
+        let mut agent = Loop::with_session(client.clone(), model, workspace.path(), "system")?
+            .with_max_rounds(3);
+        agent.set_effort(Some(crate::provider::Effort::High));
+        let input = UserInput {
+            text: "inspect image".into(),
+            images: vec![Image::encode(
+                "image/png",
+                &STANDARD.decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1S0AAAAASUVORK5CYII=")?,
+            )],
+        };
+        let result = agent.turn_with(input, |_| {}).await?;
+        assert!(result.text.contains("done"));
+        let mut state = crate::durable::log::State::default();
+        for line in crate::durable::log::read(agent.session_path())? {
+            state.apply(line);
+        }
+        let replay = state.replay();
+        drop(agent);
+        let mut resumed =
+            Loop::with_session(client, model, workspace.path(), "system")?.restore_replay(replay);
+        assert!(resumed.turn("continue").await?.text.contains("done"));
+        Ok::<_, Box<dyn std::error::Error>>(())
+    };
+    let (requests, ()) = timeout(Duration::from_secs(15), async {
+        tokio::try_join!(server, turn)
+    })
+    .await??;
+    for request in &requests {
+        let image = if wire == Wire::Gemini {
+            &request["contents"][0]["parts"][1]["inline_data"]["data"]
+        } else {
+            &request["messages"][0]["content"][1]["source"]["data"]
+        };
+        assert_eq!(
+            image,
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1S0AAAAASUVORK5CYII=",
+            "{wire:?} streaming={streaming}: {request}"
+        );
+    }
+    if wire == Wire::Gemini {
+        for request in &requests[1..] {
+            let mut parts = request["contents"]
+                .as_array()
+                .expect("contents")
+                .iter()
+                .flat_map(|message| message["parts"].as_array().expect("parts"));
+            let call = parts
+                .find(|part| part.get("functionCall").is_some())
+                .expect("tool call");
+            assert_eq!(
+                call["thoughtSignature"], "fixture-signature",
+                "streaming={streaming}: {request}"
+            );
+            assert!(
+                !request
+                    .to_string()
+                    .contains("skip_thought_signature_validator")
+            );
+        }
+    } else {
+        for request in &requests[1..] {
+            let assistant = request["messages"]
+                .as_array()
+                .expect("messages")
+                .iter()
+                .find(|message| message["role"] == "assistant")
+                .expect("assistant continuation");
+            assert_eq!(
+                assistant["content"],
+                anthropic_content(true),
+                "streaming={streaming}: {request}"
+            );
+        }
+    }
+    Ok(())
+}
+
+fn reply(wire: Wire, streaming: bool, first: bool) -> String {
+    if wire == Wire::Gemini {
+        let parts = if first {
+            json!([{"functionCall":{"name":"list_dir","args":{"path":"."}},"thoughtSignature":"fixture-signature"}])
+        } else {
+            json!([{"text":"done"}])
+        };
+        let body = json!({"candidates":[{"content":{"role":"model","parts":parts},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10,"candidatesTokenCount":2,"totalTokenCount":12}});
+        return if streaming {
+            event("message", body)
+        } else {
+            body.to_string()
+        };
+    }
+    let content = anthropic_content(first);
+    let stop = if first { "tool_use" } else { "end_turn" };
+    if streaming {
+        let mut body = message_start();
+        for (index, block) in content
+            .as_array()
+            .expect("fixture content")
+            .iter()
+            .enumerate()
+        {
+            let (start, deltas) = match block["type"].as_str().expect("block type") {
+                "thinking" => (
+                    json!({"type":"thinking","thinking":"","signature":"signed-"}),
+                    vec![
+                        json!({"type":"thinking_delta","thinking":block["thinking"]}),
+                        json!({"type":"signature_delta","signature":"fragment-"}),
+                        json!({"type":"signature_delta","signature":"fragment"}),
+                    ],
+                ),
+                "tool_use" => (
+                    json!({"type":"tool_use","id":"fixture-call","name":"list_dir","input":{}}),
+                    vec![json!({"type":"input_json_delta","partial_json":"{\"path\":\".\"}"})],
+                ),
+                "text" => (
+                    json!({"type":"text","text":""}),
+                    vec![json!({"type":"text_delta","text":block["text"]})],
+                ),
+                _ => (block.clone(), Vec::new()),
+            };
+            body += &event(
+                "content_block_start",
+                json!({"type":"content_block_start","index":index,"content_block":start}),
+            );
+            for delta in deltas {
+                body += &event(
+                    "content_block_delta",
+                    json!({"type":"content_block_delta","index":index,"delta":delta}),
+                );
+            }
+            body += &event(
+                "content_block_stop",
+                json!({"type":"content_block_stop","index":index}),
+            );
+        }
+        body + &terminal(stop)
+    } else {
+        json!({"id":"fixture","type":"message","role":"assistant","model":"claude-sonnet-4-5","content":content,"stop_reason":stop,"usage":{"input_tokens":10,"output_tokens":2}}).to_string()
+    }
+}
+
+fn anthropic_content(first: bool) -> Value {
+    if first {
+        json!([
+            {"type":"thinking","thinking":"Inspect the workspace.","signature":"signed-fragment-fragment"},
+            {"type":"redacted_thinking","data":"opaque-redacted-fixture"},
+            {"type":"text","text":"I will inspect the files."},
+            {"type":"tool_use","id":"fixture-call","name":"list_dir","input":{"path":"."}}
+        ])
+    } else {
+        json!([{"type":"text","text":"done"}])
+    }
+}
+
+#[test]
+fn native_continuation_is_scoped_to_its_model_and_wire() -> Result<()> {
+    let message = Message {
+        role: Role::Assistant,
+        content: String::new(),
+        images: Vec::new(),
+        tool_call_id: None,
+        reasoning: None,
+        tool_calls: vec![ToolCall {
+            id: "call".into(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                name: "list_dir".into(),
+                arguments: "{}".into(),
+            },
+            continuation: Some(Continuation::Gemini {
+                model: "gemini-3-pro-preview".into(),
+                signatures: vec!["fixture-signature".into()],
+            }),
+        }],
+    };
+    let mut request = CompletionRequest {
+        model: "gemini-3-pro-preview".into(),
+        messages: vec![message.clone()],
+        tools: Vec::new(),
+        max_output_tokens: None,
+        emit_deltas: false,
+        effort: None,
+    };
+    assert!(
+        to_chat(&request, Wire::Gemini)?.messages[0]
+            .content
+            .contains_thought_signature()
+    );
+    assert!(
+        !to_chat(&request, Wire::Anthropic)?.messages[0]
+            .content
+            .contains_thought_signature()
+    );
+    request.model = "gemini-2.5-pro".into();
+    assert!(
+        !to_chat(&request, Wire::Gemini)?.messages[0]
+            .content
+            .contains_thought_signature()
+    );
+    let completions = crate::provider::message_value(&message)?;
+    assert!(completions["tool_calls"][0].get("continuation").is_none());
+    assert!(!completions.to_string().contains("fixture-signature"));
+    request.messages[0].tool_calls[0].continuation = Some(Continuation::Anthropic {
+        model: "claude-sonnet-4-5".into(),
+        blocks: anthropic_content(true)
+            .as_array()
+            .expect("fixture content")
+            .clone(),
+    });
+    request.model = "claude-sonnet-4-5".into();
+    let native = serde_json::to_string(&to_chat(&request, Wire::Anthropic)?)?;
+    assert!(native.contains("opaque-redacted-fixture"));
+    assert!(
+        !serde_json::to_string(&to_chat(&request, Wire::Gemini)?)?
+            .contains("opaque-redacted-fixture")
+    );
+    request.model = "claude-sonnet-4-6".into();
+    assert!(
+        !serde_json::to_string(&to_chat(&request, Wire::Anthropic)?)?
+            .contains("opaque-redacted-fixture")
+    );
+    assert!(
+        !crate::provider::message_value(&request.messages[0])?
+            .to_string()
+            .contains("opaque-redacted-fixture")
+    );
+    request.messages[0].tool_calls[0].function.arguments = "{".into();
+    let error = to_chat(&request, Wire::Gemini)
+        .expect_err("invalid arguments must not become an empty object");
+    assert_eq!(
+        error.provider_failure().map(|failure| failure.kind),
+        Some(ProviderFailureKind::MalformedToolCall)
+    );
+    Ok(())
+}
 
 async fn anthropic_stream(body: &str) -> Result<AssistantMessage> {
     native_stream(Wire::Anthropic, "claude-sonnet-4-5", body).await
@@ -216,6 +537,41 @@ async fn native_stream_preserves_partial_output_on_parse_error() -> Result<()> {
 }
 
 #[tokio::test]
+async fn native_anthropic_rejects_incomplete_or_invalid_continuation() -> Result<()> {
+    let start = message_start()
+        + &event(
+            "content_block_start",
+            json!({"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}),
+        )
+        + &event(
+            "content_block_delta",
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}),
+        );
+    for tail in [
+        terminal("end_turn"),
+        event(
+            "content_block_delta",
+            json!({"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"wrong block"}}),
+        ) + &terminal("end_turn"),
+        event(
+            "content_block_delta",
+            json!({"type":"content_block_delta","index":0,"delta":{"type":"unknown_delta","data":"unsupported"}}),
+        ) + &terminal("end_turn"),
+    ] {
+        let error = anthropic_stream(&(start.clone() + &tail))
+            .await
+            .expect_err("invalid native continuation must fail");
+        let failure = error.provider_failure().expect("provider failure");
+        assert_eq!(failure.kind, ProviderFailureKind::Malformed);
+        assert!(
+            failure.partial_output,
+            "failure must retain emitted output: {error}"
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
 async fn native_stream_preserves_length_stop_reason() -> Result<()> {
     let body = message_start() + &terminal("max_tokens");
     let message = anthropic_stream(&body).await?;
@@ -421,7 +777,7 @@ fn to_chat_lifts_system_and_tools() -> Result<()> {
         emit_deltas: true,
         effort: None,
     };
-    let chat = to_chat(&request)?;
+    let chat = to_chat(&request, Wire::Anthropic)?;
     assert_eq!(chat.system.as_deref(), Some("be brief"));
     assert_eq!(chat.messages.len(), 1);
     let tools = chat.tools.expect("tools");
@@ -443,7 +799,7 @@ fn to_chat_marks_the_last_message_for_prompt_caching() -> Result<()> {
         emit_deltas: false,
         effort: None,
     };
-    let chat = to_chat(&request)?;
+    let chat = to_chat(&request, Wire::Anthropic)?;
     let last = chat.messages.last().expect("a message");
     assert!(matches!(
         last.options.as_ref().and_then(|o| o.cache_control.as_ref()),

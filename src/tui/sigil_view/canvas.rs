@@ -2,9 +2,6 @@ use std::sync::OnceLock;
 
 use sigil::prelude::*;
 
-/// Cell geometry in layout units plus the text class that fits it. The
-/// terminal host keeps Sigil's square cell; the desktop host installs a
-/// font-shaped cell before its first frame.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Metrics {
     pub(super) w: f32,

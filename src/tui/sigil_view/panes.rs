@@ -6,8 +6,6 @@ use super::chat::row;
 use super::pane::Pane;
 use super::patch::{self, Kind};
 
-/// Pane width, in cells, from which the hunk view shows old and new side
-/// by side.
 const SPLIT: usize = 80;
 
 type Line = (String, Rgba8);
@@ -289,7 +287,6 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
     single(lines)
 }
 
-/// One side-by-side row: the old line, a divider, the new line.
 fn split(pair: &patch::Pair, half: usize) -> Vec<Line> {
     let (left_color, right_color) = match pair.kind {
         Kind::Meta => (DIM, DIM),
@@ -487,7 +484,6 @@ fn overlay(app: &App, lines: &mut Vec<(String, Rgba8)>, accent: Rgba8) {
     }
 }
 
-/// Paints one pane row; `caret` inverts that column so an editor caret shows.
 fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width];
     if width > 1 {

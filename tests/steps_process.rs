@@ -503,7 +503,6 @@ fn wait_for_file(path: &Path, timeout: Duration) -> io::Result<()> {
     clippy::disallowed_methods,
     reason = "bounded synchronous integration-test polling"
 )]
-/// Poll every session's `work.json` until one satisfies `predicate`.
 fn wait_for_work(
     home: &Path,
     predicate: impl Fn(&Value) -> bool,
@@ -535,7 +534,6 @@ fn wait_for_work(
     }
 }
 
-/// `"completed"` is a bare string; an active stage is `{"active": "execute"}`.
 fn work_status(work: &Value, status: &str, stage: Option<&str>) -> bool {
     match (work.get("status"), stage) {
         (Some(Value::String(value)), None) => value == status,
@@ -591,7 +589,6 @@ fn wait_for_tokens(path: &Path, expected: u64) -> Result<(), Box<dyn std::error:
     }
 }
 
-/// Tokens charged by every `assistant` and `charge` line of the session log.
 fn settled_tokens(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     let mut total = 0_u64;
     for line in fs::read_to_string(path)?.lines() {
@@ -606,7 +603,6 @@ fn settled_tokens(path: &Path) -> Result<u64, Box<dyn std::error::Error>> {
     Ok(total)
 }
 
-/// The token ceiling from the last `budget` line.
 fn budget_tokens(path: &Path) -> Result<Option<u64>, Box<dyn std::error::Error>> {
     for line in fs::read_to_string(path)?.lines().rev() {
         let value: Value = serde_json::from_str(line)?;

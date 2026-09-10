@@ -1,5 +1,3 @@
-//! Main column: title bar, transcript, composer, status strip.
-
 use sigil::prelude::*;
 
 use super::super::app::App;
@@ -279,7 +277,6 @@ fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
         .child(child)
 }
 
-/// Paragraphs with `code` spans as badges.
 fn prose(body: &str, class: &'static str) -> NodeBuilder {
     let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(6.0));
     for para in body.split('\n') {

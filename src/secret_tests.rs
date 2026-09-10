@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use super::SEAL;
 use super::{Source, Store, backend};
 
-/// A stand-in for /usr/bin/security that keeps items in one directory.
 #[cfg(unix)]
 fn fake_security(dir: &Path, delay: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;

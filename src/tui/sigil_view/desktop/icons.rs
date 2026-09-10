@@ -1,5 +1,3 @@
-//! Tiny path glyphs for the Codex chrome.
-
 use sigil::prelude::*;
 
 pub(super) fn folder() -> PathNode {

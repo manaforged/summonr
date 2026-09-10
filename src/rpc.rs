@@ -9,7 +9,6 @@ use crate::error::{Error, Result};
 
 pub(crate) const PROTOCOL: &str = "2025-03-26";
 
-/// One newline-delimited JSON-RPC 2.0 frame.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Frame {
     Request {
@@ -78,7 +77,6 @@ pub(crate) fn text(result: &Value) -> String {
         .unwrap_or_default()
 }
 
-/// A JSON-RPC client over a child process's stdio, one request at a time.
 pub(crate) struct Client {
     child: Child,
     stdin: ChildStdin,

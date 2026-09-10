@@ -1,8 +1,3 @@
-//! The desktop window: Codex-shaped chrome over the same [`App`] the
-//! terminal drives. A left rail switches panes and lists sessions, the main
-//! column holds the transcript and composer, the right rail shows the open
-//! pane with real widgets.
-
 use sigil::prelude::*;
 
 use super::super::Cmd;
@@ -89,7 +84,6 @@ pub(super) fn root(app: App) -> NodeBuilder {
         })
 }
 
-/// Whether `pane` is the one open beside the chat.
 fn open(app: &App, pane: Pane) -> bool {
     app.layout.peek().secondary == Some(pane)
 }
@@ -104,7 +98,6 @@ fn hairline() -> NodeBuilder {
         .class(classes!("bg-gray-6"))
 }
 
-/// A clickable row or button; `on` paints it selected.
 pub(super) fn hit(name: String, on: bool, act: impl Fn() + 'static) -> NodeBuilder {
     container()
         .role(Role::Button)

@@ -2,7 +2,6 @@
 name = "summoner"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.90"
 license = "MIT"
 authors = ["Thomas Gardiner"]
 description = "A small, provider-neutral agent harness"
@@ -36,10 +35,10 @@ reqwest = { version = "0.13", default-features = false, features = ["form", "jso
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87", default-features = false, features = ["tui", "clipboard-image"] }
-sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
-sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
-sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "1610aad4c6e4f5f3f06d6959f143f241724dbb87" }
+sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c", default-features = false, features = ["tui", "clipboard-image"] }
+sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
+sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
+sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
 chacha20poly1305 = "0.10"
 
 [features]
@@ -54,7 +53,7 @@ keyring = { version = "3", features = ["windows-native", "sync-secret-service", 
 dunce = "1.0"
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
 winapi-util = "0.1"
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [lints.rust]
 unsafe_code = "deny"

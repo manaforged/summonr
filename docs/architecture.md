@@ -33,13 +33,13 @@ CLI. A plain `summon` turn still opens Work if the session has none
 The model never owns this. It sees one step, or one objective, and
 the tools. Summoner re-reads the rest.
 
-## Why that helps an agent run
+## What the harness holds between turns
 
-Summoner keeps the plan between turns. Each turn receives the current item
-and any check you put in the plan as ``Run `command` ``.
+Summoner keeps the plan between turns. Each turn is "do this item"
+plus whatever check you put in the plan as ``Run `command` ``.
 
-Commands in `.mage/check.toml` determine whether checks pass, using their
-exit status.
+Summoner does not ask the model whether the job is done. The gate is
+`.mage/check.toml`: each command exits 0 or the turn fails.
 In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
 
@@ -49,10 +49,6 @@ aborts the turn the dead process left open (`src/durable/driver.rs`).
 Resume checks the saved plan and workspace against the requested job.
 If the gate list changes during a turn, Summoner selects the current checks
 before verification.
-
-That is the agentic loop this repo is built around: you name the job,
-the harness keeps it, the model edits, commands prove it, two files
-are the resume program.
 
 ## Where it lives in the tree
 
@@ -123,4 +119,4 @@ it cannot provide an executable command. Only the user config at
 ## What this is not
 
 - Not a new harness. Disk and env still say Mage (`~/.mage`, `MAGE_*`).
-- Not crates.io. Sigil is a git dependency. Version is `0.1.0` alpha.
+- Not crates.io. Sigil is a git dependency.

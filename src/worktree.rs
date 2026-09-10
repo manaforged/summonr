@@ -16,7 +16,6 @@ pub struct Tree {
     pub base: String,
 }
 
-/// One worktree with its distance from the base and the session that ran in it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Status {
     pub tree: Tree,
@@ -52,8 +51,6 @@ pub fn status(cwd: &Path) -> Result<Vec<Status>> {
         .collect()
 }
 
-/// Removes a worktree that holds nothing: no uncommitted change and no
-/// commit the base lacks.
 pub(crate) fn discard(tree: &Tree) -> Result<()> {
     if dirty(&tree.path)? {
         return Err(Error::Config(format!(

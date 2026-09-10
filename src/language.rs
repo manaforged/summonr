@@ -1,5 +1,3 @@
-//! Curated language policy shared by the harness tools.
-
 use std::path::Path;
 
 use serde_json::{Value, json};
@@ -7,7 +5,6 @@ use serde_json::{Value, json};
 use crate::error::{Error, Result};
 
 #[derive(Debug)]
-/// One compiled-in language policy.
 pub(crate) struct Module {
     pub(crate) id: &'static str,
     pub(crate) markers: &'static [&'static str],
@@ -17,7 +14,6 @@ pub(crate) struct Module {
 }
 
 #[derive(Debug)]
-/// One language-server command supplied by a module.
 pub(crate) struct Server {
     pub(crate) name: &'static str,
     pub(crate) args: &'static [&'static str],
@@ -78,7 +74,6 @@ const MODULES: &[Module] = &[
     },
 ];
 
-/// Returns a module selected by user configuration.
 pub(crate) fn named(name: &str) -> Result<&'static Module> {
     MODULES
         .iter()
@@ -90,7 +85,6 @@ pub(crate) fn named(name: &str) -> Result<&'static Module> {
         })
 }
 
-/// Selects a module from the file extension and nearest project marker.
 pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
     let extension = path.extension().and_then(|extension| extension.to_str());
     let module = MODULES
@@ -112,8 +106,6 @@ pub(crate) fn detect(workspace: &Path, path: &Path) -> Result<&'static Module> {
     )))
 }
 
-/// Returns the modules whose project marker sits at the workspace root or
-/// in one of its direct subdirectories.
 pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
     let mut roots = vec![workspace.to_path_buf()];
     if let Ok(entries) = std::fs::read_dir(workspace) {
@@ -137,7 +129,6 @@ pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
         .collect()
 }
 
-/// Returns initialization options for the module's language server.
 pub(crate) fn options(module: &Module) -> Value {
     match module.id {
         "rust" => json!({
@@ -152,7 +143,6 @@ pub(crate) fn options(module: &Module) -> Value {
     }
 }
 
-/// Returns the LSP language identifier for a file.
 pub(crate) fn language_id(path: &Path) -> &'static str {
     match path.extension().and_then(|extension| extension.to_str()) {
         Some("rs") => "rust",
@@ -167,7 +157,6 @@ pub(crate) fn language_id(path: &Path) -> &'static str {
     }
 }
 
-/// Reports whether a command belongs to a compiled-in toolchain.
 pub(crate) fn toolchain(command: &str) -> bool {
     MODULES
         .iter()

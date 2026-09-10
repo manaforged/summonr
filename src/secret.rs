@@ -1,11 +1,3 @@
-//! Where keys and tokens live.
-//!
-//! Default: a sealed file `~/.mage/credentials.toml` (ChaCha20-Poly1305,
-//! mode 0600). The wrapping key is a 32-byte OS item (`summoner` / `seal`),
-//! not a sibling file. `cat` of the blob does not show keys. Opt in to
-//! putting every secret in the OS store with `secrets = "keychain"` or
-//! `MAGE_SECRETS=keychain`. Neither mode falls back to the other.
-
 #[cfg(unix)]
 use std::fs::File;
 use std::io::Read as _;
@@ -30,8 +22,6 @@ const MAGIC: &[u8] = b"MAGE1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
-/// How long one `security` call may take before it counts as a locked or
-/// unreachable keychain.
 #[cfg(not(test))]
 const TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(test)]
@@ -62,7 +52,6 @@ impl Source {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Backend {
     File,
-    /// The `security` tool; the path is a test seam.
     #[cfg(any(target_os = "macos", all(test, unix)))]
     Security(PathBuf),
     #[cfg(not(target_os = "macos"))]
@@ -221,9 +210,6 @@ impl Store {
         }
     }
 
-    /// Runs one read-modify-write under a file lock shared by every Summoner
-    /// process on this machine, so two logins or refreshes cannot drop each
-    /// other's change.
     fn locked<T>(&self, work: impl FnOnce() -> Result<T>) -> Result<T> {
         let path = self.file.with_extension("lock");
         if let Some(parent) = path.parent() {
@@ -302,7 +288,6 @@ impl Store {
     }
 }
 
-/// One keychain item's password, `None` when there is no such item.
 fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     match security(
         tool,
@@ -315,10 +300,6 @@ fn find(tool: &Path, account: &str) -> Result<Option<String>> {
     }
 }
 
-/// Runs the `security` tool with a deadline and returns its stdout. A
-/// deadline is reported as a locked keychain; any other failure carries the
-/// exit code and the tool's first line of stderr. Nothing falls back to a
-/// file.
 fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Result<String> {
     let mut child = Command::new(tool)
         .args(args)
@@ -414,33 +395,37 @@ fn parse(text: &str) -> Result<DocumentMut> {
         .map_err(|error| Error::Config(format!("credential store: {error}")))
 }
 
-/// Puts a credentials file back to owner-only if anything loosened it.
-fn tighten(_path: &Path) -> Result<()> {
-    #[cfg(unix)]
+#[cfg(unix)]
+fn tighten(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path)
+        && meta.is_file()
+        && meta.permissions().mode() & 0o077 != 0
     {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(_path)
-            && meta.is_file()
-            && meta.permissions().mode() & 0o077 != 0
-        {
-            std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o600))?;
-        }
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     }
     Ok(())
 }
 
-/// Keeps the directory that holds the credentials file owner-only.
-fn tighten_dir(_path: &Path) -> Result<()> {
-    #[cfg(unix)]
+#[cfg(not(unix))]
+fn tighten(_: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn tighten_dir(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if let Ok(meta) = std::fs::metadata(path)
+        && meta.is_dir()
+        && meta.permissions().mode() & 0o077 != 0
     {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(meta) = std::fs::metadata(_path)
-            && meta.is_dir()
-            && meta.permissions().mode() & 0o077 != 0
-        {
-            std::fs::set_permissions(_path, std::fs::Permissions::from_mode(0o700))?;
-        }
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
     }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn tighten_dir(_: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -572,9 +557,6 @@ fn test_seal(file: &Path) -> [u8; KEY_LEN] {
     })
 }
 
-/// Writes `bytes` to `path` through a fresh owner-only temporary file in the
-/// same directory and a rename, then syncs the directory so the rename is
-/// durable before anything that depends on it.
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::io::Write;
     let dir = path

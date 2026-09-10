@@ -8,6 +8,7 @@ use crate::prefs::{Prefs, ToolOutput};
 use crate::tools::Event;
 
 use super::super::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
+use super::speed::Speed;
 
 #[derive(Clone, Debug)]
 pub(super) enum Entry {
@@ -41,7 +42,6 @@ pub(super) enum Entry {
     },
 }
 
-/// One workspace file in the view pane with its added-line ranges.
 #[derive(Clone)]
 pub(super) struct View {
     pub(super) path: String,
@@ -69,6 +69,8 @@ pub(super) struct Model {
     pub(super) cached_tokens: u64,
     pub(super) rounds: usize,
     pub(super) spinner: usize,
+    pub(super) speed: Speed,
+    pub(super) queued: (usize, usize),
     pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) live_tool: Option<(String, String)>,
     pub(super) prefs: Prefs,
@@ -107,6 +109,8 @@ impl Model {
             cached_tokens: 0,
             rounds: 0,
             spinner: 0,
+            speed: Speed::default(),
+            queued: (0, 0),
             busy_since: None,
             live_tool: None,
             prefs: info.prefs.clone(),
@@ -137,14 +141,19 @@ impl Model {
             }),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::Bye => return false,
-            Msg::Thinking(_) if !self.prefs.reasoning => {
+            Msg::Thinking(text) if !self.prefs.reasoning => {
+                self.speed.delta(text.chars().count(), Instant::now());
                 self.live_tool = Some(("thinking".to_string(), String::new()));
             }
-            Msg::Thinking(text) => match self.entries.last_mut() {
-                Some(Entry::Thinking(body)) => body.push_str(&text),
-                _ => self.entries.push(Entry::Thinking(text)),
-            },
+            Msg::Thinking(text) => {
+                self.speed.delta(text.chars().count(), Instant::now());
+                match self.entries.last_mut() {
+                    Some(Entry::Thinking(body)) => body.push_str(&text),
+                    _ => self.entries.push(Entry::Thinking(text)),
+                }
+            }
             Msg::Delta(text) => {
+                self.speed.delta(text.chars().count(), Instant::now());
                 self.live_tool = None;
                 match self.entries.last_mut() {
                     Some(Entry::Assistant {
@@ -161,7 +170,8 @@ impl Model {
                 self.set_busy(None);
                 self.entries.push(Entry::Error(text));
             }
-            Msg::Restored(_) => {}
+            Msg::Restored(_) => self.queued = (0, 0),
+            Msg::Queued { steering, queued } => self.queued = (steering, queued),
             Msg::System(text) => self.entries.push(Entry::System(text)),
             Msg::Cleared => self.clear(),
             Msg::Reset => {
@@ -176,6 +186,7 @@ impl Model {
                 self.cached_tokens = 0;
                 self.rounds = 0;
                 self.live_tool = None;
+                self.speed = Speed::default();
             }
             Msg::Mode(plan) => self.snapshot.plan = plan,
             Msg::OpenSettings => {}
@@ -218,6 +229,10 @@ impl Model {
 
     fn set_busy(&mut self, activity: Option<Activity>) {
         self.busy_since = activity.map(|activity| (activity, Instant::now()));
+        if activity == Some(Activity::Turn) {
+            self.live_tool = Some(("thinking".to_string(), String::new()));
+            self.speed.start(Instant::now());
+        }
         if activity.is_some() {
             self.rounds = 0;
             self.spinner = 0;
@@ -362,7 +377,7 @@ impl Model {
             };
             *stored = output;
         }
-        self.live_tool = None;
+        self.live_tool = Some(("thinking".to_string(), String::new()));
     }
 
     fn finish_assistant(&mut self, text: String) {
@@ -398,6 +413,7 @@ impl Model {
         cost: Option<f64>,
     ) {
         self.rounds += 1;
+        self.speed.finish(completion.max(reasoning), Instant::now());
         self.usage.push(Round {
             prompt,
             completion,

@@ -12,7 +12,6 @@ const SKILL: &str = include_str!("room/SKILL.md");
 
 const USAGE: &str = "usage:\n  summon room                 who is in the room\n  summon room serve           MCP server over stdio (Claude Code and Codex spawn this)\n  summon room host codex [--cwd PATH] [--id NAME] [--read-only]\n                              run Codex as a peer that answers mail\n  summon room setup claude    install the /summon-room skill and the .mcp.json entry here\n  summon room setup codex     install the skill and the ~/.codex/config.toml entry";
 
-/// Run `summon room …` and return the exit code.
 pub async fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
     match words.as_slice() {

@@ -1,5 +1,3 @@
-//! Right rail: the open pane with widgets instead of cells.
-
 use sigil::prelude::*;
 
 use super::super::app::{App, FileRow};

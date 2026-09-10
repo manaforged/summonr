@@ -140,8 +140,6 @@ async fn saving_a_view_preserves_its_root() {
     );
 }
 
-// notify's FSEvents stream takes several seconds to start on macOS; the
-// window below covers that under a loaded machine.
 #[tokio::test]
 async fn the_watch_reports_a_changed_file_once_the_burst_settles() {
     let dir = repo();

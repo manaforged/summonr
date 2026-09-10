@@ -10,7 +10,7 @@ use sigil_tui::{EventRouter, Grid, Host, Ink, Screen};
 use tokio::sync::mpsc::unbounded_channel;
 use unicode_width::UnicodeWidthStr;
 
-use super::super::{Cmd, Info, Msg};
+use super::super::{Activity, Cmd, Info, Msg};
 use super::app::App;
 use super::chat;
 use super::model::Entry;
@@ -261,7 +261,7 @@ fn the_files_pane_walks_the_tree_and_attaches_a_file_to_the_prompt() {
         assert_eq!(names, ["README.md", "src", "lib.rs", "main.rs"]);
         app.pane_move(1);
         app.pane_enter();
-        assert_eq!(app.draft.peek(), "@src/lib.rs ");
+        assert_eq!(app.draft.peek(), "@\"src/lib.rs\" ");
         assert!(
             !app.pane_focus.peek(),
             "picking a file returns focus to the composer"
@@ -338,7 +338,7 @@ fn pane_hotkeys_and_the_context_menu_drive_the_files_pane() {
         app.context_move(1);
         app.context_move(-1);
         app.context_enter();
-        assert_eq!(app.draft.peek(), "@README.md ");
+        assert_eq!(app.draft.peek(), "@\"README.md\" ");
         assert!(app.context.peek().is_none());
         let text = screen
             .frame(&mut host, &mut router, [], (120, 40))
@@ -565,6 +565,7 @@ fn the_view_pane_shows_a_file_with_its_added_lines() {
             &app,
             Msg::View {
                 path: "README.md".to_string(),
+                file: PathBuf::from("/tmp/mage-view-test/README.md"),
                 rope: Rope::from_str("one\ntwo\nthree\n"),
                 added: vec![(2, 1)],
             },
@@ -594,7 +595,10 @@ fn the_view_pane_shows_a_file_with_its_added_lines() {
         assert!(text.contains("   3   three"), "{text}");
 
         app.view_external();
-        assert_eq!(app.open_file.peek().as_deref(), Some("README.md"));
+        assert_eq!(
+            app.open_file.peek(),
+            Some(PathBuf::from("/tmp/mage-view-test/README.md"))
+        );
 
         apply(&app, Msg::Changed(vec!["README.md".to_string()]));
         assert!(matches!(rx.try_recv(), Ok(Cmd::View(None, path)) if path == "README.md"));
@@ -706,6 +710,31 @@ fn the_diff_pane_splits_wide_hunks_filters_by_turn_and_copies_the_patch() {
 }
 
 #[test]
+fn rejected_attachments_keep_submit_and_queue_drafts() {
+    sigil::reactive::Runtime::scope("summoner-attachment-recovery", || {
+        let dir = tempfile::tempdir().expect("workspace");
+        std::fs::write(dir.path().join("binary.dat"), [0xff, 0xfe]).expect("binary file");
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), dir.path().to_path_buf(), cmd);
+        let draft = "Keep this detailed request @binary.dat";
+        app.replace(draft.to_string());
+        assert!(matches!(rx.try_recv(), Ok(Cmd::ListFiles)));
+        app.submit();
+        assert_eq!(app.draft.peek(), draft);
+        assert!(rx.try_recv().is_err());
+        app.queue();
+        assert_eq!(app.draft.peek(), draft);
+        assert!(rx.try_recv().is_err());
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("cannot attach files")
+        );
+    });
+}
+
+#[test]
 fn the_view_pane_edits_a_file_in_place_and_saves_it() {
     use sigil_ide_core::buffer::Rope;
     sigil::reactive::Runtime::scope("mage-edit-pane-test", || {
@@ -720,6 +749,7 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
             &app,
             Msg::View {
                 path: "notes.md".to_string(),
+                file: PathBuf::from("/tmp/mage-view-test/notes.md"),
                 rope: Rope::from_str("one\ntwo\n"),
                 added: Vec::new(),
             },
@@ -735,19 +765,26 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
         );
 
         app.view_caret.set(3);
-        app.submit();
-        assert_eq!(
-            app.view_text.peek(),
-            "one\n\ntwo\n",
-            "enter inserts a newline"
-        );
-        assert_eq!(app.view_caret.peek(), 4);
-
         let tree = app.clone();
         let mut host = Host::cells();
         host.mount(move |cx: &mut Cx| cx.add(root(tree)));
         let mut router = EventRouter::new();
         let mut screen = Screen::new(120, 40);
+        screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .expect("initial frame");
+        router.focus_next(host.cx());
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Enter)],
+                (120, 40),
+            )
+            .expect("newline");
+        assert_eq!(app.view_text.peek(), "one\n\ntwo\n");
+        assert_eq!(app.view_caret.peek(), 4);
+        app.refresh();
         let text = screen
             .frame(&mut host, &mut router, [], (120, 40))
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
@@ -762,15 +799,33 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
             "{text}"
         );
 
-        assert!(
-            app.edit_stop(),
-            "first esc with unsaved text arms the discard"
-        );
         assert!(app.view_edit.peek(), "still editing");
         app.edit_save();
         assert!(
-            matches!(rx.try_recv(), Ok(Cmd::Save(path, text)) if path == "notes.md" && text == "one\n\ntwo\n")
+            matches!(rx.try_recv(), Ok(Cmd::Save(path, text)) if path == std::path::Path::new("/tmp/mage-view-test/notes.md") && text == "one\n\ntwo\n")
         );
+        app.update(Msg::Saved {
+            file: PathBuf::from("/tmp/mage-view-test/notes.md"),
+            text: "one\n\ntwo\n".to_string(),
+            result: Err("disk full".to_string()),
+        });
+        assert!(app.edit_stop());
+        assert!(
+            app.view_edit.peek(),
+            "failed saves retain the discard warning"
+        );
+        app.view_text.set("newer edits".to_string());
+        app.update(Msg::Saved {
+            file: PathBuf::from("/tmp/mage-view-test/notes.md"),
+            text: "one\n\ntwo\n".to_string(),
+            result: Ok(()),
+        });
+        assert!(app.edit_stop());
+        assert!(
+            app.view_edit.peek(),
+            "an older save does not mark newer text saved"
+        );
+        app.view_text.set("one\n\ntwo\n".to_string());
         assert!(app.edit_stop(), "esc after a save leaves");
         assert!(!app.view_edit.peek());
         assert_eq!(app.pane_active(), Some(super::pane::Pane::View));
@@ -785,24 +840,5 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
         );
         assert!(app.edit_stop() && app.edit_stop(), "two escapes discard");
         assert!(!app.view_edit.peek());
-    });
-}
-
-#[test]
-fn a_multi_line_paste_lands_in_the_draft_at_the_caret() {
-    sigil::reactive::Runtime::scope("mage-paste-test", || {
-        let (cmd, _rx) = unbounded_channel();
-        let mut start = info();
-        start.prefs.splash = false;
-        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
-        app.resize(120, 40);
-        app.replace("fix ".to_string());
-        app.insert("line one\r\nline two\n");
-        assert_eq!(app.draft.peek(), "fix line one\nline two\n");
-        assert_eq!(app.caret.peek(), "fix line one\nline two\n".len());
-        app.caret.set(0);
-        app.insert("> ");
-        assert_eq!(app.draft.peek(), "> fix line one\nline two\n");
-        assert_eq!(app.caret.peek(), 2);
     });
 }

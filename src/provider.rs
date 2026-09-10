@@ -84,6 +84,14 @@ mod image_bytes {
 pub struct UserInput {
     pub text: String,
     pub images: Vec<Image>,
+    pub source: Option<Source>,
+}
+
+/// Editable text before file expansion and the number of images loaded from files.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Source {
+    pub text: String,
+    pub images: usize,
 }
 
 impl From<&str> for UserInput {
@@ -91,6 +99,7 @@ impl From<&str> for UserInput {
         Self {
             text: text.to_string(),
             images: Vec::new(),
+            source: None,
         }
     }
 }
@@ -100,6 +109,7 @@ impl From<String> for UserInput {
         Self {
             text,
             images: Vec::new(),
+            source: None,
         }
     }
 }

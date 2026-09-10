@@ -327,6 +327,7 @@ async fn loop_sends_and_persists_image_input() -> Result<()> {
     let mut loop_ = Loop::with_session(ImageProvider, "test-model", &workspace, "test")?;
     let input = UserInput {
         text: "describe".to_string(),
+        source: None,
         images: vec![Image {
             media_type: "image/png".to_string(),
             bytes: b"encoded-image".to_vec(),
@@ -373,6 +374,7 @@ async fn image_overflow_does_not_resend_an_unchanged_request() -> Result<()> {
     )?;
     let input = UserInput {
         text: "describe".to_string(),
+        source: None,
         images: vec![Image {
             media_type: "image/png".to_string(),
             bytes: b"encoded-image".to_vec(),

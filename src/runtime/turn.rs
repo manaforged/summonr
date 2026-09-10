@@ -52,9 +52,7 @@ impl<P: Provider> Loop<P> {
     ) -> Result<()> {
         let mut injected = false;
         while let Some(input) = self.steer.pop_front() {
-            self.session
-                .steer(&input.text)
-                .map_err(super::session_err)?;
+            self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));
             injected = true;
         }
@@ -62,9 +60,7 @@ impl<P: Provider> Loop<P> {
             && let Ok(mut queue) = shared.lock()
         {
             while let Some(input) = queue.pop_front() {
-                self.session
-                    .steer(&input.text)
-                    .map_err(super::session_err)?;
+                self.session.steer(&input).map_err(super::session_err)?;
                 messages.push(Message::user(input));
                 injected = true;
             }
@@ -72,7 +68,9 @@ impl<P: Provider> Loop<P> {
         let (mail, overflow) = self.take_bus_mail(5)?;
         for mail in mail {
             let text = envelope(&mail);
-            self.session.steer(&text).map_err(super::session_err)?;
+            self.session
+                .steer(&text.clone().into())
+                .map_err(super::session_err)?;
             messages.push(Message::user(text.clone()));
             injected = true;
             self.push_event(
@@ -89,9 +87,7 @@ impl<P: Provider> Loop<P> {
                 "[summon bus: {overflow} more message(s) waiting — use the inbox tool to drain them]"
             );
             let input = UserInput::from(note);
-            self.session
-                .steer(&input.text)
-                .map_err(super::session_err)?;
+            self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));
             injected = true;
         }
@@ -170,9 +166,7 @@ impl<P: Provider> Loop<P> {
                              its arguments were invalid JSON. Retry that action with one valid tool \
                              call. Split a large file write into smaller edits if needed.]",
                         );
-                        self.session
-                            .steer(&input.text)
-                            .map_err(super::session_err)?;
+                        self.session.steer(&input).map_err(super::session_err)?;
                         messages.push(Message::user(input));
                         self.push_event(
                             events,
@@ -443,9 +437,7 @@ impl<P: Provider> Loop<P> {
                          briefly from the partial answer.]",
                     )
                 };
-                self.session
-                    .steer(&control.text)
-                    .map_err(super::session_err)?;
+                self.session.steer(&control).map_err(super::session_err)?;
                 messages.push(Message::user(control));
                 self.push_event(
                     events,
@@ -520,7 +512,9 @@ impl<P: Provider> Loop<P> {
         };
         self.session.set_brief(&brief).map_err(super::session_err)?;
         let note = scout::note(&brief);
-        self.session.steer(&note).map_err(super::session_err)?;
+        self.session
+            .steer(&note.clone().into())
+            .map_err(super::session_err)?;
         messages.push(Message::user(note));
         self.commit(messages);
         self.push_event(
@@ -563,7 +557,7 @@ impl<P: Provider> Loop<P> {
         input.text = decorate(&harness, &input.text);
         let queued = self
             .session
-            .start_input(&input.text, &input.images)
+            .start_input(&input)
             .map_err(super::session_err)?;
         self.history.extend(queued.into_iter().map(Message::user));
         self.history.push(Message::user(input.clone()));
@@ -1273,7 +1267,7 @@ impl<P: Provider> Loop<P> {
         self.hydrate();
     }
 
-    fn hydrate(&mut self) {
+    pub(super) fn hydrate(&mut self) {
         self.history = self.session.replay().history;
     }
 

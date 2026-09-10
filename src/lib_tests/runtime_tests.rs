@@ -138,6 +138,45 @@ async fn fork_keeps_the_provider_schema() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn earlier_branch_excludes_later_turns_from_the_next_provider_request() -> Result<()> {
+    let workspace = test_workspace()?;
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let mut loop_ = schema_loop(&workspace, requests.clone())?;
+    loop_.turn("keep this first turn").await?;
+    let parent_path = loop_.session_path().to_path_buf();
+    loop_.turn("exclude this later turn").await?;
+    let parent = std::fs::read(&parent_path)?;
+    let id = loop_.fork_at(Some(0))?;
+    assert_eq!(loop_.session_id(), id);
+    loop_.turn("continue from the branch").await?;
+    let requests = captured(&requests)?;
+    assert_eq!(requests.len(), 3);
+    let messages = &requests[2].messages;
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.content.contains("keep this first turn"))
+    );
+    assert!(
+        messages
+            .iter()
+            .any(|message| message.content.contains("continue from the branch"))
+    );
+    assert!(
+        !messages
+            .iter()
+            .any(|message| message.content.contains("exclude this later turn"))
+    );
+    assert_eq!(std::fs::read(parent_path)?, parent);
+    assert_eq!(
+        serde_json::to_vec(&requests[0].tools)?,
+        serde_json::to_vec(&requests[2].tools)?
+    );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
 #[test]
 fn harness_section_lists_plan_and_check() {
     let both = crate::prompt::harness_section(true, &["cargo test".to_string()]);

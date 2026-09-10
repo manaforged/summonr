@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::provider::Message;
 
@@ -7,7 +8,7 @@ mod catalog;
 #[cfg(test)]
 pub(crate) use catalog::list_in;
 pub use catalog::{export, last_for, list, resolve_id, set_name, short};
-pub(crate) use catalog::{name_of as catalog_name, previous_for};
+pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SessionInfo {
@@ -19,6 +20,15 @@ pub struct SessionInfo {
     pub name: Option<String>,
     pub parent: Option<String>,
     pub depth: u8,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Prompt {
+    pub session: Arc<SessionInfo>,
+    pub turn: usize,
+    pub text: String,
+    pub images: usize,
+    pub closed: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -37,6 +47,10 @@ pub(crate) fn decorate(harness: &str, text: &str) -> String {
     } else {
         format!("{text}\n\n{harness}")
     }
+}
+
+pub(crate) fn user_text(text: &str) -> &str {
+    text.split("\n\nHarness state:").next().unwrap_or(text)
 }
 
 #[cfg(test)]

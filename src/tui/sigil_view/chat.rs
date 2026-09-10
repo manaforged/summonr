@@ -4,7 +4,7 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 use super::app::App;
 use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
 use super::model::Model;
-use crate::tui::{Round, context, fmt_tokens, short_session};
+use crate::tui::{Activity, Round, context, fmt_tokens, short_session};
 
 #[path = "chat/transcript.rs"]
 mod transcript;
@@ -74,26 +74,73 @@ impl Span {
 
 type Line = Vec<Span>;
 
+#[derive(Default)]
+pub(super) struct History {
+    key: Option<(u64, usize)>,
+    lines: Vec<Line>,
+    offsets: Vec<usize>,
+}
+
+impl History {
+    pub(super) fn extent(&self, rows: u16) -> Option<f32> {
+        self.key.map(|_| {
+            let height = usize::from(prompt_row(rows).saturating_sub(1));
+            self.lines.len().saturating_sub(height) as f32 * canvas::cell().h
+        })
+    }
+
+    fn lines(&mut self, model: &Model, width: usize, revision: u64) -> &[Line] {
+        if self.key != Some((revision, width)) {
+            self.lines.clear();
+            self.offsets.clear();
+            for entry in transcript::entries(model, width, accent(&model.prefs.theme)) {
+                self.offsets.push(self.lines.len());
+                self.lines.extend(wrap(entry, width));
+            }
+            self.key = Some((revision, width));
+        }
+        &self.lines
+    }
+
+    pub(super) fn position(&mut self, app: &App, entry: usize) -> Option<f32> {
+        let width = usize::from(app.chat_cols());
+        let left = if width > 28 {
+            2
+        } else {
+            usize::from(width > 2)
+        };
+        let width = width.saturating_sub(left * 2).max(1);
+        self.lines(&app.model.borrow(), width, app.panes.peek());
+        self.offsets
+            .get(entry)
+            .map(|row| *row as f32 * canvas::cell().h)
+    }
+}
+
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let (_, rows) = app.viewport.get();
-    let cols = app.chat_cols();
-    let draft = app.draft.get();
-    let mut cells = grid(&app.model.borrow(), &app, &draft, cols, rows);
-    if let Some(menu) = super::suggest::menu(&app, cols, rows) {
-        stamp_menu(&mut cells, usize::from(cols).max(1), &menu);
-    }
-    let mut layer = container().layout(
-        LayoutStyle::flex_column()
-            .position(Position::Absolute)
-            .inset(0.0)
-            .fill_width()
-            .fill_height()
-            .gap(0.0),
-    );
-    for cells in cells.chunks(usize::from(cols).max(1)) {
-        layer = layer.child(row(cells));
-    }
-    layer
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .position(Position::Absolute)
+                .inset(0.0)
+                .fill_width()
+                .fill_height()
+                .gap(0.0),
+        )
+        .children_reactive(move || {
+            super::view::watch(&app);
+            let (_, rows) = app.viewport.get();
+            let cols = app.chat_cols();
+            let draft = app.draft.get();
+            let mut cells = grid(&app.model.borrow(), &app, &draft, cols, rows);
+            if let Some(menu) = super::suggest::menu(&app, cols, rows) {
+                stamp_menu(&mut cells, usize::from(cols).max(1), &menu);
+            }
+            cells
+                .chunks(usize::from(cols).max(1))
+                .map(row)
+                .collect::<Vec<_>>()
+        })
 }
 
 fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell> {
@@ -116,15 +163,15 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         content_left,
         content_width,
         0,
-        &header(model, app, content_width, accent),
+        &header(model, content_width, accent),
     );
     if height < 5 {
         return cells;
     }
     let prompt = usize::from(prompt_row(rows));
     let body_height = prompt.saturating_sub(1);
-    let transcript = transcript::entries(model, content_width, accent);
-    let visible = wrap(transcript, content_width);
+    let mut history = app.history.borrow_mut();
+    let visible = history.lines(model, content_width, app.panes.get());
     let max_start = visible.len().saturating_sub(body_height);
     let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);
     if visible.is_empty() && body_height > 0 {
@@ -139,19 +186,14 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
             &vec![Span::text(" ".repeat(pad)), Span::styled(hint, DIM)],
         );
     }
-    for (offset, line) in visible
-        .into_iter()
-        .skip(start)
-        .take(body_height)
-        .enumerate()
-    {
+    for (offset, line) in visible.iter().skip(start).take(body_height).enumerate() {
         write_line_at(
             &mut cells,
             width,
             content_left,
             content_width,
             1 + offset,
-            &line,
+            line,
         );
     }
     let editing = app
@@ -182,9 +224,9 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
 
 fn empty_hint(width: usize) -> &'static str {
     [
-        "ask anything — @file attaches · !cmd runs · /help lists",
-        "ask anything · @file · !cmd · /help",
-        "ask anything · /help",
+        "ask anything · /auth setup · @file attaches · !cmd runs · /help",
+        "ask anything · /auth · @file · /help",
+        "ask anything · /auth",
         "ask anything",
     ]
     .into_iter()
@@ -243,7 +285,7 @@ pub(super) fn write_at(
     }
 }
 
-fn header(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
+fn header(model: &Model, width: usize, accent: Rgba8) -> Line {
     let mut left = vec![
         Span::styled("summoner ", accent).bold(),
         Span::text(model.model.clone()),
@@ -258,7 +300,7 @@ fn header(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
     let mut right = Vec::new();
     if width >= 70 {
         right.push(Span::styled(
-            format!("ses {} ", short_session(&app.info.session)),
+            format!("ses {} ", short_session(&model.session)),
             DIM,
         ));
     }
@@ -359,7 +401,12 @@ fn prompt_rows(
     );
     let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
     let select = selecting.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-    let hint = composer_hint(busy, width, &options, select.as_deref());
+    let hint = composer_hint(
+        model.busy_since.map(|(activity, _)| activity),
+        width,
+        &options,
+        select.as_deref(),
+    );
     let hint_width = UnicodeWidthStr::width(hint.as_str());
     let dash = width.saturating_sub(hint_width + 2);
     write_line_at(
@@ -378,7 +425,7 @@ fn prompt_rows(
 }
 
 pub(super) fn composer_hint(
-    busy: bool,
+    activity: Option<Activity>,
     width: usize,
     options: &str,
     select: Option<&str>,
@@ -386,11 +433,18 @@ pub(super) fn composer_hint(
     let available = width.saturating_sub(2);
     let choices = if let Some(key) = select {
         vec![format!(" select on · mouse to terminal · {key} off ")]
-    } else if busy {
+    } else if activity == Some(Activity::Branch) {
+        vec![" branching · draft kept ".to_string()]
+    } else if activity == Some(Activity::Turn) {
         vec![
             " esc cancel · enter steer · tab queue ".to_string(),
             " ↵ steer · tab queue · esc cancel ".to_string(),
             " ↵ steer · esc cancel ".to_string(),
+        ]
+    } else if activity.is_some() {
+        vec![
+            " esc cancel · enter/tab queue ".to_string(),
+            " ↵ queue · esc cancel ".to_string(),
         ]
     } else {
         vec![
@@ -506,17 +560,21 @@ fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
         ));
     }
     let mut right = Vec::new();
-    if let Some(since) = model.busy_since {
+    if let Some((activity, since)) = model.busy_since {
         right.push(Span::styled(
-            format!("{} working", SPINNER[model.spinner]),
+            format!("{} {}", SPINNER[model.spinner], activity.label()),
             accent,
         ));
         right.push(Span::styled(
-            format!(
-                " · r{} · {}s",
-                model.rounds.max(1),
-                since.elapsed().as_secs()
-            ),
+            if activity == Activity::Turn {
+                format!(
+                    " · r{} · {}s",
+                    model.rounds.max(1),
+                    since.elapsed().as_secs()
+                )
+            } else {
+                format!(" · {}s", since.elapsed().as_secs())
+            },
             DIM,
         ));
         if let Some((name, arg)) = &model.live_tool {

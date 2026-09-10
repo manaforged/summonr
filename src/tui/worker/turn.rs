@@ -1,6 +1,9 @@
+use std::sync::PoisonError;
+
 use super::{Cmd, Msg, Worker, set_mode};
 use crate::provider::UserInput;
 use crate::tools::Event;
+use crate::tui::Activity;
 
 const MODE_LATER: &str = "mode switches when the current turn ends — esc cancels now";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends — esc cancels now";
@@ -20,7 +23,7 @@ impl Worker {
     }
 
     async fn run_turn(&mut self, input: Input) -> bool {
-        drop(self.ui.send(Msg::Busy(true)));
+        drop(self.ui.send(Msg::Busy(Some(Activity::Turn))));
         let sender = self.ui.clone();
         let emit = move |event: &Event| drop(sender.send(Msg::Event(event.clone())));
         let (cancelled, result, mode, quit) = {
@@ -36,11 +39,11 @@ impl Worker {
                 tokio::select! {
                     done = &mut turn => break Some(done),
                     command = self.cmd.recv() => match command {
-                        Some(command @ Cmd::Command(_)) => {
+                        Some(command @ (Cmd::Command(_) | Cmd::Branch { .. })) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
-                        Some(command @ (Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command),
+                        Some(command @ (Cmd::ListSessions | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
                         Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Merge(_) | Cmd::Discard(_))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
@@ -92,6 +95,9 @@ impl Worker {
     }
 
     fn finish_turn<T>(&mut self, cancelled: bool, result: Option<crate::error::Result<T>>) {
+        if cancelled || matches!(&result, Some(Err(_))) {
+            self.recover();
+        }
         if cancelled {
             if let Err(error) = self.loop_.abort_note("cancelled by user") {
                 self.fail(&format!("cancellation not recorded: {error}"));
@@ -99,7 +105,8 @@ impl Worker {
             drop(self.ui.send(Msg::Event(Event::Aborted {
                 reason: "cancelled by user".to_string(),
             })));
-            drop(self.ui.send(Msg::Busy(false)));
+            self.system("F5 or /retry continues this turn. Up recalls your prompt for editing.");
+            drop(self.ui.send(Msg::Busy(None)));
         } else if let Some(Err(error)) = result {
             if let Err(abort) = self.loop_.abort_note("turn failed") {
                 self.fail(&format!(
@@ -108,10 +115,36 @@ impl Worker {
             } else {
                 self.fail(&error.to_string());
             }
-            drop(self.ui.send(Msg::Busy(false)));
+            self.system("F5 or /retry continues this turn. Up recalls your prompt for editing.");
+            drop(self.ui.send(Msg::Busy(None)));
         } else {
             self.send_diff(true);
-            drop(self.ui.send(Msg::Busy(false)));
+            drop(self.ui.send(Msg::Busy(None)));
+        }
+    }
+
+    pub(super) fn recover(&mut self) {
+        let mut pending: Vec<UserInput> = self
+            .steering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect();
+        pending.extend(self.followups.drain(..));
+        while let Ok(command) = self.cmd.try_recv() {
+            match command {
+                Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input) => pending.push(input),
+                command => self.deferred.push_back(command),
+            }
+        }
+        for input in &mut pending {
+            if let Some(source) = input.source.take() {
+                input.text = source.text;
+                input.images.drain(..source.images.min(input.images.len()));
+            }
+        }
+        if !pending.is_empty() {
+            drop(self.ui.send(Msg::Restored(pending)));
         }
     }
 

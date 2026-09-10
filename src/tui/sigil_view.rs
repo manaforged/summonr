@@ -13,6 +13,8 @@ mod pane;
 mod panes;
 mod patch;
 mod scene;
+mod search;
+mod sessions;
 mod settings;
 mod suggest;
 mod view;

@@ -1336,6 +1336,55 @@ impl Provider for Leaver {
 }
 
 #[tokio::test]
+async fn branching_keeps_uncollected_background_children_running() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let provider = Leaver {
+        child: false,
+        parent_calls: Arc::new(AtomicUsize::new(0)),
+    };
+    let mut loop_ = Loop::with_session(provider, "test-model", home.path(), "system")?;
+    drop(
+        loop_
+            .task_execute(
+                &background_task_call(0, "wait", Access::Research),
+                &mut Vec::new(),
+                &mut |_: &Event| {},
+            )
+            .await?,
+    );
+    assert_eq!(loop_.spawned.len(), 1);
+    let parent = loop_.session_id();
+    let journal = std::fs::read(loop_.session_path())?;
+    for turn in [None, Some(0)] {
+        let error = loop_
+            .fork_at(turn)
+            .expect_err("uncollected child prevents branching");
+        assert!(error.to_string().contains("background agents"));
+        assert_eq!(loop_.session_id(), parent);
+        assert_eq!(loop_.spawned.len(), 1);
+        assert!(
+            loop_
+                .session
+                .children()
+                .iter()
+                .all(|record| matches!(record.state, ChildState::Running))
+        );
+        assert_eq!(std::fs::read(loop_.session_path())?, journal);
+    }
+    let id = loop_.session.children()[0].id.to_string();
+    drop(
+        loop_
+            .task_execute(
+                &child_settlement_call(&id, true),
+                &mut Vec::new(),
+                &mut |_: &Event| {},
+            )
+            .await?,
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn turns_defer_while_a_background_child_runs_until_explicitly_stopped() -> Result<()> {
     let home = tempfile::tempdir()?;
     let provider = Leaver {

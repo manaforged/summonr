@@ -1,6 +1,40 @@
 use super::*;
 
 #[test]
+fn restored_conversation_keeps_roles_and_one_copy_of_the_reply() {
+    sigil::reactive::Runtime::scope("summoner-restored-view", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        apply(&app, Msg::User("fix arithmetic".to_string()));
+        apply(
+            &app,
+            Msg::Event(Event::Assistant {
+                text: "Fixed it.".to_string(),
+            }),
+        );
+        apply(
+            &app,
+            Msg::Receipt("Fixed it.\n\nTurn receipt\n- Changed: calculator.py".to_string()),
+        );
+        let text = app.transcript.peek();
+        assert!(text.contains("fix arithmetic"));
+        assert!(text.contains("Changed: calculator.py"));
+        assert_eq!(text.matches("Fixed it.").count(), 1);
+        app.replace("/copy".to_string());
+        app.submit();
+        assert_eq!(app.copy.peek().as_deref(), Some("Fixed it."));
+        assert!(
+            matches!(app.model.borrow().entries.first(), Some(Entry::User(text)) if text == "fix arithmetic")
+        );
+        apply(&app, Msg::Cleared);
+        apply(&app, Msg::User("next task".to_string()));
+        let text = app.transcript.peek();
+        assert!(text.contains("next task"));
+        assert!(!text.contains("fix arithmetic"));
+    });
+}
+
+#[test]
 fn configured_endpoint_list_drives_switching() {
     sigil::reactive::Runtime::scope("mage-endpoint-cycle-test", || {
         let (cmd, mut rx) = unbounded_channel();
@@ -168,19 +202,54 @@ fn tool_result_updates_the_existing_call() {
                 arguments: r#"{"path":"README.md"}"#.to_string(),
             }),
         );
+        let output = format!(
+            "early error\n{}\nlast",
+            (1..30)
+                .map(|line| format!("line {line}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
         apply(
             &app,
             Msg::Event(Event::ToolResult {
                 id: "call-1".to_string(),
                 success: true,
                 mutated: false,
-                output: "first\nlast".to_string(),
+                output: output.clone(),
             }),
         );
         let text = app.transcript.peek();
         assert!(text.contains("✓ **read_file** `README.md`"));
-        assert!(text.contains("last"));
-        assert!(!text.contains("first"), "compact output keeps one line");
+        assert!(text.contains(&output), "transcript retains the full result");
+        let render = || {
+            let tree = app.clone();
+            sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 50, &[])
+                .expect("tool output frame")
+        };
+        app.resize(100, 50);
+        let compact = render();
+        assert!(compact.contains("last"));
+        assert!(!compact.contains("early error"));
+        app.replace("unrelated draft".to_string());
+        app.search.start("early error");
+        assert_eq!(
+            app.search
+                .rows(&app.model.borrow())
+                .expect("search tool output")
+                .len(),
+            1
+        );
+        app.jump();
+        let expanded = render();
+        for line in ["early error", "line 15", "last"] {
+            assert!(expanded.contains(line), "missing {line}:\n{expanded}");
+        }
+        assert_eq!(app.draft.peek(), "unrelated draft");
+        app.toggle_tools();
+        assert!(!render().contains("early error"));
+        app.replace("/copy all".to_string());
+        app.submit();
+        assert!(app.copy.peek().expect("copy transcript").contains(&output));
     });
 }
 
@@ -201,7 +270,7 @@ fn busy_submit_steers_and_queue_stays_distinct() {
     sigil::reactive::Runtime::scope("mage-submit-routing-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-        apply(&app, Msg::Busy(true));
+        apply(&app, Msg::Busy(Some(Activity::Turn)));
         app.replace("steer now".to_string());
         app.submit();
         assert!(matches!(rx.try_recv(), Ok(Cmd::Steer(input)) if input.text == "steer now"));
@@ -216,7 +285,7 @@ fn failed_turn_releases_busy_before_the_next_submit() {
     sigil::reactive::Runtime::scope("mage-failed-turn-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-        apply(&app, Msg::Busy(true));
+        apply(&app, Msg::Busy(Some(Activity::Turn)));
         apply(&app, Msg::Failed("provider unavailable".to_string()));
         assert!(app.model.borrow().busy_since.is_none());
 
@@ -253,7 +322,7 @@ fn slash_commands_never_become_model_input() {
             for busy in [false, true] {
                 let (cmd, mut rx) = unbounded_channel();
                 let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-                app.model.borrow_mut().busy_since = busy.then(Instant::now);
+                app.model.borrow_mut().busy_since = busy.then(|| (Activity::Turn, Instant::now()));
                 app.replace(line.to_string());
                 app.submit();
                 if let Ok(command) = rx.try_recv() {
@@ -301,6 +370,8 @@ fn slash_completion_accepts_and_cycles_the_visible_matches() {
         assert_eq!(app.draft.peek(), "/settings");
         assert!(app.complete());
         assert_eq!(app.draft.peek(), "/session");
+        assert!(app.complete());
+        assert_eq!(app.draft.peek(), "/search");
         assert!(app.complete());
         assert_eq!(app.draft.peek(), "/settings");
     });

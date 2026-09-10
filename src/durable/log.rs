@@ -51,6 +51,8 @@ pub(crate) enum Line {
     },
     User {
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<String>,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<Image>,
         #[serde(default)]
@@ -146,6 +148,7 @@ impl State {
                 text,
                 images,
                 start,
+                ..
             } => {
                 if start {
                     self.opener = Some(self.history.len());

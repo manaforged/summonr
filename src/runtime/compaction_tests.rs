@@ -19,6 +19,7 @@ fn context_estimate_counts_reasoning_sent_back_to_provider() {
 fn context_estimate_does_not_count_image_bytes_as_text() {
     let message = Message::user(UserInput {
         text: "look".to_string(),
+        source: None,
         images: vec![Image {
             media_type: "image/png".to_string(),
             bytes: b"encoded-image".to_vec(),

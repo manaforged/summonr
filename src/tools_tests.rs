@@ -24,11 +24,24 @@ fn attachments_separate_images_from_text() -> Result<()> {
     std::fs::write(workspace.join("note.txt"), "hello")?;
     std::fs::write(workspace.join("pixel.png"), b"\x89PNG\r\n\x1a\n")?;
 
-    let input = attach(&workspace, "compare @note.txt @pixel.png")?;
-    assert!(input.text.starts_with("compare\n"));
+    let prompt = "Compare these files:\n\n  @note.txt\n\t@pixel.png\n\nKeep this  spacing.\n";
+    let input = attach(&workspace, prompt)?;
+    assert_eq!(input.text, format!("{prompt}\n\n--- note.txt ---\nhello\n"));
     assert!(input.text.contains("--- note.txt ---\nhello"));
     assert_eq!(input.images.len(), 1);
     assert_eq!(input.images[0].media_type, "image/png");
+    let image_prompt = "Check @pixel.png\n\n  Preserve indentation.";
+    assert_eq!(attach(&workspace, image_prompt)?.text, image_prompt);
+    let code =
+        "Explain this @mention:\n```python\n@staticmethod\ndef answer():\n    return 42\n```";
+    assert_eq!(attach(&workspace, code)?.text, code);
+    let missing =
+        attach(&workspace, "read @\"missing.txt\"").expect_err("explicit missing attachment");
+    assert!(
+        missing
+            .to_string()
+            .contains("attachment `missing.txt` is not a readable file")
+    );
 
     std::fs::remove_dir_all(workspace)?;
     Ok(())

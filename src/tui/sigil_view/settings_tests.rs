@@ -259,6 +259,7 @@ fn model_picker_sections_recent_then_providers() {
             rows: vec![
                 "qwen\tqwen3.8-27b".to_string(),
                 "glm\tglm-5.3".to_string(),
+                "glm\tglm-5.4".to_string(),
                 "qwen\tqwen3.8-27b".to_string(),
             ],
         });
@@ -273,6 +274,13 @@ fn model_picker_sections_recent_then_providers() {
         let recent_at = frame.find("recent").unwrap_or(usize::MAX);
         let providers_at = frame.find("providers").unwrap_or(0);
         assert!(recent_at < providers_at, "recent must sit first:\n{frame}");
+        let active: Vec<_> = frame.lines().filter(|line| line.contains('●')).collect();
+        assert_eq!(
+            active.len(),
+            1,
+            "only the active model has a marker:\n{frame}"
+        );
+        assert!(active[0].contains("glm-5.3"));
 
         app.replace_model_draft("glm".to_string());
         let tree = app.clone();
@@ -367,6 +375,7 @@ fn auth_command_opens_masked_provider_menu() {
         }
         assert!(frame.text().contains("authentication"));
         assert!(frame.text().contains("API key"));
+        assert!(frame.text().contains("credential store"));
         assert!(!frame.text().contains("never-render-this-secret"));
 
         app.commit_auth();
@@ -377,6 +386,36 @@ fn auth_command_opens_masked_provider_menu() {
         ));
         assert!(!app.auth_open.peek());
         assert!(app.auth_key.peek().is_empty());
+        app.resize(40, 12);
+        app.begin_auth(Some("glm"));
+        for entering in [false, true] {
+            app.auth_entering.set(entering);
+            let tree = app.clone();
+            let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 40, 12, &[])
+                .expect("narrow authentication");
+            assert!(
+                frame
+                    .lines()
+                    .nth(10)
+                    .expect("footer")
+                    .trim_end()
+                    .ends_with('╯'),
+                "{frame}"
+            );
+            assert!(frame.contains("esc"), "{frame}");
+            if entering {
+                assert!(frame.contains("Saves in the credential store"), "{frame}");
+                assert!(
+                    frame
+                        .lines()
+                        .nth(9)
+                        .expect("storage note")
+                        .trim_end()
+                        .ends_with('│'),
+                    "{frame}"
+                );
+            }
+        }
     });
 }
 
@@ -384,7 +423,9 @@ fn auth_command_opens_masked_provider_menu() {
 fn login_command_uses_device_flow_from_menu() {
     sigil::reactive::Runtime::scope("mage-auth-device-test", || {
         let (cmd, mut rx) = unbounded_channel();
-        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        let mut start = info();
+        start.prefs.splash = true;
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.replace("/login copilot".to_string());
         app.submit();
 
@@ -392,6 +433,15 @@ fn login_command_uses_device_flow_from_menu() {
         app.commit_auth();
         assert!(matches!(rx.try_recv(), Ok(Cmd::Login(name)) if name == "copilot"));
         assert!(!app.auth_open.peek());
+        app.replace("keep this draft".to_string());
+        app.update(Msg::System("code LOGIN-FIXTURE".to_string()));
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 80, 24, &[])
+            .expect("login instructions");
+        assert!(frame.contains("code LOGIN-FIXTURE"), "{frame}");
+        assert!(frame.contains("keep this draft"), "{frame}");
+        assert!(!app.splash.peek());
     });
 }
 

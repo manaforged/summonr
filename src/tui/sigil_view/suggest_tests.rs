@@ -4,11 +4,11 @@ use super::*;
 fn picker_wraps_and_accepts_the_selected_row() {
     sigil::reactive::Runtime::scope("mage-command-picker-test", || {
         let picker = Picker::new();
-        assert!(picker.open("/"));
-        assert!(picker.shift("/", -1));
-        assert_eq!(picker.accept("/"), Some("/quit"));
-        assert!(picker.shift("/", 1));
-        assert_eq!(picker.accept("/"), Some("/help"));
+        assert!(picker.open("/", 0, &[]));
+        assert!(picker.shift("/", 0, &[], -1));
+        assert_eq!(picker.accept("/", 0, &[]).as_deref(), Some("/quit"));
+        assert!(picker.shift("/", 0, &[], 1));
+        assert_eq!(picker.accept("/", 0, &[]).as_deref(), Some("/help"));
     });
 }
 
@@ -16,12 +16,12 @@ fn picker_wraps_and_accepts_the_selected_row() {
 fn picker_dismissal_resets_after_an_edit() {
     sigil::reactive::Runtime::scope("mage-command-dismiss-test", || {
         let picker = Picker::new();
-        assert!(picker.hide("/mo"));
-        assert!(!picker.open("/mo"));
+        assert!(picker.hide("/mo", 0, &[]));
+        assert!(!picker.open("/mo", 0, &[]));
         picker.change("/mo");
-        assert!(picker.open("/mo"));
-        assert_eq!(picker.accept("/mo"), Some("/model"));
-        assert_eq!(picker.accept("/model"), None);
+        assert!(picker.open("/mo", 0, &[]));
+        assert_eq!(picker.accept("/mo", 0, &[]).as_deref(), Some("/model"));
+        assert_eq!(picker.accept("/model", 0, &[]).as_deref(), None);
     });
 }
 

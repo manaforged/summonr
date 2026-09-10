@@ -59,8 +59,6 @@ fn compact_formatters_keep_the_useful_tail() {
     assert_eq!(fmt_tokens(1_500), "1.5k");
     assert_eq!(fmt_tokens(1_000_000), "1.0m");
     assert_eq!(short_session("session-12345"), "12345");
-    assert_eq!(last_line("one\n\ntwo\n"), "two");
-    assert_eq!(tail_lines("one\ntwo\nthree", 2), "two\nthree");
 }
 
 #[test]

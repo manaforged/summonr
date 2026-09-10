@@ -16,49 +16,17 @@ const SCRIM: Rgba8 = Rgba8 {
 pub(super) fn root(app: App) -> NodeBuilder {
     let screen = app.clone();
     shell(&app).children_reactive(move || {
-        drop((
-            screen.transcript.get(),
-            screen.status.get(),
-            screen.select.get(),
-            screen.draft.get(),
-            screen.caret.get(),
-            screen.viewport.get(),
-            screen.scroll_y.get(),
-            screen.settings_sel.get(),
-            screen.hotkeys_open.get(),
-            screen.hotkey_sel.get(),
-            screen.hotkey_recording.get(),
-            screen.hotkey_note.get(),
-            screen.auth_open.get(),
-            screen.auth_choices.get(),
-            screen.auth_sel.get(),
-            screen.auth_entering.get(),
-            screen.auth_key.get(),
-            screen.auth_caret.get(),
-            screen.editing_model.get(),
-            screen.model_draft.get(),
-            screen.model_caret.get(),
-            screen.model_choices.get(),
-            screen.model_recent.get(),
-            screen.model_sel.get(),
-            screen.model_loading.get(),
-            screen.model_error.get(),
-            screen.workflow_open.get(),
-            screen.workflow_name.get(),
-            screen.workflow_names.get(),
-            screen.workflow_seats.get(),
-            screen.workflow_sel.get(),
-            screen.workflow_naming.get(),
-            screen.workflow_draft.get(),
-            screen.workflow_caret.get(),
-            screen.drag_from.get(),
-            screen.drag_over.get(),
-            screen.ticks.get(),
-            screen.view_edit.get(),
-            screen.view_text.get(),
-            screen.view_caret.get(),
-        ));
-        let view = if screen.auth_open.get() {
+        if let Some(entry) = screen.search.target.peek() {
+            if let Some(position) = screen.history.borrow_mut().position(&screen, entry) {
+                screen.scroll_y.set(position);
+            }
+            screen.search.target.set(None);
+        }
+        let view = if screen.search.open.get() {
+            super::search::layer(screen.clone())
+        } else if screen.sessions.open.get() {
+            super::sessions::layer(screen.clone())
+        } else if screen.auth_open.get() {
             settings::auth_layer(screen.clone())
         } else if screen.editing_model.get() {
             settings::model_picker_layer(screen.clone())
@@ -82,12 +50,64 @@ pub(super) fn root(app: App) -> NodeBuilder {
     })
 }
 
+pub(super) fn watch(app: &App) {
+    drop((
+        app.search.open.get(),
+        app.search.query.get(),
+        app.search.caret.get(),
+        app.search.selected.get(),
+    ));
+    drop((
+        app.transcript.get(),
+        app.status.get(),
+        app.select.get(),
+        app.draft.get(),
+        app.caret.get(),
+        app.viewport.get(),
+        app.scroll_y.get(),
+        app.settings_sel.get(),
+        app.hotkeys_open.get(),
+        app.hotkey_sel.get(),
+        app.hotkey_recording.get(),
+        app.hotkey_note.get(),
+        app.auth_open.get(),
+        app.auth_choices.get(),
+        app.auth_sel.get(),
+        app.auth_entering.get(),
+        app.auth_key.get(),
+        app.auth_caret.get(),
+        app.editing_model.get(),
+        app.model_draft.get(),
+        app.model_caret.get(),
+        app.model_choices.get(),
+        app.model_recent.get(),
+        app.model_sel.get(),
+        app.model_loading.get(),
+        app.model_error.get(),
+        app.workflow_open.get(),
+        app.workflow_name.get(),
+        app.workflow_names.get(),
+        app.workflow_seats.get(),
+        app.workflow_sel.get(),
+        app.workflow_naming.get(),
+        app.workflow_draft.get(),
+        app.workflow_caret.get(),
+        app.drag_from.get(),
+        app.drag_over.get(),
+        app.ticks.get(),
+        app.view_edit.get(),
+        app.view_text.get(),
+        app.view_caret.get(),
+    ));
+}
+
 pub(super) fn shell(app: &App) -> NodeBuilder {
     let cancel = app.clone();
     let interrupt = app.clone();
     let eof = app.clone();
     let complete = app.clone();
     let enter = app.clone();
+    let retry = app.clone();
     let page_up = app.clone();
     let page_down = app.clone();
     let setting_up = app.clone();
@@ -120,7 +140,13 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         .theme(Theme::dark())
         .layout(LayoutStyle::flex_column().fill_width().fill_height())
         .class("w-full h-full bg-surface");
-    hotkey_shortcuts(shell, app)
+    let shell = shell
+        .key_capture(Key::F5, move |event| {
+            if !retry.options_active() && !retry.view_edit.peek() {
+                event.stop_propagation();
+                retry.retry();
+            }
+        })
         .key_capture(Key::Escape, move |event| {
             event.stop_propagation();
             if cancel.options_active() {
@@ -142,7 +168,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(Shortcut::ctrl(LogicalKey::character("s")), move |event| {
-            if save.view_edit.peek() {
+            if save.view_edit.peek() && !save.hotkey_recording.peek() {
                 event.stop_propagation();
                 save.edit_save();
             }
@@ -191,8 +217,15 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         })
         .child(tab_shortcuts(&complete))
         .key_capture(Key::Enter, move |event| {
+            if enter.view_edit.peek() && !enter.options_active() {
+                return;
+            }
             event.stop_propagation();
-            if enter.context.peek().is_some() {
+            if enter.search.open.peek() {
+                enter.jump();
+            } else if enter.sessions.open.peek() {
+                enter.resume_session();
+            } else if enter.context.peek().is_some() {
                 enter.context_enter();
             } else if enter.pane_active().is_some() {
                 enter.pane_enter();
@@ -241,11 +274,14 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             },
         )
         .key_capture(Shortcut::ctrl(LogicalKey::character("c")), move |event| {
-            event.stop_propagation();
-            interrupt.interrupt();
+            if !interrupt.hotkey_recording.peek() {
+                event.stop_propagation();
+                interrupt.interrupt();
+            }
         })
         .key_capture(Shortcut::ctrl(LogicalKey::character("d")), move |event| {
-            if !eof.auth_open.peek()
+            if !eof.hotkey_recording.peek()
+                && !eof.options_active()
                 && eof.draft.peek().is_empty()
                 && eof.model.borrow().busy_since.is_none()
             {
@@ -255,7 +291,11 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         })
         .key_capture(Key::PageUp, move |event| {
             event.stop_propagation();
-            if page_up.pane_active().is_some() {
+            if page_up.search.open.peek() {
+                page_up.search.shift(&page_up.model.borrow(), -8);
+            } else if page_up.sessions.open.peek() {
+                page_up.sessions.shift(-8);
+            } else if page_up.pane_active().is_some() {
                 page_up.pane_page(-1);
             } else {
                 page_up.page_history(-1.0);
@@ -263,14 +303,24 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         })
         .key_capture(Key::PageDown, move |event| {
             event.stop_propagation();
-            if page_down.pane_active().is_some() {
+            if page_down.search.open.peek() {
+                page_down.search.shift(&page_down.model.borrow(), 8);
+            } else if page_down.sessions.open.peek() {
+                page_down.sessions.shift(8);
+            } else if page_down.pane_active().is_some() {
                 page_down.pane_page(1);
             } else {
                 page_down.page_history(1.0);
             }
         })
         .key_capture(Key::ArrowUp, move |event| {
-            if setting_up.context.peek().is_some() {
+            if setting_up.search.open.peek() {
+                event.stop_propagation();
+                setting_up.search.shift(&setting_up.model.borrow(), -1);
+            } else if setting_up.sessions.open.peek() {
+                event.stop_propagation();
+                setting_up.sessions.shift(-1);
+            } else if setting_up.context.peek().is_some() {
                 event.stop_propagation();
                 setting_up.context_move(-1);
             } else if setting_up.pane_active().is_some() {
@@ -294,10 +344,18 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             } else if setting_up.suggesting() {
                 event.stop_propagation();
                 setting_up.shift(-1);
+            } else if setting_up.recall(true) {
+                event.stop_propagation();
             }
         })
         .key_capture(Key::ArrowDown, move |event| {
-            if setting_down.context.peek().is_some() {
+            if setting_down.search.open.peek() {
+                event.stop_propagation();
+                setting_down.search.shift(&setting_down.model.borrow(), 1);
+            } else if setting_down.sessions.open.peek() {
+                event.stop_propagation();
+                setting_down.sessions.shift(1);
+            } else if setting_down.context.peek().is_some() {
                 event.stop_propagation();
                 setting_down.context_move(1);
             } else if setting_down.pane_active().is_some() {
@@ -321,6 +379,8 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             } else if setting_down.suggesting() {
                 event.stop_propagation();
                 setting_down.shift(1);
+            } else if setting_down.recall(false) {
+                event.stop_propagation();
             }
         })
         .key_capture(Key::ArrowLeft, move |event| {
@@ -413,12 +473,33 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 ScrollDelta::Pixels(point) => point.y,
                 ScrollDelta::Lines(point) => point.y * super::canvas::cell().h * 3.0,
             };
+            if scroll.sessions.open.peek() {
+                scroll
+                    .sessions
+                    .shift((-delta / super::canvas::cell().h).round() as isize);
+                event.stop_propagation();
+                return;
+            }
+            if !scroll.options_active()
+                && !scroll.splash.peek()
+                && scroll.layout.peek().secondary.is_some()
+                && event.position.x >= f32::from(scroll.chat_cols()) * super::canvas::cell().w
+            {
+                let lines = match event.delta {
+                    ScrollDelta::Pixels(point) => point.y / super::canvas::cell().h,
+                    ScrollDelta::Lines(point) => point.y,
+                };
+                scroll.pane_move(-lines.round() as isize);
+                event.stop_propagation();
+                return;
+            }
             let before = scroll.scroll_y.peek();
             scroll.scroll_history(delta);
             if scroll.scroll_y.peek() != before {
                 event.stop_propagation();
             }
-        })
+        });
+    hotkey_shortcuts(shell, app)
 }
 
 fn tab_shortcuts(app: &App) -> NodeBuilder {
@@ -439,7 +520,11 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(tab.clone())
                 .key(tab, move |event| {
                     event.stop_propagation();
-                    if complete.auth_open.peek() {
+                    if complete.search.open.peek() {
+                        complete.search.shift(&complete.model.borrow(), 1);
+                    } else if complete.sessions.open.peek() {
+                        complete.sessions.scope();
+                    } else if complete.auth_open.peek() {
                         complete.move_auth(1);
                     } else if complete.editing_model.peek() {
                         complete.move_model(1);
@@ -461,7 +546,11 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(shift_tab.clone())
                 .key(shift_tab, move |event| {
                     event.stop_propagation();
-                    if mode.auth_open.peek() {
+                    if mode.search.open.peek() {
+                        mode.search.shift(&mode.model.borrow(), -1);
+                    } else if mode.sessions.open.peek() {
+                        mode.sessions.scope();
+                    } else if mode.auth_open.peek() {
                         mode.move_auth(-1);
                     } else if mode.editing_model.peek() {
                         mode.move_model(-1);
@@ -484,7 +573,15 @@ fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
         node = node.key_capture(
             Shortcut::ctrl(LogicalKey::character(key.to_string())),
             move |event| {
-                if route.route_hotkey(key) {
+                if !route.hotkey_recording.peek()
+                    && !route.options_active()
+                    && route.model.borrow().prefs.hotkeys.action(key)
+                        == Some(crate::prefs::Hotkey::Newline)
+                {
+                    event.key = Key::Enter.into();
+                    event.modifiers = ModifiersState::empty();
+                    event.text = None;
+                } else if route.route_hotkey(key) {
                     event.stop_propagation();
                 }
             },
@@ -494,6 +591,14 @@ fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
 }
 
 fn escape(app: &App) {
+    if app.search.open.peek() {
+        app.search.open.set(false);
+        return;
+    }
+    if app.sessions.open.peek() {
+        app.sessions.open.set(false);
+        return;
+    }
     if app.hotkey_recording.peek() {
         app.hotkey_recording.set(false);
         app.hotkey_note.set(String::new());

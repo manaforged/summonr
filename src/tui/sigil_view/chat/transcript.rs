@@ -8,12 +8,13 @@ use crate::tui::{Round, ToolState};
 
 use super::super::model::{Entry, Model};
 
-pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Line> {
-    let mut lines = Vec::new();
+pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Vec<Line>> {
+    let mut entries = Vec::new();
     let mut previous_tool = false;
     for entry in &model.entries {
+        let mut lines = Vec::new();
         let tool = matches!(entry, Entry::Tool { .. });
-        if !lines.is_empty() && !(tool && previous_tool) {
+        if !entries.is_empty() && !(tool && previous_tool) {
             lines.push(Vec::new());
         }
         previous_tool = tool;
@@ -41,8 +42,8 @@ pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Line> {
                 name,
                 arg,
                 state,
-                tail,
-            } => lines.extend(tool_lines(name, arg, state, tail)),
+                output,
+            } => lines.extend(tool_lines(name, arg, state, model.prefs.tools.text(output))),
             Entry::Verify { command, passed } => lines.push(vec![
                 Span::styled(
                     if *passed { "✓ " } else { "✗ " },
@@ -73,8 +74,8 @@ pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Line> {
             ),
             Entry::Error(text) => lines.push(vec![Span::styled(format!("summon: {text}"), RED)]),
             Entry::Chart(rounds) => lines.extend(chart(rounds, accent)),
-            Entry::Image { bytes, label, .. } => lines.extend(
-                super::image::render_cached(bytes, width)
+            Entry::Image { source, label } => lines.extend(
+                super::image::render_cached(source, width)
                     .map(|rows| {
                         let mut block = vec![vec![Span::styled(label, DIM)]];
                         block.extend(rows);
@@ -88,8 +89,9 @@ pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Line> {
                     }),
             ),
         }
+        entries.push(lines);
     }
-    lines
+    entries
 }
 
 fn user(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {

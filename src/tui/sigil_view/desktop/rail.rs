@@ -69,7 +69,7 @@ fn section(title: &'static str) -> NodeBuilder {
 /// Sessions that ran in this workspace, newest first; the live one is lit.
 fn sessions(app: &App) -> NodeBuilder {
     let here = app.workspace.display().to_string();
-    let current = app.info.session.clone();
+    let current = app.model.borrow().session.clone();
     let mut rows: Vec<session::SessionInfo> = session::list()
         .unwrap_or_default()
         .into_iter()

@@ -12,6 +12,7 @@ use crate::runtime::Loop;
 use crate::workflow::Workflow;
 
 mod command;
+mod history;
 mod reader;
 mod settings;
 mod turn;
@@ -91,6 +92,7 @@ impl Worker {
     }
 
     async fn run(mut self) {
+        self.replay();
         if let Some(name) = self.loop_.workflow() {
             self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }
@@ -125,11 +127,9 @@ impl Worker {
 
     async fn dispatch(&mut self, command: Cmd) -> bool {
         match command {
+            Cmd::Branch { session, turn } => self.branch(&session, turn),
             Cmd::Command(line) => self.command(&line).await.unwrap_or(true),
-            Cmd::Login(name) => {
-                self.login(&name);
-                true
-            }
+            Cmd::Login(name) => self.login(&name).await,
             Cmd::SetKey(name, key) => {
                 self.set_key(&name, &key).await;
                 true
@@ -178,13 +178,15 @@ impl Worker {
                 self.list_models();
                 true
             }
-            command @ (Cmd::ListFiles
+            command @ (Cmd::ListSessions
+            | Cmd::ListPrompts(_)
+            | Cmd::ListFiles
             | Cmd::Diff(_)
             | Cmd::Patch(..)
             | Cmd::Trees
             | Cmd::View(..)
             | Cmd::Save(..)) => {
-                self.reader.run(command);
+                self.reader.run(command).await;
                 true
             }
             Cmd::Merge(path) => {

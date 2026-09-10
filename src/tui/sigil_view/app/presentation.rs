@@ -1,9 +1,9 @@
 use crate::prefs::Prefs;
-use crate::tui::{Info, Round, Snapshot, fmt_tokens, short_session};
+use crate::tui::{Activity, Info, Round, Snapshot, fmt_tokens, short_session};
 
 use super::super::model::Model;
 
-pub(super) fn header(model: &Model, info: &Info) -> String {
+pub(super) fn header(model: &Model) -> String {
     let relay = model
         .relay
         .as_deref()
@@ -13,7 +13,7 @@ pub(super) fn header(model: &Model, info: &Info) -> String {
         "summoner  {}{}   session {}   {mode}",
         model.model,
         relay,
-        short_session(&info.session),
+        short_session(&model.session),
     )
 }
 
@@ -21,7 +21,10 @@ pub(super) fn status(model: &Model, info: &Info) -> String {
     let total = model.prompt_tokens + model.completion_tokens;
     let activity = model.busy_since.map_or_else(
         || "ready".to_string(),
-        |start| {
+        |(activity, start)| {
+            if activity != Activity::Turn {
+                return format!("{} · {}s", activity.label(), start.elapsed().as_secs());
+            }
             let tool = model
                 .live_tool
                 .as_ref()
@@ -82,7 +85,7 @@ pub(super) fn facts(model: &Model, info: &Info) -> String {
     let mut rows = vec![
         format!("summoner  {}", info.version),
         format!("   model  {}{relay}", model.model),
-        format!(" session  {}", short_session(&info.session)),
+        format!(" session  {}", short_session(&model.session)),
         format!(" workdir  {}", info.workspace),
     ];
     if model.snapshot.plan {

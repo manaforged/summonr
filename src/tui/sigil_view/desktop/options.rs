@@ -7,6 +7,115 @@ use crate::workflow::Role as WorkflowRole;
 
 const WIDTH: f32 = 360.0;
 
+pub(super) fn auth(app: App) -> NodeBuilder {
+    let escape = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill()
+                .justify_content(JustifyContent::Center),
+        )
+        .class(classes!("bg-gray-1"))
+        .key_capture(Key::Escape, move |event| {
+            escape.cancel_auth();
+            event.stop_propagation();
+        })
+        .children_reactive(move || {
+            let entering = app.auth_entering.get();
+            let choices = app.auth_choices.get();
+            let selected = app.auth_sel.peek();
+            let back = app.clone();
+            let mut panel = pane()
+                .child(label("Authentication").class(classes!("text-sm font-medium text-gray-12")));
+            if entering {
+                if let Some(choice) = choices.get(selected) {
+                    let save = app.clone();
+                    let submit = app.clone();
+                    panel = panel
+                        .child(label(choice.name.as_str()).class(classes!("text-sm text-gray-12")))
+                        .child(
+                            container()
+                                .layout(LayoutStyle::block().fill_width().height(34.0))
+                                .child(
+                                    text_field(app.auth_key)
+                                        .password()
+                                        .placeholder("API key")
+                                        .submit(move |_| submit.commit_auth())
+                                        .height(34.0)
+                                        .class(classes!(
+                                            "rounded-md border border-gray-6 bg-gray-1"
+                                        )),
+                                )
+                                .on_added(|cx, id| {
+                                    if let Some(field) = cx.first_child(id) {
+                                        request_focus(field);
+                                    }
+                                }),
+                        )
+                        .child(
+                            label("Saves in the credential store.")
+                                .class(classes!("text-xs text-gray-11")),
+                        )
+                        .child(
+                            button("Save API key")
+                                .height(32.0)
+                                .activate(move || save.commit_auth()),
+                        );
+                }
+            } else {
+                for (index, choice) in choices.iter().enumerate() {
+                    let pick = app.clone();
+                    let action = if choice.device_login {
+                        "Sign in"
+                    } else if choice.configured {
+                        "Replace key"
+                    } else {
+                        "Add key"
+                    };
+                    panel = panel.child(
+                        container()
+                            .layout(LayoutStyle::block().fill_width().height(32.0))
+                            .child(
+                                button(format!("{} · {action}", choice.name))
+                                    .ghost()
+                                    .height(28.0)
+                                    .accessible(choice.status())
+                                    .activate(move || {
+                                        pick.auth_sel.set(index);
+                                        pick.commit_auth();
+                                    }),
+                            )
+                            .on_added(move |cx, id| {
+                                if index == selected
+                                    && let Some(button) = cx.first_child(id)
+                                {
+                                    request_focus(button);
+                                }
+                            }),
+                    );
+                }
+                if choices.is_empty() {
+                    panel = panel.child(
+                        label("No providers available.").class(classes!("text-sm text-error-11")),
+                    );
+                }
+            }
+            vec![
+                panel
+                    .child(
+                        button(if entering { "Back" } else { "Close" })
+                            .ghost()
+                            .height(32.0)
+                            .activate(move || back.cancel_auth()),
+                    )
+                    .child(
+                        label("Tab selects · Enter activates · Esc backs")
+                            .class(classes!("text-xs text-gray-11")),
+                    ),
+            ]
+        })
+}
+
 pub(super) fn main(app: App) -> NodeBuilder {
     let close = app.clone();
     let model = app.model.borrow();
@@ -69,12 +178,12 @@ pub(super) fn main(app: App) -> NodeBuilder {
 
     let mut panel = pane()
         .child(header("Options", move || close.toggle_options()))
-        .child(section("Session"));
+        .child(section("Session · not saved"));
     for (index, (name, value)) in rows.into_iter().enumerate() {
         if index == 3 {
-            panel = panel.child(section("Provider"));
+            panel = panel.child(section("Provider · not saved"));
         } else if index == 6 {
-            panel = panel.child(section("Interface"));
+            panel = panel.child(section("Interface · auto-save"));
         }
         let change = app.clone();
         let selected = app.settings_sel.peek() == index;
@@ -168,10 +277,13 @@ pub(super) fn models(app: App) -> NodeBuilder {
     for (index, choice) in choices.iter().enumerate() {
         let pick = app.clone();
         let picked = choice.clone();
-        let title = picked.split_once('\t').map_or_else(
+        let mut title = picked.split_once('\t').map_or_else(
             || picked.clone(),
             |(endpoint, model)| format!("{endpoint} · {model}"),
         );
+        if app.model.borrow().is_model(choice) {
+            title.push_str(" · current");
+        }
         panel = panel.child(
             hit(title.clone(), app.model_sel.peek() == index, move || {
                 let choices = pick.filtered_models();
@@ -191,7 +303,11 @@ pub(super) fn models(app: App) -> NodeBuilder {
     if app.model_loading.peek() {
         panel = panel.child(label("Loading models…").class(classes!("text-xs text-gray-11")));
     } else if choices.is_empty() {
-        panel = panel.child(label("No models match.").class(classes!("text-xs text-gray-11")));
+        panel = panel
+            .child(label("No models match.").class(classes!("text-xs text-gray-11")))
+            .child(
+                label("Enter uses this exact model ID.").class(classes!("text-xs text-gray-11")),
+            );
     }
     let error = app.model_error.peek();
     if !error.is_empty() {

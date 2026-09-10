@@ -13,7 +13,7 @@ default = "zai"
 # theme = "space"        # "space" or "fantasy" accent palette
 # splash = true          # boot into the splash cover, or straight to chat
 # reasoning = true       # show streamed reasoning in the transcript
-# tools = "compact"      # "compact" keeps a tool's last line; "full" keeps twelve
+# tools = "compact"      # show the last line or the full tool result
 # bus = true             # let incoming mail start a turn after MAGE_BUS joins
 #
 # Language modules route diagnostics, definition, and rename for Rust,

@@ -10,6 +10,7 @@ use tokio::sync::mpsc::UnboundedSender;
 use super::{Cmd, Msg};
 use crate::diff;
 use crate::error::Result;
+use crate::session::prompts;
 use crate::worktree;
 
 /// How long a burst of changes is gathered before one report goes out.
@@ -28,13 +29,38 @@ impl Reader {
         Self { workspace, ui }
     }
 
-    pub(super) fn run(&self, command: Cmd) {
+    pub(super) async fn run(&self, command: Cmd) {
+        let save = matches!(command, Cmd::Save(..));
         let reader = self.clone();
-        drop(tokio::task::spawn_blocking(move || reader.serve(command)));
+        let task = tokio::task::spawn_blocking(move || reader.serve(command));
+        if save && let Err(error) = task.await {
+            self.send(Msg::System(format!("save task failed: {error}")));
+        }
     }
 
     pub(super) fn serve(&self, command: Cmd) {
         match command {
+            Cmd::ListPrompts(session) => {
+                let result = prompts(session.as_deref()).map_err(|error| error.to_string());
+                self.send(Msg::Prompts { session, result });
+            }
+            Cmd::ListSessions => {
+                let roots = crate::session::roots(&self.workspace);
+                let rows = crate::session::list()
+                    .map(|rows| {
+                        rows.into_iter()
+                            .rev()
+                            .filter(|info| info.depth == 0)
+                            .map(|info| {
+                                let local =
+                                    info.cwd.as_ref().is_some_and(|cwd| roots.contains(cwd));
+                                (info, local)
+                            })
+                            .collect()
+                    })
+                    .map_err(|error| error.to_string());
+                self.send(Msg::Sessions(rows));
+            }
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
             Cmd::Patch(root, path) => {
@@ -44,20 +70,19 @@ impl Reader {
                 self.send(Msg::Patch { path, text });
             }
             Cmd::Trees => self.trees(),
-            Cmd::Save(path, text) => {
-                let lines = text.lines().count();
-                self.send(match std::fs::write(self.workspace.join(&path), text) {
-                    Ok(()) => Msg::System(format!(
-                        "saved {path} · {lines} line{}",
-                        if lines == 1 { "" } else { "s" }
-                    )),
-                    Err(error) => Msg::System(format!("cannot save {path}: {error}")),
-                });
+            Cmd::Save(file, text) => {
+                let result = std::fs::write(&file, &text).map_err(|error| error.to_string());
+                self.send(Msg::Saved { file, text, result });
             }
             Cmd::View(root, path) => {
                 let root = root.as_deref().unwrap_or(&self.workspace);
                 match view(root, &path) {
-                    Ok((rope, added)) => self.send(Msg::View { path, rope, added }),
+                    Ok((rope, added)) => self.send(Msg::View {
+                        file: root.join(&path),
+                        path,
+                        rope,
+                        added,
+                    }),
                     Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
                 }
             }

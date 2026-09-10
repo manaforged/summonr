@@ -27,6 +27,7 @@ fn usage(input: u64, output: u64, millis: u64) -> Usage {
 fn user(text: &str, start: bool) -> Line {
     Line::User {
         text: text.to_string(),
+        source: None,
         images: Vec::new(),
         start,
     }
@@ -73,6 +74,7 @@ fn every_line_round_trips_through_the_file() {
         },
         Line::User {
             text: "look".to_string(),
+            source: None,
             images: vec![Image {
                 media_type: "image/png".to_string(),
                 bytes: b"png-bytes".to_vec(),

@@ -29,20 +29,24 @@ impl Picker {
         self.query.set(draft.to_string());
     }
 
-    pub(super) fn open(self, draft: &str) -> bool {
-        !self.hidden.get() && !self.rows(draft).is_empty()
+    pub(super) fn mentions(self) -> bool {
+        self.query.peek().contains('@')
     }
 
-    pub(super) fn hide(self, draft: &str) -> bool {
-        if !self.open(draft) {
+    pub(super) fn open(self, draft: &str, caret: usize, files: &[String]) -> bool {
+        !self.hidden.get() && !self.rows(draft, caret, files).is_empty()
+    }
+
+    pub(super) fn hide(self, draft: &str, caret: usize, files: &[String]) -> bool {
+        if !self.open(draft, caret, files) {
             return false;
         }
         self.hidden.set(true);
         true
     }
 
-    pub(super) fn shift(self, draft: &str, delta: isize) -> bool {
-        let count = self.rows(draft).len();
+    pub(super) fn shift(self, draft: &str, caret: usize, files: &[String], delta: isize) -> bool {
+        let count = self.rows(draft, caret, files).len();
         if count == 0 || self.hidden.peek() {
             return false;
         }
@@ -57,17 +61,17 @@ impl Picker {
         true
     }
 
-    pub(super) fn accept(self, draft: &str) -> Option<&'static str> {
+    pub(super) fn accept(self, draft: &str, caret: usize, files: &[String]) -> Option<String> {
         if self.hidden.peek() {
             return None;
         }
-        let rows = self.rows(draft);
+        let rows = self.rows(draft, caret, files);
         let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
-        (row.0 != draft).then_some(row.0)
+        (row.0 != draft).then(|| row.0.clone())
     }
 
-    pub(super) fn complete(self, draft: &str) -> Option<&'static str> {
-        let rows = self.rows(draft);
+    pub(super) fn complete(self, draft: &str, caret: usize, files: &[String]) -> Option<String> {
+        let rows = self.rows(draft, caret, files);
         if rows.is_empty() || self.hidden.peek() {
             return None;
         }
@@ -76,22 +80,58 @@ impl Picker {
             cursor = (cursor + 1) % rows.len();
             self.cursor.set(cursor);
         }
-        Some(rows[cursor].0)
+        Some(rows[cursor].0.clone())
     }
 
     fn cursor(self, count: usize) -> usize {
         self.cursor.get().min(count.saturating_sub(1))
     }
 
-    fn rows(self, draft: &str) -> Vec<(&'static str, &'static str)> {
+    fn rows(self, draft: &str, caret: usize, files: &[String]) -> Vec<(String, String)> {
+        if let Some((_, query)) = mention(draft, caret) {
+            let query = query.to_lowercase();
+            let mut matches: Vec<_> = files
+                .iter()
+                .filter_map(|path| {
+                    let score = crate::tui::rank(&path.to_lowercase(), "", &query)?;
+                    Some((score, path))
+                })
+                .collect();
+            matches.sort_unstable();
+            return matches
+                .into_iter()
+                .map(|(_, path)| (path.clone(), String::new()))
+                .collect();
+        }
         let query = self.query.get();
         let exact = crate::command_specs().iter().any(|spec| spec.name == draft);
-        if exact && !query.is_empty() {
+        let rows = if exact && !query.is_empty() {
             matching_commands(&query)
         } else {
             matching_commands(draft)
-        }
+        };
+        rows.into_iter()
+            .map(|(name, help)| (name.to_string(), help.to_string()))
+            .collect()
     }
+}
+
+pub(super) fn mention(draft: &str, caret: usize) -> Option<(usize, &str)> {
+    let before = draft.get(..caret)?;
+    let start = before.rfind('@')?;
+    if start > 0 && !before[..start].ends_with(char::is_whitespace) {
+        return None;
+    }
+    let query = &before[start + 1..];
+    if let Some(query) = query.strip_prefix('"') {
+        (!query.contains(['"', '\n', '\r'])).then_some((start, query))
+    } else {
+        (!query.contains(char::is_whitespace)).then_some((start, query))
+    }
+}
+
+pub(super) fn reference(path: &str) -> String {
+    format!("@{}", serde_json::Value::String(path.to_string()))
 }
 
 pub(super) struct Menu {
@@ -102,18 +142,20 @@ pub(super) struct Menu {
 
 pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     let draft = app.draft.get();
+    let caret = app.caret.get();
+    let model = app.model.borrow();
     if app.settings_open.peek()
         || app.auth_open.peek()
         || app.editing_model.peek()
-        || app.model.borrow().busy_since.is_some()
-        || !app.commands.open(&draft)
+        || model.busy_since.is_some()
+        || !app.commands.open(&draft, caret, &model.files)
     {
         return None;
     }
     if cols < 12 || rows < 6 {
         return None;
     }
-    let matches = app.commands.rows(&draft);
+    let matches = app.commands.rows(&draft, caret, &model.files);
     let cursor = app.commands.cursor(matches.len());
     let splash = app.splash.peek();
     let [left, prompt, anchor_width] = if splash {
@@ -146,7 +188,12 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
         prompt.saturating_sub(u16::try_from(height + 1).unwrap_or(u16::MAX))
     };
     let mut lines = Vec::with_capacity(height);
-    lines.push(border("commands", width, true));
+    let title = if mention(&draft, caret).is_some() {
+        "files"
+    } else {
+        "commands"
+    };
+    lines.push(border(title, width, true));
     for (offset, (name, description)) in shown.iter().enumerate() {
         lines.push(row(name, description, width, start + offset == cursor));
     }
@@ -158,11 +205,11 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     })
 }
 
-fn popup_width(matches: &[(&str, &str)], viewport: usize) -> usize {
+fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
     let widest = matches
         .iter()
         .map(|(name, description)| {
-            UnicodeWidthStr::width(*name) + UnicodeWidthStr::width(*description) + 7
+            UnicodeWidthStr::width(name.as_str()) + UnicodeWidthStr::width(description.as_str()) + 7
         })
         .max()
         .unwrap_or(MIN_WIDTH);
@@ -172,7 +219,8 @@ fn popup_width(matches: &[(&str, &str)], viewport: usize) -> usize {
 fn row(name: &str, description: &str, width: usize, selected: bool) -> String {
     let marker = if selected { '›' } else { ' ' };
     let inner = width.saturating_sub(4);
-    let name_width = UnicodeWidthStr::width(name);
+    let name = fit(name, inner);
+    let name_width = UnicodeWidthStr::width(name.as_str());
     let available = inner.saturating_sub(name_width + 2);
     let help = fit(description, available);
     let gap = inner.saturating_sub(name_width + UnicodeWidthStr::width(help.as_str()));

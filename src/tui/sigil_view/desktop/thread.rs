@@ -6,10 +6,13 @@ use super::super::app::App;
 use super::super::model::Entry;
 use super::super::pane::Pane;
 use super::{hairline, hit, icons, open, spacer};
+use crate::prefs::ToolOutput;
 use crate::session;
 use crate::tui::{context, fmt_tokens};
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
+    let title = app.clone();
+    let input = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -18,10 +21,28 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .class(classes!("bg-gray-1"))
-        .child(title_bar(app.clone()))
+        .child(
+            container()
+                .layout(LayoutStyle::block().fill_width().shrink(0.0))
+                .children_reactive(move || {
+                    let _updates = (title.panes.get(), title.layout.get());
+                    vec![title_bar(title.clone())]
+                }),
+        )
         .child(transcript(app.clone()))
-        .child(composer(app.clone()))
-        .child(status_strip(app))
+        .child(
+            container()
+                .layout(LayoutStyle::block().fill_width().shrink(0.0))
+                .children_reactive(move || vec![composer(input.clone(), input.view_edit.get())]),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::block().fill_width().shrink(0.0))
+                .children_reactive(move || {
+                    drop(app.status.get());
+                    vec![status_strip(app.clone())]
+                }),
+        )
 }
 
 fn title_bar(app: App) -> NodeBuilder {
@@ -47,8 +68,11 @@ fn title_bar(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            label(format!("session {}", session::short(&app.info.session)))
-                .class(classes!("text-sm font-medium text-gray-12")),
+            label(format!(
+                "session {}",
+                session::short(&app.model.borrow().session)
+            ))
+            .class(classes!("text-sm font-medium text-gray-12")),
         )
         .child(label(workspace).class(classes!("text-sm text-gray-11")))
         .child(spacer())
@@ -95,7 +119,18 @@ fn title_bar(app: App) -> NodeBuilder {
 
 fn transcript(app: App) -> NodeBuilder {
     let live = app.clone();
+    let bounds = signal((0.0, 0.0, 0.0, 0.0));
+    let extent = app.extent;
     let body = container()
+        .bounds_reactive(bounds)
+        .on_added(move |_, _| {
+            effect(move || {
+                let height = bounds.get().3;
+                if height > 0.0 {
+                    extent.set(height);
+                }
+            });
+        })
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
@@ -106,6 +141,7 @@ fn transcript(app: App) -> NodeBuilder {
         .children_reactive(move || {
             drop(live.transcript.get());
             let entries: Vec<Entry> = live.model.borrow().entries.clone();
+            let tools = live.model.borrow().prefs.tools;
             let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
             if entries.is_empty() {
                 column = column.child(
@@ -113,8 +149,27 @@ fn transcript(app: App) -> NodeBuilder {
                         .class(classes!("text-sm text-gray-11")),
                 );
             } else {
-                for entry in entries {
-                    column = column.child(row(entry));
+                for (index, entry) in entries.into_iter().enumerate() {
+                    if live.search.target.peek() != Some(index) {
+                        column = column.child(row(entry, tools));
+                        continue;
+                    }
+                    let measured = signal((0.0, 0.0, 0.0, 0.0));
+                    let target = live.search.target;
+                    let scroll = live.scroll_y;
+                    column = column.child(row(entry, tools).bounds_reactive(measured).on_added(
+                        move |_, _| {
+                            effect(move || {
+                                let (_, y, _, height) = measured.get();
+                                let (_, top, _, body_height) = bounds.get();
+                                if target.peek() == Some(index) && height > 0.0 && body_height > 0.0
+                                {
+                                    scroll.set((y - top).max(0.0));
+                                    target.set(None);
+                                }
+                            });
+                        },
+                    ));
                 }
             }
             vec![column]
@@ -130,12 +185,11 @@ fn transcript(app: App) -> NodeBuilder {
             scroll(body, app.extent)
                 .fill()
                 .scroll_bind(app.scroll_y)
-                .scroll_to_end()
-                .auto_pin_to_bottom(true),
+                .auto_pin_to_bottom(app.search.target.peek().is_none()),
         )
 }
 
-fn row(entry: Entry) -> NodeBuilder {
+fn row(entry: Entry, tools: ToolOutput) -> NodeBuilder {
     match entry {
         Entry::User(body) => container()
             .layout(
@@ -157,7 +211,7 @@ fn row(entry: Entry) -> NodeBuilder {
         Entry::Assistant { text: body, .. } => prose(&body, "text-sm text-gray-12"),
         Entry::Thinking(body) => prose(&body, "text-xs text-gray-11"),
         Entry::Tool {
-            name, arg, tail, ..
+            name, arg, output, ..
         } => container()
             .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
             .child(
@@ -175,7 +229,7 @@ fn row(entry: Entry) -> NodeBuilder {
                             .class(classes!("text-xs font-mono text-gray-11")),
                     ),
             )
-            .child(text(tail).class(classes!("text-xs font-mono text-gray-11"))),
+            .child(text(tools.text(&output)).class(classes!("text-xs font-mono text-gray-11"))),
         Entry::Verify { command, passed } => wrap(
             label(format!("{} {command}", if passed { "✓" } else { "✗" })).class(if passed {
                 classes!("text-xs text-success-11")
@@ -195,7 +249,27 @@ fn row(entry: Entry) -> NodeBuilder {
                 .height(72.0)
                 .width(280.0),
         ),
-        Entry::Image { label: name, .. } => wrap(badge(name, Tone::Neutral)),
+        Entry::Image {
+            source,
+            label: name,
+        } => {
+            let height = source.height() as f32;
+            let width = source.width() as f32;
+            container()
+                .layout(LayoutStyle::flex_column().fill_width().gap(6.0))
+                .child(
+                    image(source)
+                        .alt(name.clone())
+                        .fit(ObjectFit::Contain)
+                        .layout(
+                            LayoutStyle::block()
+                                .fill_width()
+                                .max_size(width, height)
+                                .height(height),
+                        ),
+                )
+                .child(label(name).class(classes!("text-xs text-gray-11")))
+        }
     }
 }
 
@@ -238,18 +312,32 @@ fn prose(body: &str, class: &'static str) -> NodeBuilder {
     column
 }
 
-fn composer(app: App) -> NodeBuilder {
+fn composer(app: App, editing: bool) -> NodeBuilder {
     let submit = app.clone();
     let send = app.clone();
     let changed = app.clone();
-    let editing = app.view_edit.peek();
+    let paste = app.clone();
+    let paste_meta = app.clone();
     let (value, caret) = if editing {
         (app.view_text, app.view_caret)
     } else {
         (app.draft, app.caret)
     };
-    let model = app.model.borrow().model.clone();
+    let model = app.clone();
     container()
+        .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
+            if paste.clipboard() {
+                event.stop_propagation();
+            }
+        })
+        .key_capture(
+            Shortcut::new(LogicalKey::character("v"), ModifiersState::META),
+            move |event| {
+                if paste_meta.clipboard() {
+                    event.stop_propagation();
+                }
+            },
+        )
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
@@ -291,7 +379,13 @@ fn composer(app: App) -> NodeBuilder {
                                 .align_items(AlignItems::Center)
                                 .gap(8.0),
                         )
-                        .child(label(model).class(classes!("text-sm text-gray-12")))
+                        .child(
+                            text_live(move || {
+                                drop(model.header.get());
+                                model.model.borrow().model.clone()
+                            })
+                            .class(classes!("text-sm text-gray-12")),
+                        )
                         .child(spacer())
                         .child(
                             hit("Send".to_string(), false, move || send.submit())

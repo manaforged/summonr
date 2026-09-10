@@ -21,7 +21,6 @@ const FRAME: Duration = Duration::from_millis(40);
 
 type Inbox = Rc<RefCell<UnboundedReceiver<Msg>>>;
 
-/// Runs the same App in a desktop window.
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -72,8 +71,6 @@ fn window() -> sigil::AppConfig {
     sigil::AppConfig::from((TITLE, SIZE.0, SIZE.1)).esc_exits(false)
 }
 
-/// One frame of housekeeping: drain the worker's messages, tick, and act on
-/// requests the terminal host serves by suspending the screen.
 fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     let mut changed = false;
     while let Ok(msg) = inbox.borrow_mut().try_recv() {
@@ -124,7 +121,6 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     }
 }
 
-/// Opens `path` with the desktop's default application.
 fn reveal(path: &Path) -> Result<()> {
     let (program, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
         ("open", vec![])

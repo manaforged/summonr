@@ -55,8 +55,6 @@ impl Diff {
     }
 }
 
-/// The revision the workspace is compared against: the worktree base when
-/// `root` is a Summoner worktree, `HEAD` otherwise.
 #[must_use]
 pub fn base(root: &Path) -> String {
     worktree::list(root)
@@ -96,8 +94,6 @@ fn short(value: &str) -> &str {
     value.get(..12).unwrap_or(value)
 }
 
-/// Per-file line counts for every change in `root` against [`base`],
-/// untracked files included.
 pub fn stats(root: &Path) -> Result<Diff> {
     let base = base(root);
     let numstat = git(root, &["diff", "--numstat", "--no-renames", &base, "--"])?;
@@ -118,8 +114,6 @@ pub fn stats(root: &Path) -> Result<Diff> {
     Ok(Diff { base, files })
 }
 
-/// The unified patch for `path`, or for the whole workspace when `path` is
-/// `None`, against [`base`].
 pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
     let base = base(root);
     let mut args = vec!["diff", "--no-color", "--no-renames", base.as_str(), "--"];
@@ -142,8 +136,6 @@ pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
     Ok(text)
 }
 
-/// Added line ranges of `path` against [`base`] as `(first line, count)`,
-/// 1-based. An untracked file is one range covering every line.
 pub fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
     let tracked = !git(root, &["ls-files", "--", path])?.trim().is_empty();
     if !tracked {
@@ -169,7 +161,6 @@ fn hunk_header(line: &str) -> Option<(usize, usize)> {
     (count > 0).then(|| (start.parse().ok().unwrap_or(1), count))
 }
 
-/// Workspace paths the given tool calls edit, in call order, deduplicated.
 pub fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for (name, arguments) in calls {
@@ -189,7 +180,6 @@ pub fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<St
     paths
 }
 
-/// The paths each turn of a session journal edited, first turn first.
 pub fn turns(journal: &Path) -> Result<Vec<Vec<String>>> {
     let mut turns: Vec<Vec<String>> = Vec::new();
     for line in log::read(journal)? {

@@ -68,3 +68,34 @@ fn chat_composer_keeps_the_original_three_row_height() {
         );
     });
 }
+
+#[test]
+fn numbered_lists_keep_their_numbers() {
+    use crate::tui::sigil_view::chat::transcript::numbered;
+    assert_eq!(numbered("1. first"), Some(("1", "first")));
+    assert_eq!(numbered("12. twelfth"), Some(("12", "twelfth")));
+    assert_eq!(numbered("1234. not a list"), None);
+    assert_eq!(numbered("1.no space"), None);
+    assert_eq!(numbered("plain"), None);
+}
+
+#[test]
+fn fenced_code_colours_keywords_and_leaves_names_plain() {
+    use crate::tui::sigil_view::chat::transcript::code;
+    let line = code("pub fn main() { let count = 1; }");
+    let parts: Vec<(&str, _)> = line.iter().map(|span| span.parts()).collect();
+    let colour = |word: &str| {
+        parts
+            .iter()
+            .find(|(text, _)| *text == word)
+            .map(|(_, fg)| *fg)
+            .unwrap_or_else(|| panic!("no span for {word}: {parts:?}"))
+    };
+    assert_eq!(colour("pub"), colour("fn"));
+    assert_eq!(colour("let"), colour("fn"));
+    assert_ne!(colour("main"), colour("fn"));
+    assert_eq!(colour("main"), colour("count"));
+    let quoted = code("let name = \"fn\";");
+    let parts: Vec<(&str, _)> = quoted.iter().map(|span| span.parts()).collect();
+    assert!(parts.iter().any(|(text, _)| *text == "\"fn\""), "{parts:?}");
+}

@@ -326,9 +326,6 @@ pub(super) fn detect(workspace: &Path, path: &Path) -> Result<Launch> {
     from_tree(workspace, path)
 }
 
-/// Reports whether a language server can serve this workspace: a configured
-/// command, or a curated module whose project marker sits at the root or one
-/// level down and whose server is on PATH.
 pub(super) fn available(workspace: &Path) -> bool {
     if let Ok(Some(module)) = workspace_module(workspace) {
         return language::named(&module).is_ok_and(|module| built(module).is_ok());

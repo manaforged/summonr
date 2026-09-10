@@ -316,3 +316,13 @@ fn adopt_moves_plaintext_keys_out_of_config() {
     );
     secret::forget("glm").expect("forget");
 }
+
+#[test]
+fn seat_cycling_wraps_both_ways() {
+    let names: Vec<String> = ["zai", "grok", "kimi"].map(str::to_string).into();
+    assert_eq!(step(&names, "zai", true).as_deref(), Some("grok"));
+    assert_eq!(step(&names, "kimi", true).as_deref(), Some("zai"));
+    assert_eq!(step(&names, "zai", false).as_deref(), Some("kimi"));
+    assert_eq!(step(&names, "unknown", false).as_deref(), Some("kimi"));
+    assert_eq!(step(&names[..1], "zai", true), None);
+}

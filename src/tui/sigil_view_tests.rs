@@ -29,6 +29,7 @@ pub(super) fn info() -> Info {
             splash: false,
             ..Prefs::default()
         },
+        splash: false,
         plan: false,
         strict: true,
         workspace: "~/src/mage".to_string(),
@@ -53,7 +54,7 @@ fn splash_frame(theme: &str, width: u16, height: u16, draft: &str) -> Grid {
     sigil::reactive::Runtime::scope("mage-splash-visual-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         start.prefs.theme = theme.to_string();
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.splash_revealed.set(true);
@@ -91,7 +92,7 @@ fn slash_menu_is_visible_on_the_splash() {
     sigil::reactive::Runtime::scope("mage-splash-command-menu-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.splash_revealed.set(true);
         app.resize(100, 32);
@@ -125,7 +126,7 @@ fn slash_menu_is_visible_after_leaving_splash() {
     sigil::reactive::Runtime::scope("mage-chat-command-menu-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.splash_revealed.set(true);
         app.resize(100, 32);
@@ -173,6 +174,8 @@ mod scene_tests;
 mod scroll_tests;
 #[path = "sigil_view/settings_tests.rs"]
 mod settings_tests;
+#[path = "sigil_view/speed_tests.rs"]
+mod speed_tests;
 #[path = "sigil_view/state_tests.rs"]
 mod state_tests;
 #[path = "sigil_view/view_tests.rs"]
@@ -183,7 +186,7 @@ fn a_run_layout_paints_the_ledger_beside_the_chat() {
     sigil::reactive::Runtime::scope("mage-layout-ledger-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         start.prefs.layout = "run".to_string();
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
@@ -239,7 +242,7 @@ fn the_files_pane_walks_the_tree_and_attaches_a_file_to_the_prompt() {
     sigil::reactive::Runtime::scope("mage-files-pane-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         start.prefs.layout = "files".to_string();
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
@@ -287,7 +290,7 @@ fn pane_hotkeys_and_the_context_menu_drive_the_files_pane() {
     sigil::reactive::Runtime::scope("mage-files-hotkeys-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
         app.toggle_pane(super::pane::Pane::Files);
@@ -353,7 +356,7 @@ fn pane_header_close_button_hides_the_side_pane() {
     sigil::reactive::Runtime::scope("mage-pane-close-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-close-test"), cmd);
         app.resize(120, 40);
         app.toggle_pane(super::pane::Pane::Diff);
@@ -400,7 +403,7 @@ fn the_diff_pane_lists_changes_and_shows_hunks() {
     sigil::reactive::Runtime::scope("mage-diff-pane-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
         app.toggle_pane(super::pane::Pane::Diff);
@@ -480,7 +483,7 @@ fn the_worktrees_pane_lists_trees_and_opens_their_diff() {
     sigil::reactive::Runtime::scope("mage-worktrees-pane-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
         app.toggle_pane(super::pane::Pane::Worktrees);
@@ -552,7 +555,7 @@ fn the_view_pane_shows_a_file_with_its_added_lines() {
     sigil::reactive::Runtime::scope("mage-view-pane-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
         app.toggle_pane(super::pane::Pane::Files);
@@ -625,7 +628,7 @@ fn the_diff_pane_splits_wide_hunks_filters_by_turn_and_copies_the_patch() {
     sigil::reactive::Runtime::scope("mage-diff-wide-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(220, 40);
         app.set_layout(super::pane::Layout::parse("chat | diff 60%").unwrap_or_default());
@@ -740,7 +743,7 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
     sigil::reactive::Runtime::scope("mage-edit-pane-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = false;
+        start.splash = false;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(120, 40);
         app.view_open("notes.md".to_string());
@@ -840,5 +843,22 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
         );
         assert!(app.edit_stop() && app.edit_stop(), "two escapes discard");
         assert!(!app.view_edit.peek());
+    });
+}
+
+#[test]
+fn a_no_splash_run_keeps_the_saved_preference() {
+    sigil::reactive::Runtime::scope("mage-no-splash-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.prefs.splash = true;
+        start.splash = false;
+        let config = start.config.clone().expect("scratch config");
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        assert!(!app.splash.peek(), "the run skips the cover");
+        app.toggle_theme();
+        let saved = std::fs::read_to_string(&config).expect("settings written");
+        assert!(saved.contains("splash = true"), "saved: {saved}");
+        drop(std::fs::remove_file(config));
     });
 }

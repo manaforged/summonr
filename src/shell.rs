@@ -11,68 +11,65 @@ use dunce::simplified;
 use crate::error::Error;
 use crate::error::Result;
 
+#[cfg(unix)]
 pub(crate) fn program() -> Result<String> {
-    #[cfg(unix)]
-    {
-        Ok("bash".to_string())
-    }
-    #[cfg(windows)]
-    {
-        let root = std::env::var_os("SystemRoot")
-            .ok_or_else(|| Error::Config("SystemRoot is missing".to_string()))?;
-        let path = PathBuf::from(root)
-            .join("System32")
-            .join("WindowsPowerShell")
-            .join("v1.0")
-            .join("powershell.exe");
-        if !path.is_file() {
-            return Err(Error::Config(
-                "Windows PowerShell is unavailable".to_string(),
-            ));
-        }
-        path.into_os_string().into_string().map_err(|path| {
-            Error::Config(format!(
-                "PowerShell path is not valid Unicode: {}",
-                path.to_string_lossy()
-            ))
-        })
-    }
+    Ok("bash".to_string())
 }
 
-pub(crate) fn arguments(script: &str, _cwd: &Path) -> Vec<String> {
-    #[cfg(unix)]
-    {
-        vec!["-c".to_string(), script.to_string()]
+#[cfg(windows)]
+pub(crate) fn program() -> Result<String> {
+    let root = std::env::var_os("SystemRoot")
+        .ok_or_else(|| Error::Config("SystemRoot is missing".to_string()))?;
+    let path = PathBuf::from(root)
+        .join("System32")
+        .join("WindowsPowerShell")
+        .join("v1.0")
+        .join("powershell.exe");
+    if !path.is_file() {
+        return Err(Error::Config(
+            "Windows PowerShell is unavailable".to_string(),
+        ));
     }
-    #[cfg(windows)]
-    {
-        vec![
-            "-NoProfile".to_string(),
-            "-NonInteractive".to_string(),
-            "-OutputFormat".to_string(),
-            "Text".to_string(),
-            "-EncodedCommand".to_string(),
-            encode(script, _cwd),
-        ]
-    }
+    path.into_os_string().into_string().map_err(|path| {
+        Error::Config(format!(
+            "PowerShell path is not valid Unicode: {}",
+            path.to_string_lossy()
+        ))
+    })
 }
 
-pub(crate) fn wrap(command: &str, exit: &Path, _cwd: &Path) -> String {
-    #[cfg(unix)]
-    {
-        let exit = exit.to_string_lossy().replace('\'', "'\\''");
-        format!(
-            "trap '' HUP\n(\n{command}\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{exit}'\nexit \"$code\""
-        )
-    }
-    #[cfg(windows)]
-    {
-        let exit = simplified(exit).to_string_lossy().replace('\'', "''");
-        let command = encode(command, _cwd);
-        format!(
-            "& (Join-Path $PSHOME 'powershell.exe') -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand '{command}'\n$code = $LASTEXITCODE\n[System.IO.File]::WriteAllText('{exit}', \"$code`n\")\nexit $code"
-        )
-    }
+#[cfg(unix)]
+pub(crate) fn arguments(script: &str, _: &Path) -> Vec<String> {
+    vec!["-c".to_string(), script.to_string()]
+}
+
+#[cfg(windows)]
+pub(crate) fn arguments(script: &str, cwd: &Path) -> Vec<String> {
+    vec![
+        "-NoProfile".to_string(),
+        "-NonInteractive".to_string(),
+        "-OutputFormat".to_string(),
+        "Text".to_string(),
+        "-EncodedCommand".to_string(),
+        encode(script, cwd),
+    ]
+}
+
+#[cfg(unix)]
+pub(crate) fn wrap(command: &str, exit: &Path, _: &Path) -> String {
+    let exit = exit.to_string_lossy().replace('\'', "'\\''");
+    format!(
+        "trap '' HUP\n(\n{command}\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{exit}'\nexit \"$code\""
+    )
+}
+
+#[cfg(windows)]
+pub(crate) fn wrap(command: &str, exit: &Path, cwd: &Path) -> String {
+    let exit = simplified(exit).to_string_lossy().replace('\'', "''");
+    let command = encode(command, cwd);
+    format!(
+        "& (Join-Path $PSHOME 'powershell.exe') -NoProfile -NonInteractive -OutputFormat Text -EncodedCommand '{command}'\n$code = $LASTEXITCODE\n[System.IO.File]::WriteAllText('{exit}', \"$code`n\")\nexit $code"
+    )
 }
 
 #[cfg(windows)]

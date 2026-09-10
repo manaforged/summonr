@@ -16,7 +16,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 FONT = "/System/Library/Fonts/Menlo.ttc"
 FALLBACK = "/System/Library/Fonts/Apple Symbols.ttf"
-# glyphs Menlo lacks; real terminals find them via font fallback
 FALLBACK_GLYPHS = set("⎿⏹✻✓✗▁▂▃▄▅▆▇█⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
 CELL_W, CELL_H = 11, 22
 

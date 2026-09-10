@@ -50,6 +50,15 @@ fn slash_table_is_unique_and_filters_prefixes() {
 fn tool_argument_uses_an_editable_summary() {
     assert_eq!(tool_arg(r#"{"path":"src/main.rs"}"#), "src/main.rs");
     assert_eq!(tool_arg(r#"{"command":"cargo test"}"#), "cargo test");
+    assert_eq!(
+        tool_arg(r#"{"command":"cd \"/Volumes/VAULT 4TB/dev/repo\" && grep -rn tag scripts/"}"#),
+        "grep -rn tag scripts/"
+    );
+    assert_eq!(
+        tool_arg(r#"{"command":"cd \"$(git rev-parse --show-toplevel)\"; ls -la"}"#),
+        "ls -la"
+    );
+    assert_eq!(tool_arg(r#"{"command":"cd src"}"#), "cd src");
     assert_eq!(tool_arg("not-json"), "");
 }
 
@@ -85,11 +94,15 @@ fn help_lists_the_live_composer_bindings() {
     let help = help_text();
     for binding in [
         "/model",
-        "enter send/steer",
-        "tab complete/queue",
-        "shift+tab mode",
-        "ctrl+o by default",
+        "/tools",
+        "/reasoning",
+        "send, or steer",
+        "complete a /command",
+        "switch between auto and plan",
         "hotkeys are editable",
+        "twice on an empty draft quits",
+        "!cmd",
+        "alt+↑",
     ] {
         assert!(help.contains(binding), "missing `{binding}` in:\n{help}");
     }

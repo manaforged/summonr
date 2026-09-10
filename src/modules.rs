@@ -4,7 +4,6 @@ use std::path::Path;
 use crate::config;
 use crate::error::{Error, Result};
 
-/// One compiled-in capability with a switch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Module {
     pub name: &'static str,
@@ -50,7 +49,6 @@ pub const ALL: [Module; 7] = [
     },
 ];
 
-/// Which modules are on: user config turns them on or off, a project may only turn them off.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Switches {
     off: BTreeSet<String>,

@@ -122,9 +122,6 @@ pub fn forget_key(name: &str) -> Result<bool> {
     Ok(stored || token || legacy || config)
 }
 
-/// Moves every plaintext `api_key` in config.toml into the secret store. A
-/// key the store already holds wins; the config row goes either way.
-/// Returns the endpoints moved; nothing changes when the store is away.
 pub fn adopt_keys() -> Result<Vec<String>> {
     adopt_from(&config::path()?)
 }
@@ -201,12 +198,24 @@ pub(crate) fn ready() -> Vec<String> {
 }
 
 pub(crate) fn next(current: &str) -> Option<String> {
-    let names = ready();
+    step(&ready(), current, true)
+}
+
+pub(crate) fn previous(current: &str) -> Option<String> {
+    step(&ready(), current, false)
+}
+
+pub(crate) fn step(names: &[String], current: &str, forward: bool) -> Option<String> {
     if names.len() < 2 {
         return None;
     }
     let index = names.iter().position(|name| name == current).unwrap_or(0);
-    Some(names[(index + 1) % names.len()].clone())
+    let target = if forward {
+        (index + 1) % names.len()
+    } else {
+        (index + names.len() - 1) % names.len()
+    };
+    Some(names[target].clone())
 }
 
 pub(crate) fn catalog(wire: Wire) -> Vec<String> {

@@ -339,7 +339,6 @@ fn secret_name(name: &str) -> String {
     format!("oauth:{name}")
 }
 
-/// Removes the token file an earlier build kept under ~/.mage/credentials.
 pub(crate) fn forget_legacy(name: &str) -> Result<bool> {
     let path = credentials_path(&crate::prompt::mage_home()?, name);
     match std::fs::remove_file(path) {

@@ -11,14 +11,17 @@ use std::os::windows::process::CommandExt;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use crossterm::event::{
-    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event as TermEvent, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+    self, DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+    EnableFocusChange, EnableMouseCapture, Event as TermEvent, KeyCode, KeyEvent, KeyEventKind,
+    KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::style::Print;
 use crossterm::terminal::{
-    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
+    Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, SetTitle, disable_raw_mode,
+    enable_raw_mode,
 };
 use crossterm::{cursor, execute, queue};
+use sigil::clipboard::OsClipboard;
 use sigil::prelude::{Cx, Signal};
 use sigil_hal::{Point, ShellEvent};
 use sigil_tui::widgets::{ClipError, Clipboard, install};
@@ -115,6 +118,8 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     let mut pointer = Point::new(0.0, 0.0);
     let mut selecting = false;
     let mut status_at = Instant::now();
+    let mut was_busy = None;
+    term.title(&title(&app, false))?;
     loop {
         let mut incoming = Vec::new();
         if event::poll(FRAME)? {
@@ -138,6 +143,14 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
         }
         if let Some(code) = status(ui.is_closed(), app.quit.peek()) {
             return Ok(Exit::Code(code));
+        }
+        let busy = app.model.borrow().busy_since.is_some();
+        if was_busy != Some(busy) {
+            term.title(&title(&app, busy))?;
+            if was_busy == Some(true) && !busy && !term.focused {
+                term.bell()?;
+            }
+            was_busy = Some(busy);
         }
         if changed {
             app.refresh();
@@ -194,6 +207,18 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
         }
         term.paint(&mut screen)?;
     }
+}
+
+fn title(app: &App, busy: bool) -> String {
+    let place = app
+        .workspace
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    format!(
+        "summon · {place} · {}",
+        if busy { "working" } else { "ready" }
+    )
 }
 
 fn status(closed: bool, quit: bool) -> Option<i32> {
@@ -282,7 +307,8 @@ fn read_event(
             if app.pane_active().is_some() && !app.options_active() {
                 app.focus_pane(false);
             }
-            if !app.paste(&text) {
+            if app.paste(&text) || app.paste_text(&text) {
+            } else {
                 *term.paste.borrow_mut() = Some(text);
                 incoming.extend(sigil_tui::map_key(&KeyEvent::new(
                     KeyCode::Char('v'),
@@ -290,7 +316,8 @@ fn read_event(
                 )));
             }
         }
-        TermEvent::FocusGained | TermEvent::FocusLost => {}
+        TermEvent::FocusGained => term.focused = true,
+        TermEvent::FocusLost => term.focused = false,
     }
     Ok(())
 }
@@ -314,7 +341,7 @@ struct Paste {
 
 impl Clipboard for Paste {
     fn get(&self) -> Option<String> {
-        self.text.borrow_mut().take()
+        self.text.borrow_mut().take().or_else(|| OsClipboard.get())
     }
 
     fn set(&self, text: &str) -> std::result::Result<(), ClipError> {
@@ -326,6 +353,7 @@ impl Clipboard for Paste {
 struct Terminal {
     paste: Rc<RefCell<Option<String>>>,
     out: BufWriter<std::io::Stdout>,
+    focused: bool,
     redraw: bool,
     anchor: Option<(u16, u16)>,
     selection: Option<Selection>,
@@ -336,6 +364,7 @@ impl Terminal {
         let mut terminal = Self {
             paste: Rc::default(),
             out: BufWriter::with_capacity(BUFFER, std::io::stdout()),
+            focused: true,
             redraw: true,
             anchor: None,
             selection: None,
@@ -346,6 +375,7 @@ impl Terminal {
             EnterAlternateScreen,
             EnableMouseCapture,
             EnableBracketedPaste,
+            EnableFocusChange,
             cursor::Hide
         )?;
         Ok(terminal)
@@ -379,8 +409,6 @@ impl Terminal {
         Ok(())
     }
 
-    /// Copies with `pbcopy`, or requests an unconfirmed terminal write
-    /// through OSC 52.
     fn copy(&mut self, text: &str) -> Result<CopyStatus> {
         if pbcopy(text) {
             return Ok(CopyStatus::Confirmed);
@@ -416,8 +444,23 @@ impl Terminal {
         enable_raw_mode()?;
         execute!(self.out, EnterAlternateScreen)?;
         mouse(&mut self.out, selecting)?;
-        execute!(self.out, EnableBracketedPaste, cursor::Hide)?;
+        execute!(
+            self.out,
+            EnableBracketedPaste,
+            EnableFocusChange,
+            cursor::Hide
+        )?;
         self.redraw = true;
+        Ok(())
+    }
+
+    fn title(&mut self, text: &str) -> Result<()> {
+        queue!(self.out, SetTitle(text))?;
+        Ok(())
+    }
+
+    fn bell(&mut self) -> Result<()> {
+        queue!(self.out, Print("\x07"))?;
         Ok(())
     }
 }
@@ -498,7 +541,9 @@ fn restore(out: &mut impl Write) -> std::io::Result<()> {
         out,
         Print("\x1b[?2026l"),
         DisableBracketedPaste,
+        DisableFocusChange,
         DisableMouseCapture,
+        SetTitle(""),
         cursor::Show,
         LeaveAlternateScreen
     )?;
@@ -514,7 +559,9 @@ fn guard() {
                 std::io::stdout(),
                 Print("\x1b[?2026l"),
                 DisableBracketedPaste,
+                DisableFocusChange,
                 DisableMouseCapture,
+                SetTitle(""),
                 cursor::Show,
                 LeaveAlternateScreen
             ));

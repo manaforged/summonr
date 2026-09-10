@@ -1,5 +1,3 @@
-//! Left rail: pane switches, this workspace's sessions, the seat.
-
 use sigil::prelude::*;
 
 use super::super::app::App;
@@ -66,7 +64,6 @@ fn section(title: &'static str) -> NodeBuilder {
         .child(label(title).class(classes!("text-xs text-gray-11")))
 }
 
-/// Sessions that ran in this workspace, newest first; the live one is lit.
 fn sessions(app: &App) -> NodeBuilder {
     let here = app.workspace.display().to_string();
     let current = app.model.borrow().session.clone();

@@ -1,17 +1,89 @@
+use std::collections::VecDeque;
+
+use tokio::sync::mpsc::UnboundedReceiver;
+
+use super::reader::Reader;
 use super::{Cmd, Msg, Worker, set_mode};
 use crate::durable::log::{self, Line};
 use crate::provider::UserInput;
 use crate::tui::Activity;
 
+struct Inbox<'a> {
+    cmd: &'a mut UnboundedReceiver<Cmd>,
+    reader: &'a Reader,
+    followups: &'a mut VecDeque<UserInput>,
+    deferred: &'a mut VecDeque<Cmd>,
+    ui: &'a tokio::sync::mpsc::UnboundedSender<Msg>,
+}
+
+enum Attended<T> {
+    Done(T),
+    Cancelled,
+    Quit,
+}
+
+async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<T> {
+    tokio::pin!(task);
+    loop {
+        tokio::select! {
+            result = &mut task => break Attended::Done(result),
+            command = inbox.cmd.recv() => match command {
+                Some(Cmd::Cancel) => break Attended::Cancelled,
+                Some(Cmd::Quit) | None => break Attended::Quit,
+                Some(Cmd::Tick) => {}
+                Some(command @ Cmd::ListPrompts(_)) => inbox.reader.run(command).await,
+                Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => {
+                    inbox.followups.push_back(input);
+                    drop(inbox.ui.send(Msg::Queued {
+                        steering: 0,
+                        queued: inbox.followups.len(),
+                    }));
+                }
+                Some(command) => inbox.deferred.push_back(command),
+            }
+        }
+    }
+}
+
 impl Worker {
     pub(super) async fn submit(&mut self, input: UserInput) -> bool {
         if input.images.is_empty() {
             let line = input.text.trim();
+            if let Some((send, command)) = shell_prefix(line) {
+                return self.shell(command, send).await;
+            }
             if let Some(keep_running) = self.command(line).await {
                 return keep_running;
             }
         }
         self.turn(input).await
+    }
+
+    async fn shell(&mut self, command: &str, send: bool) -> bool {
+        drop(self.ui.send(Msg::Busy(Some(Activity::Shell))));
+        let id = format!("shell-{}", self.loop_.session_id());
+        drop(self.ui.send(Msg::Event(crate::tools::Event::ToolCall {
+            id: id.clone(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({ "command": command }).to_string(),
+        })));
+        let (output, success) = match self.loop_.shell(command).await {
+            Ok(result) => result,
+            Err(error) => (error.to_string(), false),
+        };
+        drop(self.ui.send(Msg::Event(crate::tools::Event::ToolResult {
+            id,
+            success,
+            mutated: false,
+            output: output.clone(),
+        })));
+        drop(self.ui.send(Msg::Busy(None)));
+        if send {
+            self.turn(UserInput::from(shell_prompt(command, &output)))
+                .await
+        } else {
+            true
+        }
     }
 
     pub(super) async fn command(&mut self, line: &str) -> Option<bool> {
@@ -308,34 +380,37 @@ impl Worker {
         let login = crate::provider::Client::login(&endpoint, move |line| {
             drop(notice.send(Msg::System(line.to_string())));
         });
-        tokio::pin!(login);
         self.system(&format!("{name}: signing in. Press Escape to cancel."));
         drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
-        let running = loop {
-            tokio::select! {
-                result = &mut login => {
-                    match result {
-                        Ok(()) => self.system(&format!("{name}: login complete")),
-                        Err(error) => {
-                            self.fail(&format!("{error}. Use /login {name} to try again."));
-                            self.recover();
-                        }
-                    }
-                    break true;
-                }
-                command = self.cmd.recv() => match command {
-                    Some(Cmd::Cancel) => {
-                        self.system(&format!("{name}: sign-in cancelled. Use /login {name} to try again."));
-                        self.recover();
-                        break true;
-                    }
-                    Some(Cmd::Quit) | None => break false,
-                    Some(Cmd::Tick) => {}
-                    Some(command @ Cmd::ListPrompts(_)) => self.reader.run(command).await,
-                    Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => self.followups.push_back(input),
-                    Some(command) => self.deferred.push_back(command),
-                }
+        let outcome = attend(
+            Inbox {
+                cmd: &mut self.cmd,
+                reader: &self.reader,
+                followups: &mut self.followups,
+                deferred: &mut self.deferred,
+                ui: &self.ui,
+            },
+            login,
+        )
+        .await;
+        let running = match outcome {
+            Attended::Done(Ok(())) => {
+                self.system(&format!("{name}: login complete"));
+                true
             }
+            Attended::Done(Err(error)) => {
+                self.fail(&format!("{error}. Use /login {name} to try again."));
+                self.recover();
+                true
+            }
+            Attended::Cancelled => {
+                self.system(&format!(
+                    "{name}: sign-in cancelled. Use /login {name} to try again."
+                ));
+                self.recover();
+                true
+            }
+            Attended::Quit => false,
         };
         drop(self.ui.send(Msg::Busy(None)));
         running
@@ -352,35 +427,29 @@ impl Worker {
     async fn compact(&mut self) -> bool {
         self.system("Compacting context. Press Escape to cancel.");
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
-        let (result, quit) = {
-            let compact = self.loop_.compact();
-            tokio::pin!(compact);
-            loop {
-                tokio::select! {
-                    result = &mut compact => break (Some(result), false),
-                    command = self.cmd.recv() => match command {
-                        Some(Cmd::Cancel) => break (None, false),
-                        Some(Cmd::Quit) | None => break (None, true),
-                        Some(Cmd::Tick) => {}
-                    Some(command @ Cmd::ListPrompts(_)) => self.reader.run(command).await,
-                        Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => self.followups.push_back(input),
-                        Some(command) => self.deferred.push_back(command),
-                    }
-                }
-            }
-        };
-        if result.as_ref().is_none_or(Result::is_err) {
+        let outcome = attend(
+            Inbox {
+                cmd: &mut self.cmd,
+                reader: &self.reader,
+                followups: &mut self.followups,
+                deferred: &mut self.deferred,
+                ui: &self.ui,
+            },
+            self.loop_.compact(),
+        )
+        .await;
+        if !matches!(outcome, Attended::Done(Ok(_))) {
             self.recover();
         }
         drop(self.ui.send(Msg::Busy(None)));
-        if quit {
-            return false;
-        }
-        match result {
-            Some(Ok(true)) => self.system("context compacted — earlier turns summarized"),
-            Some(Ok(false)) => self.system("nothing to compact yet"),
-            Some(Err(error)) => self.fail(&error.to_string()),
-            None => self.system("Compaction cancelled. The conversation is unchanged."),
+        match outcome {
+            Attended::Done(Ok(true)) => self.system("context compacted — earlier turns summarized"),
+            Attended::Done(Ok(false)) => self.system("nothing to compact yet"),
+            Attended::Done(Err(error)) => self.fail(&error.to_string()),
+            Attended::Cancelled => {
+                self.system("Compaction cancelled. The conversation is unchanged.");
+            }
+            Attended::Quit => return false,
         }
         true
     }
@@ -616,4 +685,18 @@ fn argument(line: &str) -> Option<&str> {
     line.split_once(char::is_whitespace)
         .map(|(_, value)| value.trim())
         .filter(|value| !value.is_empty())
+}
+
+pub(super) fn shell_prefix(line: &str) -> Option<(bool, &str)> {
+    let rest = line.strip_prefix('!')?;
+    let (send, command) = match rest.strip_prefix('!') {
+        Some(quiet) => (false, quiet),
+        None => (true, rest),
+    };
+    let command = command.trim();
+    (!command.is_empty()).then_some((send, command))
+}
+
+pub(super) fn shell_prompt(command: &str, output: &str) -> String {
+    format!("$ {command}\n{output}")
 }

@@ -13,11 +13,8 @@ use crate::error::Result;
 use crate::session::prompts;
 use crate::worktree;
 
-/// How long a burst of changes is gathered before one report goes out.
 const WINDOW: Duration = Duration::from_millis(400);
 
-/// Read-only workspace queries the panes ask for. They run off the worker,
-/// so a turn in flight never delays a listing, a diff, or a file view.
 #[derive(Clone)]
 pub(super) struct Reader {
     workspace: PathBuf,
@@ -60,6 +57,13 @@ impl Reader {
                     })
                     .map_err(|error| error.to_string());
                 self.send(Msg::Sessions(rows));
+            }
+            Cmd::DeleteSession(id) => {
+                match crate::session::remove(&id) {
+                    Ok(name) => self.send(Msg::System(format!("deleted session {name}"))),
+                    Err(error) => self.send(Msg::Failed(error.to_string())),
+                }
+                self.serve(Cmd::ListSessions);
             }
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
@@ -108,9 +112,6 @@ impl Reader {
         drop(self.ui.send(msg));
     }
 
-    /// Forwards file-system changes under the workspace as [`Msg::Changed`]
-    /// until the interface goes away. A burst is gathered for [`WINDOW`]
-    /// after its first event, and ignored paths never reach the interface.
     pub(super) fn watch(&self) {
         let reader = self.clone();
         drop(
@@ -180,7 +181,6 @@ fn text(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-/// Drops paths git ignores. Outside a repository every path passes.
 fn unignored(workspace: &Path, mut paths: Vec<String>) -> Vec<String> {
     paths.sort();
     paths.dedup();

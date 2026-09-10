@@ -117,6 +117,7 @@ fn clicking_transcript_text_preserves_typing_and_paste_focus() {
         let mut terminal = ManuallyDrop::new(Terminal {
             paste: Default::default(),
             out: BufWriter::new(stdout()),
+            focused: true,
             redraw: false,
             anchor: None,
             selection: None,
@@ -248,6 +249,7 @@ fn paste_and_undo_target_each_open_editor() {
             let mut terminal = ManuallyDrop::new(Terminal {
                 paste: Default::default(),
                 out: BufWriter::new(stdout()),
+                focused: true,
                 redraw: false,
                 anchor: None,
                 selection: None,
@@ -447,3 +449,16 @@ fn restoration_ends_synchronized_output_and_terminal_modes() {
     assert!(output.contains("\x1b[?1049l"), "{output:?}");
 }
 use std::env::var_os;
+
+#[test]
+fn the_title_names_the_workspace_and_the_state() {
+    sigil::reactive::Runtime::scope("mage-title-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        assert_eq!(
+            super::title(&app, true),
+            "summon · mage-view-test · working"
+        );
+        assert_eq!(super::title(&app, false), "summon · mage-view-test · ready");
+    });
+}

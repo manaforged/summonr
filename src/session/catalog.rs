@@ -211,9 +211,47 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
     }
 }
 
+pub(crate) fn remove(id: &str) -> Result<String> {
+    remove_in(&crate::prompt::mage_home()?, id)
+}
+
+pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
+    let id = id.trim();
+    let exact = log::sessions_dir(home).join(id);
+    let dir = if !id.is_empty() && exact.is_dir() {
+        exact
+    } else {
+        let hits: Vec<PathBuf> = list_in(home)?
+            .into_iter()
+            .filter(|info| prefix(&info.id, id))
+            .map(|info| info.path)
+            .collect();
+        match hits.as_slice() {
+            [only] => only
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| Error::Config(format!("session `{id}` has no directory")))?,
+            [] => return Err(Error::Config(format!("no session `{id}`"))),
+            _ => {
+                return Err(Error::Config(format!(
+                    "session id `{id}` is ambiguous — pass more of the id"
+                )));
+            }
+        }
+    };
+    let name = dir
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    std::fs::remove_dir_all(&dir)?;
+    Ok(name)
+}
+
 pub fn list() -> Result<Vec<SessionInfo>> {
     list_in(&crate::prompt::mage_home()?)
 }
+
+const PROMPT_SESSIONS: usize = 64;
 
 pub(crate) fn prompts(scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
     prompts_in(&mage_home()?, scope)
@@ -231,7 +269,12 @@ pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt
         }
         None => list_in(home)?,
     };
-    for session in sessions.into_iter().rev().filter(|info| info.depth == 0) {
+    for session in sessions
+        .into_iter()
+        .rev()
+        .filter(|info| info.depth == 0)
+        .take(PROMPT_SESSIONS)
+    {
         let lines = match log::read(&session.path) {
             Ok(lines) => lines,
             Err(error) => {

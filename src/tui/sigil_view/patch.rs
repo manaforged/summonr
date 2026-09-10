@@ -1,5 +1,3 @@
-/// One row of a side-by-side patch: the old line, the new line, and what
-/// the row is.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Pair {
     pub(super) left: Option<String>,
@@ -15,9 +13,6 @@ pub(super) enum Kind {
     Change,
 }
 
-/// Pairs the removed and added lines of each hunk so a unified patch reads
-/// as two columns. A removed line without a partner leaves the right side
-/// empty, an added line without one the left.
 pub(super) fn pairs(text: &str) -> Vec<Pair> {
     let mut rows = Vec::new();
     let mut removed: Vec<String> = Vec::new();

@@ -571,6 +571,7 @@ fn the_view_pane_shows_a_file_with_its_added_lines() {
                 file: PathBuf::from("/tmp/mage-view-test/README.md"),
                 rope: Rope::from_str("one\ntwo\nthree\n"),
                 added: vec![(2, 1)],
+                image: None,
             },
         );
         let tree = app.clone();
@@ -755,6 +756,7 @@ fn the_view_pane_edits_a_file_in_place_and_saves_it() {
                 file: PathBuf::from("/tmp/mage-view-test/notes.md"),
                 rope: Rope::from_str("one\ntwo\n"),
                 added: Vec::new(),
+                image: None,
             },
         );
         assert_eq!(app.pane_active(), Some(super::pane::Pane::View));

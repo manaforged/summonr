@@ -55,8 +55,40 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
                 let at = caret.filter(|(row, _)| *row == index).map(|(_, col)| col);
                 children.push(row(&cells(spans, width, at)));
             }
+            if pane == Pane::View
+                && let Some(source) = app
+                    .model
+                    .borrow()
+                    .view
+                    .as_ref()
+                    .and_then(|view| view.image.clone())
+            {
+                children.push(picture(&source, width, usize::from(rows)));
+            }
             children
         })
+}
+
+fn picture(source: &ImageSource, width: usize, rows: usize) -> NodeBuilder {
+    let (cols, tall) = super::chat::transcript::image_cells(source, width.saturating_sub(2));
+    let tall = tall.min(rows.saturating_sub(3)).max(1);
+    let cols =
+        cols.min((tall * 2 * source.width() as usize / source.height().max(1) as usize).max(1));
+    let cell = super::canvas::cell();
+    container()
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Absolute)
+                .inset_left(cell.w)
+                .inset_top(2.0 * cell.h)
+                .width(cols as f32 * cell.w)
+                .height(tall as f32 * cell.h),
+        )
+        .child(
+            image(source.clone())
+                .fit(ObjectFit::Fill)
+                .layout(LayoutStyle::block().fill_width().fill_height()),
+        )
 }
 
 fn single(lines: Vec<Line>) -> Vec<Vec<Line>> {
@@ -383,6 +415,20 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
             ),
         ];
     };
+    if let Some(source) = &view.image {
+        return vec![
+            (
+                format!(
+                    "view · {} · {}×{} · esc back",
+                    view.path,
+                    source.width(),
+                    source.height()
+                ),
+                accent,
+            ),
+            (String::new(), TEXT),
+        ];
+    }
     if app.view_edit.get() {
         let text = app.view_text.get();
         let all: Vec<&str> = text.lines().collect();

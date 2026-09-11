@@ -318,6 +318,7 @@ fn wheel_scrolls_the_pane_under_the_pointer_without_moving_chat() {
             file: PathBuf::from("notes.md"),
             rope: Rope::from_str(&"file line\n".repeat(120)),
             added: Vec::new(),
+            image: None,
         });
         app.focus_pane(false);
         app.refresh();

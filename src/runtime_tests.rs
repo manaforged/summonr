@@ -231,6 +231,6 @@ fn the_default_schema_stays_under_budget_and_hides_idle_tools() -> Result<()> {
         names.contains(&"skill"),
         crate::skills::catalog(workspace.path()).is_some()
     );
-    assert!(bytes <= 4_600, "schema is {bytes} bytes: {names:?}");
+    assert!(bytes <= 4_900, "schema is {bytes} bytes: {names:?}");
     Ok(())
 }

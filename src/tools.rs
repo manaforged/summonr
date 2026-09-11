@@ -279,6 +279,9 @@ impl ToolRegistry {
             "write_file" => self.write_file(&call.function.arguments).await,
             "list_dir" => self.list_dir(&call.function.arguments).map(ToolOutput::ok),
             "grep" => self.grep(&call.function.arguments).map(ToolOutput::ok),
+            "show_image" => self
+                .show_image(&call.function.arguments)
+                .map(ToolOutput::ok),
             "skill" => self.skill(&call.function.arguments).map(ToolOutput::ok),
             "run_command" => self.run_command(&call.function.arguments).await,
             "web_search" => self

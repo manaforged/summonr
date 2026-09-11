@@ -374,6 +374,7 @@ impl Terminal {
             terminal.out,
             EnterAlternateScreen,
             EnableMouseCapture,
+            Print(NO_MOTION),
             EnableBracketedPaste,
             EnableFocusChange,
             cursor::Hide
@@ -465,11 +466,13 @@ impl Terminal {
     }
 }
 
+const NO_MOTION: &str = "\x1b[?1003l";
+
 fn mouse(out: &mut impl Write, selecting: bool) -> std::io::Result<()> {
     if selecting {
         queue!(out, DisableMouseCapture)?;
     } else {
-        queue!(out, EnableMouseCapture)?;
+        queue!(out, EnableMouseCapture, Print(NO_MOTION))?;
     }
     out.flush()
 }

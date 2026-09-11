@@ -23,7 +23,7 @@ impl ToolRegistry {
             delete_lines(),
             write_file(),
         ]);
-        all.extend([list_dir(), grep()]);
+        all.extend([list_dir(), grep(), show_image()]);
         if self.skill_ready() {
             all.push(skill());
         }
@@ -43,7 +43,7 @@ impl ToolRegistry {
 
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
-            "read_file" | "list_dir" | "grep" => true,
+            "read_file" | "list_dir" | "grep" | "show_image" => true,
             "skill" => self.skills,
             "diagnostics" | "definition" => self.language,
             "edit_file" | "replace_text" | "replace_texts" | "replace_lines" | "insert_after"
@@ -58,7 +58,14 @@ impl ToolRegistry {
 pub(crate) fn readonly(name: &str) -> bool {
     matches!(
         name,
-        "read_file" | "list_dir" | "grep" | "diagnostics" | "skill" | "web_search" | "web_fetch"
+        "read_file"
+            | "list_dir"
+            | "grep"
+            | "show_image"
+            | "diagnostics"
+            | "skill"
+            | "web_search"
+            | "web_fetch"
     )
 }
 
@@ -75,6 +82,7 @@ pub(super) fn known(name: &str) -> bool {
             | "write_file"
             | "list_dir"
             | "grep"
+            | "show_image"
             | "diagnostics"
             | "definition"
             | "skill"
@@ -223,6 +231,19 @@ fn list_dir() -> ToolDefinition {
         serde_json::json!({
             "type": "object",
             "properties": {"path": {"type": "string"}},
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn show_image() -> ToolDefinition {
+    tool(
+        "show_image",
+        "Show an image file in the transcript.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
             "additionalProperties": false
         }),
     )

@@ -86,8 +86,7 @@ async fn conversation(
         Ok::<_, Box<dyn std::error::Error>>(requests)
     };
     let turn = async {
-        let mut agent = Loop::with_session(client.clone(), model, workspace.path(), "system")?
-            .with_max_rounds(3);
+        let mut agent = Loop::with_session(client.clone(), model, workspace.path(), "system")?;
         agent.set_effort(Some(crate::provider::Effort::High));
         let input = UserInput {
             text: "inspect image".into(),

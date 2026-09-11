@@ -541,7 +541,6 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         let labels = [
             "mode",
             "verify",
-            "rounds",
             "endpoint",
             "model",
             "workflow",
@@ -647,7 +646,6 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             .to_string(),
         ),
         ("verify", verify),
-        ("rounds", model.snapshot.rounds_label()),
         ("endpoint", endpoint),
         ("model", model.snapshot.model.clone()),
         (

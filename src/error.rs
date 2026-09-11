@@ -18,6 +18,7 @@ pub struct ProviderFailure {
     pub status: Option<u16>,
     pub message: String,
     pub partial_output: bool,
+    pub retry_after: Option<u64>,
 }
 
 impl std::fmt::Display for ProviderFailure {
@@ -51,6 +52,7 @@ impl Error {
             status: None,
             message: message.into(),
             partial_output: false,
+            retry_after: None,
         })
     }
 

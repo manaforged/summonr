@@ -189,7 +189,12 @@ impl ToolRegistry {
     }
 
     pub(crate) fn enable_sandbox(&mut self, deny_network: bool) -> Result<()> {
-        self.sandbox = Some(sandbox::Sandbox::discover(&self.workspace, deny_network)?);
+        let write = crate::config::load()?.sandbox.paths();
+        self.sandbox = Some(sandbox::Sandbox::discover(
+            &self.workspace,
+            deny_network,
+            &write,
+        )?);
         Ok(())
     }
 
@@ -288,6 +293,16 @@ impl ToolRegistry {
             "definition" => self.definition(&call.function.arguments).await,
             name => Err(Error::Tool(format!("unknown tool `{name}`"))),
         }
+    }
+
+    fn resolve_read(&self, path: &str) -> Result<PathBuf> {
+        let candidate = Path::new(path);
+        if candidate.is_absolute() {
+            return candidate
+                .canonicalize()
+                .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")));
+        }
+        self.resolve_existing(path)
     }
 
     fn resolve_existing(&self, path: &str) -> Result<PathBuf> {

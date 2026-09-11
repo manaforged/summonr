@@ -568,10 +568,18 @@ impl SessionDriver {
             self.fail_provider(attempt, reason, 0)?;
         }
         for call in self.state.unanswered.clone() {
+            let finished = self.state.children.values().find(|child| {
+                child.call.as_deref() == Some(call.as_str())
+                    && matches!(child.state, crate::child::ChildState::Completed(_))
+            });
+            let (text, success) = match finished.map(serde_json::to_string) {
+                Some(Ok(text)) => (text, true),
+                _ => ("aborted".to_string(), false),
+            };
             self.append(Line::Tool {
                 call,
-                text: "aborted".to_string(),
-                success: false,
+                text,
+                success,
                 millis: 0,
             })?;
         }

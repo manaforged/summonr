@@ -112,6 +112,7 @@ impl Worker {
             return Some(command);
         }
         if let Some(next) = self.followups.pop_front() {
+            announce(&self.ui, &self.steering, &self.followups);
             return Some(Cmd::Submit(next));
         }
         let command = self.cmd.recv().await?;
@@ -141,8 +142,17 @@ impl Worker {
                 false
             }
             Cmd::Cancel => true,
+            Cmd::Dequeue => {
+                self.recover();
+                true
+            }
+            Cmd::Export(target) => {
+                self.export(target);
+                true
+            }
             Cmd::Steer(text) | Cmd::Queue(text) => {
                 self.followups.push_back(text);
+                announce(&self.ui, &self.steering, &self.followups);
                 true
             }
             Cmd::Tick => {
@@ -151,11 +161,6 @@ impl Worker {
             }
             Cmd::SetMode(plan) => {
                 set_mode(&mut self.loop_, &self.ui, plan);
-                true
-            }
-            Cmd::SetRounds(rounds) => {
-                self.loop_.set_max_rounds(rounds);
-                self.send_settings();
                 true
             }
             Cmd::SetVerify(on) => {
@@ -179,6 +184,7 @@ impl Worker {
                 true
             }
             command @ (Cmd::ListSessions
+            | Cmd::DeleteSession(_)
             | Cmd::ListPrompts(_)
             | Cmd::ListFiles
             | Cmd::Diff(_)
@@ -314,6 +320,15 @@ impl Worker {
         drop(self.ui.send(Msg::System(text.to_string())));
     }
 
+    fn export(&self, target: Option<String>) {
+        export_session(
+            self.loop_.session_path(),
+            &self.loop_.session_id(),
+            target,
+            &self.ui,
+        );
+    }
+
     fn fail(&self, text: &str) {
         drop(self.ui.send(Msg::Failed(text.to_string())));
     }
@@ -322,3 +337,42 @@ impl Worker {
 #[cfg(test)]
 #[path = "worker_tests.rs"]
 mod tests;
+
+pub(super) fn export_session(
+    session: &std::path::Path,
+    id: &str,
+    target: Option<String>,
+    ui: &UnboundedSender<Msg>,
+) {
+    let out = match target {
+        Some(path) => Ok(std::path::PathBuf::from(path)),
+        None => {
+            crate::prompt::mage_home().map(|home| home.join("exports").join(format!("{id}.md")))
+        }
+    };
+    let written = out.and_then(|out| {
+        let text = crate::export_session(session)?;
+        if let Some(parent) = out.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&out, text)?;
+        Ok(out)
+    });
+    let message = match written {
+        Ok(out) => Msg::System(format!("exported to {}", out.display())),
+        Err(error) => Msg::Failed(error.to_string()),
+    };
+    drop(ui.send(message));
+}
+
+pub(super) fn announce(
+    ui: &UnboundedSender<Msg>,
+    steering: &Arc<Mutex<VecDeque<UserInput>>>,
+    followups: &VecDeque<UserInput>,
+) {
+    let steering = steering.lock().map_or(0, |queue| queue.len());
+    drop(ui.send(Msg::Queued {
+        steering,
+        queued: followups.len(),
+    }));
+}

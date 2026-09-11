@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-09-10
+
+First public release of the Mage harness under the Summoner name.
 
 - Native Anthropic and Gemini requests include user images. Gemini tool
   calls retain thought signatures. Anthropic tool turns retain ordered
@@ -8,6 +10,22 @@
   and session replay. Continuation data stays scoped to its wire and model.
 - Repository policy intersects user allow and write rules. Children inherit
   both sets of restrictions.
+- Command policy splits on `|` and `;` outside quotes, so a grep pattern
+  such as `pwsh\|sh` is not a pipe into a shell. A `cd` to
+  `$(git rev-parse --show-toplevel)` counts as the workspace.
+- `[sandbox] write` in `~/.mage/config.toml` lists directories outside the
+  workspace that contained commands may write, for build caches that
+  otherwise fail with `Operation not permitted`.
+- A research child that finishes before its batch is cancelled keeps its
+  result; the model reads it on the next turn.
+- A `Retry-After` header on a 429 or 5xx reply sets the retry wait, up to
+  600 s, instead of the doubling backoff.
+- Fenced code in replies colours keywords; `/export [PATH]` writes the
+  session as markdown from inside the interface, also during a turn.
+- Tool cards drop a leading `cd … &&`, and the working status sits on its
+  own row above the composer with the output rate in tokens per second:
+  a three-second estimate while text streams, the provider's count over
+  the streamed span once the round reports usage.
 - Workflow changes resolve every seat before activation. A failed seat
   leaves the previous workflow and session log unchanged.
 - Experimental Windows command execution uses PowerShell, AppContainer,
@@ -28,9 +46,10 @@
 - Herdr panes show the Summoner session name and model, and ordered
   lifecycle reports. A live fork retargets the pane to the new session
   id.
-- `task` children keep the parent's shell and language-server tools, run
-  up to 32 rounds under a 15-minute deadline, and stream every tool call,
-  result, and answer into the parent transcript under the child id.
+- `task` children keep the parent's shell and language-server tools,
+  share the parent's remaining token and time budget, and stream every
+  tool call, result, and answer into the parent transcript under the child
+  id.
   Cancelling a batch removes child worktrees that hold no change.
   `task` also takes `background`, `child`, and `kill`: start a child and
   return its id, poll its state and last action, or stop it. A turn defers
@@ -38,8 +57,8 @@
 - Work remembers deferred background jobs by id across turns; a later
   turn cannot complete while one still runs. `--max-turns` also bounds a
   goal whose checks keep failing (exit 2). Every goal turn restates the
-  objective. Goal-judge repairs, provider retries (exponential backoff),
-  and reviewer/scout tool rounds have fixed caps. Receipts carry
+  objective. Goal-judge repairs and provider retries (exponential backoff)
+  have fixed caps; provider rounds have none. Receipts carry
   `verified`. Changing `.mage/check.toml` mid-turn re-selects the checks
   instead of blocking the session.
 - Context overflow recovery clears the oldest tool results first and keeps
@@ -51,20 +70,14 @@
   peer that answers mail on one thread. `summon room setup claude|codex`
   installs the `/summon-room` skill and the MCP entry. Roster records and
   mail carry the agent kind.
-
-## 0.1.0 - 2026-08-23
-
-First alpha of the Mage harness under the Summoner name.
-
 - Command is `summon` or `summoner` (same binary). Crate is `summoner`.
 - Connector owns OpenAI `chat/completions` (HTTP, SSE) and native
   Anthropic Messages / Gemini wires. Credentials: API key, RFC 6749
   token, or RFC 8628 device login. CoT is `reasoning_content`. The
-  `task` runs up to four depth-one child sessions concurrently. Writable
+  `task` tool runs depth-one child sessions concurrently. Writable
   children use separate Git worktrees. Summoner combines their patches and
   removes the worktrees before the parent verifies once. Child sessions have
-  no command, language-server, web, or background tools. `/model` lists every
-  resolvable seat.
+  no web or background tools. `/model` lists every resolvable seat.
 - Work: plan, execute, verify. `--steps` and `--goal` hold the job.
 - Git worktrees for `--goal` / `--steps` when the directory is a repo.
   Launch does not sweep live trees. `prune` only forgets missing dirs.
@@ -76,5 +89,5 @@ First alpha of the Mage harness under the Summoner name.
   `doctor` reports crashes or incomplete runs. Malformed goal verdicts
   stop the Work instead of silently continuing it.
 
-Not in this alpha: crates.io (Sigil is a git dependency), Windows,
-renaming `~/.mage`.
+Not in this release: crates.io (Sigil is a git dependency) and renaming
+`~/.mage`. Native Windows is experimental.

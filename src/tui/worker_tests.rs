@@ -44,6 +44,7 @@ fn worker_ui() -> (
         session: "test".to_string(),
         endpoint: "test".to_string(),
         prefs: Prefs::default(),
+        splash: true,
         plan: false,
         strict: false,
         workspace: workspace.display().to_string(),
@@ -115,7 +116,7 @@ async fn cancelled_login_stops_polling_and_returns_pending_input() {
             if matches!(message, Msg::System(text) if text == "code FIXTURE") {
                 tx.send(Cmd::Queue("keep this draft".into()))
                     .expect("queue");
-                tx.send(Cmd::SetRounds(3)).expect("setting");
+                tx.send(Cmd::SetVerify(false)).expect("setting");
                 tx.send(Cmd::Cancel).expect("cancel");
                 return;
             }
@@ -136,7 +137,7 @@ async fn cancelled_login_stops_polling_and_returns_pending_input() {
             .any(|msg| matches!(msg, Msg::System(text) if text.contains("sign-in cancelled")))
     );
     assert!(messages.iter().any(|msg| matches!(msg, Msg::Restored(inputs) if inputs.len() == 1 && inputs[0].text == "keep this draft")));
-    assert!(matches!(worker.next().await, Some(Cmd::SetRounds(3))));
+    assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     assert!(
         tokio::time::timeout(Duration::from_millis(1500), listener.accept())
             .await
@@ -183,7 +184,7 @@ async fn cancelled_compaction_keeps_the_conversation_and_returns_pending_input()
         );
         tx.send(Cmd::Queue("keep this next prompt".into()))
             .expect("queue");
-        tx.send(Cmd::SetRounds(3)).expect("setting");
+        tx.send(Cmd::SetVerify(false)).expect("setting");
         tx.send(Cmd::Cancel).expect("cancel");
         while connection.read(&mut request).await.expect("closed request") != 0 {}
     };
@@ -202,7 +203,7 @@ async fn cancelled_compaction_keeps_the_conversation_and_returns_pending_input()
     assert!(messages.iter().any(|msg| matches!(msg, Msg::Busy(None))));
     assert!(messages.iter().any(|msg| matches!(msg, Msg::System(text) if text == "Compaction cancelled. The conversation is unchanged.")));
     assert!(messages.iter().any(|msg| matches!(msg, Msg::Restored(inputs) if inputs.len() == 1 && inputs[0].text == "keep this next prompt")));
-    assert!(matches!(worker.next().await, Some(Cmd::SetRounds(3))));
+    assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     assert!(worker.followups.is_empty());
     std::fs::remove_dir_all(workspace).expect("workspace");
 }
@@ -302,7 +303,7 @@ async fn failed_turn_returns_a_followup_instead_of_sending_it() {
         assert!(connection.read(&mut bytes).await.expect("request") > 0);
         tx.send(Cmd::Queue("keep this followup".into()))
             .expect("followup");
-        tx.send(Cmd::SetRounds(24)).expect("next command");
+        tx.send(Cmd::SetVerify(false)).expect("next command");
         connection.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 28\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":{\"message\":\"bad\"}}\n").await.expect("failed response");
     };
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -318,7 +319,7 @@ async fn failed_turn_returns_a_followup_instead_of_sending_it() {
         })
         .expect("restored input");
     assert_eq!(pending, vec![UserInput::from("keep this followup")]);
-    assert!(matches!(worker.next().await, Some(Cmd::SetRounds(24))));
+    assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     std::fs::remove_dir_all(workspace).expect("scratch workspace");
 }
 
@@ -509,7 +510,7 @@ async fn cancellation_returns_pending_prompts_without_starting_a_followup() {
         tx.send(Cmd::Queue("second prompt".into()))
             .expect("second followup");
         tx.send(Cmd::Cancel).expect("cancel");
-        tx.send(Cmd::SetRounds(24)).expect("next command");
+        tx.send(Cmd::SetVerify(false)).expect("next command");
         completion.await.expect("turn finished");
     };
     let turn = async {
@@ -538,7 +539,7 @@ async fn cancellation_returns_pending_prompts_without_starting_a_followup() {
         pending[1].images,
         [crate::provider::Image::encode("image/png", b"pasted image")]
     );
-    assert!(matches!(worker.next().await, Some(Cmd::SetRounds(24))));
+    assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     assert!(worker.steering.lock().expect("steering").is_empty());
     std::fs::remove_dir_all(workspace).expect("scratch workspace");
 }
@@ -547,11 +548,11 @@ async fn cancellation_returns_pending_prompts_without_starting_a_followup() {
 async fn followup_runs_without_consuming_the_next_command() {
     let (mut worker, tx, workspace) = worker();
     worker.followups.push_back("queued".into());
-    tx.send(Cmd::SetRounds(24))
+    tx.send(Cmd::SetVerify(false))
         .unwrap_or_else(|error| panic!("{error}"));
 
     assert!(matches!(worker.next().await, Some(Cmd::Submit(input)) if input.text == "queued"));
-    assert!(matches!(worker.next().await, Some(Cmd::SetRounds(24))));
+    assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     std::fs::remove_dir_all(workspace).unwrap_or_else(|error| panic!("{error}"));
 }
 
@@ -794,5 +795,72 @@ async fn startup_replays_saved_conversation_and_tool_results() {
         })
     )));
     assert!(messages.iter().any(|message| matches!(message, Msg::Receipt(text) if text == "The file is missing.\n\nTurn receipt\n- Changed: none")));
+    std::fs::remove_dir_all(workspace).expect("scratch workspace");
+}
+
+#[tokio::test]
+async fn a_double_bang_runs_locally_without_a_provider_round() {
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+    assert!(worker.submit("!!printf local-ok".into()).await);
+    let messages: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
+    assert!(
+        messages
+            .iter()
+            .any(|msg| matches!(msg, Msg::Busy(Some(crate::tui::Activity::Shell))))
+    );
+    assert!(messages.iter().any(|msg| matches!(
+        msg,
+        Msg::Event(crate::tools::Event::ToolCall { name, .. }) if name == "run_command"
+    )));
+    assert!(messages.iter().any(|msg| matches!(
+        msg,
+        Msg::Event(crate::tools::Event::ToolResult { success: true, output, .. }) if output.contains("local-ok")
+    )));
+    assert!(
+        !messages
+            .iter()
+            .any(|msg| matches!(msg, Msg::Busy(Some(crate::tui::Activity::Turn))))
+    );
+    std::fs::remove_dir_all(workspace).expect("scratch workspace");
+}
+
+#[test]
+fn bang_prefixes_split_send_from_quiet() {
+    assert_eq!(
+        super::command::shell_prefix("!ls -la"),
+        Some((true, "ls -la"))
+    );
+    assert_eq!(
+        super::command::shell_prefix("!! git status"),
+        Some((false, "git status"))
+    );
+    assert_eq!(super::command::shell_prefix("!"), None);
+    assert_eq!(super::command::shell_prefix("plain"), None);
+    assert_eq!(super::command::shell_prompt("ls", "a\nb"), "$ ls\na\nb");
+}
+
+#[tokio::test]
+async fn queued_input_is_announced_and_alt_up_hands_it_back() {
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+    assert!(worker.dispatch(Cmd::Queue("later".into())).await);
+    let announced = std::iter::from_fn(|| ui.try_recv().ok()).find_map(|msg| match msg {
+        Msg::Queued { steering, queued } => Some((steering, queued)),
+        _ => None,
+    });
+    assert_eq!(announced, Some((0, 1)));
+    assert!(worker.dispatch(Cmd::Dequeue).await);
+    let messages: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
+    assert!(messages.iter().any(|msg| matches!(
+        msg,
+        Msg::Restored(inputs) if inputs.len() == 1 && inputs[0].text == "later"
+    )));
+    assert!(messages.iter().any(|msg| matches!(
+        msg,
+        Msg::Queued {
+            steering: 0,
+            queued: 0
+        }
+    )));
+    assert!(worker.followups.is_empty());
     std::fs::remove_dir_all(workspace).expect("scratch workspace");
 }

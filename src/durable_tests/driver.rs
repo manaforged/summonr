@@ -152,6 +152,7 @@ fn resume_interrupts_a_running_child_record() {
             workspace: workspace.canonicalize().expect("canonical workspace"),
             depth: 1,
             access: crate::child::Access::Implement,
+            call: None,
             state: ChildState::Running,
         })
         .expect("record child");
@@ -183,6 +184,7 @@ fn parent_accepts_more_than_four_concurrent_children() {
             workspace: workspace.clone(),
             depth: 1,
             access: crate::child::Access::Research,
+            call: None,
             state: ChildState::Running,
         };
         parent.start_child(record.clone()).expect("start child");
@@ -210,6 +212,7 @@ fn parent_retains_completed_children_without_a_lifetime_quota() {
             workspace: workspace.canonicalize().expect("canonical workspace"),
             depth: 1,
             access: crate::child::Access::Implement,
+            call: None,
             state: ChildState::Running,
         };
         parent.start_child(record.clone()).expect("start child");
@@ -226,6 +229,7 @@ fn parent_retains_completed_children_without_a_lifetime_quota() {
         workspace: workspace.canonicalize().expect("canonical workspace"),
         depth: 1,
         access: crate::child::Access::Implement,
+        call: None,
         state: ChildState::Running,
     };
 
@@ -911,4 +915,72 @@ fn a_finished_session_resumes_from_anywhere_after_its_tree_is_gone() {
         elsewhere.canonicalize().ok(),
         "a terminal session follows the caller"
     );
+}
+
+#[test]
+fn abort_answers_a_completed_child_with_its_result() {
+    let (home, workspace) = home();
+    let mut driver = open(home.path(), &workspace);
+    start(&mut driver, "audit");
+    let attempt = driver
+        .start_provider("test-model", exposure())
+        .expect("provider");
+    driver
+        .finish_provider_with_tools(
+            attempt,
+            "",
+            "",
+            usage(1, 1, 1),
+            &["t1", "t2"].map(|id| ToolCall {
+                continuation: None,
+                id: id.into(),
+                kind: ToolKind::Function,
+                function: ToolFunction {
+                    name: "task".into(),
+                    arguments: r#"{"assignment":"inspect","access":"research"}"#.into(),
+                },
+            }),
+        )
+        .expect("plan tools");
+    let mut record = ChildRecord {
+        version: 1,
+        id: SessionId::from_u128(7),
+        parent: driver.id(),
+        assignment: "inspect".to_string(),
+        model: "child-model".to_string(),
+        workspace: workspace.canonicalize().expect("canonical workspace"),
+        depth: 1,
+        access: crate::child::Access::Research,
+        call: Some("t1".to_string()),
+        state: ChildState::Running,
+    };
+    driver.start_child(record.clone()).expect("start child");
+    record.state = ChildState::Completed(crate::child::ChildResult {
+        text: "the report".to_string(),
+        changed_paths: Vec::new(),
+        changed_paths_total: 0,
+        rounds: 3,
+        usage: crate::provider::Usage::default(),
+        billed_tokens: 0,
+        elapsed_millis: 5,
+        diagnostic: None,
+    });
+    driver.finish_child(record).expect("finish child");
+    driver.abort("cancelled by user", None).expect("abort");
+
+    let history = driver.replay().history;
+    assert_eq!(history.len(), 4, "user, assistant, completed, aborted");
+    assert_eq!(history[2].tool_call_id.as_deref(), Some("t1"));
+    assert!(
+        history[2].content.contains("the report"),
+        "{}",
+        history[2].content
+    );
+    assert!(
+        history[2].content.contains("completed"),
+        "{}",
+        history[2].content
+    );
+    assert_eq!(history[3].tool_call_id.as_deref(), Some("t2"));
+    assert_eq!(history[3].content, "aborted");
 }

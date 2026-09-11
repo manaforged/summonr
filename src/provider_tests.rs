@@ -280,13 +280,31 @@ fn http_failures_keep_status_and_category() {
         ),
     ];
     for (status, body, kind) in cases {
-        let error = response_failure(status, body);
+        let error = response_failure(status, body, None);
         let failure = error
             .provider_failure()
             .unwrap_or_else(|| panic!("{error}"));
         assert_eq!(failure.status, Some(status));
         assert_eq!(failure.kind, kind);
+        assert_eq!(failure.retry_after, None);
     }
+    let limited = response_failure(429, "slow down", Some(17));
+    assert_eq!(
+        limited.provider_failure().and_then(|f| f.retry_after),
+        Some(17)
+    );
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(reqwest::header::RETRY_AFTER, "30".parse().expect("header"));
+    assert_eq!(retry_after(&headers), Some(30));
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        "Wed, 21 Oct 2026 07:28:00 GMT".parse().expect("header"),
+    );
+    assert_eq!(
+        retry_after(&headers),
+        None,
+        "HTTP dates fall back to backoff"
+    );
 }
 
 #[test]

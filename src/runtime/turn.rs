@@ -18,6 +18,7 @@ use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
 const RETRY_LIMIT: usize = 6;
 const RETRY_BASE_SECS: u64 = 2;
 const RETRY_MAX_SECS: u64 = 60;
+const RETRY_AFTER_MAX_SECS: u64 = 600;
 
 pub(super) enum WaitError {
     Deadline(Duration),
@@ -67,11 +68,9 @@ impl<P: Provider> Loop<P> {
         }
         let (mail, overflow) = self.take_bus_mail(5)?;
         for mail in mail {
-            let text = envelope(&mail);
-            self.session
-                .steer(&text.clone().into())
-                .map_err(super::session_err)?;
-            messages.push(Message::user(text.clone()));
+            let input = UserInput::from(envelope(&mail));
+            self.session.steer(&input).map_err(super::session_err)?;
+            messages.push(Message::user(input));
             injected = true;
             self.push_event(
                 events,
@@ -206,7 +205,11 @@ impl<P: Provider> Loop<P> {
                     if !retryable || retries >= RETRY_LIMIT {
                         return Err(error);
                     }
-                    let wait = (RETRY_BASE_SECS << retries).min(RETRY_MAX_SECS);
+                    let wait = failure
+                        .and_then(|failure| failure.retry_after)
+                        .map_or((RETRY_BASE_SECS << retries).min(RETRY_MAX_SECS), |after| {
+                            after.clamp(1, RETRY_AFTER_MAX_SECS)
+                        });
                     retries += 1;
                     self.push_event(
                         events,
@@ -314,7 +317,7 @@ impl<P: Provider> Loop<P> {
                         millis,
                         ..Meter::default()
                     },
-                    "active turn time",
+                    "unaccounted turn time",
                     &self.model,
                 )
                 .map_err(super::session_err)?;
@@ -355,7 +358,7 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         reached: &mut usize,
     ) -> Result<Turn> {
-        let mut abort_reason = None;
+        let abort_reason;
         let tools = self.advertised_tools().to_vec();
         if std::mem::take(&mut self.accepted) {
             self.push_event(
@@ -371,9 +374,6 @@ impl<P: Provider> Loop<P> {
         loop {
             while self.budget.max_tokens.is_some() && self.child_budget_reserved() > 0 {
                 self.await_children(events, &mut emit, usage).await?;
-            }
-            if self.max_rounds > 0 && *reached >= self.max_rounds {
-                break;
             }
             *reached = reached.saturating_add(1);
             let round = *reached;
@@ -511,11 +511,9 @@ impl<P: Provider> Loop<P> {
             }
         };
         self.session.set_brief(&brief).map_err(super::session_err)?;
-        let note = scout::note(&brief);
-        self.session
-            .steer(&note.clone().into())
-            .map_err(super::session_err)?;
-        messages.push(Message::user(note));
+        let input = UserInput::from(scout::note(&brief));
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
         self.commit(messages);
         self.push_event(
             events,
@@ -1086,7 +1084,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<(Vec<Outcome>, Vec<String>, Vec<String>)> {
-        let mut outcomes = BTreeMap::new();
+        let mut outcomes: Vec<(String, Outcome)> = Vec::new();
         let mut running = Vec::new();
         let mut unsettled = Vec::new();
         let session = self.session.id().to_string();
@@ -1141,9 +1139,15 @@ impl<P: Provider> Loop<P> {
                     status.text
                 },
             };
-            outcomes.insert(record.command, outcome);
+            match outcomes
+                .iter_mut()
+                .find(|(command, _)| *command == record.command)
+            {
+                Some((_, latest)) => *latest = outcome,
+                None => outcomes.push((record.command, outcome)),
+            }
         }
-        for outcome in outcomes.values() {
+        for (_, outcome) in &outcomes {
             self.push_event(
                 events,
                 emit,
@@ -1153,7 +1157,11 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
         }
-        Ok((outcomes.into_values().collect(), running, unsettled))
+        Ok((
+            outcomes.into_iter().map(|(_, outcome)| outcome).collect(),
+            running,
+            unsettled,
+        ))
     }
 
     async fn run_verify(
@@ -1229,8 +1237,7 @@ impl<P: Provider> Loop<P> {
         reached: usize,
         snapshot: String,
     ) -> Result<Turn> {
-        let reason =
-            abort_reason.unwrap_or_else(|| format!("stopped after {} rounds", self.max_rounds));
+        let reason = abort_reason.unwrap_or_else(|| "turn aborted".to_string());
         self.push_event(
             events,
             &mut emit,

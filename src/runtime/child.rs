@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use futures::future::join_all;
+use futures::stream::{FuturesUnordered, StreamExt};
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -28,6 +28,8 @@ struct Args {
     child: Option<String>,
     #[serde(default)]
     kill: bool,
+    #[serde(skip)]
+    call: String,
 }
 
 pub(super) struct Execution {
@@ -36,7 +38,6 @@ pub(super) struct Execution {
     pub(super) millis: u64,
 }
 
-/// One background child: its running record, task handle, and last visible action.
 pub(super) struct Spawned {
     record: ChildRecord,
     path: PathBuf,
@@ -61,7 +62,6 @@ struct Run<P: Provider> {
     started: Instant,
 }
 
-/// Removes a clean child worktree when the run is dropped before it settles.
 struct Guard {
     tree: Option<Tree>,
 }
@@ -89,6 +89,7 @@ pub(super) struct Done {
     usage: Usage,
     billed: u64,
     millis: u64,
+    settled: bool,
 }
 
 pub(super) fn definition() -> ToolDefinition {
@@ -148,7 +149,10 @@ impl<P: Provider> Loop<P> {
         let mut args = Vec::with_capacity(calls.len());
         for call in calls {
             match task_args(call) {
-                Ok(value) => args.push(value),
+                Ok(mut value) => {
+                    value.call.clone_from(&call.id);
+                    args.push(value);
+                }
                 Err(error) => return rejected(calls.len(), &error.to_string()),
             }
         }
@@ -252,27 +256,44 @@ impl<P: Provider> Loop<P> {
             runs.push((access, self.task_start(args, &budget, tree)));
         }
         let sender = self.mailbox.0.clone();
-        let runs = join_all(runs.into_iter().map(|(access, run)| {
-            let sender = sender.clone();
-            async move {
-                let done = match run {
-                    Ok(run) => Ok(run.execute(sender).await),
-                    Err(error) => Err(error),
-                };
-                (access, done)
-            }
-        }));
-        tokio::pin!(runs);
-        let mut done = loop {
+        let mut runs: FuturesUnordered<_> = runs
+            .into_iter()
+            .enumerate()
+            .map(|(index, (access, run))| {
+                let sender = sender.clone();
+                async move {
+                    let done = match run {
+                        Ok(run) => Ok(run.execute(sender).await),
+                        Err(error) => Err(error),
+                    };
+                    (index, access, done)
+                }
+            })
+            .collect();
+        let mut finished = Vec::with_capacity(count);
+        while finished.len() < count {
             tokio::select! {
-                done = &mut runs => break done,
+                Some((index, access, done)) = runs.next() => {
+                    let done = match done {
+                        Ok(mut done) if access == Access::Research => {
+                            self.task_record(&mut done).map(|()| done)
+                        }
+                        other => other,
+                    };
+                    finished.push((index, access, done));
+                }
                 Some(event) = self.mailbox.1.recv() => {
                     self.saw(&event);
                     emit(&event);
                     events.push(event);
                 }
             }
-        };
+        }
+        finished.sort_by_key(|(index, _, _)| *index);
+        let mut done: Vec<(Access, Result<Done>)> = finished
+            .into_iter()
+            .map(|(_, access, done)| (access, done))
+            .collect();
         self.drain(events, emit);
         self.task_reconcile(&mut done);
         let mut results = Vec::with_capacity(done.len());
@@ -280,6 +301,27 @@ impl<P: Provider> Loop<P> {
             results.push(done.and_then(|done| self.task_settle(done)));
         }
         results
+    }
+
+    fn task_record(&mut self, done: &mut Done) -> Result<()> {
+        self.session
+            .finish_child(done.record.clone())
+            .map_err(super::session_err)?;
+        self.session
+            .charge(
+                Meter {
+                    input: done.billed,
+                    output: 0,
+                    cached: 0,
+                    millis: 0,
+                },
+                &format!("child {}", done.record.id),
+                &done.record.model,
+            )
+            .map_err(super::session_err)?;
+        self.spent_tokens = self.session.replay().spent_tokens;
+        done.settled = true;
+        Ok(())
     }
 
     fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
@@ -408,6 +450,7 @@ impl<P: Provider> Loop<P> {
                     paths: Vec::new(),
                     usage: Usage::default(),
                     billed: 0,
+                    settled: false,
                     millis: super::elapsed_millis(spawned.started),
                 }
             }
@@ -597,6 +640,7 @@ impl<P: Provider> Loop<P> {
             workspace,
             depth: 1,
             access: args.access,
+            call: Some(args.call.clone()),
             state: ChildState::Running,
         };
         self.session
@@ -672,25 +716,11 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    fn task_settle(&mut self, done: Done) -> Result<Execution> {
+    fn task_settle(&mut self, mut done: Done) -> Result<Execution> {
+        if !done.settled {
+            self.task_record(&mut done)?;
+        }
         let record = done.record;
-        self.session
-            .finish_child(record.clone())
-            .map_err(super::session_err)?;
-        self.session
-            .charge(
-                Meter {
-                    input: done.billed,
-                    output: 0,
-                    cached: 0,
-                    millis: 0,
-                },
-                &format!("child {}", record.id),
-                &record.model,
-            )
-            .map_err(super::session_err)?;
-        self.spent_tokens = self.session.replay().spent_tokens;
-
         let text = serde_json::to_string(&record)
             .map_err(|error| Error::Config(format!("cannot encode child receipt: {error}")))?;
         let success = matches!(record.state, ChildState::Completed(_));
@@ -849,6 +879,7 @@ impl<P: Provider> Run<P> {
             paths,
             usage,
             billed: self.child.session.replay().spent_tokens,
+            settled: false,
             millis: super::elapsed_millis(self.started),
         }
     }
@@ -879,6 +910,7 @@ async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Result<Done> {
         paths: Vec::new(),
         usage,
         billed,
+        settled: false,
         millis: super::elapsed_millis(spawned.started),
     })
 }

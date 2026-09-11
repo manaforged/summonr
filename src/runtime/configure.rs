@@ -138,7 +138,6 @@ impl<P: Provider> Loop<P> {
             history: Vec::new(),
             herdr,
             session,
-            max_rounds: 0,
             verify: None,
             budget: Budget {
                 max_tokens,
@@ -282,11 +281,6 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn max_rounds(&self) -> usize {
-        self.max_rounds
-    }
-
-    #[must_use]
     pub fn verify_commands(&self) -> &[String] {
         self.verify.as_deref().unwrap_or(&[])
     }
@@ -379,10 +373,6 @@ impl<P: Provider> Loop<P> {
         self.verify = commands;
     }
 
-    pub fn set_max_rounds(&mut self, max: usize) {
-        self.max_rounds = max;
-    }
-
     #[must_use]
     pub fn with_verify(mut self, commands: Vec<String>) -> Self {
         self.set_verify(Some(commands));
@@ -403,12 +393,6 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub fn history_len(&self) -> usize {
         self.history.len()
-    }
-
-    #[must_use]
-    pub fn with_max_rounds(mut self, max_rounds: usize) -> Self {
-        self.max_rounds = max_rounds;
-        self
     }
 
     #[must_use]

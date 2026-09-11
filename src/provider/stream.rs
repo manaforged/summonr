@@ -22,6 +22,7 @@ impl Client {
                     status: None,
                     message: error.to_string(),
                     partial_output: state.has_output(),
+                    retry_after: None,
                 })
             })?;
             state.push(self, &chunk)?;
@@ -115,6 +116,7 @@ impl Stream {
             status: None,
             message: message.into(),
             partial_output: self.has_output(),
+            retry_after: None,
         })
     }
 

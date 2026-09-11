@@ -15,7 +15,7 @@ use crate::tui::{Cmd, Msg};
 fn app() -> (App, tokio::sync::mpsc::UnboundedReceiver<Cmd>) {
     let (cmd, rx) = unbounded_channel();
     let mut info = super::super::tests::info();
-    info.prefs.splash = false;
+    info.splash = false;
     let mut app = App::new(info, PathBuf::from("/tmp/mage-desktop-test"), cmd);
     app.extent = signal(1.0);
     app.resize(160, 50);
@@ -497,8 +497,8 @@ fn the_desktop_hotkey_editor_shows_a_changed_binding() {
         app.toggle_options();
         assert!(app.settings_open.peek());
 
-        app.settings_sel.set(12);
-        app.adjust_setting(1);
+        app.settings_sel.set(11);
+        app.adjust_setting();
         assert!(app.hotkeys_open.peek());
 
         app.edit_hotkey();

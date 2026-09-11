@@ -296,7 +296,6 @@ fn print_diff(args: &Args) -> Result<()> {
     Ok(())
 }
 
-/// Moves plaintext keys out of config.toml once per run and names them.
 fn adopt(args: &Args) -> Result<Vec<String>> {
     let moved = summoner::adopt_keys()?;
     if !moved.is_empty() && !args.json {
@@ -308,7 +307,6 @@ fn adopt(args: &Args) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-/// Raw mode for one prompt; the terminal comes back however the read ends.
 struct Raw;
 
 impl Raw {
@@ -324,8 +322,6 @@ impl Drop for Raw {
     }
 }
 
-/// Reads one line from stdin. On a terminal it prompts and keeps the echo
-/// off, so the key never lands in the scrollback.
 fn read_secret(prompt: &str) -> Result<String> {
     use std::io::Read as _;
     if !std::io::stdin().is_terminal() {
@@ -660,9 +656,6 @@ fn configure(
     if let Some(check) = check {
         loop_ = loop_.with_verify(check);
     }
-    if let Some(rounds) = args.max_rounds {
-        loop_ = loop_.with_max_rounds(rounds);
-    }
     if args.max_turns.is_some() && args.goal.is_none() {
         return Err(summoner::Error::Config(
             "--max-turns only applies to --goal".to_string(),
@@ -721,10 +714,8 @@ async fn dispatch(
             .await
             .map(summoner::tui::Exit::Code)
     } else if let Some(ui_rx) = ui.1 {
-        let mut prefs = summoner::prefs::load()?;
-        if args.no_splash {
-            prefs.splash = false;
-        }
+        let prefs = summoner::prefs::load()?;
+        let splash = prefs.splash && !args.no_splash;
         let info = summoner::tui::Info {
             version: env!("CARGO_PKG_VERSION").to_string(),
             model: model.to_string(),
@@ -732,6 +723,7 @@ async fn dispatch(
             session: loop_.session_id().to_string(),
             endpoint: endpoint.name.clone(),
             prefs,
+            splash,
             plan: args.plan,
             strict: args.strict,
             workspace: splash::short_path(&workspace),

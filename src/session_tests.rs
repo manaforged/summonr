@@ -288,3 +288,17 @@ fn a_named_session_lists_resolves_and_exports() -> Result<()> {
     assert!(text.contains("## Assistant\n\nWidget fixed."), "{text}");
     Ok(())
 }
+
+#[test]
+fn remove_in_deletes_one_session_directory() {
+    let home = tempfile::tempdir().expect("home");
+    let dir = home.path().join("sessions").join("abc123");
+    std::fs::create_dir_all(&dir).expect("session dir");
+    std::fs::write(dir.join("session.jsonl"), "").expect("journal");
+    assert_eq!(
+        catalog::remove_in(home.path(), "abc123").expect("removed"),
+        "abc123"
+    );
+    assert!(!dir.exists());
+    catalog::remove_in(home.path(), "missing").unwrap_err();
+}

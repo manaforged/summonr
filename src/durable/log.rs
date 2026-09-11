@@ -260,7 +260,11 @@ impl Log {
     }
 
     pub(crate) fn append(&mut self, line: &Line) -> io::Result<()> {
-        let mut bytes = serde_json::to_vec(line)?;
+        let mut value = serde_json::to_value(line)?;
+        if let Some(object) = value.as_object_mut() {
+            object.insert("at".to_string(), serde_json::Value::from(now_millis()));
+        }
+        let mut bytes = serde_json::to_vec(&value)?;
         bytes.push(b'\n');
         self.file.write_all(&bytes)?;
         self.file.flush()
@@ -291,6 +295,14 @@ fn heal(path: &Path) -> io::Result<()> {
             .open(path)?
             .set_len(complete as u64)
     }
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| {
+            u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
+        })
 }
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<Line>> {

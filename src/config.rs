@@ -31,6 +31,8 @@ pub(crate) struct File {
     pub secrets: Option<String>,
     #[serde(default)]
     pub lsp: Lsp,
+    #[serde(default)]
+    pub sandbox: Sandbox,
     pub workflow: Option<String>,
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
@@ -46,6 +48,27 @@ pub(crate) enum SeatRow {
         endpoint: String,
         model: Option<String>,
     },
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct Sandbox {
+    #[serde(default)]
+    pub write: Vec<String>,
+}
+
+impl Sandbox {
+    pub(crate) fn paths(&self) -> Vec<PathBuf> {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(PathBuf::from);
+        self.write
+            .iter()
+            .map(|path| match (path.strip_prefix("~/"), &home) {
+                (Some(rest), Some(home)) => home.join(rest),
+                _ => PathBuf::from(path),
+            })
+            .collect()
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

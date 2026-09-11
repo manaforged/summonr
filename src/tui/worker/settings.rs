@@ -314,7 +314,6 @@ impl Worker {
             relay: self.relay.clone(),
             plan: self.loop_.is_plan(),
             verify: verify_display(self.loop_.verify_commands()),
-            max_rounds: self.loop_.max_rounds(),
             strict: self.loop_.is_strict(),
             endpoint: self.endpoint.clone(),
             context_window: self.loop_.context_window(),

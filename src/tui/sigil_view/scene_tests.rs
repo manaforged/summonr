@@ -6,7 +6,7 @@ fn splash_is_one_compact_terminal_composition() {
     sigil::reactive::Runtime::scope("mage-splash-frame-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.splash_revealed.set(true);
         app.resize(160, 50);
@@ -255,7 +255,7 @@ fn compact_surfaces_keep_selected_content_inside_the_frame() {
                 .unwrap_or_else(|error| panic!("{width}x{height} chat failed: {error}"));
 
             app.settings_open.set(true);
-            app.settings_sel.set(11);
+            app.settings_sel.set(10);
             let tree = app.clone();
             let frame =
                 sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, height, &[])
@@ -331,7 +331,7 @@ fn narrow_chat_keeps_the_complete_busy_status() {
     sigil::reactive::Runtime::scope("mage-narrow-status-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.workspace = "/home/user/dev/mage".to_string();
+        start.workspace = "/home/user/dev/project".to_string();
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         {
             let mut model = app.model.borrow_mut();
@@ -426,7 +426,7 @@ fn splash_reveal_and_scene_advance_on_ticks() {
     sigil::reactive::Runtime::scope("mage-splash-animation-parity-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         start.prefs.theme = "space".to_string();
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.resize(100, 30);
@@ -454,5 +454,120 @@ fn splash_reveal_and_scene_advance_on_ticks() {
         assert!(animated.text().contains("summoner 0.1.0"));
         assert!(animated.text().contains("❯ "));
         assert_ne!(initial, animated, "animated scene stayed frozen");
+    });
+}
+
+#[test]
+fn the_composer_shows_what_the_model_is_doing_while_busy() {
+    sigil::reactive::Runtime::scope("mage-composer-status-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/project".to_string();
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(80, 16);
+        let composer = |app: &App| {
+            app.refresh();
+            let tree = app.clone();
+            let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 80, 16, &[])
+                .unwrap_or_else(|error| panic!("layout failed: {error}"));
+            let lines: Vec<&str> = frame.lines().collect();
+            let top = lines
+                .iter()
+                .position(|line| line.contains('╭'))
+                .unwrap_or_else(|| panic!("no composer border:\n{frame}"));
+            let above = lines[top.saturating_sub(1)].to_string();
+            let bottom = lines[top + 2].to_string();
+            (above, bottom)
+        };
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        let (above, bottom) = composer(&app);
+        assert!(above.contains("thinking ·"), "{above}");
+        assert!(bottom.contains("esc cancel"), "{bottom}");
+        app.update(Msg::Calling("read_file".to_string()));
+        assert!(
+            composer(&app).0.contains("read_file"),
+            "{}",
+            composer(&app).0
+        );
+        app.update(Msg::Event(Event::ToolResult {
+            id: "c1".to_string(),
+            success: true,
+            mutated: false,
+            output: "ok".to_string(),
+        }));
+        assert!(
+            composer(&app).0.contains("thinking ·"),
+            "{}",
+            composer(&app).0
+        );
+        app.update(Msg::Busy(None));
+        let (above, bottom) = composer(&app);
+        assert!(bottom.contains("enter send"), "{bottom}");
+        assert!(!above.contains("thinking"), "{above}");
+    });
+}
+
+#[test]
+fn the_composer_counts_queued_input_while_busy() {
+    sigil::reactive::Runtime::scope("mage-queue-count-test", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/project".to_string();
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 16);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Queued {
+            steering: 1,
+            queued: 1,
+        });
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 16, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let lines: Vec<&str> = frame.lines().collect();
+        let top = lines
+            .iter()
+            .position(|line| line.contains('╭'))
+            .unwrap_or_default();
+        assert!(lines[top.saturating_sub(1)].contains("2 queued"), "{frame}");
+        app.dequeue();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Dequeue)));
+    });
+}
+
+#[test]
+fn the_busy_row_and_status_bar_show_tokens_per_second() {
+    sigil::reactive::Runtime::scope("mage-speed-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/project".to_string();
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 16);
+        let frame = |app: &App| {
+            app.refresh();
+            let tree = app.clone();
+            sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 16, &[])
+                .unwrap_or_else(|error| panic!("layout failed: {error}"))
+        };
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Delta("x".repeat(400)));
+        let lines: Vec<String> = frame(&app).lines().map(str::to_string).collect();
+        let top = lines
+            .iter()
+            .position(|line| line.contains('╭'))
+            .expect("composer");
+        assert!(lines[top - 1].contains("tok/s"), "{}", lines[top - 1]);
+        app.update(Msg::Event(Event::Usage {
+            prompt_tokens: 10,
+            completion_tokens: 100,
+            reasoning_tokens: 0,
+            cached_tokens: 0,
+            millis: Some(1_000),
+            prefix_hash: String::new(),
+            cost: None,
+        }));
+        app.update(Msg::Busy(None));
+        let last = frame(&app).lines().last().unwrap_or_default().to_string();
+        assert!(last.contains("tok/s"), "{last}");
     });
 }

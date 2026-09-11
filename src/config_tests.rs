@@ -103,3 +103,20 @@ fn modules_accept_known_names_only() {
     let file = load_from(&path).expect("reload");
     assert_eq!(file.modules.get("task"), Some(&false));
 }
+
+#[test]
+fn sandbox_write_paths_expand_the_home_prefix() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(&path, "[sandbox]\nwrite = [\"~/store\", \"/opt/cache\"]\n")
+        .expect("seed config");
+    let file = load_from(&path).expect("load config");
+    let paths = file.sandbox.paths();
+    let user_home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(std::path::PathBuf::from)
+        .expect("home");
+    assert_eq!(paths[0], user_home.join("store"));
+    assert_eq!(paths[1], std::path::PathBuf::from("/opt/cache"));
+    assert!(load_from(&path).expect("reload").sandbox.paths().len() == 2);
+}

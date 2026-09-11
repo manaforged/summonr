@@ -8,8 +8,9 @@ strict = false
 
 # Extra deny patterns (substring / prefix, case-insensitive).
 # Built-in denies always apply: force-push, curl|sh, sudo, mkfs, ...
-# Commands are also contained: rm, mv, cp, chmod, tee, redirects, and
-# `cd` may not name a path outside the workspace (absolute, ~, $VAR, or ..).
+# Commands are also contained: rm, mv, cp, chmod, tee, and redirects may not
+# name a path outside the workspace, and after a `cd` outside it every such
+# target counts as outside. Reads and builds outside the workspace run.
 # deny = ["npm publish"]
 
 # When non-empty (or strict = true), only these commands run.

@@ -65,6 +65,7 @@ pub fn harness_section(plan: bool, checks: &[String]) -> String {
             "Harness state: Auto mode is active. Match the work to the request. For an answer, explanation, review, diagnosis, or status report, inspect the evidence and report without changing files or repository state. {REVIEW} For a requested change or build, implement it and run the narrowest useful check."
         )
     }];
+    parts.push("Search with the grep tool. A shell grep -r or find from the repository root walks target/ and node_modules/ and can take minutes.".to_string());
     #[cfg(windows)]
     parts.push("Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs. The sandbox uses a PowerShell drive rooted at the workspace. Use relative paths, or $PWD.ProviderPath when a native program needs the filesystem path. Git Bash and other MSYS programs cannot run inside the Windows sandbox.".to_string());
     if checks.is_empty() {

@@ -56,7 +56,7 @@ impl CommandChild {
             return self
                 .child
                 .id()
-                .map_or(Ok(()), super::sandbox::windows::stop);
+                .map_or(Ok(()), |pid| super::sandbox::windows::stop(pid).map(drop));
         }
         self.child.start_kill()
     }
@@ -119,7 +119,10 @@ impl ToolRegistry {
             }
             if object_bool(&args, "kill") {
                 let record = crate::jobs::load(&self.workspace, id)?;
-                stop_job(&self.workspace, &record)?;
+                let workspace = self.workspace.clone();
+                tokio::task::spawn_blocking(move || stop_job(&workspace, &record))
+                    .await
+                    .map_err(|error| Error::Tool(format!("job stop failed: {error}")))??;
             }
             let status = crate::jobs::status(&self.workspace, id)?;
             return Ok(ToolOutput {
@@ -258,6 +261,7 @@ impl ToolRegistry {
             temp: _temp,
         } = started;
         let mut group = ProcessGroup::new(pid, self.sandbox.is_some());
+        let started = std::time::Instant::now();
         let waited = match timeout {
             Some(seconds) => {
                 tokio::time::timeout(
@@ -280,7 +284,11 @@ impl ToolRegistry {
                 let code = status.code().unwrap_or(-1);
                 crate::jobs::write_exit(&exit_path, code)?;
                 let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
-                let output = format!("exit {code}\n{}", super::digest(command, &raw));
+                let output = format!(
+                    "exit {code}\n{}{}",
+                    super::digest(command, &raw),
+                    slow_search_note(command, started.elapsed().as_secs())
+                );
                 Ok(ToolOutput {
                     text: output,
                     success: code == 0,
@@ -315,6 +323,20 @@ impl ToolRegistry {
             }
         }
     }
+}
+
+fn slow_search_note(command: &str, secs: u64) -> String {
+    let searches = command.contains("grep -r")
+        || command.contains("grep -R")
+        || command.starts_with("find ")
+        || command.contains("; find ")
+        || command.contains("&& find ");
+    if secs < 30 || !searches {
+        return String::new();
+    }
+    format!(
+        "\nnote: this search ran {secs}s; the grep tool skips ignored directories such as target/ and node_modules/"
+    )
 }
 
 fn spawn_command(
@@ -621,7 +643,9 @@ async fn settle_command(child: &mut CommandChild) -> std::io::Result<()> {
 fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
     #[cfg(windows)]
     if record.sandbox {
-        super::sandbox::windows::stop(record.pid)?;
+        if let Some(helper) = super::sandbox::windows::stop(record.pid)? {
+            super::sandbox::windows::wait(&helper)?;
+        }
     } else {
         kill_group(record.pid, false);
     }

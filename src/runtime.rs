@@ -77,7 +77,6 @@ pub struct Loop<P> {
     history: Vec<Message>,
     herdr: Reporter,
     session: SessionDriver,
-    max_rounds: usize,
     verify: Option<Vec<String>>,
     budget: Budget,
     spent_tokens: u64,
@@ -107,6 +106,20 @@ mod configure;
 mod turn;
 
 impl<P: Provider> Loop<P> {
+    pub async fn shell(&self, command: &str) -> Result<(String, bool)> {
+        let call = ToolCall {
+            continuation: None,
+            id: format!("shell-{}", self.session_id()),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                name: "run_command".to_string(),
+                arguments: serde_json::json!({ "command": command }).to_string(),
+            },
+        };
+        let output = self.tools.execute_outcome(&call).await?;
+        Ok((output.text, output.success))
+    }
+
     fn seat(&self, role: workflow::Role) -> (&P, &str) {
         self.seats.get(&role).map_or(
             (&self.provider, self.model.as_str()),

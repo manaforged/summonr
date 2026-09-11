@@ -32,7 +32,7 @@ impl ToolRegistry {
         let limit = object_usize(&args, "limit")
             .unwrap_or(READ_DEFAULT_LIMIT)
             .clamp(1, READ_MAX_LIMIT);
-        let canonical = self.resolve_existing(path)?;
+        let canonical = self.resolve_read(path)?;
         let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         let first = offset.saturating_sub(1);
@@ -207,7 +207,7 @@ impl ToolRegistry {
         let dir = if path == "." {
             self.workspace.clone()
         } else {
-            self.resolve_existing(path)?
+            self.resolve_read(path)?
         };
         if !dir.is_dir() {
             return Err(Error::Tool(format!("`{path}` is not a directory")));
@@ -230,7 +230,7 @@ impl ToolRegistry {
             .unwrap_or(GREP_DEFAULT)
             .clamp(1, GREP_MAX);
         let root = match args.get("path").and_then(Value::as_str) {
-            Some(path) if !path.trim().is_empty() && path != "." => self.resolve_existing(path)?,
+            Some(path) if !path.trim().is_empty() && path != "." => self.resolve_read(path)?,
             _ => self.workspace.clone(),
         };
         let regex = if pattern.is_empty() {
@@ -261,6 +261,11 @@ impl ToolRegistry {
                 .canonicalize()
                 .unwrap_or(self.workspace.clone());
             let root = root.canonicalize().unwrap_or(root);
+            let base = if root.starts_with(&base) {
+                base
+            } else {
+                root.clone()
+            };
             let mut files = if root == base {
                 crate::durable::tree::listing(&base)
             } else {

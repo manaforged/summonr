@@ -46,6 +46,16 @@ impl ToolRegistry {
             .take(READ_MAX_WORK_BYTES as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+        if let Some(media) = image_type(&bytes) {
+            let (width, height) = ::image::ImageReader::new(std::io::Cursor::new(&bytes))
+                .with_guessed_format()
+                .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?
+                .into_dimensions()
+                .map_err(|error| Error::Tool(format!("cannot decode `{path}`: {error}")))?;
+            return Ok(format!(
+                "{path} is a {media} image, {width}x{height}. It is shown to the user. To look at it yourself, ask the user to attach it with @{path}."
+            ));
+        }
         let total_unknown = bytes.len() > READ_MAX_WORK_BYTES;
         bytes.truncate(READ_MAX_WORK_BYTES);
         let ends_newline = bytes.last() == Some(&b'\n');
@@ -168,7 +178,7 @@ impl ToolRegistry {
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write_file requires content".to_string()))?;
         let dest = self.resolve_write(path)?;
-        self.policy.write_path(&self.relative(&dest)?)?;
+        self.policy.write_globs(&self.relative(&dest)?)?;
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
@@ -439,6 +449,23 @@ fn decode(path: &str, index: usize, raw: &[u8], partial: bool) -> Result<(String
         text.push_str(&format!("… [line clipped at {READ_MAX_BYTES} bytes]"));
     }
     Ok((text, clipped))
+}
+
+impl ToolRegistry {
+    pub(super) fn show_image(&self, arguments: &str) -> Result<String> {
+        let args: Value = parse_args("show_image", arguments)?;
+        let path = object_string(&args, "path")?;
+        let canonical = self.resolve_read(path)?;
+        let bytes = std::fs::read(&canonical)
+            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+        let media = image_type(&bytes).ok_or_else(|| {
+            Error::Tool(format!("`{path}` is not a PNG, JPEG, GIF, or WebP image"))
+        })?;
+        let (width, height) = ::image::load_from_memory(&bytes)
+            .map(|decoded| (decoded.width(), decoded.height()))
+            .map_err(|error| Error::Tool(format!("cannot decode `{path}`: {error}")))?;
+        Ok(format!("shown {path} ({media}, {width}x{height})"))
+    }
 }
 
 pub(super) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {

@@ -228,6 +228,26 @@ A draft that starts with `!` runs in the command sandbox before any
 model round: `!cmd` shows the output as a tool card and then sends
 `$ cmd` plus the output as the prompt; `!!cmd` shows the output only.
 
+An image pasted from the clipboard, or attached with `@shot.png`, shows in
+the transcript, and so does any image the model shows you: the
+`show_image` tool takes a path, and a markdown image link such as
+`![plot](out/plot.png)` in a reply shows that file. In Ghostty, Kitty,
+WezTerm, and Konsole the picture renders through the Kitty graphics
+protocol; in iTerm2 and Warp through inline images; in other terminals as
+half-block cells. `SIGIL_GRAPHICS=kitty`, `iterm2`, or `none` overrides the
+detection, and tmux turns it off. A picture is 24 rows tall at most, and a
+picture scrolled partly off the screen shows the rows that are on it.
+`read_file` on an image reports its type and size, and the picture shows in
+the transcript; the model attaches it as `@path` to look at it. `/view
+shot.png`, or `→` on an image in the tree, shows the picture in the view
+pane.
+
+A fenced `mermaid` block in a reply renders as a diagram in the
+transcript: flowcharts and state diagrams with box-drawing edges, sequence
+diagrams with lifelines and frames, and pie charts as bars. Other Mermaid
+kinds show their source in a frame. The drawing comes from Sigil's
+`mermaid` widget, so it looks the same in every terminal.
+
 A paste of eight or more lines, or a thousand or more bytes, folds into
 `[pasted N lines #k]` in the draft. Summoner expands every token back to
 the pasted text when the prompt is sent or queued; `ctrl+c` discards
@@ -392,10 +412,10 @@ Each flag alone gives these modes:
 | Mode | File tools | Shell commands | Shell network |
 | --- | --- | --- | --- |
 | Default | Reads any path the sandbox can read; writes inside the workspace under policy | Contained; workspace and temporary storage writable | Denied |
-| `--plan` | Workspace reads; writes denied | Contained inspection; workspace read-only; no background jobs | Denied |
+| `--plan` | Reads; write_file writes any path | write_file writes; edit tools, shell writes, and background jobs denied | Denied |
 | `--no-sandbox` | Full access with your account's permissions | Uncontained; command policy bypassed | Your account's access |
 
-`read_file`, `list_dir`, and `grep` accept an absolute path outside the
+`read_file`, `list_dir`, `grep`, and `show_image` accept an absolute path outside the
 workspace, which is what the shell can already read; every edit and write
 tool stays inside it. For work that spans sibling repositories, launch
 Summoner in the parent directory or pass absolute paths to the read tools.
@@ -406,7 +426,7 @@ it does not change file permissions. Model requests and language servers use
 host networking separately from shell commands.
 
 `--no-sandbox` also bypasses file allow/write restrictions and permits file tools
-outside the workspace. `--plan` still denies file writes when combined with it,
+outside the workspace. `--plan` still limits writes to the write_file tool when combined with it,
 and refuses shell commands because read-only inspection requires a sandbox.
 `--strict` reapplies policy restrictions but does not restore process containment.
 
@@ -432,6 +452,9 @@ An action must match every configured nonempty allow/write list. Deny lists
 accumulate. Empty lists add no restriction, except that `strict = true` with an
 empty allow list denies all commands. Repository policy can narrow user
 permissions, never widen them. Children inherit these restrictions.
+In plan mode the write_file tool writes any path, so the plan or review file
+lands. The edit tools and shell commands stay read-only, so source edits and
+builds are refused.
 A restricted write list makes contained shell commands read-only and disables
 background commands; file tools still use the list.
 

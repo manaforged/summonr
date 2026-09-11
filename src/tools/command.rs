@@ -285,9 +285,10 @@ impl ToolRegistry {
                 crate::jobs::write_exit(&exit_path, code)?;
                 let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
                 let output = format!(
-                    "exit {code}\n{}{}",
+                    "exit {code}\n{}{}{}",
                     super::digest(command, &raw),
-                    slow_search_note(command, started.elapsed().as_secs())
+                    slow_search_note(command, started.elapsed().as_secs()),
+                    plan_write_note(read_only, &raw)
                 );
                 Ok(ToolOutput {
                     text: output,
@@ -322,6 +323,15 @@ impl ToolRegistry {
                 })
             }
         }
+    }
+}
+
+fn plan_write_note(read_only: bool, raw: &str) -> String {
+    if read_only && raw.contains("Operation not permitted") {
+        "\nplan mode runs the shell read-only. Write a plan or review with the write_file          tool, which creates parent directories; builds and edits run in auto mode."
+            .to_string()
+    } else {
+        String::new()
     }
 }
 

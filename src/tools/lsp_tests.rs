@@ -350,7 +350,7 @@ fn workspace_edit_is_denied_in_plan_mode() -> Result<()> {
         Ok(_) => panic!("rename must fail in plan mode"),
         Err(error) => error,
     };
-    assert!(error.to_string().contains("read-only"), "{error}");
+    assert!(error.to_string().contains("does not edit"), "{error}");
     assert_eq!(std::fs::read_to_string(&file)?, "fn old() {}\n");
     Ok(())
 }

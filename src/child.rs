@@ -24,6 +24,8 @@ pub(crate) struct ChildRecord {
     pub(crate) depth: u8,
     #[serde(default)]
     pub(crate) access: Access,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) call: Option<String>,
     pub(crate) state: ChildState,
 }
 

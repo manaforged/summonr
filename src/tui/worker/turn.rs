@@ -27,6 +27,8 @@ impl Worker {
         let sender = self.ui.clone();
         let emit = move |event: &Event| drop(sender.send(Msg::Event(event.clone())));
         let (cancelled, result, mode, quit) = {
+            let session_path = self.loop_.session_path().to_path_buf();
+            let session_id = self.loop_.session_id();
             let turn = async {
                 match input {
                     Input::User(input) => self.loop_.turn_with(input, emit).await,
@@ -43,7 +45,8 @@ impl Worker {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
-                        Some(command @ (Cmd::ListSessions | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
+                        Some(Cmd::Export(target)) => super::export_session(&session_path, &session_id, target, &self.ui),
+                        Some(command @ (Cmd::ListSessions | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
                         Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Merge(_) | Cmd::Discard(_))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
@@ -60,14 +63,27 @@ impl Worker {
                         }
                         Some(Cmd::Steer(text)) => {
                             if let Ok(mut queue) = self.steering.lock() { queue.push_back(text); }
+                            super::announce(&self.ui, &self.steering, &self.followups);
                         }
-                        Some(Cmd::Queue(text)) => self.followups.push_back(text),
-                        Some(command @ (Cmd::SetRounds(_) | Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::ListModels | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows)) => {
+                        Some(Cmd::Queue(text)) => {
+                            self.followups.push_back(text);
+                            super::announce(&self.ui, &self.steering, &self.followups);
+                        }
+                        Some(Cmd::Dequeue) => {
+                            let mut pending: Vec<UserInput> = self.steering.lock().map_or_else(|_| Vec::new(), |mut queue| queue.drain(..).collect());
+                            pending.extend(self.followups.drain(..));
+                            if !pending.is_empty() {
+                                drop(self.ui.send(Msg::Restored(pending)));
+                            }
+                            super::announce(&self.ui, &self.steering, &self.followups);
+                        }
+                        Some(command @ (Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::ListModels | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows)) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
                         Some(Cmd::Submit(input)) => {
                             self.followups.push_back(input);
+                            super::announce(&self.ui, &self.steering, &self.followups);
                         }
                         Some(Cmd::Mail) => {}
                         Some(Cmd::Tick) => {}
@@ -146,10 +162,9 @@ impl Worker {
         if !pending.is_empty() {
             drop(self.ui.send(Msg::Restored(pending)));
         }
+        super::announce(&self.ui, &self.steering, &self.followups);
     }
 
-    /// Sends the workspace diff to the interface. With `announce`, only a
-    /// change since the last report is sent, with a transcript line.
     pub(super) fn send_diff(&mut self, announce: bool) {
         let diff = match crate::diff::stats(self.loop_.workspace()) {
             Ok(diff) => diff,

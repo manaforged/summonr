@@ -64,10 +64,9 @@ fn cache_rate(model: &Model) -> u64 {
 
 pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
     format!(
-        "mode      {}\nverify    {}\nrounds    {}\nendpoint  {}\nmodel     {}\ntheme     {}\nreasoning {}\ntools     {}\nbus       {}",
+        "mode      {}\nverify    {}\nendpoint  {}\nmodel     {}\ntheme     {}\nreasoning {}\ntools     {}\nbus       {}",
         if snapshot.plan { "plan" } else { "auto" },
         snapshot.verify.as_deref().unwrap_or("off"),
-        snapshot.rounds_label(),
         snapshot.endpoint,
         snapshot.model,
         prefs.theme,

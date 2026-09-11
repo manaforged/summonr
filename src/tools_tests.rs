@@ -153,12 +153,12 @@ async fn foreground_commands_kill_successful_and_failed_descendants() -> Result<
                 workspace.path(),
             );
             format!(
-                "$child = Start-Process (Join-Path $PSHOME 'powershell.exe') -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -PassThru; $deadline = [DateTime]::UtcNow.AddSeconds(5); while (!(Test-Path ready.txt)) {{ if ($child.HasExited -or [DateTime]::UtcNow -gt $deadline) {{ exit 99 }}; Start-Sleep -Milliseconds 20 }}; exit {exit}",
+                "$child = Start-Process (Join-Path $PSHOME 'powershell.exe') -ArgumentList '-NoProfile','-NonInteractive','-EncodedCommand','{}' -PassThru; [IO.File]::WriteAllText('pid.txt', $child.Id); $deadline = [DateTime]::UtcNow.AddSeconds(5); while (!(Test-Path ready.txt)) {{ if ($child.HasExited -or [DateTime]::UtcNow -gt $deadline) {{ exit 99 }}; Start-Sleep -Milliseconds 20 }}; exit {exit}",
                 arguments.last().expect("encoded command")
             )
         } else {
             format!(
-                "(printf ready > ready.txt; sleep 2; printf late > late.txt) & while [ ! -f ready.txt ]; do sleep 0.02; done; exit {exit}"
+                "(echo $BASHPID > pid.txt; printf ready > ready.txt; sleep 2; printf late > late.txt) & while [ ! -f ready.txt ]; do sleep 0.02; done; exit {exit}"
             )
         };
         let call = ToolCall {
@@ -177,10 +177,34 @@ async fn foreground_commands_kill_successful_and_failed_descendants() -> Result<
             std::fs::read_to_string(workspace.path().join("ready.txt"))?,
             "ready"
         );
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        let pid: u32 = std::fs::read_to_string(workspace.path().join("pid.txt"))?
+            .trim()
+            .parse()
+            .expect("descendant pid");
+        for _ in 0..150 {
+            if !descendant_alive(pid) {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        assert!(
+            !descendant_alive(pid),
+            "descendant {pid} survived the command"
+        );
         assert!(!workspace.path().join("late.txt").exists());
     }
     Ok(())
+}
+
+fn descendant_alive(pid: u32) -> bool {
+    #[cfg(unix)]
+    {
+        crate::jobs::alive(pid)
+    }
+    #[cfg(windows)]
+    {
+        crate::jobs::alive_since(pid, u64::MAX)
+    }
 }
 
 #[tokio::test]
@@ -220,5 +244,29 @@ async fn stopping_session_jobs_does_not_stop_another_session() -> Result<()> {
 
     second.stop_jobs()?;
     assert!(crate::jobs::status(workspace.path(), &second_id)?.killed);
+    Ok(())
+}
+
+#[tokio::test]
+async fn read_tools_reach_outside_the_workspace_and_writes_do_not() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let outside = tempfile::tempdir()?;
+    std::fs::write(
+        outside.path().join("sibling.txt"),
+        "from the sibling repo\n",
+    )?;
+    let tools = ToolRegistry::new(workspace.path())?;
+    let path = outside.path().join("sibling.txt");
+    let read = tools.read_file(&serde_json::json!({ "path": path }).to_string())?;
+    assert!(read.contains("from the sibling repo"), "{read}");
+    let listed = tools.list_dir(&serde_json::json!({ "path": outside.path() }).to_string())?;
+    assert!(listed.contains("sibling.txt"), "{listed}");
+    let found = tools
+        .grep(&serde_json::json!({ "pattern": "sibling", "path": outside.path() }).to_string())?;
+    assert!(found.contains("sibling.txt"), "{found}");
+    let write = tools
+        .write_file(&serde_json::json!({ "path": path, "content": "x" }).to_string())
+        .await;
+    assert!(write.is_err(), "writes outside the workspace must fail");
     Ok(())
 }

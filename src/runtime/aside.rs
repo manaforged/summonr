@@ -1,8 +1,6 @@
 use super::*;
 use crate::workflow::Role;
 
-const ASIDE_ROUNDS: usize = 32;
-
 impl<P: Provider> Loop<P> {
     pub(crate) async fn aside(
         &mut self,
@@ -30,12 +28,7 @@ impl<P: Provider> Loop<P> {
             Message::user(user.to_string()),
         ];
         let mut usage = Usage::default();
-        for round in 0.. {
-            if round >= ASIDE_ROUNDS {
-                return Err(Error::Config(format!(
-                    "{role} exceeded {ASIDE_ROUNDS} rounds without an answer"
-                )));
-            }
+        loop {
             if let Some(reason) = self.round_abort() {
                 return Err(Error::Config(reason));
             }
@@ -97,6 +90,5 @@ impl<P: Provider> Loop<P> {
                 messages.push(Message::tool(call.id, output));
             }
         }
-        Err(Error::Config(format!("{role} produced no answer")))
     }
 }

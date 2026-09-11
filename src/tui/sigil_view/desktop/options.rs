@@ -139,7 +139,6 @@ pub(super) fn main(app: App) -> NodeBuilder {
             .to_string(),
         ),
         ("verify", verify),
-        ("rounds", model.snapshot.rounds_label()),
         ("endpoint", endpoint),
         ("model", model.snapshot.model.clone()),
         (
@@ -190,7 +189,7 @@ pub(super) fn main(app: App) -> NodeBuilder {
         panel = panel.child(
             hit(name.to_string(), selected, move || {
                 change.settings_sel.set(index);
-                change.adjust_setting(1);
+                change.adjust_setting();
             })
             .child(label(name).class(classes!("text-sm text-gray-12")))
             .child(spacer())

@@ -26,6 +26,10 @@ pub enum Msg {
     Busy(Option<Activity>),
     Failed(String),
     Restored(Vec<UserInput>),
+    Queued {
+        steering: usize,
+        queued: usize,
+    },
     System(String),
     Session(String),
     Cleared,
@@ -87,6 +91,7 @@ pub enum Activity {
     Login,
     Compact,
     Branch,
+    Shell,
 }
 
 impl Activity {
@@ -96,6 +101,7 @@ impl Activity {
             Self::Login => "signing in",
             Self::Compact => "compacting",
             Self::Branch => "branching",
+            Self::Shell => "running",
         }
     }
 }
@@ -115,7 +121,6 @@ enum Cmd {
     Steer(UserInput),
     Queue(UserInput),
     SetMode(bool),
-    SetRounds(usize),
     SetVerify(bool),
     SetEndpoint(String),
     SetModel(String),
@@ -137,6 +142,9 @@ enum Cmd {
     SaveWorkflow(String),
     ListWorkflows,
     SetBus(bool),
+    Dequeue,
+    DeleteSession(String),
+    Export(Option<String>),
     Cancel,
     Quit,
     Tick,
@@ -164,21 +172,13 @@ pub struct Snapshot {
     pub relay: Option<String>,
     pub plan: bool,
     pub verify: Option<String>,
-    pub max_rounds: usize,
     pub strict: bool,
     pub endpoint: String,
     pub context_window: Option<u32>,
     pub workflow: Option<String>,
 }
 
-impl Snapshot {
-    pub fn rounds_label(&self) -> String {
-        match self.max_rounds {
-            0 => "unlimited".to_string(),
-            rounds => rounds.to_string(),
-        }
-    }
-}
+impl Snapshot {}
 
 #[derive(Clone, Debug)]
 pub struct Info {
@@ -188,6 +188,7 @@ pub struct Info {
     pub session: String,
     pub endpoint: String,
     pub prefs: Prefs,
+    pub splash: bool,
     pub plan: bool,
     pub strict: bool,
     pub workspace: String,
@@ -325,6 +326,7 @@ fn tool_arg(arguments: &str) -> String {
         .iter()
         .find_map(|field| value.get(field).and_then(serde_json::Value::as_str))
         .unwrap_or("");
+    let picked = after_cd(picked);
     let chars: Vec<char> = picked.chars().collect();
     if chars.len() > 46 {
         format!("{}…", chars[..45].iter().collect::<String>())
@@ -333,31 +335,69 @@ fn tool_arg(arguments: &str) -> String {
     }
 }
 
+fn after_cd(command: &str) -> &str {
+    let mut rest = command;
+    while let Some(target) = rest.strip_prefix("cd ") {
+        let cut = [
+            target.find("&&").map(|index| (index, 2)),
+            target.find(';').map(|index| (index, 1)),
+        ]
+        .into_iter()
+        .flatten()
+        .min_by_key(|(index, _)| *index);
+        let Some((index, len)) = cut else { break };
+        rest = target[index + len..].trim_start();
+    }
+    rest
+}
+
 fn help_text() -> String {
-    let commands = crate::command_specs()
-        .iter()
-        .map(|spec| format!("{} {}", spec.name, spec.description))
-        .collect::<Vec<_>>()
-        .join(" · ");
-    format!(
-        "{commands}\n\
-         @path attach text or an image · ↑↓ recall prompts at first/last line\n\
-         keys: enter send/steer · tab complete/queue · shift+tab mode\n\
-         options: ctrl+o by default · hotkeys are editable there\n\
-         search: ctrl+f by default · /search TEXT finds conversation text\n\
-         history: ctrl+r by default · /history TEXT inserts saved prompt text\n\
-         pgup/pgdn or wheel scroll\n\
-         panes: ctrl+e files · ctrl+l ledger · ctrl+x diff · /pane worktrees · ctrl+p hide/show · ctrl+→ focus pane · ctrl+← composer\n\
-         in a pane: ↑↓ move · ←→ collapse/expand or hunks/list · enter attach @path or view hunks · right-click menu · esc back\n\
-         view: → on a file or /view PATH · ↑↓ scroll · o open in $EDITOR · esc back\n\
-         diff: t last turn only · c copy the patch\n\
-         copy: ctrl+y last reply · /copy all transcript · ctrl+t select text\n\
-         edit: e in the view pane · type, enter, arrows · ctrl+s save · esc leave (twice to discard)\n\
-         ctrl+shift+←/→ resize the split\n\
-         settings: enter on model lists every ready seat\n\
-         workflow card: ↑↓ role · enter seat · d driving · ←→ saved · s save\n\
-         esc cancel · ctrl+c clear/quit · ctrl+d quit when empty"
-    )
+    let specs = crate::command_specs();
+    let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
+    let mut lines: Vec<String> = vec!["commands".to_string()];
+    lines.extend(
+        specs
+            .iter()
+            .map(|spec| format!("  {:<width$}  {}", spec.name, spec.description)),
+    );
+    lines.extend(
+        [
+            "",
+            "composer",
+            "  enter        send, or steer the running turn",
+            "  tab          complete a /command or @path; queue while busy",
+            "  alt+↑        pull queued input back into the editor",
+            "  shift+tab    switch between auto and plan mode",
+            "  esc          cancel; twice on an idle composer opens /tree",
+            "  ctrl+c       clear the draft; twice on an empty draft quits",
+            "  ctrl+d       quit when the draft is empty",
+            "  ctrl+j       newline (default; editable in options)",
+            "  ctrl+g       edit the draft in $EDITOR (default)",
+            "  alt+←/→      word left or right · alt+b/f the same",
+            "  ctrl+w       delete the word before the caret · alt+d after",
+            "  ctrl+u/k     delete to the line start or end",
+            "  ↑↓           recall prompts at the first or last line",
+            "  @path        attach text or an image",
+            "  !cmd         run in the sandbox and send the output; !!cmd runs only",
+            "  a paste of 8+ lines folds into [pasted N lines #k] until sent",
+            "",
+            "interface",
+            "  ctrl+o       options (hotkeys are editable there)",
+            "  ctrl+f       search the conversation · /search TEXT",
+            "  ctrl+r       prompt history · /history TEXT",
+            "  ctrl+e       files · ctrl+l ledger · ctrl+x diff · /pane worktrees",
+            "  ctrl+p       hide or show the pane · ctrl+→ focus it · ctrl+← composer",
+            "  ctrl+y       copy the last reply · /copy all · ctrl+t select text",
+            "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll",
+            "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc",
+            "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place",
+            "  diff         t last turn only · c copy the patch",
+            "  sessions     ↑↓ · enter resume · tab scope · ctrl+d twice deletes · esc",
+            "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save",
+        ]
+        .map(str::to_string),
+    );
+    lines.join("\n")
 }
 
 #[cfg(test)]

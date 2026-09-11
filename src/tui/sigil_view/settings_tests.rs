@@ -67,7 +67,7 @@ fn autocomplete_and_settings_keep_the_overlays() {
         screen
             .frame(&mut host, &mut router, [increase], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
-        assert!(matches!(rx.try_recv(), Ok(Cmd::SetRounds(8))));
+        assert!(matches!(rx.try_recv(), Ok(Cmd::SetEndpoint(_))));
         let typed = sigil_tui::map_key(&TerminalKeyEvent::new(
             KeyCode::Char('x'),
             KeyModifiers::NONE,
@@ -108,7 +108,7 @@ fn options_show_and_rebind_hotkeys() {
             .frame(&mut host, &mut router, [ctrl('o')], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         assert!(app.settings_open.peek());
-        app.settings_sel.set(12);
+        app.settings_sel.set(11);
         let options = screen
             .frame(&mut host, &mut router, [], (100, 32))
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
@@ -206,7 +206,7 @@ fn settings_model_row_opens_the_provider_picker() {
         app.resize(100, 32);
         app.refresh();
         app.settings_open.set(true);
-        app.settings_sel.set(4);
+        app.settings_sel.set(3);
         let tree = app.clone();
         let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
@@ -424,7 +424,7 @@ fn login_command_uses_device_flow_from_menu() {
     sigil::reactive::Runtime::scope("mage-auth-device-test", || {
         let (cmd, mut rx) = unbounded_channel();
         let mut start = info();
-        start.prefs.splash = true;
+        start.splash = true;
         let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
         app.replace("/login copilot".to_string());
         app.submit();
@@ -517,7 +517,7 @@ fn settings_model_edit_uses_enter_and_escape() {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
         app.settings_open.set(true);
-        app.settings_sel.set(4);
+        app.settings_sel.set(3);
         app.resize(80, 24);
         app.refresh();
         let tree = app.clone();
@@ -655,7 +655,7 @@ fn the_workflow_card_lists_roles_seats_and_saved_names() {
 
         app.settings_open.set(true);
         app.workflow_open.set(false);
-        app.settings_sel.set(5);
+        app.settings_sel.set(4);
         let tree = app.clone();
         let settings = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
@@ -698,7 +698,7 @@ fn clicks_select_and_act_on_settings_rows() {
         let (col, row) = app
             .hits
             .find(&crate::tui::sigil_view::hit::Target::Setting(2))
-            .unwrap_or_else(|| panic!("rounds row was not painted"));
+            .unwrap_or_else(|| panic!("endpoint row was not painted"));
 
         for kind in [
             MouseEventKind::Down(MouseButton::Left),
@@ -728,7 +728,7 @@ fn clicks_select_and_act_on_settings_rows() {
                 .unwrap_or_else(|error| panic!("layout failed: {error}"));
         }
         assert!(
-            matches!(rx.try_recv(), Ok(Cmd::SetRounds(8))),
+            matches!(rx.try_recv(), Ok(Cmd::SetEndpoint(_))),
             "a second click acts on the selected row"
         );
     });

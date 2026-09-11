@@ -1,7 +1,7 @@
 use sigil::prelude::*;
 
 use super::super::Cmd;
-use super::app::App;
+use super::app::{App, Overlay};
 use super::chat as chat_surface;
 use super::scene;
 use super::settings;
@@ -111,6 +111,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
     let page_up = app.clone();
     let page_down = app.clone();
     let setting_up = app.clone();
+    let dequeue = app.clone();
     let setting_down = app.clone();
     let setting_left = app.clone();
     let setting_right = app.clone();
@@ -221,28 +222,13 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 return;
             }
             event.stop_propagation();
-            if enter.search.open.peek() {
-                enter.jump();
-            } else if enter.sessions.open.peek() {
-                enter.resume_session();
+            if enter.overlay_enter() {
             } else if enter.context.peek().is_some() {
                 enter.context_enter();
             } else if enter.pane_active().is_some() {
                 enter.pane_enter();
-            } else if enter.auth_open.peek() {
-                enter.commit_auth();
-            } else if enter.editing_model.peek() {
-                enter.commit_model_edit();
-            } else if enter.workflow_open.peek() {
-                enter.pick_workflow_seat();
-            } else if enter.hotkeys_open.peek() {
-                enter.edit_hotkey();
-            } else if enter.settings_open.peek() {
-                enter.adjust_setting(1);
-            } else {
-                if !enter.accept() {
-                    enter.submit();
-                }
+            } else if !enter.accept() {
+                enter.submit();
             }
         })
         .key_capture(Shortcut::ctrl(Key::ArrowLeft), move |event| {
@@ -280,7 +266,10 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(Shortcut::ctrl(LogicalKey::character("d")), move |event| {
-            if !eof.hotkey_recording.peek()
+            if eof.overlay() == Some(Overlay::Sessions) {
+                event.stop_propagation();
+                eof.delete_session();
+            } else if !eof.hotkey_recording.peek()
                 && !eof.options_active()
                 && eof.draft.peek().is_empty()
                 && eof.model.borrow().busy_since.is_none()
@@ -291,10 +280,8 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         })
         .key_capture(Key::PageUp, move |event| {
             event.stop_propagation();
-            if page_up.search.open.peek() {
-                page_up.search.shift(&page_up.model.borrow(), -8);
-            } else if page_up.sessions.open.peek() {
-                page_up.sessions.shift(-8);
+            if page_up.picker_open() {
+                page_up.overlay_move(-8);
             } else if page_up.pane_active().is_some() {
                 page_up.pane_page(-1);
             } else {
@@ -303,44 +290,30 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
         })
         .key_capture(Key::PageDown, move |event| {
             event.stop_propagation();
-            if page_down.search.open.peek() {
-                page_down.search.shift(&page_down.model.borrow(), 8);
-            } else if page_down.sessions.open.peek() {
-                page_down.sessions.shift(8);
+            if page_down.picker_open() {
+                page_down.overlay_move(8);
             } else if page_down.pane_active().is_some() {
                 page_down.pane_page(1);
             } else {
                 page_down.page_history(1.0);
             }
         })
+        .key_capture(
+            Shortcut::new(Key::ArrowUp, ModifiersState::ALT),
+            move |event| {
+                event.stop_propagation();
+                dequeue.dequeue();
+            },
+        )
         .key_capture(Key::ArrowUp, move |event| {
-            if setting_up.search.open.peek() {
+            if setting_up.overlay_move(-1) {
                 event.stop_propagation();
-                setting_up.search.shift(&setting_up.model.borrow(), -1);
-            } else if setting_up.sessions.open.peek() {
-                event.stop_propagation();
-                setting_up.sessions.shift(-1);
             } else if setting_up.context.peek().is_some() {
                 event.stop_propagation();
                 setting_up.context_move(-1);
             } else if setting_up.pane_active().is_some() {
                 event.stop_propagation();
                 setting_up.pane_move(-1);
-            } else if setting_up.auth_open.peek() {
-                event.stop_propagation();
-                setting_up.move_auth(-1);
-            } else if setting_up.editing_model.peek() {
-                event.stop_propagation();
-                setting_up.move_model(-1);
-            } else if setting_up.workflow_open.peek() {
-                event.stop_propagation();
-                setting_up.move_workflow(-1);
-            } else if setting_up.hotkeys_open.peek() {
-                event.stop_propagation();
-                setting_up.move_hotkey(-1);
-            } else if setting_up.settings_open.peek() {
-                event.stop_propagation();
-                setting_up.move_setting(-1);
             } else if setting_up.suggesting() {
                 event.stop_propagation();
                 setting_up.shift(-1);
@@ -349,33 +322,14 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(Key::ArrowDown, move |event| {
-            if setting_down.search.open.peek() {
+            if setting_down.overlay_move(1) {
                 event.stop_propagation();
-                setting_down.search.shift(&setting_down.model.borrow(), 1);
-            } else if setting_down.sessions.open.peek() {
-                event.stop_propagation();
-                setting_down.sessions.shift(1);
             } else if setting_down.context.peek().is_some() {
                 event.stop_propagation();
                 setting_down.context_move(1);
             } else if setting_down.pane_active().is_some() {
                 event.stop_propagation();
                 setting_down.pane_move(1);
-            } else if setting_down.auth_open.peek() {
-                event.stop_propagation();
-                setting_down.move_auth(1);
-            } else if setting_down.editing_model.peek() {
-                event.stop_propagation();
-                setting_down.move_model(1);
-            } else if setting_down.workflow_open.peek() {
-                event.stop_propagation();
-                setting_down.move_workflow(1);
-            } else if setting_down.hotkeys_open.peek() {
-                event.stop_propagation();
-                setting_down.move_hotkey(1);
-            } else if setting_down.settings_open.peek() {
-                event.stop_propagation();
-                setting_down.move_setting(1);
             } else if setting_down.suggesting() {
                 event.stop_propagation();
                 setting_down.shift(1);
@@ -384,86 +338,49 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             }
         })
         .key_capture(Key::ArrowLeft, move |event| {
-            if setting_left.workflow_open.peek()
-                && !setting_left.workflow_naming.peek()
-                && !setting_left.editing_model.peek()
-            {
+            if setting_left.overlay_adjust(-1) {
                 event.stop_propagation();
-                setting_left.cycle_workflow(-1);
-            } else if setting_left.settings_open.peek()
-                && !setting_left.hotkeys_open.peek()
-                && !setting_left.workflow_open.peek()
-                && !setting_left.editing_model.peek()
-                && !setting_left.auth_open.peek()
-            {
-                event.stop_propagation();
-                setting_left.adjust_setting(-1);
             }
         })
         .key_capture(Key::ArrowRight, move |event| {
-            if setting_right.workflow_open.peek()
-                && !setting_right.workflow_naming.peek()
-                && !setting_right.editing_model.peek()
-            {
+            if setting_right.overlay_adjust(1) {
                 event.stop_propagation();
-                setting_right.cycle_workflow(1);
-            } else if setting_right.settings_open.peek()
-                && !setting_right.hotkeys_open.peek()
-                && !setting_right.workflow_open.peek()
-                && !setting_right.editing_model.peek()
-                && !setting_right.auth_open.peek()
-            {
-                event.stop_propagation();
-                setting_right.adjust_setting(1);
             }
         })
         .key_capture(LogicalKey::character("d"), move |event| {
-            if seat_clear.workflow_open.peek()
-                && !seat_clear.workflow_naming.peek()
-                && !seat_clear.editing_model.peek()
-            {
+            if seat_clear.workflow_keys() {
                 event.stop_propagation();
                 seat_clear.clear_workflow_seat();
             }
         })
         .key_capture(LogicalKey::character("s"), move |event| {
-            if seat_save.workflow_open.peek()
-                && !seat_save.workflow_naming.peek()
-                && !seat_save.editing_model.peek()
-            {
+            if seat_save.workflow_keys() {
                 event.stop_propagation();
                 seat_save.begin_workflow_save();
             }
         })
         .key_capture(LogicalKey::character(" "), move |event| {
-            if setting_space.settings_open.peek()
-                && !setting_space.hotkeys_open.peek()
-                && !setting_space.workflow_open.peek()
-            {
+            if setting_space.overlay() == Some(Overlay::Settings) {
                 event.stop_propagation();
-                setting_space.adjust_setting(1);
+                setting_space.adjust_setting();
             }
         })
         .key_capture(LogicalKey::character("+"), move |event| {
-            if setting_increase.settings_open.peek()
-                && !setting_increase.hotkeys_open.peek()
-                && !setting_increase.workflow_open.peek()
-            {
+            if setting_increase.overlay() == Some(Overlay::Settings) {
                 event.stop_propagation();
-                setting_increase.adjust_setting(1);
+                setting_increase.adjust_setting();
             }
         })
         .key_capture(LogicalKey::character("-"), move |event| {
-            if setting_decrease.settings_open.peek()
-                && !setting_decrease.hotkeys_open.peek()
-                && !setting_decrease.workflow_open.peek()
-            {
+            if setting_decrease.overlay() == Some(Overlay::Settings) {
                 event.stop_propagation();
-                setting_decrease.adjust_setting(-1);
+                setting_decrease.adjust_setting();
             }
         })
         .key_capture(LogicalKey::character("r"), move |event| {
-            if hotkey_reset.hotkeys_open.peek() && !hotkey_reset.hotkey_recording.peek() {
+            if hotkey_reset.overlay() == Some(Overlay::Hotkeys)
+                && !hotkey_reset.hotkey_recording.peek()
+            {
                 event.stop_propagation();
                 hotkey_reset.reset_hotkeys();
             }
@@ -473,7 +390,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 ScrollDelta::Pixels(point) => point.y,
                 ScrollDelta::Lines(point) => point.y * super::canvas::cell().h * 3.0,
             };
-            if scroll.sessions.open.peek() {
+            if scroll.overlay() == Some(Overlay::Sessions) {
                 scroll
                     .sessions
                     .shift((-delta / super::canvas::cell().h).round() as isize);
@@ -520,20 +437,7 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(tab.clone())
                 .key(tab, move |event| {
                     event.stop_propagation();
-                    if complete.search.open.peek() {
-                        complete.search.shift(&complete.model.borrow(), 1);
-                    } else if complete.sessions.open.peek() {
-                        complete.sessions.scope();
-                    } else if complete.auth_open.peek() {
-                        complete.move_auth(1);
-                    } else if complete.editing_model.peek() {
-                        complete.move_model(1);
-                    } else if complete.workflow_open.peek() {
-                        complete.move_workflow(1);
-                    } else if complete.hotkeys_open.peek() {
-                        complete.move_hotkey(1);
-                    } else if complete.settings_open.peek() {
-                        complete.move_setting(1);
+                    if complete.overlay_tab(1) {
                     } else if complete.model.borrow().busy_since.is_some() {
                         complete.queue_if_busy();
                     } else {
@@ -546,21 +450,7 @@ fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(shift_tab.clone())
                 .key(shift_tab, move |event| {
                     event.stop_propagation();
-                    if mode.search.open.peek() {
-                        mode.search.shift(&mode.model.borrow(), -1);
-                    } else if mode.sessions.open.peek() {
-                        mode.sessions.scope();
-                    } else if mode.auth_open.peek() {
-                        mode.move_auth(-1);
-                    } else if mode.editing_model.peek() {
-                        mode.move_model(-1);
-                    } else if mode.workflow_open.peek() {
-                        mode.move_workflow(-1);
-                    } else if mode.hotkeys_open.peek() {
-                        mode.move_hotkey(-1);
-                    } else if mode.settings_open.peek() {
-                        mode.move_setting(-1);
-                    } else {
+                    if !mode.overlay_tab(-1) {
                         mode.toggle_mode();
                     }
                 }),
@@ -591,43 +481,16 @@ fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder {
 }
 
 fn escape(app: &App) {
-    if app.search.open.peek() {
-        app.search.open.set(false);
-        return;
-    }
-    if app.sessions.open.peek() {
-        app.sessions.open.set(false);
-        return;
-    }
-    if app.hotkey_recording.peek() {
-        app.hotkey_recording.set(false);
-        app.hotkey_note.set(String::new());
-        return;
-    }
-    if app.hotkeys_open.peek() {
-        app.close_hotkeys();
-        return;
-    }
-    if app.auth_open.peek() {
-        app.cancel_auth();
-        return;
-    }
-    if app.editing_model.peek() {
-        app.cancel_model_edit();
-        return;
-    }
-    if app.workflow_open.peek() {
-        app.close_workflow();
-        return;
-    }
-    if app.settings_open.peek() {
-        app.settings_open.set(false);
+    if app.overlay_close() {
         return;
     }
     if app.model.borrow().busy_since.is_some() {
         drop(app.cmd.send(Cmd::Cancel));
-    } else if !app.dismiss() && app.splash.peek() {
+    } else if app.dismiss() {
+    } else if app.splash.peek() {
         app.splash.set(false);
+    } else {
+        app.escape_idle();
     }
 }
 

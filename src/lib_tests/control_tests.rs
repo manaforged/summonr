@@ -2,47 +2,6 @@ use super::*;
 use serde_json::json;
 
 #[tokio::test]
-async fn max_rounds_keeps_history() -> Result<()> {
-    let workspace = test_workspace()?;
-    struct RepeatRead;
-    impl Provider for RepeatRead {
-        fn complete<'a>(
-            &'a self,
-            _request: &'a crate::provider::CompletionRequest,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<AssistantMessage>> + Send + 'a>,
-        > {
-            Box::pin(async {
-                Ok(AssistantMessage {
-                    content: None,
-                    tool_calls: vec![ToolCall {
-                        continuation: None,
-                        id: "c".to_string(),
-                        kind: ToolKind::Function,
-                        function: ToolFunction {
-                            name: "read_file".to_string(),
-                            arguments: r#"{"path":"note.txt"}"#.to_string(),
-                        },
-                    }],
-                    ..AssistantMessage::default()
-                })
-            })
-        }
-    }
-    let mut loop_ =
-        Loop::with_session(RepeatRead, "test-model", &workspace, "test")?.with_max_rounds(2);
-    let turn = loop_.turn("again").await?;
-    assert_eq!(turn.rounds, 2);
-    assert!(turn.text.contains("stopped after 2"));
-    assert!(loop_.history_len() > 0);
-    assert!(turn.aborted);
-    let log = std::fs::read_to_string(loop_.session_path())?;
-    assert!(log.contains("read_file"));
-    std::fs::remove_dir_all(workspace)?;
-    Ok(())
-}
-
-#[tokio::test]
 async fn default_rounds_continue_past_the_old_limit() -> Result<()> {
     struct RepeatRead(AtomicUsize);
     impl Provider for RepeatRead {
@@ -2122,6 +2081,44 @@ async fn goal_continuation_turns_restate_the_objective() -> Result<()> {
         "the harness note restates the objective: {}",
         opener.content
     );
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn journal_lines_carry_a_timestamp_and_still_replay() -> Result<()> {
+    struct Answer;
+    impl Provider for Answer {
+        fn complete<'a>(
+            &'a self,
+            _request: &'a CompletionRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+            Box::pin(async {
+                Ok(AssistantMessage {
+                    content: Some("done".to_string()),
+                    ..AssistantMessage::default()
+                })
+            })
+        }
+    }
+    let workspace = test_workspace()?;
+    let mut loop_ = Loop::with_session(Answer, "test-model", &workspace, "test")?;
+    loop_.turn("hi").await?;
+    let raw = std::fs::read_to_string(loop_.session_path())?;
+    for line in raw.lines() {
+        let value: serde_json::Value = serde_json::from_str(line)?;
+        assert!(
+            value
+                .get("at")
+                .and_then(serde_json::Value::as_u64)
+                .is_some_and(|at| at > 0),
+            "no timestamp on {line}"
+        );
+    }
+    let lines = crate::durable::log::read(loop_.session_path())?;
+    assert!(lines.len() >= 3);
+    let clear: crate::durable::log::Line = serde_json::from_str(r#"{"kind":"clear","at":7}"#)?;
+    assert_eq!(clear, crate::durable::log::Line::Clear);
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

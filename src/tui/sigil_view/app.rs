@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -31,6 +31,17 @@ use presentation::{facts, header, settings_text, status};
 pub(super) enum CopyStatus {
     Confirmed,
     Requested,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Overlay {
+    Search,
+    Sessions,
+    Auth,
+    Model,
+    Workflow,
+    Hotkeys,
+    Settings,
 }
 
 #[derive(Clone)]
@@ -117,10 +128,14 @@ pub(super) struct App {
     pub(super) open_file: Signal<Option<PathBuf>>,
     pub(super) resume: Rc<RefCell<Option<String>>>,
     pub(super) quit: Signal<bool>,
+    quit_armed: Rc<Cell<Option<std::time::Instant>>>,
+    escape_armed: Rc<Cell<Option<std::time::Instant>>>,
+    delete_armed: Rc<Cell<Option<std::time::Instant>>>,
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
     pasted_images: Rc<RefCell<Vec<crate::provider::Image>>>,
+    pasted_text: Rc<RefCell<Vec<String>>>,
 }
 
 impl App {
@@ -180,7 +195,7 @@ impl App {
             auth_caret: signal(0),
             ticks: signal(0),
             splash_revealed: signal(!info.prefs.animations),
-            splash: signal(info.prefs.splash),
+            splash: signal(info.splash),
             theme_name: signal(info.prefs.theme.clone()),
             viewport: signal((80, 24)),
             layout: signal(Layout::parse(&info.prefs.layout).unwrap_or_default()),
@@ -208,10 +223,14 @@ impl App {
             open_file: signal(None),
             resume: Rc::new(RefCell::new(None)),
             quit: signal(false),
+            quit_armed: Rc::new(Cell::new(None)),
+            escape_armed: Rc::new(Cell::new(None)),
+            delete_armed: Rc::new(Cell::new(None)),
             editor_requested: signal(false),
             commands: Picker::new(),
             sessions: super::sessions::Picker::new(),
             pasted_images: Rc::new(RefCell::new(Vec::new())),
+            pasted_text: Rc::new(RefCell::new(Vec::new())),
             git_branch,
             workspace,
             prefs_path: info.config.clone(),
@@ -538,7 +557,7 @@ impl App {
         if self.view_edit.peek() {
             return;
         }
-        let text = self.draft.peek();
+        let text = self.expand_pastes(&self.draft.peek());
         if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
             return;
         }
@@ -556,6 +575,7 @@ impl App {
             return;
         };
         self.replace(String::new());
+        self.pasted_text.borrow_mut().clear();
         input.images.extend(self.take_pasted());
         if input.text.trim().is_empty() && input.images.is_empty() {
             return;
@@ -644,6 +664,51 @@ impl App {
         )
     }
 
+    pub(super) fn paste_text(&self, text: &str) -> bool {
+        if self.options_active() || self.view_edit.peek() || self.pane_focus.peek() {
+            return false;
+        }
+        let lines = text.lines().count();
+        if lines < PASTE_FOLD_LINES && text.len() < PASTE_FOLD_CHARS {
+            return false;
+        }
+        let index = {
+            let mut store = self.pasted_text.borrow_mut();
+            store.push(text.to_string());
+            store.len()
+        };
+        let token = paste_token(lines, index);
+        let mut draft = self.draft.peek();
+        let caret = self.caret.peek().min(draft.len());
+        draft.insert_str(caret, &token);
+        self.replace(draft);
+        self.caret.set(caret + token.len());
+        self.refresh();
+        true
+    }
+
+    pub(super) fn expand_pastes(&self, text: &str) -> String {
+        let store = self.pasted_text.borrow();
+        let mut out = text.to_string();
+        for (index, pasted) in store.iter().enumerate() {
+            out = out.replace(&paste_token(pasted.lines().count(), index + 1), pasted);
+        }
+        out
+    }
+
+    pub(super) fn dequeue(&self) {
+        if self.model.borrow().queued != (0, 0) {
+            drop(self.cmd.send(Cmd::Dequeue));
+        }
+    }
+
+    pub(super) fn escape_idle(&self) -> bool {
+        if !armed(&self.escape_armed, REPEAT_WINDOW) {
+            return false;
+        }
+        self.local("/tree")
+    }
+
     pub(super) fn dismiss(&self) -> bool {
         self.commands.hide(
             &self.draft.peek(),
@@ -657,7 +722,7 @@ impl App {
             return;
         }
         self.splash.set(false);
-        let text = self.draft.peek();
+        let text = self.expand_pastes(&self.draft.peek());
         if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
             return;
         }
@@ -665,6 +730,7 @@ impl App {
             return;
         };
         self.replace(String::new());
+        self.pasted_text.borrow_mut().clear();
         input.images.extend(self.take_pasted());
         let mut model = self.model.borrow_mut();
         model.entries.push(Entry::User(text.clone()));
@@ -934,10 +1000,11 @@ impl App {
             }
             Some(crate::SlashCommand::Model) => {
                 let model = line.trim_start_matches("/model").trim();
-                if model.is_empty() {
-                    self.begin_model_edit();
-                } else {
-                    drop(self.cmd.send(Cmd::SetModel(model.to_string())));
+                match model {
+                    "" => self.begin_model_edit(),
+                    "next" => self.cycle_seat(true),
+                    "prev" | "previous" => self.cycle_seat(false),
+                    model => drop(self.cmd.send(Cmd::SetModel(model.to_string()))),
                 }
             }
             Some(crate::SlashCommand::Workflow) if argument(line).is_none() => {
@@ -949,10 +1016,18 @@ impl App {
                 self.refresh();
             }
             Some(crate::SlashCommand::Theme) => self.toggle_theme(),
+            Some(crate::SlashCommand::Tools) => self.toggle_tools(),
+            Some(crate::SlashCommand::Reasoning) => self.toggle_reasoning(),
             Some(crate::SlashCommand::Pane) => self.pane_command(argument(line)),
             Some(crate::SlashCommand::Layout) => self.layout_command(argument(line)),
             Some(crate::SlashCommand::Diff) => self.diff_command(argument(line)),
             Some(crate::SlashCommand::Copy) => self.copy_chat(argument(line)),
+            Some(crate::SlashCommand::Export) => {
+                drop(
+                    self.cmd
+                        .send(Cmd::Export(argument(line).map(str::to_string))),
+                );
+            }
             Some(crate::SlashCommand::View) => self.view_command(argument(line)),
             Some(crate::SlashCommand::Bus) => self.toggle_bus(),
             _ => return false,
@@ -972,18 +1047,26 @@ impl App {
         drop(self.cmd.send(Cmd::SetVerify(on)));
     }
 
-    pub(super) fn adjust_rounds(&self, delta: isize) {
-        let current = self.model.borrow().snapshot.max_rounds;
-        let next = current.saturating_add_signed(delta);
-        drop(self.cmd.send(Cmd::SetRounds(next)));
+    pub(super) fn cycle_endpoint(&self) {
+        self.cycle_seat(true);
     }
 
-    pub(super) fn cycle_endpoint(&self) {
+    fn cycle_seat(&self, forward: bool) {
         let current = self.model.borrow().snapshot.endpoint.clone();
-        let Some(next) = crate::endpoint::next(&current) else {
-            return;
+        let step = if forward {
+            crate::endpoint::next(&current)
+        } else {
+            crate::endpoint::previous(&current)
         };
-        drop(self.cmd.send(Cmd::SetEndpoint(next)));
+        match step {
+            Some(next) => drop(self.cmd.send(Cmd::SetEndpoint(next))),
+            None => {
+                self.model.borrow_mut().entries.push(Entry::System(
+                    "only one ready seat; `summon login NAME` adds another".to_string(),
+                ));
+                self.refresh();
+            }
+        }
     }
 
     pub(super) fn move_setting(&self, delta: isize) {
@@ -994,23 +1077,22 @@ impl App {
             self.settings_sel
                 .peek()
                 .saturating_add_signed(delta)
-                .min(12),
+                .min(11),
         );
     }
 
-    pub(super) fn adjust_setting(&self, direction: isize) {
+    pub(super) fn adjust_setting(&self) {
         if self.editing_model.peek() {
             return;
         }
         match self.settings_sel.peek() {
             0 => self.toggle_mode(),
             1 => self.toggle_verify(),
-            2 => self.adjust_rounds(direction * 8),
-            3 => self.cycle_endpoint(),
-            4 => self.begin_model_edit(),
-            5 => self.open_workflow(),
-            6 => self.toggle_theme(),
-            7 => {
+            2 => self.cycle_endpoint(),
+            3 => self.begin_model_edit(),
+            4 => self.open_workflow(),
+            5 => self.toggle_theme(),
+            6 => {
                 let mut model = self.model.borrow_mut();
                 model.prefs.splash = !model.prefs.splash;
                 let prefs = model.prefs.clone();
@@ -1018,7 +1100,7 @@ impl App {
                 self.persist(&prefs);
                 self.refresh();
             }
-            8 => {
+            7 => {
                 let mut model = self.model.borrow_mut();
                 model.prefs.animations = !model.prefs.animations;
                 let prefs = model.prefs.clone();
@@ -1027,44 +1109,29 @@ impl App {
                 self.persist(&prefs);
                 self.refresh();
             }
-            9 => self.toggle_reasoning(),
-            10 => self.toggle_tools(),
-            11 => self.toggle_bus(),
-            12 => self.open_hotkeys(),
+            8 => self.toggle_reasoning(),
+            9 => self.toggle_tools(),
+            10 => self.toggle_bus(),
+            11 => self.open_hotkeys(),
             _ => {}
         }
     }
 
     pub(super) fn toggle_options(&self) {
-        if self.search.open.peek() {
-            self.search.open.set(false);
-            return;
+        match self.overlay() {
+            Some(Overlay::Workflow) => self.workflow_open.set(false),
+            Some(Overlay::Hotkeys) => self.close_hotkeys(),
+            Some(Overlay::Settings) | None => {
+                let open = !self.settings_open.peek();
+                if open {
+                    self.settings_sel.set(0);
+                }
+                self.settings_open.set(open);
+            }
+            Some(_) => {
+                self.overlay_close();
+            }
         }
-        if self.sessions.open.peek() {
-            self.sessions.open.set(false);
-            return;
-        }
-        if self.auth_open.peek() {
-            self.cancel_auth();
-            return;
-        }
-        if self.editing_model.peek() {
-            self.cancel_model_edit();
-            return;
-        }
-        if self.workflow_open.peek() {
-            self.workflow_open.set(false);
-            return;
-        }
-        if self.hotkeys_open.peek() {
-            self.close_hotkeys();
-            return;
-        }
-        let open = !self.settings_open.peek();
-        if open {
-            self.settings_sel.set(0);
-        }
-        self.settings_open.set(open);
     }
 
     pub(super) fn open_hotkeys(&self) {
@@ -1155,14 +1222,99 @@ impl App {
         drop(self.cmd.send(Cmd::ListPrompts(None)));
     }
 
+    pub(super) fn overlay(&self) -> Option<Overlay> {
+        if self.search.open.peek() {
+            Some(Overlay::Search)
+        } else if self.sessions.open.peek() {
+            Some(Overlay::Sessions)
+        } else if self.auth_open.peek() {
+            Some(Overlay::Auth)
+        } else if self.editing_model.peek() {
+            Some(Overlay::Model)
+        } else if self.workflow_open.peek() {
+            Some(Overlay::Workflow)
+        } else if self.hotkeys_open.peek() {
+            Some(Overlay::Hotkeys)
+        } else if self.settings_open.peek() {
+            Some(Overlay::Settings)
+        } else {
+            None
+        }
+    }
+
     pub(super) fn options_active(&self) -> bool {
-        self.search.open.peek()
-            || self.sessions.open.peek()
-            || self.settings_open.peek()
-            || self.hotkeys_open.peek()
-            || self.auth_open.peek()
-            || self.editing_model.peek()
-            || self.workflow_open.peek()
+        self.overlay().is_some()
+    }
+
+    pub(super) fn overlay_move(&self, delta: isize) -> bool {
+        match self.overlay() {
+            Some(Overlay::Search) => self.search.shift(&self.model.borrow(), delta),
+            Some(Overlay::Sessions) => self.sessions.shift(delta),
+            Some(Overlay::Auth) => self.move_auth(delta),
+            Some(Overlay::Model) => self.move_model(delta),
+            Some(Overlay::Workflow) => self.move_workflow(delta),
+            Some(Overlay::Hotkeys) => self.move_hotkey(delta),
+            Some(Overlay::Settings) => self.move_setting(delta),
+            None => return false,
+        }
+        true
+    }
+
+    pub(super) fn overlay_tab(&self, delta: isize) -> bool {
+        if self.overlay() == Some(Overlay::Sessions) {
+            self.sessions.scope();
+            return true;
+        }
+        self.overlay_move(delta)
+    }
+
+    pub(super) fn overlay_enter(&self) -> bool {
+        match self.overlay() {
+            Some(Overlay::Search) => self.jump(),
+            Some(Overlay::Sessions) => self.resume_session(),
+            Some(Overlay::Auth) => self.commit_auth(),
+            Some(Overlay::Model) => self.commit_model_edit(),
+            Some(Overlay::Workflow) => self.pick_workflow_seat(),
+            Some(Overlay::Hotkeys) => self.edit_hotkey(),
+            Some(Overlay::Settings) => self.adjust_setting(),
+            None => return false,
+        }
+        true
+    }
+
+    pub(super) fn overlay_close(&self) -> bool {
+        match self.overlay() {
+            Some(Overlay::Search) => self.search.open.set(false),
+            Some(Overlay::Sessions) => self.sessions.open.set(false),
+            Some(Overlay::Auth) => self.cancel_auth(),
+            Some(Overlay::Model) => self.cancel_model_edit(),
+            Some(Overlay::Workflow) => self.close_workflow(),
+            Some(Overlay::Hotkeys) if self.hotkey_recording.peek() => {
+                self.hotkey_recording.set(false);
+                self.hotkey_note.set(String::new());
+            }
+            Some(Overlay::Hotkeys) => self.close_hotkeys(),
+            Some(Overlay::Settings) => self.settings_open.set(false),
+            None => return false,
+        }
+        true
+    }
+
+    pub(super) fn picker_open(&self) -> bool {
+        matches!(self.overlay(), Some(Overlay::Search | Overlay::Sessions))
+    }
+
+    pub(super) fn overlay_adjust(&self, delta: isize) -> bool {
+        match self.overlay() {
+            Some(Overlay::Workflow) if !self.workflow_naming.peek() => self.cycle_workflow(delta),
+            Some(Overlay::Settings) => self.adjust_setting(),
+            _ => return false,
+        }
+        true
+    }
+
+    pub(super) fn workflow_keys(&self) -> bool {
+        self.overlay() == Some(Overlay::Workflow) && !self.workflow_naming.peek()
     }
 
     pub(super) fn press(&self, col: usize, row: usize) -> bool {
@@ -1233,7 +1385,7 @@ impl App {
             }
             Target::Setting(index) => {
                 if self.settings_sel.peek() == index {
-                    self.adjust_setting(1);
+                    self.adjust_setting();
                 } else {
                     self.settings_sel.set(index);
                 }
@@ -1669,8 +1821,6 @@ impl App {
         }
     }
 
-    /// Shows one workspace file in the view pane; esc returns to the pane
-    /// it was opened from.
     pub(super) fn view_open(&self, path: String) {
         let layout = self.layout.peek();
         if layout.secondary != Some(Pane::View) {
@@ -1686,7 +1836,6 @@ impl App {
         self.refresh();
     }
 
-    /// Turns the view pane into an editor on the file it shows.
     pub(super) fn edit_start(&self) {
         let text = self
             .model
@@ -1706,8 +1855,6 @@ impl App {
         self.refresh();
     }
 
-    /// Leaves edit mode. Unsaved text needs a second call, so one esc cannot
-    /// discard work. Returns false when nothing was being edited.
     pub(super) fn edit_stop(&self) -> bool {
         if !self.view_edit.peek() {
             return false;
@@ -1979,8 +2126,6 @@ impl App {
         self.refresh();
     }
 
-    /// The diff rows on show: every change, or only the last turn's files
-    /// while the `t` filter is on.
     pub(super) fn diff_stats(&self) -> Vec<crate::diff::Stat> {
         let model = self.model.borrow();
         let recent = self.diff_recent.peek();
@@ -1999,8 +2144,6 @@ impl App {
         self.refresh();
     }
 
-    /// Copies the patch on show: the viewed file's hunks, or the whole
-    /// workspace patch from the list.
     pub(super) fn copy_patch(&self) {
         let viewed = self.diff_view.peek();
         let text = self
@@ -2122,8 +2265,6 @@ impl App {
         self.refresh();
     }
 
-    /// The directory the diff pane reads: a worktree chosen in the
-    /// worktrees pane, or the session workspace.
     fn root(&self) -> Option<PathBuf> {
         self.diff_root.peek().map(|(path, _)| path)
     }
@@ -2162,7 +2303,6 @@ impl App {
         }
     }
 
-    /// Opens the diff pane on one worktree; esc returns to the list.
     pub(super) fn tree_show(&self, path: PathBuf, branch: String) {
         self.diff_root.set(Some((path, branch)));
         self.diff_view.set(None);
@@ -2175,8 +2315,6 @@ impl App {
         self.refresh();
     }
 
-    /// Leaves the hunk view for the file list. Returns false when there is
-    /// no hunk view to leave.
     pub(super) fn pane_back(&self) -> bool {
         let layout = self.layout.peek();
         if layout.secondary == Some(Pane::View) {
@@ -2326,22 +2464,28 @@ impl App {
     }
 
     pub(super) fn interrupt(&self) {
-        if self.search.open.peek() {
-            self.search.open.set(false);
-        } else if self.sessions.open.peek() {
-            self.sessions.open.set(false);
-        } else if self.auth_open.peek() {
-            self.cancel_auth();
-        } else if self.workflow_open.peek() {
-            self.close_workflow();
+        if matches!(
+            self.overlay(),
+            Some(Overlay::Search | Overlay::Sessions | Overlay::Auth | Overlay::Workflow)
+        ) {
+            self.overlay_close();
         } else if let Some((activity, _)) = self.model.borrow().busy_since {
             if activity != Activity::Branch {
                 drop(self.cmd.send(Cmd::Cancel));
             }
         } else if self.draft.peek().is_empty() && self.pasted_images.borrow().is_empty() {
-            self.quit.set(true);
+            if armed(&self.quit_armed, REPEAT_WINDOW) {
+                self.quit.set(true);
+            } else {
+                self.model
+                    .borrow_mut()
+                    .entries
+                    .push(Entry::System("press ctrl+c again to quit".to_string()));
+                self.refresh();
+            }
         } else {
             self.replace(String::new());
+            self.pasted_text.borrow_mut().clear();
             if !self.pasted_images.borrow().is_empty() {
                 self.pasted_images.borrow_mut().clear();
                 self.model.borrow_mut().entries.push(Entry::System(
@@ -2355,6 +2499,31 @@ impl App {
     fn persist(&self, prefs: &Prefs) {
         if let Err(error) = save(self.prefs_path.as_deref(), prefs) {
             self.model.borrow_mut().entries.push(Entry::Error(error));
+        }
+    }
+
+    pub(super) fn delete_session(&self) {
+        let rows = self.sessions.rows();
+        let Some(info) = rows.get(
+            self.sessions
+                .selected
+                .peek()
+                .min(rows.len().saturating_sub(1)),
+        ) else {
+            return;
+        };
+        if info.id == self.model.borrow().session {
+            self.sessions.note("the open session cannot be deleted");
+            return;
+        }
+        if armed(&self.delete_armed, REPEAT_WINDOW) {
+            drop(self.cmd.send(Cmd::DeleteSession(info.id.clone())));
+            self.sessions.note("");
+        } else {
+            self.sessions.note(&format!(
+                "ctrl+d again deletes {}",
+                crate::session::short(&info.id)
+            ));
         }
     }
 
@@ -2547,4 +2716,22 @@ impl Context {
             ]
         }
     }
+}
+
+const REPEAT_WINDOW: std::time::Duration = std::time::Duration::from_secs(2);
+
+fn armed(slot: &Cell<Option<std::time::Instant>>, window: std::time::Duration) -> bool {
+    let now = std::time::Instant::now();
+    let repeat = slot
+        .get()
+        .is_some_and(|last| now.duration_since(last) <= window);
+    slot.set(if repeat { None } else { Some(now) });
+    repeat
+}
+
+const PASTE_FOLD_LINES: usize = 8;
+const PASTE_FOLD_CHARS: usize = 1000;
+
+fn paste_token(lines: usize, index: usize) -> String {
+    format!("[pasted {lines} lines #{index}]")
 }

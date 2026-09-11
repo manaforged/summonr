@@ -87,7 +87,6 @@ pub struct UserInput {
     pub source: Option<Source>,
 }
 
-/// Editable text before file expansion and the number of images loaded from files.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Source {
     pub text: String,
@@ -711,8 +710,9 @@ impl Client {
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let status = response.status();
         if !status.is_success() {
+            let after = retry_after(response.headers());
             let text = response.text().await.unwrap_or_default();
-            return Err(response_failure(status.as_u16(), text.trim()));
+            return Err(response_failure(status.as_u16(), text.trim(), after));
         }
         let value: Value = response
             .json()
@@ -776,11 +776,13 @@ impl Client {
             if retry.status().is_success() {
                 return Ok(retry);
             }
+            let after = retry_after(retry.headers());
             let text = retry.text().await.unwrap_or_default();
-            return Err(response_failure(code, text.trim()));
+            return Err(response_failure(code, text.trim(), after));
         }
+        let after = retry_after(response.headers());
         let text = response.text().await.unwrap_or_default();
-        Err(response_failure(status.as_u16(), text.trim()))
+        Err(response_failure(status.as_u16(), text.trim(), after))
     }
 
     async fn post_json(&self, body: &Value) -> Result<reqwest::Response> {
@@ -870,7 +872,17 @@ fn tokens(value: &Value) -> Option<u32> {
         .filter(|value| *value > 0)
 }
 
-fn response_failure(code: u16, text: &str) -> Error {
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
+fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
     let lower = text.to_lowercase();
     let kind = match code {
         401 | 403 => ProviderFailureKind::Authentication,
@@ -898,6 +910,7 @@ fn response_failure(code: u16, text: &str) -> Error {
         status: Some(code),
         message: format!("HTTP {code}: {text}"),
         partial_output: false,
+        retry_after,
     })
 }
 

@@ -156,6 +156,7 @@ impl Client {
                 status: None,
                 message: "native stream ended without a terminal stop reason".to_string(),
                 partial_output: output_started,
+                retry_after: None,
             }));
         };
         let stop = from_genai_stop(&stop, output_started)?;
@@ -454,12 +455,14 @@ fn from_genai_stop(reason: &genai::chat::StopReason, partial_output: bool) -> Re
             status: None,
             message: format!("native response was blocked by the provider: {reason}"),
             partial_output,
+            retry_after: None,
         })),
         genai::chat::StopReason::Other(reason) => Err(Error::Provider(ProviderFailure {
             kind: ProviderFailureKind::Malformed,
             status: None,
             message: format!("native response ended with an unsupported stop reason: {reason}"),
             partial_output,
+            retry_after: None,
         })),
     }
 }
@@ -488,13 +491,13 @@ pub(super) fn map_genai(error: genai::Error) -> Error {
         genai::Error::WebAdapterCall { webc_error, .. }
         | genai::Error::WebModelCall { webc_error, .. } => match webc_error {
             genai::webc::Error::ResponseFailedStatus { status, body, .. } => {
-                return response_failure(status.as_u16(), &body);
+                return response_failure(status.as_u16(), &body, None);
             }
             genai::webc::Error::Reqwest(_) => ProviderFailureKind::Transport,
             _ => ProviderFailureKind::Malformed,
         },
         genai::Error::HttpError { status, body, .. } => {
-            return response_failure(status.as_u16(), &body);
+            return response_failure(status.as_u16(), &body, None);
         }
         _ => ProviderFailureKind::Http,
     };

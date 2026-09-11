@@ -508,6 +508,7 @@ async fn permanent_error_does_not_retry() -> Result<()> {
                     status: Some(400),
                     message: "HTTP 400: request id 500 says connection closed".to_string(),
                     partial_output: false,
+                    retry_after: None,
                 }))
             })
         }
@@ -555,6 +556,7 @@ async fn malformed_tool_call_gets_a_repair_prompt() -> Result<()> {
                         status: Some(500),
                         message: "tool call arguments are invalid JSON".to_string(),
                         partial_output: false,
+                        retry_after: None,
                     }));
                 }
                 Ok(AssistantMessage {
@@ -609,6 +611,7 @@ async fn partial_stream_failure_does_not_retry() -> Result<()> {
                     status: None,
                     message: "connection reset after delta".to_string(),
                     partial_output: true,
+                    retry_after: None,
                 }))
             })
         }

@@ -13,8 +13,8 @@ use std::ptr::{null, null_mut};
 
 use dunce::simplified;
 use windows_sys::Win32::Foundation::{
-    DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, LocalFree,
-    WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    DUPLICATE_SAME_ACCESS, DuplicateHandle, ERROR_ALREADY_EXISTS, ERROR_INVALID_PARAMETER,
+    GetLastError, HANDLE, LocalFree, WAIT_ABANDONED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::Security::Authorization::{
     ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -31,7 +31,8 @@ use windows_sys::Win32::Security::{
     WinCapabilityInternetClientSid, WinCapabilityPrivateNetworkClientServerSid,
 };
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE,
+    DELETE, FILE_GENERIC_EXECUTE, FILE_GENERIC_READ, FILE_GENERIC_WRITE, READ_CONTROL,
+    STANDARD_RIGHTS_REQUIRED, WRITE_DAC,
 };
 use windows_sys::Win32::System::Console::{
     GetStdHandle, STD_ERROR_HANDLE, STD_INPUT_HANDLE, STD_OUTPUT_HANDLE,
@@ -42,10 +43,13 @@ use windows_sys::Win32::System::JobObjects::{
     SetInformationJobObject, TerminateJobObject,
 };
 use windows_sys::Win32::System::StationsAndDesktops::{
-    CloseDesktop, CloseWindowStation, CreateDesktopW, CreateWindowStationW,
+    CloseDesktop, CloseWindowStation, CreateDesktopW, CreateWindowStationW, DESKTOP_CREATEMENU,
+    DESKTOP_CREATEWINDOW, DESKTOP_ENUMERATE, DESKTOP_HOOKCONTROL, DESKTOP_JOURNALPLAYBACK,
+    DESKTOP_JOURNALRECORD, DESKTOP_READOBJECTS, DESKTOP_SWITCHDESKTOP, DESKTOP_WRITEOBJECTS,
     GetProcessWindowStation, GetUserObjectInformationW, HDESK, HWINSTA, SetProcessWindowStation,
     UOI_NAME,
 };
+use windows_sys::Win32::System::SystemServices::SE_GROUP_ENABLED;
 use windows_sys::Win32::System::Threading::{
     CREATE_UNICODE_ENVIRONMENT, CreateMutexW, CreateProcessW, DeleteProcThreadAttributeList,
     EXTENDED_STARTUPINFO_PRESENT, GetCurrentProcess, GetExitCodeProcess,
@@ -61,7 +65,17 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 const READ: u32 = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
-const MODIFY: u32 = READ | FILE_GENERIC_WRITE | 0x0001_0000;
+const MODIFY: u32 = READ | FILE_GENERIC_WRITE | DELETE;
+const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
+    | DESKTOP_READOBJECTS
+    | DESKTOP_CREATEWINDOW
+    | DESKTOP_CREATEMENU
+    | DESKTOP_HOOKCONTROL
+    | DESKTOP_JOURNALRECORD
+    | DESKTOP_JOURNALPLAYBACK
+    | DESKTOP_ENUMERATE
+    | DESKTOP_WRITEOBJECTS
+    | DESKTOP_SWITCHDESKTOP;
 
 #[cfg(test)]
 #[path = "windows_tests.rs"]
@@ -238,13 +252,12 @@ impl Desktop {
             name: Vec::new(),
             sid: profile.sid,
         };
-        // SAFETY: This runs only in the dedicated sandbox subprocess before it launches the tool.
-        // Both UI objects have explicit ACLs and owned handles; the process station is restored.
+        // SAFETY: Runs only in the sandbox subprocess; both UI objects have explicit ACLs and owned handles, and the station is restored.
         unsafe {
             desktop.station = CreateWindowStationW(
                 null(),
                 0,
-                (WINSTA_READATTRIBUTES | WINSTA_CREATEDESKTOP) as u32 | 0x0006_0000,
+                (WINSTA_READATTRIBUTES | WINSTA_CREATEDESKTOP) as u32 | READ_CONTROL | WRITE_DAC,
                 &security,
             );
             if desktop.station.is_null() {
@@ -261,7 +274,7 @@ impl Desktop {
                 null(),
                 null(),
                 0,
-                0x000f_01ff,
+                DESKTOP_ALL,
                 &security,
             );
             let error = Error::last_os_error();
@@ -322,7 +335,7 @@ fn station_acl(station: HWINSTA, sid: PSID, revoke: bool) -> io::Result<()> {
     })?;
     let _descriptor = Local(descriptor);
     let entry = EXPLICIT_ACCESS_W {
-        grfAccessPermissions: 0x0002_0000
+        grfAccessPermissions: READ_CONTROL
             | (WINSTA_READATTRIBUTES
                 | WINSTA_ACCESSGLOBALATOMS
                 | WINSTA_ENUMDESKTOPS
@@ -446,13 +459,13 @@ fn job(pid: u32) -> io::Result<OwnedHandle> {
     Ok(job)
 }
 
-pub(crate) fn stop(pid: u32) -> io::Result<()> {
+pub(crate) fn stop(pid: u32) -> io::Result<Option<OwnedHandle>> {
     // SAFETY: This opens a handle only for waiting on the named helper process.
     let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, pid) };
     if raw.is_null() {
         let error = Error::last_os_error();
-        return if error.raw_os_error() == Some(87) {
-            Ok(())
+        return if error.raw_os_error() == Some(ERROR_INVALID_PARAMETER as i32) {
+            Ok(None)
         } else {
             Err(error)
         };
@@ -461,7 +474,7 @@ pub(crate) fn stop(pid: u32) -> io::Result<()> {
     let process = unsafe { OwnedHandle::from_raw_handle(raw) };
     // SAFETY: The process guard remains live throughout the query.
     if unsafe { WaitForSingleObject(process.as_raw_handle(), 0) } == WAIT_OBJECT_0 {
-        return Ok(());
+        return Ok(None);
     }
     let job = job(pid)?;
     let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
@@ -478,7 +491,11 @@ pub(crate) fn stop(pid: u32) -> io::Result<()> {
     })?;
     // SAFETY: Termination affects the command job, leaving its helper alive to revoke ACLs.
     boolean(unsafe { TerminateJobObject(job.as_raw_handle(), 1) })?;
-    // SAFETY: Both handles stay open until the helper has consumed cancellation and cleaned up.
+    Ok(Some(process))
+}
+
+pub(crate) fn wait(process: &OwnedHandle) -> io::Result<()> {
+    // SAFETY: The caller owns the handle for the whole wait.
     match unsafe { WaitForSingleObject(process.as_raw_handle(), 30_000) } {
         WAIT_OBJECT_0 => Ok(()),
         WAIT_TIMEOUT => Err(Error::new(ErrorKind::TimedOut, "sandbox cleanup timed out")),
@@ -488,8 +505,7 @@ pub(crate) fn stop(pid: u32) -> io::Result<()> {
 
 fn stdio(kind: u32) -> io::Result<OwnedHandle> {
     let mut duplicate = null_mut();
-    // SAFETY: The current-process pseudo handle is borrowed; DuplicateHandle creates an owned copy
-    // of one standard stream. Only these copies appear in the child's handle allowlist.
+    // SAFETY: The pseudo handle is borrowed; DuplicateHandle makes an owned copy of one stream, and only these copies enter the child's handle allowlist.
     unsafe {
         let process = GetCurrentProcess();
         boolean(DuplicateHandle(
@@ -531,14 +547,14 @@ pub fn entry(args: &[OsString]) -> crate::Result<i32> {
 }
 
 fn execute(args: &[OsString]) -> io::Result<i32> {
-    if args.len() < 6 {
+    if args.len() < 7 {
         return Err(Error::new(
             ErrorKind::InvalidInput,
             "incomplete sandbox invocation",
         ));
     }
     let job = job(std::process::id())?;
-    let parent = args[4]
+    let parent = args[5]
         .to_str()
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid sandbox parent"))?;
@@ -557,7 +573,13 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
     let cwd = Path::new(&args[1]).canonicalize()?;
     let readonly = flag(&args[2])?;
     let deny_network = flag(&args[3])?;
-    let executable = Path::new(&args[5]);
+    let write: Vec<PathBuf> = args[4]
+        .to_string_lossy()
+        .split(';')
+        .filter(|path| !path.is_empty())
+        .map(|path| Path::new(path).canonicalize())
+        .collect::<io::Result<_>>()?;
+    let executable = Path::new(&args[6]);
     let temp = tempfile::Builder::new()
         .prefix("summoner-sandbox-")
         .tempdir()?;
@@ -572,6 +594,9 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
     let mut profile = Profile::create(&name)?;
     profile.grant(&workspace, if readonly { READ } else { MODIFY })?;
     profile.grant(temp.path(), MODIFY)?;
+    for path in &write {
+        profile.grant(path, MODIFY)?;
+    }
     let desktop = Desktop::create(&profile, &name)
         .map_err(|error| Error::other(format!("sandbox desktop: {error}")))?;
     let streams = [
@@ -585,7 +610,7 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
         .iter_mut()
         .map(|sid| SID_AND_ATTRIBUTES {
             Sid: sid.as_mut_ptr().cast(),
-            Attributes: 4,
+            Attributes: SE_GROUP_ENABLED as u32,
         })
         .collect();
     let security = SECURITY_CAPABILITIES {
@@ -611,9 +636,8 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
     let exe = wide(executable)?;
     let environment = environment(temp.path(), &workspace, &cwd)?;
     let cwd = wide(&cwd)?;
-    let mut command = command(executable.as_os_str(), &args[6..])?;
-    // SAFETY: All referenced attribute values, strings, stream handles, and the job live until
-    // CreateProcessW returns. JOB_LIST assigns containment atomically before any child code runs.
+    let mut command = command(executable.as_os_str(), &args[7..])?;
+    // SAFETY: Every attribute value, string, stream handle, and the job outlive CreateProcessW; JOB_LIST assigns containment before child code runs.
     unsafe {
         for (kind, pointer, size) in [
             (

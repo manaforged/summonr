@@ -158,7 +158,7 @@ fn sandbox_for_test_with(
     workspace: &std::path::Path,
     deny_network: bool,
 ) -> Result<Option<crate::tools::sandbox::Sandbox>> {
-    match crate::tools::sandbox::Sandbox::discover(workspace, deny_network) {
+    match crate::tools::sandbox::Sandbox::discover(workspace, deny_network, &[]) {
         Ok(sandbox) => Ok(Some(sandbox)),
         Err(Error::Config(message))
             if message.contains("not available") || message.contains("unsupported") =>
@@ -428,4 +428,37 @@ fn call(name: &str, arguments: &str) -> ToolCall {
             arguments: arguments.to_string(),
         },
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn sandbox_write_paths_reach_the_backend() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let extra = tempfile::tempdir()?;
+    let extra_path = extra.path().canonicalize()?;
+    let sandbox = match crate::tools::sandbox::Sandbox::discover(
+        workspace.path(),
+        false,
+        std::slice::from_ref(&extra_path),
+    ) {
+        Ok(sandbox) => sandbox,
+        Err(Error::Config(message)) if message.contains("not available") => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let (_, args) = sandbox.command_line("true", &[], workspace.path());
+    let joined = args
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        joined.contains(&extra_path.display().to_string()),
+        "write path missing from backend arguments:\n{joined}"
+    );
+    let missing = workspace.path().join("absent");
+    assert!(
+        crate::tools::sandbox::Sandbox::discover(workspace.path(), false, &[missing]).is_err(),
+        "a missing write path must fail discovery"
+    );
+    Ok(())
 }

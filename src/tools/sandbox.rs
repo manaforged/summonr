@@ -18,6 +18,8 @@ pub(crate) struct Sandbox {
     workspace: PathBuf,
     #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     deny_network: bool,
+    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    write: Vec<PathBuf>,
     #[cfg(target_os = "linux")]
     temp: PathBuf,
 }
@@ -38,10 +40,14 @@ enum Backend {
 }
 
 impl Sandbox {
-    pub(crate) fn discover(workspace: &Path, deny_network: bool) -> Result<Self> {
+    pub(crate) fn discover(
+        workspace: &Path,
+        deny_network: bool,
+        write: &[PathBuf],
+    ) -> Result<Self> {
         #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
-            let _ = (workspace, deny_network);
+            let _ = (workspace, deny_network, write);
             Err(Error::Config(
                 "--sandbox is unsupported on this platform; use macOS Seatbelt or Linux bubblewrap"
                     .to_string(),
@@ -53,6 +59,17 @@ impl Sandbox {
             let workspace = workspace.canonicalize().map_err(|error| {
                 Error::Config(format!("cannot open sandbox workspace: {error}"))
             })?;
+            let write = write
+                .iter()
+                .map(|path| {
+                    path.canonicalize().map_err(|error| {
+                        Error::Config(format!(
+                            "sandbox write path {} is unusable: {error}",
+                            path.display()
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<PathBuf>>>()?;
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             let temp = std::env::temp_dir().canonicalize().map_err(|error| {
                 Error::Config(format!(
@@ -75,6 +92,7 @@ impl Sandbox {
                     backend: Backend::Windows { executable },
                     workspace,
                     deny_network,
+                    write,
                 };
                 sandbox.probe()?;
                 Ok(sandbox)
@@ -88,8 +106,8 @@ impl Sandbox {
                             .to_string(),
                     )
                 })?;
-                let profile = mac_profile(&workspace, &temp, deny_network, false)?;
-                let read_profile = mac_profile(&workspace, &temp, deny_network, true)?;
+                let profile = mac_profile(&workspace, &temp, &write, deny_network, false)?;
+                let read_profile = mac_profile(&workspace, &temp, &write, deny_network, true)?;
                 let sandbox = Self {
                     backend: Backend::Mac {
                         executable,
@@ -98,6 +116,7 @@ impl Sandbox {
                     },
                     workspace,
                     deny_network,
+                    write,
                 };
                 sandbox.probe()?;
                 Ok(sandbox)
@@ -118,6 +137,7 @@ impl Sandbox {
                     workspace,
                     temp,
                     deny_network,
+                    write,
                 };
                 sandbox.probe()?;
                 Ok(sandbox)
@@ -128,12 +148,12 @@ impl Sandbox {
     pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {
         #[cfg(any(target_os = "macos", target_os = "linux", windows))]
         {
-            Self::discover(workspace, self.deny_network)
+            Self::discover(workspace, self.deny_network, &self.write)
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         {
             let _ = self;
-            Self::discover(workspace, false)
+            Self::discover(workspace, false, &[])
         }
     }
 
@@ -176,6 +196,12 @@ impl Sandbox {
                     cwd.as_os_str().to_owned(),
                     read_only.to_string().into(),
                     self.deny_network.to_string().into(),
+                    self.write
+                        .iter()
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>()
+                        .join(";")
+                        .into(),
                     std::process::id().to_string().into(),
                     program.into(),
                 ];
@@ -217,6 +243,13 @@ impl Sandbox {
                         "--bind".into(),
                         self.workspace.as_os_str().to_os_string(),
                         self.workspace.as_os_str().to_os_string(),
+                    ]);
+                }
+                for path in &self.write {
+                    command.extend([
+                        "--bind".into(),
+                        path.as_os_str().to_os_string(),
+                        path.as_os_str().to_os_string(),
                     ]);
                 }
                 if self.deny_network {
@@ -323,11 +356,16 @@ fn is_executable(path: &Path) -> bool {
 fn mac_profile(
     workspace: &Path,
     temp: &Path,
+    write: &[PathBuf],
     deny_network: bool,
     read_only: bool,
 ) -> Result<String> {
     let workspace = profile_path(workspace)?;
     let temp = profile_path(temp)?;
+    let extra = write
+        .iter()
+        .map(|path| Ok(format!("    (subpath \"{}\")\n", profile_path(path)?)))
+        .collect::<Result<String>>()?;
     let network_rule = if deny_network {
         String::from("(deny network*)\n")
     } else {
@@ -349,6 +387,7 @@ fn mac_profile(
 (allow file-write*\n\
     (literal \"/dev/null\")\n\
 {workspace_rule}\
+{extra}\
     (subpath \"{temp}\")\n\
  )\n\
 {workspace_deny}"

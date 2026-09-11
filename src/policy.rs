@@ -187,43 +187,46 @@ fn shell(program: &str) -> bool {
 }
 
 fn pipes_to_shell(command: &str) -> bool {
-    command.split('|').skip(1).any(|segment| {
-        segment
-            .trim_start_matches('&')
-            .split_whitespace()
-            .map(|word| word.rsplit('/').next().unwrap_or(word))
-            .find(|word| {
-                !matches!(
-                    *word,
-                    "env"
-                        | "sudo"
-                        | "doas"
-                        | "nice"
-                        | "nohup"
-                        | "exec"
-                        | "command"
-                        | "time"
-                        | "xargs"
-                        | "timeout"
-                        | "stdbuf"
-                        | "setsid"
-                        | "flock"
-                        | "chronic"
-                ) && !word.starts_with('-')
-                    && !word.contains('=')
-                    && !word.chars().all(|c| c.is_ascii_digit())
-            })
-            .is_some_and(|word| {
-                let bare: String = word.chars().filter(|c| !matches!(c, '"' | '\'')).collect();
-                if let Some(var) = bare.strip_prefix('$') {
-                    return expands_to_shell(var);
-                }
-                let name = bare
-                    .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
-                    .to_ascii_lowercase();
-                shell(&name) || word.starts_with('`')
-            })
-    })
+    unquoted(command, &["|"])
+        .into_iter()
+        .skip(1)
+        .any(|segment| {
+            segment
+                .trim_start_matches('&')
+                .split_whitespace()
+                .map(|word| word.rsplit('/').next().unwrap_or(word))
+                .find(|word| {
+                    !matches!(
+                        *word,
+                        "env"
+                            | "sudo"
+                            | "doas"
+                            | "nice"
+                            | "nohup"
+                            | "exec"
+                            | "command"
+                            | "time"
+                            | "xargs"
+                            | "timeout"
+                            | "stdbuf"
+                            | "setsid"
+                            | "flock"
+                            | "chronic"
+                    ) && !word.starts_with('-')
+                        && !word.contains('=')
+                        && !word.chars().all(|c| c.is_ascii_digit())
+                })
+                .is_some_and(|word| {
+                    let bare: String = word.chars().filter(|c| !matches!(c, '"' | '\'')).collect();
+                    if let Some(var) = bare.strip_prefix('$') {
+                        return expands_to_shell(var);
+                    }
+                    let name = bare
+                        .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
+                        .to_ascii_lowercase();
+                    shell(&name) || word.starts_with('`')
+                })
+        })
 }
 
 fn builtin_deny(command: &str) -> bool {
@@ -237,11 +240,19 @@ fn builtin_deny(command: &str) -> bool {
         || folded.contains(":(){ :|:& };:")
         || folded.starts_with("sudo ")
         || folded.contains(" sudo ")
-        || folded.contains("shutdown")
-        || folded.contains("reboot")
-        || folded.contains("halt")
+        || powers_off(&folded)
         || folded.contains("chmod -r 777 /")
         || (folded.contains("dd if=") && folded.contains("of=/dev/"))
+}
+
+fn powers_off(folded: &str) -> bool {
+    split_segments(folded).iter().any(|segment| {
+        segment
+            .split_whitespace()
+            .find(|word| !word.contains('='))
+            .map(|word| word.rsplit('/').next().unwrap_or(word))
+            .is_some_and(|verb| matches!(verb, "shutdown" | "reboot" | "halt" | "poweroff"))
+    })
 }
 
 const DESTRUCTIVE: [&str; 14] = [
@@ -252,6 +263,11 @@ const DESTRUCTIVE: [&str; 14] = [
 fn escapes(command: &str, workspace: &Path) -> Option<String> {
     let mut outside_cwd = false;
     for segment in split_segments(command) {
+        let segment = if outside_cwd || !workspace.join(".git").exists() {
+            segment
+        } else {
+            segment.replace("$(git rev-parse --show-toplevel)", ".")
+        };
         let words: Vec<String> = segment
             .split_whitespace()
             .map(|word| word.trim_matches(|c| c == '"' || c == '\'').to_string())
@@ -327,15 +343,58 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
 const DEST_ONLY: [&str; 5] = ["cp", "mv", "ln", "install", "rsync"];
 
 fn split_segments(command: &str) -> Vec<String> {
-    command
-        .replace("&&", "\n")
-        .replace("||", "\n")
-        .replace(['|', ';'], "\n")
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
+    unquoted(command, &["&&", "||", "|", ";"])
+        .into_iter()
+        .map(|segment| segment.trim().to_string())
+        .filter(|segment| !segment.is_empty())
         .collect()
+}
+
+fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut open: Vec<char> = Vec::new();
+    let mut rest = command;
+    while let Some(ch) = rest.chars().next() {
+        let mut take = ch.len_utf8();
+        match open.last() {
+            Some('\'') => {
+                if ch == '\'' {
+                    open.pop();
+                }
+            }
+            Some('"') => {
+                if ch == '\\' {
+                    take += rest[take..].chars().next().map_or(0, char::len_utf8);
+                } else if ch == '"' {
+                    open.pop();
+                } else if rest.starts_with("$(") {
+                    open.push('(');
+                    take = 2;
+                }
+            }
+            _ => {
+                if ch == '\\' {
+                    take += rest[take..].chars().next().map_or(0, char::len_utf8);
+                } else if ch == '\'' || ch == '"' {
+                    open.push(ch);
+                } else if rest.starts_with("$(") {
+                    open.push('(');
+                    take = 2;
+                } else if ch == ')' && open.last() == Some(&'(') {
+                    open.pop();
+                } else if let Some(delimiter) = delimiters.iter().find(|d| rest.starts_with(*d)) {
+                    segments.push(std::mem::take(&mut current));
+                    rest = &rest[delimiter.len()..];
+                    continue;
+                }
+            }
+        }
+        current.push_str(&rest[..take]);
+        rest = &rest[take..];
+    }
+    segments.push(current);
+    segments
 }
 
 fn in_temp(word: &str) -> bool {

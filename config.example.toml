@@ -106,8 +106,13 @@ model = "grok-4.6"
 # [endpoint.gemini]
 # wire = "gemini"
 
-# web_search: Bing RSS needs no key; set backend = "brave" with a key
-# (or BRAVE_API_KEY) for stable results.
+# Sandbox: directories outside the workspace that contained commands may
+# write, such as a shared build cache. "~/" expands to your home directory.
+# [sandbox]
+# write = ["~/.cargo/registry"]
+
+# web_search: DuckDuckGo HTML needs no key. backend = "brave" with a key
+# (or BRAVE_API_KEY) gives stable results; backend = "bing" keeps the RSS path.
 # [search]
 # backend = "brave"
 # api_key = "…"

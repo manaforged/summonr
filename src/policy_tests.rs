@@ -61,6 +61,27 @@ fn unrestricted_policy_allows_commands_outside_the_workspace() {
 }
 
 #[test]
+fn cd_to_the_git_toplevel_stays_inside() -> Result<()> {
+    let policy = Policy::builtin();
+    let repo = tempdir()?;
+    std::fs::create_dir(repo.path().join(".git"))?;
+    policy.command(
+        "cd \"$(git rev-parse --show-toplevel)\"; echo test > docs/.probe",
+        repo.path(),
+    )?;
+    assert!(
+        policy
+            .command(
+                "cd \"$(git rev-parse --show-toplevel)\"; echo test > docs/.probe",
+                Path::new(WS),
+            )
+            .is_err(),
+        "a workspace below the repository root cannot claim its parent"
+    );
+    Ok(())
+}
+
+#[test]
 fn redirects_and_cd_are_contained() {
     let policy = Policy::builtin();
     policy.command_ws("echo hi > out.txt").unwrap();
@@ -153,6 +174,16 @@ fn builtin_blocks_force_push_and_pipe_shell() {
     policy.command_ws("git diff | $HOME").unwrap();
     policy.command_ws("cat script.sh | shasum").unwrap();
     policy.command_ws("cat script.sh | shellcheck -").unwrap();
+    policy
+        .command_ws(r#"grep -n "node \|pwsh\|powershell" scripts/*.ps1 | head -40"#)
+        .unwrap();
+    policy
+        .command_ws("grep -rhoE '(scripts|tools)/[a-z]+\\.(mjs|ps1|sh)' scripts/ | sort -u")
+        .unwrap();
+    policy
+        .command_ws("grep -E 'shutdown|reboot' docs/*.md")
+        .unwrap();
+    assert!(policy.command_ws("echo 'safe' | sh").is_err());
     policy.command_ws("echo hi").unwrap();
     policy.command_ws("cargo test -p summoner").unwrap();
 }
@@ -320,4 +351,15 @@ fn native_paths_cannot_redirect_outside_the_workspace() {
             .command_ws(r"echo changed > ..\summoner.txt")
             .is_err()
     );
+}
+
+#[test]
+fn power_words_deny_only_as_the_command() {
+    let policy = Policy::builtin();
+    assert!(policy.command_ws("shutdown -h now").is_err());
+    assert!(policy.command_ws("echo done; reboot").is_err());
+    policy
+        .command_ws("sed -n '1,30p' crates/browser/src/process/shutdown_tests.rs")
+        .unwrap();
+    policy.command_ws("grep -n mod src/halt.rs").unwrap();
 }

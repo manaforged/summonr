@@ -1,8 +1,8 @@
 use sigil::prelude::Rgba8;
 
 use super::{
-    CODE_BG, CODE_COMMENT, CODE_STRING, DIM, GREEN, Line, RED, Span, TEXT, USER_BG, YELLOW, blend,
-    fmt_tokens, pad, rgb,
+    CODE_BG, CODE_COMMENT, CODE_KEYWORD, CODE_STRING, DIM, GREEN, Line, RED, Span, TEXT, USER_BG,
+    YELLOW, blend, fmt_tokens, pad, rgb,
 };
 use crate::tui::{Round, ToolState};
 
@@ -169,6 +169,10 @@ fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
                 let mut line = vec![Span::styled("• ", accent)];
                 line.extend(inline(item, accent));
                 lines.push(line);
+            } else if let Some((number, item)) = numbered(trimmed) {
+                let mut line = vec![Span::styled(format!("{number}. "), accent)];
+                line.extend(inline(item, accent));
+                lines.push(line);
             } else {
                 lines.push(inline(raw, accent));
             }
@@ -178,6 +182,15 @@ fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
         lines.push(Vec::new());
     }
     lines
+}
+
+pub(crate) fn numbered(line: &str) -> Option<(&str, &str)> {
+    let digits = line.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 || digits > 3 {
+        return None;
+    }
+    let rest = line[digits..].strip_prefix(". ")?;
+    Some((&line[..digits], rest))
 }
 
 fn inline(text: &str, accent: Rgba8) -> Line {
@@ -215,12 +228,59 @@ fn inline(text: &str, accent: Rgba8) -> Line {
     spans
 }
 
-fn code(raw: &str) -> Line {
+const KEYWORDS: [&str; 44] = [
+    "as",
+    "async",
+    "await",
+    "break",
+    "class",
+    "const",
+    "continue",
+    "def",
+    "dyn",
+    "else",
+    "enum",
+    "export",
+    "false",
+    "fn",
+    "for",
+    "from",
+    "function",
+    "if",
+    "impl",
+    "import",
+    "in",
+    "interface",
+    "let",
+    "loop",
+    "match",
+    "mod",
+    "mut",
+    "new",
+    "null",
+    "pub",
+    "return",
+    "self",
+    "static",
+    "struct",
+    "trait",
+    "true",
+    "type",
+    "unsafe",
+    "use",
+    "var",
+    "where",
+    "while",
+    "None",
+    "Some",
+];
+
+pub(crate) fn code(raw: &str) -> Line {
     let mut spans = vec![Span::surface("  ", TEXT, CODE_BG)];
     let mut text = raw;
     if let Some(index) = raw.find("//") {
         let (plain, comment) = raw.split_at(index);
-        spans.push(Span::surface(plain, TEXT, CODE_BG));
+        words(&mut spans, plain);
         spans.push(Span::surface(comment, CODE_COMMENT, CODE_BG));
         return spans;
     }
@@ -230,7 +290,7 @@ fn code(raw: &str) -> Line {
         let Some(end) = after.find(quote) else {
             break;
         };
-        spans.push(Span::surface(&text[..start], TEXT, CODE_BG));
+        words(&mut spans, &text[..start]);
         spans.push(Span::surface(
             &text[start..start + end + 2],
             CODE_STRING,
@@ -238,8 +298,32 @@ fn code(raw: &str) -> Line {
         ));
         text = &text[start + end + 2..];
     }
-    spans.push(Span::surface(text, TEXT, CODE_BG));
+    words(&mut spans, text);
     spans
+}
+
+fn words(spans: &mut Line, text: &str) {
+    let mut rest = text;
+    while !rest.is_empty() {
+        let word = rest
+            .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .unwrap_or(rest.len());
+        if word == 0 {
+            let gap = rest
+                .find(|c: char| c.is_alphanumeric() || c == '_')
+                .unwrap_or(rest.len());
+            spans.push(Span::surface(&rest[..gap], TEXT, CODE_BG));
+            rest = &rest[gap..];
+            continue;
+        }
+        let color = if KEYWORDS.contains(&&rest[..word]) {
+            CODE_KEYWORD
+        } else {
+            TEXT
+        };
+        spans.push(Span::surface(&rest[..word], color, CODE_BG));
+        rest = &rest[word..];
+    }
 }
 
 fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {

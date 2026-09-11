@@ -1,13 +1,16 @@
+use std::time::Instant;
+
 use sigil::prelude::*;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
 use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
 use super::model::Model;
+use super::speed::Speed;
 use crate::tui::{Activity, Round, context, fmt_tokens, short_session};
 
 #[path = "chat/transcript.rs"]
-mod transcript;
+pub(crate) mod transcript;
 
 #[path = "chat/image.rs"]
 pub(super) mod image;
@@ -20,11 +23,12 @@ const USER_BG: Rgba8 = rgb(42, 44, 58);
 const CODE_BG: Rgba8 = rgb(30, 32, 42);
 const CODE_COMMENT: Rgba8 = rgb(96, 148, 102);
 const CODE_STRING: Rgba8 = rgb(226, 178, 106);
+const CODE_KEYWORD: Rgba8 = rgb(198, 146, 230);
 const SPARK: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 pub(super) const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 #[derive(Clone)]
-struct Span {
+pub(super) struct Span {
     text: String,
     fg: Rgba8,
     bg: Rgba8,
@@ -69,6 +73,11 @@ impl Span {
 
     fn width(&self) -> usize {
         UnicodeWidthStr::width(self.text.as_str())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn parts(&self) -> (&str, Rgba8) {
+        (&self.text, self.fg)
     }
 }
 
@@ -169,7 +178,8 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         return cells;
     }
     let prompt = usize::from(prompt_row(rows));
-    let body_height = prompt.saturating_sub(1);
+    let busy = busy_status(model);
+    let body_height = prompt.saturating_sub(1 + usize::from(busy.is_some()));
     let mut history = app.history.borrow_mut();
     let visible = history.lines(model, content_width, app.panes.get());
     let max_start = visible.len().saturating_sub(body_height);
@@ -194,6 +204,16 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
             content_width,
             1 + offset,
             line,
+        );
+    }
+    if let Some(status) = &busy {
+        write_line_at(
+            &mut cells,
+            width,
+            content_left,
+            content_width,
+            prompt.saturating_sub(1),
+            &busy_line(status, content_width, accent),
         );
     }
     let editing = app
@@ -424,6 +444,46 @@ fn prompt_rows(
     );
 }
 
+pub(super) fn busy_status(model: &Model) -> Option<String> {
+    model.busy_since.map(|(activity, since)| {
+        let doing = match &model.live_tool {
+            Some((name, arg)) => format!("{name} {arg}").trim_end().to_string(),
+            None => activity.label().to_string(),
+        };
+        let (steering, queued) = model.queued;
+        let waiting = match steering + queued {
+            0 => String::new(),
+            n => format!(" · {n} queued, alt+↑ edits"),
+        };
+        let rounds = if activity == Activity::Turn {
+            format!(" · r{}", model.rounds.max(1))
+        } else {
+            String::new()
+        };
+        let now = Instant::now();
+        let speed = model
+            .speed
+            .live(now)
+            .or_else(|| model.speed.last())
+            .map(|rate| format!(" · {}", Speed::label(rate)))
+            .unwrap_or_default();
+        format!(
+            "{} {doing}{rounds} · {}s{speed}{waiting}",
+            SPINNER[model.spinner],
+            since.elapsed().as_secs()
+        )
+    })
+}
+
+fn busy_line(status: &str, width: usize, accent: Rgba8) -> Vec<Span> {
+    let shown = ellipsize(status, width);
+    let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
+    vec![
+        Span::styled(spinner.to_string(), accent),
+        Span::styled(rest.to_string(), DIM),
+    ]
+}
+
 pub(super) fn composer_hint(
     activity: Option<Activity>,
     width: usize,
@@ -608,6 +668,9 @@ fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
             ),
             DIM,
         ));
+    }
+    if let Some(rate) = model.speed.last() {
+        right.push(Span::styled(format!(" · {}", Speed::label(rate)), DIM));
     }
     join(left, right, width)
 }

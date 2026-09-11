@@ -196,7 +196,7 @@ async fn a_later_session_stops_a_detached_job_and_restores_permissions() -> Resu
         .expect("background record");
     if !ready(&root.path().join("ready")).await {
         let status = crate::jobs::status(root.path(), &record.id)?;
-        super::stop(record.pid)?;
+        drop(super::stop(record.pid)?);
         panic!("background command did not start: {}", status.text);
     }
     drop(tools);

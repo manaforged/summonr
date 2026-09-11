@@ -80,6 +80,10 @@ impl Picker {
         }
     }
 
+    pub(super) fn note(self, text: &str) {
+        self.error.set(text.to_string());
+    }
+
     pub(super) fn rows(self) -> Vec<SessionInfo> {
         let query = self.query.get().to_lowercase();
         let scope = self.scope.get();
@@ -273,7 +277,7 @@ pub(super) fn desktop(app: App) -> NodeBuilder {
                 .height(48.0),
         )
         .child(label(
-            "↑↓ select · enter resume · tab project/all/tree · esc",
+            "↑↓ select · enter resume · tab project/all/tree · ctrl+d delete · esc",
         ));
     if rows.is_empty() {
         body = body.child(label(picker.empty()));
@@ -399,7 +403,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let help = if width < 60 {
         "↑↓ move · enter · tab scope · esc"
     } else {
-        "↑↓ select · enter resume · tab project/all/tree · esc cancel"
+        "↑↓ select · enter resume · tab project/all/tree · ctrl+d delete · esc cancel"
     };
     write_at(
         &mut cells,

@@ -16,6 +16,7 @@ mod scene;
 mod search;
 mod sessions;
 mod settings;
+mod speed;
 mod suggest;
 mod view;
 

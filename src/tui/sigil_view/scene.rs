@@ -427,6 +427,13 @@ fn prompt(
         .select
         .peek()
         .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+    if let Some(status) = super::chat::busy_status(model).filter(|_| y > 0) {
+        let shown = super::chat::ellipsize(&status, usize::from(width));
+        let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
+        write(cells, cols, x, y - 1, spinner, accent);
+        let after = x.saturating_add(UnicodeWidthStr::width(spinner) as u16);
+        write(cells, cols, after, y - 1, rest, DIM);
+    }
     let hint = super::chat::composer_hint(
         model.busy_since.map(|(activity, _)| activity),
         usize::from(width),

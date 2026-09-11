@@ -22,6 +22,22 @@ First public release of the Mage harness under the Summoner name.
   600 s, instead of the doubling backoff.
 - Fenced code in replies colours keywords; `/export [PATH]` writes the
   session as markdown from inside the interface, also during a turn.
+- Pictures in the transcript: a pasted or attached image, a `show_image`
+  tool call, or a markdown image link in a reply renders through the
+  terminal's graphics protocol (Kitty or iTerm2) and as half-block cells
+  elsewhere. The drawing lives in Sigil's terminal host.
+- A fenced `mermaid` block in a reply renders as a diagram: flowcharts,
+  state diagrams, sequence diagrams, and pie charts, through Sigil's
+  `mermaid` widget.
+- The terminal no longer reports mouse motion without a button, so moving the
+  mouse over an idle session stops pinning a CPU core and no longer starves
+  selection and scroll.
+- Plan mode writes files. The write_file tool writes any path so a plan or
+  review lands; the edit tools and shell commands stay read-only, so source
+  edits and builds are refused, and a blocked write says why.
+- A picture scrolled partly off the screen shows its visible rows;
+  `read_file` on an image reports its size and shows it; `/view` and the
+  tree open image files as pictures in the view pane.
 - Tool cards drop a leading `cd … &&`, and the working status sits on its
   own row above the composer with the output rate in tokens per second:
   a three-second estimate while text streams, the provider's count over

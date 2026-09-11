@@ -94,6 +94,7 @@ fn view_reads_the_file_and_its_added_lines() {
             file,
             rope,
             added,
+            image: _,
         }) => {
             assert_eq!(path, "src/lib.rs");
             assert_eq!(file, dir.path().join("src/lib.rs"));

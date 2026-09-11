@@ -571,3 +571,161 @@ fn the_busy_row_and_status_bar_show_tokens_per_second() {
         assert!(last.contains("tok/s"), "{last}");
     });
 }
+
+#[test]
+fn an_image_entry_reserves_rows_and_places_a_picture() {
+    sigil::reactive::Runtime::scope("mage-image-rows-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/project".to_string();
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 30);
+        let source = sigil::prelude::ImageSource::from_rgba8(80, 40, vec![200; 80 * 40 * 4])
+            .expect("source");
+        app.model.borrow_mut().entries.push(Entry::Image {
+            source,
+            label: "shot.png".to_string(),
+        });
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 30, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let lines: Vec<&str> = frame.lines().collect();
+        let label = lines
+            .iter()
+            .position(|line| line.contains("shot.png"))
+            .expect("label row");
+        let history = app.history.borrow();
+        let placed = history.placements();
+        assert_eq!(placed.len(), 1, "one picture placed");
+        assert_eq!(placed[0].size(), (80, 20), "80 px wide at half-row height");
+        assert_eq!(placed[0].line(), label + 1 - 1, "rows follow the label");
+        assert!(
+            lines.len() >= label + 21,
+            "twenty rows reserved under the label"
+        );
+    });
+}
+
+#[test]
+fn a_show_image_call_adds_the_picture_to_the_transcript() {
+    sigil::reactive::Runtime::scope("mage-show-image-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        let dir = tempfile::tempdir().expect("tempdir");
+        let picture = dir.path().join("plot.png");
+        ::image::RgbaImage::from_pixel(3, 3, ::image::Rgba([1, 2, 3, 255]))
+            .save(&picture)
+            .expect("write png");
+        let arguments = serde_json::json!({ "path": picture }).to_string();
+        app.update(Msg::Event(Event::ToolCall {
+            id: "c1".to_string(),
+            name: "show_image".to_string(),
+            arguments,
+        }));
+        let model = app.model.borrow();
+        assert!(
+            matches!(model.entries.last(), Some(Entry::Image { label, .. }) if label.ends_with("plot.png")),
+            "{:?}",
+            model.entries.len()
+        );
+        drop(model);
+        app.update(Msg::Event(Event::Assistant {
+            text: format!("See ![the plot]({})", picture.display()),
+        }));
+        let model = app.model.borrow();
+        let pictures = model
+            .entries
+            .iter()
+            .filter(|entry| matches!(entry, Entry::Image { .. }))
+            .count();
+        assert_eq!(pictures, 2, "a markdown image link shows the file too");
+    });
+}
+
+#[test]
+fn a_mermaid_fence_renders_as_a_diagram() {
+    sigil::reactive::Runtime::scope("mage-mermaid-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(100, 40);
+        app.update(Msg::Event(Event::Assistant {
+            text: "Flow:\n```mermaid\ngraph LR\n    A[Parse] --> B[Paint]\n```\ndone".to_string(),
+        }));
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 40, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(
+            frame.contains("Parse") && frame.contains("Paint"),
+            "{frame}"
+        );
+        assert!(frame.contains('▶'), "arrow head:\n{frame}");
+        assert!(!frame.contains("graph LR"), "source hidden:\n{frame}");
+    });
+}
+
+#[test]
+fn a_tall_picture_shows_its_visible_rows_while_scrolled() {
+    sigil::reactive::Runtime::scope("mage-tall-picture-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/project".to_string();
+        let app = App::new(start, PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(60, 14);
+        let source = sigil::prelude::ImageSource::from_rgba8(20, 400, vec![90; 20 * 400 * 4])
+            .expect("source");
+        app.model.borrow_mut().entries.push(Entry::Image {
+            source,
+            label: "tall.png".to_string(),
+        });
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 60, 14, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        let placed = app.history.borrow().placements().len();
+        assert_eq!(placed, 1);
+        assert_eq!(
+            app.history.borrow().placements()[0].size().1,
+            24,
+            "capped at 24 rows"
+        );
+        assert!(
+            frame.contains('▀') || sigil_tui::protocol().is_some(),
+            "a picture taller than the body still shows its visible rows:\n{frame}"
+        );
+    });
+}
+
+#[test]
+fn the_view_pane_shows_an_image_file() {
+    sigil::reactive::Runtime::scope("mage-view-image-test", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        app.resize(120, 30);
+        let mut bytes = Vec::new();
+        ::image::RgbaImage::from_pixel(40, 20, ::image::Rgba([200, 200, 200, 255]))
+            .write_to(
+                &mut std::io::Cursor::new(&mut bytes),
+                ::image::ImageFormat::Png,
+            )
+            .expect("png");
+        app.update(Msg::View {
+            path: "shot.png".to_string(),
+            file: PathBuf::from("/tmp/mage-view-test/shot.png"),
+            rope: sigil_ide_core::buffer::Rope::from_reader(std::io::empty()).expect("rope"),
+            added: Vec::new(),
+            image: Some(bytes),
+        });
+        app.pane_command(Some("view"));
+        app.refresh();
+        let tree = app.clone();
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 120, 30, &[])
+            .unwrap_or_else(|error| panic!("layout failed: {error}"));
+        assert!(frame.contains("view · shot.png · 40×20"), "{frame}");
+        assert!(
+            frame.contains('▀') || sigil_tui::protocol().is_some(),
+            "the pane draws the picture:\n{frame}"
+        );
+    });
+}

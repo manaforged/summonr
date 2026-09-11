@@ -71,6 +71,7 @@ pub enum Msg {
         file: PathBuf,
         rope: sigil_ide_core::buffer::Rope,
         added: Vec<(usize, usize)>,
+        image: Option<Vec<u8>>,
     },
     Saved {
         file: PathBuf,

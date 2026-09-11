@@ -270,3 +270,71 @@ async fn read_tools_reach_outside_the_workspace_and_writes_do_not() -> Result<()
     assert!(write.is_err(), "writes outside the workspace must fail");
     Ok(())
 }
+
+#[test]
+fn show_image_reports_the_decoded_size_and_refuses_text() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let tools = ToolRegistry::new(workspace.path())?;
+    let picture = workspace.path().join("shot.png");
+    ::image::RgbaImage::from_pixel(6, 4, ::image::Rgba([10, 20, 30, 255]))
+        .save(&picture)
+        .map_err(|error| Error::Tool(error.to_string()))?;
+    let shown = tools.show_image(&serde_json::json!({ "path": "shot.png" }).to_string())?;
+    assert!(
+        shown.contains("image/png") && shown.contains("6x4"),
+        "{shown}"
+    );
+    std::fs::write(workspace.path().join("notes.txt"), "plain")?;
+    let refused = tools.show_image(&serde_json::json!({ "path": "notes.txt" }).to_string());
+    assert!(refused.is_err(), "text is not an image");
+    Ok(())
+}
+
+#[test]
+fn read_file_describes_an_image_instead_of_dumping_bytes() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let tools = ToolRegistry::new(workspace.path())?;
+    ::image::RgbaImage::from_pixel(9, 5, ::image::Rgba([1, 2, 3, 255]))
+        .save(workspace.path().join("shot.png"))
+        .map_err(|error| Error::Tool(error.to_string()))?;
+    let read = tools.read_file(&serde_json::json!({ "path": "shot.png" }).to_string())?;
+    assert!(read.contains("image/png") && read.contains("9x5"), "{read}");
+    assert!(read.contains("@shot.png"), "{read}");
+    Ok(())
+}
+
+#[tokio::test]
+async fn plan_mode_writes_files_but_the_edit_tools_are_denied() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let mut tools = ToolRegistry::new(workspace.path())?;
+    tools.set_read_only(true);
+    let plan = serde_json::json!({
+        "path": "docs/reviews/audit.md",
+        "content": "# findings\n",
+    })
+    .to_string();
+    let wrote = tools.write_file(&plan).await?;
+    assert!(
+        wrote.text.contains("wrote docs/reviews/audit.md"),
+        "{}",
+        wrote.text
+    );
+    assert!(workspace.path().join("docs/reviews/audit.md").is_file());
+
+    std::fs::write(workspace.path().join("note.md"), "one\ntwo\n")?;
+    let edit = serde_json::json!({
+        "path": "note.md",
+        "find": "one",
+        "replace": "three",
+    })
+    .to_string();
+    let refused = match tools.edit_operation("replace_text", &edit).await {
+        Err(error) => error,
+        Ok(_) => panic!("the edit tools are denied in plan mode"),
+    };
+    assert!(
+        refused.to_string().contains("does not edit"),
+        "the denial names plan mode: {refused}"
+    );
+    Ok(())
+}

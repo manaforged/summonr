@@ -48,6 +48,7 @@ pub(super) struct View {
     pub(super) file: std::path::PathBuf,
     pub(super) rope: sigil_ide_core::buffer::Rope,
     pub(super) added: Vec<(usize, usize)>,
+    pub(super) image: Option<ImageSource>,
 }
 
 #[derive(Clone)]
@@ -212,12 +213,14 @@ impl Model {
                 file,
                 rope,
                 added,
+                image,
             } => {
                 self.view = Some(View {
                     path,
                     file,
                     rope,
                     added,
+                    image: image.and_then(|bytes| preview(&bytes).ok()),
                 })
             }
             Msg::Saved { .. } => {}
@@ -266,7 +269,17 @@ impl Model {
                 id,
                 name,
                 arguments,
-            } => self.start_tool(id, name, arguments),
+            } => {
+                let shown = match name.as_str() {
+                    "show_image" => Some((arguments.clone(), false)),
+                    "read_file" => Some((arguments.clone(), true)),
+                    _ => None,
+                };
+                self.start_tool(id, name, arguments);
+                if let Some((arguments, quiet)) = shown {
+                    self.show_call(&arguments, quiet);
+                }
+            }
             Event::ToolResult {
                 id,
                 success,
@@ -381,6 +394,56 @@ impl Model {
     }
 
     fn finish_assistant(&mut self, text: String) {
+        let links = linked(&text);
+        self.place_assistant(text);
+        for path in links {
+            self.show(&path);
+        }
+    }
+
+    fn show_call(&mut self, arguments: &str, quiet: bool) {
+        let path = serde_json::from_str::<serde_json::Value>(arguments)
+            .ok()
+            .and_then(|value| value.get("path")?.as_str().map(str::to_string));
+        if let Some(path) = path {
+            self.show_path(&path, quiet);
+        }
+    }
+
+    fn show(&mut self, path: &str) {
+        self.show_path(path, false);
+    }
+
+    fn show_path(&mut self, path: &str, quiet: bool) {
+        let full = if std::path::Path::new(path).is_absolute() {
+            std::path::PathBuf::from(path)
+        } else {
+            std::env::current_dir()
+                .map(|dir| dir.join(path))
+                .unwrap_or_else(|_| std::path::PathBuf::from(path))
+        };
+        let bytes = std::fs::read(&full).map_err(|error| error.to_string());
+        if quiet
+            && !bytes
+                .as_ref()
+                .is_ok_and(|bytes| crate::tools::image_type(bytes).is_some())
+        {
+            return;
+        }
+        let entry = match bytes {
+            Ok(bytes) => match preview(&bytes) {
+                Ok(source) => Entry::Image {
+                    source,
+                    label: path.to_string(),
+                },
+                Err(error) => Entry::Error(format!("{path}: {error}")),
+            },
+            Err(error) => Entry::Error(format!("{path}: {error}")),
+        };
+        self.entries.push(entry);
+    }
+
+    fn place_assistant(&mut self, text: String) {
         let pending = self
             .entries
             .iter_mut()
@@ -460,6 +523,35 @@ pub(super) fn entry_markdown(entry: &Entry) -> String {
         Entry::Chart(rounds) => super::app::presentation::stats(rounds),
         Entry::Image { label, .. } => format!("   {label}"),
     }
+}
+
+fn linked(text: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("![") {
+        let after = &rest[start + 2..];
+        let Some(open) = after.find("](") else { break };
+        let target = &after[open + 2..];
+        let Some(close) = target.find(')') else { break };
+        let path = target[..close]
+            .trim()
+            .trim_matches(|c| c == '<' || c == '>' || c == '"');
+        let remote = path.contains("://") || path.starts_with("data:");
+        if !path.is_empty() && !remote {
+            let full = if std::path::Path::new(path).is_absolute() {
+                std::path::PathBuf::from(path)
+            } else {
+                std::env::current_dir()
+                    .map(|dir| dir.join(path))
+                    .unwrap_or_default()
+            };
+            if full.is_file() {
+                paths.push(path.to_string());
+            }
+        }
+        rest = &target[close + 1..];
+    }
+    paths
 }
 
 pub(super) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {

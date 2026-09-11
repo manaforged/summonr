@@ -132,9 +132,15 @@ impl Policy {
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
-                "plan mode is read-only — no file writes".to_string(),
+                "plan mode does not edit files. Write a new plan or review with the write_file \
+                 tool, or propose the change as a diff."
+                    .to_string(),
             ));
         }
+        self.write_globs(relative)
+    }
+
+    pub(crate) fn write_globs(&self, relative: &str) -> Result<()> {
         if self.unrestricted {
             return Ok(());
         }

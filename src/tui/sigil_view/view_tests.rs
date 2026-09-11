@@ -1214,6 +1214,7 @@ fn newline_replaces_selection_and_undo_restores_it_in_both_editors() {
                     file: PathBuf::from("notes.md"),
                     rope: sigil_ide_core::buffer::Rope::from_str("replace me"),
                     added: Vec::new(),
+                    image: None,
                 });
                 app.edit_start();
             } else {

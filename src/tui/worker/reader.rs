@@ -81,11 +81,12 @@ impl Reader {
             Cmd::View(root, path) => {
                 let root = root.as_deref().unwrap_or(&self.workspace);
                 match view(root, &path) {
-                    Ok((rope, added)) => self.send(Msg::View {
+                    Ok((rope, added, image)) => self.send(Msg::View {
                         file: root.join(&path),
                         path,
                         rope,
                         added,
+                        image,
                     }),
                     Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
                 }
@@ -162,11 +163,21 @@ fn files(workspace: &Path) -> Vec<String> {
         .collect()
 }
 
-fn view(root: &Path, path: &str) -> Result<(Rope, Vec<(usize, usize)>)> {
-    let file = std::fs::File::open(root.join(path))?;
-    let rope = Rope::from_reader(file)?;
+type Viewed = (Rope, Vec<(usize, usize)>, Option<Vec<u8>>);
+
+fn view(root: &Path, path: &str) -> Result<Viewed> {
+    let full = root.join(path);
+    let bytes = std::fs::read(&full)?;
+    if crate::tools::image_type(&bytes).is_some() {
+        return Ok((
+            Rope::from_reader(std::io::empty())?,
+            Vec::new(),
+            Some(bytes),
+        ));
+    }
+    let rope = Rope::from_reader(bytes.as_slice())?;
     let added = diff::hunks(root, path).unwrap_or_default();
-    Ok((rope, added))
+    Ok((rope, added, None))
 }
 
 fn relative(root: &Path, event: &FsEvent) -> String {

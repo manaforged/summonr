@@ -1,3 +1,5 @@
+use sigil::prelude::ImageSource;
+
 use sigil::prelude::Rgba8;
 
 use super::{
@@ -74,20 +76,11 @@ pub(super) fn entries(model: &Model, width: usize, accent: Rgba8) -> Vec<Vec<Lin
             ),
             Entry::Error(text) => lines.push(vec![Span::styled(format!("summon: {text}"), RED)]),
             Entry::Chart(rounds) => lines.extend(chart(rounds, accent)),
-            Entry::Image { source, label } => lines.extend(
-                super::image::render_cached(source, width)
-                    .map(|rows| {
-                        let mut block = vec![vec![Span::styled(label, DIM)]];
-                        block.extend(rows);
-                        block
-                    })
-                    .unwrap_or_else(|_| {
-                        vec![vec![Span::styled(
-                            format!("summon: {label} — could not render"),
-                            RED,
-                        )]]
-                    }),
-            ),
+            Entry::Image { source, label } => {
+                let (_, rows) = image_cells(source, width);
+                lines.push(vec![Span::styled(label, DIM)]);
+                lines.extend((0..rows).map(|_| vec![Span::text(" ")]));
+            }
         }
         entries.push(lines);
     }
@@ -148,13 +141,25 @@ fn tool_lines(name: &str, arg: &str, state: &ToolState, tail: &str) -> Vec<Line>
 
 fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
     let mut lines = Vec::new();
-    let mut fence = false;
+    let mut fence: Option<(bool, Vec<String>)> = None;
     for raw in text.lines() {
-        if raw.trim_start().starts_with("```") {
-            fence = !fence;
-        } else if fence {
-            lines.push(pad(code(raw), width, CODE_BG));
-        } else {
+        if let Some(info) = raw.trim_start().strip_prefix("```") {
+            match fence.take() {
+                Some((true, source)) => lines.extend(diagram(&source.join("\n"), width)),
+                Some((false, _)) => {}
+                None => fence = Some((info.trim().starts_with("mermaid"), Vec::new())),
+            }
+            continue;
+        }
+        if let Some((mermaid, source)) = fence.as_mut() {
+            if *mermaid {
+                source.push(raw.to_string());
+            } else {
+                lines.push(pad(code(raw), width, CODE_BG));
+            }
+            continue;
+        }
+        {
             let trimmed = raw.trim_start();
             if let Some(header) = trimmed
                 .strip_prefix("### ")
@@ -181,7 +186,37 @@ fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
     if lines.is_empty() {
         lines.push(Vec::new());
     }
+    if let Some((true, source)) = fence {
+        lines.extend(source.iter().map(|line| pad(code(line), width, CODE_BG)));
+    }
     lines
+}
+
+fn diagram(source: &str, width: usize) -> Vec<Line> {
+    sigil_tui::widgets::mermaid_draw(source)
+        .into_iter()
+        .map(|line| {
+            pad(
+                vec![Span::surface(format!("  {line}"), TEXT, CODE_BG)],
+                width,
+                CODE_BG,
+            )
+        })
+        .collect()
+}
+
+pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) {
+    let pixel_width = source.width() as usize;
+    let pixel_height = source.height() as usize;
+    if width == 0 || pixel_width == 0 || pixel_height == 0 {
+        return (0, 0);
+    }
+    let cols = width.min(pixel_width).max(1);
+    let rows = (pixel_height * cols / pixel_width)
+        .div_ceil(2)
+        .clamp(1, IMAGE_ROWS);
+    let cols = cols.min((rows * 2 * pixel_width / pixel_height).max(1));
+    (cols, rows)
 }
 
 pub(crate) fn numbered(line: &str) -> Option<(&str, &str)> {
@@ -227,6 +262,8 @@ fn inline(text: &str, accent: Rgba8) -> Line {
     }
     spans
 }
+
+const IMAGE_ROWS: usize = 24;
 
 const KEYWORDS: [&str; 44] = [
     "as",

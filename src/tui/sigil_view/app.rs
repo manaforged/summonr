@@ -2374,7 +2374,7 @@ impl App {
         }
     }
 
-    fn pane_command(&self, argument: Option<&str>) {
+    pub(super) fn pane_command(&self, argument: Option<&str>) {
         let layout = self.layout.peek();
         match argument {
             None => {

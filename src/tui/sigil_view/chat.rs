@@ -5,15 +5,12 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::app::App;
 use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
-use super::model::Model;
+use super::model::{Entry, Model};
 use super::speed::Speed;
 use crate::tui::{Activity, Round, context, fmt_tokens, short_session};
 
 #[path = "chat/transcript.rs"]
 pub(crate) mod transcript;
-
-#[path = "chat/image.rs"]
-pub(super) mod image;
 
 pub(super) use canvas::{Cell, rgb};
 pub(super) const YELLOW: Rgba8 = rgb(220, 200, 90);
@@ -83,11 +80,31 @@ impl Span {
 
 type Line = Vec<Span>;
 
+pub(super) struct Placed {
+    line: usize,
+    cols: usize,
+    rows: usize,
+    source: ImageSource,
+}
+
+impl Placed {
+    #[cfg(test)]
+    pub(super) const fn line(&self) -> usize {
+        self.line
+    }
+
+    #[cfg(test)]
+    pub(super) const fn size(&self) -> (usize, usize) {
+        (self.cols, self.rows)
+    }
+}
+
 #[derive(Default)]
 pub(super) struct History {
     key: Option<(u64, usize)>,
     lines: Vec<Line>,
     offsets: Vec<usize>,
+    images: Vec<Placed>,
 }
 
 impl History {
@@ -102,13 +119,29 @@ impl History {
         if self.key != Some((revision, width)) {
             self.lines.clear();
             self.offsets.clear();
-            for entry in transcript::entries(model, width, accent(&model.prefs.theme)) {
+            self.images.clear();
+            let rendered = transcript::entries(model, width, accent(&model.prefs.theme));
+            for (entry, lines) in model.entries.iter().zip(rendered) {
                 self.offsets.push(self.lines.len());
-                self.lines.extend(wrap(entry, width));
+                self.lines.extend(wrap(lines, width));
+                if let Entry::Image { source, .. } = entry {
+                    let (cols, rows) = transcript::image_cells(source, width);
+                    self.images.push(Placed {
+                        line: self.lines.len().saturating_sub(rows),
+                        cols,
+                        rows,
+                        source: source.clone(),
+                    });
+                }
             }
             self.key = Some((revision, width));
         }
         &self.lines
+    }
+
+    #[cfg(test)]
+    pub(super) fn placements(&self) -> &[Placed] {
+        &self.images
     }
 
     pub(super) fn position(&mut self, app: &App, entry: usize) -> Option<f32> {
@@ -145,10 +178,12 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             if let Some(menu) = super::suggest::menu(&app, cols, rows) {
                 stamp_menu(&mut cells, usize::from(cols).max(1), &menu);
             }
-            cells
+            let mut nodes = cells
                 .chunks(usize::from(cols).max(1))
                 .map(row)
-                .collect::<Vec<_>>()
+                .collect::<Vec<_>>();
+            nodes.extend(pictures(&app.model.borrow(), &app, cols, rows));
+            nodes
         })
 }
 
@@ -240,6 +275,64 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         &status(model, app, content_width, accent),
     );
     cells
+}
+
+fn pictures(model: &Model, app: &App, cols: u16, rows: u16) -> Vec<NodeBuilder> {
+    let width = usize::from(cols);
+    if width == 0 || usize::from(rows) < 5 {
+        return Vec::new();
+    }
+    let content_left = if width > 28 {
+        2
+    } else {
+        usize::from(width > 2)
+    };
+    let prompt = usize::from(prompt_row(rows));
+    let body_height = prompt.saturating_sub(1 + usize::from(busy_status(model).is_some()));
+    let history = app.history.borrow();
+    let max_start = history.lines.len().saturating_sub(body_height);
+    let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);
+    let cell = canvas::cell();
+    history
+        .images
+        .iter()
+        .filter_map(|placed| {
+            let top = placed.line;
+            let first = top.max(start);
+            let last = top
+                .saturating_add(placed.rows)
+                .min(start.saturating_add(body_height));
+            if placed.rows == 0 || last <= first {
+                return None;
+            }
+            let hidden = first - top;
+            let shown = last - first;
+            let pixels = placed.source.height() as usize;
+            let mut picture = image(placed.source.clone())
+                .fit(ObjectFit::Fill)
+                .layout(LayoutStyle::block().fill_width().fill_height());
+            if shown < placed.rows {
+                let crop_top = hidden * pixels / placed.rows;
+                let crop_height = (shown * pixels / placed.rows).max(1);
+                picture = picture.crop(
+                    u32::try_from(crop_top).unwrap_or(u32::MAX),
+                    u32::try_from(crop_height).unwrap_or(u32::MAX),
+                );
+            }
+            Some(
+                container()
+                    .layout(
+                        LayoutStyle::block()
+                            .position(Position::Absolute)
+                            .inset_left(content_left as f32 * cell.w)
+                            .inset_top((1 + first - start) as f32 * cell.h)
+                            .width(placed.cols as f32 * cell.w)
+                            .height(shown as f32 * cell.h),
+                    )
+                    .child(picture),
+            )
+        })
+        .collect()
 }
 
 fn empty_hint(width: usize) -> &'static str {

@@ -7,7 +7,7 @@ use super::log::{self, Line, Log, State, Usage};
 use super::tree::{self, Snapshot};
 use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
 use crate::WorkProgress;
-use crate::provider::{Message, ToolCall, UserInput};
+use crate::provider::{Message, Partial, ToolCall, UserInput};
 use crate::session::Replay;
 use crate::workflow::Role;
 
@@ -66,6 +66,7 @@ pub(crate) struct Verdict {
 }
 
 pub(crate) struct SessionDriver {
+    pub(crate) partial: Partial,
     log: Log,
     state: State,
     work: Option<Work>,
@@ -84,6 +85,7 @@ impl SessionDriver {
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
+            partial: Partial::default(),
             log: Log::create(&path)?,
             state: State::default(),
             work: None,
@@ -112,6 +114,7 @@ impl SessionDriver {
         let id = SessionId::new();
         let path = log::session_path(home, id);
         let mut driver = Self {
+            partial: Partial::default(),
             log: Log::create(&path)?,
             state: State::default(),
             work: None,
@@ -164,6 +167,7 @@ impl SessionDriver {
             )));
         };
         let mut driver = Self {
+            partial: Partial::default(),
             log: Log::open(&path)?,
             work,
             state,
@@ -406,6 +410,13 @@ impl SessionDriver {
         diagnostic: &str,
         millis: u64,
     ) -> Result<(), DriverError> {
+        if !self.partial.text.is_empty() || !self.partial.reasoning.is_empty() {
+            self.append(Line::Interrupted {
+                text: self.partial.text.clone(),
+                reasoning: self.partial.reasoning.clone(),
+            })?;
+            self.partial = Partial::default();
+        }
         let round = self.end_round(attempt)?;
         self.append(Line::Charge {
             usage: Usage {

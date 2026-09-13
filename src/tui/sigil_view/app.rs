@@ -8,9 +8,10 @@ use image::{ExtendedColorType, ImageEncoder};
 use sigil::clipboard;
 use sigil::prelude::{ImageSource, Signal, signal};
 use sigil::reactive::batch;
+use sigil::widgets::TextEditState;
 use sigil_ide_core::buffer::Rope;
+use sigil_tui::cell_width;
 use tokio::sync::mpsc::UnboundedSender;
-use unicode_width::UnicodeWidthStr;
 
 use crate::prefs::{self, Hotkey, Prefs, ToolOutput};
 use crate::provider::{Image, UserInput};
@@ -60,6 +61,7 @@ pub(super) struct App {
     pub(super) scroll_y: Signal<f32>,
     pub(super) draft: Signal<String>,
     pub(super) caret: Signal<usize>,
+    pub(super) editor: TextEditState,
     recalled: Signal<Option<(usize, String, usize)>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
@@ -144,6 +146,8 @@ impl App {
         let git_branch = read_git_branch(&workspace);
         let estimated_extent = signal(1.0);
         let extent = estimated_extent;
+        let draft = signal(String::new());
+        let caret = signal(0);
         Self {
             model: Rc::new(RefCell::new(model)),
             history: Rc::new(RefCell::new(super::chat::History::default())),
@@ -153,8 +157,9 @@ impl App {
             estimated_extent,
             extent,
             scroll_y: signal(0.0),
-            draft: signal(String::new()),
-            caret: signal(0),
+            draft,
+            caret,
+            editor: TextEditState::new(draft, caret),
             recalled: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
@@ -426,7 +431,7 @@ impl App {
             let content_width = width.saturating_sub(content_left * 2).max(1);
             let wrapped: usize = transcript
                 .lines()
-                .map(|line| UnicodeWidthStr::width(line).max(1).div_ceil(content_width))
+                .map(|line| cell_width(line).max(1).div_ceil(content_width))
                 .sum();
             self.estimated_extent
                 .set(wrapped as f32 * cell().h + cell().h);
@@ -543,7 +548,7 @@ impl App {
         let extent = self
             .history
             .borrow()
-            .extent(self.viewport.peek().1)
+            .extent(self.viewport.peek().1, &self.draft.peek())
             .unwrap_or_else(|| self.extent.peek());
         self.extent.set(extent);
         let next = self.scroll_y.peek().min(extent) - delta;

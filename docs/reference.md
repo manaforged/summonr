@@ -212,7 +212,7 @@ only called tools. The footer shows the last round's rate after the turn.
 | --- | --- | --- |
 | `enter` | send | steer: delivered after the current tool calls |
 | `tab` | complete a `/command` or `@path` | queue: delivered after the turn |
-| `alt+↑` | | pull queued input back into the editor |
+| `ctrl+q` | | pull queued input back into the editor |
 | `esc` | dismiss; twice within two seconds opens `/tree` | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
 | `ctrl+d` | quit when the draft is empty; in the sessions picker, twice deletes the selected session | |
@@ -254,7 +254,7 @@ the pasted text when the prompt is sent or queued; `ctrl+c` discards
 them with the draft.
 
 While a turn runs, the composer status also counts waiting input
-(`2 queued, alt+↑ edits`). The terminal title reads
+(`2 queued, ctrl+q edits`). The terminal title reads
 `summon · <workspace> · working` or `· ready`, and the terminal bell
 rings once when a turn ends while the terminal is not focused.
 

@@ -1,10 +1,11 @@
 use sigil::prelude::ImageSource;
 
 use sigil::prelude::Rgba8;
+use std::ops::Range;
 
 use super::{
-    CODE_BG, CODE_COMMENT, CODE_KEYWORD, CODE_STRING, DIM, GREEN, Line, RED, Span, TEXT, USER_BG,
-    YELLOW, blend, fmt_tokens, pad, rgb,
+    CODE_BG, CODE_COMMENT, CODE_KEYWORD, CODE_STRING, DIM, GREEN, Line, RED, Source, Span, TEXT,
+    USER_BG, YELLOW, blend, fmt_tokens, pad, rgb,
 };
 use crate::tui::{Round, ToolState};
 
@@ -141,21 +142,33 @@ fn tool_lines(name: &str, arg: &str, state: &ToolState, tail: &str) -> Vec<Line>
 
 fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
     let mut lines = Vec::new();
-    let mut fence: Option<(bool, Vec<String>)> = None;
-    for raw in text.lines() {
+    let mut fence: Option<(bool, Vec<String>, usize)> = None;
+    let mut byte = 0;
+    for raw in text.split_inclusive('\n') {
+        let offset = byte;
+        byte += raw.len();
+        let raw = raw.trim_end_matches(['\r', '\n']);
         if let Some(info) = raw.trim_start().strip_prefix("```") {
             match fence.take() {
-                Some((true, source)) => lines.extend(diagram(&source.join("\n"), width)),
-                Some((false, _)) => {}
-                None => fence = Some((info.trim().starts_with("mermaid"), Vec::new())),
+                Some((true, source, start)) => {
+                    lines.extend(diagram(&source.join("\n"), width, start..byte))
+                }
+                Some((false, _, _)) => {}
+                None => fence = Some((info.trim().starts_with("mermaid"), Vec::new(), offset)),
             }
             continue;
         }
-        if let Some((mermaid, source)) = fence.as_mut() {
+        if let Some((mermaid, source, _)) = fence.as_mut() {
             if *mermaid {
                 source.push(raw.to_string());
             } else {
-                lines.push(pad(code(raw), width, CODE_BG));
+                let mut spans = code(raw);
+                let mut source = offset;
+                for span in spans.iter_mut().skip(1) {
+                    span.source = Some(Source::Text(source..source + span.text.len()));
+                    source += span.text.len();
+                }
+                lines.push(pad(spans, width, CODE_BG));
             }
             continue;
         }
@@ -166,41 +179,49 @@ fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
                 .or_else(|| trimmed.strip_prefix("## "))
                 .or_else(|| trimmed.strip_prefix("# "))
             {
-                lines.push(vec![Span::styled(header, accent).bold()]);
+                lines.push(vec![
+                    Span::styled(header, accent)
+                        .bold()
+                        .source(offset + raw.len() - header.len()),
+                ]);
             } else if let Some(item) = trimmed
                 .strip_prefix("- ")
                 .or_else(|| trimmed.strip_prefix("* "))
             {
                 let mut line = vec![Span::styled("• ", accent)];
-                line.extend(inline(item, accent));
+                line.extend(inline(item, accent, offset + raw.len() - item.len()));
                 lines.push(line);
             } else if let Some((number, item)) = numbered(trimmed) {
                 let mut line = vec![Span::styled(format!("{number}. "), accent)];
-                line.extend(inline(item, accent));
+                line.extend(inline(item, accent, offset + raw.len() - item.len()));
                 lines.push(line);
             } else {
-                lines.push(inline(raw, accent));
+                lines.push(inline(raw, accent, offset));
             }
         }
     }
     if lines.is_empty() {
         lines.push(Vec::new());
     }
-    if let Some((true, source)) = fence {
-        lines.extend(source.iter().map(|line| pad(code(line), width, CODE_BG)));
+    if let Some((true, source, start)) = fence {
+        lines.extend(source.iter().map(|line| {
+            let mut spans = pad(code(line), width, CODE_BG);
+            for span in &mut spans {
+                span.source = Some(Source::Block(start..text.len()));
+            }
+            spans
+        }));
     }
     lines
 }
 
-fn diagram(source: &str, width: usize) -> Vec<Line> {
+fn diagram(source: &str, width: usize, range: Range<usize>) -> Vec<Line> {
     sigil_tui::widgets::mermaid_draw(source)
         .into_iter()
         .map(|line| {
-            pad(
-                vec![Span::surface(format!("  {line}"), TEXT, CODE_BG)],
-                width,
-                CODE_BG,
-            )
+            let mut span = Span::surface(format!("  {line}"), TEXT, CODE_BG);
+            span.source = Some(Source::Block(range.clone()));
+            pad(vec![span], width, CODE_BG)
         })
         .collect()
 }
@@ -228,14 +249,15 @@ pub(crate) fn numbered(line: &str) -> Option<(&str, &str)> {
     Some((&line[..digits], rest))
 }
 
-fn inline(text: &str, accent: Rgba8) -> Line {
+fn inline(text: &str, accent: Rgba8, offset: usize) -> Line {
     let mut spans = Vec::new();
     let mut plain = String::new();
-    let mut chars = text.chars().peekable();
+    let mut chars = text.char_indices().peekable();
+    let mut start = 0;
     let mut bold = false;
     let mut code = false;
-    while let Some(ch) = chars.next() {
-        let marker = (ch == '*' && chars.peek() == Some(&'*')) || ch == '`';
+    while let Some((index, ch)) = chars.next() {
+        let marker = (ch == '*' && chars.peek().is_some_and(|(_, ch)| *ch == '*')) || ch == '`';
         if marker {
             if ch == '*' {
                 chars.next();
@@ -244,8 +266,10 @@ fn inline(text: &str, accent: Rgba8) -> Line {
                 let mut span =
                     Span::styled(std::mem::take(&mut plain), if code { accent } else { TEXT });
                 span.bold = bold;
+                span.source = Some(Source::Text(offset + start..offset + index));
                 spans.push(span);
             }
+            start = index + if ch == '*' { 2 } else { 1 };
             if ch == '*' {
                 bold = !bold;
             } else {
@@ -258,6 +282,7 @@ fn inline(text: &str, accent: Rgba8) -> Line {
     if !plain.is_empty() || spans.is_empty() {
         let mut span = Span::styled(plain, if code { accent } else { TEXT });
         span.bold = bold;
+        span.source = Some(Source::Text(offset + start..offset + text.len()));
         spans.push(span);
     }
     spans

@@ -118,8 +118,13 @@ impl<P: Provider> Loop<P> {
                 .start_provider(&request.model, super::exposure(&request, &durable))
                 .map_err(super::session_err)?;
             let started = Instant::now();
-            let completion = self.seat(role).0.complete(&request);
-            let reply = self.wait(completion).await;
+            let remaining = self.remaining_time();
+            let provider = self
+                .seats
+                .get(&role)
+                .map_or(&self.provider, |(provider, _)| provider);
+            let completion = provider.stream(&request, &mut self.session.partial);
+            let reply = Self::wait(completion, remaining).await;
             match reply {
                 Ok(message) => {
                     return Ok(Some((
@@ -243,7 +248,7 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    fn remaining_time(&self) -> Option<Duration> {
+    pub(super) fn remaining_time(&self) -> Option<Duration> {
         let limit = self.budget.max_secs?.saturating_mul(1_000);
         Some(Duration::from_millis(
             limit.saturating_sub(self.session.replay().elapsed_millis),
@@ -251,13 +256,13 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) async fn wait<F>(
-        &self,
         completion: F,
+        remaining: Option<Duration>,
     ) -> std::result::Result<AssistantMessage, WaitError>
     where
         F: Future<Output = Result<AssistantMessage>> + Send,
     {
-        if let Some(remaining) = self.remaining_time() {
+        if let Some(remaining) = remaining {
             tokio::time::timeout(remaining, completion)
                 .await
                 .map_err(|_elapsed| WaitError::Deadline(remaining))?

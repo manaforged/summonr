@@ -4,6 +4,25 @@ use crate::durable::log::{self, Line, Log};
 use crate::error::Result;
 
 #[test]
+fn displayed_session_suffix_resolves_and_collisions_require_more_digits() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let first = SessionId::from_u128(0x1234504bd1);
+    let path = log::session_path(home.path(), first);
+    Log::create(&path)?;
+    assert_eq!(catalog::resolve_in(home.path(), "04bd1")?, path);
+    assert_eq!(catalog::resolve_in(home.path(), "12345")?, path);
+    let missing = catalog::resolve_in(home.path(), "missing").expect_err("missing session");
+    assert!(missing.to_string().contains("no session"));
+    let second = SessionId::from_u128(0x6789004bd1);
+    Log::create(&log::session_path(home.path(), second))?;
+    let error = catalog::resolve_in(home.path(), "04bd1").expect_err("suffix collision");
+    assert!(error.to_string().contains("ambiguous"));
+    assert_eq!(catalog::resolve_in(home.path(), &first.to_string())?, path);
+    assert_eq!(catalog::resolve_in(home.path(), "504bd1")?, path);
+    Ok(())
+}
+
+#[test]
 fn prompt_search_reads_original_text_across_sessions_and_skips_worker_inputs() -> Result<()> {
     let home = tempfile::tempdir()?;
     let mut ids = Vec::new();

@@ -1,4 +1,6 @@
 use sigil::prelude::*;
+use sigil_tui::cell_width;
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
 use super::canvas::{BASE, CYAN, Cell, DIM, GREEN, RED, TEXT};
@@ -534,7 +536,7 @@ fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width];
     if width > 1 {
         cells[0] = Cell {
-            ch: '│',
+            text: "│".into(),
             fg: DIM,
             bg: BASE,
             bold: false,
@@ -543,18 +545,27 @@ fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
     }
     let mut slot = 2;
     for (text, color) in spans {
-        for ch in text.chars() {
-            if slot >= width {
+        for grapheme in text.graphemes(true) {
+            let step = cell_width(grapheme);
+            if slot >= width || slot.saturating_add(step) > width {
                 return cells;
             }
+            if step == 0 {
+                continue;
+            }
             cells[slot] = Cell {
-                ch,
+                text: grapheme.into(),
                 fg: *color,
                 bg: BASE,
                 bold: false,
                 italic: false,
             };
-            slot += 1;
+            let continuation = Cell {
+                text: "".into(),
+                ..cells[slot].clone()
+            };
+            cells[slot + 1..slot + step].fill(continuation);
+            slot += step;
         }
     }
     if let Some(col) = caret

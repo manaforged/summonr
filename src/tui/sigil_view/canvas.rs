@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
 use sigil::prelude::*;
+use smol_str::SmolStr;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Metrics {
@@ -31,9 +32,9 @@ pub(super) const GREEN: Rgba8 = rgb(80, 200, 120);
 pub(super) const RED: Rgba8 = rgb(225, 95, 95);
 pub(super) const CYAN: Rgba8 = rgb(90, 200, 220);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(super) struct Cell {
-    pub(super) ch: char,
+    pub(super) text: SmolStr,
     pub(super) fg: Rgba8,
     pub(super) bg: Rgba8,
     pub(super) bold: bool,
@@ -43,7 +44,7 @@ pub(super) struct Cell {
 impl Cell {
     pub(super) const fn blank() -> Self {
         Self {
-            ch: ' ',
+            text: SmolStr::new_inline(" "),
             fg: TEXT,
             bg: BASE,
             bold: false,

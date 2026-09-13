@@ -86,7 +86,7 @@ impl<P: Provider> Loop<P> {
             .map_err(super::session_err)?;
         let started = Instant::now();
         let completion = self.seat(workflow::Role::Summary).0.complete(&request);
-        let reply = match self.wait(completion).await {
+        let reply = match Self::wait(completion, self.remaining_time()).await {
             Ok(reply) => reply,
             Err(wait_error) => {
                 let millis = wait_error.millis(started);
@@ -236,9 +236,11 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config(reason));
         }
         let started = Instant::now();
-        let reply = self
-            .wait(self.seat(workflow::Role::Summary).0.complete(&request))
-            .await;
+        let reply = Self::wait(
+            self.seat(workflow::Role::Summary).0.complete(&request),
+            self.remaining_time(),
+        )
+        .await;
         let reply = match reply {
             Ok(reply) => reply,
             Err(wait_error) => {

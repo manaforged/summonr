@@ -102,7 +102,7 @@ fn help_lists_the_live_composer_bindings() {
         "hotkeys are editable",
         "twice on an empty draft quits",
         "!cmd",
-        "alt+↑",
+        "ctrl+q",
     ] {
         assert!(help.contains(binding), "missing `{binding}` in:\n{help}");
     }

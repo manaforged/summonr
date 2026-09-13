@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::Round;
+use sigil_tui::{CellWidth, cell_width, set_cell_width};
 
 #[test]
 fn splash_is_one_compact_terminal_composition() {
@@ -128,7 +129,44 @@ fn focused_splash_prompt_keeps_visible_chrome() {
 }
 
 #[test]
+fn composer_preserves_graphemes_and_its_right_border() {
+    for mode in [
+        CellWidth::Unicode,
+        CellWidth::Scalar {
+            joiner: 1,
+            nonjoiner: 1,
+            keycap: 1,
+        },
+    ] {
+        set_cell_width(mode);
+        for symbol in ["👍🏽", "e\u{301}", "👩\u{200d}💻", "🇳🇿", "1️⃣", "a\u{200c}"]
+        {
+            sigil::reactive::Runtime::scope("summoner-composer-graphemes", || {
+                let (cmd, _rx) = unbounded_channel();
+                let app = App::new(info(), PathBuf::from("."), cmd);
+                app.resize(40, 12);
+                app.replace(format!("A{symbol}B"));
+                app.refresh();
+                let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(app)), 40, 12, &[])
+                    .expect("composer frame");
+                let input = frame.lines().nth(9).expect("input row");
+                assert!(input.contains(&format!("A{symbol}B▌")), "{frame}");
+                assert!(input.ends_with(" │"), "{frame}");
+                assert_eq!(cell_width(input), 38, "{frame}");
+                let width = cell_width(symbol) + 3;
+                let shown =
+                    chat::draft_view(&format!("hidden words {symbol}B"), usize::MAX, width, '▌');
+                assert!(shown.ends_with(&format!("{symbol}B▌")), "{shown}");
+                assert!(cell_width(shown.as_str()) <= width, "{shown}");
+            });
+        }
+    }
+    set_cell_width(CellWidth::Unicode);
+}
+
+#[test]
 fn composer_keeps_the_caret_and_current_line_visible() {
+    assert_eq!(chat::draft_view("abcdefx", 6, 6, '▌'), "…def▌x");
     sigil::reactive::Runtime::scope("mage-composer-draft-viewport-test", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
@@ -155,12 +193,15 @@ fn composer_keeps_the_caret_and_current_line_visible() {
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         let input = frame.lines().nth(9).unwrap_or_default();
         assert!(
-            input.contains("↵ current line▌"),
+            input.contains("current line▌"),
             "current line missing:\n{frame}"
         );
         assert!(
-            !input.contains("first line"),
-            "previous line leaked:\n{frame}"
+            frame
+                .lines()
+                .nth(8)
+                .is_some_and(|line| line.contains("first line")),
+            "previous draft line missing:\n{frame}"
         );
     });
 }
@@ -327,8 +368,8 @@ fn chat_chrome_keeps_a_horizontal_gutter() {
 }
 
 #[test]
-fn narrow_chat_keeps_the_complete_busy_status() {
-    sigil::reactive::Runtime::scope("mage-narrow-status-test", || {
+fn busy_footer_keeps_usage_visible() {
+    sigil::reactive::Runtime::scope("mage-busy-usage-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut start = info();
         start.workspace = "/home/user/dev/project".to_string();
@@ -337,49 +378,39 @@ fn narrow_chat_keeps_the_complete_busy_status() {
             let mut model = app.model.borrow_mut();
             model.busy_since = Some((Activity::Turn, Instant::now()));
             model.rounds = 2;
+            model.snapshot.context_window = Some(128_000);
+            model.usage.push(Round {
+                prompt: 32_000,
+                completion: 0,
+                reasoning: 0,
+                cached: 16_000,
+                prefix_hash: String::new(),
+                cost: None,
+            });
+            model.prompt_tokens = 32_000;
+            model.cached_tokens = 16_000;
+            model.live_tool = Some(("run_command".to_string(), "cargo check".to_string()));
         }
-        app.resize(40, 12);
+        app.resize(100, 12);
         app.refresh();
         let tree = app.clone();
-        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 40, 12, &[])
+        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 12, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
 
         let status = frame.lines().last().unwrap_or_default();
         assert!(
-            status.contains("working · r2 · "),
-            "busy status was clipped:\n{frame}"
+            status.contains("ctx 32.0k / 128.0k · 25% used"),
+            "busy footer hid context usage:\n{frame}"
         );
         assert!(
-            status.ends_with('s'),
-            "busy elapsed time was clipped:\n{frame}"
+            status.contains("50% cached"),
+            "busy footer hid cache usage:\n{frame}"
         );
-    });
-}
-
-#[test]
-fn narrow_busy_status_keeps_time_ahead_of_tool_detail() {
-    sigil::reactive::Runtime::scope("mage-narrow-tool-status-test", || {
-        let (cmd, _rx) = unbounded_channel();
-        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
-        {
-            let mut model = app.model.borrow_mut();
-            model.busy_since = Some((Activity::Turn, Instant::now()));
-            model.rounds = 3;
-            model.live_tool = Some((
-                "run_command".to_string(),
-                "a deliberately long command that cannot fit".to_string(),
-            ));
-        }
-        app.resize(40, 12);
-        app.refresh();
-        let tree = app.clone();
-        let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 40, 12, &[])
-            .unwrap_or_else(|error| panic!("layout failed: {error}"));
-        let status = frame.lines().last().unwrap_or_default();
         assert!(
-            status.contains("working · r3 · 0s"),
-            "core status missing:\n{frame}"
+            !status.contains("working") && !status.contains("run_command"),
+            "busy footer duplicated activity:\n{frame}"
         );
+        assert!(frame.contains("run_command cargo check"), "{frame}");
     });
 }
 

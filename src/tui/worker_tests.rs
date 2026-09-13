@@ -3,10 +3,82 @@ use std::time::Duration;
 
 use base64::Engine;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpStream;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::*;
+use crate::Event;
 use crate::prefs::Prefs;
+
+#[tokio::test]
+async fn interrupted_streams_survive_cancel_shutdown_and_resume() {
+    for quit in [false, true] {
+        let (mut worker, tx, mut ui, workspace) = worker_ui();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        let cancel = tx.clone();
+        worker.loop_.set_provider(
+            Client::new("", format!("http://{address}/v1"))
+                .expect("provider")
+                .on_delta(move |_| {
+                    cancel
+                        .send(if quit { Cmd::Quit } else { Cmd::Cancel })
+                        .expect("interrupt");
+                }),
+            "test",
+        );
+        let path = worker.loop_.session_path().to_path_buf();
+        let server = async {
+            let (mut connection, _) = listener.accept().await.expect("request");
+            let mut bytes = [0; 8192];
+            assert!(connection.read(&mut bytes).await.expect("request bytes") > 0);
+            let body = "data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"unfinished thought\",\"content\":\"Useful partial answer 👍🏽\",\"tool_calls\":[{\"index\":0,\"id\":\"unfinished\",\"type\":\"function\",\"function\":{\"name\":\"run_command\",\"arguments\":\"{\"}}]}}]}\n\n";
+            connection.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{body}\r\n", body.len()).as_bytes()).await.expect("partial SSE");
+            while connection
+                .read(&mut bytes)
+                .await
+                .expect("connection closes")
+                != 0
+            {}
+        };
+        let (running, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(worker.turn("long answer".into()), server)
+        })
+        .await
+        .expect("bounded interruption");
+        assert_eq!(running, !quit);
+        let lines = crate::durable::log::read(&path).expect("journal");
+        assert_eq!(lines.iter().filter(|line| matches!(line, crate::durable::log::Line::Interrupted { text, reasoning } if text == "Useful partial answer 👍🏽" && reasoning == "unfinished thought")).count(), 1);
+        worker.loop_ = Loop::resume_path(
+            Client::new("", "http://localhost/v1").expect("provider"),
+            "test",
+            &workspace,
+            "system",
+            &path,
+        )
+        .expect("resume");
+        let replay = worker.loop_.replay_session();
+        let answer = replay
+            .history
+            .iter()
+            .find(|message| message.content == "Useful partial answer 👍🏽")
+            .expect("partial context");
+        assert!(answer.tool_calls.is_empty());
+        assert!(answer.reasoning.is_none());
+        while ui.try_recv().is_ok() {}
+        worker.replay();
+        let restored: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
+        assert!(restored.iter().any(|msg| matches!(msg, Msg::Event(Event::Assistant { text }) if text == "Useful partial answer 👍🏽")));
+        assert!(
+            restored.iter().any(
+                |msg| matches!(msg, Msg::System(text) if text == "Partial answer · interrupted")
+            )
+        );
+        std::fs::remove_dir_all(workspace).expect("workspace");
+    }
+}
 
 fn worker() -> (Worker, UnboundedSender<Cmd>, PathBuf) {
     let (worker, tx, _ui, workspace) = worker_ui();
@@ -87,6 +159,10 @@ async fn cancelled_login_stops_polling_and_returns_pending_input() {
                 "--exact",
             ])
             .env_clear()
+            .envs(std::env::vars_os().filter(|(name, _)| {
+                name.to_str()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("SystemRoot"))
+            }))
             .env(CASE, "1")
             .env("MAGE_HOME", home.path())
             .status()
@@ -299,8 +375,7 @@ async fn failed_turn_returns_a_followup_instead_of_sending_it() {
     );
     let response = async {
         let (mut connection, _) = listener.accept().await.expect("active request");
-        let mut bytes = [0_u8; 4096];
-        assert!(connection.read(&mut bytes).await.expect("request") > 0);
+        drop(request(&mut connection).await);
         tx.send(Cmd::Queue("keep this followup".into()))
             .expect("followup");
         tx.send(Cmd::SetVerify(false)).expect("next command");
@@ -321,6 +396,35 @@ async fn failed_turn_returns_a_followup_instead_of_sending_it() {
     assert_eq!(pending, vec![UserInput::from("keep this followup")]);
     assert!(matches!(worker.next().await, Some(Cmd::SetVerify(false))));
     std::fs::remove_dir_all(workspace).expect("scratch workspace");
+}
+
+async fn request(connection: &mut TcpStream) -> serde_json::Value {
+    let mut bytes = Vec::new();
+    let (offset, length) = loop {
+        let mut chunk = [0; 4096];
+        let read = connection.read(&mut chunk).await.expect("headers");
+        assert!(read > 0);
+        bytes.extend_from_slice(&chunk[..read]);
+        if let Some(end) = bytes.windows(4).position(|chunk| chunk == b"\r\n\r\n") {
+            let headers = String::from_utf8_lossy(&bytes[..end]);
+            let length: usize = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse().expect("length"))
+                })
+                .expect("body length");
+            break (end + 4, length);
+        }
+    };
+    while bytes.len() < offset + length {
+        let mut chunk = [0; 4096];
+        let read = connection.read(&mut chunk).await.expect("body");
+        assert!(read > 0);
+        bytes.extend_from_slice(&chunk[..read]);
+    }
+    serde_json::from_slice(&bytes[offset..offset + length]).expect("JSON request")
 }
 
 #[tokio::test]
@@ -358,35 +462,7 @@ async fn retry_preserves_the_original_request_images_and_completed_tool_results(
         let mut requests = Vec::new();
         for (status, body) in responses {
             let (mut connection, _) = listener.accept().await.expect("request");
-            let mut bytes = Vec::new();
-            let (offset, length) = loop {
-                let mut chunk = [0; 4096];
-                let read = connection.read(&mut chunk).await.expect("headers");
-                assert!(read > 0);
-                bytes.extend_from_slice(&chunk[..read]);
-                if let Some(end) = bytes.windows(4).position(|chunk| chunk == b"\r\n\r\n") {
-                    let headers = String::from_utf8_lossy(&bytes[..end]);
-                    let length: usize = headers
-                        .lines()
-                        .find_map(|line| {
-                            let (name, value) = line.split_once(':')?;
-                            name.eq_ignore_ascii_case("content-length")
-                                .then(|| value.trim().parse().expect("length"))
-                        })
-                        .expect("body length");
-                    break (end + 4, length);
-                }
-            };
-            while bytes.len() < offset + length {
-                let mut chunk = [0; 4096];
-                let read = connection.read(&mut chunk).await.expect("body");
-                assert!(read > 0);
-                bytes.extend_from_slice(&chunk[..read]);
-            }
-            requests.push(
-                serde_json::from_slice::<serde_json::Value>(&bytes[offset..offset + length])
-                    .expect("JSON request"),
-            );
+            requests.push(request(&mut connection).await);
             let body = body.to_string();
             let response = format!(
                 "HTTP/1.1 {status}\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{body}",
@@ -801,7 +877,7 @@ async fn startup_replays_saved_conversation_and_tool_results() {
 #[tokio::test]
 async fn a_double_bang_runs_locally_without_a_provider_round() {
     let (mut worker, _tx, mut ui, workspace) = worker_ui();
-    assert!(worker.submit("!!printf local-ok".into()).await);
+    assert!(worker.submit("!!echo local-ok".into()).await);
     let messages: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
     assert!(
         messages

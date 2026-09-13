@@ -218,6 +218,73 @@ fn clicking_transcript_text_preserves_typing_and_paste_focus() {
 }
 
 #[test]
+fn native_pastes_show_small_drafts_and_fold_at_eight_lines() {
+    for lines in [6, 8] {
+        sigil::reactive::Runtime::scope("summoner-native-paste", || {
+            let (cmd, mut rx) = unbounded_channel();
+            let app = App::new(info(), PathBuf::from("."), cmd);
+            app.resize(80, 24);
+            let mut terminal = ManuallyDrop::new(Terminal {
+                paste: Default::default(),
+                out: BufWriter::new(stdout()),
+                focused: true,
+                redraw: false,
+                anchor: None,
+                selection: None,
+            });
+            sigil_tui::widgets::install(super::Paste {
+                text: terminal.paste.clone(),
+                copy: app.copy,
+            });
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(80, 24);
+            screen
+                .frame(&mut host, &mut router, [], (80, 24))
+                .expect("chat");
+            router.focus_next(host.cx());
+            let text: String = (1..=lines)
+                .map(|index| format!("paste line {index}\r"))
+                .collect();
+            let mut incoming = Vec::new();
+            read_event(
+                Event::Paste(text.clone()),
+                &mut incoming,
+                &mut Point::new(0.0, 0.0),
+                &mut screen,
+                &mut terminal,
+                &app,
+            )
+            .expect("native paste");
+            let frame = screen
+                .frame(&mut host, &mut router, incoming, (80, 24))
+                .expect("draft");
+            if lines == 6 {
+                for index in 1..=6 {
+                    assert!(
+                        frame.text().contains(&format!("paste line {index}")),
+                        "{}",
+                        frame.text()
+                    );
+                }
+            } else {
+                assert!(
+                    frame.text().contains("[pasted 8 lines #1]"),
+                    "{}",
+                    frame.text()
+                );
+            }
+            app.submit();
+            assert!(
+                matches!(rx.try_recv(), Ok(crate::tui::Cmd::Submit(input)) if input.text == text.replace('\r', "\n"))
+            );
+        });
+    }
+}
+
+#[test]
 fn paste_and_undo_target_each_open_editor() {
     for editor in ["auth", "model", "workflow", "file"] {
         sigil::reactive::Runtime::scope("summoner-editor-paste", || {
@@ -414,8 +481,13 @@ fn selection_returns_mouse_control_to_the_terminal() {
     assert_eq!(mode(&input), before);
     #[cfg(unix)]
     {
-        let disabled = String::from_utf8_lossy(&bytes);
-        assert!(disabled.contains("\x1b[?1000l"), "{disabled:?}");
+        let mut terminal = vt100::Parser::default();
+        terminal.process(b"\x1b[?1002h\x1b[?1006h");
+        terminal.process(&bytes);
+        assert_eq!(
+            terminal.screen().mouse_protocol_mode(),
+            vt100::MouseProtocolMode::None
+        );
     }
 
     bytes.clear();
@@ -427,8 +499,26 @@ fn selection_returns_mouse_control_to_the_terminal() {
     }
     #[cfg(unix)]
     {
-        let enabled = String::from_utf8_lossy(&bytes);
-        assert!(enabled.contains("\x1b[?1000h"), "{enabled:?}");
+        let mut terminal = vt100::Parser::default();
+        for _ in 0..2 {
+            terminal.process(&bytes);
+            assert_eq!(
+                terminal.screen().mouse_protocol_mode(),
+                vt100::MouseProtocolMode::ButtonMotion,
+                "wheel, button, and drag reporting must remain enabled"
+            );
+            assert_eq!(
+                terminal.screen().mouse_protocol_encoding(),
+                vt100::MouseProtocolEncoding::Sgr
+            );
+            let mut disabled = Vec::new();
+            mouse(&mut disabled, true).expect("release mouse capture");
+            terminal.process(&disabled);
+            assert_eq!(
+                terminal.screen().mouse_protocol_mode(),
+                vt100::MouseProtocolMode::None
+            );
+        }
     }
 }
 

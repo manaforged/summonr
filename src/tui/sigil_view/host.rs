@@ -25,7 +25,7 @@ use sigil::clipboard::OsClipboard;
 use sigil::prelude::{Cx, Signal};
 use sigil_hal::{Point, ShellEvent};
 use sigil_tui::widgets::{ClipError, Clipboard, install};
-use sigil_tui::{EventRouter, Grid, Host, Screen};
+use sigil_tui::{EventRouter, Grid, Host, Screen, calibrate};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::super::{Cmd, Exit, Info, Msg, worker};
@@ -100,6 +100,11 @@ pub(super) fn start_tick(tx: UnboundedSender<Cmd>) {
 fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     guard();
     let mut term = Terminal::enter()?;
+    if let Err(error) = calibrate(&mut term.out) {
+        app.update(Msg::System(format!(
+            "Could not measure terminal text widths: {error}"
+        )));
+    }
     install(Paste {
         text: term.paste.clone(),
         copy: app.copy,
@@ -269,7 +274,8 @@ fn read_event(
                     if !app.options_active()
                         && !app.splash.peek()
                         && mouse.column < app.chat_cols()
-                        && mouse.row < super::chat::prompt_row(app.viewport.peek().1) =>
+                        && mouse.row
+                            < super::chat::prompt_row(app.viewport.peek().1, &app.draft.peek()) =>
                 {
                     term.deselect(screen);
                     term.anchor = Some((mouse.column, mouse.row));
@@ -303,6 +309,7 @@ fn read_event(
             incoming.extend(sigil_tui::map_mouse(&mouse, Host::CELL, pointer));
         }
         TermEvent::Paste(text) => {
+            let text = text.replace("\r\n", "\n").replace('\r', "\n");
             term.deselect(screen);
             if app.pane_active().is_some() && !app.options_active() {
                 app.focus_pane(false);
@@ -370,11 +377,10 @@ impl Terminal {
             selection: None,
         };
         enable_raw_mode()?;
+        execute!(terminal.out, EnterAlternateScreen)?;
+        mouse(&mut terminal.out, false)?;
         execute!(
             terminal.out,
-            EnterAlternateScreen,
-            EnableMouseCapture,
-            Print(NO_MOTION),
             EnableBracketedPaste,
             EnableFocusChange,
             cursor::Hide
@@ -466,13 +472,13 @@ impl Terminal {
     }
 }
 
-const NO_MOTION: &str = "\x1b[?1003l";
+const DRAG: &str = "\x1b[?1003l\x1b[?1002h";
 
 fn mouse(out: &mut impl Write, selecting: bool) -> std::io::Result<()> {
     if selecting {
         queue!(out, DisableMouseCapture)?;
     } else {
-        queue!(out, EnableMouseCapture, Print(NO_MOTION))?;
+        queue!(out, EnableMouseCapture, Print(DRAG))?;
     }
     out.flush()
 }

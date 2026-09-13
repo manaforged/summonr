@@ -57,7 +57,9 @@ pub use goal::prompt as goal_prompt;
 pub use hashline::{line_hash, tagged_text};
 pub use jobs::live as live_jobs;
 pub use prompt::{harness_section, mage_home, system_prompt, system_prompt_with};
-pub use provider::{Client, Effort, Image, Message, Price, Provider, Usage, UserInput, dollars};
+pub use provider::{
+    Client, Effort, Image, Message, Partial, Price, Provider, Usage, UserInput, dollars,
+};
 pub use runtime::{Budget, Loop, Turn};
 pub use session::{
     Replay, SessionInfo, export as export_session, last_for, list as list_sessions,

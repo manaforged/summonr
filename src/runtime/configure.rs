@@ -540,7 +540,7 @@ impl<P: Provider> Loop<P> {
             .map_err(super::session_err)?;
         let started = Instant::now();
         let completion = self.seat(workflow::Role::Judge).0.complete(&request);
-        match self.wait(completion).await {
+        match Self::wait(completion, self.remaining_time()).await {
             Ok(message) => {
                 let usage = message.usage.clone();
                 let text = message.content.unwrap_or_default();

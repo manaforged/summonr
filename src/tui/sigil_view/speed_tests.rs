@@ -7,6 +7,17 @@ fn at(base: Instant, millis: u64) -> Instant {
 }
 
 #[test]
+fn replayed_output_does_not_measure_read_speed() {
+    let base = Instant::now();
+    let mut speed = Speed::default();
+    speed.delta(400, base);
+    assert_eq!(speed.live(base), None);
+    speed.finish(100, at(base, 1));
+    speed.finish(200, at(base, 2));
+    assert_eq!(speed.last(), None);
+}
+
+#[test]
 fn live_rate_averages_the_recent_window() {
     let base = Instant::now();
     let mut speed = Speed::default();

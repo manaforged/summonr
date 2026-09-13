@@ -1,8 +1,10 @@
 use sigil::prelude::*;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use sigil_tui::cell_width;
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
 use super::canvas::{BASE, CYAN, Cell, DIM, GRAY, GREEN, TEXT, cell as metrics, rgb};
+use super::chat::write_at;
 use super::model::Model;
 use crate::tui::short_session;
 
@@ -178,7 +180,7 @@ fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App, ticks: u64) {
         let width = menu
             .lines
             .first()
-            .map(|line| UnicodeWidthStr::width(line.as_str()) as u16)
+            .map(|line| cell_width(line.as_str()) as u16)
             .unwrap_or(0);
         clear(cells, cols, left, top, width, menu.lines.len() as u16);
         for (offset, line) in menu.lines.iter().enumerate() {
@@ -294,7 +296,7 @@ fn dim_rect(cells: &mut [Cell], cols: u16, area: [u16; 4], reset_background: boo
             let index = usize::from(row) * usize::from(cols) + usize::from(col);
             if let Some(cell) = cells.get_mut(index) {
                 let reset = rgb(0, 0, 0);
-                let fg = if reset_background && cell.ch == ' ' {
+                let fg = if reset_background && cell.text == " " {
                     reset
                 } else {
                     cell.fg
@@ -309,8 +311,8 @@ fn dim_rect(cells: &mut [Cell], cols: u16, area: [u16; 4], reset_background: boo
 
 fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgba8) {
     let mut col = x;
-    for ch in text.chars() {
-        if ch != ' ' {
+    for grapheme in text.graphemes(true) {
+        if grapheme != " " {
             let bg = cells
                 .get(usize::from(y) * usize::from(cols) + usize::from(col))
                 .map_or(BASE, |cell| cell.bg);
@@ -320,7 +322,7 @@ fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgb
                 col,
                 y,
                 Cell {
-                    ch,
+                    text: grapheme.into(),
                     fg: color,
                     bg,
                     bold: false,
@@ -328,7 +330,7 @@ fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgb
                 },
             );
         }
-        col = col.saturating_add(UnicodeWidthChar::width(ch).unwrap_or(0) as u16);
+        col = col.saturating_add(cell_width(grapheme) as u16);
     }
 }
 
@@ -362,8 +364,7 @@ fn prompt(
     let border = if busy { accent } else { GRAY };
     let right_width = usize::from(width).saturating_sub(6 + mode.len());
     let right = super::chat::ellipsize(&model.model, right_width);
-    let fill =
-        usize::from(width).saturating_sub(6 + mode.len() + UnicodeWidthStr::width(right.as_str()));
+    let fill = usize::from(width).saturating_sub(6 + mode.len() + cell_width(right.as_str()));
     write(
         cells,
         cols,
@@ -383,7 +384,7 @@ fn prompt(
     write(
         cells,
         cols,
-        x + width.saturating_sub(UnicodeWidthStr::width(right.as_str()) as u16 + 2),
+        x + width.saturating_sub(cell_width(right.as_str()) as u16 + 2),
         y,
         &right,
         DIM,
@@ -431,7 +432,7 @@ fn prompt(
         let shown = super::chat::ellipsize(&status, usize::from(width));
         let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
         write(cells, cols, x, y - 1, spinner, accent);
-        let after = x.saturating_add(UnicodeWidthStr::width(spinner) as u16);
+        let after = x.saturating_add(cell_width(spinner) as u16);
         write(cells, cols, after, y - 1, rest, DIM);
     }
     let hint = super::chat::composer_hint(
@@ -440,7 +441,7 @@ fn prompt(
         &options,
         select.as_deref(),
     );
-    let dash = usize::from(width).saturating_sub(UnicodeWidthStr::width(hint.as_str()) + 2);
+    let dash = usize::from(width).saturating_sub(cell_width(hint.as_str()) + 2);
     write(
         cells,
         cols,
@@ -454,23 +455,14 @@ fn prompt(
 }
 
 fn write(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgba8) {
-    let mut col = x;
-    for ch in text.chars() {
-        set(
-            cells,
-            cols,
-            col,
-            y,
-            Cell {
-                ch,
-                fg: color,
-                bg: BASE,
-                bold: false,
-                italic: false,
-            },
-        );
-        col = col.saturating_add(UnicodeWidthChar::width(ch).unwrap_or(0) as u16);
-    }
+    write_at(
+        cells,
+        usize::from(cols),
+        usize::from(x),
+        usize::from(y),
+        text,
+        color,
+    );
 }
 
 fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
@@ -494,12 +486,20 @@ fn scene_row(cells: &[Cell]) -> NodeBuilder {
     );
     let mut start = 0;
     while start < cells.len() {
-        let cell = cells[start];
+        let cell = &cells[start];
         let mut end = start + 1;
-        while end < cells.len() && cells[end] == cell {
+        while end < cells.len()
+            && cells[end].fg == cell.fg
+            && cells[end].bg == cell.bg
+            && cells[end].bold == cell.bold
+            && cells[end].italic == cell.italic
+        {
             end += 1;
         }
-        let text: String = std::iter::repeat_n(cell.ch, end - start).collect();
+        let text: String = cells[start..end]
+            .iter()
+            .map(|cell| cell.text.as_str())
+            .collect();
         let surface = Style::new().bg(cell.bg);
         let ink = Style::new().text_color(ColorAtom::Rgba8(cell.fg));
         let class = if cell.bold {
@@ -542,7 +542,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                 x,
                 y,
                 Cell {
-                    ch: if bright { '✦' } else { '·' },
+                    text: if bright { "✦" } else { "·" }.into(),
                     fg: if bright { STAR_BRIGHT } else { STAR_DIM },
                     bg: BASE,
                     bold: false,
@@ -562,10 +562,10 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
             if x < 0.0 || y < 0.0 || x >= f32::from(cols) || y >= f32::from(rows) {
                 continue;
             }
-            let (ch, fg) = match step {
-                0 => ('✦', STAR_BRIGHT),
-                1 => ('·', STAR_MID),
-                _ => ('·', STAR_DIM),
+            let (text, fg) = match step {
+                0 => ("✦", STAR_BRIGHT),
+                1 => ("·", STAR_MID),
+                _ => ("·", STAR_DIM),
             };
             set(
                 &mut cells,
@@ -573,7 +573,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                 x as u16,
                 y as u16,
                 Cell {
-                    ch,
+                    text: text.into(),
                     fg,
                     bg: BASE,
                     bold: false,
@@ -620,7 +620,7 @@ fn fantasy(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
     for y in 0..rows {
         for x in 0..cols {
             cells.push(Cell {
-                ch: '▀',
+                text: "▀".into(),
                 fg: pixel(&pixels, cols, x, y * 2),
                 bg: pixel(&pixels, cols, x, y * 2 + 1),
                 bold: false,

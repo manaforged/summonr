@@ -49,7 +49,7 @@ impl<P: Provider> Loop<P> {
                 .map_err(super::session_err)?;
             let started = Instant::now();
             let completion = self.seat(role).0.complete(&request);
-            let assistant = match self.wait(completion).await {
+            let assistant = match Self::wait(completion, self.remaining_time()).await {
                 Ok(assistant) => assistant,
                 Err(wait_error) => {
                     let millis = wait_error.millis(started);

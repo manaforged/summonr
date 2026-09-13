@@ -1,5 +1,6 @@
 use sigil::prelude::*;
-use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
+use sigil_tui::cell_width;
+use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
 use crate::tui::matching_commands;
@@ -161,7 +162,11 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     let [left, prompt, anchor_width] = if splash {
         super::scene::prompt_area(app, cols, rows)
     } else {
-        [2, super::chat::prompt_row(rows), cols.saturating_sub(4)]
+        [
+            2,
+            super::chat::prompt_row(rows, &draft),
+            cols.saturating_sub(4),
+        ]
     };
     let composer = 3_u16;
     let below = splash && rows > prompt.saturating_add(composer).saturating_add(2);
@@ -208,9 +213,7 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
 fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
     let widest = matches
         .iter()
-        .map(|(name, description)| {
-            UnicodeWidthStr::width(name.as_str()) + UnicodeWidthStr::width(description.as_str()) + 7
-        })
+        .map(|(name, description)| cell_width(name.as_str()) + cell_width(description.as_str()) + 7)
         .max()
         .unwrap_or(MIN_WIDTH);
     widest.max(MIN_WIDTH).min(viewport.saturating_sub(4).max(1))
@@ -220,25 +223,25 @@ fn row(name: &str, description: &str, width: usize, selected: bool) -> String {
     let marker = if selected { '›' } else { ' ' };
     let inner = width.saturating_sub(4);
     let name = fit(name, inner);
-    let name_width = UnicodeWidthStr::width(name.as_str());
+    let name_width = cell_width(name.as_str());
     let available = inner.saturating_sub(name_width + 2);
     let help = fit(description, available);
-    let gap = inner.saturating_sub(name_width + UnicodeWidthStr::width(help.as_str()));
+    let gap = inner.saturating_sub(name_width + cell_width(help.as_str()));
     format!("│{marker} {name}{}{help}│", " ".repeat(gap))
 }
 
 fn border(label: &str, width: usize, top: bool) -> String {
     let (left, right) = if top { ('╭', '╮') } else { ('╰', '╯') };
     let label = fit(label, width.saturating_sub(4));
-    let fill = width.saturating_sub(UnicodeWidthStr::width(label.as_str()) + 3);
+    let fill = width.saturating_sub(cell_width(label.as_str()) + 3);
     format!("{left}─{label}{}{right}", "─".repeat(fill))
 }
 
 fn fit(text: &str, width: usize) -> String {
     let mut used = 0;
-    text.chars()
-        .take_while(|ch| {
-            let next = used + UnicodeWidthChar::width(*ch).unwrap_or(0);
+    text.graphemes(true)
+        .take_while(|grapheme| {
+            let next = used + cell_width(grapheme);
             if next > width {
                 return false;
             }

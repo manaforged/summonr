@@ -13,7 +13,7 @@ fn rendered() -> Grid {
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(40, 12);
         app.model.borrow_mut().entries.push(Entry::Assistant {
-            text: "café 日本語\nsecond line".to_string(),
+            text: "café 日本語\nsecond line\nA👍🏽 e\u{301} 👩\u{200d}💻 🇳🇿B".to_string(),
             done: true,
         });
         app.refresh();
@@ -24,6 +24,21 @@ fn rendered() -> Grid {
             .expect("render transcript")
             .clone()
     })
+}
+
+#[test]
+fn copying_rendered_graphemes_preserves_the_original_text() {
+    let mut selected = Selection::new(rendered(), 40, 2, 3);
+    selected.move_to(13, 3);
+    let expected = "A👍🏽 e\u{301} 👩\u{200d}💻 🇳🇿B";
+    assert_eq!(selected.text().as_deref(), Some(expected));
+    let mut output = Vec::new();
+    selected.paint(&mut output).expect("highlight graphemes");
+    assert!(
+        String::from_utf8(output)
+            .expect("terminal bytes")
+            .contains(expected)
+    );
 }
 
 #[test]

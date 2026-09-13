@@ -55,37 +55,73 @@ impl Diff {
     }
 }
 
-#[must_use]
-pub fn base(root: &Path) -> String {
-    worktree::list(root)
-        .ok()
-        .and_then(|trees| trees.into_iter().find(|tree| tree.path == root))
-        .map_or_else(|| "HEAD".to_string(), |tree| tree.base)
+fn base(root: &Path) -> Result<Option<String>> {
+    let base = worktree::list(root)?
+        .into_iter()
+        .find(|tree| tree.path == root)
+        .map_or_else(|| "HEAD".to_string(), |tree| tree.base);
+    match git(root, &["rev-parse", "--verify", &base]) {
+        Ok(_) => Ok(Some(base)),
+        Err(error) => {
+            if base == "HEAD" && initial(root)? {
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn initial(root: &Path) -> Result<bool> {
+    Ok(git(
+        root,
+        &[
+            "status",
+            "--porcelain=v2",
+            "--branch",
+            "--untracked-files=no",
+        ],
+    )?
+    .lines()
+    .any(|line| line == "# branch.oid (initial)"))
+}
+
+fn reference(root: &Path, base: Option<&str>) -> Result<String> {
+    match base {
+        Some(base) => Ok(base.to_string()),
+        None => git(root, &["hash-object", "-t", "tree", "--stdin"])
+            .map(|value| value.trim().to_string()),
+    }
 }
 
 pub(crate) fn snapshot(root: &Path) -> String {
     if !root.ancestors().any(|path| path.join(".git").exists()) {
         return "non-Git workspace".to_string();
     }
-    let Ok(head) = git(root, &["rev-parse", "--short=12", "HEAD"]) else {
+    let Ok(base) = base(root) else {
         return "Git state unavailable".to_string();
     };
-    let base = base(root);
+    let head = match git(root, &["rev-parse", "--short=12", "HEAD"]) {
+        Ok(head) => head.trim().to_string(),
+        Err(_) if base.is_none() || initial(root).unwrap_or(false) => "no commits".to_string(),
+        Err(_) => return "Git state unavailable".to_string(),
+    };
+    let base = base.as_deref().unwrap_or("empty tree");
     match stats(root) {
         Ok(diff) if diff.files.is_empty() => {
-            format!("{} ({}), worktree clean", head.trim(), short(&base))
+            format!("{head} ({}), worktree clean", short(base))
         }
         Ok(diff) => format!(
             "{} ({}), {} file{} dirty",
-            head.trim(),
-            short(&base),
+            head,
+            short(base),
             diff.files.len(),
             if diff.files.len() == 1 { "" } else { "s" }
         ),
         Err(error) => format!(
             "{} ({}), worktree state unavailable: {error}",
-            head.trim(),
-            short(&base)
+            head,
+            short(base)
         ),
     }
 }
@@ -95,27 +131,39 @@ fn short(value: &str) -> &str {
 }
 
 pub fn stats(root: &Path) -> Result<Diff> {
-    let base = base(root);
-    let numstat = git(root, &["diff", "--numstat", "--no-renames", &base, "--"])?;
+    let base = base(root)?;
+    let reference = reference(root, base.as_deref())?;
+    let numstat = git(
+        root,
+        &["diff", "--numstat", "--no-renames", &reference, "--"],
+    )?;
     let mut files: Vec<Stat> = numstat.lines().filter_map(numstat_row).collect();
     let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
     for path in untracked.split('\0').filter(|path| !path.is_empty()) {
-        let added = std::fs::read(root.join(path))
-            .map(|bytes| bytes.iter().filter(|byte| **byte == b'\n').count() as u32)
-            .unwrap_or(0);
-        files.push(Stat {
-            path: path.to_string(),
-            added,
-            removed: 0,
-            new: true,
-        });
+        let mut stat = if path.ends_with('/') {
+            Stat::default()
+        } else {
+            let text = git(
+                root,
+                &["diff", "--no-index", "--numstat", "--", "/dev/null", path],
+            )?;
+            text.lines()
+                .find_map(numstat_row)
+                .ok_or_else(|| Error::Config(format!("git returned no line counts for {path}")))?
+        };
+        stat.path = path.to_string();
+        stat.new = true;
+        files.push(stat);
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(Diff { base, files })
+    Ok(Diff {
+        base: base.unwrap_or_else(|| "empty tree".to_string()),
+        files,
+    })
 }
 
 pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
-    let base = base(root);
+    let base = reference(root, base(root)?.as_deref())?;
     let mut args = vec!["diff", "--no-color", "--no-renames", base.as_str(), "--"];
     if let Some(path) = path {
         args.push(path);
@@ -126,30 +174,41 @@ pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
         .split('\0')
         .filter(|file| !file.is_empty() && path.is_none_or(|path| path == *file))
     {
-        let output = Command::new("git")
-            .arg("-C")
-            .arg(root)
-            .args(["diff", "--no-color", "--no-index", "--", "/dev/null", file])
-            .output()?;
-        text.push_str(&String::from_utf8_lossy(&output.stdout));
+        if file.ends_with('/') {
+            if path.is_some() {
+                return Err(Error::Config(format!(
+                    "open {file} as a separate workspace to inspect its changes"
+                )));
+            }
+            continue;
+        }
+        text.push_str(&git(
+            root,
+            &["diff", "--no-index", "--no-color", "--", "/dev/null", file],
+        )?);
     }
     Ok(text)
 }
 
 pub fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
-    let tracked = !git(root, &["ls-files", "--", path])?.trim().is_empty();
-    if !tracked {
-        let lines = std::fs::read_to_string(root.join(path))
-            .map(|text| text.lines().count())
-            .unwrap_or(0);
-        return Ok(if lines == 0 {
-            Vec::new()
-        } else {
-            vec![(1, lines)]
-        });
-    }
-    let base = base(root);
-    let text = git(root, &["diff", "-U0", "--no-color", &base, "--", path])?;
+    let tracked = !git(root, &["ls-files", "-z", "--", path])?.is_empty();
+    let text = if tracked {
+        let base = reference(root, base(root)?.as_deref())?;
+        git(root, &["diff", "-U0", "--no-color", &base, "--", path])?
+    } else {
+        git(
+            root,
+            &[
+                "diff",
+                "--no-index",
+                "-U0",
+                "--no-color",
+                "--",
+                "/dev/null",
+                path,
+            ],
+        )?
+    };
     Ok(text.lines().filter_map(hunk_header).collect())
 }
 
@@ -228,7 +287,10 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
         .arg(root)
         .args(args)
         .output()?;
-    if !output.status.success() {
+    let different = args.starts_with(&["diff", "--no-index"])
+        && output.status.code() == Some(1)
+        && !output.stdout.is_empty();
+    if !output.status.success() && !different {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(Error::Config(format!(
             "git {} failed: {}",

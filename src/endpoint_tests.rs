@@ -48,13 +48,18 @@ fn environment_key_scopes_are_isolated() {
                 assert_ne!(named.base_url, endpoint.base_url);
                 assert!(named.api_key.is_none());
             }
+            "muse" => {
+                let endpoint = fill_key(builtin("muse").expect("muse preset"), false)
+                    .expect("resolve muse key");
+                assert_eq!(endpoint.api_key.as_deref(), Some("meta-key"));
+            }
             other => panic!("unknown endpoint environment test case: {other}"),
         }
         return;
     }
 
     let home = tempfile::tempdir().expect("temporary MAGE_HOME");
-    for case in ["named", "generic"] {
+    for case in ["named", "generic", "muse"] {
         let mut child = std::process::Command::new(std::env::current_exe().expect("test binary"));
         child
             .args([
@@ -66,6 +71,8 @@ fn environment_key_scopes_are_isolated() {
             .env("MAGE_HOME", home.path());
         if case == "named" {
             child.env("MAGE_API_KEY", "generic-key");
+        } else if case == "muse" {
+            child.env("META_API_KEY", "meta-key");
         } else {
             child
                 .env("MAGE_BASE_URL", "https://example.invalid/v1")
@@ -82,6 +89,18 @@ fn glm_builtin_points_at_coding_plan_cn() {
     };
     assert_eq!(endpoint.base_url.as_deref(), Some(GLM_CN));
     assert_eq!(endpoint.model, "glm-5.3");
+}
+
+#[test]
+fn muse_builtin_points_at_the_model_api() {
+    let Some(endpoint) = builtin("muse") else {
+        panic!("muse builtin missing");
+    };
+    assert_eq!(endpoint.base_url.as_deref(), Some(MUSE));
+    assert_eq!(endpoint.model, "muse-spark-1.3");
+    let preset = preset("muse").expect("muse preset");
+    assert!(preset.env_keys.contains(&"META_API_KEY"));
+    assert!(preset.env_keys.contains(&"MODEL_API_KEY"));
 }
 
 #[test]

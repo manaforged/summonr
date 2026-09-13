@@ -148,6 +148,9 @@ pub fn export(path: &Path) -> Result<String> {
                     out.push('\n');
                 }
             }
+            Line::Interrupted { text, .. } => {
+                out.push_str(&format!("## Assistant (interrupted)\n\n{text}\n\n"));
+            }
             Line::Tool { text, success, .. } => {
                 let shown: Vec<&str> = text.lines().take(12).collect();
                 out.push_str(&format!(
@@ -179,12 +182,15 @@ pub fn export(path: &Path) -> Result<String> {
 }
 
 pub fn resolve_id(id: &str) -> Result<PathBuf> {
+    resolve_in(&mage_home()?, id)
+}
+
+pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     let id = id.trim();
     if id.is_empty() {
         return Err(Error::Config("session id is empty".to_string()));
     }
-    let home = crate::prompt::mage_home()?;
-    if let Some(named) = list_in(&home)?.into_iter().rev().find(|info| {
+    if let Some(named) = list_in(home)?.into_iter().rev().find(|info| {
         info.name
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(id))
@@ -192,14 +198,14 @@ pub fn resolve_id(id: &str) -> Result<PathBuf> {
         return Ok(named.path);
     }
     if let Ok(session) = id.parse() {
-        let exact = log::session_path(&home, session);
+        let exact = log::session_path(home, session);
         if exact.is_file() {
             return Ok(exact);
         }
     }
-    let hits: Vec<PathBuf> = list_in(&home)?
+    let hits: Vec<PathBuf> = list_in(home)?
         .into_iter()
-        .filter(|info| prefix(&info.id, id))
+        .filter(|info| prefix(&info.id, id) || (id.len() >= 5 && info.id.ends_with(id)))
         .map(|info| info.path)
         .collect();
     match hits.as_slice() {

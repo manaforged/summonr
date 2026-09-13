@@ -68,6 +68,15 @@ impl Worker {
                 }
                 self.usage(usage, String::new());
             }
+            Line::Interrupted { text, reasoning } => {
+                if !reasoning.is_empty() {
+                    drop(self.ui.send(Msg::Thinking(reasoning)));
+                }
+                if !text.is_empty() {
+                    drop(self.ui.send(Msg::Event(Event::Assistant { text })));
+                }
+                self.system("Partial answer · interrupted");
+            }
             Line::Charge { usage, note, model } => self.usage(usage, format!("{note} · {model}")),
             Line::Tool {
                 call,

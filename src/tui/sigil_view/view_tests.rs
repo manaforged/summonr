@@ -1,6 +1,277 @@
 use super::*;
 
 #[test]
+fn composer_clicks_and_drags_edit_the_visible_source() {
+    for width in [24, 100] {
+        sigil::reactive::Runtime::scope("composer-pointer", || {
+            let (cmd, _rx) = unbounded_channel();
+            let app = App::new(info(), PathBuf::from("."), cmd);
+            app.resize(width, 16);
+            app.replace("alpha\na👍🏽b\nthird\nfourth\nfifth\nsixth\n".to_string());
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(width, 16);
+            screen
+                .frame(&mut host, &mut router, [], (width, 16))
+                .expect("chat");
+            router.focus_next(host.cx());
+            let left = if width > 28 { 6 } else { 5 };
+            let row = chat::prompt_row(16, &app.draft.peek()) + 1;
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    sigil_tui::click(left, row),
+                    (width, 16),
+                )
+                .expect("click first line");
+            screen
+                .frame(&mut host, &mut router, [sigil_tui::paste("X")], (width, 16))
+                .expect("insert");
+            assert!(app.draft.peek().starts_with("Xalpha\n"));
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    sigil_tui::click(left + 3, row + 1),
+                    (width, 16),
+                )
+                .expect("click after emoji");
+            screen
+                .frame(&mut host, &mut router, [sigil_tui::paste("Y")], (width, 16))
+                .expect("insert after emoji");
+            assert!(app.draft.peek().contains("a👍🏽Yb"));
+            for event in [
+                sigil_tui::pointer(sigil_hal::PointerPhase::Down, left, row + 2),
+                sigil_tui::pointer(sigil_hal::PointerPhase::Move, left + 4, row + 2),
+                sigil_tui::pointer(sigil_hal::PointerPhase::Up, left + 4, row + 2),
+            ] {
+                screen
+                    .frame(&mut host, &mut router, [event], (width, 16))
+                    .expect("select");
+            }
+            screen
+                .frame(&mut host, &mut router, [sigil_tui::paste("Z")], (width, 16))
+                .expect("replace selection");
+            assert!(app.draft.peek().contains("\nZrd\n"), "{}", app.draft.peek());
+            app.replace((0..12).map(|index| format!("line{index}\n")).collect());
+            screen
+                .frame(&mut host, &mut router, [], (width, 16))
+                .expect("long draft");
+            let row = chat::prompt_row(16, &app.draft.peek()) + 1;
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    sigil_tui::click(left, row),
+                    (width, 16),
+                )
+                .expect("click visible line");
+            screen
+                .frame(&mut host, &mut router, [sigil_tui::paste("V")], (width, 16))
+                .expect("edit visible line");
+            assert!(
+                app.draft.peek().contains("\nVline5\n"),
+                "{}",
+                app.draft.peek()
+            );
+        });
+    }
+}
+
+#[test]
+fn composer_history_survives_search_and_resize() {
+    sigil::reactive::Runtime::scope("composer-remount", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(100, 24);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 24);
+        screen
+            .frame(&mut host, &mut router, [], (100, 24))
+            .expect("chat");
+        router.focus_next(host.cx());
+        for ch in ['A', 'B', 'C'] {
+            let key = sigil_tui::map_key(&TerminalKeyEvent::new(
+                KeyCode::Char(ch),
+                KeyModifiers::NONE,
+            ))
+            .expect("letter");
+            screen
+                .frame(&mut host, &mut router, [key], (100, 24))
+                .expect("type");
+        }
+        app.search.start("search");
+        screen
+            .frame(&mut host, &mut router, [], (100, 24))
+            .expect("search");
+        app.search.open.set(false);
+        app.resize(40, 16);
+        screen
+            .frame(&mut host, &mut router, [], (40, 16))
+            .expect("resized chat");
+        for (ch, modifiers, expected) in [
+            ('z', KeyModifiers::CONTROL, "AB"),
+            ('Z', KeyModifiers::CONTROL | KeyModifiers::SHIFT, "ABC"),
+        ] {
+            let key = sigil_tui::map_key(&TerminalKeyEvent::new(KeyCode::Char(ch), modifiers))
+                .expect("history");
+            screen
+                .frame(&mut host, &mut router, [key], (40, 16))
+                .expect("history edit");
+            assert_eq!(app.draft.peek(), expected);
+        }
+    });
+}
+
+#[test]
+fn queue_edit_shortcut_does_not_cancel_or_modify_the_draft() {
+    sigil::reactive::Runtime::scope("summoner-queue-edit", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(100, 24);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Queued {
+            steering: 0,
+            queued: 1,
+        });
+        app.replace("unfinished draft".to_string());
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 24);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (100, 24))
+            .expect("chat");
+        assert!(frame.text().contains("ctrl+q edits"));
+        router.focus_next(host.cx());
+        let key = sigil_tui::map_key(&TerminalKeyEvent::new(
+            KeyCode::Char('q'),
+            KeyModifiers::CONTROL,
+        ))
+        .expect("ctrl+q");
+        screen
+            .frame(&mut host, &mut router, [key], (100, 24))
+            .expect("edit queue");
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Dequeue)));
+        assert!(rx.try_recv().is_err());
+        assert_eq!(app.draft.peek(), "unfinished draft");
+        assert_eq!(
+            app.model.borrow().busy_since.map(|(activity, _)| activity),
+            Some(Activity::Turn)
+        );
+    });
+}
+
+#[test]
+fn search_reveals_a_match_near_the_end_of_a_long_answer() {
+    for width in [40, 100] {
+        sigil::reactive::Runtime::scope("summoner-long-answer-search", || {
+            let (cmd, mut rx) = unbounded_channel();
+            let app = App::new(info(), PathBuf::from("."), cmd);
+            app.resize(100, 24);
+            let text = (1..=180)
+                .map(|index| format!("{index} scroll target alpha\n"))
+                .collect();
+            app.update(Msg::Event(crate::Event::Assistant { text }));
+            app.replace("keep my draft".to_string());
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(100, 24);
+            screen
+                .frame(&mut host, &mut router, [], (100, 24))
+                .expect("chat");
+            app.search.start("180 SCROLL target");
+            assert_eq!(
+                app.search.rows(&app.model.borrow()).expect("matches").len(),
+                1
+            );
+            app.resize(width, 16);
+            app.jump();
+            let frame = screen
+                .frame(&mut host, &mut router, [], (width, 16))
+                .expect("jump");
+            assert!(
+                frame.text().contains("180 scroll target"),
+                "{}",
+                frame.text()
+            );
+            assert_eq!(app.draft.peek(), "keep my draft");
+            assert!(rx.try_recv().is_err());
+        });
+    }
+}
+
+#[test]
+fn search_reveals_markdown_source_after_wrapping() {
+    for width in [24, 40, 100] {
+        let long = "long prefix ".repeat(60) + "**bold target** end";
+        for (source, query, visible) in [
+            (
+                "Before **bold target** after",
+                "**bold target**",
+                "bold target",
+            ),
+            ("# Header target", "# Header target", "Header target"),
+            ("before\nafter target", "before\nafter", "before"),
+            ("```rust\nlet target = 1;\n```", "let target", "let target"),
+            (
+                "```mermaid\ngraph LR\nA[Alpha] --> B[Beta]\n```",
+                "A[Alpha]",
+                "Alpha",
+            ),
+            (long.as_str(), "**bold target**", "target"),
+        ] {
+            sigil::reactive::Runtime::scope("markdown-search", || {
+                let (cmd, _rx) = unbounded_channel();
+                let app = App::new(info(), PathBuf::from("."), cmd);
+                app.resize(width, 16);
+                app.update(Msg::Event(crate::Event::Assistant {
+                    text: format!(
+                        "{}{source}\n{}",
+                        "filler\n".repeat(120),
+                        "tail\n".repeat(80)
+                    ),
+                }));
+                let tree = app.clone();
+                let mut host = Host::cells();
+                host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+                let mut router = EventRouter::new();
+                let mut screen = Screen::new(width, 16);
+                screen
+                    .frame(&mut host, &mut router, [], (width, 16))
+                    .expect("chat");
+                app.search.start(query);
+                assert_eq!(
+                    app.search.rows(&app.model.borrow()).expect("matches").len(),
+                    1
+                );
+                app.jump();
+                let frame = screen
+                    .frame(&mut host, &mut router, [], (width, 16))
+                    .expect("jump");
+                let body: String = frame
+                    .text()
+                    .lines()
+                    .skip(1)
+                    .take(10)
+                    .map(str::trim)
+                    .collect();
+                assert!(body.contains(visible), "{}", frame.text());
+            });
+        }
+    }
+}
+
+#[test]
 fn saved_prompt_search_inserts_at_the_caret_and_preserves_the_draft_image() {
     for width in [40, 100] {
         sigil::reactive::Runtime::scope("summoner-saved-prompts", || {

@@ -41,11 +41,12 @@ fn split_utf8_is_preserved_across_every_byte_boundary() -> Result<()> {
     for text in ["漢", "🧙"] {
         let frame = format!("data: {{\"choices\":[{{\"delta\":{{\"content\":\"{text}\"}}}}]}}\n\n");
         for split in 1..frame.len() {
-            let mut stream = Stream::default();
+            let mut partial = Partial::default();
+            let mut stream = Stream::new(&mut partial);
             stream.push(&client, &frame.as_bytes()[..split])?;
             stream.push(&client, &frame.as_bytes()[split..])?;
-            assert_eq!(stream.text, text, "split at byte {split}");
-            assert!(!stream.text.contains('\u{fffd}'));
+            assert_eq!(stream.partial.text, text, "split at byte {split}");
+            assert!(!stream.partial.text.contains('\u{fffd}'));
         }
     }
     Ok(())
@@ -54,15 +55,40 @@ fn split_utf8_is_preserved_across_every_byte_boundary() -> Result<()> {
 #[test]
 fn invalid_utf8_is_a_provider_error() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     assert!(stream.push(&client, b"data: \xff\n\n").is_err());
+    Ok(())
+}
+
+#[test]
+fn rejected_completion_retains_reasoning_and_text() -> Result<()> {
+    let client = Client::new("k", "http://h/v1")?;
+    for content in ["", " \n"] {
+        let mut partial = Partial::default();
+        let mut stream = Stream::new(&mut partial);
+        let frame = serde_json::json!({"choices": [{
+            "delta": {"content": content, "reasoning_content": "retained thought"},
+            "finish_reason": "stop"
+        }]});
+        stream.push(&client, format!("data: {frame}\n\n").as_bytes())?;
+        let error = stream.complete(&client).expect_err("an answer is required");
+        assert!(
+            error
+                .provider_failure()
+                .is_some_and(|failure| failure.partial_output)
+        );
+        assert_eq!(partial.reasoning, "retained thought");
+        assert_eq!(partial.text, content);
+    }
     Ok(())
 }
 
 #[test]
 fn length_limited_reasoning_is_a_valid_stream_result() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"reasoning_content\":\"think\"},\"finish_reason\":\"length\"}]}\n\n",
@@ -76,7 +102,8 @@ fn length_limited_reasoning_is_a_valid_stream_result() -> Result<()> {
 #[test]
 fn think_tags_in_content_stream_as_reasoning() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"content\":\"<thi\"}}]}\n\n",
@@ -102,7 +129,8 @@ fn a_streaming_tool_call_announces_its_name_once_before_the_round_ends() -> Resu
             names.push(name.to_string());
         }
     });
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"write\"}}]}}]}\n\n",
@@ -128,7 +156,8 @@ fn a_streaming_tool_call_announces_its_name_once_before_the_round_ends() -> Resu
 #[test]
 fn a_wild_tool_call_index_is_ignored_not_allocated() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":100000000,\"id\":\"x\",\"function\":{\"name\":\"f\"}}]}}]}\n\n",
@@ -160,7 +189,8 @@ fn contiguous_tool_calls_have_no_fixed_limit() {
 #[test]
 fn a_mid_stream_error_is_a_provider_error() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
@@ -182,7 +212,8 @@ fn a_mid_stream_error_is_a_provider_error() -> Result<()> {
 #[test]
 fn malformed_frame_after_output_preserves_partial_state() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
@@ -201,7 +232,8 @@ fn malformed_frame_after_output_preserves_partial_state() -> Result<()> {
 #[test]
 fn clean_eof_before_a_terminal_frame_is_rejected_with_partial_state() -> Result<()> {
     let client = Client::new("k", "http://h/v1")?;
-    let mut stream = Stream::default();
+    let mut partial = Partial::default();
+    let mut stream = Stream::new(&mut partial);
     stream.push(
         &client,
         b"data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n",
@@ -226,7 +258,8 @@ fn finish_reason_or_done_are_supported_terminal_frames() -> Result<()> {
             .as_slice(),
         b"data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n".as_slice(),
     ] {
-        let mut stream = Stream::default();
+        let mut partial = Partial::default();
+        let mut stream = Stream::new(&mut partial);
         stream.push(&client, terminal)?;
         let message = stream.complete(&client)?;
         assert_eq!(message.content.as_deref(), Some("ok"));
@@ -240,7 +273,7 @@ async fn client_rejects_a_tool_stream_that_closes_before_terminal_frame() -> Res
     let body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"write\",\"arguments\":\"{}\"}}]}}]}\n\n";
     let (client, server) = local_stream(body)?;
     let error = client
-        .complete_stream(&request())
+        .complete_stream(&request(), &mut Partial::default())
         .await
         .expect_err("incomplete tool stream must fail before handoff");
     assert!(
@@ -258,7 +291,9 @@ async fn client_rejects_a_tool_stream_that_closes_before_terminal_frame() -> Res
 async fn client_accepts_a_complete_stream_with_terminal_frames() -> Result<()> {
     let body = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"}}]}\n\ndata: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n";
     let (client, server) = local_stream(body)?;
-    let message = client.complete_stream(&request()).await?;
+    let message = client
+        .complete_stream(&request(), &mut Partial::default())
+        .await?;
     assert_eq!(message.content.as_deref(), Some("ok"));
     assert_eq!(message.stop_reason, StopReason::Stop);
     server
@@ -272,7 +307,7 @@ async fn client_rejects_truncated_data_after_a_terminal_frame() -> Result<()> {
     let body = "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\ndata: {\"choices\"";
     let (client, server) = local_stream(body)?;
     let error = client
-        .complete_stream(&request())
+        .complete_stream(&request(), &mut Partial::default())
         .await
         .expect_err("trailing incomplete data must fail");
     assert!(error.to_string().contains("incomplete SSE frame"));
@@ -292,7 +327,7 @@ async fn client_preserves_partial_state_for_an_in_band_error() -> Result<()> {
     let body = "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\ndata: {\"error\":{\"message\":\"overloaded\"}}\n\n";
     let (client, server) = local_stream(body)?;
     let error = client
-        .complete_stream(&request())
+        .complete_stream(&request(), &mut Partial::default())
         .await
         .expect_err("in-band provider errors must fail the client request");
     assert!(error.to_string().contains("overloaded"));

@@ -1,4 +1,4 @@
-use std::mem::replace;
+use std::mem::{replace, take};
 use std::sync::{Arc, Mutex};
 
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -14,11 +14,12 @@ use genai::{ModelIden, ServiceTarget};
 use crate::endpoint::Wire;
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 use crate::provider::{
-    AssistantMessage, CompletionRequest, Continuation, Role, StopReason, ToolCall, ToolFunction,
-    ToolKind, Usage, response_failure,
+    AssistantMessage, CompletionRequest, Continuation, Partial, Role, StopReason, ToolCall,
+    ToolFunction, ToolKind, Usage, response_failure,
 };
 
 use super::Client;
+use super::stream::validate;
 
 mod anthropic;
 
@@ -35,6 +36,7 @@ impl Client {
         &self,
         request: &CompletionRequest,
         kind: AdapterKind,
+        output: &mut Partial,
     ) -> Result<AssistantMessage> {
         let genai = self
             .genai
@@ -50,7 +52,9 @@ impl Client {
         let options = chat_options(&self.headers, request.max_output_tokens, request.effort)
             .with_capture_raw_body(self.wire == Wire::Anthropic);
         if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
-            return self.stream_native(genai, target, chat, &options).await;
+            return self
+                .stream_native(genai, target, chat, &options, output)
+                .await;
         }
         let response = genai
             .exec_chat(target, chat, Some(&options))
@@ -72,6 +76,7 @@ impl Client {
         target: ServiceTarget,
         chat: ChatRequest,
         options: &ChatOptions,
+        output: &mut Partial,
     ) -> Result<AssistantMessage> {
         let model = target.model.model_name.to_string();
         let capture = (self.wire == Wire::Anthropic)
@@ -93,8 +98,8 @@ impl Client {
             .exec_chat_stream(target, chat, Some(&options))
             .await
             .map_err(map_genai)?;
-        let mut content = String::new();
-        let mut reasoning = String::new();
+        let content = &mut output.text;
+        let reasoning = &mut output.reasoning;
         let mut tool_calls = Vec::new();
         let mut usage = Usage::default();
         let mut stop = None;
@@ -125,7 +130,7 @@ impl Client {
                         if content.is_empty()
                             && let Some(text) = captured.first_text()
                         {
-                            content = text.to_string();
+                            *content = text.to_string();
                         }
                         tool_calls = captured
                             .into_tool_calls()
@@ -136,7 +141,7 @@ impl Client {
                     if reasoning.is_empty()
                         && let Some(text) = end.captured_reasoning_content
                     {
-                        reasoning = text;
+                        *reasoning = text;
                     }
                     if let Some(genai_usage) = end.captured_usage {
                         usage = from_genai_usage(&genai_usage);
@@ -160,14 +165,7 @@ impl Client {
             }));
         };
         let stop = from_genai_stop(&stop, output_started)?;
-        let mut message = AssistantMessage {
-            content: (!content.is_empty()).then_some(content),
-            tool_calls,
-            reasoning_content: (!reasoning.is_empty()).then_some(reasoning),
-            usage,
-            stop_reason: stop,
-        };
-        if let Some(capture) = capture {
+        let blocks = if let Some(capture) = capture {
             let mut state = capture.lock().map_err(|error| {
                 partial(
                     Error::provider(
@@ -180,8 +178,22 @@ impl Client {
             let blocks = replace(&mut *state, Ok(anthropic::Capture::default()))
                 .and_then(anthropic::Capture::finish)
                 .map_err(|error| partial(error, output_started))?;
-            anthropic::retain(&mut message, &model, Some(blocks));
+            Some(blocks)
+        } else {
+            None
+        };
+        if stop != StopReason::Length {
+            validate(content, reasoning, &tool_calls, stop)
+                .map_err(|error| partial(error, output_started))?;
         }
+        let mut message = AssistantMessage {
+            content: (!content.is_empty()).then(|| take(content)),
+            tool_calls,
+            reasoning_content: (!reasoning.is_empty()).then(|| take(reasoning)),
+            usage,
+            stop_reason: stop,
+        };
+        anthropic::retain(&mut message, &model, blocks);
         Ok(message)
     }
 

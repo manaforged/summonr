@@ -36,7 +36,7 @@ impl Speed {
     }
 
     pub(super) fn delta(&mut self, chars: usize, now: Instant) {
-        if chars == 0 {
+        if self.round.is_none() || chars == 0 {
             return;
         }
         self.first.get_or_insert(now);
@@ -72,11 +72,13 @@ impl Speed {
     }
 
     pub(super) fn finish(&mut self, tokens: u32, now: Instant) {
+        let Some(round) = self.round else {
+            return;
+        };
         if tokens > 0 {
-            let span = match (self.first, self.last, self.round) {
-                (Some(first), Some(last), _) => last.duration_since(first),
-                (_, _, Some(round)) => now.duration_since(round),
-                _ => Duration::ZERO,
+            let span = match (self.first, self.last) {
+                (Some(first), Some(last)) => last.duration_since(first),
+                _ => now.duration_since(round),
             }
             .as_secs_f64()
             .max(FLOOR);

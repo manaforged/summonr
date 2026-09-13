@@ -32,7 +32,7 @@ impl Selection {
             && self
                 .grid
                 .get(col, row)
-                .is_some_and(|cell| cell.ch == CONTINUES)
+                .is_some_and(|cell| cell.text == CONTINUES)
         {
             col -= 1;
         }
@@ -60,9 +60,9 @@ impl Selection {
                             *col < self.cols
                                 && (row, *col) >= start
                                 && (row, *col) <= end
-                                && cell.ch != CONTINUES
+                                && cell.text != CONTINUES
                         })
-                        .map(|(_, cell)| cell.ch)
+                        .map(|(_, cell)| cell.text.as_str())
                         .collect();
                     text.trim_end().to_string()
                 })
@@ -80,8 +80,7 @@ impl Selection {
             let last = if row == end.0 { end.1 + 1 } else { self.cols };
             let text: String = self.grid.row(row)[first..last]
                 .iter()
-                .filter(|cell| cell.ch != CONTINUES)
-                .map(|cell| cell.ch)
+                .map(|cell| cell.text.as_str())
                 .collect();
             queue!(out, MoveTo(first as u16, row as u16), Print(text))?;
         }

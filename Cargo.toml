@@ -24,22 +24,30 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+smol_str = { version = "0.3.6", default-features = false }
 thiserror = "2"
 tempfile = "3"
 toml = "0.8"
 toml_edit = "0.22"
 unicode-width = "0.2"
+unicode-segmentation = "1.13.3"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls"] }
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c", default-features = false, features = ["tui", "clipboard-image"] }
-sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
-sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
-sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "3b4def5731398f1c001615eb84fa3fdc2af10d0c" }
+sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "c99ae1e493c7e1b13647952ef68b2df409e4112a", default-features = false, features = ["tui", "clipboard-image"] }
+sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "c99ae1e493c7e1b13647952ef68b2df409e4112a" }
+sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "c99ae1e493c7e1b13647952ef68b2df409e4112a" }
+sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "c99ae1e493c7e1b13647952ef68b2df409e4112a" }
 chacha20poly1305 = "0.10"
+
+[dev-dependencies]
+vt100 = "=0.16.2"
+
+[patch.crates-io]
+crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e35d24a2f643c61760e1eb05b8ca9e63" }
 
 [features]
 default = []

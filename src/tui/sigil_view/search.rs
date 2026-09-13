@@ -128,12 +128,16 @@ impl Picker {
         format!("{name} · {project} · turn {}", prompt.turn + 1)
     }
 
-    pub(super) fn rows(self, model: &Model) -> Result<Vec<(usize, String)>, String> {
+    pub(super) fn pattern(self) -> Result<Regex, String> {
         let query = self.query.get();
-        let pattern = RegexBuilder::new(&escape(query.trim()))
+        RegexBuilder::new(&escape(query.trim()))
             .case_insensitive(true)
             .build()
-            .map_err(|error| format!("Cannot search: {error}"))?;
+            .map_err(|error| format!("Cannot search: {error}"))
+    }
+
+    pub(super) fn rows(self, model: &Model) -> Result<Vec<(usize, String)>, String> {
+        let pattern = self.pattern()?;
         if self.is_history() {
             let saved = self.saved.get()?;
             let mut seen = HashSet::new();

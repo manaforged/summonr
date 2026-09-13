@@ -28,11 +28,8 @@ fn picker_dismissal_resets_after_an_edit() {
 #[test]
 fn popup_rows_stay_at_the_requested_cell_width() {
     let line = row("/model", "choose the active model", 42, true);
-    assert_eq!(UnicodeWidthStr::width(line.as_str()), 42);
-    assert_eq!(
-        UnicodeWidthStr::width(border("commands", 42, true).as_str()),
-        42
-    );
+    assert_eq!(cell_width(line.as_str()), 42);
+    assert_eq!(cell_width(border("commands", 42, true).as_str()), 42);
 }
 
 #[test]

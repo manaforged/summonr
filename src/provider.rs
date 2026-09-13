@@ -479,6 +479,14 @@ pub trait Provider: Send + Sync + 'static {
         request: &'a CompletionRequest,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>>;
 
+    fn stream<'a>(
+        &'a self,
+        request: &'a CompletionRequest,
+        _partial: &'a mut Partial,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        self.complete(request)
+    }
+
     fn child(&self) -> Option<Self>
     where
         Self: Sized,
@@ -492,6 +500,12 @@ pub trait Provider: Send + Sync + 'static {
 }
 
 type DeltaFn = Arc<dyn Fn(&str) + Send + Sync>;
+
+#[derive(Default)]
+pub struct Partial {
+    pub text: String,
+    pub reasoning: String,
+}
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -945,12 +959,20 @@ impl Provider for Client {
         &'a self,
         request: &'a CompletionRequest,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move { self.stream(request, &mut Partial::default()).await })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        request: &'a CompletionRequest,
+        partial: &'a mut Partial,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         Box::pin(async move {
             if let Some(kind) = Self::native_kind(self.wire) {
-                return self.complete_native(request, kind).await;
+                return self.complete_native(request, kind, partial).await;
             }
             if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
-                self.complete_stream(request).await
+                self.complete_stream(request, partial).await
             } else {
                 self.complete_once(request).await
             }

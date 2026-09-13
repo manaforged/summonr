@@ -4,7 +4,7 @@ use super::*;
 fn blank_cell_uses_the_shared_canvas_defaults() {
     let cell = Cell::blank();
 
-    assert_eq!(cell.ch, ' ');
+    assert_eq!(cell.text, " ");
     assert_eq!(cell.fg, TEXT);
     assert_eq!(cell.bg, BASE);
     assert!(!cell.bold);

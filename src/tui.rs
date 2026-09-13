@@ -367,7 +367,7 @@ fn help_text() -> String {
             "composer",
             "  enter        send, or steer the running turn",
             "  tab          complete a /command or @path; queue while busy",
-            "  alt+↑        pull queued input back into the editor",
+            "  ctrl+q       pull queued input back into the editor",
             "  shift+tab    switch between auto and plan mode",
             "  esc          cancel; twice on an idle composer opens /tree",
             "  ctrl+c       clear the draft; twice on an empty draft quits",

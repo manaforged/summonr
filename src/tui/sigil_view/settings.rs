@@ -1,5 +1,5 @@
 use sigil::prelude::*;
-use unicode_width::UnicodeWidthStr;
+use sigil_tui::cell_width;
 
 use super::app::App;
 use super::canvas::{Cell, DIM, GRAY, TEXT};
@@ -142,7 +142,7 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         } else {
             candidate.clone()
         };
-        let span = UnicodeWidthStr::width(label.as_str());
+        let span = cell_width(label.as_str());
         if x + span + 2 > left + card_width - 1 {
             write_at(&mut cells, width, x, saved_y, "…", DIM);
             break;
@@ -188,7 +188,7 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let hint = hints
         .iter()
         .copied()
-        .find(|hint| UnicodeWidthStr::width(*hint) <= card_width.saturating_sub(2))
+        .find(|hint| cell_width(hint) <= card_width.saturating_sub(2))
         .unwrap_or("");
     write_at(
         &mut cells,
@@ -616,7 +616,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let hint = hints
         .iter()
         .copied()
-        .find(|hint| UnicodeWidthStr::width(*hint) <= card_width.saturating_sub(2))
+        .find(|hint| cell_width(hint) <= card_width.saturating_sub(2))
         .unwrap_or("");
     write_at(
         &mut cells,

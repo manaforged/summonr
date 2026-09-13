@@ -1,9 +1,11 @@
+use std::mem::take;
+
 use futures::StreamExt;
 use serde::Deserialize;
 
 use super::{
-    AssistantMessage, Client, CompletionRequest, StopReason, ToolCall, ToolFunction, ToolKind,
-    Usage, think,
+    AssistantMessage, Client, CompletionRequest, Partial, StopReason, ToolCall, ToolFunction,
+    ToolKind, Usage, think,
 };
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
@@ -11,10 +13,11 @@ impl Client {
     pub(super) async fn complete_stream(
         &self,
         request: &CompletionRequest,
+        partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request_body(request, true)?;
         let mut bytes = self.send(&body).await?.bytes_stream();
-        let mut state = Stream::default();
+        let mut state = Stream::new(partial);
         while let Some(chunk) = bytes.next().await {
             let chunk = chunk.map_err(|error| {
                 Error::Provider(ProviderFailure {
@@ -31,11 +34,9 @@ impl Client {
     }
 }
 
-#[derive(Default)]
-struct Stream {
+struct Stream<'a> {
     buffer: Vec<u8>,
-    text: String,
-    reasoning: String,
+    partial: &'a mut Partial,
     think: think::Scan,
     calls: Vec<ToolCall>,
     announced: Vec<bool>,
@@ -45,7 +46,20 @@ struct Stream {
     finished: bool,
 }
 
-impl Stream {
+impl<'a> Stream<'a> {
+    fn new(partial: &'a mut Partial) -> Self {
+        Self {
+            partial,
+            buffer: Vec::new(),
+            think: think::Scan::default(),
+            calls: Vec::new(),
+            announced: Vec::new(),
+            usage: Usage::default(),
+            stop_reason: StopReason::default(),
+            output_started: false,
+            finished: false,
+        }
+    }
     fn push(&mut self, client: &Client, bytes: &[u8]) -> Result<()> {
         self.buffer.extend_from_slice(bytes);
         self.consume(client)
@@ -105,8 +119,8 @@ impl Stream {
 
     fn has_output(&self) -> bool {
         self.output_started
-            || !self.text.is_empty()
-            || !self.reasoning.is_empty()
+            || !self.partial.text.is_empty()
+            || !self.partial.reasoning.is_empty()
             || !self.calls.is_empty()
     }
 
@@ -169,7 +183,7 @@ impl Stream {
         if let Some(emit) = &client.on_delta {
             emit(part);
         }
-        self.text.push_str(part);
+        self.partial.text.push_str(part);
     }
 
     fn push_reason(&mut self, client: &Client, part: &str) {
@@ -179,7 +193,7 @@ impl Stream {
         if let Some(emit) = &client.on_reasoning {
             emit(part);
         }
-        self.reasoning.push_str(part);
+        self.partial.reasoning.push_str(part);
     }
 
     fn flush(&mut self, client: &Client) {
@@ -209,20 +223,28 @@ impl Stream {
         }
         self.flush(client);
         let partial = self.has_output();
-        finish(self.message()).map_err(|error| match error {
+        validate(
+            &self.partial.text,
+            &self.partial.reasoning,
+            &self.calls,
+            self.stop_reason,
+        )
+        .map_err(|error| match error {
             Error::Provider(mut failure) => {
                 failure.partial_output |= partial;
                 Error::Provider(failure)
             }
             error => error,
-        })
+        })?;
+        Ok(self.message())
     }
 
     fn message(self) -> AssistantMessage {
         AssistantMessage {
-            content: (!self.text.is_empty()).then_some(self.text),
+            content: (!self.partial.text.is_empty()).then(|| take(&mut self.partial.text)),
             tool_calls: self.calls,
-            reasoning_content: (!self.reasoning.is_empty()).then_some(self.reasoning),
+            reasoning_content: (!self.partial.reasoning.is_empty())
+                .then(|| take(&mut self.partial.reasoning)),
             usage: self.usage,
             stop_reason: self.stop_reason,
         }
@@ -273,22 +295,29 @@ pub(super) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
 
 pub(super) fn finish(mut message: AssistantMessage) -> Result<AssistantMessage> {
     think::hoist(&mut message);
-    let empty = message
-        .content
-        .as_deref()
-        .is_none_or(|text| text.trim().is_empty());
-    let truncated_reasoning = message.stop_reason == StopReason::Length
-        && message
-            .reasoning_content
-            .as_deref()
-            .is_some_and(|text| !text.trim().is_empty());
-    if empty && message.tool_calls.is_empty() && !truncated_reasoning {
+    validate(
+        message.content.as_deref().unwrap_or_default(),
+        message.reasoning_content.as_deref().unwrap_or_default(),
+        &message.tool_calls,
+        message.stop_reason,
+    )?;
+    Ok(message)
+}
+
+pub(super) fn validate(
+    text: &str,
+    reasoning: &str,
+    calls: &[ToolCall],
+    stop: StopReason,
+) -> Result<()> {
+    let truncated_reasoning = stop == StopReason::Length && !reasoning.trim().is_empty();
+    if text.trim().is_empty() && calls.is_empty() && !truncated_reasoning {
         return Err(Error::provider(
             ProviderFailureKind::Malformed,
             "stream produced neither text nor a tool call",
         ));
     }
-    Ok(message)
+    Ok(())
 }
 
 #[derive(Deserialize)]

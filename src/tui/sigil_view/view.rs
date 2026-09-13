@@ -1,6 +1,6 @@
 use sigil::prelude::*;
 
-use super::super::Cmd;
+use super::super::{Cmd, Msg};
 use super::app::{App, Overlay};
 use super::chat as chat_surface;
 use super::scene;
@@ -17,8 +17,10 @@ pub(super) fn root(app: App) -> NodeBuilder {
     let screen = app.clone();
     shell(&app).children_reactive(move || {
         if let Some(entry) = screen.search.target.peek() {
-            if let Some(position) = screen.history.borrow_mut().position(&screen, entry) {
-                screen.scroll_y.set(position);
+            match screen.history.borrow_mut().position(&screen, entry) {
+                Ok(Some(position)) => screen.scroll_y.set(position),
+                Ok(None) => {}
+                Err(error) => screen.update(Msg::System(error)),
             }
             screen.search.target.set(None);
         }
@@ -298,13 +300,10 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
                 page_down.page_history(1.0);
             }
         })
-        .key_capture(
-            Shortcut::new(Key::ArrowUp, ModifiersState::ALT),
-            move |event| {
-                event.stop_propagation();
-                dequeue.dequeue();
-            },
-        )
+        .key_capture(Shortcut::ctrl(LogicalKey::character("q")), move |event| {
+            event.stop_propagation();
+            dequeue.dequeue();
+        })
         .key_capture(Key::ArrowUp, move |event| {
             if setting_up.overlay_move(-1) {
                 event.stop_propagation();
@@ -502,6 +501,7 @@ fn splash(app: App) -> NodeBuilder {
         .layout(LayoutStyle::block().fill_width().fill_height())
         .child(
             text_edit(app.draft)
+                .state(app.editor.clone())
                 .caret_position(app.caret)
                 .placeholder("")
                 .change(move |draft| changed.change(draft))
@@ -539,6 +539,12 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
     } else {
         (app.draft, app.caret)
     };
+    let editor = text_edit(value).caret_position(caret);
+    let editor = if editing {
+        editor
+    } else {
+        editor.state(app.editor.clone())
+    };
     container()
         .layout(
             LayoutStyle::block()
@@ -555,17 +561,25 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
                         .class("grow"),
                 )
                 .child(
-                    text_edit(value)
-                        .caret_position(caret)
-                        .placeholder("")
-                        .change(move |draft| {
-                            if !editing {
-                                changed.change(draft);
-                            }
+                    container()
+                        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+                        .style_reactive(move || {
+                            let rows =
+                                chat_surface::input_rows(&app.draft.get(), app.viewport.get().1);
+                            &chat_surface::INPUT_HEIGHTS[usize::from(rows - 1)]
                         })
-                        .submit(move |_| submit.submit())
-                        .height(super::canvas::cell().h * 3.0)
-                        .class("w-full"),
+                        .child(
+                            editor
+                                .placeholder("")
+                                .change(move |draft| {
+                                    if !editing {
+                                        changed.change(draft);
+                                    }
+                                })
+                                .submit(move |_| submit.submit())
+                                .layout(LayoutStyle::flex_column().fill().min_size(0.0, 0.0))
+                                .class("w-full"),
+                        ),
                 )
                 .child(
                     container().layout(

@@ -68,6 +68,11 @@ pub(crate) enum Line {
         #[serde(default)]
         model: String,
     },
+    Interrupted {
+        text: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        reasoning: String,
+    },
     Tool {
         call: String,
         text: String,
@@ -175,6 +180,18 @@ impl State {
                     tool_call_id: None,
                     reasoning: (!reasoning.is_empty()).then_some(reasoning),
                 });
+            }
+            Line::Interrupted { text, .. } => {
+                if !text.is_empty() {
+                    self.history.push(Message {
+                        role: Role::Assistant,
+                        content: text,
+                        images: Vec::new(),
+                        tool_calls: Vec::new(),
+                        tool_call_id: None,
+                        reasoning: None,
+                    });
+                }
             }
             Line::Tool {
                 call, text, millis, ..

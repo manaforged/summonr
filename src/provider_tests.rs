@@ -53,12 +53,88 @@ fn context_metadata_selects_the_active_model_and_valid_limits() {
     assert_eq!(listed(&models, "qwen"), Some(262_144));
     assert_eq!(listed(&models, "missing"), None);
     assert_eq!(
+        listed(
+            &json!({"data": [{"id": "other", "context_length": 8192}]}),
+            "missing"
+        ),
+        None
+    );
+    assert_eq!(
         loaded(&json!({
             "default_generation_settings": {"n_ctx": 65536}
         })),
         Some(65_536)
     );
     assert_eq!(loaded(&json!({"n_ctx": 0})), None);
+}
+
+#[tokio::test]
+async fn context_reads_native_model_limits_with_provider_authentication() -> Result<()> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    for (wire, version, model, field, header) in [
+        (
+            Wire::Anthropic,
+            "v1",
+            "claude-fixture",
+            "max_input_tokens",
+            "x-api-key: fixture-key",
+        ),
+        (
+            Wire::Gemini,
+            "v1beta",
+            "models/gemini-fixture",
+            "inputTokenLimit",
+            "x-goog-api-key: fixture-key",
+        ),
+    ] {
+        for (value, expected) in [
+            (json!(131072), Some(131072)),
+            (json!(0), None),
+            (Value::Null, None),
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await?;
+            let address = listener.local_addr()?;
+            let client = Client::build(
+                &format!("http://{address}/{version}"),
+                Auth::bearer("fixture-key"),
+                None,
+                vec![("x-fixture".to_string(), "metadata".to_string())],
+                wire,
+                None,
+                None,
+            )?;
+            let server = async {
+                let (mut connection, _) = listener.accept().await.expect("metadata request");
+                let mut bytes = Vec::new();
+                while !bytes.windows(4).any(|chunk| chunk == b"\r\n\r\n") {
+                    let mut chunk = [0; 1024];
+                    let count = connection.read(&mut chunk).await.expect("headers");
+                    assert!(count > 0);
+                    bytes.extend_from_slice(&chunk[..count]);
+                }
+                let request = String::from_utf8_lossy(&bytes);
+                let name = model.strip_prefix("models/").unwrap_or(model);
+                assert!(request.starts_with(&format!("GET /{version}/models/{name} ")));
+                let headers = request.to_ascii_lowercase();
+                assert!(headers.contains(header));
+                assert!(headers.contains("x-fixture: metadata"));
+                if wire == Wire::Anthropic {
+                    assert!(headers.contains("anthropic-version: 2023-06-01"));
+                }
+                let body = json!({field: value}).to_string();
+                connection.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.expect("metadata response");
+            };
+            let ((), limit) = tokio::time::timeout(Duration::from_secs(6), async {
+                tokio::join!(server, client.context(model))
+            })
+            .await
+            .expect("bounded metadata probe");
+            assert_eq!(limit, expected);
+        }
+    }
+    Ok(())
 }
 
 #[tokio::test]

@@ -688,9 +688,6 @@ impl Client {
     }
 
     pub async fn context(&self, model: &str) -> Option<u32> {
-        if Self::native_kind(self.wire).is_some() {
-            return None;
-        }
         tokio::time::timeout(PROBE_TIMEOUT, self.probe(model))
             .await
             .ok()
@@ -702,6 +699,20 @@ impl Client {
             .url
             .strip_suffix("/chat/completions")
             .unwrap_or(&self.url);
+        let field = match self.wire {
+            Wire::Anthropic => Some("max_input_tokens"),
+            Wire::Gemini => Some("inputTokenLimit"),
+            Wire::Completions => None,
+        };
+        if let Some(field) = field {
+            let mut url = reqwest::Url::parse(&format!("{base}/models/")).ok()?;
+            url.path_segments_mut()
+                .ok()?
+                .pop_if_empty()
+                .push(model.strip_prefix("models/").unwrap_or(model));
+            let value = self.get(url.to_string()).await.ok()?;
+            return value.get(field).and_then(tokens);
+        }
         let root = base.strip_suffix("/v1").unwrap_or(base);
         if let Ok(mut url) = reqwest::Url::parse(&format!("{root}/props")) {
             url.query_pairs_mut().append_pair("model", model);
@@ -770,7 +781,13 @@ impl Client {
     }
 
     fn attach(&self, mut request: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
-        request = request.bearer_auth(token);
+        request = match self.wire {
+            Wire::Completions => request.bearer_auth(token),
+            Wire::Anthropic => request
+                .header("x-api-key", token)
+                .header("anthropic-version", "2023-06-01"),
+            Wire::Gemini => request.header("x-goog-api-key", token),
+        };
         for (key, value) in &self.headers {
             request = request.header(key.as_str(), value.as_str());
         }
@@ -864,8 +881,7 @@ fn listed(value: &Value, model: &str) -> Option<u32> {
     let rows = value.get("data")?.as_array()?;
     let row = rows
         .iter()
-        .find(|row| row.get("id").and_then(Value::as_str) == Some(model))
-        .or_else(|| (rows.len() == 1).then(|| &rows[0]))?;
+        .find(|row| row.get("id").and_then(Value::as_str) == Some(model))?;
     [
         row.get("context_length"),
         row.get("context_window"),

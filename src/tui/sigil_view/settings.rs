@@ -2,8 +2,8 @@ use sigil::prelude::*;
 use sigil_tui::cell_width;
 
 use super::app::App;
-use super::canvas::{Cell, DIM, GRAY, TEXT};
-use super::chat::{BLACK, RED, YELLOW, accent, draft_view, ellipsize, row, write_at};
+use super::canvas::{Cell, palette};
+use super::chat::{accent, draft_view, ellipsize, row, write_at};
 use super::hit::{self, Target};
 
 pub(super) fn settings_layer(app: App) -> NodeBuilder {
@@ -33,17 +33,17 @@ pub(super) fn workflow_layer(app: App) -> NodeBuilder {
 fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
-        cell.bg = BLACK;
+        cell.bg = palette().black;
     }
     if width < 20 || height < 8 {
-        write_at(&mut cells, width, 1, 0, "workflow", GRAY);
+        write_at(&mut cells, width, 1, 0, "workflow", palette().gray);
         write_at(
             &mut cells,
             width,
             1,
             height.saturating_sub(1),
             "enter · esc",
-            DIM,
+            palette().dim,
         );
         return cells;
     }
@@ -114,11 +114,11 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 2,
             y,
             &format!("{marker} {role:<10}"),
-            if lit { accent } else { DIM },
+            if lit { accent } else { palette().dim },
         );
         let (value, color) = match seats.get(index).and_then(|seat| seat.as_deref()) {
-            Some(seat) => (seat.replace('\t', "  "), TEXT),
-            None => (driving.clone(), DIM),
+            Some(seat) => (seat.replace('\t', "  "), palette().text),
+            None => (driving.clone(), palette().dim),
         };
         write_at(
             &mut cells,
@@ -126,15 +126,26 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 15,
             y,
             &ellipsize(&value, value_width),
-            if index == selected { color } else { DIM },
+            if index == selected {
+                color
+            } else {
+                palette().dim
+            },
         );
     }
     let names = app.workflow_names.peek();
     let saved_y = top + 9;
-    write_at(&mut cells, width, left + 2, saved_y, "saved:", DIM);
+    write_at(
+        &mut cells,
+        width,
+        left + 2,
+        saved_y,
+        "saved:",
+        palette().dim,
+    );
     let mut x = left + 9;
     if names.is_empty() {
-        write_at(&mut cells, width, x, saved_y, "none", DIM);
+        write_at(&mut cells, width, x, saved_y, "none", palette().dim);
     }
     for (index, candidate) in names.iter().enumerate() {
         let label = if *candidate == name {
@@ -144,11 +155,11 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         };
         let span = cell_width(label.as_str());
         if x + span + 2 > left + card_width - 1 {
-            write_at(&mut cells, width, x, saved_y, "…", DIM);
+            write_at(&mut cells, width, x, saved_y, "…", palette().dim);
             break;
         }
         if index > 0 {
-            write_at(&mut cells, width, x, saved_y, "· ", DIM);
+            write_at(&mut cells, width, x, saved_y, "· ", palette().dim);
             x += 2;
         }
         app.hits
@@ -159,7 +170,11 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             x,
             saved_y,
             &label,
-            if *candidate == name { TEXT } else { DIM },
+            if *candidate == name {
+                palette().text
+            } else {
+                palette().dim
+            },
         );
         x += span + 1;
     }
@@ -170,8 +185,15 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             card_width.saturating_sub(12),
             '▌',
         );
-        write_at(&mut cells, width, left + 2, top + 11, "name", DIM);
-        write_at(&mut cells, width, left + 9, top + 11, &draft, TEXT);
+        write_at(&mut cells, width, left + 2, top + 11, "name", palette().dim);
+        write_at(
+            &mut cells,
+            width,
+            left + 9,
+            top + 11,
+            &draft,
+            palette().text,
+        );
     }
     let hints: &[&str] = if app.workflow_naming.peek() {
         &[" enter save · esc back ", " enter · esc "]
@@ -196,7 +218,7 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left + card_width.saturating_sub(hint.chars().count() + 1),
         top + card_height - 1,
         hint,
-        DIM,
+        palette().dim,
     );
     cells
 }
@@ -211,11 +233,18 @@ pub(super) fn auth_layer(app: App) -> NodeBuilder {
 fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
-        cell.bg = BLACK;
+        cell.bg = palette().black;
     }
     if width < 20 || height < 8 {
-        write_at(&mut cells, width, 1, 0, "authentication", GRAY);
-        write_at(&mut cells, width, 1, height - 1, "enter · esc", DIM);
+        write_at(&mut cells, width, 1, 0, "authentication", palette().gray);
+        write_at(
+            &mut cells,
+            width,
+            1,
+            height - 1,
+            "enter · esc",
+            palette().dim,
+        );
         return cells;
     }
     let model = app.model.borrow();
@@ -259,8 +288,22 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         let Some(choice) = choices.get(selected) else {
             return cells;
         };
-        write_at(&mut cells, width, left + 3, top + 3, &choice.name, TEXT);
-        write_at(&mut cells, width, left + 3, top + 5, "API key", DIM);
+        write_at(
+            &mut cells,
+            width,
+            left + 3,
+            top + 3,
+            &choice.name,
+            palette().text,
+        );
+        write_at(
+            &mut cells,
+            width,
+            left + 3,
+            top + 5,
+            "API key",
+            palette().dim,
+        );
         let masked = format!("{}▌", "•".repeat(app.auth_key.peek().chars().count()));
         write_at(
             &mut cells,
@@ -268,7 +311,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 13,
             top + 5,
             &ellipsize(&masked, card_width.saturating_sub(17)),
-            TEXT,
+            palette().text,
         );
         write_at(
             &mut cells,
@@ -276,7 +319,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 3,
             top + 8,
             "Saves in the credential store",
-            DIM,
+            palette().dim,
         );
         let hint = " enter save · esc back ";
         write_at(
@@ -285,7 +328,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + card_width.saturating_sub(hint.chars().count() + 1),
             top + card_height - 1,
             hint,
-            DIM,
+            palette().dim,
         );
         return cells;
     }
@@ -323,7 +366,11 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 &format!("{marker} {:<14} {status}", choice.name),
                 card_width.saturating_sub(6),
             ),
-            if index == selected { TEXT } else { DIM },
+            if index == selected {
+                palette().text
+            } else {
+                palette().dim
+            },
         );
     }
     let hint = if card_width >= 50 {
@@ -337,7 +384,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left + card_width.saturating_sub(hint.chars().count() + 1),
         top + card_height - 1,
         hint,
-        DIM,
+        palette().dim,
     );
     cells
 }
@@ -364,21 +411,28 @@ fn list_rows(count: usize, recent: usize, sections: bool) -> Vec<ModelRow> {
 fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
-        cell.bg = BLACK;
+        cell.bg = palette().black;
     }
     if width == 0 || height == 0 {
         return cells;
     }
     if width < 20 || height < 8 {
-        write_at(&mut cells, width, 1, 0, "models", GRAY);
-        write_at(&mut cells, width, 1, height / 2, "type to filter", TEXT);
+        write_at(&mut cells, width, 1, 0, "models", palette().gray);
+        write_at(
+            &mut cells,
+            width,
+            1,
+            height / 2,
+            "type to filter",
+            palette().text,
+        );
         write_at(
             &mut cells,
             width,
             1,
             height.saturating_sub(1),
             "enter · esc",
-            DIM,
+            palette().dim,
         );
         return cells;
     }
@@ -423,15 +477,29 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         query_width,
         '▌',
     );
-    write_at(&mut cells, width, left + 2, top + 2, "filter", DIM);
-    write_at(&mut cells, width, left + 10, top + 2, &query, TEXT);
+    write_at(
+        &mut cells,
+        width,
+        left + 2,
+        top + 2,
+        "filter",
+        palette().dim,
+    );
+    write_at(
+        &mut cells,
+        width,
+        left + 10,
+        top + 2,
+        &query,
+        palette().text,
+    );
     write_at(
         &mut cells,
         width,
         left + 1,
         top + 4,
         &"─".repeat(card_width - 2),
-        DIM,
+        palette().dim,
     );
     let choices = app.filtered_models();
     let selected = app.model_sel.peek().min(choices.len().saturating_sub(1));
@@ -439,7 +507,14 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut list_y = top + 5;
     app.hits.clear();
     if app.model_loading.peek() {
-        write_at(&mut cells, width, left + 3, list_y, "loading models…", DIM);
+        write_at(
+            &mut cells,
+            width,
+            left + 3,
+            list_y,
+            "loading models…",
+            palette().dim,
+        );
     } else {
         if !error.is_empty() {
             write_at(
@@ -448,7 +523,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 left + 3,
                 list_y,
                 "couldn't load the host list — type an exact id",
-                YELLOW,
+                palette().yellow,
             );
             write_at(
                 &mut cells,
@@ -459,7 +534,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                     &error.lines().collect::<Vec<_>>().join(" "),
                     card_width.saturating_sub(6),
                 ),
-                RED,
+                palette().error,
             );
             list_y += 2;
         } else if choices.is_empty() {
@@ -469,7 +544,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 left + 3,
                 list_y,
                 "no matching models — type an exact id",
-                YELLOW,
+                palette().yellow,
             );
         }
         if !choices.is_empty() {
@@ -488,7 +563,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 let y = list_y + offset;
                 match row {
                     ModelRow::Header(label) => {
-                        write_at(&mut cells, width, left + 3, y, label, DIM);
+                        write_at(&mut cells, width, left + 3, y, label, palette().dim);
                     }
                     ModelRow::Seat(index) => {
                         let choice = &choices[*index];
@@ -510,7 +585,11 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                                 "{marker} {active} {}",
                                 ellipsize(&label, card_width.saturating_sub(10))
                             ),
-                            if *index == selected { TEXT } else { DIM },
+                            if *index == selected {
+                                palette().text
+                            } else {
+                                palette().dim
+                            },
                         );
                     }
                 }
@@ -524,7 +603,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left + card_width.saturating_sub(hint.chars().count() + 1),
         top + card_height - 1,
         hint,
-        DIM,
+        palette().dim,
     );
     cells
 }
@@ -532,7 +611,7 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
 fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
-        cell.bg = BLACK;
+        cell.bg = palette().black;
     }
     if width < 8 || height < 3 {
         return cells;
@@ -553,16 +632,16 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             "hotkeys",
         ];
         let selected = labels[app.settings_sel.peek().min(labels.len() - 1)];
-        write_at(&mut cells, width, 1, 0, "options", GRAY);
+        write_at(&mut cells, width, 1, 0, "options", palette().gray);
         write_at(
             &mut cells,
             width,
             1,
             height / 2,
             &format!("› {selected}"),
-            TEXT,
+            palette().text,
         );
-        write_at(&mut cells, width, 1, height - 1, "↑↓ ←→ esc", DIM);
+        write_at(&mut cells, width, 1, height - 1, "↑↓ ←→ esc", palette().dim);
         return cells;
     }
     let model = app.model.borrow();
@@ -624,7 +703,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left + card_width.saturating_sub(hint.chars().count() + 1),
         top + card_height - 1,
         hint,
-        DIM,
+        palette().dim,
     );
     let verify = model
         .snapshot
@@ -659,15 +738,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         ("theme", model.prefs.theme.clone()),
         ("splash", on_off(model.prefs.splash).to_string()),
         ("motion", on_off(model.prefs.animations).to_string()),
-        (
-            "reasoning",
-            if model.prefs.reasoning {
-                "shown"
-            } else {
-                "hidden"
-            }
-            .to_string(),
-        ),
+        ("reasoning", model.prefs.reasoning.name().to_string()),
         ("tools", model.prefs.tools.name().to_string()),
         (
             "bus",
@@ -705,7 +776,14 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             (11, "interface · auto-save"),
         ] {
             let label = ellipsize(label, card_width.saturating_sub(4));
-            write_at(&mut cells, width, left + 2, top + offset, &label, DIM);
+            write_at(
+                &mut cells,
+                width,
+                left + 2,
+                top + offset,
+                &label,
+                palette().dim,
+            );
         }
     }
     let positions = [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18];
@@ -721,7 +799,7 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         app.hits
             .add(y, left + 1, left + card_width - 1, Target::Setting(index));
         let selected = index == app.settings_sel.peek();
-        let marker = if selected { accent } else { DIM };
+        let marker = if selected { accent } else { palette().dim };
         write_at(
             &mut cells,
             width,
@@ -738,7 +816,11 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 17,
             y,
             &value,
-            if selected { TEXT } else { DIM },
+            if selected {
+                palette().text
+            } else {
+                palette().dim
+            },
         );
     }
     cells
@@ -749,7 +831,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
 
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
     for cell in &mut cells {
-        cell.bg = BLACK;
+        cell.bg = palette().black;
     }
     if width < 8 || height < 3 {
         return cells;
@@ -758,7 +840,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let model = app.model.borrow();
     if width < 28 || height < Hotkey::ALL.len() + 4 {
         let action = Hotkey::ALL[selected];
-        write_at(&mut cells, width, 1, 0, "hotkeys", GRAY);
+        write_at(&mut cells, width, 1, 0, "hotkeys", palette().gray);
         write_at(
             &mut cells,
             width,
@@ -768,9 +850,16 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 &format!("› {}  {}", action.name(), model.prefs.hotkeys.label(action)),
                 width.saturating_sub(2),
             ),
-            TEXT,
+            palette().text,
         );
-        write_at(&mut cells, width, 1, height - 1, "↑↓ enter esc", DIM);
+        write_at(
+            &mut cells,
+            width,
+            1,
+            height - 1,
+            "↑↓ enter esc",
+            palette().dim,
+        );
         return cells;
     }
     let accent = accent(&model.prefs.theme);
@@ -817,7 +906,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left + card_width.saturating_sub(hint.chars().count() + 1),
         top + card_height - 1,
         hint,
-        DIM,
+        palette().dim,
     );
     app.hits.clear();
     for (index, action) in Hotkey::ALL.iter().copied().enumerate() {
@@ -831,7 +920,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 2,
             y,
             &format!("{} {:<10}", if active { '›' } else { ' ' }, action.name()),
-            if active { accent } else { DIM },
+            if active { accent } else { palette().dim },
         );
         let binding = if active && app.hotkey_recording.peek() {
             "press ctrl+letter".to_string()
@@ -844,7 +933,11 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 16,
             y,
             &binding,
-            if active { TEXT } else { DIM },
+            if active {
+                palette().text
+            } else {
+                palette().dim
+            },
         );
         write_at(
             &mut cells,
@@ -852,7 +945,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 36,
             y,
             hotkey_description(action),
-            DIM,
+            palette().dim,
         );
     }
     let note = app.hotkey_note.peek();
@@ -863,7 +956,7 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 2,
             top + 10,
             &ellipsize(&note, card_width.saturating_sub(4)),
-            RED,
+            palette().error,
         );
     }
     cells
@@ -908,6 +1001,7 @@ pub(super) fn layer(
         )
         .children_reactive(move || {
             super::view::watch(&paint);
+            let _revision = paint.panes.get();
             let (cols, rows) = paint.viewport.get();
             grid(&paint, usize::from(cols), usize::from(rows))
                 .chunks(usize::from(cols).max(1))

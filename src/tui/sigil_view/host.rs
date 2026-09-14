@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::fs::read_to_string;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -111,6 +112,7 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     });
     let (mut cols, mut rows) = crossterm::terminal::size()?;
     app.resize(cols, rows);
+    app.load();
     let mut host = Host::cells();
     app.refresh();
     let mut router = EventRouter::new();
@@ -128,14 +130,19 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
     loop {
         let mut incoming = Vec::new();
         if event::poll(FRAME)? {
-            read_event(
-                event::read()?,
-                &mut incoming,
-                &mut pointer,
-                &mut screen,
-                &mut term,
-                &app,
-            )?;
+            loop {
+                read_event(
+                    event::read()?,
+                    &mut incoming,
+                    &mut pointer,
+                    &mut screen,
+                    &mut term,
+                    &app,
+                )?;
+                if !event::poll(Duration::ZERO)? {
+                    break;
+                }
+            }
             (cols, rows) = app.viewport.peek();
         }
         let mut changed = false;
@@ -178,7 +185,7 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
         if let Some(path) = app.open_file.peek() {
             app.open_file.set(None);
             term.suspend()?;
-            let opened = open_external(&path);
+            let opened = edit(&path, &editor());
             term.resume(selecting)?;
             screen.invalidate();
             if let Err(error) = opened {
@@ -196,11 +203,11 @@ fn live(app: App, mut ui: UnboundedReceiver<Msg>) -> Result<Exit> {
         if app.editor_requested.peek() {
             app.editor_requested.set(false);
             term.suspend()?;
-            let edited = edit_external(&app.draft.peek());
+            let edited = edit_external(&app.draft.peek(), &editor());
             term.resume(selecting)?;
             screen.invalidate();
             match edited {
-                Ok(draft) => app.replace(draft),
+                Ok(draft) => app.edit(&draft),
                 Err(error) => {
                     app.model
                         .borrow_mut()
@@ -275,7 +282,11 @@ fn read_event(
                         && !app.splash.peek()
                         && mouse.column < app.chat_cols()
                         && mouse.row
-                            < super::chat::prompt_row(app.viewport.peek().1, &app.draft.peek()) =>
+                            < super::chat::prompt_row(
+                                app.chat_cols(),
+                                app.viewport.peek().1,
+                                &app.draft.peek(),
+                            ) =>
                 {
                     term.deselect(screen);
                     term.anchor = Some((mouse.column, mouse.row));
@@ -490,14 +501,13 @@ fn osc52(out: &mut impl Write, text: &str) -> Result<CopyStatus> {
     Ok(CopyStatus::Requested)
 }
 
-fn open_external(path: &Path) -> Result<()> {
-    let editor = std::env::var("VISUAL")
+fn editor() -> String {
+    std::env::var("VISUAL")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| std::env::var("EDITOR").ok())
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "vi".to_string());
-    edit(path, &editor)
+        .unwrap_or_else(|| "vi".to_string())
 }
 
 fn edit(path: &Path, editor: &str) -> Result<()> {
@@ -529,13 +539,12 @@ fn edit(path: &Path, editor: &str) -> Result<()> {
     Ok(())
 }
 
-fn edit_external(initial: &str) -> Result<String> {
+fn edit_external(initial: &str, editor: &str) -> Result<String> {
     let mut draft = tempfile::Builder::new().suffix(".md").tempfile()?;
     draft.write_all(initial.as_bytes())?;
     draft.flush()?;
-    open_external(draft.path())?;
-    let text = std::fs::read_to_string(draft.path())?;
-    Ok(text.trim_end_matches('\n').to_string())
+    edit(draft.path(), editor)?;
+    Ok(read_to_string(draft.path())?)
 }
 
 impl Drop for Terminal {

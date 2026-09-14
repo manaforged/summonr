@@ -10,11 +10,47 @@ fn slash_table_is_unique_and_filters_prefixes() {
     unique.sort_unstable();
     unique.dedup();
     assert_eq!(names.len(), unique.len());
+    let default = matching_commands("/");
+    for (shortcut, primary) in [
+        ("/auth", "/login"),
+        ("/quit", "/exit"),
+        ("/fork", "/branch"),
+        ("/tree", "/resume"),
+    ] {
+        assert!(!default.iter().any(|(name, _)| *name == shortcut));
+        assert!(default.iter().any(|(name, _)| *name == primary));
+    }
+    for name in [
+        "/workflow",
+        "/layout",
+        "/session",
+        "/steps",
+        "/agents",
+        "/modules",
+        "/goal",
+        "/theme",
+        "/tools",
+        "/reasoning",
+        "/bus",
+    ] {
+        assert!(
+            !default.iter().any(|row| row.0 == name),
+            "default menu contains {name}"
+        );
+        assert_eq!(matching_commands(name)[0].0, name);
+    }
+    for spec in crate::command_specs() {
+        assert_eq!(matching_commands(spec.name)[0].0, spec.name);
+        assert_eq!(crate::parse_command(spec.name), Some(spec.command));
+    }
     assert_eq!(
         matching_commands("/plan"),
         vec![
-            ("/plan", "toggle plan mode"),
-            ("/plan accept", "keep the journaled plan and return to auto"),
+            ("/plan", "enter plan mode"),
+            (
+                "/plan accept",
+                "approve the saved plan; send a prompt to begin"
+            ),
             ("/plan reject", "leave plan mode without implementing"),
         ]
     );
@@ -26,6 +62,12 @@ fn slash_table_is_unique_and_filters_prefixes() {
         vec!["/model", "/modules"]
     );
     assert_eq!(matching_commands("/mdl")[0].0, "/model");
+    assert_eq!(matching_commands("/au")[0].0, "/auto");
+    assert_eq!(matching_commands("/auth")[0].0, "/auth");
+    assert_eq!(
+        matching_commands("/ut").last().map(|row| row.0),
+        Some("/auth")
+    );
     assert_eq!(matching_commands("/active")[0].0, "/model");
     assert_eq!(
         crate::parse_command("/model"),
@@ -82,16 +124,31 @@ fn context_reports_the_limit_and_percentage_used() {
     };
 
     assert_eq!(
-        context(Some(&round), Some(262_144)),
+        context(Some(&round), Some(262_144), false),
         "65.5k / 262.1k · 25% used"
     );
-    assert_eq!(context(None, Some(262_144)), "0 / 262.1k · 0% used");
-    assert_eq!(context(Some(&round), None), "not set");
+    assert_eq!(context(None, Some(262_144), false), "0 / 262.1k · 0% used");
+    assert_eq!(context(Some(&round), None, false), "not set");
 }
 
 #[test]
 fn help_lists_the_live_composer_bindings() {
-    let help = help_text();
+    let help = help_text(&Hotkeys::default());
+    let positions: Vec<_> = [
+        "/diff",
+        "plan actions",
+        "/plan accept",
+        "preferences · also in /settings",
+        "/tools",
+        "advanced commands",
+        "/workflow",
+        "shortcuts",
+        "/auth",
+    ]
+    .into_iter()
+    .map(|text| help.find(text).expect(text))
+    .collect();
+    assert!(positions.windows(2).all(|pair| pair[0] < pair[1]), "{help}");
     for binding in [
         "/model",
         "/tools",

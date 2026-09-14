@@ -32,6 +32,7 @@ impl Default for Speed {
 impl Speed {
     pub(super) fn start(&mut self, now: Instant) {
         self.round = Some(now);
+        self.rate = None;
         self.clear();
     }
 

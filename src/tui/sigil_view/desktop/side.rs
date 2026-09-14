@@ -88,8 +88,14 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 })
                 .child(label("← all changes").class(classes!("text-xs text-gray-11"))),
             );
-        let Some((_, text)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
+        let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
             return column.child(label("loading…").class(classes!("text-xs text-gray-11")));
+        };
+        let text = match result {
+            Ok(text) => text,
+            Err(error) => {
+                return column.child(label(error.clone()).class(classes!("text-xs text-error-11")));
+            }
         };
         let mut hunk = container()
             .layout(LayoutStyle::flex_column().fill_width().gap(1.0))

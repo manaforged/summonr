@@ -9,6 +9,17 @@ fn hash_is_four_chars_and_stable() {
 }
 
 #[test]
+fn diff_hunk_marks_removed_and_added_lines() {
+    let replaced = diff_hunk("a\nb\nc\n", "a\nB\nc\n").expect("replace");
+    assert_eq!(replaced, "@@ -1,3 +1,3 @@\n a\n-b\n+B\n c");
+    let inserted = diff_hunk("a\nc\n", "a\nb\nc\n").expect("insert");
+    assert_eq!(inserted, "@@ -1,2 +1,3 @@\n a\n+b\n c");
+    let deleted = diff_hunk("a\nb\nc\n", "a\nc\n").expect("delete");
+    assert_eq!(deleted, "@@ -1,3 +1,2 @@\n a\n-b\n c");
+    assert!(diff_hunk("same\n", "same\n").is_none());
+}
+
+#[test]
 fn hash_only_replace_survives_insert_above() -> Result<()> {
     let original = "hello\nworld\n";
     let hello = line_hash("hello");

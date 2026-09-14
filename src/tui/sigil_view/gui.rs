@@ -86,6 +86,12 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
         status_at.set(Instant::now());
     }
     app.tick();
+    if app.help.open.peek() {
+        app.help.open.set(false);
+        let text = super::super::help_text(&app.model.borrow().prefs.hotkeys);
+        app.update(Msg::System(text));
+        app.refresh();
+    }
     if let Some(path) = app.open_file.peek() {
         app.open_file.set(None);
         if let Err(error) = reveal(&path) {

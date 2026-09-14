@@ -50,6 +50,28 @@ async fn interrupted_streams_survive_cancel_shutdown_and_resume() {
         .expect("bounded interruption");
         assert_eq!(running, !quit);
         let lines = crate::durable::log::read(&path).expect("journal");
+        let reserved: u64 = lines
+            .iter()
+            .filter_map(|line| match line {
+                crate::durable::log::Line::Charge {
+                    usage,
+                    reported: false,
+                    ..
+                } => Some(usage.input + usage.output),
+                _ => None,
+            })
+            .sum();
+        assert!(reserved > 0);
+        let live: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
+        assert!(live.iter().any(
+            |msg| matches!(msg, Msg::Event(Event::Unreported { tokens }) if *tokens == reserved)
+        ));
+        assert!(
+            !live
+                .iter()
+                .any(|msg| matches!(msg, Msg::Event(Event::Usage { .. })))
+        );
+        assert_eq!(worker.loop_.replay_session().spent_tokens, reserved);
         assert_eq!(lines.iter().filter(|line| matches!(line, crate::durable::log::Line::Interrupted { text, reasoning } if text == "Useful partial answer 👍🏽" && reasoning == "unfinished thought")).count(), 1);
         worker.loop_ = Loop::resume_path(
             Client::new("", "http://localhost/v1").expect("provider"),
@@ -70,6 +92,14 @@ async fn interrupted_streams_survive_cancel_shutdown_and_resume() {
         while ui.try_recv().is_ok() {}
         worker.replay();
         let restored: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok()).collect();
+        assert!(restored.iter().any(
+            |msg| matches!(msg, Msg::Event(Event::Unreported { tokens }) if *tokens == reserved)
+        ));
+        assert!(
+            !restored
+                .iter()
+                .any(|msg| matches!(msg, Msg::Event(Event::Usage { .. })))
+        );
         assert!(restored.iter().any(|msg| matches!(msg, Msg::Event(Event::Assistant { text }) if text == "Useful partial answer 👍🏽")));
         assert!(
             restored.iter().any(
@@ -146,6 +176,144 @@ async fn saves_finish_in_command_order_before_shutdown() {
     assert_eq!(saved, vec!["old".repeat(100_000), "new".to_string()]);
     assert_eq!(std::fs::read_to_string(file).expect("saved file"), "new");
     std::fs::remove_dir_all(workspace).expect("scratch workspace");
+}
+
+#[tokio::test]
+async fn plan_choices_follow_publish_accept_reject_and_branch() {
+    for action in ["/plan accept", "/plan reject", "/fork", "/branch"] {
+        let (mut worker, _tx, mut ui, workspace) = worker_ui();
+        worker.send_settings();
+        assert!(matches!(ui.try_recv(), Ok(Msg::Settings(snapshot)) if !snapshot.pending_plan));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let address = listener.local_addr().expect("address");
+        worker.loop_.set_provider(
+            Client::new("", format!("http://{address}/v1")).expect("provider"),
+            "test",
+        );
+        worker.loop_.set_plan(true);
+        let serve = async {
+            let (mut connection, _) = listener.accept().await.expect("plan request");
+            let _request = request(&mut connection).await;
+            let body = serde_json::json!({"choices":[{"message":{"content":"## Steps\n\n1. Write result.txt. Run `exit 0`."},"finish_reason":"stop"}]}).to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            connection
+                .write_all(response.as_bytes())
+                .await
+                .expect("plan response");
+        };
+        let (running, ()) = tokio::time::timeout(Duration::from_secs(10), async {
+            tokio::join!(worker.turn("Plan a small change".into()), serve)
+        })
+        .await
+        .expect("bounded plan");
+        assert!(running);
+        let settings: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok())
+            .filter_map(|msg| match msg {
+                Msg::Settings(snapshot) => Some(snapshot),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            settings
+                .last()
+                .is_some_and(|snapshot| snapshot.pending_plan)
+        );
+        if action == "/branch" {
+            assert!(worker.branch(&worker.loop_.session_id(), 0));
+        } else {
+            assert!(worker.dispatch(Cmd::Command(action.to_string())).await);
+        }
+        let settings: Vec<_> = std::iter::from_fn(|| ui.try_recv().ok())
+            .filter_map(|msg| match msg {
+                Msg::Settings(snapshot) => Some(snapshot),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            settings
+                .last()
+                .is_some_and(|snapshot| !snapshot.pending_plan),
+            "{action}"
+        );
+        std::fs::remove_dir_all(workspace).expect("workspace");
+    }
+}
+
+#[tokio::test]
+async fn plan_and_auto_commands_select_a_mode_without_toggling() {
+    let (mut worker, _tx, _ui, workspace) = worker_ui();
+    for command in ["/plan", "/plan"] {
+        assert_eq!(worker.command(command).await, Some(true));
+        assert!(worker.loop_.is_plan());
+    }
+    for command in ["/auto", "/auto"] {
+        assert_eq!(worker.command(command).await, Some(true));
+        assert!(!worker.loop_.is_plan());
+    }
+    std::fs::remove_dir_all(workspace).expect("workspace");
+}
+
+#[tokio::test]
+async fn export_preserves_existing_files_and_writes_new_destinations() {
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+    let existing = workspace.join("keep.md");
+    std::fs::write(&existing, "Keep this document.").expect("existing document");
+    assert!(
+        worker
+            .dispatch(Cmd::Export(Some(existing.display().to_string())))
+            .await
+    );
+    assert_eq!(
+        std::fs::read_to_string(&existing).expect("preserved document"),
+        "Keep this document."
+    );
+    assert!(std::iter::from_fn(|| ui.try_recv().ok()).any(|message| matches!(message, Msg::Failed(text) if text.contains("already exists") && text.contains("different filename"))));
+    let destination = workspace.join("new export.md");
+    let expected = crate::export_session(worker.loop_.session_path()).expect("session export");
+    assert!(
+        worker
+            .dispatch(Cmd::Export(Some(destination.display().to_string())))
+            .await
+    );
+    assert_eq!(
+        std::fs::read_to_string(destination).expect("exported document"),
+        expected
+    );
+    assert!(
+        std::iter::from_fn(|| ui.try_recv().ok()).any(
+            |message| matches!(message, Msg::System(text) if text.starts_with("exported to "))
+        )
+    );
+    std::fs::remove_dir_all(workspace).expect("workspace");
+}
+
+#[tokio::test]
+async fn verify_reloads_workspace_checks_without_losing_valid_settings_on_error() {
+    let (mut worker, _tx, mut ui, workspace) = worker_ui();
+    std::fs::create_dir_all(workspace.join(".mage")).expect("configuration directory");
+    let path = workspace.join(".mage/check.toml");
+    for command in ["echo first", "echo updated"] {
+        worker.dispatch(Cmd::SetVerify(false)).await;
+        std::fs::write(&path, format!("check = {command:?}")).expect("check file");
+        worker.dispatch(Cmd::SetVerify(true)).await;
+        assert_eq!(worker.loop_.verify_commands(), &[command.to_string()]);
+    }
+    std::fs::write(path, "checks = [").expect("invalid check file");
+    worker.dispatch(Cmd::SetVerify(true)).await;
+    assert_eq!(
+        worker.loop_.verify_commands(),
+        &["echo updated".to_string()]
+    );
+    assert!(
+        std::iter::from_fn(|| ui.try_recv().ok())
+            .any(|message| matches!(message, Msg::Failed(text) if text.contains("check.toml")))
+    );
+    std::fs::remove_dir_all(workspace).expect("workspace");
 }
 
 #[tokio::test]
@@ -743,6 +911,17 @@ async fn goal_clear_ends_the_active_goal() {
         .loop_
         .select_goal("finish it", &[], 3)
         .unwrap_or_else(|error| panic!("{error}"));
+    assert_eq!(worker.command("/goal").await, Some(true));
+    assert!(
+        system_line(&mut ui)
+            .await
+            .contains("goal active — finish it")
+    );
+    assert_eq!(worker.command("/plan reject now").await, Some(true));
+    assert!(worker.loop_.active_goal().expect("active goal").is_some());
+    assert!(std::iter::from_fn(|| ui.try_recv().ok()).any(
+        |message| matches!(message, Msg::Failed(text) if text.contains("takes no arguments"))
+    ));
     assert_eq!(worker.command("/goal clear").await, Some(true));
     assert_eq!(system_line(&mut ui).await, "goal cleared — finish it");
     assert!(
@@ -814,7 +993,7 @@ async fn bare_resume_reports_when_the_workspace_has_no_previous_session() {
 #[tokio::test]
 async fn startup_replays_saved_conversation_and_tool_results() {
     use std::io::Write;
-    let (worker, tx, mut ui, workspace) = worker_ui();
+    let (mut worker, tx, mut ui, workspace) = worker_ui();
     let mut journal = std::fs::OpenOptions::new()
         .append(true)
         .open(worker.loop_.session_path())
@@ -826,12 +1005,23 @@ async fn startup_replays_saved_conversation_and_tool_results() {
         serde_json::json!({"kind":"assistant","text":"The file is missing.","usage":{"input":12,"output":5,"cached":4,"millis":50}}),
         serde_json::json!({"kind":"receipt","text":"The file is missing.\n\nTurn receipt\n- Changed: none"}),
         serde_json::json!({"kind":"close"}),
-        serde_json::json!({"kind":"charge","usage":{"input":7,"output":2,"cached":1,"millis":20},"note":"review","model":"review-model"}),
-        serde_json::json!({"kind":"charge","usage":{"input":8,"output":4,"cached":0,"millis":30},"note":"scout","model":"scout-model"}),
+        serde_json::json!({"kind":"charge","reported":true,"usage":{"input":7,"output":2,"cached":1,"millis":20},"note":"review","model":"review-model"}),
+        serde_json::json!({"kind":"charge","reported":true,"usage":{"input":8,"output":4,"cached":0,"millis":30},"note":"scout","model":"scout-model"}),
+        serde_json::json!({"kind":"charge","reported":false,"usage":{"input":20,"output":100,"cached":0,"millis":30},"note":"failed request"}),
+        serde_json::json!({"kind":"charge","usage":{"input":10,"output":5,"cached":0,"millis":30},"note":"legacy charge"}),
+        serde_json::json!({"kind":"charge","usage":{"input":0,"output":0,"cached":0,"millis":9},"note":"unaccounted turn time"}),
     ] {
         writeln!(journal, "{line}").expect("saved record");
     }
     drop(journal);
+    worker.loop_ = Loop::resume_path(
+        Client::new("", "http://localhost/v1").expect("provider"),
+        "test",
+        &workspace,
+        "system",
+        worker.loop_.session_path(),
+    )
+    .expect("resume saved journal");
     let mut durable = crate::durable::log::State::default();
     for line in crate::durable::log::read(worker.loop_.session_path()).expect("journal") {
         durable.apply(line);
@@ -853,7 +1043,21 @@ async fn startup_replays_saved_conversation_and_tool_results() {
             _ => None,
         })
         .sum();
-    assert_eq!(restored, durable.spent);
+    assert_eq!(restored, 51);
+    assert_eq!(durable.unreported, 135);
+    assert_eq!(restored + durable.unreported, durable.spent);
+    assert!(
+        messages
+            .iter()
+            .any(|msg| matches!(msg, Msg::Event(Event::Unreported { tokens: 135 })))
+    );
+    assert_eq!(
+        messages
+            .iter()
+            .filter(|message| matches!(message, Msg::Event(Event::Usage { .. })))
+            .count(),
+        4
+    );
     assert!(messages.iter().any(|message| matches!(message, Msg::System(text) if text.contains("Historical reasoning tokens and cost are unavailable"))));
     assert!(
         messages

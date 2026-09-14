@@ -94,7 +94,7 @@ impl Worker {
             (cancelled, result, mode, quit)
         };
         if quit {
-            if let Err(error) = self.loop_.abort_note("shutdown") {
+            if let Err(error) = self.abort("shutdown") {
                 self.fail(&error.to_string());
             }
             return false;
@@ -107,6 +107,7 @@ impl Worker {
             set_mode(&mut self.loop_, &self.ui, plan);
         }
         self.finish_turn(cancelled, result);
+        self.send_settings();
         true
     }
 
@@ -115,7 +116,7 @@ impl Worker {
             self.recover();
         }
         if cancelled {
-            if let Err(error) = self.loop_.abort_note("cancelled by user") {
+            if let Err(error) = self.abort("cancelled by user") {
                 self.fail(&format!("cancellation not recorded: {error}"));
             }
             drop(self.ui.send(Msg::Event(Event::Aborted {
@@ -124,7 +125,7 @@ impl Worker {
             self.system("F5 or /retry continues this turn. Up recalls your prompt for editing.");
             drop(self.ui.send(Msg::Busy(None)));
         } else if let Some(Err(error)) = result {
-            if let Err(abort) = self.loop_.abort_note("turn failed") {
+            if let Err(abort) = self.abort("turn failed") {
                 self.fail(&format!(
                     "{error}; and the turn could not be closed: {abort}"
                 ));
@@ -137,6 +138,12 @@ impl Worker {
             self.send_diff(true);
             drop(self.ui.send(Msg::Busy(None)));
         }
+    }
+
+    fn abort(&mut self, reason: &str) -> crate::Result<()> {
+        let ui = &self.ui;
+        self.loop_
+            .abort_with(reason, |event| drop(ui.send(Msg::Event(event.clone()))))
     }
 
     pub(super) fn recover(&mut self) {
@@ -169,12 +176,8 @@ impl Worker {
         let diff = match crate::diff::stats(self.loop_.workspace()) {
             Ok(diff) => diff,
             Err(error) => {
-                if !announce {
-                    drop(
-                        self.ui
-                            .send(Msg::System(format!("diff unavailable: {error}"))),
-                    );
-                }
+                self.last_diff = None;
+                drop(self.ui.send(Msg::DiffFailed(error.to_string())));
                 return;
             }
         };

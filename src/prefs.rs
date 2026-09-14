@@ -69,7 +69,7 @@ pub struct Hotkeys {
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
-            keys: ['o', 'j', 'g', 'e', 'l', 'x', 'y', 't', 'p', 'f', 'r'],
+            keys: ['o', 'j', 'g', 'e', 'l', 'x', 'b', 't', 'p', 'f', 'r'],
         }
     }
 }
@@ -87,14 +87,22 @@ impl Hotkeys {
             })?;
             hotkeys.keys[action.index()] = key;
         }
-        for action in [Hotkey::Search, Hotkey::History] {
+        if hotkeys.keys.iter().filter(|key| **key == 'y').count() > 1 {
+            return Err(Error::Config(
+                "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
+            ));
+        }
+        for action in Hotkey::ALL {
             let index = action.index();
-            if !rows.contains_key(action.name())
-                && hotkeys
-                    .keys
-                    .iter()
-                    .enumerate()
-                    .any(|(other, key)| other != index && *key == hotkeys.keys[index])
+            let inherited = matches!(action, Hotkey::Copy | Hotkey::Search | Hotkey::History)
+                && !rows.contains_key(action.name());
+            if hotkeys.keys[index] == 'y'
+                || inherited
+                    && hotkeys
+                        .keys
+                        .iter()
+                        .enumerate()
+                        .any(|(other, key)| other != index && *key == hotkeys.keys[index])
             {
                 hotkeys.keys[index] = Self::default()
                     .keys
@@ -154,13 +162,17 @@ impl Hotkeys {
 
 #[must_use]
 pub const fn available(key: char) -> bool {
-    key.is_ascii_lowercase() && !matches!(key, 'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'v' | 'z')
+    key.is_ascii_lowercase()
+        && !matches!(
+            key,
+            'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'v' | 'y' | 'z'
+        )
 }
 
 fn parse(binding: &str) -> Option<char> {
     let mut chars = binding.strip_prefix("ctrl+")?.chars();
     let key = chars.next()?;
-    (chars.next().is_none() && available(key)).then_some(key)
+    (chars.next().is_none() && (available(key) || key == 'y')).then_some(key)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,12 +215,87 @@ impl ToolOutput {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Reasoning {
+    Off,
+    #[default]
+    Collapsed,
+    Expanded,
+}
+
+impl Reasoning {
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Collapsed => "collapsed",
+            Self::Expanded => "expanded",
+        }
+    }
+
+    #[must_use]
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Off => Self::Collapsed,
+            Self::Collapsed => Self::Expanded,
+            Self::Expanded => Self::Off,
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "off" | "false" | "hidden" => Self::Off,
+            "expanded" | "on" | "true" | "shown" => Self::Expanded,
+            _ => Self::Collapsed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Receipts {
+    #[default]
+    Off,
+    Collapsed,
+    Expanded,
+}
+
+impl Receipts {
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Collapsed => "collapsed",
+            Self::Expanded => "expanded",
+        }
+    }
+
+    #[must_use]
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::Off => Self::Collapsed,
+            Self::Collapsed => Self::Expanded,
+            Self::Expanded => Self::Off,
+        }
+    }
+
+    #[must_use]
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "collapsed" => Self::Collapsed,
+            "expanded" | "on" | "true" => Self::Expanded,
+            _ => Self::Off,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     pub theme: String,
     pub splash: bool,
     pub animations: bool,
-    pub reasoning: bool,
+    pub reasoning: Reasoning,
+    pub receipts: Receipts,
     pub tools: ToolOutput,
     pub bus: bool,
     pub layout: String,
@@ -222,7 +309,8 @@ impl Default for Prefs {
             theme: "space".to_string(),
             splash: true,
             animations: true,
-            reasoning: true,
+            reasoning: Reasoning::Collapsed,
+            receipts: Receipts::Off,
             tools: ToolOutput::Compact,
             bus: true,
             hotkeys: Hotkeys::default(),
@@ -233,11 +321,12 @@ impl Default for Prefs {
 }
 
 #[cfg(test)]
-const KEYS: [&str; 8] = [
+const KEYS: [&str; 9] = [
     "theme",
     "splash",
     "animations",
     "reasoning",
+    "receipts",
     "tools",
     "bus",
     "layout",
@@ -259,8 +348,18 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
     if let Some(animations) = file.animations {
         prefs.animations = animations;
     }
-    if let Some(reasoning) = file.reasoning {
-        prefs.reasoning = reasoning;
+    match file.reasoning {
+        Some(crate::config::ReasoningSetting::Flag(true)) => {
+            prefs.reasoning = Reasoning::Expanded;
+        }
+        Some(crate::config::ReasoningSetting::Flag(false)) => prefs.reasoning = Reasoning::Off,
+        Some(crate::config::ReasoningSetting::Text(text)) => {
+            prefs.reasoning = Reasoning::parse(&text);
+        }
+        None => {}
+    }
+    if let Some(receipts) = file.receipts.as_deref() {
+        prefs.receipts = Receipts::parse(receipts);
     }
     if let Some(tools) = file.tools {
         prefs.tools = if tools == "full" {

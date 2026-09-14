@@ -6,7 +6,7 @@ use regex::{Regex, RegexBuilder, escape};
 use sigil::prelude::*;
 
 use super::app::App;
-use super::canvas::{Cell, DIM, TEXT};
+use super::canvas::{Cell, palette};
 use super::chat::{accent, draft_view, ellipsize, write_at};
 use super::hit::Target;
 use super::model::{Entry, Model, entry_markdown};
@@ -229,7 +229,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 
 #[cfg(feature = "gui")]
 pub(super) fn desktop(app: App) -> NodeBuilder {
-    drop(app.transcript.get());
+    let _ = app.panes.get();
     let picker = app.search;
     let close = app.clone();
     let mut body = container()
@@ -344,7 +344,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left,
         3,
         &ellipsize(&format!("find   {query}"), columns),
-        TEXT,
+        palette().text,
     );
     let (rows, note) = match app.search.rows(&model) {
         Ok(rows) => (rows, "No matches. Edit the search.".to_string()),
@@ -359,7 +359,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             5,
             &ellipsize(&warning, columns),
-            DIM,
+            palette().dim,
         );
     }
     if rows.is_empty() {
@@ -369,7 +369,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             top,
             &ellipsize(&note, columns),
-            DIM,
+            palette().dim,
         );
     }
     let selected = app.search.selected.get().min(rows.len().saturating_sub(1));
@@ -390,7 +390,11 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             y,
             &ellipsize(&label, columns),
-            if offset == selected { color } else { TEXT },
+            if offset == selected {
+                color
+            } else {
+                palette().text
+            },
         );
         app.hits
             .add(y, left, left + columns, Target::Search(offset));
@@ -401,7 +405,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
                 left + 2,
                 y + 1,
                 &ellipsize(&app.search.detail(*entry), columns.saturating_sub(2)),
-                DIM,
+                palette().dim,
             );
             app.hits
                 .add(y + 1, left, left + columns, Target::Search(offset));
@@ -423,7 +427,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left,
         height.saturating_sub(1),
         &ellipsize(&help, columns),
-        DIM,
+        palette().dim,
     );
     cells
 }

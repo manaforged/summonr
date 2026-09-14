@@ -1,6 +1,412 @@
 use super::*;
 
 #[test]
+fn diff_commands_reveal_the_saved_pane_from_the_welcome_screen() {
+    sigil::reactive::Runtime::scope("summoner-welcome-command", || {
+        for command in ["/diff", "/diff file.txt"] {
+            let (cmd, mut rx) = unbounded_channel();
+            let mut start = info();
+            start.splash = true;
+            start.prefs.layout = "chat | diff 40%".to_string();
+            let app = App::new(start, PathBuf::from("."), cmd);
+            app.resize(120, 32);
+            app.splash_revealed.set(true);
+            apply(
+                &app,
+                Msg::Diff(crate::diff::Diff {
+                    base: "HEAD".to_string(),
+                    files: vec![crate::diff::Stat {
+                        path: "file.txt".to_string(),
+                        added: 1,
+                        ..crate::diff::Stat::default()
+                    }],
+                }),
+            );
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(120, 32);
+            let welcome = screen
+                .frame(&mut host, &mut router, [], (120, 32))
+                .expect("welcome")
+                .text();
+            assert!(welcome.contains("workdir"), "{welcome}");
+            router.focus_next(host.cx());
+            let keys = command
+                .chars()
+                .map(KeyCode::Char)
+                .chain([KeyCode::Enter])
+                .map(|key| {
+                    sigil_tui::map_key(&TerminalKeyEvent::new(key, KeyModifiers::NONE))
+                        .expect("key")
+                });
+            let frame = screen
+                .frame(&mut host, &mut router, keys, (120, 32))
+                .expect("command outcome")
+                .text();
+            assert!(frame.contains("diff ·"), "{command}: {frame}");
+            assert!(frame.contains("file.txt"), "{frame}");
+            assert!(!frame.contains("workdir"), "{frame}");
+            assert!(app.draft.peek().is_empty());
+            if command.contains(' ') {
+                assert!(matches!(rx.try_recv(), Ok(Cmd::Patch(None, path)) if path == "file.txt"));
+            }
+        }
+    });
+}
+
+#[test]
+fn drafting_returns_pane_shortcuts_to_the_composer() {
+    sigil::reactive::Runtime::scope("summoner-pane-draft-focus", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(120, 40);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Diff(None))));
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(120, 40);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .expect("pane")
+            .text();
+        assert!(frame.contains("pane controls · esc back"), "{frame}");
+        assert!(!frame.contains("enter send"), "{frame}");
+        router.focus_next(host.cx());
+        let keys = "t/exit".chars().map(KeyCode::Char).chain([KeyCode::Enter]);
+        for (index, code) in keys.enumerate() {
+            let key =
+                sigil_tui::map_key(&TerminalKeyEvent::new(code, KeyModifiers::NONE)).expect("key");
+            let frame = screen
+                .frame(&mut host, &mut router, [key], (120, 40))
+                .expect("typing")
+                .text();
+            if index == 0 {
+                assert!(
+                    app.diff_recent.peek(),
+                    "pane shortcuts still work before editing"
+                );
+                assert!(app.draft.peek().is_empty());
+            } else if index == 5 {
+                assert_eq!(app.draft.peek(), "/exit");
+                assert!(!app.pane_focus.peek());
+                assert!(frame.contains("enter send"), "{frame}");
+                assert!(!frame.contains("pane controls"), "{frame}");
+            }
+        }
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(text)) if text == "/exit"));
+        assert!(app.draft.peek().is_empty());
+        assert!(
+            app.diff_recent.peek(),
+            "the t in exit must not toggle the pane"
+        );
+        app.replace("/diff".to_string());
+        app.submit();
+        assert!(
+            app.pane_focus.peek(),
+            "opening Diff explicitly still focuses it"
+        );
+        assert!(app.draft.peek().is_empty());
+        app.resize(60, 40);
+        let key = sigil_tui::map_key(&TerminalKeyEvent::new(
+            KeyCode::Char('t'),
+            KeyModifiers::NONE,
+        ))
+        .expect("key");
+        let frame = screen
+            .frame(&mut host, &mut router, [key], (60, 40))
+            .expect("hidden pane")
+            .text();
+        assert_eq!(app.draft.peek(), "t", "hidden panes cannot consume typing");
+        assert!(frame.contains("enter send"), "{frame}");
+    });
+}
+
+#[test]
+fn plan_suggestions_follow_the_pending_plan_and_mode() {
+    sigil::reactive::Runtime::scope("plan-suggestions", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(100, 32);
+        app.refresh();
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 32);
+        for pending in [false, true, false] {
+            let mut snapshot = app.model.borrow().snapshot.clone();
+            snapshot.pending_plan = pending;
+            apply(&app, Msg::Settings(snapshot));
+            app.replace("/plan".to_string());
+            let rendered = screen
+                .frame(&mut host, &mut router, [], (100, 32))
+                .expect("plan menu")
+                .text();
+            assert!(rendered.contains("enter plan mode"));
+            assert_eq!(rendered.contains("/plan accept"), pending);
+            assert_eq!(rendered.contains("/plan reject"), pending);
+            app.shift(1);
+            assert!(app.complete());
+            assert_eq!(
+                app.draft.peek(),
+                if pending { "/plan accept" } else { "/plan" }
+            );
+        }
+        for plan in [true, false] {
+            apply(&app, Msg::Mode(plan));
+            app.replace("/au".to_string());
+            let rendered = screen
+                .frame(&mut host, &mut router, [], (100, 32))
+                .expect("mode menu")
+                .text();
+            assert_eq!(rendered.contains("return to auto mode"), plan);
+            assert!(app.complete());
+            assert_eq!(app.draft.peek(), if plan { "/auto" } else { "/auth" });
+        }
+        app.replace("/plan accept".to_string());
+        app.submit();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Command(line)) if line == "/plan accept"));
+    });
+}
+
+#[test]
+fn invalid_commands_preserve_settings_and_do_not_select_another_provider() {
+    sigil::reactive::Runtime::scope("command-validation", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        let before = app.model.borrow().prefs.clone();
+        for line in [
+            "/theme nonsense",
+            "/tools nonsense",
+            "/bus nonsense",
+            "/plan nonsense",
+        ] {
+            app.replace(line.to_string());
+            app.submit();
+            assert_eq!(app.model.borrow().prefs, before);
+            assert_eq!(app.draft.peek(), line);
+            assert!(rx.try_recv().is_err());
+            assert!(
+                matches!(app.model.borrow().entries.last(), Some(Entry::Error(text)) if text.contains("takes no arguments"))
+            );
+        }
+        let unknown = "  /compactt preserve café 日本語  ";
+        app.replace(unknown.to_string());
+        app.caret.set(11);
+        app.submit();
+        assert_eq!(app.draft.peek(), unknown);
+        assert_eq!(app.caret.peek(), 11);
+        assert!(rx.try_recv().is_err());
+        assert!(
+            matches!(app.model.borrow().entries.last(), Some(Entry::Error(text)) if text.contains("Unknown command `/compactt`"))
+        );
+        app.replace("/login nonexistent-audit-provider".to_string());
+        app.submit();
+        assert!(!app.auth_open.peek());
+        assert!(rx.try_recv().is_err());
+        assert!(
+            matches!(app.model.borrow().entries.last(), Some(Entry::Error(text)) if text.contains("nonexistent-audit-provider"))
+        );
+        app.replace("/export \"saved session.md\"".to_string());
+        app.submit();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Export(Some(path))) if path == "saved session.md"));
+    });
+}
+
+#[test]
+fn composer_wraps_navigation_selection_and_submission() {
+    sigil::reactive::Runtime::scope("composer-wrap-keys", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(24, 16);
+        let original = "alpha beta gamma delta";
+        app.replace(original.to_string());
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(24, 16);
+        screen
+            .frame(&mut host, &mut router, [], (24, 16))
+            .expect("chat");
+        router.focus_next(host.cx());
+        for (code, modifiers, caret, draft) in [
+            (KeyCode::Home, KeyModifiers::NONE, 11, original),
+            (KeyCode::Up, KeyModifiers::NONE, 0, original),
+            (KeyCode::End, KeyModifiers::NONE, 11, original),
+            (KeyCode::Down, KeyModifiers::SHIFT, 22, original),
+            (KeyCode::Char('X'), KeyModifiers::NONE, 12, "alpha beta X"),
+            (KeyCode::Char('z'), KeyModifiers::CONTROL, 22, original),
+            (KeyCode::Home, KeyModifiers::CONTROL, 0, original),
+            (
+                KeyCode::End,
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                22,
+                original,
+            ),
+            (KeyCode::Char('Y'), KeyModifiers::NONE, 1, "Y"),
+            (KeyCode::Char('z'), KeyModifiers::CONTROL, 22, original),
+        ] {
+            let key = sigil_tui::map_key(&TerminalKeyEvent::new(code, modifiers)).expect("key");
+            screen
+                .frame(&mut host, &mut router, [key], (24, 16))
+                .expect("edit");
+            assert_eq!(app.caret.peek(), caret, "{code:?} {modifiers:?}");
+            assert_eq!(app.draft.peek(), draft, "{code:?} {modifiers:?}");
+        }
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Enter)],
+                (24, 16),
+            )
+            .expect("submit");
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Submit(input)) if input.text == original));
+    });
+}
+
+#[test]
+fn composer_keeps_a_vertical_column_through_short_rows() {
+    sigil::reactive::Runtime::scope("composer-wrap-column", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.model
+            .borrow_mut()
+            .entries
+            .push(Entry::User("older prompt".to_string()));
+        app.resize(24, 16);
+        app.replace("abcdefghij\nx\nabcdefghij".to_string());
+        app.caret.set(8);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(24, 16);
+        screen
+            .frame(&mut host, &mut router, [], (24, 16))
+            .expect("chat");
+        router.focus_next(host.cx());
+        for (code, caret) in [
+            (Key::ArrowDown, 12),
+            (Key::ArrowDown, 21),
+            (Key::ArrowUp, 12),
+            (Key::ArrowUp, 8),
+        ] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [sigil_tui::key_down(code)],
+                    (24, 16),
+                )
+                .expect("vertical");
+            assert_eq!(app.caret.peek(), caret);
+        }
+        let draft = app.draft.peek();
+        app.caret.set(draft.len());
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::ArrowDown)],
+                (24, 16),
+            )
+            .expect("bottom edge");
+        assert_eq!(app.draft.peek(), draft);
+        assert_eq!(app.caret.peek(), draft.len());
+    });
+}
+
+#[test]
+fn composer_selects_across_wrapped_unicode_rows_and_resizes() {
+    sigil::reactive::Runtime::scope("composer-wrap-pointer", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let mut start = info();
+        start.splash = true;
+        let app = App::new(start, PathBuf::from("."), cmd);
+        app.resize(24, 16);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(24, 16);
+        screen
+            .frame(&mut host, &mut router, [], (24, 16))
+            .expect("welcome");
+        router.focus_next(host.cx());
+        let original = "alpha beta café 日本語";
+        let frame = screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::paste(original)],
+                (24, 16),
+            )
+            .expect("paragraph");
+        assert!(!app.splash.peek());
+        assert!(frame.text().contains("alpha beta"), "{}", frame.text());
+        assert!(frame.text().contains("café 日本語"), "{}", frame.text());
+        let row = chat::prompt_row(24, 16, original) + 1;
+        for event in [
+            sigil_tui::pointer(sigil_hal::PointerPhase::Down, 11, row),
+            sigil_tui::pointer(sigil_hal::PointerPhase::Move, 10, row + 1),
+            sigil_tui::pointer(sigil_hal::PointerPhase::Up, 10, row + 1),
+        ] {
+            screen
+                .frame(&mut host, &mut router, [event], (24, 16))
+                .expect("drag");
+        }
+        screen
+            .frame(&mut host, &mut router, [sigil_tui::paste("X")], (24, 16))
+            .expect("replace");
+        assert_eq!(app.draft.peek(), "alpha X日本語");
+        let undo = sigil_tui::map_key(&TerminalKeyEvent::new(
+            KeyCode::Char('z'),
+            KeyModifiers::CONTROL,
+        ))
+        .expect("undo");
+        screen
+            .frame(&mut host, &mut router, [undo], (24, 16))
+            .expect("restore");
+        assert_eq!(app.draft.peek(), original);
+        app.resize(80, 24);
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::End)],
+                (80, 24),
+            )
+            .expect("resize");
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::paste(" done")],
+                (80, 24),
+            )
+            .expect("continue");
+        assert_eq!(app.draft.peek(), format!("{original} done"));
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Enter)],
+                (80, 24),
+            )
+            .expect("submit");
+        assert!(
+            matches!(rx.try_recv(), Ok(Cmd::Submit(input)) if input.text == format!("{original} done"))
+        );
+    });
+}
+
+#[test]
 fn composer_clicks_and_drags_edit_the_visible_source() {
     for width in [24, 100] {
         sigil::reactive::Runtime::scope("composer-pointer", || {
@@ -17,8 +423,8 @@ fn composer_clicks_and_drags_edit_the_visible_source() {
                 .frame(&mut host, &mut router, [], (width, 16))
                 .expect("chat");
             router.focus_next(host.cx());
-            let left = if width > 28 { 6 } else { 5 };
-            let row = chat::prompt_row(16, &app.draft.peek()) + 1;
+            let left = chat::margin(usize::from(width)) as u16 + 4;
+            let row = chat::prompt_row(width, 16, &app.draft.peek()) + 1;
             screen
                 .frame(
                     &mut host,
@@ -60,7 +466,7 @@ fn composer_clicks_and_drags_edit_the_visible_source() {
             screen
                 .frame(&mut host, &mut router, [], (width, 16))
                 .expect("long draft");
-            let row = chat::prompt_row(16, &app.draft.peek()) + 1;
+            let row = chat::prompt_row(width, 16, &app.draft.peek()) + 1;
             screen
                 .frame(
                     &mut host,
@@ -170,6 +576,110 @@ fn queue_edit_shortcut_does_not_cancel_or_modify_the_draft() {
 }
 
 #[test]
+fn search_does_not_invent_matches_across_message_lines() {
+    for (kind, query) in [
+        ("system", "alphabeta"),
+        ("error", "alphabeta"),
+        ("tool", "alpha    beta"),
+    ] {
+        sigil::reactive::Runtime::scope("summoner-hard-line-search", || {
+            let (cmd, _rx) = unbounded_channel();
+            let app = App::new(info(), PathBuf::from("."), cmd);
+            app.resize(100, 16);
+            let text = format!(
+                "alpha\nbeta\n{}{query}\nactual match is here\n{}",
+                "filler row\n".repeat(90),
+                "tail row\n".repeat(50)
+            );
+            match kind {
+                "system" => apply(&app, Msg::System(text)),
+                "error" => apply(&app, Msg::Failed(text)),
+                _ => {
+                    apply(
+                        &app,
+                        Msg::Event(Event::ToolCall {
+                            id: "command".to_string(),
+                            name: "run_command".to_string(),
+                            arguments: "{}".to_string(),
+                        }),
+                    );
+                    apply(
+                        &app,
+                        Msg::Event(Event::ToolResult {
+                            id: "command".to_string(),
+                            success: true,
+                            mutated: false,
+                            output: text,
+                        }),
+                    );
+                }
+            }
+            app.replace("keep my draft".to_string());
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(100, 16);
+            screen
+                .frame(&mut host, &mut router, [], (100, 16))
+                .expect("chat");
+            app.search.start(query);
+            assert_eq!(
+                app.search.rows(&app.model.borrow()).expect("matches").len(),
+                1
+            );
+            app.jump();
+            let frame = screen
+                .frame(&mut host, &mut router, [], (100, 16))
+                .expect("jump")
+                .text();
+            assert!(frame.contains("actual match is here"), "{kind}: {frame}");
+            assert_eq!(app.draft.peek(), "keep my draft");
+        });
+    }
+}
+
+#[test]
+fn search_follows_a_phrase_across_soft_wrapped_message_rows() {
+    for width in [24, 40, 100] {
+        sigil::reactive::Runtime::scope("summoner-soft-line-search", || {
+            let (cmd, _rx) = unbounded_channel();
+            let app = App::new(info(), PathBuf::from("."), cmd);
+            app.resize(width, 16);
+            apply(
+                &app,
+                Msg::System(format!(
+                    "{}{}café 日本語 target phrase\n{}",
+                    "filler\n".repeat(80),
+                    "prefix ".repeat(20),
+                    "tail\n".repeat(40)
+                )),
+            );
+            let tree = app.clone();
+            let mut host = Host::cells();
+            host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+            let mut router = EventRouter::new();
+            let mut screen = Screen::new(width, 16);
+            screen
+                .frame(&mut host, &mut router, [], (width, 16))
+                .expect("chat");
+            app.search.start("café 日本語 target phrase");
+            app.jump();
+            let frame = screen
+                .frame(&mut host, &mut router, [], (width, 16))
+                .expect("jump")
+                .text();
+            assert!(
+                ["café", "日", "本", "語", "target", "phrase"]
+                    .iter()
+                    .all(|part| frame.contains(part)),
+                "{frame}"
+            );
+        });
+    }
+}
+
+#[test]
 fn search_reveals_a_match_near_the_end_of_a_long_answer() {
     for width in [40, 100] {
         sigil::reactive::Runtime::scope("summoner-long-answer-search", || {
@@ -214,6 +724,11 @@ fn search_reveals_a_match_near_the_end_of_a_long_answer() {
 fn search_reveals_markdown_source_after_wrapping() {
     for width in [24, 40, 100] {
         let long = "long prefix ".repeat(60) + "**bold target** end";
+        let diagram = format!(
+            "```mermaid\r\ngraph LR\r\n{}Z[café target] --> Last[Read every input record and preserve its complete label]\r\n",
+            "A[日本語 input] --> B[Continue processing every record without losing its payload]\r\n".repeat(40)
+        );
+        let closed = format!("{diagram}```");
         for (source, query, visible) in [
             (
                 "Before **bold target** after",
@@ -229,6 +744,8 @@ fn search_reveals_markdown_source_after_wrapping() {
                 "Alpha",
             ),
             (long.as_str(), "**bold target**", "target"),
+            (diagram.as_str(), "café target", "café target"),
+            (closed.as_str(), "café target", "café target"),
         ] {
             sigil::reactive::Runtime::scope("markdown-search", || {
                 let (cmd, _rx) = unbounded_channel();
@@ -351,8 +868,9 @@ fn saved_prompt_search_inserts_at_the_caret_and_preserves_the_draft_image() {
             });
             app.refresh();
             assert!(
-                app.transcript
-                    .peek()
+                app.model
+                    .borrow()
+                    .transcript()
                     .contains("broken-session: invalid record")
             );
             app.update(Msg::Prompts {
@@ -384,6 +902,23 @@ fn saved_prompt_search_inserts_at_the_caret_and_preserves_the_draft_image() {
             assert!(!app.search.open.peek());
             assert_eq!(app.draft.peek(), format!("before {saved}🦀 after"));
             assert_eq!(app.caret.peek(), 7 + saved.len());
+            for (modifiers, expected, caret) in [
+                (KeyModifiers::CONTROL, "before 🦀 after".to_string(), 7),
+                (
+                    KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                    format!("before {saved}🦀 after"),
+                    7 + saved.len(),
+                ),
+            ] {
+                let event =
+                    sigil_tui::map_key(&TerminalKeyEvent::new(KeyCode::Char('z'), modifiers))
+                        .expect("history shortcut");
+                screen
+                    .frame(&mut host, &mut router, [event], (width, 16))
+                    .expect("prompt history edit");
+                assert_eq!(app.draft.peek(), expected);
+                assert_eq!(app.caret.peek(), caret);
+            }
             assert!(rx.try_recv().is_err(), "selection must not send a prompt");
             assert!(
                 app.model
@@ -1262,6 +1797,100 @@ fn resume_picker_keeps_drafts_on_cancel_and_explains_empty_or_failed_lists() {
 }
 
 #[test]
+fn command_completion_undo_restores_the_typed_prefix() {
+    sigil::reactive::Runtime::scope("completion-undo", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(80, 24);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(80, 24);
+        screen
+            .frame(&mut host, &mut router, [], (80, 24))
+            .expect("mount");
+        router.focus_next(host.cx());
+        screen
+            .frame(&mut host, &mut router, [sigil_tui::paste("/mo")], (80, 24))
+            .expect("prefix");
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::key_down(Key::Tab)],
+                (80, 24),
+            )
+            .expect("complete");
+        assert_eq!(app.draft.peek(), "/model");
+        for (key, expected) in [('z', "/mo"), ('y', "/model")] {
+            let event = sigil_tui::map_key(&TerminalKeyEvent::new(
+                KeyCode::Char(key),
+                KeyModifiers::CONTROL,
+            ))
+            .expect("history key");
+            screen
+                .frame(&mut host, &mut router, [event], (80, 24))
+                .expect("history");
+            assert_eq!(app.draft.peek(), expected);
+            assert_eq!(app.caret.peek(), expected.len());
+            assert!(app.editor.selection().is_none());
+        }
+    });
+}
+
+#[test]
+fn external_edits_undo_without_losing_the_original_caret() {
+    sigil::reactive::Runtime::scope("external-edit-history", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(80, 24);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(80, 24);
+        screen
+            .frame(&mut host, &mut router, [], (80, 24))
+            .expect("mount");
+        router.focus_next(host.cx());
+        let original = "keep café untouched ";
+        screen
+            .frame(
+                &mut host,
+                &mut router,
+                [sigil_tui::paste(original)],
+                (80, 24),
+            )
+            .expect("draft");
+        app.editor.select("keep café".len(), false);
+        let edited = "edited 日本語\nkeep trailing space ";
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        assert!(app.pane_focus.peek());
+        app.edit(edited);
+        assert!(!app.pane_focus.peek());
+        app.edit(edited);
+        for (modifiers, expected, caret) in [
+            (KeyModifiers::CONTROL, original, "keep café".len()),
+            (
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                edited,
+                edited.len(),
+            ),
+        ] {
+            let event = sigil_tui::map_key(&TerminalKeyEvent::new(KeyCode::Char('z'), modifiers))
+                .expect("history key");
+            screen
+                .frame(&mut host, &mut router, [event], (80, 24))
+                .expect("editor history");
+            assert_eq!(app.draft.peek(), expected);
+            assert_eq!(app.caret.peek(), caret);
+            assert!(app.editor.selection().is_none());
+        }
+    });
+}
+
+#[test]
 fn file_completion_attaches_a_quoted_path_and_preserves_surrounding_text() {
     sigil::reactive::Runtime::scope("summoner-file-completion", || {
         let dir = tempfile::tempdir().expect("workspace");
@@ -1304,6 +1933,27 @@ fn file_completion_attaches_a_quoted_path_and_preserves_surrounding_text() {
             )
             .expect("completion");
         assert_eq!(app.draft.peek(), "review @\"docs/design notes.md\" please");
+        assert_eq!(app.caret.peek(), "review @\"docs/design notes.md\" ".len());
+        for (modifiers, expected, caret) in [
+            (
+                KeyModifiers::CONTROL,
+                "review @dn please",
+                "review @dn".len(),
+            ),
+            (
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+                "review @\"docs/design notes.md\" please",
+                "review @\"docs/design notes.md\" ".len(),
+            ),
+        ] {
+            let event = sigil_tui::map_key(&TerminalKeyEvent::new(KeyCode::Char('z'), modifiers))
+                .expect("history key");
+            screen
+                .frame(&mut host, &mut router, [event], (40, 12))
+                .expect("file history");
+            assert_eq!(app.draft.peek(), expected);
+            assert_eq!(app.caret.peek(), caret);
+        }
         screen
             .frame(
                 &mut host,
@@ -1414,7 +2064,7 @@ fn slash_menu_routes_arrows_tab_and_escape() {
             )
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
             .clone();
-        assert!(selected.text().contains("› /settings"));
+        assert!(selected.text().contains("› /model"));
 
         screen
             .frame(
@@ -1424,7 +2074,7 @@ fn slash_menu_routes_arrows_tab_and_escape() {
                 (80, 24),
             )
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
-        assert_eq!(app.draft.peek(), "/settings");
+        assert_eq!(app.draft.peek(), "/model");
 
         let hidden = screen
             .frame(
@@ -1436,7 +2086,7 @@ fn slash_menu_routes_arrows_tab_and_escape() {
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
             .clone();
         assert!(!hidden.text().contains("commands"));
-        assert!(!app.settings_open.peek());
+        assert!(!app.editing_model.peek());
     });
 }
 

@@ -478,8 +478,9 @@ fn the_right_rail_follows_the_open_pane() {
         app.toggle_pane(Pane::Diff);
         app.diff_open("src/lib.rs".to_string());
         app.update(Msg::Patch {
+            root: None,
             path: "src/lib.rs".to_string(),
-            text: "@@ -1 +1,2 @@\n-a\n+b\n+c\n".to_string(),
+            result: Ok("@@ -1 +1,2 @@\n-a\n+b\n+c\n".to_string()),
         });
         app.refresh();
         let tree = app.clone();

@@ -76,7 +76,7 @@ pub use worktree::{
 
 #[must_use]
 pub fn revision() -> &'static str {
-    option_env!("SUMMON_REVISION").unwrap_or("unknown")
+    option_env!("SUMMONR_REVISION").unwrap_or("unknown")
 }
 
 #[cfg(test)]

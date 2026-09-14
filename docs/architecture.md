@@ -1,10 +1,11 @@
 # Work
 
-Summoner is a local coding harness. `summon NAME` selects a configured
-endpoint; `summoner` uses your default. The connector owns HTTP and SSE
-(`src/provider.rs`) and credentials (`src/provider/auth.rs`). It supports
-OpenAI-compatible `chat/completions`, Anthropic Messages, and Gemini.
-The native adapters live in `src/provider/native.rs`.
+Summonr is a local coding harness. `summonr NAME` selects a configured
+endpoint; `summonr` uses your default. The connector owns HTTP and SSE
+(`src/provider.rs`) and credentials (`src/provider/auth.rs`). Completions
+seats (including `zen`, `go`, and `opencode`) speak OpenAI
+`chat/completions`. Anthropic Messages and Gemini use their own wires
+in `src/provider/native.rs`.
 
 Reasoning text uses `reasoning_content`. Provider continuation data stays
 on the tool call in the session log. Anthropic tool turns preserve their
@@ -26,19 +27,34 @@ Work is one coding job:
 - steps, their checks, and (when verifying) a candidate capture of the
   workspace
 
-`summon --steps` and `summon --goal` are how you start Work from the
-CLI. A plain `summon` turn still opens Work if the session has none
+`summonr --steps` and `summonr --goal` are how you start Work from the
+CLI. A plain `summonr` turn still opens Work if the session has none
 (`src/runtime/turn.rs`).
 
 The model never owns this. It sees one step, or one objective, and
-the tools. Summoner re-reads the rest.
+the tools. Summonr re-reads the rest.
+
+## Tools
+
+The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts
+the old names.
+
+| Tool | Job |
+| --- | --- |
+| `read` | File as tagged lines, directory, image, or search (`pattern` / `glob`) |
+| `edit` | Hash-anchored replace, insert, delete, or a batch |
+| `write` | Create or overwrite |
+| `run_command` | Sandboxed shell |
+
+On when the module is on: `skill`, `lsp`, `web`, `task`, `bus`. Plan mode
+advertises `read` and `run_command` (plus `skill` and `web`).
 
 ## What the harness holds between turns
 
-Summoner keeps the plan between turns. Each turn is "do this item"
+Summonr keeps the plan between turns. Each turn is "do this item"
 plus whatever check you put in the plan as ``Run `command` ``.
 
-Summoner does not ask the model whether the job is done. The gate is
+Summonr does not ask the model whether the job is done. The gate is
 `.mage/check.toml`: each command exits 0 or the turn fails.
 In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
@@ -47,7 +63,7 @@ Crash the process. Run the same command. Resume reads the session
 log back into the conversation and `work.json` back into Work, then
 aborts the turn the dead process left open (`src/durable/driver.rs`).
 Resume checks the saved plan and workspace against the requested job.
-If the gate list changes during a turn, Summoner selects the current checks
+If the gate list changes during a turn, Summonr selects the current checks
 before verification.
 
 ## Where it lives in the tree
@@ -62,7 +78,8 @@ before verification.
 | Numbered plan | `src/steps.rs` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
-| argv (`summon grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
+| Advertised tools | `src/tools/catalog.rs` |
+| argv (`summonr grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
 
 A session is `~/.mage/sessions/<id>/session.jsonl` (append-only
 messages) plus `work.json` (the job, rewritten atomically after every
@@ -75,22 +92,20 @@ On disk you still see Mage names: `~/.mage/sessions/`, `.mage/jobs/`,
 
 ## Worktrees
 
-`--goal` and `--steps` call `git worktree add` (`src/worktree.rs`) so
-a long job does not edit the tree you launched from. Branch
-`summon/<id>`, directory `<repo>-worktrees/<id>`. On exit 0 the
+`--goal` and `--steps` edit the directory you launched from. Pass
+`--worktree` to call `git worktree add` (`src/worktree.rs`). Branch
+`summonr/<id>`, directory `<repo>-worktrees/<id>`. On exit 0 the
 harness `merge --ff-only` into the branch you started on, then
 `worktree remove`. Dirty trees and non-fast-forward merges stay.
-`summon worktrees prune` only drops records for directories that are
-already gone. `--here` skips isolation. Interactive sessions stay in
+`summonr worktrees prune` only drops records for directories that are
+already gone. `--here` is the default. Interactive sessions stay in
 cwd unless you pass `--worktree`.
 
-Concurrent `implement` children use the same linked-worktree directory.
-Each child starts from the parent's tracked `HEAD` with the parent's file,
-shell, and language-server tools; background commands stay with the parent.
-Summoner first applies every child patch in one child worktree. If the patches
-conflict, the parent stays unchanged and the worktrees remain for inspection.
-If they combine cleanly, Summoner applies one patch to the parent and removes
-the child worktrees. The parent runs verification after reconciliation.
+Concurrent `implement` children share the parent workspace. Each child
+uses the parent's file, shell, and language-server tools; background
+commands stay with the parent. The parent runs verification after they
+finish. Pass `--worktree` on the session to isolate the whole run, not
+each child.
 
 A background child (`task` with `background`) runs as a Tokio task while
 the parent keeps working. `Loop::spawned` holds its handle; child events
@@ -108,7 +123,7 @@ turn waits for the same jobs before it can verify.
 TypeScript/JavaScript, Python, and Go. A module owns project markers, source
 extensions, server candidates, and LSP initialization options. `src/tools/lsp.rs`
 uses the requested file to select a module and keeps one server connection for
-each active module.
+each active module. The advertised tool is `lsp`.
 
 The Rust module disables rust-analyzer check-on-save, build scripts, proc
 macros, and `cargo --all-targets`. The model must use `run_command` for an

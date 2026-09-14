@@ -76,7 +76,7 @@ pub(crate) fn wrap(command: &str, exit: &Path, cwd: &Path) -> String {
 fn encode(script: &str, cwd: &Path) -> String {
     let cwd = simplified(cwd).to_string_lossy().replace('\'', "''");
     let script = format!(
-        "$ProgressPreference = 'SilentlyContinue'\n[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()\ntry {{\nif ($env:SUMMONER_SANDBOX_ROOT) {{\nNew-PSDrive -Name Workspace -PSProvider FileSystem -Root $env:SUMMONER_SANDBOX_ROOT -ErrorAction Stop | Out-Null\nSet-Location -LiteralPath ('Workspace:\\' + $env:SUMMONER_SANDBOX_DIRECTORY) -ErrorAction Stop\n}} else {{\nSet-Location -LiteralPath '{cwd}' -ErrorAction Stop\n}}\n[Environment]::CurrentDirectory = '{cwd}'\n}} catch {{\n[Console]::Error.WriteLine($_.Exception.Message)\nexit 1\n}}\n{script}"
+        "$ProgressPreference = 'SilentlyContinue'\n[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()\ntry {{\nif ($env:SUMMONR_SANDBOX_ROOT) {{\nNew-PSDrive -Name Workspace -PSProvider FileSystem -Root $env:SUMMONR_SANDBOX_ROOT -ErrorAction Stop | Out-Null\nSet-Location -LiteralPath ('Workspace:\\' + $env:SUMMONR_SANDBOX_DIRECTORY) -ErrorAction Stop\n}} else {{\nSet-Location -LiteralPath '{cwd}' -ErrorAction Stop\n}}\n[Environment]::CurrentDirectory = '{cwd}'\n}} catch {{\n[Console]::Error.WriteLine($_.Exception.Message)\nexit 1\n}}\n{script}"
     );
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     STANDARD.encode(bytes)

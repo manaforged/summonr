@@ -65,7 +65,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                 shell(&screen).child(
                     container()
                         .role(Role::Application)
-                        .label("Summoner")
+                        .label("Summonr")
                         .layout(LayoutStyle::flex_row().fill())
                         .class(classes!("bg-gray-1"))
                         .child(

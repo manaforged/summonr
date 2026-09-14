@@ -10,7 +10,7 @@ mod serve;
 
 const SKILL: &str = include_str!("room/SKILL.md");
 
-const USAGE: &str = "usage:\n  summon room                 who is in the room\n  summon room serve           MCP server over stdio (Claude Code and Codex spawn this)\n  summon room host codex [--cwd PATH] [--id NAME] [--read-only]\n                              run Codex as a peer that answers mail\n  summon room setup claude    install the /summon-room skill and the .mcp.json entry here\n  summon room setup codex     install the skill and the ~/.codex/config.toml entry";
+const USAGE: &str = "usage:\n  summonr room                 who is in the room\n  summonr room serve           MCP server over stdio (Claude Code and Codex spawn this)\n  summonr room host codex [--cwd PATH] [--id NAME] [--read-only]\n                              run Codex as a peer that answers mail\n  summonr room setup claude    install the /summon-room skill and the .mcp.json entry here\n  summonr room setup codex     install the skill and the ~/.codex/config.toml entry";
 
 pub async fn run(args: &[String], cwd: &Path) -> Result<i32> {
     let words: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -134,7 +134,7 @@ fn setup_codex(root: &Path) -> Result<String> {
         std::fs::write(&path, after)?;
     }
     Ok(format!(
-        "skill      {}\nmcp        {} ({})\n\nCodex cannot receive a push. Inside Codex, call the wait tool to read the room, or let Claude Code host Codex with `summon room host codex`.",
+        "skill      {}\nmcp        {} ({})\n\nCodex cannot receive a push. Inside Codex, call the wait tool to read the room, or let Claude Code host Codex with `summonr room host codex`.",
         skill.display(),
         path.display(),
         if changed { "written" } else { "unchanged" }

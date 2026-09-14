@@ -219,7 +219,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     if trees.is_empty() {
         return column.child(
-            label("no worktrees — summon --worktree, --goal, or --steps")
+            label("no worktrees — summonr --worktree, --goal, or --steps")
                 .class(classes!("text-xs text-gray-11")),
         );
     }

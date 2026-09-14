@@ -14,10 +14,10 @@ fn main() {
         .is_some_and(|arg| arg == "--sandbox-exec")
     {
         let args: Vec<_> = std::env::args_os().skip(2).collect();
-        match summoner::sandbox_entry(&args) {
+        match summonr::sandbox_entry(&args) {
             Ok(code) => std::process::exit(code),
             Err(error) => {
-                eprintln!("summon: {error}");
+                eprintln!("summonr: {error}");
                 std::process::exit(1);
             }
         }
@@ -32,7 +32,7 @@ async fn run() {
         Err(error) => {
             eprintln!(
                 "{}: {error}",
-                option_env!("CARGO_BIN_NAME").unwrap_or("summon")
+                option_env!("CARGO_BIN_NAME").unwrap_or("summonr")
             );
             std::process::exit(1);
         }

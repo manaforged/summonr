@@ -61,15 +61,8 @@ impl Sandbox {
             })?;
             let write = write
                 .iter()
-                .map(|path| {
-                    path.canonicalize().map_err(|error| {
-                        Error::Config(format!(
-                            "sandbox write path {} is unusable: {error}",
-                            path.display()
-                        ))
-                    })
-                })
-                .collect::<Result<Vec<PathBuf>>>()?;
+                .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
+                .collect::<Vec<PathBuf>>();
             #[cfg(any(target_os = "macos", target_os = "linux"))]
             let temp = std::env::temp_dir().canonicalize().map_err(|error| {
                 Error::Config(format!(
@@ -87,7 +80,7 @@ impl Sandbox {
                     .ok_or_else(|| {
                         Error::Config("cannot locate the sandbox test executable".to_string())
                     })?
-                    .join("summon.exe");
+                    .join("summonr.exe");
                 let sandbox = Self {
                     backend: Backend::Windows { executable },
                     workspace,

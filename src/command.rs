@@ -239,7 +239,7 @@ const SPECS: &[CommandSpec] = &[
     ),
     spec(
         "/agents",
-        "show connected Summoner sessions",
+        "show connected Summonr sessions",
         SlashCommand::Agents,
         Bare,
     )
@@ -267,14 +267,14 @@ const SPECS: &[CommandSpec] = &[
     .category(Advanced),
     spec(
         "/write",
-        "approve a path outside the workspace for writes",
+        "persist a writable root; /write --session PATH for this session",
         SlashCommand::Write,
         Value,
     )
     .category(Advanced),
     spec(
         "/approve",
-        "ask before each shell command: on or off",
+        "manual: ask before extra-root writes and shell commands",
         SlashCommand::Approve,
         Value,
     )

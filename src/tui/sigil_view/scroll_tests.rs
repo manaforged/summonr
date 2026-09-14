@@ -129,7 +129,7 @@ fn transcript_follows_the_tail_through_resize_and_draft_growth() {
 
 #[test]
 fn scrolling_projection_updates_when_streamed_text_changes() {
-    sigil::reactive::Runtime::scope("summoner-streamed-history", || {
+    sigil::reactive::Runtime::scope("summonr-streamed-history", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 24);
@@ -160,7 +160,7 @@ fn scrolling_projection_updates_when_streamed_text_changes() {
 
 #[test]
 fn long_history_scroll_keeps_the_visible_text() {
-    sigil::reactive::Runtime::scope("summoner-long-scroll", || {
+    sigil::reactive::Runtime::scope("summonr-long-scroll", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
         for index in 0..2000 {
@@ -208,7 +208,7 @@ fn long_history_scroll_keeps_the_visible_text() {
 
 #[test]
 fn the_first_wheel_notch_moves_away_from_the_visible_tail() {
-    sigil::reactive::Runtime::scope("summoner-scroll-tail", || {
+    sigil::reactive::Runtime::scope("summonr-scroll-tail", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 24);

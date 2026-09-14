@@ -27,7 +27,7 @@ async fn run(workspace: &Path, readonly: bool, script: &str) -> Output {
     );
     timeout(
         Duration::from_secs(30),
-        Command::new(env!("CARGO_BIN_EXE_summon"))
+        Command::new(env!("CARGO_BIN_EXE_summonr"))
             .arg("--sandbox-exec")
             .arg(workspace)
             .arg(workspace)
@@ -48,7 +48,7 @@ async fn run(workspace: &Path, readonly: bool, script: &str) -> Output {
 #[tokio::test]
 async fn workspace_writes_preserve_quoted_paths_and_unicode_output() {
     let root = tempfile::Builder::new()
-        .prefix("summoner's sandbox ")
+        .prefix("summonr's sandbox ")
         .tempdir()
         .expect("tempdir");
     let file = root.path().join("result.txt");

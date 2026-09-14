@@ -15,7 +15,7 @@ use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
 
-const TITLE: &str = "Summoner";
+const TITLE: &str = "Summonr";
 const SIZE: (u32, u32) = (1280, 800);
 const FRAME: Duration = Duration::from_millis(40);
 

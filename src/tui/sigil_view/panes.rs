@@ -440,7 +440,7 @@ fn trees(app: &App, rows: usize) -> Vec<Line> {
     ];
     if count == 0 {
         lines.push(Line::new(
-            "no worktrees — summon --worktree, --goal, or --steps".to_string(),
+            "no worktrees — summonr --worktree, --goal, or --steps".to_string(),
             palette().dim,
         ));
         return lines;

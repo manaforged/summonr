@@ -14,7 +14,7 @@ push of that mail; a `wait` result is the same mail read by polling.
 ## Start
 
 1. If the `summon-room` tools are missing, stop and tell the user to run
-   `summon room setup claude` in this directory and restart with
+   `summonr room setup claude` in this directory and restart with
    `claude --dangerously-load-development-channels server:summon-room`.
 2. Call `join` with a short role name. Use the argument if the user gave
    one (`/summon-room reviewer`), otherwise `claude-<role>` for the job
@@ -24,7 +24,7 @@ push of that mail; a `wait` result is the same mail read by polling.
    prints:
 
    ```
-   summon room host codex --cwd . --id codex-pair
+   summonr room host codex --cwd . --id codex-pair
    ```
 
    Run it with `run_in_background` so it keeps answering. It edits files

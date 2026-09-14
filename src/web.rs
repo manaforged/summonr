@@ -277,7 +277,7 @@ fn client() -> Result<reqwest::Client> {
                 attempt.follow()
             }
         }))
-        .user_agent(format!("summon/{}", env!("CARGO_PKG_VERSION")))
+        .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| Error::Tool(format!("http client: {error}")))
 }

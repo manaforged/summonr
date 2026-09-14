@@ -25,7 +25,7 @@ async fn run(script: &str, cwd: &Path) -> Output {
 #[tokio::test]
 async fn foreground_reads_literal_text_in_the_working_directory() {
     let dir = tempfile::Builder::new()
-        .prefix("summoner's shell ")
+        .prefix("summonr's shell ")
         .tempdir()
         .expect("tempdir");
     let text = "literal ' \" café [] $&";
@@ -49,7 +49,7 @@ async fn foreground_reads_literal_text_in_the_working_directory() {
 #[tokio::test]
 async fn background_records_failure_in_a_quoted_path() {
     let dir = tempfile::Builder::new()
-        .prefix("summoner's jobs ")
+        .prefix("summonr's jobs ")
         .tempdir()
         .expect("tempdir");
     let cwd = dir.path().canonicalize().expect("canonical workspace");

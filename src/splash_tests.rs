@@ -73,10 +73,10 @@ fn render_stacks_info_under_logo() {
     let first = text.lines().next().unwrap_or_default();
     assert!(first.contains("███╗"), "logo starts the first line");
     assert!(
-        !first.contains("summoner 0.1.0"),
+        !first.contains("summonr 0.1.0"),
         "facts sit under the wordmark, not beside it"
     );
-    assert!(text.contains("  summoner 0.1.0"), "info is indented below");
+    assert!(text.contains("  summonr 0.1.0"), "info is indented below");
 }
 
 #[test]

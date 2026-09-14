@@ -34,7 +34,7 @@ fn clean_id(id: &str) -> String {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Agent {
     pub id: String,
-    #[serde(default = "summoner")]
+    #[serde(default = "default_kind")]
     pub kind: String,
     pub model: String,
     pub cwd: String,
@@ -47,13 +47,13 @@ pub struct Agent {
 pub struct Mail {
     pub ts: u64,
     pub from: String,
-    #[serde(default = "summoner")]
+    #[serde(default = "default_kind")]
     pub kind: String,
     pub text: String,
 }
 
-fn summoner() -> String {
-    "summoner".to_string()
+fn default_kind() -> String {
+    "summonr".to_string()
 }
 
 pub(crate) fn envelope(mail: &Mail) -> String {
@@ -114,7 +114,7 @@ impl Bus {
         if !bus_enabled(std::env::var_os("MAGE_BUS").as_deref()) {
             return None;
         }
-        Self::open(id, "summoner", model, cwd).ok()
+        Self::open(id, "summonr", model, cwd).ok()
     }
 
     pub(crate) fn open(id: &str, kind: &str, model: &str, cwd: &Path) -> Result<Self> {
@@ -350,49 +350,29 @@ impl Drop for Bus {
 }
 
 pub(crate) fn definitions() -> Vec<ToolDefinition> {
-    vec![
-        tool(
-            "agents",
-            "List live summoner sessions on this machine with id, model, workspace, and status. Use before send.",
-            serde_json::json!({"type": "object", "additionalProperties": false}),
-        ),
-        tool(
-            "inbox",
-            "Read new mail from other sessions. Mail also arrives between rounds.",
-            serde_json::json!({"type": "object", "additionalProperties": false}),
-        ),
-        tool(
-            "board",
-            "Shared workspace blackboard. action get reads key, list reads all, set posts key=value.",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "action": {"type": "string", "enum": ["get", "set", "list"]},
-                    "key": {"type": "string"},
-                    "value": {"type": "string"}
+    vec![tool(
+        "bus",
+        "Room mail and board. action agents lists sessions; inbox reads mail; send needs to and text; get/set/list is the board (key, value).",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["agents", "inbox", "send", "get", "set", "list"]
                 },
-                "required": ["action"],
-                "additionalProperties": false
-            }),
-        ),
-        tool(
-            "send",
-            "Send text to another session: to is an id from agents, or \"all\".",
-            serde_json::json!({
-                "type": "object",
-                "properties": {
-                    "to": {"type": "string"},
-                    "text": {"type": "string"}
-                },
-                "required": ["to", "text"],
-                "additionalProperties": false
-            }),
-        ),
-    ]
+                "to": {"type": "string"},
+                "text": {"type": "string"},
+                "key": {"type": "string"},
+                "value": {"type": "string"}
+            },
+            "required": ["action"],
+            "additionalProperties": false
+        }),
+    )]
 }
 
 pub(crate) fn is_bus_tool(name: &str) -> bool {
-    matches!(name, "agents" | "inbox" | "board" | "send")
+    matches!(name, "bus" | "agents" | "inbox" | "board" | "send")
 }
 
 #[cfg(test)]

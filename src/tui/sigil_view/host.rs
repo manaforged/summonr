@@ -80,7 +80,7 @@ pub(crate) fn run(
     }
     if matches!(exit, Exit::Code(_)) {
         eprintln!(
-            "\n  summon {version} · session {session}\n  resume: summon -c · by id: summon --session {session} · branch: summon --fork\n"
+            "\n  summonr {version} · session {session}\n  resume: summonr -c · by id: summonr --session {session} · branch: summonr --fork\n"
         );
     }
     Ok(exit)
@@ -516,8 +516,8 @@ fn edit(path: &Path, editor: &str) -> Result<()> {
         let mut command = Command::new("cmd.exe");
         command
             .args(["/D", "/V:OFF", "/S", "/C"])
-            .env("SUMMONER_EDITOR_FILE", path)
-            .raw_arg(format!("\"{editor} \"%SUMMONER_EDITOR_FILE%\"\""));
+            .env("SUMMONR_EDITOR_FILE", path)
+            .raw_arg(format!("\"{editor} \"%SUMMONR_EDITOR_FILE%\"\""));
         command
     };
     #[cfg(not(windows))]
@@ -526,7 +526,7 @@ fn edit(path: &Path, editor: &str) -> Result<()> {
         command
             .arg("-c")
             .arg(format!("exec {editor} \"$1\""))
-            .arg("summoner-editor")
+            .arg("summonr-editor")
             .arg(path);
         command
     };

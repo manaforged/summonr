@@ -1,9 +1,10 @@
 #!/bin/sh
 # Run this checkout's newest build. Point your PATH at it once:
+#   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summonr
 #   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summon
 #   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summoner
 # Rebuilds release when src/ or Cargo files are newer than the binary, then
-# execs it, so the process identity stays target/release/summon.
+# execs it, so the process identity stays target/release/summonr.
 set -u
 
 self=$0
@@ -15,7 +16,7 @@ while [ -L "$self" ]; do
     esac
 done
 root=$(CDPATH= cd -- "$(dirname -- "$self")/.." && pwd)
-bin="$root/target/release/summon"
+bin="$root/target/release/summonr"
 
 stale() {
     [ ! -x "$bin" ] && return 0
@@ -30,8 +31,8 @@ stale() {
 
 if stale; then
     cargo build --locked --manifest-path "$root/Cargo.toml" --release \
-        --bin summon --bin summoner >&2 ||
-        echo "summon: keeping the previous build" >&2
+        --bin summonr >&2 ||
+        echo "summonr: keeping the previous build" >&2
 fi
 
 exec "$bin" "$@"

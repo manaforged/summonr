@@ -8,7 +8,7 @@ use super::super::super::{app::App, model::Entry, tests::info, view::root};
 use super::Selection;
 
 fn rendered() -> Grid {
-    sigil::reactive::Runtime::scope("summoner-selection", || {
+    sigil::reactive::Runtime::scope("summonr-selection", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(40, 12);

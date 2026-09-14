@@ -1,4 +1,4 @@
-use summoner::{Client, Event, Loop, Result, Turn, UserInput, WorkPhase, WorkProgress};
+use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkPhase, WorkProgress};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -12,11 +12,11 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
         args.prompt.join(" ")
     };
     if let Some(command) = slash(&prompt) {
-        return Err(summoner::Error::Config(format!(
+        return Err(summonr::Error::Config(format!(
             "`{command}` is an interface command; -p takes a prompt"
         )));
     }
-    let input = summoner::attach(loop_.workspace(), &prompt)?;
+    let input = summonr::attach(loop_.workspace(), &prompt)?;
     let turn = complete(&mut loop_, input, args.json).await?;
     if !args.json {
         println!();
@@ -27,8 +27,8 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
 
 pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str) -> Result<i32> {
     let markdown = std::fs::read_to_string(plan_path)
-        .map_err(|error| summoner::Error::Config(format!("cannot read {plan_path}: {error}")))?;
-    let steps = summoner::steps::parse(&markdown)?;
+        .map_err(|error| summonr::Error::Config(format!("cannot read {plan_path}: {error}")))?;
+    let steps = summonr::steps::parse(&markdown)?;
     let total = steps.len();
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
@@ -42,14 +42,14 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
         }
         let current = progress
             .current
-            .ok_or_else(|| summoner::Error::Config("Steps Work has no active item".to_string()))?;
+            .ok_or_else(|| summonr::Error::Config("Steps Work has no active item".to_string()))?;
         let step = steps.get(current.saturating_sub(1)).ok_or_else(|| {
-            summoner::Error::Config("Steps Work is outside the selected plan".to_string())
+            summonr::Error::Config("Steps Work is outside the selected plan".to_string())
         })?;
         step_event(args.json, current, total, "start", None);
         let turn = complete(
             &mut loop_,
-            summoner::steps::prompt(step, total, plan_path).into(),
+            summonr::steps::prompt(step, total, plan_path).into(),
             args.json,
         )
         .await?;
@@ -109,7 +109,7 @@ pub(super) async fn drive_goal(
         }
         let turn = complete(
             loop_,
-            summoner::goal_prompt(objective, gates, progress.rounds).into(),
+            summonr::goal_prompt(objective, gates, progress.rounds).into(),
             json,
         )
         .await?;
@@ -130,7 +130,7 @@ async fn complete(loop_: &mut Loop<Client>, input: UserInput, json: bool) -> Res
 
 fn slash(prompt: &str) -> Option<&str> {
     let line = prompt.trim_start().lines().next()?;
-    summoner::parse_command(line)?;
+    summonr::parse_command(line)?;
     line.split_whitespace().next()
 }
 

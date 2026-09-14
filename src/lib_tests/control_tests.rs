@@ -51,13 +51,29 @@ async fn default_rounds_continue_past_the_old_limit() -> Result<()> {
 #[tokio::test]
 async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
     let workspace = test_workspace()?;
-    struct Planner;
+    struct Planner(AtomicUsize);
     impl Provider for Planner {
         fn complete<'a>(
             &'a self,
-            _request: &'a CompletionRequest,
+            request: &'a CompletionRequest,
         ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
-            Box::pin(async {
+            Box::pin(async move {
+                if self.0.fetch_add(1, Ordering::SeqCst) > 0 {
+                    let answers: Vec<_> = request
+                        .messages
+                        .iter()
+                        .filter(|message| message.role == Role::Assistant)
+                        .collect();
+                    assert_eq!(answers.len(), 1);
+                    assert_eq!(answers[0].content, "here is the plan");
+                    assert!(
+                        request
+                            .messages
+                            .iter()
+                            .any(|message| message.role == Role::System
+                                && message.content.starts_with("Turn receipt"))
+                    );
+                }
                 Ok(AssistantMessage {
                     content: Some("here is the plan".to_string()),
                     ..AssistantMessage::default()
@@ -65,7 +81,13 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
             })
         }
     }
-    let mut loop_ = Loop::with_session(Planner, "test-model", &workspace, "test")?.with_plan();
+    let mut loop_ = Loop::with_session(
+        Planner(AtomicUsize::new(0)),
+        "test-model",
+        &workspace,
+        "test",
+    )?
+    .with_plan();
     let names = loop_.tool_names();
     assert!(!names.iter().any(|name| name == "write_file"));
     let turn = loop_.turn("plan something").await?;
@@ -84,10 +106,10 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
             .replay_session()
             .history
             .last()
-            .is_some_and(|message| message
-                .content
-                .starts_with("here is the plan\n\nTurn receipt"))
+            .is_some_and(|message| message.role == Role::System
+                && message.content.starts_with("Turn receipt"))
     );
+    loop_.turn("revise the plan").await?;
     let denied = loop_
         .execute_tool(&call("write_file", r#"{"path":"x.rs","content":"no"}"#))
         .await;
@@ -311,11 +333,25 @@ async fn mutating_turn_runs_the_configured_verify_gate() -> Result<()> {
     assert!(receipt.text.contains("plan.md"));
     let replay = loop_.replay_session();
     assert_eq!(
+        replay.history.last().expect("harness feedback").role,
+        Role::System
+    );
+    assert_eq!(
+        replay
+            .history
+            .iter()
+            .rev()
+            .find(|message| message.role == Role::Assistant)
+            .expect("assistant reply")
+            .content,
+        turn.text
+    );
+    assert_eq!(
         replay
             .history
             .last()
             .map(|message| message.content.as_str()),
-        Some(crate::verify::context(&turn.text, receipt).as_str())
+        Some(crate::verify::context(receipt).as_str())
     );
     let log = std::fs::read_to_string(loop_.session_path())?;
     let receipt = log

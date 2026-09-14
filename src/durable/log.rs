@@ -84,6 +84,8 @@ pub(crate) enum Line {
         note: String,
         #[serde(default)]
         model: String,
+        #[serde(default)]
+        reported: bool,
     },
     Receipt {
         text: String,
@@ -118,6 +120,7 @@ pub(crate) struct State {
     pub(crate) children: std::collections::BTreeMap<SessionId, crate::child::ChildRecord>,
     pub(crate) history: Vec<Message>,
     pub(crate) spent: u64,
+    pub(crate) unreported: u64,
     pub(crate) elapsed: u64,
     pub(crate) opener: Option<usize>,
     pub(crate) unanswered: Vec<String>,
@@ -200,13 +203,16 @@ impl State {
                 self.unanswered.retain(|id| *id != call);
                 self.history.push(Message::tool(call, text));
             }
-            Line::Charge { usage, .. } => self.charge(usage),
-            Line::Receipt { text } => {
-                if let Some(last) = self.history.last_mut()
-                    && last.role == Role::Assistant
-                {
-                    last.content = text;
+            Line::Charge {
+                usage, reported, ..
+            } => {
+                if !reported {
+                    self.unreported = self.unreported.saturating_add(usage.tokens());
                 }
+                self.charge(usage);
+            }
+            Line::Receipt { text } => {
+                self.history.push(Message::system(text));
             }
             Line::Summary { text, tail } => {
                 let opener = self

@@ -340,10 +340,11 @@ fn verdict_writes_the_receipt_and_closes_the_turn() {
     let verdict = driver.prepare_verdict(true).expect("verdict");
     assert!(verdict.passed && verdict.diagnostic.is_none());
     driver
-        .commit_verdict(verdict, Decision::Automatic, Some("done\n\nTurn receipt"))
+        .commit_verdict(verdict, Decision::Automatic, Some("Turn receipt"))
         .expect("commit");
     assert!(!driver.busy());
-    assert_eq!(driver.replay().history[1].content, "done\n\nTurn receipt");
+    assert_eq!(driver.replay().history[1].content, "done");
+    assert_eq!(driver.replay().history[2].content, "Turn receipt");
     assert_eq!(
         driver.work_progress().expect("progress").phase,
         crate::WorkPhase::Completed
@@ -423,7 +424,7 @@ fn failed_provider_charges_exposure_without_adding_history() {
         .start_provider("test-model", exposure())
         .expect("provider");
     driver
-        .fail_provider(attempt, "denied", 25)
+        .fail_provider(attempt, "denied", 25, true)
         .expect("failure settles");
     let replay = driver.replay();
     assert_eq!(replay.spent_tokens, 100);

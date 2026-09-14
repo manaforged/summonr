@@ -90,6 +90,7 @@ fn every_line_round_trips_through_the_file() {
         },
         Line::Charge {
             usage: usage(1, 2, 3),
+            reported: true,
             note: "goal judge".to_string(),
             model: "judge-model".to_string(),
         },
@@ -181,7 +182,7 @@ fn state_folds_messages_usage_and_the_open_turn() {
 }
 
 #[test]
-fn receipt_replaces_the_last_assistant_text() {
+fn receipt_preserves_the_assistant_and_adds_harness_feedback() {
     let state = fold(vec![
         header(1),
         user("write", true),
@@ -191,7 +192,10 @@ fn receipt_replaces_the_last_assistant_text() {
         },
         Line::Close { reason: None },
     ]);
-    assert_eq!(state.history[1].content, "done\n\nTurn receipt");
+    assert_eq!(state.history[1].content, "done");
+    assert_eq!(state.history[1].role, Role::Assistant);
+    assert_eq!(state.history[2].content, "done\n\nTurn receipt");
+    assert_eq!(state.history[2].role, Role::System);
     assert_eq!(state.opener, None);
 }
 
@@ -234,11 +238,13 @@ fn charge_counts_without_a_message() {
         user("go", true),
         Line::Charge {
             usage: usage(70, 30, 25),
+            reported: false,
             note: "denied".to_string(),
             model: String::new(),
         },
     ]);
     assert_eq!(state.spent, 100);
+    assert_eq!(state.unreported, 100);
     assert_eq!(state.elapsed, 25);
     assert_eq!(state.history.len(), 1);
 }

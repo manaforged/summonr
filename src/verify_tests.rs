@@ -38,7 +38,7 @@ fn receipt_leads_with_a_failed_check_and_names_the_changed_file() {
         "abc123 (HEAD), worktree clean".to_string(),
         &[],
     );
-    let text = context("done", &receipt);
+    let text = context(&receipt);
 
     assert!(text.starts_with("Verification failed."));
     assert_eq!(receipt.checks.len(), 1);
@@ -51,8 +51,8 @@ fn receipt_leads_with_a_failed_check_and_names_the_changed_file() {
 fn receipt_records_an_unchanged_unverified_turn() {
     let receipt = Receipt::new(Vec::new(), Vec::new(), "non-Git workspace".to_string(), &[]);
     assert_eq!(
-        context("  unchanged\n", &receipt),
-        "unchanged\n\nTurn receipt\n- Started at: non-Git workspace\n- Inspected: 0 files read, 0 searches, 0 commands\n- Changed: none\n- Verification: not configured"
+        context(&receipt),
+        "Turn receipt\n- Started at: non-Git workspace\n- Inspected: 0 files read, 0 searches, 0 commands\n- Changed: none\n- Verification: not configured"
     );
     assert_eq!(
         receipt.text,

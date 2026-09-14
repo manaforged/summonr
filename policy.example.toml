@@ -11,6 +11,8 @@ strict = false
 # Commands are also contained: rm, mv, cp, chmod, tee, and redirects may not
 # name a path outside the workspace, and after a `cd` outside it every such
 # target counts as outside. Reads and builds outside the workspace run.
+# Paths in [sandbox] write (config.toml) and paths approved with /write are
+# inside: those targets accept rm, cp, ln, mv, install, and redirects.
 # deny = ["npm publish"]
 
 # When non-empty (or strict = true), only these commands run.

@@ -19,6 +19,9 @@ impl Worker {
         for line in lines {
             self.restore(line);
         }
+        drop(self.ui.send(Msg::Event(Event::Unreported {
+            tokens: self.loop_.unreported_tokens(),
+        })));
         if charged {
             self.system(
                 "Restored token usage. Historical reasoning tokens and cost are unavailable.",
@@ -77,7 +80,15 @@ impl Worker {
                 }
                 self.system("Partial answer · interrupted");
             }
-            Line::Charge { usage, note, model } => self.usage(usage, format!("{note} · {model}")),
+            Line::Charge {
+                usage,
+                note,
+                model,
+                reported: true,
+            } => self.usage(usage, format!("{note} · {model}")),
+            Line::Charge {
+                reported: false, ..
+            } => {}
             Line::Tool {
                 call,
                 text,
@@ -103,6 +114,9 @@ impl Worker {
     }
 
     fn usage(&self, usage: Usage, prefix_hash: String) {
+        if usage.input == 0 && usage.output == 0 {
+            return;
+        }
         drop(self.ui.send(Msg::Event(Event::Usage {
             prompt_tokens: u32::try_from(usage.input).unwrap_or(u32::MAX),
             completion_tokens: u32::try_from(usage.output).unwrap_or(u32::MAX),

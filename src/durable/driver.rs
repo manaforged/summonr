@@ -351,21 +351,25 @@ impl SessionDriver {
                 model: round.model,
             },
             Purpose::Summary => Line::Charge {
+                reported: true,
                 usage,
                 note: "compaction summary".to_string(),
                 model: round.model,
             },
             Purpose::Judge => Line::Charge {
+                reported: true,
                 usage,
                 note: "goal judge".to_string(),
                 model: round.model,
             },
             Purpose::Review => Line::Charge {
+                reported: true,
                 usage,
                 note: "review".to_string(),
                 model: round.model,
             },
             Purpose::Scout => Line::Charge {
+                reported: true,
                 usage,
                 note: "scout".to_string(),
                 model: round.model,
@@ -409,6 +413,7 @@ impl SessionDriver {
         attempt: Attempt,
         diagnostic: &str,
         millis: u64,
+        billable: bool,
     ) -> Result<(), DriverError> {
         if !self.partial.text.is_empty() || !self.partial.reasoning.is_empty() {
             self.append(Line::Interrupted {
@@ -418,10 +423,19 @@ impl SessionDriver {
             self.partial = Partial::default();
         }
         let round = self.end_round(attempt)?;
+        let (input, output) = if billable {
+            (
+                round.exposure.max_input_tokens,
+                round.exposure.max_output_tokens,
+            )
+        } else {
+            (0, 0)
+        };
         self.append(Line::Charge {
+            reported: false,
             usage: Usage {
-                input: round.exposure.max_input_tokens,
-                output: round.exposure.max_output_tokens,
+                input,
+                output,
                 cached: 0,
                 millis,
             },
@@ -576,7 +590,7 @@ impl SessionDriver {
             .and_then(|turn| turn.round.as_ref())
             .map(|round| round.attempt)
         {
-            self.fail_provider(attempt, reason, 0)?;
+            self.fail_provider(attempt, reason, 0, true)?;
         }
         for call in self.state.unanswered.clone() {
             let finished = self.state.children.values().find(|child| {
@@ -694,12 +708,18 @@ impl SessionDriver {
         usage: Usage,
         note: &str,
         model: &str,
+        reported: bool,
     ) -> Result<(), DriverError> {
         self.append(Line::Charge {
+            reported,
             usage,
             note: note.to_string(),
             model: model.to_string(),
         })
+    }
+
+    pub(crate) fn usage(&self) -> (u64, u64) {
+        (self.state.spent, self.state.unreported)
     }
 
     pub(crate) fn compact(&mut self, summary: &str, tail: &[Message]) -> Result<(), DriverError> {
@@ -897,6 +917,16 @@ impl SessionDriver {
     }
 
     pub(crate) fn accept_plan(&mut self) -> Result<(), DriverError> {
+        self.pending_plan()?;
+        self.execute()
+    }
+
+    pub(crate) fn reject_plan(&mut self) -> Result<(), DriverError> {
+        self.pending_plan()?;
+        self.abandon_work("plan rejected by the user")
+    }
+
+    pub(crate) fn pending_plan(&self) -> Result<(), DriverError> {
         let selected = self.active().is_some_and(|work| {
             work.policy == Policy::Single
                 && work.stage() == Some(Stage::Plan)
@@ -904,10 +934,10 @@ impl SessionDriver {
         });
         if !selected {
             return Err(DriverError::State(
-                "there is no selected interactive Plan to accept".to_string(),
+                "No pending plan. Use /auto to leave plan mode, or /plan and a request to create a plan.".to_string(),
             ));
         }
-        self.execute()
+        Ok(())
     }
 
     pub(crate) fn prepare_external_work(

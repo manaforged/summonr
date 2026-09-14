@@ -55,7 +55,7 @@ impl<P: Provider> Loop<P> {
                     let millis = wait_error.millis(started);
                     let error = wait_error.error();
                     self.session
-                        .fail_provider(attempt, &error.to_string(), millis)
+                        .fail_provider(attempt, &error.to_string(), millis, super::billable(&error))
                         .map_err(super::session_err)?;
                     self.spent_tokens = self.session.replay().spent_tokens;
                     return Err(error);

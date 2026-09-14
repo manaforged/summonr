@@ -121,14 +121,12 @@ pub(crate) fn outcome(command: &str, result: &std::result::Result<ToolOutput, Er
 }
 
 #[must_use]
-pub(crate) fn context(model: &str, receipt: &Receipt) -> String {
+pub(crate) fn context(receipt: &Receipt) -> String {
     let failed = receipt.checks.iter().any(|check| !check.passed);
     let mut text = String::new();
     if failed {
         text.push_str("Verification failed.\n\n");
     }
-    text.push_str(model.trim());
-    text.push_str("\n\n");
     text.push_str(&receipt.text);
     text
 }

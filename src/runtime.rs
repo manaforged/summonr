@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::bus::{Bus, Mail};
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::Usage as Meter;
-use crate::error::{Error, Result};
+use crate::error::{Error, ProviderFailureKind, Result};
 use crate::herdr::Reporter;
 use crate::policy::Policy;
 use crate::provider::{
@@ -94,6 +94,7 @@ pub struct Loop<P> {
     steer_shared: Option<Arc<Mutex<VecDeque<UserInput>>>>,
     depth: u8,
     tasks: bool,
+    manual: bool,
     spawned: BTreeMap<String, child::Spawned>,
     mailbox: (UnboundedSender<Event>, UnboundedReceiver<Event>),
 }
@@ -161,6 +162,12 @@ pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
         cached: u64::from(usage.cached_tokens),
         millis,
     }
+}
+
+pub(crate) fn billable(error: &Error) -> bool {
+    error.provider_failure().is_none_or(|failure| {
+        failure.kind != ProviderFailureKind::Transport || failure.partial_output
+    })
 }
 
 pub(super) fn exposure(request: &CompletionRequest, bytes: &[u8]) -> Exposure {

@@ -31,18 +31,25 @@ impl<P: Provider> Loop<P> {
             )));
         }
         let args = bus_args(call, name)?;
+        let op = if name == "bus" {
+            args.get("action")
+                .and_then(serde_json::Value::as_str)
+                .ok_or_else(|| Error::Tool("bus requires action".to_string()))?
+        } else {
+            name
+        };
         let text = bus_text(&args);
         let read_only = self.tools.is_read_only();
-        if name == "inbox" {
+        if op == "inbox" {
             return Ok(inbox(self.take_all_bus_mail()?));
         }
         let Some(bus) = self.bus.as_mut() else {
             unreachable!();
         };
-        match name {
+        match op {
             "agents" => agents(bus),
             "send" => send(bus, &args, text, read_only),
-            "board" => board(bus, &self.workspace, &args, text, read_only),
+            "board" | "get" | "set" | "list" => board(bus, &self.workspace, &args, text, read_only),
             other => Err(Error::Tool(format!("unknown tool `{other}`"))),
         }
     }

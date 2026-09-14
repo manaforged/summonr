@@ -732,6 +732,21 @@ pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> 
 }
 
 impl ToolRegistry {
+    pub(super) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
+        let args = parse_args("lsp", arguments)?;
+        if args.get("line").is_some()
+            || args.get("character").is_some()
+            || args.get("references").and_then(Value::as_bool) == Some(true)
+            || args
+                .get("new_name")
+                .and_then(Value::as_str)
+                .is_some_and(|name| !name.trim().is_empty())
+        {
+            return self.definition(arguments).await;
+        }
+        self.diagnostics(arguments).await
+    }
+
     pub(super) async fn diagnostics(&self, arguments: &str) -> Result<ToolOutput> {
         let args = parse_args("diagnostics", arguments)?;
         let path = nonempty_path(&args, "diagnostics")?;

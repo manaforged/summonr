@@ -25,6 +25,33 @@ const GREP_FILE_MAX: usize = 1024 * 1024;
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
+    pub(super) fn read(&self, arguments: &str) -> Result<String> {
+        let args: Value = parse_args("read", arguments)?;
+        let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
+        let glob = args
+            .get("glob")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|glob| !glob.is_empty());
+        if !pattern.is_empty() || glob.is_some() {
+            return self.grep(arguments);
+        }
+        let path = args
+            .get("path")
+            .and_then(Value::as_str)
+            .filter(|path| !path.trim().is_empty())
+            .unwrap_or(".");
+        let opened = if path == "." {
+            self.workspace.clone()
+        } else {
+            self.resolve_read(path)?
+        };
+        if opened.is_dir() {
+            return self.list_dir(arguments);
+        }
+        self.read_file(arguments)
+    }
+
     pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("read_file", arguments)?;
         let path = object_string(&args, "path")?;
@@ -142,7 +169,7 @@ impl ToolRegistry {
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         if raw.is_empty() {
             return Err(Error::Tool(format!(
-                "`{path}` is empty — there is no line to anchor an edit; use write_file"
+                "`{path}` is empty — there is no line to anchor an edit; use write"
             )));
         }
         let endings = terminators(&raw);
@@ -802,7 +829,7 @@ fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
         return delete_patch(text, tag, end);
     }
     Err(Error::Tool(
-        "edit_file requires replace_text, replace, insert_after, delete, or edits".to_string(),
+        "edit requires old+new, tag+new, tag+text, op=delete, or edits".to_string(),
     ))
 }
 

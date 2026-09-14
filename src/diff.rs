@@ -7,8 +7,10 @@ use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
 use crate::worktree;
 
-const EDITORS: [&str; 7] = [
+const EDITORS: [&str; 9] = [
+    "edit",
     "edit_file",
+    "write",
     "write_file",
     "replace_text",
     "replace_texts",

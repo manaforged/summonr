@@ -145,8 +145,8 @@ async fn tool_schema_tracks_plan_mode() -> Result<()> {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
-    assert!(names[0].iter().any(|name| name == "write_file"));
-    assert!(!names[1].iter().any(|name| name == "write_file"));
+    assert!(names[0].iter().any(|name| name == "write"));
+    assert!(!names[1].iter().any(|name| name == "write"));
     assert_eq!(names[0], names[2]);
     assert!(
         requests
@@ -161,7 +161,7 @@ async fn tool_schema_tracks_plan_mode() -> Result<()> {
                 .iter()
                 .rev()
                 .find(|message| message.role == Role::User)
-                .is_some_and(|message| message.content.contains("narrowest useful check"))
+                .is_some_and(|message| message.content.contains("Harness state: auto mode"))
         })
         .collect::<Vec<_>>();
     assert_eq!(verification, vec![true, false, true]);
@@ -1812,7 +1812,14 @@ fn module_switches_drop_their_tools_from_the_schema() -> Result<()> {
     assert!(
         after.iter().all(|name| !matches!(
             name.as_str(),
-            "diagnostics" | "definition" | "skill" | "web_search" | "web_fetch" | "task"
+            "diagnostics"
+                | "definition"
+                | "lsp"
+                | "skill"
+                | "web"
+                | "web_search"
+                | "web_fetch"
+                | "task"
         )),
         "{after:?}"
     );

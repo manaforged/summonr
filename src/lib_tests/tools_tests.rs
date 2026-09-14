@@ -611,7 +611,7 @@ async fn grep_returns_hashline_hits() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let out = tools
-        .execute(&call("grep", r#"{"pattern":"hello"}"#))
+        .execute(&call("read", r#"{"pattern":"hello"}"#))
         .await?;
     assert!(out.contains(&format!("note.txt:1:{}|hello", line_hash("hello"))));
     std::fs::remove_dir_all(workspace)?;
@@ -1050,49 +1050,49 @@ async fn edit_file_applies_several_edits_in_one_call() -> Result<()> {
 }
 
 #[test]
-fn editing_tools_advertise_flat_operation_shapes() -> Result<()> {
+fn editing_tools_advertise_one_edit_tool() -> Result<()> {
     let workspace = test_workspace()?;
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     let definitions = tools.definitions();
+    let names: Vec<_> = definitions
+        .iter()
+        .map(|tool| tool.function.name.as_str())
+        .collect();
+    assert!(names.contains(&"read"), "{names:?}");
+    assert!(names.contains(&"edit"), "{names:?}");
+    assert!(names.contains(&"write"), "{names:?}");
+    assert!(names.contains(&"run_command"), "{names:?}");
+    for retired in [
+        "read_file",
+        "list_dir",
+        "grep",
+        "show_image",
+        "write_file",
+        "edit_file",
+        "replace_text",
+        "replace_texts",
+        "replace_lines",
+        "insert_after",
+        "delete_lines",
+        "diagnostics",
+        "definition",
+        "web_search",
+        "web_fetch",
+    ] {
+        assert!(!names.contains(&retired), "{names:?}");
+    }
+    let edit = definitions
+        .iter()
+        .find(|tool| tool.function.name == "edit")
+        .expect("edit definition");
     assert_eq!(
-        definitions
-            .iter()
-            .filter(|tool| matches!(
-                tool.function.name.as_str(),
-                "replace_text"
-                    | "replace_texts"
-                    | "replace_lines"
-                    | "insert_after"
-                    | "delete_lines"
-            ))
-            .count(),
-        5
+        edit.function.parameters["required"],
+        serde_json::json!(["path"])
     );
     assert!(
-        definitions
-            .iter()
-            .all(|tool| tool.function.name != "edit_file")
-    );
-    let replace = definitions
-        .iter()
-        .find(|tool| tool.function.name == "replace_lines")
-        .expect("replace_lines definition");
-    assert_eq!(
-        replace.function.parameters["required"],
-        serde_json::json!(["path", "tag", "new"])
-    );
-    assert_eq!(
-        replace.function.parameters["properties"]["tag"]["type"],
-        "string"
-    );
-    let batch = definitions
-        .iter()
-        .find(|tool| tool.function.name == "replace_texts")
-        .expect("replace_texts definition");
-    assert!(
-        batch.function.parameters["properties"]["edits"]
-            .get("maxItems")
-            .is_none()
+        edit.function.parameters["properties"]
+            .get("edits")
+            .is_some()
     );
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -1104,10 +1104,7 @@ async fn flat_editing_tools_apply_each_operation() -> Result<()> {
     let tools = crate::tools::ToolRegistry::new(&workspace)?;
     std::fs::write(workspace.join("f.txt"), "alpha\nbeta\ngamma\n")?;
     tools
-        .execute(&call(
-            "replace_text",
-            r#"{"path":"f.txt","old":"ph","new":"PH"}"#,
-        ))
+        .execute(&call("edit", r#"{"path":"f.txt","old":"ph","new":"PH"}"#))
         .await?;
     let beta = crate::hashline::line_hash("beta");
     tools
@@ -2022,7 +2019,7 @@ async fn an_empty_file_says_use_write_file() -> Result<()> {
         .await
         .expect_err("nothing to anchor")
         .to_string();
-    assert!(error.contains("use write_file"), "{error}");
+    assert!(error.contains("use write"), "{error}");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

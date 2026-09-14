@@ -340,7 +340,7 @@ impl Model {
             } => {
                 let shown = match name.as_str() {
                     "show_image" => Some((arguments.clone(), false)),
-                    "read_file" => Some((arguments.clone(), true)),
+                    "read" | "read_file" => Some((arguments.clone(), true)),
                     _ => None,
                 };
                 self.start_tool(id, name, arguments);

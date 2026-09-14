@@ -95,7 +95,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child session with the same tools except task. Calls in one response run together and return when every child finishes. background true returns a child id: pass child to poll it, kill true to stop it. implement children edit an isolated worktree; research children are read-only.",
+        "Delegate one assignment to a child. Same tools except task. Several calls in one response run together. background true returns an id; pass child to poll, kill true to stop. implement edits this workspace; research is read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -223,37 +223,14 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Vec<Result<Execution>> {
         let count = args.len();
-        let implement = args
-            .iter()
-            .filter(|args| args.access == Access::Implement)
-            .count();
         let budget = match self.task_budget(count) {
             Ok(budget) => budget,
             Err(error) => return rejected(count, &error.to_string()),
         };
-        let trees = if implement == 0 {
-            Vec::new()
-        } else if worktree::in_git(&self.workspace) {
-            match worktree::add_children(&self.workspace, implement) {
-                Ok(trees) => trees,
-                Err(error) => return rejected(count, &error.to_string()),
-            }
-        } else if implement == 1 {
-            Vec::new()
-        } else {
-            return rejected(
-                count,
-                "concurrent implement children require a Git repository",
-            );
-        };
-        let mut trees = trees.into_iter();
         let mut runs = Vec::with_capacity(count);
         for args in args {
             let access = args.access;
-            let tree = (access == Access::Implement)
-                .then(|| trees.next())
-                .flatten();
-            runs.push((access, self.task_start(args, &budget, tree)));
+            runs.push((access, self.task_start(args, &budget, None)));
         }
         let sender = self.mailbox.0.clone();
         let mut runs: FuturesUnordered<_> = runs
@@ -336,16 +313,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
-        let tree = if args.access != Access::Implement {
-            None
-        } else if worktree::in_git(&self.workspace) {
-            worktree::add_children(&self.workspace, 1)?.pop()
-        } else {
-            return Err(Error::Denied(
-                "background implement children require a Git repository".to_string(),
-            ));
-        };
-        let run = self.task_start(args, budget, tree)?;
+        let run = self.task_start(args, budget, None)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
@@ -617,7 +585,7 @@ impl<P: Provider> Loop<P> {
         .map_err(super::session_err)?;
         let instruction = match args.access {
             Access::Implement => {
-                "Edit only this worktree. You may build, test, and lint here; background commands are unavailable. The parent reconciles every writable child, then verifies once."
+                "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
             }
             Access::Research => "This assignment is read-only. Do not change the workspace.",
         };
@@ -626,7 +594,7 @@ impl<P: Provider> Loop<P> {
             model.clone(),
             &workspace,
             format!(
-                "{}\n\nHarness: You are a depth-1 child. Finish only the assigned task. {instruction} The parent owns final verification and commit.",
+                "{}\n\nHarness: child. Finish only the assigned task. {instruction}",
                 self.system_prompt
             ),
             driver,

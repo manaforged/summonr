@@ -89,7 +89,7 @@ async fn plan_mode_is_read_only_end_to_end() -> Result<()> {
     )?
     .with_plan();
     let names = loop_.tool_names();
-    assert!(!names.iter().any(|name| name == "write_file"));
+    assert!(!names.iter().any(|name| name == "write"));
     let turn = loop_.turn("plan something").await?;
     assert_eq!(turn.text, "here is the plan");
     assert!(
@@ -1536,8 +1536,8 @@ fn system_prompt_falls_back_without_local_files() -> Result<()> {
     assert!(!prompt.contains("general-purpose agent"));
     assert!(!prompt.contains("web_search"));
     assert!(!prompt.contains("web_fetch"));
-    assert!(prompt.contains("Keep reasoning brief"));
-    assert!(prompt.contains("Stop when the task is proved"));
+    assert!(prompt.contains("current workspace"));
+    assert!(!prompt.contains("Keep reasoning brief"));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
@@ -1579,14 +1579,15 @@ async fn set_plan_switches_schema_and_enforces_policy() -> Result<()> {
     }
     let mut loop_ = Loop::with_session(Idle, "test-model", &workspace, "test")?;
     assert!(!loop_.is_plan());
-    assert!(loop_.tool_names().contains(&"write_file".to_string()));
+    assert!(loop_.tool_names().contains(&"write".to_string()));
     loop_.set_plan(true);
     assert!(loop_.is_plan());
     let names = loop_.tool_names();
-    assert!(!names.contains(&"write_file".to_string()));
+    assert!(!names.contains(&"write".to_string()));
+    assert!(names.contains(&"read".to_string()));
     assert!(names.contains(&"run_command".to_string()));
     loop_.set_plan(false);
-    assert!(loop_.tool_names().contains(&"write_file".to_string()));
+    assert!(loop_.tool_names().contains(&"write".to_string()));
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }

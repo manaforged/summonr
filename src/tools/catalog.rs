@@ -5,34 +5,26 @@ use super::{ToolRegistry, tool};
 impl ToolRegistry {
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
         if self.policy.is_read_only() {
-            let mut all = vec![run_command()];
+            let mut all = vec![read()];
             if self.skill_ready() {
-                all.insert(0, skill());
+                all.push(skill());
             }
+            all.push(run_command());
             if self.search.is_some() {
-                all.extend([web_search(), web_fetch()]);
+                all.push(web());
             }
             return all;
         }
-        let mut all = vec![read_file()];
-        all.extend([
-            replace_text(),
-            replace_texts(),
-            replace_lines(),
-            insert_after(),
-            delete_lines(),
-            write_file(),
-        ]);
-        all.extend([list_dir(), grep(), show_image()]);
+        let mut all = vec![read(), edit(), write()];
         if self.skill_ready() {
             all.push(skill());
         }
         if self.language && super::lsp::available(&self.workspace) {
-            all.extend([diagnostics(), definition()]);
+            all.push(lsp());
         }
         all.push(run_command());
         if self.search.is_some() {
-            all.extend([web_search(), web_fetch()]);
+            all.push(web());
         }
         all
     }
@@ -43,13 +35,15 @@ impl ToolRegistry {
 
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
-            "read_file" | "list_dir" | "grep" | "show_image" => true,
+            "read" | "read_file" | "list_dir" | "grep" | "show_image" => true,
             "skill" => self.skills,
-            "diagnostics" | "definition" => self.language,
-            "edit_file" | "replace_text" | "replace_texts" | "replace_lines" | "insert_after"
-            | "delete_lines" | "write_file" => !self.policy.is_read_only(),
+            "lsp" | "diagnostics" | "definition" => self.language,
+            "edit" | "edit_file" | "replace_text" | "replace_texts" | "replace_lines"
+            | "insert_after" | "delete_lines" | "write" | "write_file" => {
+                !self.policy.is_read_only()
+            }
             "run_command" => true,
-            "web_search" | "web_fetch" => self.search.is_some(),
+            "web" | "web_search" | "web_fetch" => self.search.is_some(),
             _ => false,
         }
     }
@@ -58,12 +52,14 @@ impl ToolRegistry {
 pub(crate) fn readonly(name: &str) -> bool {
     matches!(
         name,
-        "read_file"
+        "read"
+            | "read_file"
             | "list_dir"
             | "grep"
             | "show_image"
             | "diagnostics"
             | "skill"
+            | "web"
             | "web_search"
             | "web_fetch"
     )
@@ -72,36 +68,79 @@ pub(crate) fn readonly(name: &str) -> bool {
 pub(super) fn known(name: &str) -> bool {
     matches!(
         name,
-        "read_file"
+        "read"
+            | "read_file"
+            | "edit"
             | "edit_file"
             | "replace_text"
             | "replace_texts"
             | "replace_lines"
             | "insert_after"
             | "delete_lines"
+            | "write"
             | "write_file"
             | "list_dir"
             | "grep"
             | "show_image"
+            | "lsp"
             | "diagnostics"
             | "definition"
             | "skill"
             | "run_command"
+            | "web"
             | "web_search"
             | "web_fetch"
     )
 }
 
-fn read_file() -> ToolDefinition {
+fn read() -> ToolDefinition {
     tool(
-        "read_file",
-        "Read a workspace file as `N:hash|text` lines. Optional 1-based offset and limit.",
+        "read",
+        "Read a file as N:hash|text (offset/limit), list a directory, show an image, or search (pattern/glob). Hits are path:N:hash|line.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 1000}
+                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                "pattern": {"type": "string"},
+                "glob": {"type": "string"}
+            },
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn edit() -> ToolDefinition {
+    tool(
+        "edit",
+        "Change an existing file. Tags are N:hash from read. old+new replaces a unique substring; tag+new replaces lines through optional end_tag; tag+text inserts after; op=delete removes tagged lines; edits applies several atomically. Empty files: write.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old": {"type": "string"},
+                "new": {"type": "string"},
+                "tag": {"type": "string"},
+                "end_tag": {"type": "string"},
+                "text": {"type": "string"},
+                "op": {"type": "string", "enum": ["delete"]},
+                "edits": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                            "tag": {"type": "string"},
+                            "end_tag": {"type": "string"},
+                            "text": {"type": "string"},
+                            "op": {"type": "string", "enum": ["delete"]}
+                        },
+                        "additionalProperties": false
+                    }
+                }
             },
             "required": ["path"],
             "additionalProperties": false
@@ -109,109 +148,10 @@ fn read_file() -> ToolDefinition {
     )
 }
 
-fn replace_text() -> ToolDefinition {
+fn write() -> ToolDefinition {
     tool(
-        "replace_text",
-        "Replace one exact substring. A unique old needs no tag; otherwise tag names the line old starts on. Stale or ambiguous edits fail before writing.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "tag": {"type": "string"},
-                "old": {"type": "string"},
-                "new": {"type": "string"}
-            },
-            "required": ["path", "old", "new"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn replace_texts() -> ToolDefinition {
-    tool(
-        "replace_texts",
-        "Apply several exact-substring replacements to one file atomically, in order. Later olds may match text an earlier edit produced. Tag rules as replace_text.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "edits": {
-                    "type": "array",
-                    "minItems": 2,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "tag": {"type": "string"},
-                            "old": {"type": "string"},
-                            "new": {"type": "string"}
-                        },
-                        "required": ["old", "new"],
-                        "additionalProperties": false
-                    }
-                }
-            },
-            "required": ["path", "edits"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn replace_lines() -> ToolDefinition {
-    tool(
-        "replace_lines",
-        "Replace whole lines from tag through optional end_tag. Use N:hash when a line's text repeats.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "tag": {"type": "string"},
-                "end_tag": {"type": "string"},
-                "new": {"type": "string"}
-            },
-            "required": ["path", "tag", "new"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn insert_after() -> ToolDefinition {
-    tool(
-        "insert_after",
-        "Insert text after the tagged line. Use N:hash when the line repeats.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "tag": {"type": "string"},
-                "text": {"type": "string"}
-            },
-            "required": ["path", "tag", "text"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn delete_lines() -> ToolDefinition {
-    tool(
-        "delete_lines",
-        "Delete whole lines from tag through optional end_tag.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "tag": {"type": "string"},
-                "end_tag": {"type": "string"}
-            },
-            "required": ["path", "tag"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn write_file() -> ToolDefinition {
-    tool(
-        "write_file",
-        "Create or overwrite a file. Prefer an edit tool for existing code.",
+        "write",
+        "Create or overwrite a file.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -219,80 +159,6 @@ fn write_file() -> ToolDefinition {
                 "content": {"type": "string"}
             },
             "required": ["path", "content"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn list_dir() -> ToolDefinition {
-    tool(
-        "list_dir",
-        "List a workspace directory. Skips .git, target, node_modules.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn show_image() -> ToolDefinition {
-    tool(
-        "show_image",
-        "Show an image file in the transcript.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn grep() -> ToolDefinition {
-    tool(
-        "grep",
-        "Search files; skips ignored and build directories, so prefer it to a shell grep -r. path may be absolute. Hits are `path:N:hash|line`, ready to use as edit tags. glob limits files (*.rs, src/**/*.ts); an empty pattern with glob lists files.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "path": {"type": "string"},
-                "glob": {"type": "string"},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 200}
-            },
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn diagnostics() -> ToolDefinition {
-    tool(
-        "diagnostics",
-        "Type errors and lint for one file from its language server. Run after edits.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"path": {"type": "string"}},
-            "required": ["path"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn definition() -> ToolDefinition {
-    tool(
-        "definition",
-        "Go to definition at line:character (1-based). references true lists every use; new_name renames.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "path": {"type": "string"},
-                "line": {"type": "integer", "minimum": 1},
-                "character": {"type": "integer", "minimum": 1},
-                "references": {"type": "boolean"},
-                "new_name": {"type": "string"}
-            },
-            "required": ["path", "line"],
             "additionalProperties": false
         }),
     )
@@ -311,10 +177,29 @@ fn skill() -> ToolDefinition {
     )
 }
 
+fn lsp() -> ToolDefinition {
+    tool(
+        "lsp",
+        "Language server. path for diagnostics; path+line for definition; references true lists uses; new_name renames.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "line": {"type": "integer", "minimum": 1},
+                "character": {"type": "integer", "minimum": 1},
+                "references": {"type": "boolean"},
+                "new_name": {"type": "string"}
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        }),
+    )
+}
+
 fn run_command() -> ToolDefinition {
     tool(
         "run_command",
-        "Run a shell command in the workspace sandbox; network is off unless the user enables it with /net on or /net once. Use edit tools for source changes and the grep tool for recursive search. background true returns a job id: pass job to poll it, kill true to stop it. Output is the exit code and a digest.",
+        "Run a shell command in the workspace sandbox. Network is off unless the user runs /net on or /net once. background true returns a job id; pass job to poll, kill true to stop. Output is the exit code and a digest.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -329,31 +214,18 @@ fn run_command() -> ToolDefinition {
     )
 }
 
-fn web_search() -> ToolDefinition {
+fn web() -> ToolDefinition {
     tool(
-        "web_search",
-        "Search the public web. Returns numbered title, URL, and snippet. freshness: day, week, or month.",
+        "web",
+        "Search the public web (query) or fetch one https URL as markdown (url). freshness: day, week, or month.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
+                "url": {"type": "string"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 8},
                 "freshness": {"type": "string", "enum": ["day", "week", "month"]}
             },
-            "required": ["query"],
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn web_fetch() -> ToolDefinition {
-    tool(
-        "web_fetch",
-        "Fetch one public https URL as markdown, truncated.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {"url": {"type": "string"}},
-            "required": ["url"],
             "additionalProperties": false
         }),
     )

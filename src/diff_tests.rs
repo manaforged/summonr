@@ -321,7 +321,7 @@ fn hunks_cover_edits_and_whole_untracked_files() {
 fn edited_paths_come_from_editing_tool_calls_only() {
     let calls = [
         ("read_file", r#"{"path":"a.rs"}"#),
-        ("edit_file", r#"{"path":"src/b.rs","old":"x","new":"y"}"#),
+        ("edit", r#"{"path":"src/b.rs","old":"x","new":"y"}"#),
         ("write_file", r#"{"path":"c.md","content":""}"#),
         ("edit_file", r#"{"path":"src/b.rs"}"#),
         ("run_command", r#"{"command":"touch d"}"#),

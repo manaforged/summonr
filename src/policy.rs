@@ -198,7 +198,7 @@ impl Policy {
             return Ok(());
         }
         Err(Error::Denied(format!(
-            "write to `{relative}` is not in every configured write list — add it to every [policy] write list, or approve the directory with /write PATH"
+            "write to `{relative}` is not permitted by the policy write globs"
         )))
     }
 }
@@ -217,11 +217,18 @@ pub(crate) fn write_directory(path: &str) -> PathBuf {
 }
 
 #[must_use]
-pub(crate) fn outside_hint(path: &str) -> String {
+pub(crate) fn write_denied(path: &str) -> String {
+    let dir = write_directory(path);
     format!(
-        "approve the directory with /write {}, add it to [sandbox] write in ~/.mage/config.toml, or relaunch with --no-sandbox",
-        write_directory(path).display()
+        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.mage/config.toml, or /write {}",
+        dir.display(),
+        dir.display()
     )
+}
+
+#[must_use]
+pub(crate) fn outside_hint(path: &str) -> String {
+    write_denied(path)
 }
 
 pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
@@ -237,21 +244,19 @@ pub(crate) fn grant_from_message(message: &str) -> Option<Grant> {
     if dir.is_empty() || dir == "PATH" {
         return None;
     }
-    let path = expand_path(dir);
-    if protected_write(&path) {
-        return None;
-    }
-    Some(Grant::Write(path))
+    write_grant(expand_path(dir))
 }
 
 pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
     match write_block(command, workspace, roots) {
-        Some(Block::Outside(path)) => {
-            let dir = write_directory(&path);
-            (!protected_write(&dir)).then_some(Grant::Write(dir))
-        }
+        Some(Block::Outside(path)) => write_grant(write_directory(&path)),
         Some(Block::Protected(_)) | None => None,
     }
+}
+
+fn write_grant(path: PathBuf) -> Option<Grant> {
+    ((path.is_absolute() || path.has_root()) && !protected_write(&path))
+        .then_some(Grant::Write(path))
 }
 
 pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
@@ -475,8 +480,8 @@ fn write_block(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Blo
         } else {
             segment.replace("$(git rev-parse --show-toplevel)", ".")
         };
-        let words: Vec<String> = segment
-            .split_whitespace()
+        let words: Vec<String> = unquoted(&segment, &[" ", "\t"])
+            .into_iter()
             .map(|word| word.trim_matches(|c| c == '"' || c == '\'').to_string())
             .filter(|word| !word.is_empty())
             .collect();
@@ -665,16 +670,27 @@ fn expand_home(word: &str) -> Option<PathBuf> {
     Some(PathBuf::from(home).join(rest))
 }
 
+fn resolved(path: &Path) -> PathBuf {
+    if let Ok(canonical) = path.canonicalize() {
+        return canonical;
+    }
+    path.parent()
+        .and_then(|parent| parent.canonicalize().ok())
+        .map_or_else(
+            || path.to_path_buf(),
+            |parent| match path.file_name() {
+                Some(name) => parent.join(name),
+                None => parent,
+            },
+        )
+}
+
 fn is_inside(target: &Path, workspace: &Path, extra: &[PathBuf]) -> bool {
     let temp = std::env::temp_dir();
+    let target = resolved(target);
     let roots = std::iter::once(workspace).chain(extra.iter().map(PathBuf::as_path));
     roots
-        .flat_map(|root| {
-            [
-                root.to_path_buf(),
-                root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
-            ]
-        })
+        .flat_map(|root| [root.to_path_buf(), resolved(root)])
         .chain(
             [temp.clone(), temp.canonicalize().unwrap_or_default()]
                 .into_iter()

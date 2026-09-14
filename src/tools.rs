@@ -112,7 +112,6 @@ pub(crate) struct ToolRegistry {
     session: std::sync::Mutex<Option<String>>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::atomic::AtomicBool,
-    write_extra: Vec<PathBuf>,
 }
 
 pub(crate) struct ToolOutput {
@@ -171,7 +170,6 @@ impl ToolRegistry {
             session: std::sync::Mutex::new(None),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::atomic::AtomicBool::new(false),
-            write_extra: Vec::new(),
         })
     }
 
@@ -212,12 +210,10 @@ impl ToolRegistry {
     }
 
     pub(crate) fn enable_sandbox(&mut self, deny_network: bool) -> Result<()> {
-        let mut write = crate::config::load()?.sandbox.paths();
-        write.extend(self.write_extra.iter().cloned());
         self.sandbox = Some(sandbox::Sandbox::discover(
             &self.workspace,
             deny_network,
-            &write,
+            &self.policy.write_roots(),
         )?);
         Ok(())
     }
@@ -255,10 +251,7 @@ impl ToolRegistry {
                 resolved.display()
             )));
         }
-        self.policy.allow_path(resolved.clone());
-        if !self.write_extra.contains(&resolved) {
-            self.write_extra.push(resolved);
-        }
+        self.policy.allow_path(resolved);
         if self.sandbox.is_some() {
             let deny = self
                 .sandbox
@@ -376,11 +369,12 @@ impl ToolRegistry {
 
     async fn dispatch(&self, call: &ToolCall) -> Result<ToolOutput> {
         match call.function.name.as_str() {
+            "read" => self.read(&call.function.arguments).map(ToolOutput::ok),
             "read_file" => self.read_file(&call.function.arguments).map(ToolOutput::ok),
-            "edit_file" => self.edit_file(&call.function.arguments).await,
+            "edit" | "edit_file" => self.edit_file(&call.function.arguments).await,
             name @ ("replace_text" | "replace_texts" | "replace_lines" | "insert_after"
             | "delete_lines") => self.edit_operation(name, &call.function.arguments).await,
-            "write_file" => self.write_file(&call.function.arguments).await,
+            "write" | "write_file" => self.write_file(&call.function.arguments).await,
             "list_dir" => self.list_dir(&call.function.arguments).map(ToolOutput::ok),
             "grep" => self.grep(&call.function.arguments).map(ToolOutput::ok),
             "show_image" => self
@@ -388,6 +382,7 @@ impl ToolRegistry {
                 .map(ToolOutput::ok),
             "skill" => self.skill(&call.function.arguments).map(ToolOutput::ok),
             "run_command" => self.run_command(&call.function.arguments).await,
+            "web" => self.web(&call.function.arguments).await.map(ToolOutput::ok),
             "web_search" => self
                 .web_search(&call.function.arguments)
                 .await
@@ -396,6 +391,7 @@ impl ToolRegistry {
                 .web_fetch(&call.function.arguments)
                 .await
                 .map(ToolOutput::ok),
+            "lsp" => self.lsp(&call.function.arguments).await,
             "diagnostics" => self.diagnostics(&call.function.arguments).await,
             "definition" => self.definition(&call.function.arguments).await,
             name => Err(Error::Tool(format!("unknown tool `{name}`"))),
@@ -437,10 +433,8 @@ impl ToolRegistry {
         let mut ancestor = dest.parent().unwrap_or(&self.workspace).to_path_buf();
         while !ancestor.exists() {
             match ancestor.parent() {
-                Some(parent) if parent.starts_with(&self.workspace) => {
-                    ancestor = parent.to_path_buf();
-                }
-                _ => break,
+                Some(parent) => ancestor = parent.to_path_buf(),
+                None => break,
             }
         }
         if ancestor.exists() {
@@ -448,10 +442,9 @@ impl ToolRegistry {
                 .canonicalize()
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
             self.ensure_inside(&canonical)?;
-        } else if !ancestor.starts_with(&self.workspace) && !self.approved(&ancestor) {
-            return Err(Error::Tool(format!(
-                "path leaves the workspace — {}",
-                crate::policy::outside_hint(&ancestor.display().to_string())
+        } else if !self.inside_fence(&ancestor) {
+            return Err(Error::Tool(crate::policy::write_denied(
+                &ancestor.display().to_string(),
             )));
         }
         Ok(dest)
@@ -479,10 +472,9 @@ impl ToolRegistry {
                 Component::Normal(part) => out.push(part),
                 Component::CurDir => {}
                 Component::ParentDir => {
-                    if !out.pop() || !out.starts_with(&self.workspace) {
-                        return Err(Error::Tool(format!(
-                            "path leaves the workspace — {}",
-                            crate::policy::outside_hint(&out.display().to_string())
+                    if !out.pop() {
+                        return Err(Error::Tool(crate::policy::write_denied(
+                            &out.display().to_string(),
                         )));
                     }
                 }
@@ -495,6 +487,10 @@ impl ToolRegistry {
         }
         self.ensure_inside(&out)?;
         Ok(out)
+    }
+
+    fn inside_fence(&self, path: &Path) -> bool {
+        self.policy.is_unrestricted() || path.starts_with(&self.workspace) || self.approved(path)
     }
 
     fn approved(&self, path: &Path) -> bool {
@@ -533,13 +529,11 @@ impl ToolRegistry {
     }
 
     fn ensure_inside(&self, path: &Path) -> Result<()> {
-        if self.policy.is_unrestricted() || path.starts_with(&self.workspace) || self.approved(path)
-        {
+        if self.inside_fence(path) {
             Ok(())
         } else {
-            Err(Error::Tool(format!(
-                "path leaves the workspace — {}",
-                crate::policy::outside_hint(&path.display().to_string())
+            Err(Error::Tool(crate::policy::write_denied(
+                &path.display().to_string(),
             )))
         }
     }
@@ -550,12 +544,7 @@ impl ToolRegistry {
         }
         path.strip_prefix(&self.workspace)
             .map(|relative| relative.to_string_lossy().into_owned())
-            .map_err(|error| {
-                Error::Tool(format!(
-                    "path leaves the workspace ({error}) — {}",
-                    crate::policy::outside_hint(&path.display().to_string())
-                ))
-            })
+            .map_err(|_| Error::Tool(crate::policy::write_denied(&path.display().to_string())))
     }
 }
 

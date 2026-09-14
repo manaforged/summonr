@@ -86,6 +86,53 @@ fn cd_to_the_git_toplevel_stays_inside() -> Result<()> {
 }
 
 #[test]
+fn quoted_workspace_path_with_spaces_stays_inside() {
+    let policy = Policy::builtin();
+    let ws = Path::new("/Volumes/VAULT 4TB/dev/summoner");
+    policy
+        .command(
+            r#"cd "/Volumes/VAULT 4TB/dev/summoner" && echo test > .probe_b.txt"#,
+            ws,
+        )
+        .unwrap();
+    policy
+        .command(
+            r#"echo test > "/Volumes/VAULT 4TB/dev/summoner/out.txt""#,
+            ws,
+        )
+        .unwrap();
+    assert!(
+        policy
+            .command(
+                r#"cd "/Volumes/VAULT 4TB/dev/other" && echo test > .probe_b.txt"#,
+                ws,
+            )
+            .is_err(),
+        "a quoted sibling of the workspace stays outside"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn cd_through_a_workspace_symlink_stays_inside() -> Result<()> {
+    let policy = Policy::builtin();
+    let root = tempdir()?;
+    let real = root.path().join("VAULT 4TB");
+    std::fs::create_dir(&real)?;
+    let link = root.path().join("Vault");
+    std::os::unix::fs::symlink(&real, &link)?;
+    policy.command(
+        &format!("cd \"{}\" && echo test > .probe_b.txt", link.display()),
+        &real,
+    )?;
+    policy.command(
+        &format!("cd {} && echo test > .probe_c.txt", link.display()),
+        &real.canonicalize()?,
+    )?;
+    Ok(())
+}
+
+#[test]
 fn redirects_and_cd_are_contained() {
     let policy = Policy::builtin();
     policy.command_ws("echo hi > out.txt").unwrap();
@@ -189,7 +236,7 @@ fn builtin_blocks_force_push_and_pipe_shell() {
         .unwrap();
     assert!(policy.command_ws("echo 'safe' | sh").is_err());
     policy.command_ws("echo hi").unwrap();
-    policy.command_ws("cargo test -p summoner").unwrap();
+    policy.command_ws("cargo test -p summonr").unwrap();
 }
 
 #[test]
@@ -300,7 +347,7 @@ fn policy_layers_intersect_commands_and_accumulate_denials()
     policy.overlay(toml::from_str(
         "allow = ['cargo test', 'cargo publish', 'npm']\ndeny = ['cargo test --release']",
     )?);
-    policy.command_ws("cargo test -p summoner")?;
+    policy.command_ws("cargo test -p summonr")?;
     for command in [
         "git status",
         "npm install",
@@ -373,7 +420,7 @@ fn configured_roots_accept_destructive_targets() {
     let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
         return;
     };
-    let root = std::path::PathBuf::from(home).join(".summoner-root-check");
+    let root = std::path::PathBuf::from(home).join(".summonr-root-check");
     let mut policy = Policy::builtin();
     policy.roots = vec![root.clone()];
     policy
@@ -395,12 +442,12 @@ fn home_paths_expand_before_the_root_check() {
     };
     let home = std::path::PathBuf::from(home);
     let mut policy = Policy::builtin();
-    policy.roots = vec![home.join(".summoner-root-check")];
+    policy.roots = vec![home.join(".summonr-root-check")];
     policy
-        .command_ws("ln -sfn x ~/.summoner-root-check/link")
+        .command_ws("ln -sfn x ~/.summonr-root-check/link")
         .expect("~ expands to home");
     policy
-        .command_ws("ln -sfn x $HOME/.summoner-root-check/link")
+        .command_ws("ln -sfn x $HOME/.summonr-root-check/link")
         .expect("$HOME expands to home");
     assert!(
         policy.command_ws("ln -sfn x ~/.ssh/config").is_err(),
@@ -416,7 +463,7 @@ fn outside_write_denials_name_the_remedy() {
         .expect_err("outside target")
         .to_string();
     assert!(error.contains("/write"), "{error}");
-    assert!(error.contains("--no-sandbox"), "{error}");
+    assert!(error.contains("[sandbox] write"), "{error}");
     let grant = grant_from_error(&policy.command_ws("mkdir /ws/other/n").expect_err("mkdir"))
         .expect("named write grant");
     match grant {
@@ -436,11 +483,24 @@ fn outside_write_denials_name_the_remedy() {
 }
 
 #[test]
+fn a_relative_outside_hint_is_not_a_write_grant() {
+    assert!(
+        grant_from_message(&write_denied(".probe_b.txt")).is_none(),
+        "a bare filename must not become a write root"
+    );
+    assert!(grant_from_message(&write_denied("docs/.probe")).is_none());
+    assert!(
+        outside_write("cd /etc && echo x > .probe_b.txt", Path::new(WS), &[]).is_none(),
+        "a misclassified relative target is not an extra-root grant"
+    );
+}
+
+#[test]
 fn allow_path_extends_the_roots() {
     let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
         return;
     };
-    let root = std::path::PathBuf::from(home).join(".summoner-allow-check");
+    let root = std::path::PathBuf::from(home).join(".summonr-allow-check");
     let mut policy = Policy::builtin();
     policy.allow_path(root.clone());
     assert!(
@@ -480,7 +540,7 @@ fn implicit_write_names_toolchain_homes() {
     };
     let home = std::path::PathBuf::from(home);
     assert_eq!(
-        implicit_write("cargo install summoner"),
+        implicit_write("cargo install summonr"),
         Some(home.join(".cargo"))
     );
     assert_eq!(

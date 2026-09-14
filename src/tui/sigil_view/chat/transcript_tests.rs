@@ -52,8 +52,9 @@ fn thinking_renders_by_preference_on_a_panel() {
     assert_eq!(lines(Reasoning::Collapsed).len(), 1);
     let expanded = lines(Reasoning::Expanded);
     assert_eq!(expanded.len(), 2);
-    assert_eq!(expanded[0].bg, palette().thought_bg);
-    assert_eq!(expanded[1].bg, palette().thought_bg);
+    assert_eq!(expanded[0].bg, palette().base);
+    assert_eq!(expanded[1].bg, palette().base);
+    assert_eq!(expanded[0].spans[0].fg, palette().thought);
     assert!(expanded[0].spans[0].italic);
     assert!(expanded[0].spans[0].text.starts_with("✻ "));
 }

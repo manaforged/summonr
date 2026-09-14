@@ -31,26 +31,25 @@ pub(super) fn entry_lines(
             Reasoning::Collapsed => {
                 let count = text.lines().count();
                 lines.push(
-                    vec![Span::styled(
-                        format!("⌄ thinking · {count} lines"),
-                        palette().thought,
-                    )]
+                    vec![
+                        Span::styled(format!("⌄ thinking · {count} lines"), palette().thought)
+                            .italic(),
+                    ]
                     .into(),
                 );
             }
             Reasoning::Expanded => {
                 for (index, line) in text.lines().enumerate() {
-                    lines.push(Line {
-                        spans: vec![
-                            Span::surface(
+                    lines.push(
+                        vec![
+                            Span::styled(
                                 format!("{}{line}", if index == 0 { "✻ " } else { "  " }),
                                 palette().thought,
-                                palette().thought_bg,
                             )
                             .italic(),
-                        ],
-                        bg: palette().thought_bg,
-                    });
+                        ]
+                        .into(),
+                    );
                 }
             }
         },
@@ -170,12 +169,13 @@ fn tool_lines(name: &str, arg: &str, state: &ToolState, tail: &str) -> Vec<Line>
     };
     let label = match name {
         "run_command" => "$",
-        "read_file" => "read",
-        "edit_file" => "edit",
-        "write_file" => "write",
+        "read" | "read_file" => "read",
+        "edit" | "edit_file" => "edit",
+        "write" | "write_file" => "write",
         "list_dir" => "ls",
-        "web_search" => "search",
+        "web" | "web_search" => "search",
         "web_fetch" => "fetch",
+        "lsp" | "diagnostics" => "lsp",
         other => other,
     };
     let background = palette().tool_bg;

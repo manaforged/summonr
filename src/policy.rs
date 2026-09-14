@@ -1,4 +1,4 @@
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -12,6 +12,23 @@ pub(crate) struct Policy {
     deny: Vec<String>,
     allow: Vec<Vec<String>>,
     write: Vec<Vec<String>>,
+    roots: Vec<PathBuf>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Grant {
+    Write(PathBuf),
+    Network,
+}
+
+impl Grant {
+    #[must_use]
+    pub(crate) fn prompt(&self) -> String {
+        match self {
+            Self::Write(path) => path.display().to_string(),
+            Self::Network => "network".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -38,6 +55,9 @@ impl Policy {
             policy.overlay_file(&home.join("policy.toml"))?;
         }
         policy.overlay_file(&workspace.join(".mage/policy.toml"))?;
+        if let Ok(config) = crate::config::load() {
+            policy.roots = config.sandbox.paths();
+        }
         Ok(policy)
     }
 
@@ -65,6 +85,18 @@ impl Policy {
         if !file.write.is_empty() {
             self.write.push(file.write);
         }
+    }
+
+    pub(crate) fn allow_path(&mut self, path: PathBuf) {
+        let resolved = path.canonicalize().unwrap_or(path);
+        if !self.roots.contains(&resolved) {
+            self.roots.push(resolved);
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn write_roots(&self) -> Vec<PathBuf> {
+        self.roots.clone()
     }
 
     pub(crate) fn set_strict(&mut self) {
@@ -106,10 +138,17 @@ impl Policy {
         if builtin_deny(command) {
             return Err(Error::Denied(format!("blocked command `{command}`")));
         }
-        if let Some(path) = escapes(command, workspace) {
-            return Err(Error::Denied(format!(
-                "`{path}` is outside the workspace — commands may only change files under it"
-            )));
+        match write_block(command, workspace, &self.roots) {
+            Some(Block::Protected(path)) => {
+                return Err(Error::Denied(format!("`{path}` is a protected path")));
+            }
+            Some(Block::Outside(path)) => {
+                return Err(Error::Denied(format!(
+                    "`{path}` is outside the workspace — {}",
+                    outside_hint(&path)
+                )));
+            }
+            None => {}
         }
         for pattern in &self.deny {
             if matches_deny(command, pattern) {
@@ -132,10 +171,13 @@ impl Policy {
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
-                "plan mode does not edit files. Write a new plan or review with the write_file \
-                 tool, or propose the change as a diff."
+                "plan mode does not edit files. Return the plan in your reply. \
+                 Switch to auto mode before editing files."
                     .to_string(),
             ));
+        }
+        if !self.unrestricted && protected_write(Path::new(relative)) {
+            return Err(Error::Denied(format!("`{relative}` is a protected path")));
         }
         self.write_globs(relative)
     }
@@ -156,9 +198,137 @@ impl Policy {
             return Ok(());
         }
         Err(Error::Denied(format!(
-            "write to `{relative}` is not in every configured write list"
+            "write to `{relative}` is not in every configured write list — add it to every [policy] write list, or approve the directory with /write PATH"
         )))
     }
+}
+
+#[must_use]
+pub(crate) fn write_directory(path: &str) -> PathBuf {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let directory =
+        trimmed.rsplit_once(['/', '\\']).map_or(
+            trimmed,
+            |(head, _)| {
+                if head.is_empty() { "/" } else { head }
+            },
+        );
+    expand_path(directory)
+}
+
+#[must_use]
+pub(crate) fn outside_hint(path: &str) -> String {
+    format!(
+        "approve the directory with /write {}, add it to [sandbox] write in ~/.mage/config.toml, or relaunch with --no-sandbox",
+        write_directory(path).display()
+    )
+}
+
+pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
+    match error {
+        Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
+        _ => None,
+    }
+}
+
+pub(crate) fn grant_from_message(message: &str) -> Option<Grant> {
+    let rest = message.split_once("/write ")?.1;
+    let dir = rest.split([',', '\n']).next()?.trim();
+    if dir.is_empty() || dir == "PATH" {
+        return None;
+    }
+    let path = expand_path(dir);
+    if protected_write(&path) {
+        return None;
+    }
+    Some(Grant::Write(path))
+}
+
+pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
+    match write_block(command, workspace, roots) {
+        Some(Block::Outside(path)) => {
+            let dir = write_directory(&path);
+            (!protected_write(&dir)).then_some(Grant::Write(dir))
+        }
+        Some(Block::Protected(_)) | None => None,
+    }
+}
+
+pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
+    let verb = first_verb(command)?;
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)?;
+    let dir = match verb.as_str() {
+        "cargo" | "rustup" => home.join(".cargo"),
+        "npm" | "npx" | "pnpm" | "yarn" | "bun" => home.join(".npm"),
+        "go" => std::env::var_os("GOPATH")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| home.join("go")),
+        _ => return None,
+    };
+    (!protected_write(&dir)).then_some(dir)
+}
+
+pub(crate) fn first_verb(command: &str) -> Option<String> {
+    let word = command
+        .split_whitespace()
+        .find(|word| !word.contains('='))?;
+    let name = word
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(word)
+        .trim_matches(['\'', '"', '`'])
+        .to_ascii_lowercase();
+    Some(name.strip_suffix(".exe").unwrap_or(&name).to_string())
+}
+
+pub(crate) fn protected_write(path: &Path) -> bool {
+    let unix = path.to_string_lossy().replace('\\', "/");
+    let parts: Vec<&str> = unix.split('/').filter(|part| !part.is_empty()).collect();
+    if parts
+        .windows(2)
+        .any(|pair| pair[0] == ".git" && matches!(pair[1], "hooks" | "config"))
+    {
+        return true;
+    }
+    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
+        if name == ".env" || name.starts_with(".env.") {
+            return true;
+        }
+        if matches!(
+            name,
+            ".bashrc" | ".zshrc" | ".zprofile" | ".profile" | ".bash_profile"
+        ) {
+            return true;
+        }
+    }
+    let Some(home) = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+    else {
+        return false;
+    };
+    [".ssh", ".gnupg", ".mage"]
+        .into_iter()
+        .any(|dir| path.starts_with(home.join(dir)))
+}
+
+pub(crate) fn protected_read(path: &Path) -> bool {
+    if let Some(name) = path.file_name().and_then(|name| name.to_str())
+        && (name == ".env" || name.starts_with(".env."))
+    {
+        return true;
+    }
+    let Some(home) = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+    else {
+        return false;
+    };
+    [".ssh", ".gnupg"]
+        .into_iter()
+        .any(|dir| path.starts_with(home.join(dir)))
 }
 
 fn expands_to_shell(var: &str) -> bool {
@@ -266,7 +436,38 @@ const DESTRUCTIVE: [&str; 14] = [
     "install", "rsync",
 ];
 
-fn escapes(command: &str, workspace: &Path) -> Option<String> {
+enum Block {
+    Outside(String),
+    Protected(String),
+}
+
+fn locate(word: &str, workspace: &Path) -> PathBuf {
+    expand_home(word).unwrap_or_else(|| {
+        let path = Path::new(word);
+        if path.has_root() {
+            path.to_path_buf()
+        } else {
+            workspace.join(path)
+        }
+    })
+}
+
+fn block_target(
+    word: &str,
+    workspace: &Path,
+    outside_cwd: bool,
+    roots: &[PathBuf],
+) -> Option<Block> {
+    if protected_write(&locate(word, workspace)) {
+        return Some(Block::Protected(word.to_string()));
+    }
+    if outside_cwd || is_outside(word, workspace, outside_cwd, roots) {
+        return Some(Block::Outside(word.to_string()));
+    }
+    None
+}
+
+fn write_block(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
     let mut outside_cwd = false;
     for segment in split_segments(command) {
         let segment = if outside_cwd || !workspace.join(".git").exists() {
@@ -293,12 +494,13 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
             && words
                 .iter()
                 .any(|word| word == "-delete" || word == "-exec" || word == "-execdir");
+        let creates = matches!(verb.as_str(), "mkdir" | "touch" | "md");
         let destructive = DESTRUCTIVE.contains(&verb.as_str()) || deletes_via_find;
         for word in args.clone() {
             if let Some(target) = word.strip_prefix(">>").or_else(|| word.strip_prefix('>')) {
                 let target = if target.is_empty() { continue } else { target };
-                if is_outside(target, workspace, outside_cwd) {
-                    return Some(target.to_string());
+                if let Some(block) = block_target(target, workspace, outside_cwd, roots) {
+                    return Some(block);
                 }
             }
         }
@@ -307,8 +509,8 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
         for word in args.clone() {
             if redirect_next {
                 redirect_next = false;
-                if is_outside(word, workspace, outside_cwd) {
-                    return Some(word.clone());
+                if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
+                    return Some(block);
                 }
                 continue;
             }
@@ -320,14 +522,20 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
                 continue;
             }
             if verb == "cd" {
-                if is_outside(word, workspace, outside_cwd) {
+                if is_outside(word, workspace, outside_cwd, roots) {
                     outside_cwd = true;
                 }
                 break;
             }
+            if creates {
+                if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
+                    return Some(block);
+                }
+                continue;
+            }
             if destructive {
                 if in_temp(word) {
-                    return Some(word.clone());
+                    return Some(Block::Outside(word.clone()));
                 }
                 targets.push(word.clone());
             }
@@ -338,8 +546,8 @@ fn escapes(command: &str, workspace: &Path) -> Option<String> {
             targets.iter().collect()
         };
         for word in checked {
-            if outside_cwd || is_outside(word, workspace, false) {
-                return Some(word.clone());
+            if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
+                return Some(block);
             }
         }
     }
@@ -412,25 +620,18 @@ fn in_temp(word: &str) -> bool {
             .any(|root| !root.as_os_str().is_empty() && target.starts_with(root))
 }
 
-fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
+fn is_outside(word: &str, workspace: &Path, outside_cwd: bool, extra: &[PathBuf]) -> bool {
     if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
         return false;
+    }
+    if let Some(target) = expand_home(word) {
+        return !is_inside(&target, workspace, extra);
     }
     if word.starts_with('~') || word.starts_with('$') {
         return true;
     }
     if Path::new(word).has_root() {
-        let target = Path::new(word);
-        let temp = std::env::temp_dir();
-        let roots = [
-            workspace.to_path_buf(),
-            workspace.canonicalize().unwrap_or_default(),
-            temp.clone(),
-            temp.canonicalize().unwrap_or_default(),
-        ];
-        return !roots
-            .iter()
-            .any(|root| !root.as_os_str().is_empty() && target.starts_with(root));
+        return !is_inside(Path::new(word), workspace, extra);
     }
     if outside_cwd {
         return true;
@@ -450,6 +651,36 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool) -> bool {
         }
     }
     false
+}
+
+pub(crate) fn expand_path(word: &str) -> PathBuf {
+    expand_home(word).unwrap_or_else(|| PathBuf::from(word))
+}
+
+fn expand_home(word: &str) -> Option<PathBuf> {
+    let rest = word
+        .strip_prefix("~/")
+        .or_else(|| word.strip_prefix("$HOME/"))?;
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    Some(PathBuf::from(home).join(rest))
+}
+
+fn is_inside(target: &Path, workspace: &Path, extra: &[PathBuf]) -> bool {
+    let temp = std::env::temp_dir();
+    let roots = std::iter::once(workspace).chain(extra.iter().map(PathBuf::as_path));
+    roots
+        .flat_map(|root| {
+            [
+                root.to_path_buf(),
+                root.canonicalize().unwrap_or_else(|_| root.to_path_buf()),
+            ]
+        })
+        .chain(
+            [temp.clone(), temp.canonicalize().unwrap_or_default()]
+                .into_iter()
+                .filter(|root| !root.as_os_str().is_empty()),
+        )
+        .any(|root| target.starts_with(&root))
 }
 
 fn wipes_root(folded: &str) -> bool {

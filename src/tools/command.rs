@@ -8,6 +8,7 @@ use tokio::process::Child;
 use tokio::process::Command;
 
 use crate::error::{Error, Result};
+use crate::policy::Grant;
 
 use super::sandbox::Sandbox;
 use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args};
@@ -129,10 +130,14 @@ impl ToolRegistry {
                 success: status.running || status.exit_code == Some(0),
                 text: status.text,
                 mutated: false,
+                grant: None,
             });
         }
         let command = object_string(&args, "command")?;
-        self.check_command(command)?;
+        let approved = self.take_approval();
+        if !approved {
+            self.check_command(command)?;
+        }
         let background = object_bool(&args, "background");
         if read_only && self.sandbox.is_none() {
             return Err(Error::Denied(
@@ -159,12 +164,12 @@ impl ToolRegistry {
                 "background commands are unavailable in child sessions".to_string(),
             ));
         }
-        let started = self.start_command(command, background, read_only)?;
+        let started = self.start_command(command, background, read_only, approved)?;
         if background {
             return Ok(background_result(started));
         }
         let timeout = object_usize(&args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
-        self.wait_command(started, command, timeout, read_only)
+        self.wait_command(started, command, timeout, read_only, !approved)
             .await
     }
 
@@ -196,6 +201,7 @@ impl ToolRegistry {
         command: &str,
         background: bool,
         read_only: bool,
+        approved: bool,
     ) -> Result<StartedCommand> {
         let temp = if background {
             None
@@ -211,10 +217,24 @@ impl ToolRegistry {
         } else {
             command.to_string()
         };
+        let one_shot = self.sandbox.is_some()
+            && self
+                .network_once
+                .swap(false, std::sync::atomic::Ordering::SeqCst);
+        let sandbox = if approved {
+            None
+        } else if one_shot {
+            self.sandbox
+                .as_ref()
+                .map(Sandbox::allow_network)
+                .transpose()?
+        } else {
+            self.sandbox.clone()
+        };
         let child = spawn_command(
             &self.workspace,
             &self.env,
-            self.sandbox.as_ref(),
+            sandbox.as_ref(),
             &script,
             &log_path,
             background,
@@ -251,6 +271,7 @@ impl ToolRegistry {
         command: &str,
         timeout: Option<u64>,
         read_only: bool,
+        contained: bool,
     ) -> Result<ToolOutput> {
         let StartedCommand {
             id: _,
@@ -260,7 +281,7 @@ impl ToolRegistry {
             mut child,
             temp: _temp,
         } = started;
-        let mut group = ProcessGroup::new(pid, self.sandbox.is_some());
+        let mut group = ProcessGroup::new(pid, contained);
         let started = std::time::Instant::now();
         let waited = match timeout {
             Some(seconds) => {
@@ -284,16 +305,21 @@ impl ToolRegistry {
                 let code = status.code().unwrap_or(-1);
                 crate::jobs::write_exit(&exit_path, code)?;
                 let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
+                let grant = (code != 0)
+                    .then(|| sandbox_grant(self, command, &raw))
+                    .flatten();
                 let output = format!(
-                    "exit {code}\n{}{}{}",
+                    "exit {code}\n{}{}{}{}",
                     super::digest(command, &raw),
                     slow_search_note(command, started.elapsed().as_secs()),
-                    plan_write_note(read_only, &raw)
+                    plan_write_note(read_only, &raw),
+                    sandbox_note(grant.as_ref(), self, &raw)
                 );
                 Ok(ToolOutput {
                     text: output,
                     success: code == 0,
                     mutated: !read_only && code == 0 && !readonly_verb(command),
+                    grant,
                 })
             }
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
@@ -320,6 +346,7 @@ impl ToolRegistry {
                     text: format!("{timeout}\n{warning}\n{}", super::digest(command, &raw)),
                     success: false,
                     mutated: !read_only,
+                    grant: None,
                 })
             }
         }
@@ -328,10 +355,88 @@ impl ToolRegistry {
 
 fn plan_write_note(read_only: bool, raw: &str) -> String {
     if read_only && raw.contains("Operation not permitted") {
-        "\nplan mode runs the shell read-only. Write a plan or review with the write_file          tool, which creates parent directories; builds and edits run in auto mode."
+        "\nplan mode runs the shell read-only. Return the plan in your reply. Switch to auto mode before building or editing files."
             .to_string()
     } else {
         String::new()
+    }
+}
+
+fn sandbox_grant(registry: &ToolRegistry, command: &str, raw: &str) -> Option<Grant> {
+    let eperm = raw.contains("Operation not permitted") || raw.contains("Permission denied");
+    if eperm
+        && let Some(grant) = crate::policy::outside_write(
+            command,
+            &registry.workspace,
+            &registry.policy.write_roots(),
+        )
+    {
+        return Some(grant);
+    }
+    if eperm && let Some(path) = crate::policy::implicit_write(command) {
+        return Some(Grant::Write(path));
+    }
+    if registry.denies_network() && (network_text(raw) || (eperm && network_verb(command))) {
+        return Some(Grant::Network);
+    }
+    None
+}
+
+fn network_text(raw: &str) -> bool {
+    const MARKERS: [&str; 8] = [
+        "Could not resolve host",
+        "Network is unreachable",
+        "Temporary failure in name resolution",
+        "nodename nor servname",
+        "Failed to connect",
+        "Could not connect",
+        "Connection refused",
+        "curl: (6)",
+    ];
+    MARKERS.iter().any(|marker| raw.contains(marker))
+}
+
+fn network_verb(command: &str) -> bool {
+    command
+        .split_whitespace()
+        .find(|word| !word.contains('='))
+        .map(|word| {
+            word.rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(word)
+                .trim_matches(['\'', '"', '`'])
+                .to_ascii_lowercase()
+        })
+        .is_some_and(|verb| {
+            matches!(
+                verb.strip_suffix(".exe").unwrap_or(&verb),
+                "curl" | "wget" | "ssh" | "scp" | "sftp"
+            )
+        })
+}
+
+fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: &str) -> String {
+    match grant {
+        Some(Grant::Network) => {
+            "\nnote: network is off in the sandbox. Ask the user to run /net on for this session or /net once, then retry.\n"
+                .to_string()
+        }
+        Some(Grant::Write(path)) => format!(
+            "\nnote: the OS sandbox denied a write outside the workspace. Ask the user to approve the directory with /write {}, or add it to [sandbox] write in ~/.mage/config.toml.\n",
+            path.display()
+        ),
+        None if registry.has_sandbox()
+            && (raw.contains("Operation not permitted") || raw.contains("Permission denied")) =>
+        {
+            if registry.denies_network() {
+                "\nnote: the OS sandbox denied this command (network is off; writes outside the workspace need /write PATH).\n"
+                    .to_string()
+            } else {
+                "\nnote: the OS sandbox denied a write outside the workspace. Ask the user to approve the directory with /write PATH, or add it to [sandbox] write in ~/.mage/config.toml.\n"
+                    .to_string()
+            }
+        }
+        None => String::new(),
     }
 }
 
@@ -429,6 +534,7 @@ fn background_result(started: StartedCommand) -> ToolOutput {
         ),
         success: true,
         mutated: false,
+        grant: None,
     }
 }
 

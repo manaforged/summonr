@@ -13,6 +13,7 @@ use sigil_ide_core::buffer::Rope;
 use sigil_tui::cell_width;
 use tokio::sync::mpsc::UnboundedSender;
 
+use crate::command::argument;
 use crate::prefs::{self, Hotkey, Prefs, ToolOutput};
 use crate::provider::{Image, UserInput};
 use crate::tools::IMAGES_MAX_BYTES;
@@ -20,10 +21,14 @@ use crate::workflow::Role;
 
 use super::super::{Activity, Cmd, Info, Msg};
 use super::canvas::cell;
+use super::chat::{History, body_rows};
 use super::hit::{Hits, Target};
+use super::input::{self, Caret, Input};
 use super::model::{Entry, Model, preview};
 use super::pane::{Layout, Pane};
+use super::patch::{self, SPLIT};
 use super::suggest::Picker;
+use super::theme;
 
 pub(super) mod presentation;
 
@@ -36,6 +41,7 @@ pub(super) enum CopyStatus {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Overlay {
+    Help,
     Search,
     Sessions,
     Auth,
@@ -50,18 +56,18 @@ pub(super) struct App {
     pub(super) model: Rc<RefCell<Model>>,
     pub(super) history: Rc<RefCell<super::chat::History>>,
     pub(super) search: super::search::Picker,
+    pub(super) help: super::help::View,
     pub(super) cmd: UnboundedSender<Cmd>,
     pub(super) info: Info,
     pub(super) workspace: PathBuf,
     pub(super) git_branch: Option<String>,
     pub(super) prefs_path: Option<PathBuf>,
-    pub(super) transcript: Signal<String>,
-    estimated_extent: Signal<f32>,
     pub(super) extent: Signal<f32>,
     pub(super) scroll_y: Signal<f32>,
     pub(super) draft: Signal<String>,
     pub(super) caret: Signal<usize>,
     pub(super) editor: TextEditState,
+    pub(super) placement: Signal<Option<Caret>>,
     recalled: Signal<Option<(usize, String, usize)>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
@@ -125,8 +131,9 @@ pub(super) struct App {
     view_saved: Signal<String>,
     discard_armed: Signal<bool>,
     pub(super) copy: Signal<Option<String>>,
+    pub(super) approval: Signal<Option<(String, bool)>>,
     pub(super) select: Signal<bool>,
-    copy_pending: Signal<bool>,
+    copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
     pub(super) open_file: Signal<Option<PathBuf>>,
     pub(super) resume: Rc<RefCell<Option<String>>>,
     pub(super) quit: Signal<bool>,
@@ -142,24 +149,23 @@ pub(super) struct App {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
+        theme::install(&info.prefs.theme, &workspace, info.config.as_deref());
         let model = Model::new(&info);
         let git_branch = read_git_branch(&workspace);
-        let estimated_extent = signal(1.0);
-        let extent = estimated_extent;
         let draft = signal(String::new());
         let caret = signal(0);
         Self {
             model: Rc::new(RefCell::new(model)),
-            history: Rc::new(RefCell::new(super::chat::History::default())),
+            history: Rc::new(RefCell::new(History::default())),
             search: super::search::Picker::new(),
+            help: super::help::View::new(),
             cmd,
-            transcript: signal(String::new()),
-            estimated_extent,
-            extent,
+            extent: signal(0.0),
             scroll_y: signal(0.0),
             draft,
             caret,
             editor: TextEditState::new(draft, caret),
+            placement: signal(None),
             recalled: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
@@ -223,8 +229,9 @@ impl App {
             view_saved: signal(String::new()),
             discard_armed: signal(false),
             copy: signal(None),
+            approval: signal(None),
             select: signal(false),
-            copy_pending: signal(false),
+            copy_pending: signal(None),
             open_file: signal(None),
             resume: Rc::new(RefCell::new(None)),
             quit: signal(false),
@@ -245,25 +252,33 @@ impl App {
 
     pub(super) fn update(&self, msg: Msg) {
         if matches!(msg, Msg::Event(crate::Event::Work { .. })) {
-            match self.layout.peek().secondary {
-                Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
-                Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
-                Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
-                _ => {}
-            }
+            self.load();
         }
         if matches!(msg, Msg::Diff(_))
             && let Some(path) = self.diff_view.peek()
         {
+            self.model.borrow_mut().patch = None;
             drop(self.cmd.send(Cmd::Patch(self.root(), path)));
         }
-        if let Msg::Patch { path, text } = &msg
-            && path.is_empty()
-            && self.copy_pending.peek()
-        {
-            self.copy_pending.set(false);
-            self.copy.set(Some(text.clone()));
-            return;
+        if let Msg::Event(crate::Event::Approval { detail, persist }) = &msg {
+            self.approval
+                .set(detail.clone().map(|detail| (detail, *persist)));
+        }
+        if matches!(msg, Msg::Busy(None)) {
+            self.approval.set(None);
+        }
+        if let Msg::Patch { root, path, result } = &msg {
+            if self
+                .copy_pending
+                .peek()
+                .is_some_and(|(wanted, file)| &wanted == root && file == *path)
+            {
+                self.copy_pending.set(None);
+                self.patch_copy(result.clone());
+            }
+            if *root != self.root() || self.diff_view.peek().as_ref() != Some(path) {
+                return;
+            }
         }
         if let Msg::Changed(paths) = &msg {
             let viewing = self
@@ -284,6 +299,7 @@ impl App {
             }
         }
         match msg {
+            Msg::OpenHelp => self.help.show(),
             Msg::Prompts { session, result } => {
                 let current = match session {
                     Some(id) => self.search.is_branch() && id == self.model.borrow().session,
@@ -364,12 +380,24 @@ impl App {
                 seats.resize(Role::ALL.len(), None);
                 self.workflow_seats.set(seats);
             }
+            msg @ Msg::Patch { .. } => {
+                self.model.borrow_mut().apply(msg);
+                self.constrain();
+            }
             msg => {
                 if !self.model.borrow_mut().apply(msg) {
                     self.quit.set(true);
                 }
             }
         }
+    }
+
+    pub(super) fn approval_answer(&self, token: &str) {
+        self.approval.set(None);
+        drop(
+            self.cmd
+                .send(Cmd::Steer(UserInput::from(token.to_string()))),
+        );
     }
 
     pub(super) fn request_resume(&self, id: String) {
@@ -415,27 +443,10 @@ impl App {
 
     pub(super) fn refresh(&self) {
         batch(|| {
-            let old_extent = self.extent.peek();
-            let pinned = self.scroll_y.peek() >= old_extent;
             let model = self.model.borrow();
             if !model.entries.is_empty() {
                 self.splash.set(false);
             }
-            let transcript = model.transcript();
-            let width = usize::from(self.chat_cols());
-            let content_left = if width > 28 {
-                2
-            } else {
-                usize::from(width > 2)
-            };
-            let content_width = width.saturating_sub(content_left * 2).max(1);
-            let wrapped: usize = transcript
-                .lines()
-                .map(|line| cell_width(line).max(1).div_ceil(content_width))
-                .sum();
-            self.estimated_extent
-                .set(wrapped as f32 * cell().h + cell().h);
-            self.transcript.set(transcript);
             self.header.set(header(&model));
             self.status.set(status(&model, &self.info));
             self.settings
@@ -443,9 +454,7 @@ impl App {
             self.facts.set(facts(&model, &self.info));
             self.theme_name.set(model.prefs.theme.clone());
             self.panes.set(self.panes.peek().wrapping_add(1));
-            if old_extent <= 1.0 || pinned {
-                self.scroll_y.set(self.extent.peek());
-            }
+            self.reflow(&self.draft.peek());
         });
     }
 
@@ -454,7 +463,13 @@ impl App {
     }
 
     pub(super) fn resize(&self, cols: u16, rows: u16) {
-        self.viewport.set((cols, rows));
+        batch(|| {
+            self.viewport.set((cols, rows));
+            self.constrain();
+            self.placement.set(None);
+            self.reveal(&self.draft.peek());
+            self.reflow(&self.draft.peek());
+        });
     }
 
     pub(super) fn tick(&self) {
@@ -476,7 +491,15 @@ impl App {
     }
 
     pub(super) fn page_history(&self, direction: f32) {
-        let page = f32::from(self.viewport.peek().1.saturating_sub(5).max(1)) * cell().h;
+        let page = f32::from(
+            body_rows(
+                self.chat_cols(),
+                self.viewport.peek().1,
+                &self.draft.peek(),
+                self.model.borrow().busy_since.is_some(),
+            )
+            .max(1),
+        ) * cell().h;
         self.scroll_history(-direction * page);
     }
 
@@ -515,12 +538,9 @@ impl App {
                 self.refresh();
                 return;
             }
-            let mut draft = self.draft.peek();
-            let caret = self.caret.peek().min(draft.len());
-            draft.insert_str(caret, &prompt.text);
             self.search.open.set(false);
-            self.replace(draft);
-            self.caret.set(caret + prompt.text.len());
+            self.editor.insert(&prompt.text);
+            self.change(&self.draft.peek());
             if prompt.images > 0 {
                 self.model.borrow_mut().entries.push(Entry::System(
                     "Inserted prompt text. Saved images were not added.".to_string(),
@@ -545,14 +565,39 @@ impl App {
     }
 
     pub(super) fn scroll_history(&self, delta: f32) {
-        let extent = self
-            .history
-            .borrow()
-            .extent(self.viewport.peek().1, &self.draft.peek())
-            .unwrap_or_else(|| self.extent.peek());
-        self.extent.set(extent);
-        let next = self.scroll_y.peek().min(extent) - delta;
+        self.reflow(&self.draft.peek());
+        let extent = self.extent.peek();
+        let next = self.scroll_y.peek() - delta;
         self.scroll_y.set(next.clamp(0.0, extent));
+    }
+
+    fn reflow(&self, draft: &str) {
+        let pinned = self.scroll_y.peek() >= self.extent.peek();
+        let mut history = self.history.borrow_mut();
+        let anchor = if pinned {
+            None
+        } else {
+            history.anchor(self.scroll_y.peek())
+        };
+        let model = self.model.borrow();
+        let extent = history.extent(
+            &model,
+            self.chat_cols(),
+            self.viewport.peek().1,
+            draft,
+            model.entries.stamp,
+        );
+        let position = if pinned {
+            extent
+        } else {
+            anchor
+                .and_then(|anchor| history.locate(anchor))
+                .unwrap_or_else(|| self.scroll_y.peek())
+                .min(extent)
+        };
+        drop(history);
+        self.extent.set(extent);
+        self.scroll_y.set(position);
     }
 
     pub(super) fn submit(&self) {
@@ -566,7 +611,16 @@ impl App {
         if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
             return;
         }
-        if self.local(&text) {
+        let argument = match argument(&text) {
+            Ok(argument) => argument,
+            Err(error) => {
+                self.model.borrow_mut().entries.push(Entry::Error(error));
+                self.splash.set(false);
+                self.refresh();
+                return;
+            }
+        };
+        if self.local(&text, argument) {
             self.replace(String::new());
             return;
         }
@@ -623,9 +677,9 @@ impl App {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) =
-            self.commands
-                .complete(&typed, self.caret.peek(), &self.model.borrow().files)
+        let Some(name) = self
+            .commands
+            .complete(&typed, self.caret.peek(), &self.model.borrow())
         else {
             return false;
         };
@@ -638,9 +692,9 @@ impl App {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) =
-            self.commands
-                .accept(&typed, self.caret.peek(), &self.model.borrow().files)
+        let Some(name) = self
+            .commands
+            .accept(&typed, self.caret.peek(), &self.model.borrow())
         else {
             return false;
         };
@@ -653,18 +707,16 @@ impl App {
             && !self.workflow_open.peek()
             && !self.editing_model.peek()
             && self.model.borrow().busy_since.is_none()
-            && self.commands.open(
-                &self.draft.peek(),
-                self.caret.peek(),
-                &self.model.borrow().files,
-            )
+            && self
+                .commands
+                .open(&self.draft.peek(), self.caret.peek(), &self.model.borrow())
     }
 
     pub(super) fn shift(&self, delta: isize) -> bool {
         self.commands.shift(
             &self.draft.peek(),
             self.caret.peek(),
-            &self.model.borrow().files,
+            &self.model.borrow(),
             delta,
         )
     }
@@ -683,11 +735,8 @@ impl App {
             store.len()
         };
         let token = paste_token(lines, index);
-        let mut draft = self.draft.peek();
-        let caret = self.caret.peek().min(draft.len());
-        draft.insert_str(caret, &token);
-        self.replace(draft);
-        self.caret.set(caret + token.len());
+        self.editor.insert(&token);
+        self.change(&self.draft.peek());
         self.refresh();
         true
     }
@@ -711,15 +760,12 @@ impl App {
         if !armed(&self.escape_armed, REPEAT_WINDOW) {
             return false;
         }
-        self.local("/tree")
+        self.local("/tree", None)
     }
 
     pub(super) fn dismiss(&self) -> bool {
-        self.commands.hide(
-            &self.draft.peek(),
-            self.caret.peek(),
-            &self.model.borrow().files,
-        )
+        self.commands
+            .hide(&self.draft.peek(), self.caret.peek(), &self.model.borrow())
     }
 
     pub(super) fn queue(&self) {
@@ -757,21 +803,88 @@ impl App {
     }
 
     pub(super) fn replace(&self, draft: String) {
-        self.recalled.set(None);
-        if draft.contains('@') && !self.commands.mentions() {
-            drop(self.cmd.send(Cmd::ListFiles));
-        }
-        self.commands.change(&draft);
+        self.change(&draft);
         self.caret.set(draft.len());
         self.draft.set(draft);
     }
 
+    pub(super) fn edit(&self, draft: &str) {
+        self.pane_focus.set(false);
+        self.editor.replace(draft);
+        self.change(&self.draft.peek());
+    }
+
     pub(super) fn change(&self, draft: &str) {
         self.recalled.set(None);
+        self.placement.set(None);
+        self.reveal(draft);
+        self.reflow(draft);
         if draft.contains('@') && !self.commands.mentions() {
             drop(self.cmd.send(Cmd::ListFiles));
         }
         self.commands.change(draft);
+    }
+
+    fn reveal(&self, draft: &str) {
+        if self.splash.peek() {
+            let (cols, rows) = self.viewport.peek();
+            let width = super::scene::prompt_area(self, cols, rows)[2].saturating_sub(9);
+            if draft.contains('\n') || cell_width(draft) > usize::from(width) {
+                self.splash.set(false);
+            }
+        }
+    }
+
+    pub(super) fn place(&self, caret: Caret, extend: bool) {
+        batch(|| {
+            self.placement.set(Some(caret));
+            self.editor.select(caret.byte, extend);
+        });
+    }
+
+    pub(super) fn vertical(&self, delta: isize, extend: bool) -> bool {
+        if self.options_active() || self.view_edit.peek() || self.pane_active().is_some() {
+            return false;
+        }
+        let draft = self.draft.peek();
+        let input = Input::new(&draft, input::width(self.chat_cols()));
+        let caret = input.caret(self.caret.peek(), self.placement.peek());
+        if let Some(target) = input.vertical(caret, delta) {
+            self.place(target, extend);
+            true
+        } else {
+            extend
+        }
+    }
+
+    pub(super) fn edge(&self, end: bool, extend: bool) -> bool {
+        if self.options_active() || self.view_edit.peek() || self.pane_active().is_some() {
+            return false;
+        }
+        let draft = self.draft.peek();
+        let input = Input::new(&draft, input::width(self.chat_cols()));
+        let caret = input.caret(self.caret.peek(), self.placement.peek());
+        let column = if end {
+            cell_width(&draft[input.rows[caret.row].clone()])
+        } else {
+            0
+        };
+        if let Some(target) = input.hit(caret.row, column) {
+            self.place(target, extend);
+        }
+        true
+    }
+
+    pub(super) fn boundary(&self, end: bool, extend: bool) -> bool {
+        if self.options_active() || self.view_edit.peek() || self.pane_active().is_some() {
+            return false;
+        }
+        batch(|| {
+            self.placement.set(None);
+            self.editor
+                .select(if end { self.draft.peek().len() } else { 0 }, extend);
+        });
+        true
     }
 
     pub(super) fn recall(&self, older: bool) -> bool {
@@ -810,7 +923,7 @@ impl App {
         };
         if let Some((index, text)) = picked {
             self.select(text);
-            self.commands.hide(text, text.len(), &model.files);
+            self.commands.hide(text, text.len(), &model);
             self.recalled.set(Some((index, saved, saved_caret)));
             true
         } else if !older && self.recalled.peek().is_some() {
@@ -823,6 +936,9 @@ impl App {
     }
 
     fn select(&self, draft: &str) {
+        self.placement.set(None);
+        self.reveal(draft);
+        self.reflow(draft);
         self.caret.set(draft.len());
         self.draft.set(draft.to_string());
     }
@@ -831,6 +947,7 @@ impl App {
         let mut draft = self.draft.peek();
         let caret = self.caret.peek();
         let Some((start, _)) = super::suggest::mention(&draft, caret) else {
+            self.editor.replace(value);
             self.select(value);
             return;
         };
@@ -854,7 +971,7 @@ impl App {
             reference.push(' ');
         }
         draft.replace_range(start..end, &reference);
-        self.replace(draft);
+        self.edit(&draft);
         self.caret
             .set(start + reference.len() + following.map_or(0, char::len_utf8));
     }
@@ -961,11 +1078,12 @@ impl App {
         self.refresh();
     }
 
-    fn local(&self, line: &str) -> bool {
+    fn local(&self, line: &str, argument: Option<&str>) -> bool {
         match crate::parse_command(line) {
+            Some(crate::SlashCommand::Help) => self.help.show(),
             Some(crate::SlashCommand::Retry) => self.retry(),
-            Some(crate::SlashCommand::Search) => self.search.start(argument(line).unwrap_or("")),
-            Some(crate::SlashCommand::History) => self.prompt_history(argument(line).unwrap_or("")),
+            Some(crate::SlashCommand::Search) => self.search.start(argument.unwrap_or("")),
+            Some(crate::SlashCommand::History) => self.prompt_history(argument.unwrap_or("")),
             Some(crate::SlashCommand::Branch) => {
                 if self.model.borrow().busy_since.is_some() {
                     self.model.borrow_mut().entries.push(Entry::Error(
@@ -973,16 +1091,14 @@ impl App {
                     ));
                     self.refresh();
                 } else {
-                    self.search.branch(argument(line).unwrap_or(""));
+                    self.search.branch(argument.unwrap_or(""));
                     drop(
                         self.cmd
                             .send(Cmd::ListPrompts(Some(self.model.borrow().session.clone()))),
                     );
                 }
             }
-            Some(crate::SlashCommand::Resume | crate::SlashCommand::Tree)
-                if argument(line).is_none() =>
-            {
+            Some(crate::SlashCommand::Resume | crate::SlashCommand::Tree) if argument.is_none() => {
                 if self.model.borrow().busy_since.is_some() {
                     self.model.borrow_mut().entries.push(Entry::Error(
                         "Cancel the active turn before resuming a session.".to_string(),
@@ -1001,10 +1117,10 @@ impl App {
                 self.settings_open.set(true);
             }
             Some(crate::SlashCommand::Auth | crate::SlashCommand::Login) => {
-                self.begin_auth(argument(line));
+                self.begin_auth(argument);
             }
             Some(crate::SlashCommand::Model) => {
-                let model = line.trim_start_matches("/model").trim();
+                let model = argument.unwrap_or_default();
                 match model {
                     "" => self.begin_model_edit(),
                     "next" => self.cycle_seat(true),
@@ -1012,28 +1128,32 @@ impl App {
                     model => drop(self.cmd.send(Cmd::SetModel(model.to_string()))),
                 }
             }
-            Some(crate::SlashCommand::Workflow) if argument(line).is_none() => {
+            Some(crate::SlashCommand::Workflow) if argument.is_none() => {
                 self.open_workflow();
             }
             Some(crate::SlashCommand::Stats) => {
                 let rounds = self.model.borrow().usage.clone();
                 self.model.borrow_mut().entries.push(Entry::Chart(rounds));
+                let unreported = self.model.borrow().unreported_tokens;
+                if unreported > 0 {
+                    self.model.borrow_mut().entries.push(Entry::System(format!(
+                        "{unreported} additional tokens are unconfirmed and count toward the budget. Failed requests reserve an estimate; older charge records may lack usage provenance."
+                    )));
+                }
                 self.refresh();
             }
             Some(crate::SlashCommand::Theme) => self.toggle_theme(),
             Some(crate::SlashCommand::Tools) => self.toggle_tools(),
-            Some(crate::SlashCommand::Reasoning) => self.toggle_reasoning(),
-            Some(crate::SlashCommand::Pane) => self.pane_command(argument(line)),
-            Some(crate::SlashCommand::Layout) => self.layout_command(argument(line)),
-            Some(crate::SlashCommand::Diff) => self.diff_command(argument(line)),
-            Some(crate::SlashCommand::Copy) => self.copy_chat(argument(line)),
+            Some(crate::SlashCommand::Reasoning) => self.reasoning_command(argument),
+            Some(crate::SlashCommand::Receipts) => self.receipts_command(argument),
+            Some(crate::SlashCommand::Pane) => self.pane_command(argument),
+            Some(crate::SlashCommand::Layout) => self.layout_command(argument),
+            Some(crate::SlashCommand::Diff) => self.diff_command(argument),
+            Some(crate::SlashCommand::Copy) => self.copy_chat(argument),
             Some(crate::SlashCommand::Export) => {
-                drop(
-                    self.cmd
-                        .send(Cmd::Export(argument(line).map(str::to_string))),
-                );
+                drop(self.cmd.send(Cmd::Export(argument.map(str::to_string))));
             }
-            Some(crate::SlashCommand::View) => self.view_command(argument(line)),
+            Some(crate::SlashCommand::View) => self.view_command(argument),
             Some(crate::SlashCommand::Bus) => self.toggle_bus(),
             _ => return false,
         }
@@ -1114,7 +1234,7 @@ impl App {
                 self.persist(&prefs);
                 self.refresh();
             }
-            8 => self.toggle_reasoning(),
+            8 => self.reasoning_command(None),
             9 => self.toggle_tools(),
             10 => self.toggle_bus(),
             11 => self.open_hotkeys(),
@@ -1228,7 +1348,9 @@ impl App {
     }
 
     pub(super) fn overlay(&self) -> Option<Overlay> {
-        if self.search.open.peek() {
+        if self.help.open.peek() {
+            Some(Overlay::Help)
+        } else if self.search.open.peek() {
             Some(Overlay::Search)
         } else if self.sessions.open.peek() {
             Some(Overlay::Sessions)
@@ -1253,6 +1375,7 @@ impl App {
 
     pub(super) fn overlay_move(&self, delta: isize) -> bool {
         match self.overlay() {
+            Some(Overlay::Help) => super::help::shift(self, delta),
             Some(Overlay::Search) => self.search.shift(&self.model.borrow(), delta),
             Some(Overlay::Sessions) => self.sessions.shift(delta),
             Some(Overlay::Auth) => self.move_auth(delta),
@@ -1275,6 +1398,7 @@ impl App {
 
     pub(super) fn overlay_enter(&self) -> bool {
         match self.overlay() {
+            Some(Overlay::Help) => return true,
             Some(Overlay::Search) => self.jump(),
             Some(Overlay::Sessions) => self.resume_session(),
             Some(Overlay::Auth) => self.commit_auth(),
@@ -1289,6 +1413,7 @@ impl App {
 
     pub(super) fn overlay_close(&self) -> bool {
         match self.overlay() {
+            Some(Overlay::Help) => self.help.open.set(false),
             Some(Overlay::Search) => self.search.open.set(false),
             Some(Overlay::Sessions) => self.sessions.open.set(false),
             Some(Overlay::Auth) => self.cancel_auth(),
@@ -1305,13 +1430,12 @@ impl App {
         true
     }
 
-    pub(super) fn picker_open(&self) -> bool {
-        matches!(self.overlay(), Some(Overlay::Search | Overlay::Sessions))
-    }
-
     pub(super) fn overlay_adjust(&self, delta: isize) -> bool {
         match self.overlay() {
             Some(Overlay::Workflow) if !self.workflow_naming.peek() => self.cycle_workflow(delta),
+            Some(Overlay::Settings) if self.settings_sel.peek() == 2 => {
+                self.cycle_seat(delta >= 0);
+            }
             Some(Overlay::Settings) => self.adjust_setting(),
             _ => return false,
         }
@@ -1536,6 +1660,16 @@ impl App {
             .filter_map(|name| crate::endpoint::auth_info(&name).ok())
             .collect();
         let current = self.model.borrow().snapshot.endpoint.clone();
+        if let Some(name) = focus
+            && !choices.iter().any(|choice| choice.name == name)
+        {
+            self.model.borrow_mut().entries.push(Entry::Error(format!(
+                "Provider `{name}` is unavailable. Use /login to choose a provider."
+            )));
+            self.splash.set(false);
+            self.refresh();
+            return;
+        }
         let focus = focus.unwrap_or(&current);
         let selected = choices
             .iter()
@@ -1678,22 +1812,15 @@ impl App {
             }
             self.view_edit.set(false);
         }
-        let opened = |pane: Pane| {
-            layout.secondary == Some(pane) && self.layout.peek().secondary != Some(pane)
-        };
-        if opened(Pane::Files) {
-            drop(self.cmd.send(Cmd::ListFiles));
-        }
-        if opened(Pane::Diff) {
-            drop(self.cmd.send(Cmd::Diff(self.root())));
-        }
-        if opened(Pane::Worktrees) {
-            drop(self.cmd.send(Cmd::Trees));
-        }
+        let opened = self.layout.peek().secondary != layout.secondary;
         if layout.secondary.is_none() {
             self.pane_focus.set(false);
         }
         self.layout.set(layout);
+        self.constrain();
+        if opened {
+            self.load();
+        }
         let mut model = self.model.borrow_mut();
         model.prefs.layout = layout.text();
         model
@@ -1705,9 +1832,18 @@ impl App {
         self.refresh();
     }
 
+    pub(super) fn load(&self) {
+        match self.layout.peek().secondary {
+            Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
+            Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+            Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
+            _ => {}
+        }
+    }
+
     pub(super) fn toggle_pane(&self, pane: Pane) {
         if pane == Pane::Diff {
-            self.diff_root.set(None);
+            self.compare(None);
         }
         let layout = self.layout.peek();
         if layout.secondary == Some(pane) {
@@ -2052,7 +2188,7 @@ impl App {
     }
 
     pub(super) fn pane_active(&self) -> Option<Pane> {
-        if self.view_edit.peek() {
+        if self.view_edit.peek() || self.layout.peek().split(self.viewport.peek().0).1 == 0 {
             return None;
         }
         self.pane_focus
@@ -2151,21 +2287,40 @@ impl App {
 
     pub(super) fn copy_patch(&self) {
         let viewed = self.diff_view.peek();
-        let text = self
+        let result = self
             .model
             .borrow()
             .patch
             .as_ref()
             .filter(|(path, _)| viewed.as_deref() == Some(path.as_str()))
-            .map(|(_, text)| text.clone());
-        match text {
-            Some(text) => self.copy.set(Some(text)),
+            .map(|(_, result)| result.clone());
+        match result {
+            Some(result) => {
+                self.copy_pending.set(None);
+                self.patch_copy(result);
+            }
             None => {
-                self.copy_pending.set(true);
-                drop(self.cmd.send(Cmd::Patch(self.root(), String::new())));
+                let path = viewed.unwrap_or_default();
+                let root = self.root();
+                self.copy_pending.set(Some((root.clone(), path.clone())));
+                drop(self.cmd.send(Cmd::Patch(root, path)));
             }
         }
         self.refresh();
+    }
+
+    fn patch_copy(&self, result: Result<String, String>) {
+        match result {
+            Ok(text) if !text.is_empty() => self.copy.set(Some(text)),
+            Ok(_) => self.model.borrow_mut().entries.push(Entry::System(
+                "there are no patch changes to copy".to_string(),
+            )),
+            Err(error) => self
+                .model
+                .borrow_mut()
+                .entries
+                .push(Entry::Error(format!("cannot copy patch: {error}"))),
+        }
     }
 
     fn copy_chat(&self, scope: Option<&str>) {
@@ -2180,7 +2335,7 @@ impl App {
                     Entry::Assistant { text, .. } if !text.trim().is_empty() => Some(text.clone()),
                     _ => None,
                 }),
-            Some("all") => Some(self.transcript.peek()),
+            Some("all") => Some(self.model.borrow().transcript()),
             Some(_) => {
                 self.model
                     .borrow_mut()
@@ -2228,11 +2383,26 @@ impl App {
     }
 
     fn patch_lines(&self) -> usize {
+        let width = usize::from(self.layout.peek().split(self.viewport.peek().0).1);
         self.model
             .borrow()
             .patch
             .as_ref()
-            .map_or(0, |(_, text)| text.lines().count())
+            .map_or(0, |(_, result)| match result {
+                Ok(text) if width >= SPLIT => patch::pairs(text).len(),
+                Ok(text) => text.lines().count(),
+                Err(error) => Input::new(error, width).rows.len(),
+            })
+    }
+
+    fn constrain(&self) {
+        if self.model.borrow().patch.is_some() {
+            self.diff_scroll.set(
+                self.diff_scroll
+                    .peek()
+                    .min(self.patch_lines().saturating_sub(1)),
+            );
+        }
     }
 
     fn diff_move(&self, delta: isize) {
@@ -2264,6 +2434,7 @@ impl App {
     }
 
     pub(super) fn diff_open(&self, path: String) {
+        self.model.borrow_mut().patch = None;
         self.diff_scroll.set(0);
         self.diff_view.set(Some(path.clone()));
         drop(self.cmd.send(Cmd::Patch(self.root(), path)));
@@ -2272,6 +2443,11 @@ impl App {
 
     fn root(&self) -> Option<PathBuf> {
         self.diff_root.peek().map(|(path, _)| path)
+    }
+
+    fn compare(&self, root: Option<(PathBuf, String)>) {
+        self.model.borrow_mut().patch = None;
+        self.diff_root.set(root);
     }
 
     pub(super) fn tree_rows(&self) -> Vec<FileRow> {
@@ -2309,7 +2485,7 @@ impl App {
     }
 
     pub(super) fn tree_show(&self, path: PathBuf, branch: String) {
-        self.diff_root.set(Some((path, branch)));
+        self.compare(Some((path, branch)));
         self.diff_view.set(None);
         let layout = self.layout.peek();
         self.set_layout(Layout {
@@ -2341,7 +2517,7 @@ impl App {
             return true;
         }
         if self.diff_root.peek().is_some() {
-            self.diff_root.set(None);
+            self.compare(None);
             self.set_layout(Layout {
                 secondary: Some(Pane::Worktrees),
                 ..layout
@@ -2354,7 +2530,8 @@ impl App {
     }
 
     fn diff_command(&self, argument: Option<&str>) {
-        self.diff_root.set(None);
+        self.splash.set(false);
+        self.compare(None);
         let layout = self.layout.peek();
         if layout.secondary != Some(Pane::Diff) {
             self.set_layout(Layout {
@@ -2433,8 +2610,10 @@ impl App {
         } else {
             "fantasy".to_string()
         };
+        model.entries.invalidate();
         let prefs = model.prefs.clone();
         drop(model);
+        theme::install(&prefs.theme, &self.workspace, self.info.config.as_deref());
         self.persist(&prefs);
         self.refresh();
     }
@@ -2450,9 +2629,26 @@ impl App {
         self.refresh();
     }
 
-    pub(super) fn toggle_reasoning(&self) {
+    pub(super) fn reasoning_command(&self, argument: Option<&str>) {
         let mut model = self.model.borrow_mut();
-        model.prefs.reasoning = !model.prefs.reasoning;
+        model.prefs.reasoning = match argument {
+            Some(value) => crate::prefs::Reasoning::parse(value),
+            None => model.prefs.reasoning.toggle(),
+        };
+        model.entries.invalidate();
+        let prefs = model.prefs.clone();
+        drop(model);
+        self.persist(&prefs);
+        self.refresh();
+    }
+
+    pub(super) fn receipts_command(&self, argument: Option<&str>) {
+        let mut model = self.model.borrow_mut();
+        model.prefs.receipts = match argument {
+            Some(value) => crate::prefs::Receipts::parse(value),
+            None => model.prefs.receipts.toggle(),
+        };
+        model.entries.invalidate();
         let prefs = model.prefs.clone();
         drop(model);
         self.persist(&prefs);
@@ -2462,6 +2658,7 @@ impl App {
     pub(super) fn toggle_tools(&self) {
         let mut model = self.model.borrow_mut();
         model.prefs.tools = model.prefs.tools.toggle();
+        model.entries.invalidate();
         let prefs = model.prefs.clone();
         drop(model);
         self.persist(&prefs);
@@ -2471,7 +2668,13 @@ impl App {
     pub(super) fn interrupt(&self) {
         if matches!(
             self.overlay(),
-            Some(Overlay::Search | Overlay::Sessions | Overlay::Auth | Overlay::Workflow)
+            Some(
+                Overlay::Help
+                    | Overlay::Search
+                    | Overlay::Sessions
+                    | Overlay::Auth
+                    | Overlay::Workflow
+            )
         ) {
             self.overlay_close();
         } else if let Some((activity, _)) = self.model.borrow().busy_since {
@@ -2546,12 +2749,6 @@ impl App {
             self.sessions.open.set(false);
         }
     }
-}
-
-fn argument(line: &str) -> Option<&str> {
-    line.split_once(char::is_whitespace)
-        .map(|(_, value)| value.trim())
-        .filter(|value| !value.is_empty())
 }
 
 fn save(path: Option<&Path>, prefs: &Prefs) -> Result<(), String> {

@@ -39,6 +39,10 @@ fn destructive_verbs_cannot_leave_the_workspace() {
         policy.command_ws("find /usr -name x").is_ok(),
         "find without -delete only reads"
     );
+    policy.command_ws("mkdir src/out").unwrap();
+    policy.command_ws("touch src/a.rs").unwrap();
+    assert!(policy.command_ws("mkdir /ws/other/n").is_err());
+    assert!(policy.command_ws("touch ~/.bashrc").is_err());
 }
 
 #[test]
@@ -362,4 +366,126 @@ fn power_words_deny_only_as_the_command() {
         .command_ws("sed -n '1,30p' crates/browser/src/process/shutdown_tests.rs")
         .unwrap();
     policy.command_ws("grep -n mod src/halt.rs").unwrap();
+}
+
+#[test]
+fn configured_roots_accept_destructive_targets() {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
+        return;
+    };
+    let root = std::path::PathBuf::from(home).join(".summoner-root-check");
+    let mut policy = Policy::builtin();
+    policy.roots = vec![root.clone()];
+    policy
+        .command_ws(&format!(
+            "ln -sfn /ws/repo/target/release/summon {}/link",
+            root.display()
+        ))
+        .expect("symlink into a configured root");
+    assert!(
+        policy.command_ws("ln -sfn /ws/repo/x /ws/other/y").is_err(),
+        "paths outside the workspace and roots stay denied"
+    );
+}
+
+#[test]
+fn home_paths_expand_before_the_root_check() {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
+        return;
+    };
+    let home = std::path::PathBuf::from(home);
+    let mut policy = Policy::builtin();
+    policy.roots = vec![home.join(".summoner-root-check")];
+    policy
+        .command_ws("ln -sfn x ~/.summoner-root-check/link")
+        .expect("~ expands to home");
+    policy
+        .command_ws("ln -sfn x $HOME/.summoner-root-check/link")
+        .expect("$HOME expands to home");
+    assert!(
+        policy.command_ws("ln -sfn x ~/.ssh/config").is_err(),
+        "unlisted home paths stay denied"
+    );
+}
+
+#[test]
+fn outside_write_denials_name_the_remedy() {
+    let policy = Policy::builtin();
+    let error = policy
+        .command_ws("ln -sfn /ws/repo/x /ws/other/y")
+        .expect_err("outside target")
+        .to_string();
+    assert!(error.contains("/write"), "{error}");
+    assert!(error.contains("--no-sandbox"), "{error}");
+    let grant = grant_from_error(&policy.command_ws("mkdir /ws/other/n").expect_err("mkdir"))
+        .expect("named write grant");
+    match grant {
+        Grant::Write(path) => {
+            let shown = path.display().to_string();
+            assert!(
+                shown.ends_with("other") || shown.ends_with("other/n"),
+                "{shown}"
+            );
+        }
+        Grant::Network => panic!("mkdir is a write grant"),
+    }
+    assert!(
+        grant_from_message("approve the directory with /write PATH, or relaunch").is_none(),
+        "generic PATH is not a grant"
+    );
+}
+
+#[test]
+fn allow_path_extends_the_roots() {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
+        return;
+    };
+    let root = std::path::PathBuf::from(home).join(".summoner-allow-check");
+    let mut policy = Policy::builtin();
+    policy.allow_path(root.clone());
+    assert!(
+        policy.write_roots().contains(&root),
+        "{:?}",
+        policy.write_roots()
+    );
+}
+
+#[test]
+fn protected_paths_are_not_grantable() {
+    let policy = Policy::builtin();
+    let error = policy.command_ws("rm .env").expect_err(".env").to_string();
+    assert!(error.contains("protected"), "{error}");
+    assert!(grant_from_error(&policy.command_ws("rm .env").unwrap_err()).is_none());
+    let error = policy
+        .command_ws("echo x > .git/hooks/pre-commit")
+        .expect_err("hooks")
+        .to_string();
+    assert!(error.contains("protected"), "{error}");
+    assert!(protected_write(Path::new(".env")));
+    assert!(protected_write(Path::new(".git/hooks/pre-commit")));
+    assert!(!protected_write(Path::new("src/main.rs")));
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let ssh = std::path::PathBuf::from(home)
+            .join(".ssh")
+            .join("id_ed25519");
+        assert!(protected_write(&ssh));
+        assert!(protected_read(&ssh));
+    }
+}
+
+#[test]
+fn implicit_write_names_toolchain_homes() {
+    let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) else {
+        return;
+    };
+    let home = std::path::PathBuf::from(home);
+    assert_eq!(
+        implicit_write("cargo install summoner"),
+        Some(home.join(".cargo"))
+    );
+    assert_eq!(
+        implicit_write("npm install -g foo"),
+        Some(home.join(".npm"))
+    );
+    assert!(implicit_write("ls").is_none());
 }

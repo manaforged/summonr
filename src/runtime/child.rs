@@ -309,16 +309,27 @@ impl<P: Provider> Loop<P> {
             .map_err(super::session_err)?;
         self.session
             .charge(
-                Meter {
-                    input: done.billed,
-                    output: 0,
-                    cached: 0,
-                    millis: 0,
-                },
+                super::meter(&done.usage, 0),
                 &format!("child {}", done.record.id),
                 &done.record.model,
+                true,
             )
             .map_err(super::session_err)?;
+        let reported =
+            u64::from(done.usage.prompt_tokens) + u64::from(done.usage.completion_tokens);
+        if done.billed > reported {
+            self.session
+                .charge(
+                    Meter {
+                        input: done.billed - reported,
+                        ..Meter::default()
+                    },
+                    &format!("child {} unconfirmed usage", done.record.id),
+                    &done.record.model,
+                    false,
+                )
+                .map_err(super::session_err)?;
+        }
         self.spent_tokens = self.session.replay().spent_tokens;
         done.settled = true;
         Ok(())
@@ -359,6 +370,7 @@ impl<P: Provider> Loop<P> {
                 ),
                 success: true,
                 mutated: false,
+                grant: None,
             },
             usage: Usage::default(),
             millis: 0,
@@ -384,6 +396,7 @@ impl<P: Provider> Loop<P> {
                     text: serde_json::to_string(&settled)?,
                     success: matches!(settled.state, ChildState::Completed(_)),
                     mutated: false,
+                    grant: None,
                 },
                 usage: Usage::default(),
                 millis: 0,
@@ -418,6 +431,7 @@ impl<P: Provider> Loop<P> {
                     ),
                     success: true,
                     mutated: false,
+                    grant: None,
                 },
                 usage: Usage::default(),
                 millis: 0,
@@ -730,6 +744,7 @@ impl<P: Provider> Loop<P> {
                 text,
                 success,
                 mutated,
+                grant: None,
             },
             usage: done.usage,
             millis: done.millis,
@@ -810,7 +825,7 @@ impl<P: Provider> Run<P> {
             None => Ok(self.child.turn_with(self.assignment.as_str(), emit).await),
         };
         let access = self.record.access;
-        let (state, usage) = match outcome {
+        let (state, mut usage) = match outcome {
             Ok(Ok(turn)) => {
                 let state = if turn.aborted {
                     ChildState::Aborted(self.child.result(
@@ -869,6 +884,17 @@ impl<P: Provider> Run<P> {
             }
         };
         self.record.state = state;
+        if !matches!(self.record.state, ChildState::Completed(_)) {
+            match accounting_at(self.child.session.path()) {
+                Ok((_, reported)) => {
+                    usage = reported;
+                    if let Some(result) = result_mut(&mut self.record.state) {
+                        result.usage.clone_from(&usage);
+                    }
+                }
+                Err(error) => fail_record(&mut self.record, &error.to_string()),
+            }
+        }
         let paths = match access {
             Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
             Access::Research => Vec::new(),
@@ -922,7 +948,12 @@ fn accounting_at(path: &Path) -> Result<(u64, Usage)> {
         .map_err(|error| Error::Config(format!("cannot read child session log: {error}")))?;
     for line in lines {
         match &line {
-            log::Line::Assistant { usage: meter, .. } | log::Line::Charge { usage: meter, .. } => {
+            log::Line::Assistant { usage: meter, .. }
+            | log::Line::Charge {
+                usage: meter,
+                reported: true,
+                ..
+            } => {
                 usage.prompt_tokens = usage
                     .prompt_tokens
                     .saturating_add(u32::try_from(meter.input).unwrap_or(u32::MAX));

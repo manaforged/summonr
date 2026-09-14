@@ -161,6 +161,7 @@ impl<P: Provider> Loop<P> {
             steer_shared: None,
             depth,
             tasks: true,
+            manual: false,
             spawned: BTreeMap::new(),
             mailbox: tokio::sync::mpsc::unbounded_channel(),
         })
@@ -204,6 +205,45 @@ impl<P: Provider> Loop<P> {
     pub fn with_sandbox(mut self, deny_network: bool) -> Result<Self> {
         self.tools.enable_sandbox(deny_network)?;
         Ok(self)
+    }
+
+    pub fn set_network(&mut self, allow: bool) -> Result<()> {
+        if self.tools.has_sandbox() {
+            self.tools.enable_sandbox(!allow)?;
+        }
+        Ok(())
+    }
+
+    pub fn allow_network_once(&self) {
+        self.tools.allow_network_once();
+    }
+
+    pub fn set_manual(&mut self, on: bool) {
+        self.manual = on;
+    }
+
+    #[must_use]
+    pub fn manual(&self) -> bool {
+        self.manual
+    }
+
+    pub fn allow_path(&mut self, path: &str) -> Result<()> {
+        self.tools.allow_path(crate::policy::expand_path(path))
+    }
+
+    #[must_use]
+    pub fn write_roots(&self) -> Vec<String> {
+        self.tools.write_roots()
+    }
+
+    #[must_use]
+    pub fn has_sandbox(&self) -> bool {
+        self.tools.has_sandbox()
+    }
+
+    #[must_use]
+    pub fn denies_network(&self) -> bool {
+        self.tools.denies_network()
     }
 
     pub fn set_context_window(&mut self, window: Option<u32>) {
@@ -560,7 +600,7 @@ impl<P: Provider> Loop<P> {
                 let millis = wait_error.millis(started);
                 let error = wait_error.error();
                 self.session
-                    .fail_provider(attempt, &error.to_string(), millis)
+                    .fail_provider(attempt, &error.to_string(), millis, super::billable(&error))
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.session.replay().spent_tokens;
                 Err(error)
@@ -589,12 +629,21 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn abort_note(&mut self, reason: &str) -> Result<()> {
+        self.abort_with(reason, |_| {})
+    }
+
+    pub(crate) fn abort_with(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<()> {
         self.forget_children();
         self.session
             .abort(reason, None)
             .map_err(super::session_err)?;
         self.hydrate();
+        self.sync_usage(&mut emit);
         Ok(())
+    }
+
+    pub(crate) fn unreported_tokens(&self) -> u64 {
+        self.session.usage().1
     }
 
     fn forget_children(&mut self) {
@@ -625,6 +674,14 @@ impl<P: Provider> Loop<P> {
 
     pub fn accept_plan(&mut self) -> Result<()> {
         self.session.accept_plan().map_err(super::session_err)
+    }
+
+    pub(crate) fn pending_plan(&self) -> bool {
+        self.session.pending_plan().is_ok()
+    }
+
+    pub fn reject_plan(&mut self) -> Result<()> {
+        self.session.reject_plan().map_err(super::session_err)
     }
 
     #[must_use]

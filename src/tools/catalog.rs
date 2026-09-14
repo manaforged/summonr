@@ -314,7 +314,7 @@ fn skill() -> ToolDefinition {
 fn run_command() -> ToolDefinition {
     tool(
         "run_command",
-        "Run a shell command in the workspace sandbox; network is off unless the user enables it. Use edit tools for source changes and the grep tool for recursive search. background true returns a job id: pass job to poll it, kill true to stop it. Output is the exit code and a digest.",
+        "Run a shell command in the workspace sandbox; network is off unless the user enables it with /net on or /net once. Use edit tools for source changes and the grep tool for recursive search. background true returns a job id: pass job to poll it, kill true to stop it. Output is the exit code and a digest.",
         serde_json::json!({
             "type": "object",
             "properties": {

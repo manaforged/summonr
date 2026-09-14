@@ -269,7 +269,9 @@ async fn loop_executes_read_file_tool_and_continues() -> Result<()> {
         turn.text
             .contains(&format!("1:{}|hello", line_hash("hello")))
     );
-    assert_eq!(live.len(), turn.events.len());
+    assert!(live.contains(&Event::Unreported { tokens: 0 }));
+    live.retain(|event| !matches!(event, Event::Unreported { .. }));
+    assert_eq!(live, turn.events);
     let replayed = loop_.replay_session();
     assert!(
         replayed
@@ -309,7 +311,22 @@ async fn output_limited_reasoning_continues_as_an_append_only_suffix() -> Result
         })
     );
     let replayed = loop_.replay_session();
-    assert_eq!(replayed.history.len(), 4);
+    assert_eq!(
+        replayed
+            .history
+            .iter()
+            .map(|message| message.role)
+            .collect::<Vec<_>>(),
+        [
+            Role::User,
+            Role::Assistant,
+            Role::User,
+            Role::Assistant,
+            Role::System
+        ]
+    );
+    assert_eq!(replayed.history[3].content, turn.text);
+    assert!(replayed.history[4].content.starts_with("Turn receipt"));
     assert_eq!(replayed.history[1].role, Role::Assistant);
     assert_eq!(
         replayed.history[1].reasoning.as_deref(),
@@ -459,6 +476,50 @@ fn sandbox_write_paths_reach_the_backend() -> Result<()> {
     assert!(
         crate::tools::sandbox::Sandbox::discover(workspace.path(), false, &[missing]).is_err(),
         "a missing write path must fail discovery"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn sandbox_allow_network_drops_the_denial() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let sandbox = match crate::tools::sandbox::Sandbox::discover(workspace.path(), true, &[]) {
+        Ok(sandbox) => sandbox,
+        Err(Error::Config(message))
+            if message.contains("not available")
+                || message.contains("unsupported")
+                || message.contains("preflight failed") =>
+        {
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    assert!(sandbox.denies_network());
+    let join = |args: Vec<std::ffi::OsString>| {
+        args.iter()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let (_, denied) = sandbox.command_line("true", &[], workspace.path());
+    let denied = join(denied);
+    let allowed = sandbox.allow_network()?;
+    assert!(!allowed.denies_network());
+    let (_, allowed) = allowed.command_line("true", &[], workspace.path());
+    let allowed = join(allowed);
+    let marker = if cfg!(target_os = "macos") {
+        "(deny network*)"
+    } else {
+        "--unshare-net"
+    };
+    assert!(
+        denied.contains(marker),
+        "denied backend lost its network rule:\n{denied}"
+    );
+    assert!(
+        !allowed.contains(marker),
+        "allowed backend still denies network:\n{allowed}"
     );
     Ok(())
 }

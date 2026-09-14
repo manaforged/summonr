@@ -1,3 +1,5 @@
+pub(super) const SPLIT: usize = 80;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Pair {
     pub(super) left: Option<String>,

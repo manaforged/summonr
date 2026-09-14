@@ -1,6 +1,62 @@
 use super::*;
 
 #[test]
+fn endpoint_arrows_move_in_opposite_directions() {
+    sigil::reactive::Runtime::scope("summoner-endpoint-arrows", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        let names = crate::endpoint::ready();
+        assert!(names.len() >= 2);
+        app.model.borrow_mut().snapshot.endpoint = names[1].clone();
+        app.resize(100, 32);
+        app.refresh();
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(100, 32);
+        screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .expect("chat");
+        router.focus_next(host.cx());
+        app.settings_open.set(true);
+        app.settings_sel.set(2);
+        screen
+            .frame(&mut host, &mut router, [], (100, 32))
+            .expect("settings");
+        for (key, expected) in [(Key::ArrowLeft, &names[0]), (Key::ArrowRight, &names[1])] {
+            screen
+                .frame(
+                    &mut host,
+                    &mut router,
+                    [sigil_tui::key_down(key)],
+                    (100, 32),
+                )
+                .expect("arrow");
+            let Cmd::SetEndpoint(name) = rx.try_recv().expect("endpoint change") else {
+                panic!("endpoint command expected");
+            };
+            assert_eq!(&name, expected);
+            let mut snapshot = app.model.borrow().snapshot.clone();
+            snapshot.endpoint = name;
+            app.update(Msg::Settings(snapshot));
+            app.refresh();
+            let rendered = screen
+                .frame(&mut host, &mut router, [], (100, 32))
+                .expect("updated endpoint")
+                .text();
+            let mut row = rendered
+                .lines()
+                .find(|line| line.contains("endpoint"))
+                .expect("endpoint row")
+                .split_whitespace();
+            assert!(row.any(|word| word == "endpoint"));
+            assert_eq!(row.next(), Some(expected.as_str()));
+        }
+    });
+}
+
+#[test]
 fn autocomplete_and_settings_keep_the_overlays() {
     sigil::reactive::Runtime::scope("mage-overlay-parity-test", || {
         let (cmd, mut rx) = unbounded_channel();

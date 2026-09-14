@@ -168,6 +168,8 @@ fn slash_menu_keeps_compact_chat_composer_visible() {
 
 #[path = "sigil_view/chat_tests.rs"]
 mod chat_tests;
+#[path = "sigil_view/help_tests.rs"]
+mod help_tests;
 #[path = "sigil_view/scene_tests.rs"]
 mod scene_tests;
 #[path = "sigil_view/scroll_tests.rs"]
@@ -447,8 +449,11 @@ fn the_diff_pane_lists_changes_and_shows_hunks() {
         apply(
             &app,
             Msg::Patch {
+                root: None,
                 path: "new.txt".to_string(),
-                text: "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+new\n+file\n".to_string(),
+                result: Ok(
+                    "--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,2 @@\n+new\n+file\n".to_string(),
+                ),
             },
         );
         let text = screen
@@ -677,8 +682,9 @@ fn the_diff_pane_splits_wide_hunks_filters_by_turn_and_copies_the_patch() {
         apply(
             &app,
             Msg::Patch {
+                root: None,
                 path: "b.rs".to_string(),
-                text: "@@ -1,2 +1,2 @@\n keep\n-old line\n+new line\n".to_string(),
+                result: Ok("@@ -1,2 +1,2 @@\n keep\n-old line\n+new line\n".to_string()),
             },
         );
         let text = frame(&mut screen, &mut host, &mut router);
@@ -705,8 +711,9 @@ fn the_diff_pane_splits_wide_hunks_filters_by_turn_and_copies_the_patch() {
         apply(
             &app,
             Msg::Patch {
+                root: None,
                 path: String::new(),
-                text: "whole".to_string(),
+                result: Ok("whole".to_string()),
             },
         );
         assert_eq!(app.copy.peek().as_deref(), Some("whole"));

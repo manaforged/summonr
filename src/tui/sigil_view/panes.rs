@@ -3,14 +3,36 @@ use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
-use super::canvas::{BASE, CYAN, Cell, DIM, GREEN, RED, TEXT};
+use super::canvas::{Cell, palette};
 use super::chat::row;
+use super::input::Input;
 use super::pane::Pane;
-use super::patch::{self, Kind};
+use super::patch::{self, Kind, SPLIT};
 
-const SPLIT: usize = 80;
+#[derive(Clone)]
+struct Line {
+    text: String,
+    fg: Rgba8,
+    bg: Rgba8,
+}
 
-type Line = (String, Rgba8);
+impl Line {
+    fn new(text: impl Into<String>, fg: Rgba8) -> Self {
+        Self {
+            text: text.into(),
+            fg,
+            bg: palette().base,
+        }
+    }
+
+    fn tinted(text: impl Into<String>, fg: Rgba8, bg: Rgba8) -> Self {
+        Self {
+            text: text.into(),
+            fg,
+            bg,
+        }
+    }
+}
 
 pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
     let app = app.clone();
@@ -101,27 +123,35 @@ fn close_header(lines: &mut [Vec<Line>], width: usize) {
     let Some(header) = lines.first_mut() else {
         return;
     };
-    let Some((title, color)) = header.first().cloned() else {
+    let Some(Line {
+        text: title,
+        fg: color,
+        ..
+    }) = header.first().cloned()
+    else {
         return;
     };
     let limit = width.saturating_sub(4);
     let title: String = title.chars().take(limit).collect();
     let gap = width.saturating_sub(title.chars().count() + 3);
     *header = vec![
-        (title, color),
-        (" ".repeat(gap), TEXT),
-        ("×".to_string(), DIM),
+        Line::new(title, color),
+        Line::new(" ".repeat(gap), palette().text),
+        Line::new("×".to_string(), palette().dim),
     ];
 }
 
-fn ledger(app: &App) -> Vec<(String, Rgba8)> {
+fn ledger(app: &App) -> Vec<Line> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
-    let mut lines = vec![("ledger".to_string(), accent), (String::new(), TEXT)];
+    let mut lines = vec![
+        Line::new("ledger".to_string(), accent),
+        Line::new(String::new(), palette().text),
+    ];
     if model.ledger.is_empty() {
-        lines.push((
+        lines.push(Line::new(
             "no plan is running — /steps PLAN.md or --goal".to_string(),
-            DIM,
+            palette().dim,
         ));
         return lines;
     }
@@ -129,16 +159,16 @@ fn ledger(app: &App) -> Vec<(String, Rgba8)> {
         let color = if line.starts_with("[/]") || line.starts_with("  [/]") {
             accent
         } else if line.starts_with("[x]") || line.starts_with("  [x]") {
-            DIM
+            palette().dim
         } else {
-            TEXT
+            palette().text
         };
-        lines.push((line.clone(), color));
+        lines.push(Line::new(line.clone(), color));
     }
     lines
 }
 
-fn files(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
+fn files(app: &App, rows: usize) -> Vec<Line> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
     let focused = app.pane_focus.get();
@@ -152,15 +182,15 @@ fn files(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         .as_deref()
         .map_or(String::new(), |branch| format!(" · {branch}"));
     let mut lines = vec![
-        (
+        Line::new(
             format!("files · {repo}{branch}"),
-            if focused { accent } else { TEXT },
+            if focused { accent } else { palette().text },
         ),
-        (String::new(), TEXT),
+        Line::new(String::new(), palette().text),
     ];
     let tree = app.file_rows();
     if tree.is_empty() {
-        lines.push(("no files listed yet".to_string(), DIM));
+        lines.push(Line::new("no files listed yet".to_string(), palette().dim));
         return lines;
     }
     let cursor = app.file_cursor.get().min(tree.len() - 1);
@@ -189,11 +219,11 @@ fn files(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         let color = if index == cursor && focused {
             accent
         } else if row.dir {
-            TEXT
+            palette().text
         } else {
-            DIM
+            palette().dim
         };
-        lines.push((
+        lines.push(Line::new(
             format!("{marker}{}{glyph}{}", "  ".repeat(row.depth), row.name),
             color,
         ));
@@ -206,7 +236,22 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
     let focused = app.pane_focus.get();
-    let head = if focused { accent } else { TEXT };
+    let head = if focused { accent } else { palette().text };
+    if let Some(error) = &model.diff_error {
+        let mut lines = vec![
+            Line::new("diff unavailable".to_string(), palette().red),
+            Line::new(String::new(), palette().text),
+        ];
+        lines.extend(
+            Input::new(error, width)
+                .rows
+                .into_iter()
+                .map(|range| Line::new(error[range].to_string(), palette().dim)),
+        );
+        lines.push(Line::new(String::new(), palette().text));
+        lines.push(Line::new("reopen Diff to retry".to_string(), palette().dim));
+        return single(lines);
+    }
     if let Some(path) = app.diff_view.get() {
         let counts = model
             .diff
@@ -217,12 +262,26 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
                 format!(" · +{} −{}", stat.added, stat.removed)
             });
         let mut lines = vec![
-            (format!("diff · {path}{counts}"), head),
-            (String::new(), TEXT),
+            Line::new(format!("diff · {path}{counts}"), head),
+            Line::new(String::new(), palette().text),
         ];
         match model.patch.as_ref().filter(|(seen, _)| *seen == path) {
-            None => lines.push(("loading…".to_string(), DIM)),
-            Some((_, text)) if width >= SPLIT => {
+            None => lines.push(Line::new("loading…".to_string(), palette().dim)),
+            Some((_, Err(error))) => {
+                lines.push(Line::new("patch unavailable".to_string(), palette().red));
+                lines.extend(
+                    Input::new(error, width)
+                        .rows
+                        .into_iter()
+                        .skip(app.diff_scroll.get())
+                        .take(rows.saturating_sub(3))
+                        .map(|range| Line::new(error[range].to_string(), palette().dim)),
+                );
+            }
+            Some((_, Ok(text))) if text.is_empty() => {
+                lines.push(Line::new("no changes".to_string(), palette().dim));
+            }
+            Some((_, Ok(text))) if width >= SPLIT => {
                 let mut out = single(lines);
                 let scroll = app.diff_scroll.get();
                 let half = width.saturating_sub(5) / 2;
@@ -235,23 +294,31 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
                 }
                 return out;
             }
-            Some((_, text)) => {
+            Some((_, Ok(text))) => {
                 let scroll = app.diff_scroll.get();
                 for line in text.lines().skip(scroll).take(rows.saturating_sub(2)) {
-                    let color = if line.starts_with("+++") || line.starts_with("---") {
-                        DIM
+                    let (fg, bg) = if line.starts_with("+++") || line.starts_with("---") {
+                        (palette().dim, palette().base)
                     } else if line.starts_with('+') {
-                        GREEN
+                        (palette().green, palette().diff_add_bg)
                     } else if line.starts_with('-') {
-                        RED
+                        (palette().red, palette().diff_del_bg)
                     } else if line.starts_with("@@") {
-                        CYAN
+                        (palette().cyan, palette().base)
                     } else if line.starts_with("diff ") || line.starts_with("index ") {
-                        DIM
+                        (palette().dim, palette().base)
                     } else {
-                        TEXT
+                        (palette().text, palette().base)
                     };
-                    lines.push((line.replace('\t', "    "), color));
+                    let mut text = line.replace('\t', "    ");
+                    if bg != palette().base {
+                        let available = width.saturating_sub(2);
+                        let used = cell_width(&text);
+                        if used < available {
+                            text.push_str(&" ".repeat(available - used));
+                        }
+                    }
+                    lines.push(Line::tinted(text, fg, bg));
                 }
             }
         }
@@ -271,7 +338,10 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
     } else {
         format!("diff{scope} · {}{recent}", model.diff.summary())
     };
-    let mut lines = vec![(title, head), (String::new(), TEXT)];
+    let mut lines = vec![
+        Line::new(title, head),
+        Line::new(String::new(), palette().text),
+    ];
     let stats = app.diff_stats();
     if stats.is_empty() {
         let note = if model.diff.base.is_empty() {
@@ -281,7 +351,7 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
         } else {
             "the last turn edited nothing — t shows every change"
         };
-        lines.push((note.to_string(), DIM));
+        lines.push(Line::new(note.to_string(), palette().dim));
         return single(lines);
     }
     let count = stats.len();
@@ -313,20 +383,35 @@ fn diff(app: &App, width: usize, rows: usize) -> Vec<Vec<Line>> {
         let color = if index == cursor && focused {
             accent
         } else {
-            TEXT
+            palette().text
         };
-        lines.push((format!("{marker}{text}"), color));
+        lines.push(Line::new(format!("{marker}{text}"), color));
     }
     overlay(app, &mut lines, accent);
     single(lines)
 }
 
 fn split(pair: &patch::Pair, half: usize) -> Vec<Line> {
-    let (left_color, right_color) = match pair.kind {
-        Kind::Meta => (DIM, DIM),
-        Kind::Hunk => (CYAN, CYAN),
-        Kind::Context => (TEXT, TEXT),
-        Kind::Change => (RED, GREEN),
+    let (left_color, right_color, left_bg, right_bg) = match pair.kind {
+        Kind::Meta => (palette().dim, palette().dim, palette().base, palette().base),
+        Kind::Hunk => (
+            palette().cyan,
+            palette().cyan,
+            palette().base,
+            palette().base,
+        ),
+        Kind::Context => (
+            palette().text,
+            palette().text,
+            palette().base,
+            palette().base,
+        ),
+        Kind::Change => (
+            palette().red,
+            palette().green,
+            palette().diff_del_bg,
+            palette().diff_add_bg,
+        ),
     };
     let fit = |text: &Option<String>| -> String {
         let text = text.as_deref().unwrap_or("").replace('\t', "    ");
@@ -337,26 +422,26 @@ fn split(pair: &patch::Pair, half: usize) -> Vec<Line> {
         out
     };
     vec![
-        (fit(&pair.left), left_color),
-        (" │ ".to_string(), DIM),
-        (fit(&pair.right), right_color),
+        Line::tinted(fit(&pair.left), left_color, left_bg),
+        Line::new(" │ ".to_string(), palette().dim),
+        Line::tinted(fit(&pair.right), right_color, right_bg),
     ]
 }
 
-fn trees(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
+fn trees(app: &App, rows: usize) -> Vec<Line> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
     let focused = app.pane_focus.get();
-    let head = if focused { accent } else { TEXT };
+    let head = if focused { accent } else { palette().text };
     let count = model.trees.len();
     let mut lines = vec![
-        (format!("worktrees · {count}"), head),
-        (String::new(), TEXT),
+        Line::new(format!("worktrees · {count}"), head),
+        Line::new(String::new(), palette().text),
     ];
     if count == 0 {
-        lines.push((
+        lines.push(Line::new(
             "no worktrees — summon --worktree, --goal, or --steps".to_string(),
-            DIM,
+            palette().dim,
         ));
         return lines;
     }
@@ -393,33 +478,37 @@ fn trees(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         let color = if index == cursor && focused {
             accent
         } else if row.dirty {
-            RED
+            palette().red
         } else {
-            TEXT
+            palette().text
         };
-        lines.push((format!("{marker}{text}"), color));
+        lines.push(Line::new(format!("{marker}{text}"), color));
     }
     overlay(app, &mut lines, accent);
     lines
 }
 
-fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
+fn view(app: &App, rows: usize) -> Vec<Line> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
-    let head = if app.pane_focus.get() { accent } else { TEXT };
+    let head = if app.pane_focus.get() {
+        accent
+    } else {
+        palette().text
+    };
     let Some(view) = model.view.as_ref() else {
         return vec![
-            ("view".to_string(), head),
-            (String::new(), TEXT),
-            (
+            Line::new("view".to_string(), head),
+            Line::new(String::new(), palette().text),
+            Line::new(
                 "no file — /view PATH, or → on a file in the tree".to_string(),
-                DIM,
+                palette().dim,
             ),
         ];
     };
     if let Some(source) = &view.image {
         return vec![
-            (
+            Line::new(
                 format!(
                     "view · {} · {}×{} · esc back",
                     view.path,
@@ -428,7 +517,7 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
                 ),
                 accent,
             ),
-            (String::new(), TEXT),
+            Line::new(String::new(), palette().text),
         ];
     }
     if app.view_edit.get() {
@@ -438,7 +527,7 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
         let window =
             super::editor::window(&text, app.view_caret.get(), app.view_scroll.get(), body);
         let mut lines = vec![
-            (
+            Line::new(
                 format!(
                     "edit · {} · {} line{} · ctrl+s save · esc leave",
                     view.path,
@@ -447,16 +536,19 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
                 ),
                 accent,
             ),
-            (String::new(), TEXT),
+            Line::new(String::new(), palette().text),
         ];
         for (index, line) in all.iter().enumerate().skip(window.start).take(body) {
-            lines.push((
+            lines.push(Line::new(
                 format!("{:>4}   {}", index + 1, line.replace('\t', "    ")),
-                TEXT,
+                palette().text,
             ));
         }
         if all.len() <= window.line {
-            lines.push((format!("{:>4}   ", window.line + 1), TEXT));
+            lines.push(Line::new(
+                format!("{:>4}   ", window.line + 1),
+                palette().text,
+            ));
         }
         return lines;
     }
@@ -464,7 +556,7 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
     let all: Vec<&str> = text.lines().collect();
     let added_total: usize = view.added.iter().map(|(_, count)| count).sum();
     let mut lines = vec![
-        (
+        Line::new(
             format!(
                 "view · {} · {} line{} · +{added_total} added",
                 view.path,
@@ -473,7 +565,7 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
             ),
             head,
         ),
-        (String::new(), TEXT),
+        Line::new(String::new(), palette().text),
     ];
     let added = |number: usize| {
         view.added
@@ -489,15 +581,21 @@ fn view(app: &App, rows: usize) -> Vec<(String, Rgba8)> {
     {
         let number = index + 1;
         let mark = if added(number) { '+' } else { ' ' };
-        lines.push((
+        let (fg, bg) = if added(number) {
+            (palette().green, palette().diff_add_bg)
+        } else {
+            (palette().text, palette().base)
+        };
+        lines.push(Line::tinted(
             format!("{number:>4} {mark} {}", line.replace('\t', "    ")),
-            if added(number) { GREEN } else { TEXT },
+            fg,
+            bg,
         ));
     }
     lines
 }
 
-fn overlay(app: &App, lines: &mut Vec<(String, Rgba8)>, accent: Rgba8) {
+fn overlay(app: &App, lines: &mut Vec<Line>, accent: Rgba8) {
     let Some(context) = app.context.get() else {
         return;
     };
@@ -508,19 +606,19 @@ fn overlay(app: &App, lines: &mut Vec<(String, Rgba8)>, accent: Rgba8) {
         .max()
         .unwrap_or(0)
         + 3;
-    let mut block = vec![(format!("┌{}┐", "─".repeat(width)), accent)];
+    let mut block = vec![Line::new(format!("┌{}┐", "─".repeat(width)), accent)];
     for (index, (label, _)) in items.iter().enumerate() {
         let marker = if index == context.cursor { "›" } else { " " };
-        block.push((
+        block.push(Line::new(
             format!("│{marker}{label:<w$} │", w = width - 2),
             if index == context.cursor {
                 accent
             } else {
-                TEXT
+                palette().text
             },
         ));
     }
-    block.push((format!("└{}┘", "─".repeat(width)), accent));
+    block.push(Line::new(format!("└{}┘", "─".repeat(width)), accent));
     let top = context.row.max(2);
     for (offset, line) in block.into_iter().enumerate() {
         let at = top + offset;
@@ -537,15 +635,15 @@ fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
     if width > 1 {
         cells[0] = Cell {
             text: "│".into(),
-            fg: DIM,
-            bg: BASE,
+            fg: palette().dim,
+            bg: palette().base,
             bold: false,
             italic: false,
         };
     }
     let mut slot = 2;
-    for (text, color) in spans {
-        for grapheme in text.graphemes(true) {
+    for line in spans {
+        for grapheme in line.text.graphemes(true) {
             let step = cell_width(grapheme);
             if slot >= width || slot.saturating_add(step) > width {
                 return cells;
@@ -555,8 +653,8 @@ fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
             }
             cells[slot] = Cell {
                 text: grapheme.into(),
-                fg: *color,
-                bg: BASE,
+                fg: line.fg,
+                bg: line.bg,
                 bold: false,
                 italic: false,
             };
@@ -571,8 +669,8 @@ fn cells(spans: &[Line], width: usize, caret: Option<usize>) -> Vec<Cell> {
     if let Some(col) = caret
         && let Some(cell) = cells.get_mut(col + 2)
     {
-        cell.fg = BASE;
-        cell.bg = TEXT;
+        cell.fg = palette().base;
+        cell.bg = palette().text;
     }
     cells
 }

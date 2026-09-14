@@ -28,8 +28,8 @@ fn rendered() -> Grid {
 
 #[test]
 fn copying_rendered_graphemes_preserves_the_original_text() {
-    let mut selected = Selection::new(rendered(), 40, 2, 3);
-    selected.move_to(13, 3);
+    let mut selected = Selection::new(rendered(), 40, 2, 4);
+    selected.move_to(13, 4);
     let expected = "A👍🏽 e\u{301} 👩\u{200d}💻 🇳🇿B";
     assert_eq!(selected.text().as_deref(), Some(expected));
     let mut output = Vec::new();
@@ -45,23 +45,23 @@ fn copying_rendered_graphemes_preserves_the_original_text() {
 fn drag_copies_unicode_from_the_rendered_cells_in_either_direction() {
     let grid = rendered();
     assert!(grid.text().contains("café 日本語"));
-    let mut selected = Selection::new(grid.clone(), 40, 2, 1);
+    let mut selected = Selection::new(grid.clone(), 40, 2, 2);
     assert_eq!(
         selected.text(),
         None,
         "a click must not replace the clipboard"
     );
-    selected.move_to(12, 1);
+    selected.move_to(12, 2);
     assert_eq!(selected.text().as_deref(), Some("café 日本語"));
-    let mut reversed = Selection::new(grid, 40, 12, 1);
-    reversed.move_to(2, 1);
+    let mut reversed = Selection::new(grid, 40, 12, 2);
+    reversed.move_to(2, 2);
     assert_eq!(reversed.text(), selected.text());
 }
 
 #[test]
 fn multiline_selection_trims_terminal_padding_and_paints_a_highlight() {
-    let mut selected = Selection::new(rendered(), 40, 2, 1);
-    selected.move_to(12, 2);
+    let mut selected = Selection::new(rendered(), 40, 2, 2);
+    selected.move_to(12, 3);
     assert_eq!(
         selected.text().as_deref(),
         Some("café 日本語\n  second line")
@@ -83,10 +83,10 @@ fn multiline_selection_trims_terminal_padding_and_paints_a_highlight() {
 #[test]
 fn multiline_copy_stays_inside_the_selected_pane() {
     let grid = rendered();
-    let mut selected = Selection::new(grid.clone(), 7, 2, 1);
-    selected.move_to(6, 2);
+    let mut selected = Selection::new(grid.clone(), 7, 2, 2);
+    selected.move_to(6, 3);
     assert_eq!(selected.text().as_deref(), Some("café\n  secon"));
-    let mut reversed = Selection::new(grid, 7, 6, 2);
-    reversed.move_to(2, 1);
+    let mut reversed = Selection::new(grid, 7, 6, 3);
+    reversed.move_to(2, 2);
     assert_eq!(reversed.text(), selected.text());
 }

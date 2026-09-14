@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::policy::Policy;
+use crate::policy::{Grant, Policy};
 use crate::provider::{FunctionDefinition, ToolCall, ToolDefinition, ToolKind, UserInput};
 use crate::web::Search;
 
@@ -51,6 +51,9 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cost: Option<f64>,
     },
+    Unreported {
+        tokens: u64,
+    },
     Mail {
         from: String,
         text: String,
@@ -71,6 +74,11 @@ pub enum Event {
     },
     Note {
         text: String,
+    },
+    Approval {
+        detail: Option<String>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        persist: bool,
     },
     Verify {
         command: String,
@@ -102,12 +110,16 @@ pub(crate) struct ToolRegistry {
         std::collections::BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>>,
     >,
     session: std::sync::Mutex<Option<String>>,
+    network_once: std::sync::atomic::AtomicBool,
+    approved_once: std::sync::atomic::AtomicBool,
+    write_extra: Vec<PathBuf>,
 }
 
 pub(crate) struct ToolOutput {
     pub(crate) text: String,
     pub(crate) success: bool,
     pub(crate) mutated: bool,
+    pub(crate) grant: Option<Grant>,
 }
 
 impl ToolOutput {
@@ -116,7 +128,15 @@ impl ToolOutput {
             text,
             success: true,
             mutated: false,
+            grant: None,
         }
+    }
+}
+
+pub(crate) fn needed_grant(result: &Result<ToolOutput>) -> Option<Grant> {
+    match result {
+        Ok(output) => output.grant.clone(),
+        Err(error) => crate::policy::grant_from_error(error),
     }
 }
 
@@ -149,6 +169,9 @@ impl ToolRegistry {
             history: std::sync::Mutex::new(std::collections::VecDeque::new()),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
+            network_once: std::sync::atomic::AtomicBool::new(false),
+            approved_once: std::sync::atomic::AtomicBool::new(false),
+            write_extra: Vec::new(),
         })
     }
 
@@ -189,13 +212,94 @@ impl ToolRegistry {
     }
 
     pub(crate) fn enable_sandbox(&mut self, deny_network: bool) -> Result<()> {
-        let write = crate::config::load()?.sandbox.paths();
+        let mut write = crate::config::load()?.sandbox.paths();
+        write.extend(self.write_extra.iter().cloned());
         self.sandbox = Some(sandbox::Sandbox::discover(
             &self.workspace,
             deny_network,
             &write,
         )?);
         Ok(())
+    }
+
+    pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
+        if crate::policy::protected_write(&path) {
+            return Err(Error::Denied(format!(
+                "`{}` is a protected path",
+                path.display()
+            )));
+        }
+        if !path.exists() {
+            std::fs::create_dir_all(&path).map_err(|error| {
+                Error::Config(format!(
+                    "cannot create write path {}: {error}",
+                    path.display()
+                ))
+            })?;
+        }
+        let resolved = path.canonicalize().map_err(|error| {
+            Error::Config(format!(
+                "write path {} is unusable: {error}",
+                path.display()
+            ))
+        })?;
+        if crate::policy::protected_write(&resolved) {
+            return Err(Error::Denied(format!(
+                "`{}` is a protected path",
+                resolved.display()
+            )));
+        }
+        if !resolved.is_dir() {
+            return Err(Error::Config(format!(
+                "write path {} is not a directory",
+                resolved.display()
+            )));
+        }
+        self.policy.allow_path(resolved.clone());
+        if !self.write_extra.contains(&resolved) {
+            self.write_extra.push(resolved);
+        }
+        if self.sandbox.is_some() {
+            let deny = self
+                .sandbox
+                .as_ref()
+                .is_some_and(sandbox::Sandbox::denies_network);
+            self.enable_sandbox(deny)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_roots(&self) -> Vec<String> {
+        self.policy
+            .write_roots()
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect()
+    }
+
+    pub(crate) fn allow_network_once(&self) {
+        self.network_once
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn approve_once(&self) {
+        self.approved_once
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    pub(crate) fn take_approval(&self) -> bool {
+        self.approved_once
+            .swap(false, std::sync::atomic::Ordering::SeqCst)
+    }
+
+    pub(crate) fn has_sandbox(&self) -> bool {
+        self.sandbox.is_some()
+    }
+
+    pub(crate) fn denies_network(&self) -> bool {
+        self.sandbox
+            .as_ref()
+            .is_some_and(sandbox::Sandbox::denies_network)
     }
 
     pub(crate) fn is_strict(&self) -> bool {
@@ -300,12 +404,17 @@ impl ToolRegistry {
 
     fn resolve_read(&self, path: &str) -> Result<PathBuf> {
         let candidate = Path::new(path);
-        if candidate.is_absolute() {
-            return candidate
+        let opened = if candidate.is_absolute() {
+            candidate
                 .canonicalize()
-                .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")));
+                .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?
+        } else {
+            self.resolve_existing(path)?
+        };
+        if !self.policy.is_unrestricted() && crate::policy::protected_read(&opened) {
+            return Err(Error::Denied(format!("`{path}` is a protected path")));
         }
-        self.resolve_existing(path)
+        Ok(opened)
     }
 
     fn resolve_existing(&self, path: &str) -> Result<PathBuf> {
@@ -339,8 +448,11 @@ impl ToolRegistry {
                 .canonicalize()
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
             self.ensure_inside(&canonical)?;
-        } else if !ancestor.starts_with(&self.workspace) {
-            return Err(Error::Tool("path leaves the workspace".to_string()));
+        } else if !ancestor.starts_with(&self.workspace) && !self.approved(&ancestor) {
+            return Err(Error::Tool(format!(
+                "path leaves the workspace — {}",
+                crate::policy::outside_hint(&ancestor.display().to_string())
+            )));
         }
         Ok(dest)
     }
@@ -368,7 +480,10 @@ impl ToolRegistry {
                 Component::CurDir => {}
                 Component::ParentDir => {
                     if !out.pop() || !out.starts_with(&self.workspace) {
-                        return Err(Error::Tool("path leaves the workspace".to_string()));
+                        return Err(Error::Tool(format!(
+                            "path leaves the workspace — {}",
+                            crate::policy::outside_hint(&out.display().to_string())
+                        )));
                     }
                 }
                 Component::Prefix(_) | Component::RootDir => {
@@ -382,11 +497,50 @@ impl ToolRegistry {
         Ok(out)
     }
 
+    fn approved(&self, path: &Path) -> bool {
+        let roots = self.policy.write_roots();
+        if roots.is_empty() {
+            return false;
+        }
+        let resolved = path.canonicalize().unwrap_or_else(|_| {
+            path.parent()
+                .and_then(|parent| parent.canonicalize().ok())
+                .map_or_else(
+                    || path.to_path_buf(),
+                    |parent| parent.join(path.file_name().unwrap_or_default()),
+                )
+        });
+        roots.iter().any(|root| {
+            let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+            resolved.starts_with(&root) || path.starts_with(&root)
+        })
+    }
+
+    fn check_write(&self, path: &Path) -> Result<()> {
+        if self.policy.is_unrestricted() {
+            return Ok(());
+        }
+        if crate::policy::protected_write(path) {
+            return Err(Error::Denied(format!(
+                "`{}` is a protected path",
+                path.display()
+            )));
+        }
+        if self.approved(path) {
+            return Ok(());
+        }
+        self.policy.write_path(&self.relative(path)?)
+    }
+
     fn ensure_inside(&self, path: &Path) -> Result<()> {
-        if self.policy.is_unrestricted() || path.starts_with(&self.workspace) {
+        if self.policy.is_unrestricted() || path.starts_with(&self.workspace) || self.approved(path)
+        {
             Ok(())
         } else {
-            Err(Error::Tool("path leaves the workspace".to_string()))
+            Err(Error::Tool(format!(
+                "path leaves the workspace — {}",
+                crate::policy::outside_hint(&path.display().to_string())
+            )))
         }
     }
 
@@ -396,7 +550,12 @@ impl ToolRegistry {
         }
         path.strip_prefix(&self.workspace)
             .map(|relative| relative.to_string_lossy().into_owned())
-            .map_err(|error| Error::Tool(format!("path leaves the workspace: {error}")))
+            .map_err(|error| {
+                Error::Tool(format!(
+                    "path leaves the workspace ({error}) — {}",
+                    crate::policy::outside_hint(&path.display().to_string())
+                ))
+            })
     }
 }
 

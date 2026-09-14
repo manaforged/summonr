@@ -7,7 +7,7 @@ use crate::session::SessionInfo;
 
 use super::super::short_session;
 use super::app::App;
-use super::canvas::{Cell, DIM, TEXT};
+use super::canvas::{Cell, palette};
 use super::chat::{accent, draft_view, ellipsize, write_at};
 use super::hit::Target;
 
@@ -358,7 +358,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left,
         3,
         &ellipsize(&format!("find   {query}"), columns),
-        TEXT,
+        palette().text,
     );
     let rows = picker.rows();
     let selected = picker.selected.get().min(rows.len().saturating_sub(1));
@@ -374,7 +374,11 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             y,
             &ellipsize(&format!("{marker} {title}"), columns),
-            if offset == selected { color } else { TEXT },
+            if offset == selected {
+                color
+            } else {
+                palette().text
+            },
         );
         let detail = format!("  {}", picker.detail(info));
         write_at(
@@ -383,7 +387,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             y + 1,
             &ellipsize(&detail, columns),
-            DIM,
+            palette().dim,
         );
         app.hits
             .add(y, left, left + columns, Target::Session(offset));
@@ -397,7 +401,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left,
             5,
             &ellipsize(&picker.empty(), columns),
-            DIM,
+            palette().dim,
         );
     }
     let help = if width < 60 {
@@ -411,7 +415,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         left,
         height.saturating_sub(1),
         &ellipsize(help, columns),
-        DIM,
+        palette().dim,
     );
     cells
 }

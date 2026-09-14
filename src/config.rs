@@ -22,8 +22,9 @@ pub(crate) struct File {
     pub theme: Option<String>,
     pub splash: Option<bool>,
     pub animations: Option<bool>,
-    pub reasoning: Option<bool>,
+    pub reasoning: Option<ReasoningSetting>,
     pub tools: Option<String>,
+    pub receipts: Option<String>,
     pub bus: Option<bool>,
     pub layout: Option<String>,
     #[serde(default)]
@@ -48,6 +49,13 @@ pub(crate) enum SeatRow {
         endpoint: String,
         model: Option<String>,
     },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum ReasoningSetting {
+    Flag(bool),
+    Text(String),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -192,7 +200,8 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["theme"] = value(&prefs.theme);
     document["splash"] = value(prefs.splash);
     document["animations"] = value(prefs.animations);
-    document["reasoning"] = value(prefs.reasoning);
+    document["reasoning"] = value(prefs.reasoning.name());
+    document["receipts"] = value(prefs.receipts.name());
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
     document["layout"] = value(&prefs.layout);
@@ -265,6 +274,54 @@ fn read_document(path: &Path) -> Result<DocumentMut> {
     };
     text.parse::<DocumentMut>()
         .map_err(|error| Error::Config(format!("config.toml: {error}")))
+}
+
+pub(crate) fn sandbox_entry(path: &Path) -> String {
+    let home = std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from);
+    if let Some(home) = home
+        && let Ok(rest) = path.strip_prefix(&home)
+    {
+        let rest = rest.to_string_lossy();
+        if rest.is_empty() {
+            return "~/".to_string();
+        }
+        return format!("~/{rest}");
+    }
+    path.display().to_string()
+}
+
+pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
+    let mut document = read_document(path)?;
+    let entry = if Path::new(dir).is_absolute() {
+        sandbox_entry(Path::new(dir))
+    } else {
+        dir.to_string()
+    };
+    let existing = document
+        .get("sandbox")
+        .and_then(|sandbox| sandbox.get("write"));
+    if existing.is_some_and(|item| !item.is_none() && item.as_array().is_none()) {
+        return Err(Error::Config(
+            "config.toml: [sandbox] write must be an array".to_string(),
+        ));
+    }
+    let mut array = existing
+        .and_then(toml_edit::Item::as_array)
+        .cloned()
+        .unwrap_or_else(toml_edit::Array::new);
+    if !array
+        .iter()
+        .any(|value| value.as_str() == Some(entry.as_str()))
+    {
+        array.push(entry.as_str());
+    }
+    document["sandbox"]["write"] = toml_edit::Item::Value(toml_edit::Value::Array(array));
+    if let Some(table) = document["sandbox"].as_table_mut() {
+        table.set_implicit(true);
+    }
+    persist(path, &document)
 }
 
 fn persist(path: &Path, document: &DocumentMut) -> Result<()> {

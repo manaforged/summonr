@@ -137,7 +137,7 @@ impl ToolRegistry {
     async fn apply_edit(&self, name: &str, args: &Value) -> Result<ToolOutput> {
         let path = nonempty_path(args, name)?;
         let dest = self.resolve_existing(path)?;
-        self.policy.write_path(&self.relative(&dest)?)?;
+        self.check_write(&dest)?;
         let raw = std::fs::read_to_string(&dest)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         if raw.is_empty() {
@@ -159,6 +159,10 @@ impl ToolRegistry {
         let edited = restore(&endings, &original, &edited);
         atomic_write(&dest, path, &edited)?;
         let mut out = format!("edited {path}\n{}", edit_view(&original, &edited));
+        if let Some(diff) = crate::hashline::diff_hunk(&original, &edited) {
+            out.push('\n');
+            out.push_str(&diff);
+        }
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -167,6 +171,7 @@ impl ToolRegistry {
             text: out,
             success: true,
             mutated: true,
+            grant: None,
         })
     }
 
@@ -178,7 +183,7 @@ impl ToolRegistry {
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write_file requires content".to_string()))?;
         let dest = self.resolve_write(path)?;
-        self.policy.write_globs(&self.relative(&dest)?)?;
+        self.check_write(&dest)?;
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
@@ -204,6 +209,7 @@ impl ToolRegistry {
             text: out,
             success: true,
             mutated: true,
+            grant: None,
         })
     }
 

@@ -10,7 +10,7 @@ default = "zai"
 
 # Interface preferences. The settings modal (ctrl+o or /settings) writes
 # these; edit them here if you prefer.
-# theme = "space"        # "space" or "fantasy" accent palette
+# theme = "space"        # "space" or "fantasy" preset; colors in theme.toml
 # splash = true          # boot into the splash cover, or straight to chat
 # reasoning = true       # show streamed reasoning in the transcript
 # tools = "compact"      # show the last line or the full tool result
@@ -108,8 +108,10 @@ model = "grok-4.6"
 
 # Sandbox: directories outside the workspace that contained commands may
 # write, such as a shared build cache. "~/" expands to your home directory.
+# `cp`, `ln`, `mv`, and `install` may target these paths too. `/write PATH`
+# approves one for the current session without editing this file.
 # [sandbox]
-# write = ["~/.cargo/registry"]
+# write = ["~/.cargo", "~/.cargo/registry"]
 
 # web_search: DuckDuckGo HTML needs no key. backend = "brave" with a key
 # (or BRAVE_API_KEY) gives stable results; backend = "bing" keeps the RSS path.

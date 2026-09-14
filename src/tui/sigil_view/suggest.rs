@@ -1,9 +1,11 @@
 use sigil::prelude::*;
 use sigil_tui::cell_width;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
+use super::chat::ellipsize;
+use super::model::Model;
 use crate::tui::matching_commands;
+use crate::{SlashCommand, parse_command};
 
 const LIMIT: usize = 9;
 const MIN_WIDTH: usize = 34;
@@ -34,20 +36,20 @@ impl Picker {
         self.query.peek().contains('@')
     }
 
-    pub(super) fn open(self, draft: &str, caret: usize, files: &[String]) -> bool {
-        !self.hidden.get() && !self.rows(draft, caret, files).is_empty()
+    pub(super) fn open(self, draft: &str, caret: usize, model: &Model) -> bool {
+        !self.hidden.get() && !self.rows(draft, caret, model).is_empty()
     }
 
-    pub(super) fn hide(self, draft: &str, caret: usize, files: &[String]) -> bool {
-        if !self.open(draft, caret, files) {
+    pub(super) fn hide(self, draft: &str, caret: usize, model: &Model) -> bool {
+        if !self.open(draft, caret, model) {
             return false;
         }
         self.hidden.set(true);
         true
     }
 
-    pub(super) fn shift(self, draft: &str, caret: usize, files: &[String], delta: isize) -> bool {
-        let count = self.rows(draft, caret, files).len();
+    pub(super) fn shift(self, draft: &str, caret: usize, model: &Model, delta: isize) -> bool {
+        let count = self.rows(draft, caret, model).len();
         if count == 0 || self.hidden.peek() {
             return false;
         }
@@ -62,17 +64,17 @@ impl Picker {
         true
     }
 
-    pub(super) fn accept(self, draft: &str, caret: usize, files: &[String]) -> Option<String> {
+    pub(super) fn accept(self, draft: &str, caret: usize, model: &Model) -> Option<String> {
         if self.hidden.peek() {
             return None;
         }
-        let rows = self.rows(draft, caret, files);
+        let rows = self.rows(draft, caret, model);
         let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
         (row.0 != draft).then(|| row.0.clone())
     }
 
-    pub(super) fn complete(self, draft: &str, caret: usize, files: &[String]) -> Option<String> {
-        let rows = self.rows(draft, caret, files);
+    pub(super) fn complete(self, draft: &str, caret: usize, model: &Model) -> Option<String> {
+        let rows = self.rows(draft, caret, model);
         if rows.is_empty() || self.hidden.peek() {
             return None;
         }
@@ -88,10 +90,11 @@ impl Picker {
         self.cursor.get().min(count.saturating_sub(1))
     }
 
-    fn rows(self, draft: &str, caret: usize, files: &[String]) -> Vec<(String, String)> {
+    fn rows(self, draft: &str, caret: usize, model: &Model) -> Vec<(String, String)> {
         if let Some((_, query)) = mention(draft, caret) {
             let query = query.to_lowercase();
-            let mut matches: Vec<_> = files
+            let mut matches: Vec<_> = model
+                .files
                 .iter()
                 .filter_map(|path| {
                     let score = crate::tui::rank(&path.to_lowercase(), "", &query)?;
@@ -112,6 +115,13 @@ impl Picker {
             matching_commands(draft)
         };
         rows.into_iter()
+            .filter(|(name, _)| match parse_command(name) {
+                Some(SlashCommand::PlanAccept | SlashCommand::PlanReject) => {
+                    model.snapshot.pending_plan
+                }
+                Some(SlashCommand::Auto) => model.snapshot.plan,
+                _ => true,
+            })
             .map(|(name, help)| (name.to_string(), help.to_string()))
             .collect()
     }
@@ -149,14 +159,14 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
         || app.auth_open.peek()
         || app.editing_model.peek()
         || model.busy_since.is_some()
-        || !app.commands.open(&draft, caret, &model.files)
+        || !app.commands.open(&draft, caret, &model)
     {
         return None;
     }
     if cols < 12 || rows < 6 {
         return None;
     }
-    let matches = app.commands.rows(&draft, caret, &model.files);
+    let matches = app.commands.rows(&draft, caret, &model);
     let cursor = app.commands.cursor(matches.len());
     let splash = app.splash.peek();
     let [left, prompt, anchor_width] = if splash {
@@ -164,7 +174,7 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     } else {
         [
             2,
-            super::chat::prompt_row(rows, &draft),
+            super::chat::prompt_row(app.chat_cols(), rows, &draft),
             cols.saturating_sub(4),
         ]
     };
@@ -198,11 +208,22 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     } else {
         "commands"
     };
-    lines.push(border(title, width, true));
+    let title = format!(
+        "{title} {}–{}/{}",
+        start + 1,
+        start + shown.len(),
+        matches.len()
+    );
+    lines.push(border(&title, width, true));
     for (offset, (name, description)) in shown.iter().enumerate() {
         lines.push(row(name, description, width, start + offset == cursor));
     }
-    lines.push(border("↑↓ select · tab accept · esc", width, false));
+    let hint = if draft == "/" {
+        "type to search · ↑↓ · tab · esc"
+    } else {
+        "↑↓ select · tab accept · esc"
+    };
+    lines.push(border(hint, width, false));
     Some(Menu {
         left: usize::from(left),
         top: usize::from(top),
@@ -222,33 +243,19 @@ fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
 fn row(name: &str, description: &str, width: usize, selected: bool) -> String {
     let marker = if selected { '›' } else { ' ' };
     let inner = width.saturating_sub(4);
-    let name = fit(name, inner);
+    let name = ellipsize(name, inner);
     let name_width = cell_width(name.as_str());
     let available = inner.saturating_sub(name_width + 2);
-    let help = fit(description, available);
+    let help = ellipsize(description, available);
     let gap = inner.saturating_sub(name_width + cell_width(help.as_str()));
     format!("│{marker} {name}{}{help}│", " ".repeat(gap))
 }
 
 fn border(label: &str, width: usize, top: bool) -> String {
     let (left, right) = if top { ('╭', '╮') } else { ('╰', '╯') };
-    let label = fit(label, width.saturating_sub(4));
+    let label = ellipsize(label, width.saturating_sub(4));
     let fill = width.saturating_sub(cell_width(label.as_str()) + 3);
     format!("{left}─{label}{}{right}", "─".repeat(fill))
-}
-
-fn fit(text: &str, width: usize) -> String {
-    let mut used = 0;
-    text.graphemes(true)
-        .take_while(|grapheme| {
-            let next = used + cell_width(grapheme);
-            if next > width {
-                return false;
-            }
-            used = next;
-            true
-        })
-        .collect()
 }
 
 #[cfg(test)]

@@ -1,6 +1,435 @@
 use super::*;
 
 #[test]
+fn peer_updates_do_not_invalidate_the_history_cache() {
+    sigil::reactive::Runtime::scope("summoner-peers-skip-rerender", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
+        apply(&app, Msg::System("before".to_string()));
+        let stamp = app.model.borrow().entries.stamp;
+        apply(&app, Msg::Peers(2));
+        assert_eq!(app.model.borrow().entries.stamp, stamp);
+        apply(&app, Msg::System("after".to_string()));
+        assert_ne!(app.model.borrow().entries.stamp, stamp);
+    });
+}
+#[test]
+fn an_empty_patch_has_a_visible_completed_state() {
+    sigil::reactive::Runtime::scope("summoner-empty-patch", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(120, 30);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.diff_open("unchanged.txt".to_string());
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(120, 30);
+        let loading = screen
+            .frame(&mut host, &mut router, [], (120, 30))
+            .expect("loading")
+            .text();
+        assert!(loading.contains("loading…"), "{loading}");
+        assert!(!loading.contains("no changes"), "{loading}");
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "unchanged.txt".to_string(),
+                result: Ok(String::new()),
+            },
+        );
+        for width in [120, 220] {
+            app.resize(width, 30);
+            let empty = screen
+                .frame(&mut host, &mut router, [], (width, 30))
+                .expect("empty patch")
+                .text();
+            assert!(empty.contains("no changes"), "{empty}");
+            assert!(!empty.contains("loading…"), "{empty}");
+            assert!(empty.contains("unchanged.txt"), "{empty}");
+        }
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "unchanged.txt".to_string(),
+                result: Ok("+new content\n".to_string()),
+            },
+        );
+        let changed = screen
+            .frame(&mut host, &mut router, [], (220, 30))
+            .expect("changed patch")
+            .text();
+        assert!(changed.contains("new content"), "{changed}");
+        assert!(!changed.contains("no changes"), "{changed}");
+    });
+}
+
+#[test]
+fn copying_a_loading_patch_requests_the_selected_file() {
+    sigil::reactive::Runtime::scope("summoner-patch-copy-loading", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.diff_open("selected.txt".to_string());
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Patch(None, path)) if path == "selected.txt"));
+        app.copy_patch();
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Patch(None, path)) if path == "selected.txt"));
+        assert!(app.copy.peek().is_none());
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "other.txt".to_string(),
+                result: Ok("+other\n".to_string()),
+            },
+        );
+        assert!(app.copy.peek().is_none());
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "selected.txt".to_string(),
+                result: Ok("+selected\n".to_string()),
+            },
+        );
+        assert_eq!(app.copy.peek().as_deref(), Some("+selected\n"));
+        app.copy.set(None);
+        app.diff_open("first.txt".to_string());
+        app.copy_patch();
+        app.diff_open("next.txt".to_string());
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "first.txt".to_string(),
+                result: Ok("+requested\n".to_string()),
+            },
+        );
+        assert_eq!(app.copy.peek().as_deref(), Some("+requested\n"));
+        assert!(
+            app.model.borrow().patch.is_none(),
+            "copying the requested file must not replace the newly opened pane"
+        );
+    });
+}
+
+#[test]
+fn patch_errors_wrap_scroll_and_leave_the_clipboard_untouched() {
+    sigil::reactive::Runtime::scope("summoner-patch-errors", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(120, 30);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.diff_open("00-nested/".to_string());
+        let error = "open 00-nested/ as a separate workspace to inspect its changes";
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "00-nested/".to_string(),
+                result: Err(error.to_string()),
+            },
+        );
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(120, 30);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 30))
+            .expect("patch error")
+            .text();
+        assert!(frame.contains("patch unavailable"), "{frame}");
+        let pane = frame
+            .lines()
+            .filter_map(|line| line.rsplit_once('│').map(|(_, pane)| pane.trim()))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let pane = pane.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(pane.contains(error), "{pane}");
+        assert!(!frame.contains("loading…"), "{frame}");
+        app.copy_patch();
+        assert!(app.copy.peek().is_none());
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains(&format!("cannot copy patch: {error}"))
+        );
+        let long = format!("{} end of patch failure", "unavailable file ".repeat(80));
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "00-nested/".to_string(),
+                result: Err(long),
+            },
+        );
+        app.pane_move(1000);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 30))
+            .expect("scrolled error")
+            .text();
+        assert!(frame.contains("patch failure"), "{frame}");
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "00-nested/".to_string(),
+                result: Ok("+short replacement\n".to_string()),
+            },
+        );
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 30))
+            .expect("shorter patch")
+            .text();
+        assert!(frame.contains("+short replacement"), "{frame}");
+        app.diff_open("new.txt".to_string());
+        app.copy_patch();
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "new.txt".to_string(),
+                result: Err("unreadable".to_string()),
+            },
+        );
+        assert!(app.copy.peek().is_none());
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "new.txt".to_string(),
+                result: Ok("+recovered\n".to_string()),
+            },
+        );
+        assert!(
+            app.copy.peek().is_none(),
+            "a failed copy cannot complete on a later refresh"
+        );
+        app.copy_patch();
+        assert_eq!(app.copy.peek().as_deref(), Some("+recovered\n"));
+        app.copy.set(None);
+        app.pane_back();
+        app.copy_patch();
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: String::new(),
+                result: Ok(String::new()),
+            },
+        );
+        assert!(app.copy.peek().is_none());
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("there are no patch changes to copy")
+        );
+    });
+}
+
+#[test]
+fn patch_responses_follow_the_requested_workspace() {
+    sigil::reactive::Runtime::scope("summoner-patch-root", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        let first = PathBuf::from("first");
+        let second = PathBuf::from("second");
+        app.tree_show(first.clone(), "first".to_string());
+        app.diff_open("file.txt".to_string());
+        app.copy_patch();
+        app.tree_show(second.clone(), "second".to_string());
+        app.diff_open("file.txt".to_string());
+        app.copy_patch();
+        apply(
+            &app,
+            Msg::Patch {
+                root: Some(first.clone()),
+                path: "file.txt".to_string(),
+                result: Ok("+first\n".to_string()),
+            },
+        );
+        assert!(app.copy.peek().is_none());
+        assert!(app.model.borrow().patch.is_none());
+        apply(
+            &app,
+            Msg::Patch {
+                root: Some(second),
+                path: "file.txt".to_string(),
+                result: Ok("+second\n".to_string()),
+            },
+        );
+        assert_eq!(app.copy.peek().as_deref(), Some("+second\n"));
+        app.copy.set(None);
+        apply(
+            &app,
+            Msg::Patch {
+                root: Some(first),
+                path: "file.txt".to_string(),
+                result: Ok("+stale\n".to_string()),
+            },
+        );
+        app.copy_patch();
+        assert_eq!(app.copy.peek().as_deref(), Some("+second\n"));
+        app.copy.set(None);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.copy_patch();
+        assert!(
+            app.copy.peek().is_none(),
+            "switching to the primary workspace must invalidate the cached worktree patch"
+        );
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "file.txt".to_string(),
+                result: Ok("+primary\n".to_string()),
+            },
+        );
+        assert_eq!(app.copy.peek().as_deref(), Some("+primary\n"));
+    });
+}
+
+#[test]
+fn wide_patch_scrolling_stops_at_the_last_visible_pair() {
+    sigil::reactive::Runtime::scope("summoner-patch-pair-scroll", || {
+        let (cmd, _rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(220, 30);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.diff_open("file.txt".to_string());
+        apply(
+            &app,
+            Msg::Patch {
+                root: None,
+                path: "file.txt".to_string(),
+                result: Ok(
+                    "@@ -1,2 +1,2 @@\n-old first\n-old last\n+new first\n+new last\n".to_string(),
+                ),
+            },
+        );
+        app.pane_edge(true);
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(220, 30);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (220, 30))
+            .expect("last pair")
+            .text();
+        assert!(
+            frame.contains("old last") && frame.contains("new last"),
+            "{frame}"
+        );
+        app.pane_move(-1);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (220, 30))
+            .expect("previous pair")
+            .text();
+        assert!(
+            frame.contains("old first") && frame.contains("new first"),
+            "{frame}"
+        );
+        app.resize(120, 30);
+        app.pane_edge(true);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 30))
+            .expect("unified end")
+            .text();
+        assert!(frame.contains("+new last"), "{frame}");
+        app.resize(220, 30);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (220, 30))
+            .expect("split after resize")
+            .text();
+        assert!(
+            frame.contains("old last") && frame.contains("new last"),
+            "{frame}"
+        );
+    });
+}
+
+#[test]
+fn restored_panes_request_their_initial_data() {
+    sigil::reactive::Runtime::scope("summoner-restored-pane-data", || {
+        for pane in ["diff", "files", "worktrees", "ledger"] {
+            let (cmd, mut rx) = unbounded_channel();
+            let mut start = info();
+            start.prefs.layout = format!("chat | {pane} 40%");
+            let app = App::new(start, PathBuf::from("."), cmd);
+            app.load();
+            match pane {
+                "diff" => assert!(matches!(rx.try_recv(), Ok(Cmd::Diff(None)))),
+                "files" => assert!(matches!(rx.try_recv(), Ok(Cmd::ListFiles))),
+                "worktrees" => assert!(matches!(rx.try_recv(), Ok(Cmd::Trees))),
+                _ => assert!(rx.try_recv().is_err()),
+            }
+        }
+    });
+}
+
+#[test]
+fn diff_failure_settles_loading_and_retry_restores_the_pane() {
+    sigil::reactive::Runtime::scope("summoner-diff-recovery", || {
+        let (cmd, mut rx) = unbounded_channel();
+        let app = App::new(info(), PathBuf::from("."), cmd);
+        app.resize(120, 40);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Diff(None))));
+        let tree = app.clone();
+        let mut host = Host::cells();
+        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        let mut router = EventRouter::new();
+        let mut screen = Screen::new(120, 40);
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .expect("loading frame")
+            .text();
+        assert!(frame.contains("loading…"), "{frame}");
+        apply(
+            &app,
+            Msg::DiffFailed("git failed: permission denied".to_string()),
+        );
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .expect("error frame")
+            .text();
+        assert!(frame.contains("diff unavailable"), "{frame}");
+        assert!(frame.contains("git failed: permission denied"), "{frame}");
+        assert!(frame.contains("reopen Diff to retry"), "{frame}");
+        assert!(!frame.contains("loading…"), "{frame}");
+        assert!(!frame.contains("no changes"), "{frame}");
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        app.toggle_pane(super::super::pane::Pane::Diff);
+        assert!(matches!(rx.try_recv(), Ok(Cmd::Diff(None))));
+        apply(
+            &app,
+            Msg::Diff(crate::diff::Diff {
+                base: "empty tree".to_string(),
+                files: vec![crate::diff::Stat {
+                    path: "new.txt".to_string(),
+                    added: 1,
+                    new: true,
+                    ..crate::diff::Stat::default()
+                }],
+            }),
+        );
+        let frame = screen
+            .frame(&mut host, &mut router, [], (120, 40))
+            .expect("recovered frame")
+            .text();
+        assert!(frame.contains("new.txt (new)"), "{frame}");
+        assert!(!frame.contains("diff unavailable"), "{frame}");
+    });
+}
+
+#[test]
 fn restored_conversation_keeps_roles_and_one_copy_of_the_reply() {
     sigil::reactive::Runtime::scope("summoner-restored-view", || {
         let (cmd, _rx) = unbounded_channel();
@@ -16,7 +445,7 @@ fn restored_conversation_keeps_roles_and_one_copy_of_the_reply() {
             &app,
             Msg::Receipt("Fixed it.\n\nTurn receipt\n- Changed: calculator.py".to_string()),
         );
-        let text = app.transcript.peek();
+        let text = app.model.borrow().transcript();
         assert!(text.contains("fix arithmetic"));
         assert!(text.contains("Changed: calculator.py"));
         assert_eq!(text.matches("Fixed it.").count(), 1);
@@ -28,7 +457,7 @@ fn restored_conversation_keeps_roles_and_one_copy_of_the_reply() {
         );
         apply(&app, Msg::Cleared);
         apply(&app, Msg::User("next task".to_string()));
-        let text = app.transcript.peek();
+        let text = app.model.borrow().transcript();
         assert!(text.contains("next task"));
         assert!(!text.contains("fix arithmetic"));
     });
@@ -68,7 +497,7 @@ fn streamed_events_become_a_markdown_transcript() {
                 text: "Hello world".to_string(),
             }),
         );
-        let text = app.transcript.peek();
+        let text = app.model.borrow().transcript();
         assert!(text.contains("**Thinking**"));
         assert!(text.contains("Hello world"));
     });
@@ -98,7 +527,14 @@ fn turn_receipt_does_not_duplicate_the_streamed_reply() {
             }),
         );
 
-        assert_eq!(app.transcript.peek().matches("Hello world").count(), 1);
+        assert_eq!(
+            app.model
+                .borrow()
+                .transcript()
+                .matches("Hello world")
+                .count(),
+            1
+        );
         let model = app.model.borrow();
         let replies: Vec<_> = model
             .entries
@@ -130,7 +566,8 @@ fn copy_hotkey_uses_the_last_reply() {
             }),
         );
 
-        assert!(app.route_hotkey('y'));
+        assert!(!app.route_hotkey('y'));
+        assert!(app.route_hotkey('b'));
         assert_eq!(app.copy.peek().as_deref(), Some("latest reply"));
     });
 }
@@ -170,7 +607,12 @@ fn copy_reports_when_there_is_no_reply() {
         app.replace("/copy".to_string());
         app.submit();
 
-        assert!(app.transcript.peek().contains("there is no reply to copy"));
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("there is no reply to copy")
+        );
         assert!(app.copy.peek().is_none());
     });
 }
@@ -184,7 +626,12 @@ fn copy_rejects_an_unknown_scope() {
         app.replace("/copy turn".to_string());
         app.submit();
 
-        assert!(app.transcript.peek().contains("usage: /copy [all]"));
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("usage: /copy [all]")
+        );
         assert!(app.copy.peek().is_none());
     });
 }
@@ -218,7 +665,7 @@ fn tool_result_updates_the_existing_call() {
                 output: output.clone(),
             }),
         );
-        let text = app.transcript.peek();
+        let text = app.model.borrow().transcript();
         assert!(text.contains("✓ **read_file** `README.md`"));
         assert!(text.contains(&output), "transcript retains the full result");
         let render = || {
@@ -258,10 +705,10 @@ fn hidden_reasoning_never_enters_the_transcript() {
     sigil::reactive::Runtime::scope("mage-reasoning-pref-test", || {
         let (cmd, _rx) = unbounded_channel();
         let mut info = info();
-        info.prefs.reasoning = false;
+        info.prefs.reasoning = crate::prefs::Reasoning::Off;
         let app = App::new(info, PathBuf::from("/tmp/mage-view-test"), cmd);
         apply(&app, Msg::Thinking("private chain".to_string()));
-        assert!(!app.transcript.peek().contains("private chain"));
+        assert!(!app.model.borrow().transcript().contains("private chain"));
     });
 }
 
@@ -367,13 +814,13 @@ fn slash_completion_accepts_and_cycles_the_visible_matches() {
 
         app.replace("/se".to_string());
         assert!(app.complete());
+        assert_eq!(app.draft.peek(), "/search");
+        assert!(app.complete());
         assert_eq!(app.draft.peek(), "/settings");
         assert!(app.complete());
         assert_eq!(app.draft.peek(), "/session");
         assert!(app.complete());
         assert_eq!(app.draft.peek(), "/search");
-        assert!(app.complete());
-        assert_eq!(app.draft.peek(), "/settings");
     });
 }
 
@@ -440,7 +887,7 @@ fn slash_popup_filters_to_the_typed_prefix() {
 }
 
 #[test]
-fn slash_popup_shows_the_complete_command_catalog() {
+fn slash_popup_shows_the_available_command_catalog() {
     sigil::reactive::Runtime::scope("mage-command-catalog-frame-test", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
@@ -454,14 +901,30 @@ fn slash_popup_shows_the_complete_command_catalog() {
             println!("chat commands 100x32:\n{first}");
         }
 
-        assert!(first.contains("/model"), "model command missing:\n{first}");
-        assert!(first.contains("tab accept"), "key hint missing:\n{first}");
+        for name in [
+            "/help",
+            "/model",
+            "/diff",
+            "/view",
+            "/search",
+            "/history",
+            "/resume",
+            "/settings",
+            "/login",
+        ] {
+            assert!(first.contains(name), "{name} missing:\n{first}");
+        }
+        assert!(first.contains("1–9/21"), "{first}");
+        assert!(
+            first.contains("type to search"),
+            "search hint missing:\n{first}"
+        );
 
         app.shift(-1);
         let tree = app.clone();
         let last = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 100, 32, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
-        assert!(last.contains("› /quit"), "catalog did not scroll:\n{last}");
+        assert!(last.contains("› /exit"), "catalog did not scroll:\n{last}");
     });
 }
 
@@ -497,9 +960,14 @@ fn preference_write_failure_is_visible_in_the_transcript() {
             panic!("failed to create preference blocker: {error}");
         }
         app.prefs_path = Some(blocker.join("config.toml"));
-        app.toggle_reasoning();
+        app.reasoning_command(None);
 
-        assert!(app.transcript.peek().contains("settings not saved"));
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("settings not saved")
+        );
         if let Err(error) = std::fs::remove_file(&blocker) {
             panic!("failed to remove preference blocker: {error}");
         }
@@ -591,9 +1059,12 @@ fn ctrl_c_needs_two_presses_to_quit_and_escape_twice_opens_the_tree() {
         app.interrupt();
         assert!(!app.quit.peek(), "one press only arms the quit");
         assert!(
-            app.transcript.peek().contains("press ctrl+c again to quit"),
+            app.model
+                .borrow()
+                .transcript()
+                .contains("press ctrl+c again to quit"),
             "{}",
-            app.transcript.peek()
+            app.model.borrow().transcript()
         );
         app.interrupt();
         assert!(app.quit.peek(), "the second press quits");

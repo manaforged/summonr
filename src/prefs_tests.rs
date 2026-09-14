@@ -1,4 +1,5 @@
 use super::*;
+use std::fs::{read_to_string, write};
 
 #[test]
 fn compact_output_preserves_utf8_and_full_output_preserves_bytes() {
@@ -31,7 +32,8 @@ fn roundtrip_preserves_sections_and_replaces_keys() {
         theme: "fantasy".to_string(),
         splash: false,
         animations: false,
-        reasoning: true,
+        reasoning: Reasoning::Expanded,
+        receipts: Receipts::Expanded,
         tools: ToolOutput::Full,
         bus: false,
         layout: "chat".to_string(),
@@ -100,8 +102,56 @@ fn adding_history_preserves_an_existing_ctrl_r_binding() {
     let configured = BTreeMap::from([("copy".to_string(), "ctrl+r".to_string())]);
     let keys = Hotkeys::configured(&configured).expect("existing settings load");
     assert_eq!(keys.action('r'), Some(Hotkey::Copy));
-    assert_eq!(keys.key(Hotkey::History), 'y');
+    assert_eq!(keys.key(Hotkey::History), 'b');
     assert_eq!(keys.action('a'), None, "migration preserves select all");
+}
+
+#[test]
+fn saved_hotkeys_release_redo_and_preserve_explicit_bindings() {
+    let dir = tempfile::tempdir().expect("settings directory");
+    let path = dir.path().join("config.toml");
+    let legacy = "hotkeys = { options = \"ctrl+o\", newline = \"ctrl+j\", editor = \"ctrl+g\", files = \"ctrl+e\", ledger = \"ctrl+l\", diff = \"ctrl+x\", copy = \"ctrl+y\", select = \"ctrl+t\", pane = \"ctrl+p\", search = \"ctrl+f\", history = \"ctrl+r\" }\n";
+    write(&path, legacy).expect("old settings");
+    let mut prefs = load_from(&path).expect("load old settings");
+    assert_eq!(prefs.hotkeys, Hotkeys::default());
+    assert_eq!(prefs.hotkeys.key(Hotkey::Copy), 'b');
+    assert_eq!(prefs.hotkeys.action('y'), None);
+    assert!(!prefs.hotkeys.assign(Hotkey::Copy, 'y'));
+    save_in(&path, &prefs).expect("save migrated settings");
+    assert_eq!(load_from(&path).expect("reload migrated settings"), prefs);
+    assert!(
+        !read_to_string(&path)
+            .expect("saved settings")
+            .contains("ctrl+y")
+    );
+    write(
+        &path,
+        "hotkeys = { options = \"ctrl+b\", copy = \"ctrl+y\" }\n",
+    )
+    .expect("conflicting destination");
+    let prefs = load_from(&path).expect("preserved custom shortcut");
+    assert_eq!(prefs.hotkeys.key(Hotkey::Options), 'b');
+    assert_eq!(prefs.hotkeys.key(Hotkey::Copy), 'o');
+    assert_eq!(prefs.hotkeys.action('y'), None);
+    write(&path, "hotkeys = { files = \"ctrl+b\" }\n").expect("custom shortcut");
+    let prefs = load_from(&path).expect("move inherited copy shortcut");
+    assert_eq!(prefs.hotkeys.key(Hotkey::Files), 'b');
+    assert_eq!(prefs.hotkeys.key(Hotkey::Copy), 'e');
+    write(&path, "hotkeys = { newline = \"ctrl+y\" }\n").expect("legacy newline");
+    let prefs = load_from(&path).expect("migrate reserved newline");
+    assert_eq!(prefs.hotkeys.key(Hotkey::Newline), 'j');
+    assert_eq!(prefs.hotkeys.action('a'), None);
+    write(
+        &path,
+        "hotkeys = { copy = \"ctrl+y\", files = \"ctrl+y\" }\n",
+    )
+    .expect("invalid duplicate");
+    assert!(
+        load_from(&path)
+            .expect_err("duplicate remains invalid")
+            .to_string()
+            .contains("assigned more than once")
+    );
 }
 
 #[test]
@@ -140,4 +190,24 @@ fn missing_file_uses_defaults_and_bad_values_fail() {
         .unwrap_or_else(|error| panic!("write invalid preferences: {error}"));
     load_from(&path).unwrap_err();
     drop(std::fs::remove_file(&path));
+}
+
+#[test]
+fn receipts_cycle_off_collapsed_expanded() {
+    assert_eq!(Receipts::default(), Receipts::Off);
+    assert_eq!(Receipts::parse("collapsed"), Receipts::Collapsed);
+    assert_eq!(Receipts::parse("EXPANDED"), Receipts::Expanded);
+    assert_eq!(Receipts::parse("nonsense"), Receipts::Off);
+    assert_eq!(Receipts::Off.toggle(), Receipts::Collapsed);
+    assert_eq!(Receipts::Expanded.toggle(), Receipts::Off);
+}
+
+#[test]
+fn reasoning_defaults_collapsed_and_cycles() {
+    assert_eq!(Reasoning::default(), Reasoning::Collapsed);
+    assert_eq!(Reasoning::parse("off"), Reasoning::Off);
+    assert_eq!(Reasoning::parse("shown"), Reasoning::Expanded);
+    assert_eq!(Reasoning::parse("nonsense"), Reasoning::Collapsed);
+    assert_eq!(Reasoning::Off.toggle(), Reasoning::Collapsed);
+    assert_eq!(Reasoning::Expanded.toggle(), Reasoning::Off);
 }

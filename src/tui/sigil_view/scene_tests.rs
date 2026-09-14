@@ -1,5 +1,6 @@
 use super::*;
 use crate::tui::Round;
+use crate::tui::sigil_view::input::Input;
 use sigil_tui::{CellWidth, cell_width, set_cell_width};
 
 #[test]
@@ -165,6 +166,22 @@ fn composer_preserves_graphemes_and_its_right_border() {
 }
 
 #[test]
+fn composer_wraps_graphemes_without_trimming_spaces_or_blank_lines() {
+    for (text, width, expected) in [
+        ("abc", 3, vec!["abc"]),
+        ("a👍🏽b", 3, vec!["a👍🏽", "b"]),
+        ("a\u{301}b\u{301}c", 2, vec!["a\u{301}b\u{301}", "c"]),
+        ("日本語", 4, vec!["日本", "語"]),
+        ("ab  cd\n\nef\n", 4, vec!["ab  ", "cd", "", "ef", ""]),
+    ] {
+        let input = Input::new(text, width);
+        let rows: Vec<_> = input.rows.iter().map(|row| &text[row.clone()]).collect();
+        assert_eq!(rows, expected);
+        assert_eq!(input.caret(text.len(), None).row, expected.len() - 1);
+    }
+}
+
+#[test]
 fn composer_keeps_the_caret_and_current_line_visible() {
     assert_eq!(chat::draft_view("abcdefx", 6, 6, '▌'), "…def▌x");
     sigil::reactive::Runtime::scope("mage-composer-draft-viewport-test", || {
@@ -177,15 +194,16 @@ fn composer_keeps_the_caret_and_current_line_visible() {
         let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), 40, 12, &[])
             .unwrap_or_else(|error| panic!("layout failed: {error}"));
         let input = frame.lines().nth(9).unwrap_or_default();
+        assert!(input.contains("stay▌"), "draft tail missing:\n{frame}");
         assert!(
-            input.ends_with("the newest words stay▌ │"),
-            "draft tail missing:\n{frame}"
+            frame.contains("this beginning"),
+            "draft head missing:\n{frame}"
         );
-        assert!(input.contains('…'), "hidden draft was not marked:\n{frame}");
         assert!(
-            !input.contains("this beginning"),
-            "draft head stayed pinned:\n{frame}"
+            frame.contains("the newest words"),
+            "draft middle missing:\n{frame}"
         );
+        assert!(!input.contains('…'), "wrapped draft was clipped:\n{frame}");
 
         app.replace("first line\ncurrent line".to_string());
         let tree = app.clone();
@@ -338,11 +356,11 @@ fn chat_chrome_keeps_a_horizontal_gutter() {
             "narrow header hid its primary facts:\n{frame}"
         );
         assert!(
-            lines[1].starts_with(' ') && lines[1].trim_start().starts_with("ask anything"),
+            lines[2].starts_with(' ') && lines[2].trim_start().starts_with("ask anything"),
             "chat content needs left padding:\n{frame}"
         );
         assert!(
-            lines[1].contains("ask anything · /auth · @file · /help"),
+            lines[2].trim() == "ask anything · /login",
             "empty hint was clipped mid-label:\n{frame}"
         );
         assert!(
@@ -391,6 +409,7 @@ fn busy_footer_keeps_usage_visible() {
             model.cached_tokens = 16_000;
             model.live_tool = Some(("run_command".to_string(), "cargo check".to_string()));
         }
+        app.update(Msg::Event(Event::Unreported { tokens: 1_200 }));
         app.resize(100, 12);
         app.refresh();
         let tree = app.clone();
@@ -411,6 +430,97 @@ fn busy_footer_keeps_usage_visible() {
             "busy footer duplicated activity:\n{frame}"
         );
         assert!(frame.contains("run_command cargo check"), "{frame}");
+        assert!(status.contains("1.2k unconfirmed"), "{frame}");
+        assert!(status.contains("project"), "{frame}");
+        assert_eq!(app.model.borrow().usage.len(), 1);
+    });
+}
+
+#[test]
+fn narrow_footer_keeps_complete_context_and_cache_labels() {
+    for (width, window, unconfirmed, expected) in [
+        (
+            40,
+            Some(128_000),
+            0,
+            vec!["ctx 25%", "50% cached", "32.0k tok"],
+        ),
+        (
+            54,
+            Some(128_000),
+            0,
+            vec!["ctx 25%", "50% cached", "32.0k tok"],
+        ),
+        (40, None, 0, vec!["ctx not set", "50% cached", "32.0k tok"]),
+        (
+            40,
+            Some(128_000),
+            1_200,
+            vec!["ctx 25%", "1.2k unconfirmed"],
+        ),
+    ] {
+        sigil::reactive::Runtime::scope("footer-complete-labels", || {
+            let (cmd, _rx) = unbounded_channel();
+            let mut start = info();
+            start.workspace = "/home/user/dev/tui-daily-workspace".to_string();
+            let app = App::new(start, PathBuf::from("."), cmd);
+            app.update(Msg::Event(Event::Usage {
+                prompt_tokens: 32_000,
+                completion_tokens: 0,
+                reasoning_tokens: 0,
+                cached_tokens: 16_000,
+                millis: None,
+                prefix_hash: String::new(),
+                cost: None,
+            }));
+            app.model.borrow_mut().snapshot.context_window = window;
+            app.update(Msg::Event(Event::Unreported {
+                tokens: unconfirmed,
+            }));
+            app.resize(width, 16);
+            app.refresh();
+            let tree = app.clone();
+            let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, 16, &[])
+                .expect("narrow footer");
+            let footer = frame.lines().last().expect("footer row");
+            for text in expected {
+                assert!(footer.contains(text), "{text}: {footer}");
+            }
+        });
+    }
+}
+
+#[test]
+fn narrow_footer_keeps_the_project_before_optional_speed() {
+    sigil::reactive::Runtime::scope("narrow-footer-identity", || {
+        let (cmd, _rx) = unbounded_channel();
+        let mut start = info();
+        start.workspace = "/home/user/dev/tui-daily-workspace".to_string();
+        let app = App::new(start, PathBuf::from("."), cmd);
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        app.update(Msg::Event(Event::Usage {
+            prompt_tokens: 3_100,
+            completion_tokens: 100,
+            reasoning_tokens: 0,
+            cached_tokens: 2_480,
+            millis: Some(1_000),
+            prefix_hash: String::new(),
+            cost: None,
+        }));
+        app.update(Msg::Busy(None));
+        app.model.borrow_mut().snapshot.context_window = Some(128_000);
+        for width in [80, 140] {
+            app.resize(width, 16);
+            app.refresh();
+            let tree = app.clone();
+            let frame = sigil_tui::present(move |cx: &mut Cx| cx.add(root(tree)), width, 16, &[])
+                .expect("footer");
+            let footer = frame.lines().last().expect("footer row");
+            assert!(footer.contains("tui-daily-workspace"), "{footer}");
+            assert!(footer.contains("ctx 3.2k / 128.0k"), "{footer}");
+            assert!(footer.contains("80% cached"), "{footer}");
+            assert_eq!(footer.contains("tok/s"), width == 140, "{footer}");
+        }
     });
 }
 
@@ -600,6 +710,12 @@ fn the_busy_row_and_status_bar_show_tokens_per_second() {
         app.update(Msg::Busy(None));
         let last = frame(&app).lines().last().unwrap_or_default().to_string();
         assert!(last.contains("tok/s"), "{last}");
+        app.update(Msg::Busy(Some(Activity::Turn)));
+        let waiting = frame(&app);
+        assert!(
+            !waiting.contains("tok/s"),
+            "a new request has no measured rate: {waiting}"
+        );
     });
 }
 
@@ -630,7 +746,7 @@ fn an_image_entry_reserves_rows_and_places_a_picture() {
         let placed = history.placements();
         assert_eq!(placed.len(), 1, "one picture placed");
         assert_eq!(placed[0].size(), (80, 20), "80 px wide at half-row height");
-        assert_eq!(placed[0].line(), label + 1 - 1, "rows follow the label");
+        assert_eq!(placed[0].line(), label - 1, "rows follow the label");
         assert!(
             lines.len() >= label + 21,
             "twenty rows reserved under the label"

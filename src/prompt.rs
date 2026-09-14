@@ -66,6 +66,7 @@ pub fn harness_section(plan: bool, checks: &[String]) -> String {
         )
     }];
     parts.push("Search with the grep tool. A shell grep -r or find from the repository root walks target/ and node_modules/ and can take minutes.".to_string());
+    parts.push("Shell commands run in the OS sandbox with network denied. In the interface, a write or network denial pauses for the user to allow the directory or network, then the tool retries. In a non-interactive session, ask the user to run /net on or /net once for network, or /write PATH for an outside write, then retry.".to_string());
     #[cfg(windows)]
     parts.push("Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs. The sandbox uses a PowerShell drive rooted at the workspace. Use relative paths, or $PWD.ProviderPath when a native program needs the filesystem path. Git Bash and other MSYS programs cannot run inside the Windows sandbox.".to_string());
     if checks.is_empty() {

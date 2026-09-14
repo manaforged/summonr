@@ -24,13 +24,7 @@ pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
     Rgba8 { r, g, b, a: 255 }
 }
 
-pub(super) const BASE: Rgba8 = rgb(12, 12, 20);
-pub(super) const TEXT: Rgba8 = rgb(200, 200, 205);
-pub(super) const GRAY: Rgba8 = rgb(160, 160, 160);
-pub(super) const DIM: Rgba8 = rgb(90, 90, 90);
-pub(super) const GREEN: Rgba8 = rgb(80, 200, 120);
-pub(super) const RED: Rgba8 = rgb(225, 95, 95);
-pub(super) const CYAN: Rgba8 = rgb(90, 200, 220);
+pub(super) use super::theme::palette;
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct Cell {
@@ -42,11 +36,12 @@ pub(super) struct Cell {
 }
 
 impl Cell {
-    pub(super) const fn blank() -> Self {
+    pub(super) fn blank() -> Self {
+        let colors = palette();
         Self {
             text: SmolStr::new_inline(" "),
-            fg: TEXT,
-            bg: BASE,
+            fg: colors.text,
+            bg: colors.base,
             bold: false,
             italic: false,
         }

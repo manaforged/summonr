@@ -9,16 +9,34 @@ use std::future::Future;
 use std::time::Duration;
 
 use crate::bus::{envelope, is_bus_tool};
+use crate::policy::Grant;
 use crate::prompt::harness_section;
 use crate::provider::StopReason;
 use crate::session::decorate;
-use crate::tools::{ToolOutput, readonly};
+use crate::tools::{ToolOutput, needed_grant, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
 
 const RETRY_LIMIT: usize = 6;
 const RETRY_BASE_SECS: u64 = 2;
 const RETRY_MAX_SECS: u64 = 60;
 const RETRY_AFTER_MAX_SECS: u64 = 600;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GrantAnswer {
+    Deny,
+    Allow,
+    Always,
+}
+
+fn parse_decision(text: &str, persist: bool) -> Option<GrantAnswer> {
+    match text.trim().to_ascii_lowercase().as_str() {
+        "y" | "yes" | "a" | "allow" => Some(GrantAnswer::Allow),
+        "always" if persist => Some(GrantAnswer::Always),
+        "always" => Some(GrantAnswer::Allow),
+        "n" | "no" | "d" | "deny" => Some(GrantAnswer::Deny),
+        _ => None,
+    }
+}
 
 pub(super) enum WaitError {
     Deadline(Duration),
@@ -138,9 +156,9 @@ impl<P: Provider> Loop<P> {
                 Err(error @ WaitError::Deadline(_)) => {
                     let millis = error.millis(started);
                     self.session
-                        .fail_provider(durable_attempt, "work-time limit reached", millis)
+                        .fail_provider(durable_attempt, "work-time limit reached", millis, true)
                         .map_err(super::session_err)?;
-                    self.spent_tokens = self.session.replay().spent_tokens;
+                    self.sync_usage(emit);
                     return Ok(None);
                 }
                 Err(WaitError::Provider(error)) => {
@@ -149,9 +167,10 @@ impl<P: Provider> Loop<P> {
                             durable_attempt,
                             &error.to_string(),
                             super::elapsed_millis(started),
+                            super::billable(&error),
                         )
                         .map_err(super::session_err)?;
-                    self.spent_tokens = self.session.replay().spent_tokens;
+                    self.sync_usage(emit);
                     if self.round_abort().is_some() {
                         return Ok(None);
                     }
@@ -324,9 +343,11 @@ impl<P: Provider> Loop<P> {
                     },
                     "unaccounted turn time",
                     &self.model,
+                    false,
                 )
                 .map_err(super::session_err)?;
         }
+        self.sync_usage(&mut emit);
         match result {
             Ok(result) => result,
             Err(()) => {
@@ -370,7 +391,7 @@ impl<P: Provider> Loop<P> {
                 events,
                 &mut emit,
                 Event::Note {
-                    text: "plan accepted — /plan reject to discard".to_string(),
+                    text: "plan accepted — starting implementation".to_string(),
                 },
             )?;
         }
@@ -632,6 +653,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
+        self.sync_usage(emit);
         let prompt = after.prompt_tokens.saturating_sub(before.prompt_tokens);
         let completion = after
             .completion_tokens
@@ -723,6 +745,7 @@ impl<P: Provider> Loop<P> {
                     attempt,
                     "assistant returned neither text nor a tool call",
                     meter.millis,
+                    true,
                 )
                 .map_err(super::session_err)?;
             return Err(Error::provider(
@@ -732,7 +755,7 @@ impl<P: Provider> Loop<P> {
         }
         if self.plan {
             let receipt = Receipt::new(Vec::new(), Vec::new(), snapshot, events);
-            let context = verify::context(&message.content, &receipt);
+            let context = verify::context(&receipt);
             self.session
                 .finish_plan(
                     attempt,
@@ -905,7 +928,7 @@ impl<P: Provider> Loop<P> {
                 verdict = self.verdict(&mut checks, events, &mut emit)?;
             }
             let receipt = Receipt::new(receipt.changes, checks.clone(), receipt.snapshot, events);
-            let context = verify::context(&message.content, &receipt);
+            let context = verify::context(&receipt);
             match rejected {
                 Some(findings) => self
                     .session
@@ -968,6 +991,124 @@ impl<P: Provider> Loop<P> {
         Ok(verdict)
     }
 
+    async fn approve(
+        &mut self,
+        detail: String,
+        persist: bool,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<GrantAnswer> {
+        let Some(shared) = self.steer_shared.clone() else {
+            return Ok(GrantAnswer::Deny);
+        };
+        let detail: String = detail.chars().take(160).collect();
+        self.push_event(
+            events,
+            emit,
+            Event::Approval {
+                detail: Some(detail),
+                persist,
+            },
+        )?;
+        let deadline = Instant::now() + Duration::from_secs(600);
+        let decision = loop {
+            if Instant::now() >= deadline {
+                break GrantAnswer::Deny;
+            }
+            let answer = shared.lock().ok().and_then(|mut queue| queue.pop_front());
+            if let Some(input) = answer {
+                break match parse_decision(input.text.trim(), persist) {
+                    Some(decision) => decision,
+                    None => {
+                        self.steer.push_front(input);
+                        GrantAnswer::Deny
+                    }
+                };
+            }
+            tokio::time::sleep(Duration::from_millis(60)).await;
+        };
+        self.push_event(
+            events,
+            emit,
+            Event::Approval {
+                detail: None,
+                persist: false,
+            },
+        )?;
+        Ok(decision)
+    }
+
+    async fn with_grant(
+        &mut self,
+        mut output: Result<ToolOutput>,
+        call: &ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Result<ToolOutput>> {
+        for _ in 0..2 {
+            let Some(grant) = needed_grant(&output) else {
+                break;
+            };
+            if matches!(grant, Grant::Write(_)) && self.tools.is_read_only() {
+                break;
+            }
+            if self.steer_shared.is_none() {
+                break;
+            }
+            let persist = matches!(grant, Grant::Write(_));
+            match self.approve(grant.prompt(), persist, events, emit).await? {
+                GrantAnswer::Deny => break,
+                GrantAnswer::Allow => self.apply_grant(&grant, false, events, emit)?,
+                GrantAnswer::Always => self.apply_grant(&grant, true, events, emit)?,
+            }
+            output = self.tools.execute_outcome(call).await;
+        }
+        Ok(output)
+    }
+
+    fn apply_grant(
+        &mut self,
+        grant: &Grant,
+        standing: bool,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        match grant {
+            Grant::Write(path) => {
+                self.allow_path(&path.to_string_lossy())?;
+                let mut text = format!("writes allowed under {} for this session", path.display());
+                if standing {
+                    match crate::config::save_sandbox_write(
+                        &crate::config::path()?,
+                        &crate::config::sandbox_entry(path),
+                    ) {
+                        Ok(()) => {
+                            text = format!(
+                                "writes allowed under {} and saved to [sandbox] write",
+                                path.display()
+                            );
+                        }
+                        Err(error) => {
+                            text = format!("{text}; standing grant not saved: {error}");
+                        }
+                    }
+                }
+                self.push_event(events, emit, Event::Note { text })?;
+            }
+            Grant::Network => {
+                self.set_network(true)?;
+                self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: "network allowed for this session".to_string(),
+                    },
+                )?;
+            }
+        }
+        Ok(())
+    }
+
     async fn execute_calls(
         &mut self,
         planned: Vec<Call>,
@@ -1023,11 +1164,51 @@ impl<P: Provider> Loop<P> {
                             text,
                             success: true,
                             mutated: false,
+                            grant: None,
                         }),
                         None,
                     )
                 } else {
-                    (self.tools.execute_outcome(&call).await, None)
+                    let approval = self.manual && call.function.name == "run_command";
+                    let denied = if approval {
+                        let detail =
+                            serde_json::from_str::<serde_json::Value>(&call.function.arguments)
+                                .ok()
+                                .and_then(|value| {
+                                    value
+                                        .get("command")
+                                        .and_then(serde_json::Value::as_str)
+                                        .map(str::to_string)
+                                })
+                                .unwrap_or_else(|| call.function.name.clone());
+                        if self.approve(detail, false, events, emit).await? != GrantAnswer::Deny {
+                            self.tools.approve_once();
+                            None
+                        } else {
+                            Some(ToolOutput {
+                                text: "summon: the user denied this command".to_string(),
+                                success: false,
+                                mutated: false,
+                                grant: None,
+                            })
+                        }
+                    } else {
+                        None
+                    };
+                    (
+                        if let Some(denied) = denied {
+                            Ok(denied)
+                        } else {
+                            self.with_grant(
+                                self.tools.execute_outcome(&call).await,
+                                &call,
+                                events,
+                                emit,
+                            )
+                            .await?
+                        },
+                        None,
+                    )
                 };
                 if let Some(child_usage) = child_usage {
                     usage.add(&child_usage);
@@ -1263,7 +1444,7 @@ impl<P: Provider> Loop<P> {
         self.session
             .abort(&reason, Some(&receipt.text))
             .map_err(super::session_err)?;
-        self.spent_tokens = self.session.replay().spent_tokens;
+        self.sync_usage(&mut emit);
         self.hydrate();
         Ok(Turn {
             text: reason,
@@ -1281,6 +1462,12 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn hydrate(&mut self) {
         self.history = self.session.replay().history;
+    }
+
+    pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {
+        let (spent, tokens) = self.session.usage();
+        self.spent_tokens = spent;
+        emit(&Event::Unreported { tokens });
     }
 
     pub(super) fn push_event(

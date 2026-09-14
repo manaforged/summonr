@@ -4,6 +4,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::reader::Reader;
 use super::{Cmd, Msg, Worker, set_mode};
+use crate::command::argument;
 use crate::durable::log::{self, Line};
 use crate::provider::UserInput;
 use crate::tui::Activity;
@@ -90,26 +91,28 @@ impl Worker {
         if line.is_empty() {
             return Some(true);
         }
+        let argument = match argument(line) {
+            Ok(argument) => argument,
+            Err(error) => {
+                self.fail(&error);
+                return Some(true);
+            }
+        };
         let handled = match crate::parse_command(line) {
             Some(crate::SlashCommand::Exit) => {
                 drop(self.ui.send(Msg::Bye));
                 return Some(false);
             }
             Some(crate::SlashCommand::Help) => {
-                self.system(&super::super::help_text());
+                drop(self.ui.send(Msg::OpenHelp));
                 true
             }
-            Some(crate::SlashCommand::Auth) => {
-                let name = argument(line).unwrap_or(&self.endpoint);
-                self.auth(name);
-                true
-            }
-            Some(crate::SlashCommand::Login) => {
-                let name = argument(line).unwrap_or(&self.endpoint).to_string();
+            Some(crate::SlashCommand::Auth | crate::SlashCommand::Login) => {
+                let name = argument.unwrap_or(&self.endpoint).to_string();
                 return Some(self.login(&name).await);
             }
             Some(crate::SlashCommand::Workflow) => {
-                self.workflow(argument(line));
+                self.workflow(argument);
                 true
             }
             Some(crate::SlashCommand::Clear) => self.clear(),
@@ -117,8 +120,7 @@ impl Worker {
             Some(crate::SlashCommand::PlanAccept) => self.accept_plan(),
             Some(crate::SlashCommand::PlanReject) => self.reject_plan(),
             Some(crate::SlashCommand::Plan) => {
-                let plan = !self.loop_.is_plan();
-                set_mode(&mut self.loop_, &self.ui, plan);
+                set_mode(&mut self.loop_, &self.ui, true);
                 true
             }
             Some(crate::SlashCommand::Auto) => {
@@ -126,25 +128,22 @@ impl Worker {
                 true
             }
             Some(crate::SlashCommand::Goal) => {
-                let text = line.trim_start_matches("/goal").trim().to_string();
-                if text.is_empty() {
-                    self.system("/goal <objective> — work toward it across turns; gates come from .mage/check.toml");
-                    true
-                } else {
-                    return Some(self.goal(&text).await);
-                }
+                return Some(self.goal(argument.unwrap_or_default()).await);
             }
             Some(crate::SlashCommand::Session) => self.session(),
-            Some(crate::SlashCommand::Resume) => self.resume(argument(line)),
+            Some(crate::SlashCommand::Resume) => self.resume(argument),
             Some(crate::SlashCommand::Retry) => return Some(self.retry().await),
-            Some(crate::SlashCommand::Name) => self.name(argument(line)),
+            Some(crate::SlashCommand::Name) => self.name(argument),
             Some(crate::SlashCommand::Steps) => {
-                return Some(self.steps(argument(line).unwrap_or_default()).await);
+                return Some(self.steps(argument.unwrap_or_default()).await);
             }
-            Some(crate::SlashCommand::Effort) => self.effort(argument(line)),
+            Some(crate::SlashCommand::Effort) => self.effort(argument),
+            Some(crate::SlashCommand::Network) => self.network(argument),
+            Some(crate::SlashCommand::Write) => self.write(argument),
+            Some(crate::SlashCommand::Approve) => self.approve(argument),
             Some(crate::SlashCommand::Fork) => self.fork(),
             Some(crate::SlashCommand::Agents) => self.agents(),
-            Some(crate::SlashCommand::Modules) => self.modules(argument(line)),
+            Some(crate::SlashCommand::Modules) => self.modules(argument),
             Some(_) => self.unknown(line).unwrap_or(true),
             None if line.starts_with('/') => self.unknown(line).unwrap_or(true),
             _ => false,
@@ -156,6 +155,73 @@ impl Worker {
         match self.loop_.clear_history() {
             Ok(()) => drop(self.ui.send(Msg::Cleared)),
             Err(error) => self.fail(&error.to_string()),
+        }
+        true
+    }
+
+    fn network(&mut self, argument: Option<&str>) -> bool {
+        match argument.map(str::trim) {
+            None | Some("") => {
+                let state = if !self.loop_.has_sandbox() {
+                    "sandbox off — commands already have network"
+                } else if self.loop_.denies_network() {
+                    "network denied in the sandbox — /net on for this session or /net once"
+                } else {
+                    "network allowed for this session — /net off to deny again"
+                };
+                self.system(state);
+            }
+            Some("on") => match self.loop_.set_network(true) {
+                Ok(()) => self.system("network allowed for this session"),
+                Err(error) => self.fail(&error.to_string()),
+            },
+            Some("off") => match self.loop_.set_network(false) {
+                Ok(()) => self.system("network denied for this session"),
+                Err(error) => self.fail(&error.to_string()),
+            },
+            Some("once") => {
+                self.loop_.allow_network_once();
+                self.system("network allowed for the next command");
+            }
+            Some(_) => self.system("/net on | off | once"),
+        }
+        true
+    }
+
+    fn write(&mut self, argument: Option<&str>) -> bool {
+        match argument.map(str::trim) {
+            None | Some("") => {
+                let roots = self.loop_.write_roots();
+                let list = if roots.is_empty() {
+                    "no extra write paths — /write PATH".to_string()
+                } else {
+                    roots.join(" · ")
+                };
+                self.system(&format!("write paths: {list}"));
+            }
+            Some(path) => match self.loop_.allow_path(path) {
+                Ok(()) => self.system(&format!("writes allowed under {path} for this session")),
+                Err(error) => self.fail(&error.to_string()),
+            },
+        }
+        true
+    }
+
+    fn approve(&mut self, argument: Option<&str>) -> bool {
+        match argument.map(str::trim) {
+            Some("on") => {
+                self.loop_.set_manual(true);
+                self.system("manual approval on — answer y or n before each shell command");
+            }
+            Some("off") => {
+                self.loop_.set_manual(false);
+                self.system("manual approval off — shell commands run without asking");
+            }
+            None | Some("") => {
+                let state = if self.loop_.manual() { "on" } else { "off" };
+                self.system(&format!("manual approval {state} — /approve on|off"));
+            }
+            Some(_) => self.system("/approve on | off"),
         }
         true
     }
@@ -191,12 +257,12 @@ impl Worker {
             return true;
         }
         set_mode(&mut self.loop_, &self.ui, false);
-        self.system("Plan accepted. Your next prompt executes in that Work.");
+        self.system("Plan accepted. Send a prompt to start implementing it.");
         true
     }
 
     fn reject_plan(&mut self) -> bool {
-        if let Err(error) = self.loop_.abandon_work("plan rejected by the user") {
+        if let Err(error) = self.loop_.reject_plan() {
             self.fail(&error.to_string());
             return true;
         }
@@ -281,6 +347,7 @@ impl Worker {
                 drop(self.ui.send(Msg::Reset));
                 self.replay();
                 drop(self.ui.send(Msg::Session(id)));
+                self.send_settings();
                 self.system(&format!(
                     "Branched after turn {}. Workspace files are unchanged. Use /tree to return to the parent.",
                     turn + 1
@@ -427,6 +494,7 @@ impl Worker {
     async fn compact(&mut self) -> bool {
         self.system("Compacting context. Press Escape to cancel.");
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
+        let ui = self.ui.clone();
         let outcome = attend(
             Inbox {
                 cmd: &mut self.cmd,
@@ -435,7 +503,8 @@ impl Worker {
                 deferred: &mut self.deferred,
                 ui: &self.ui,
             },
-            self.loop_.compact(),
+            self.loop_
+                .compact_with(move |event| drop(ui.send(Msg::Event(event.clone())))),
         )
         .await;
         if !matches!(outcome, Attended::Done(Ok(_))) {
@@ -460,7 +529,7 @@ impl Worker {
                 command,
                 Cmd::Command(line)
                     if line.trim_start().starts_with(head)
-                        && matches!(argument(line), Some("clear" | "stop" | "off" | "cancel"))
+                        && matches!(argument(line), Ok(Some("clear" | "stop" | "off" | "cancel")))
             )
         });
         position.is_some_and(|index| self.deferred.remove(index).is_some())
@@ -679,12 +748,6 @@ impl Worker {
         }
         true
     }
-}
-
-fn argument(line: &str) -> Option<&str> {
-    line.split_once(char::is_whitespace)
-        .map(|(_, value)| value.trim())
-        .filter(|value| !value.is_empty())
 }
 
 pub(super) fn shell_prefix(line: &str) -> Option<(bool, &str)> {

@@ -17,7 +17,22 @@ use sigil_tui::{EventRouter, Host, Screen, present};
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::{app::App, model::Entry, tests::info, view::root};
-use super::{CopyStatus, Terminal, edit, mouse, osc52, read_event, restore, status};
+use super::{CopyStatus, Terminal, edit, edit_external, mouse, osc52, read_event, restore, status};
+
+#[test]
+fn unchanged_external_drafts_keep_all_whitespace() {
+    let editor = if cfg!(windows) {
+        "cmd /D /C exit 0"
+    } else {
+        "sh -c 'exit 0'"
+    };
+    for original in ["", "keep café \n\n", "日本語\r\n\r\n"] {
+        assert_eq!(
+            edit_external(original, editor).expect("unchanged draft"),
+            original
+        );
+    }
+}
 
 #[test]
 fn terminal_clipboard_requests_are_unconfirmed_and_propagate_output_failures() {
@@ -39,13 +54,19 @@ fn terminal_clipboard_requests_are_unconfirmed_and_propagate_output_failures() {
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.replace("retain this draft".to_string());
         app.copied("first\nsecond", CopyStatus::Requested);
-        assert!(app.transcript.peek().contains("copy requested for 2 lines"));
-        assert!(app.transcript.peek().contains("unconfirmed"));
-        assert!(!app.transcript.peek().contains("copied"));
+        assert!(
+            app.model
+                .borrow()
+                .transcript()
+                .contains("copy requested for 2 lines")
+        );
+        assert!(app.model.borrow().transcript().contains("unconfirmed"));
+        assert!(!app.model.borrow().transcript().contains("copied"));
         app.copied("first\nsecond", CopyStatus::Confirmed);
         assert!(
-            app.transcript
-                .peek()
+            app.model
+                .borrow()
+                .transcript()
                 .contains("copied 2 lines to the clipboard")
         );
         assert_eq!(app.draft.peek(), "retain this draft");
@@ -224,6 +245,7 @@ fn native_pastes_show_small_drafts_and_fold_at_eight_lines() {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(80, 24);
+            app.replace("draft stays ".to_string());
             let mut terminal = ManuallyDrop::new(Terminal {
                 paste: Default::default(),
                 out: BufWriter::new(stdout()),
@@ -276,9 +298,21 @@ fn native_pastes_show_small_drafts_and_fold_at_eight_lines() {
                     frame.text()
                 );
             }
+            let pasted = app.draft.peek();
+            for (modifiers, expected) in [
+                (KeyModifiers::CONTROL, "draft stays "),
+                (KeyModifiers::CONTROL | KeyModifiers::SHIFT, pasted.as_str()),
+            ] {
+                let key = sigil_tui::map_key(&KeyEvent::new(KeyCode::Char('z'), modifiers))
+                    .expect("history shortcut");
+                screen
+                    .frame(&mut host, &mut router, [key], (80, 24))
+                    .expect("paste history");
+                assert_eq!(app.draft.peek(), expected);
+            }
             app.submit();
             assert!(
-                matches!(rx.try_recv(), Ok(crate::tui::Cmd::Submit(input)) if input.text == text.replace('\r', "\n"))
+                matches!(rx.try_recv(), Ok(crate::tui::Cmd::Submit(input)) if input.text == format!("draft stays {}", text.replace('\r', "\n")))
             );
         });
     }

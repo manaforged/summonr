@@ -2,8 +2,9 @@ use std::path::PathBuf;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
+use crate::command::Category;
 use crate::error::Result;
-use crate::prefs::Prefs;
+use crate::prefs::{Hotkey, Hotkeys, Prefs};
 use crate::provider::Client;
 use crate::provider::UserInput;
 use crate::runtime::Loop;
@@ -36,6 +37,7 @@ pub enum Msg {
     Reset,
     Mode(bool),
     OpenSettings,
+    OpenHelp,
     Settings(Snapshot),
     Model {
         model: String,
@@ -63,6 +65,7 @@ pub enum Msg {
     Peers(usize),
     Files(Vec<String>),
     Diff(crate::diff::Diff),
+    DiffFailed(String),
     Trees(Vec<crate::worktree::Status>),
     Changed(Vec<String>),
     Edited(Vec<String>),
@@ -79,8 +82,9 @@ pub enum Msg {
         result: std::result::Result<(), String>,
     },
     Patch {
+        root: Option<PathBuf>,
         path: String,
-        text: String,
+        result: std::result::Result<String, String>,
     },
     Resume(String),
     Bye,
@@ -172,6 +176,7 @@ pub struct Snapshot {
     pub model: String,
     pub relay: Option<String>,
     pub plan: bool,
+    pub pending_plan: bool,
     pub verify: Option<String>,
     pub strict: bool,
     pub endpoint: String,
@@ -204,13 +209,22 @@ pub fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
     }
     let query = typed.to_lowercase();
     let needle = query.trim_start_matches('/');
-    let prefix: Vec<_> = crate::command_specs()
+    let mut prefix: Vec<_> = crate::command_specs()
         .iter()
-        .filter(|spec| needle.is_empty() || spec.name.trim_start_matches('/').starts_with(needle))
-        .map(|spec| (spec.name, spec.description))
+        .filter(|spec| {
+            if needle.is_empty() {
+                matches!(spec.category, Category::Common | Category::Contextual)
+            } else {
+                spec.name.trim_start_matches('/').starts_with(needle)
+            }
+        })
         .collect();
     if !prefix.is_empty() {
-        return prefix;
+        prefix.sort_by_key(|spec| spec.category == Category::Shortcuts);
+        return prefix
+            .into_iter()
+            .map(|spec| (spec.name, spec.description))
+            .collect();
     }
     if needle.contains(char::is_whitespace) {
         return Vec::new();
@@ -220,17 +234,24 @@ pub fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
         .enumerate()
         .filter_map(|(index, spec)| {
             let name = spec.name.trim_start_matches('/');
-            rank(name, spec.description, needle)
-                .map(|score| (score, index, spec.name, spec.description))
+            rank(name, spec.description, needle).map(|score| {
+                (
+                    score,
+                    spec.category == Category::Shortcuts,
+                    index,
+                    spec.name,
+                    spec.description,
+                )
+            })
         })
         .collect();
-    matches.sort_unstable_by_key(|(score, index, _, _)| (*score, *index));
+    matches.sort_unstable_by_key(|(score, shortcut, index, _, _)| (*score, *shortcut, *index));
     if let Some(best) = matches.first().map(|row| row.0) {
-        matches.retain(|(score, _, _, _)| *score == best);
+        matches.retain(|(score, _, _, _, _)| *score == best);
     }
     matches
         .into_iter()
-        .map(|(_, _, name, description)| (name, description))
+        .map(|(_, _, _, name, description)| (name, description))
         .collect()
 }
 
@@ -299,16 +320,20 @@ fn fmt_tokens(tokens: u64) -> String {
     }
 }
 
-fn context(round: Option<&Round>, window: Option<u32>) -> String {
+fn context(round: Option<&Round>, window: Option<u32>, compact: bool) -> String {
     let Some(window) = window.filter(|window| *window > 0) else {
         return "not set".to_string();
     };
     let used = round.map_or(0, Round::total).min(window);
+    let percent = u64::from(used) * 100 / u64::from(window);
+    if compact {
+        return format!("{percent}%");
+    }
     format!(
         "{} / {} · {}% used",
         fmt_tokens(u64::from(used)),
         fmt_tokens(u64::from(window)),
-        u64::from(used) * 100 / u64::from(window),
+        percent,
     )
 }
 
@@ -352,51 +377,58 @@ fn after_cd(command: &str) -> &str {
     rest
 }
 
-fn help_text() -> String {
+fn help_text(keys: &Hotkeys) -> String {
     let specs = crate::command_specs();
     let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
-    let mut lines: Vec<String> = vec!["commands".to_string()];
-    lines.extend(
-        specs
-            .iter()
-            .map(|spec| format!("  {:<width$}  {}", spec.name, spec.description)),
-    );
+    let mut lines = Vec::new();
+    for category in Category::ALL {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(category.title().to_string());
+        lines.extend(
+            specs
+                .iter()
+                .filter(|spec| spec.category == category)
+                .map(|spec| format!("  {:<width$}  {}", spec.name, spec.description)),
+        );
+    }
     lines.extend(
         [
-            "",
-            "composer",
-            "  enter        send, or steer the running turn",
-            "  tab          complete a /command or @path; queue while busy",
-            "  ctrl+q       pull queued input back into the editor",
-            "  shift+tab    switch between auto and plan mode",
-            "  esc          cancel; twice on an idle composer opens /tree",
-            "  ctrl+c       clear the draft; twice on an empty draft quits",
-            "  ctrl+d       quit when the draft is empty",
-            "  ctrl+j       newline (default; editable in options)",
-            "  ctrl+g       edit the draft in $EDITOR (default)",
-            "  alt+←/→      word left or right · alt+b/f the same",
-            "  ctrl+w       delete the word before the caret · alt+d after",
-            "  ctrl+u/k     delete to the line start or end",
-            "  ↑↓           recall prompts at the first or last line",
-            "  @path        attach text or an image",
-            "  !cmd         run in the sandbox and send the output; !!cmd runs only",
-            "  a paste of 8+ lines folds into [pasted N lines #k] until sent",
-            "",
-            "interface",
-            "  ctrl+o       options (hotkeys are editable there)",
-            "  ctrl+f       search the conversation · /search TEXT",
-            "  ctrl+r       prompt history · /history TEXT",
-            "  ctrl+e       files · ctrl+l ledger · ctrl+x diff · /pane worktrees",
-            "  ctrl+p       hide or show the pane · ctrl+→ focus it · ctrl+← composer",
-            "  ctrl+y       copy the last reply · /copy all · ctrl+t select text",
-            "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll",
-            "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc",
-            "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place",
-            "  diff         t last turn only · c copy the patch",
-            "  sessions     ↑↓ · enter resume · tab scope · ctrl+d twice deletes · esc",
-            "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save",
-        ]
-        .map(str::to_string),
+            "".to_string(),
+            "composer".to_string(),
+            "  enter        send, or steer the running turn".to_string(),
+            "  tab          complete a /command or @path; queue while busy".to_string(),
+            "  ctrl+q       pull queued input back into the editor".to_string(),
+            "  shift+tab    switch between auto and plan mode".to_string(),
+            "  esc          cancel; twice on an idle composer opens /tree".to_string(),
+            "  ctrl+c       clear the draft; twice on an empty draft quits".to_string(),
+            "  ctrl+d       quit when the draft is empty".to_string(),
+            format!("  {:<12} newline", keys.label(Hotkey::Newline)),
+            format!("  {:<12} edit the draft in $EDITOR", keys.label(Hotkey::Editor)),
+            "  ctrl+z/y     undo or redo the draft".to_string(),
+            "  alt+←/→      word left or right · alt+b/f the same".to_string(),
+            "  ctrl+w       delete the word before the caret · alt+d after".to_string(),
+            "  ctrl+u/k     delete to the line start or end".to_string(),
+            "  ↑↓           recall prompts at the first or last line".to_string(),
+            "  @path        attach text or an image".to_string(),
+            "  !cmd         run in the sandbox and send the output; !!cmd runs only".to_string(),
+            "  a paste of 8+ lines folds into [pasted N lines #k] until sent".to_string(),
+            "".to_string(),
+            "interface".to_string(),
+            format!("  {:<12} options (hotkeys are editable there)", keys.label(Hotkey::Options)),
+            format!("  {:<12} search the conversation · /search TEXT", keys.label(Hotkey::Search)),
+            format!("  {:<12} prompt history · /history TEXT", keys.label(Hotkey::History)),
+            format!("  {:<12} files · {} ledger · {} diff · /pane worktrees", keys.label(Hotkey::Files), keys.label(Hotkey::Ledger), keys.label(Hotkey::Diff)),
+            format!("  {:<12} hide or show the pane · ctrl+→ focus it · ctrl+← composer", keys.label(Hotkey::Pane)),
+            format!("  {:<12} copy the last reply · /copy all · {} select text", keys.label(Hotkey::Copy), keys.label(Hotkey::Select)),
+            "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll".to_string(),
+            "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
+            "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),
+            "  diff         t last turn only · c copy the patch".to_string(),
+            "  sessions     ↑↓ · enter resume · tab scope · ctrl+d twice deletes · esc".to_string(),
+            "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save".to_string(),
+        ],
     );
     lines.join("\n")
 }

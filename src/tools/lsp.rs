@@ -806,6 +806,7 @@ impl ToolRegistry {
             text: format!("diagnostics: {text}"),
             success: !text.starts_with("error "),
             mutated: false,
+            grant: None,
         })
     }
 
@@ -879,6 +880,7 @@ impl ToolRegistry {
             text: format!("renamed {}", names.join(", ")),
             success: true,
             mutated: true,
+            grant: None,
         })
     }
 

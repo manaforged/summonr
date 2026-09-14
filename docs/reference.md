@@ -56,13 +56,13 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`; native wires `anthropic`
+`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `muse`; native wires `anthropic`
 (Messages) and `gemini`. `summon login copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
 key (`KIMI_CODING_API_KEY`, `KIMI_API_KEY`, or `MOONSHOT_API_KEY`) or a
 token in `~/.kimi-code/credentials/kimi-code.json`. Environment keys are the host's own
 (`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
-`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Overlay `wire = "anthropic"`
+`META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Overlay `wire = "anthropic"`
 on any `[endpoint.NAME]` row. See [`config.example.toml`](../config.example.toml).
 
 ```sh
@@ -259,8 +259,10 @@ While a turn runs, the composer status also counts waiting input
 rings once when a turn ends while the terminal is not focused.
 
 `/tools` switches tool output between compact and full; `/reasoning`
-shows or hides streamed reasoning; `/model next` and `/model prev`
-step through the ready seats without the picker.
+sets chain of thought to `collapsed` (the default: one dim line with
+a line count), `expanded`, or `off`; `/receipts` sets turn receipts
+to `off` (the default), `collapsed`, or `expanded`; `/model next`
+and `/model prev` step through the ready seats without the picker.
 
 `/export` writes the session as markdown to `~/.mage/exports/<id>.md`;
 `/export PATH` writes it where you say. It works while a turn runs.
@@ -425,6 +427,39 @@ A missing backend is a hard stop. `--net` allows sockets inside the sandbox;
 it does not change file permissions. Model requests and language servers use
 host networking separately from shell commands.
 
+When a command needs the network, `/net on` allows sockets for the rest of the
+session, `/net once` allows only the next command, and `/net off` denies again.
+The interface also prompts when a sandboxed command fails with a network error:
+`[ allow ]` turns the session network on and retries the command; `[ deny ]`
+returns the failure to the model. `/net` alone reports the current state.
+
+`/approve on` makes the harness ask before each shell command. A bar appears
+above the composer with `[ allow ]` and `[ deny ]` buttons; click one, or press
+`y` or `n`. An approved command runs uncontained with your account's access, so
+review it first. `/approve off` returns to the sandbox; `/approve` alone shows
+the mode. A command the user denies is reported to the model as a failed tool.
+
+A path outside the workspace is writable only when the user approves it.
+The interface prompts on a grantable denial with the same bar
+(`approve ~/.cargo/bin` plus `[ allow ]` / `[ always ]` / `[ deny ]`).
+`[ allow ]` or `y` grants the directory for this session and retries the tool.
+`[ always ]` or `Y` also appends the path to `[sandbox] write` in
+`~/.mage/config.toml`. `[ deny ]` or `n` returns the denial to the model.
+`/write PATH` grants a directory for this session without a prompt; `/write`
+alone lists them.
+Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
+target those paths, and the OS sandbox allows the write. `write_file` and the
+edit tools accept files under them too, so a session can edit a dotfile or a
+sibling repo once the path is approved. `~` and `$HOME` expand before the check.
+Hard denials never prompt: force-push, `sudo`, `rm -rf /`, deny-list matches,
+and protected paths (`.env`, `.git/hooks`, `.git/config`, `~/.ssh`, `~/.gnupg`,
+`~/.mage`, shell startup files). Reads of `.env` and `~/.ssh` / `~/.gnupg` are
+blocked too.
+
+A sandboxed `cargo`, `rustup`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, or `go`
+command that fails with `Operation not permitted` offers the matching home
+directory (`~/.cargo`, `~/.npm`, or `GOPATH` / `~/go`) as the grant.
+
 `--no-sandbox` also bypasses file allow/write restrictions and permits file tools
 outside the workspace. `--plan` still limits writes to the write_file tool when combined with it,
 and refuses shell commands because read-only inspection requires a sandbox.
@@ -465,6 +500,26 @@ background commands; file tools still use the list.
   model already knows how to run through `run_command`; a skill under
   `~/.mage/skills` or `.mage/skills` carries instructions; the bus carries
   mail between sessions.
+
+## Theme
+
+`theme` in `config.toml` selects a preset accent: `space` (blue) or `fantasy`
+(gold). Every other color is a named token you can override in a theme file:
+
+```toml
+accent = "#698cd2"
+background = "#0c0c14"
+code_bg = "#1e202a"
+```
+
+Copy [`theme.example.toml`](../theme.example.toml) to `~/.mage/theme.toml`, or to
+`<workspace>/.mage/theme.toml` for one project. Unset tokens keep the preset.
+Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
+`/theme` toggles the preset and re-applies both theme files. The tokens are
+`base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
+`green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,
+`code_bg`, `thought_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,
+`code_string`, and `code_keyword`.
 
 ## Herdr
 

@@ -1,10 +1,11 @@
 use std::collections::HashMap;
+use std::ops::{Deref, DerefMut};
 use std::time::Instant;
 
 use image::load_from_memory;
 use sigil::prelude::ImageSource;
 
-use crate::prefs::{Prefs, ToolOutput};
+use crate::prefs::{Prefs, Reasoning, ToolOutput};
 use crate::tools::Event;
 
 use super::super::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
@@ -14,6 +15,7 @@ use super::speed::Speed;
 pub(super) enum Entry {
     User(String),
     Thinking(String),
+    Receipt(String),
     Assistant {
         text: String,
         done: bool,
@@ -42,6 +44,59 @@ pub(super) enum Entry {
     },
 }
 
+#[derive(Clone, Default)]
+pub(super) struct Entries {
+    inner: Vec<Entry>,
+    pub(super) stamp: u64,
+}
+
+impl Entries {
+    pub(super) fn invalidate(&mut self) {
+        self.stamp = self.stamp.wrapping_add(1);
+    }
+
+    pub(super) fn push(&mut self, entry: Entry) {
+        self.invalidate();
+        self.inner.push(entry);
+    }
+
+    pub(super) fn clear(&mut self) {
+        self.invalidate();
+        self.inner.clear();
+    }
+}
+
+impl Deref for Entries {
+    type Target = [Entry];
+
+    fn deref(&self) -> &[Entry] {
+        &self.inner
+    }
+}
+
+impl DerefMut for Entries {
+    fn deref_mut(&mut self) -> &mut [Entry] {
+        self.invalidate();
+        &mut self.inner
+    }
+}
+
+impl<'a> IntoIterator for &'a Entries {
+    type Item = &'a Entry;
+    type IntoIter = std::slice::Iter<'a, Entry>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.inner.iter()
+    }
+}
+
+impl Extend<Entry> for Entries {
+    fn extend<I: IntoIterator<Item = Entry>>(&mut self, iter: I) {
+        self.invalidate();
+        self.inner.extend(iter);
+    }
+}
+
 #[derive(Clone)]
 pub(super) struct View {
     pub(super) path: String,
@@ -54,11 +109,12 @@ pub(super) struct View {
 #[derive(Clone)]
 pub(super) struct Model {
     pub(super) session: String,
-    pub(super) entries: Vec<Entry>,
+    pub(super) entries: Entries,
     pub(super) ledger: Vec<String>,
     pub(super) files: Vec<String>,
     pub(super) diff: crate::diff::Diff,
-    pub(super) patch: Option<(String, String)>,
+    pub(super) diff_error: Option<String>,
+    pub(super) patch: Option<(String, Result<String, String>)>,
     pub(super) trees: Vec<crate::worktree::Status>,
     pub(super) view: Option<View>,
     pub(super) recent: Vec<String>,
@@ -68,6 +124,7 @@ pub(super) struct Model {
     pub(super) completion_tokens: u64,
     pub(super) reasoning_tokens: u64,
     pub(super) cached_tokens: u64,
+    pub(super) unreported_tokens: u64,
     pub(super) rounds: usize,
     pub(super) spinner: usize,
     pub(super) speed: Speed,
@@ -94,10 +151,11 @@ impl Model {
     pub(super) fn new(info: &Info) -> Self {
         Self {
             session: info.session.clone(),
-            entries: Vec::new(),
+            entries: Entries::default(),
             ledger: Vec::new(),
             files: Vec::new(),
             diff: crate::diff::Diff::default(),
+            diff_error: None,
             patch: None,
             trees: Vec::new(),
             view: None,
@@ -108,6 +166,7 @@ impl Model {
             completion_tokens: 0,
             reasoning_tokens: 0,
             cached_tokens: 0,
+            unreported_tokens: 0,
             rounds: 0,
             spinner: 0,
             speed: Speed::default(),
@@ -142,7 +201,7 @@ impl Model {
             }),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::Bye => return false,
-            Msg::Thinking(text) if !self.prefs.reasoning => {
+            Msg::Thinking(text) if self.prefs.reasoning == Reasoning::Off => {
                 self.speed.delta(text.chars().count(), Instant::now());
                 self.live_tool = Some(("thinking".to_string(), String::new()));
             }
@@ -185,12 +244,13 @@ impl Model {
                 self.completion_tokens = 0;
                 self.reasoning_tokens = 0;
                 self.cached_tokens = 0;
+                self.unreported_tokens = 0;
                 self.rounds = 0;
                 self.live_tool = None;
                 self.speed = Speed::default();
             }
             Msg::Mode(plan) => self.snapshot.plan = plan,
-            Msg::OpenSettings => {}
+            Msg::OpenSettings | Msg::OpenHelp => {}
             Msg::Settings(snapshot) => self.snapshot = snapshot,
             Msg::Model { model, relay } => {
                 self.model = model;
@@ -204,7 +264,15 @@ impl Model {
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
             Msg::Files(files) => self.files = files,
-            Msg::Diff(diff) => self.diff = diff,
+            Msg::Diff(diff) => {
+                self.diff = diff;
+                self.diff_error = None;
+            }
+            Msg::DiffFailed(error) => {
+                self.diff = crate::diff::Diff::default();
+                self.patch = None;
+                self.diff_error = Some(error);
+            }
             Msg::Trees(trees) => self.trees = trees,
             Msg::Changed(_) => {}
             Msg::Edited(paths) => self.recent = paths,
@@ -224,7 +292,7 @@ impl Model {
                 })
             }
             Msg::Saved { .. } => {}
-            Msg::Patch { path, text } => self.patch = Some((path, text)),
+            Msg::Patch { path, result, .. } => self.patch = Some((path, result)),
             Msg::Resume(_) => {}
         }
         true
@@ -252,7 +320,7 @@ impl Model {
             _ => text,
         };
         if !receipt.is_empty() {
-            self.entries.push(Entry::System(receipt.to_string()));
+            self.entries.push(Entry::Receipt(receipt.to_string()));
         }
     }
 
@@ -304,7 +372,7 @@ impl Model {
             Event::Verify { command, passed } => {
                 self.entries.push(Entry::Verify { command, passed });
             }
-            Event::Receipt { receipt } => self.entries.push(Entry::System(receipt.text)),
+            Event::Receipt { receipt } => self.entries.push(Entry::Receipt(receipt.text)),
             Event::Work { progress } => {
                 self.ledger = progress.ledger.clone();
                 self.entries.push(Entry::System(progress.to_string()));
@@ -329,7 +397,8 @@ impl Model {
                 prefix_hash,
                 cost,
             ),
-            Event::Delta { .. } | Event::Reasoning { .. } => {}
+            Event::Delta { .. } | Event::Reasoning { .. } | Event::Approval { .. } => {}
+            Event::Unreported { tokens } => self.unreported_tokens = tokens,
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
     }
@@ -451,7 +520,10 @@ impl Model {
             .take_while(|entry| {
                 matches!(
                     entry,
-                    Entry::Assistant { done: false, .. } | Entry::Verify { .. } | Entry::System(_)
+                    Entry::Assistant { done: false, .. }
+                        | Entry::Verify { .. }
+                        | Entry::Receipt(_)
+                        | Entry::System(_)
                 )
             })
             .find_map(|entry| match entry {
@@ -504,6 +576,7 @@ pub(super) fn entry_markdown(entry: &Entry) -> String {
     match entry {
         Entry::User(text) => format!("### You\n{text}"),
         Entry::Thinking(text) => format!("> **Thinking**\n> {}", text.replace('\n', "\n> ")),
+        Entry::Receipt(text) => text.clone(),
         Entry::Assistant { text, .. } => text.clone(),
         Entry::Tool {
             name,

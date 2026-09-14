@@ -137,8 +137,8 @@ fn transcript(app: App) -> NodeBuilder {
                 .gap(16.0),
         )
         .children_reactive(move || {
-            drop(live.transcript.get());
-            let entries: Vec<Entry> = live.model.borrow().entries.clone();
+            let _ = live.panes.get();
+            let entries: Vec<Entry> = live.model.borrow().entries.to_vec();
             let tools = live.model.borrow().prefs.tools;
             let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
             if entries.is_empty() {
@@ -208,6 +208,7 @@ fn row(entry: Entry, tools: ToolOutput) -> NodeBuilder {
             ),
         Entry::Assistant { text: body, .. } => prose(&body, "text-sm text-gray-12"),
         Entry::Thinking(body) => prose(&body, "text-xs text-gray-11"),
+        Entry::Receipt(body) => prose(&body, "text-xs text-gray-11"),
         Entry::Tool {
             name, arg, output, ..
         } => container()
@@ -407,7 +408,7 @@ fn status_strip(app: App) -> NodeBuilder {
             .then(|| model.cached_tokens.saturating_mul(100) / model.prompt_tokens);
         (
             model.snapshot.plan,
-            context(model.usage.last(), model.snapshot.context_window),
+            context(model.usage.last(), model.snapshot.context_window, false),
             model.prompt_tokens.saturating_add(model.completion_tokens),
             cached,
         )

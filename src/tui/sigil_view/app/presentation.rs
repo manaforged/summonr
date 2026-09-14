@@ -70,7 +70,7 @@ pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
         snapshot.endpoint,
         snapshot.model,
         prefs.theme,
-        if prefs.reasoning { "on" } else { "off" },
+        prefs.reasoning.name(),
         prefs.tools.name(),
         if prefs.bus { "on" } else { "off" },
     )

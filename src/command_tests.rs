@@ -1,4 +1,47 @@
-use super::{SlashCommand, parse_command};
+use super::{SlashCommand, argument, parse_command};
+
+#[test]
+fn arguments_preserve_paths_and_text_and_reject_unsupported_input() {
+    for line in [
+        r#"/view "NOTES with spaces.md""#,
+        "/view 'NOTES with spaces.md'",
+        "/view NOTES with spaces.md",
+    ] {
+        assert_eq!(argument(line), Ok(Some("NOTES with spaces.md")));
+    }
+    assert_eq!(
+        argument(r#"/view "C:\Users\A B\notes.md""#),
+        Ok(Some(r"C:\Users\A B\notes.md"))
+    );
+    assert_eq!(
+        argument(r#"/layout "chat | files 30%""#),
+        Ok(Some("chat | files 30%"))
+    );
+    assert_eq!(argument("  /plan  accept  "), Ok(None));
+    assert_eq!(argument("explain /plan to me"), Ok(None));
+    assert!(
+        argument("  /compactt preserve this draft")
+            .unwrap_err()
+            .contains("Unknown command `/compactt`")
+    );
+    assert_eq!(
+        argument(r#"/goal Explain "these quotes""#),
+        Ok(Some(r#"Explain "these quotes""#))
+    );
+    for line in [
+        "/theme nonsense",
+        "/tools full",
+        "/plan accept now",
+        "/quit later",
+    ] {
+        assert!(argument(line).unwrap_err().contains("takes no arguments"));
+    }
+    assert!(
+        argument("/export \"unfinished.md")
+            .unwrap_err()
+            .contains("Close the quoted argument")
+    );
+}
 
 #[test]
 fn commands_with_arguments_resolve_by_prefix() {
@@ -25,6 +68,10 @@ fn commands_with_arguments_resolve_by_prefix() {
     assert_eq!(parse_command("  /plan  "), Some(SlashCommand::Plan));
     assert_eq!(parse_command("/compact"), Some(SlashCommand::Compact));
     assert_eq!(parse_command("/copy"), Some(SlashCommand::Copy));
+    assert_eq!(parse_command("/net once"), Some(SlashCommand::Network));
+    assert_eq!(parse_command("/write ~/.cargo"), Some(SlashCommand::Write));
+    assert_eq!(parse_command("/approve on"), Some(SlashCommand::Approve));
+    assert_eq!(parse_command("/net"), Some(SlashCommand::Network));
     assert_eq!(parse_command("/resume"), Some(SlashCommand::Resume));
     assert_eq!(
         parse_command("/resume widget spike"),

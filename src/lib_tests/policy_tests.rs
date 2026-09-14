@@ -605,3 +605,133 @@ async fn a_turn_with_a_job_still_running_is_deferred_not_judged() -> Result<()> 
     std::fs::remove_dir_all(workspace)?;
     Ok(())
 }
+
+fn answer_later(queue: Arc<Mutex<std::collections::VecDeque<UserInput>>>, text: &str) {
+    let text = text.to_string();
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if let Ok(mut queue) = queue.lock() {
+            queue.push_back(UserInput::from(text));
+        }
+    });
+}
+
+struct WriteOutside {
+    rounds: AtomicUsize,
+    path: PathBuf,
+}
+
+impl Provider for WriteOutside {
+    fn complete<'a>(
+        &'a self,
+        _request: &'a CompletionRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move {
+            let round = self.rounds.fetch_add(1, Ordering::SeqCst);
+            Ok(match round {
+                0 => AssistantMessage {
+                    tool_calls: vec![call(
+                        "write_file",
+                        &serde_json::json!({"path": self.path, "content": "hello\n"}).to_string(),
+                    )],
+                    ..AssistantMessage::default()
+                },
+                _ => AssistantMessage {
+                    content: Some("wrote outside".to_string()),
+                    ..AssistantMessage::default()
+                },
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn a_write_denial_retries_after_allow() -> Result<()> {
+    let workspace = test_workspace()?;
+    let outside = std::env::temp_dir().join(format!(
+        "mage-grant-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|time| time.as_nanos())
+            .unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&outside)?;
+    let target = outside.join("note.txt");
+    let mut loop_ = Loop::with_session(
+        WriteOutside {
+            rounds: AtomicUsize::new(0),
+            path: target.clone(),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+    let queue = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    loop_.steer_with(queue.clone());
+    answer_later(queue, "y");
+    let turn = loop_.turn("write it").await?;
+    assert_eq!(std::fs::read_to_string(&target)?, "hello\n");
+    assert!(
+        turn.events.iter().any(|event| matches!(
+            event,
+            Event::Approval {
+                detail: Some(_),
+                ..
+            }
+        )),
+        "{:?}",
+        turn.events
+    );
+    assert!(
+        turn.events.iter().any(|event| matches!(
+            event,
+            Event::ToolResult { success: true, output, .. } if output.contains("wrote")
+        )),
+        "{:?}",
+        turn.events
+    );
+    std::fs::remove_dir_all(&outside)?;
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn a_write_denial_stays_denied_after_deny() -> Result<()> {
+    let workspace = test_workspace()?;
+    let outside = std::env::temp_dir().join(format!(
+        "mage-deny-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|time| time.as_nanos())
+            .unwrap_or_default()
+    ));
+    std::fs::create_dir_all(&outside)?;
+    let target = outside.join("note.txt");
+    let mut loop_ = Loop::with_session(
+        WriteOutside {
+            rounds: AtomicUsize::new(0),
+            path: target.clone(),
+        },
+        "test-model",
+        &workspace,
+        "system",
+    )?;
+    let queue = Arc::new(Mutex::new(std::collections::VecDeque::new()));
+    loop_.steer_with(queue.clone());
+    answer_later(queue, "n");
+    let turn = loop_.turn("write it").await?;
+    assert!(!target.exists(), "deny must not create the file");
+    assert!(
+        turn.events.iter().any(|event| matches!(
+            event,
+            Event::ToolResult { success: false, output, .. } if output.contains("/write")
+        )),
+        "{:?}",
+        turn.events
+    );
+    std::fs::remove_dir_all(&outside)?;
+    std::fs::remove_dir_all(workspace)?;
+    Ok(())
+}

@@ -3,7 +3,7 @@ use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
-use super::canvas::{BASE, CYAN, Cell, DIM, GRAY, GREEN, TEXT, cell as metrics, rgb};
+use super::canvas::{Cell, cell as metrics, palette, rgb};
 use super::chat::write_at;
 use super::model::Model;
 use crate::tui::short_session;
@@ -119,11 +119,7 @@ fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App, ticks: u64) {
         ],
         name != "fantasy",
     );
-    let accent = if name == "fantasy" {
-        rgb(255, 208, 96)
-    } else {
-        rgb(105, 140, 210)
-    };
+    let accent = palette().accent;
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
     let elapsed = if revealed {
@@ -159,9 +155,16 @@ fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App, ticks: u64) {
             facts_x,
             facts_y + row as u16,
             &format!("{label:<8} "),
-            DIM,
+            palette().dim,
         );
-        write(cells, cols, facts_x + 9, facts_y + row as u16, value, GRAY);
+        write(
+            cells,
+            cols,
+            facts_x + 9,
+            facts_y + row as u16,
+            value,
+            palette().gray,
+        );
     }
     clear(cells, cols, input_x, input_y, input_width, 3);
     prompt(
@@ -190,7 +193,7 @@ fn compose(cells: &mut [Cell], cols: u16, rows: u16, app: &App, ticks: u64) {
                 left,
                 top.saturating_add(offset as u16),
                 line,
-                TEXT,
+                palette().text,
             );
         }
     }
@@ -315,7 +318,7 @@ fn overlay(cells: &mut [Cell], cols: u16, x: u16, y: u16, text: &str, color: Rgb
         if grapheme != " " {
             let bg = cells
                 .get(usize::from(y) * usize::from(cols) + usize::from(col))
-                .map_or(BASE, |cell| cell.bg);
+                .map_or(palette().base, |cell| cell.bg);
             set(
                 cells,
                 cols,
@@ -354,14 +357,14 @@ fn prompt(
     let [x, y, width] = area;
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
     let glyph = if model.snapshot.plan { '◇' } else { '●' };
-    let mode_color = if model.snapshot.plan { CYAN } else { GREEN };
-    let busy = model.busy_since.is_some();
-    let accent = if model.prefs.theme == "fantasy" {
-        rgb(255, 208, 96)
+    let mode_color = if model.snapshot.plan {
+        palette().cyan
     } else {
-        rgb(105, 140, 210)
+        palette().green
     };
-    let border = if busy { accent } else { GRAY };
+    let busy = model.busy_since.is_some();
+    let accent = palette().accent;
+    let border = if busy { accent } else { palette().gray };
     let right_width = usize::from(width).saturating_sub(6 + mode.len());
     let right = super::chat::ellipsize(&model.model, right_width);
     let fill = usize::from(width).saturating_sub(6 + mode.len() + cell_width(right.as_str()));
@@ -387,7 +390,7 @@ fn prompt(
         x + width.saturating_sub(cell_width(right.as_str()) as u16 + 2),
         y,
         &right,
-        DIM,
+        palette().dim,
     );
     write(cells, cols, x + width.saturating_sub(1), y, "╮", border);
     write(cells, cols, x, y + 1, "│", border);
@@ -405,7 +408,7 @@ fn prompt(
             x + 3,
             y + 1,
             &format!("editing {path} · ctrl+s save · esc leave"),
-            DIM,
+            palette().dim,
         );
     } else if visible {
         write(cells, cols, x + 3, y + 1, "❯ ", mode_color);
@@ -420,7 +423,7 @@ fn prompt(
             usize::from(width.saturating_sub(8)),
             caret,
         );
-        write(cells, cols, x + 5, y + 1, &input, TEXT);
+        write(cells, cols, x + 5, y + 1, &input, palette().text);
     }
     write(cells, cols, x + width.saturating_sub(1), y + 1, "│", border);
     let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
@@ -433,7 +436,7 @@ fn prompt(
         let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
         write(cells, cols, x, y - 1, spinner, accent);
         let after = x.saturating_add(cell_width(spinner) as u16);
-        write(cells, cols, after, y - 1, rest, DIM);
+        write(cells, cols, after, y - 1, rest, palette().dim);
     }
     let hint = super::chat::composer_hint(
         model.busy_since.map(|(activity, _)| activity),
@@ -450,7 +453,14 @@ fn prompt(
         &format!("╰{}", "─".repeat(dash)),
         border,
     );
-    write(cells, cols, x + 1 + dash as u16, y + 2, &hint, DIM);
+    write(
+        cells,
+        cols,
+        x + 1 + dash as u16,
+        y + 2,
+        &hint,
+        palette().dim,
+    );
     write(cells, cols, x + width.saturating_sub(1), y + 2, "╯", border);
 }
 
@@ -544,7 +554,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                 Cell {
                     text: if bright { "✦" } else { "·" }.into(),
                     fg: if bright { STAR_BRIGHT } else { STAR_DIM },
-                    bg: BASE,
+                    bg: palette().base,
                     bold: false,
                     italic: false,
                 },
@@ -575,7 +585,7 @@ fn space(cols: u16, rows: u16, ticks: u64) -> Vec<Cell> {
                 Cell {
                     text: text.into(),
                     fg,
-                    bg: BASE,
+                    bg: palette().base,
                     bold: false,
                     italic: false,
                 },

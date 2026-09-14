@@ -152,15 +152,8 @@ pub(super) fn main(app: App) -> NodeBuilder {
         ("theme", model.prefs.theme.clone()),
         ("splash", on_off(model.prefs.splash).to_string()),
         ("motion", on_off(model.prefs.animations).to_string()),
-        (
-            "reasoning",
-            if model.prefs.reasoning {
-                "shown"
-            } else {
-                "hidden"
-            }
-            .to_string(),
-        ),
+        ("reasoning", model.prefs.reasoning.name().to_string()),
+        ("receipts", model.prefs.receipts.name().to_string()),
         ("tools", model.prefs.tools.name().to_string()),
         (
             "bus",

@@ -1,4 +1,6 @@
 use std::collections::VecDeque;
+use std::fs::OpenOptions;
+use std::io::{ErrorKind, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -35,7 +37,6 @@ struct Worker {
     ui: UnboundedSender<Msg>,
     endpoint: String,
     relay: Option<String>,
-    check: Option<Vec<String>>,
     auto_reply: bool,
     pending_mail: bool,
     last_auto: Instant,
@@ -48,6 +49,7 @@ struct Worker {
     dial: Option<crate::Effort>,
     home: Option<std::path::PathBuf>,
     last_diff: Option<crate::diff::Diff>,
+    last_peers: Option<usize>,
     reader: Reader,
 }
 
@@ -60,8 +62,6 @@ impl Worker {
     ) -> Self {
         let steering = Arc::new(Mutex::new(VecDeque::new()));
         loop_.steer_with(steering.clone());
-        let check = loop_.verify_commands().to_vec();
-        let check = (!check.is_empty()).then_some(check);
         let home = info
             .config
             .as_deref()
@@ -76,7 +76,6 @@ impl Worker {
             ui,
             endpoint: info.endpoint,
             relay: info.relay,
-            check,
             auto_reply: info.prefs.bus,
             pending_mail: false,
             last_auto: Instant::now(),
@@ -86,6 +85,7 @@ impl Worker {
             last_turn: None,
             bus_error: None,
             last_diff: None,
+            last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
             dial: None,
         }
@@ -129,7 +129,11 @@ impl Worker {
     async fn dispatch(&mut self, command: Cmd) -> bool {
         match command {
             Cmd::Branch { session, turn } => self.branch(&session, turn),
-            Cmd::Command(line) => self.command(&line).await.unwrap_or(true),
+            Cmd::Command(line) => {
+                let running = self.command(&line).await.unwrap_or(true);
+                self.send_settings();
+                running
+            }
             Cmd::Login(name) => self.login(&name).await,
             Cmd::SetKey(name, key) => {
                 self.set_key(&name, &key).await;
@@ -261,7 +265,10 @@ impl Worker {
             .into_iter()
             .filter(|agent| agent.id != self.loop_.session_id())
             .count();
-        drop(self.ui.send(Msg::Peers(peers)));
+        if self.last_peers != Some(peers) {
+            self.last_peers = Some(peers);
+            drop(self.ui.send(Msg::Peers(peers)));
+        }
         let mail = match self.loop_.bus_poll() {
             Ok(mail) => {
                 if self.bus_error.take().is_some() {
@@ -355,7 +362,21 @@ pub(super) fn export_session(
         if let Some(parent) = out.parent().filter(|parent| !parent.as_os_str().is_empty()) {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&out, text)?;
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&out)
+            .map_err(|error| {
+                if error.kind() == ErrorKind::AlreadyExists {
+                    crate::Error::Config(format!(
+                        "{} already exists. Use /export PATH with a different filename.",
+                        out.display()
+                    ))
+                } else {
+                    error.into()
+                }
+            })?;
+        file.write_all(text.as_bytes())?;
         Ok(out)
     });
     let message = match written {

@@ -40,6 +40,99 @@ fn files_follow_gitignore_and_skip_hidden_entries() {
 }
 
 #[test]
+fn diff_reports_failure_and_can_retry_a_readable_repository() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let (tx, mut rx) = unbounded_channel();
+    let reader = Reader::new(dir.path().to_path_buf(), tx);
+    reader.serve(Cmd::Diff(None));
+    match rx.try_recv().expect("diff response") {
+        Msg::DiffFailed(error) => assert!(error.contains("not a git repository"), "{error}"),
+        _ => panic!("expected a failed diff response"),
+    }
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["init", "-q", "-b", "main"])
+        .status()
+        .expect("git init");
+    assert!(status.success());
+    std::fs::write(dir.path().join("new.txt"), "new\n").expect("write");
+    reader.serve(Cmd::Diff(None));
+    match rx.try_recv().expect("retry response") {
+        Msg::Diff(diff) => assert_eq!(diff.summary(), "1 file · +1 −0 · vs empty tree"),
+        _ => panic!("expected the recovered diff"),
+    }
+}
+
+#[test]
+fn whole_patch_includes_tracked_and_untracked_changes() {
+    let dir = repo();
+    std::fs::write(dir.path().join("src/lib.rs"), "fn b() {}\n").expect("tracked edit");
+    std::fs::write(dir.path().join("new.txt"), "new\n").expect("new file");
+    let (tx, mut rx) = unbounded_channel();
+    let reader = Reader::new(dir.path().to_path_buf(), tx);
+    reader.serve(Cmd::Patch(None, String::new()));
+    let Msg::Patch { path, result, .. } = rx.try_recv().expect("whole patch") else {
+        panic!("expected patch response");
+    };
+    let text = result.expect("successful patch");
+    assert!(path.is_empty());
+    assert!(text.contains("-fn a() {}\n+fn b() {}"), "{text}");
+    assert!(text.contains("+++ b/new.txt\n"), "{text}");
+    assert!(text.contains("+new\n"), "{text}");
+}
+
+#[test]
+fn patch_failure_preserves_scope_and_retry_returns_only_that_file() {
+    let primary = repo();
+    let dir = tempfile::tempdir().expect("unreadable repository");
+    let (tx, mut rx) = unbounded_channel();
+    let reader = Reader::new(primary.path().to_path_buf(), tx);
+    reader.serve(Cmd::Patch(
+        Some(dir.path().to_path_buf()),
+        "new.txt".to_string(),
+    ));
+    match rx.try_recv().expect("failed patch") {
+        Msg::Patch {
+            root,
+            path,
+            result: Err(error),
+        } => {
+            assert_eq!(root.as_deref(), Some(dir.path()));
+            assert_eq!(path, "new.txt");
+            assert!(error.contains("not a git repository"), "{error}");
+        }
+        _ => panic!("expected a failed patch response"),
+    }
+    let status = Command::new("git")
+        .arg("-C")
+        .arg(dir.path())
+        .args(["init", "-q", "-b", "main"])
+        .status()
+        .expect("git init");
+    assert!(status.success());
+    std::fs::write(dir.path().join("new.txt"), "selected\n").expect("selected file");
+    std::fs::write(dir.path().join("other.txt"), "other\n").expect("other file");
+    reader.serve(Cmd::Patch(
+        Some(dir.path().to_path_buf()),
+        "new.txt".to_string(),
+    ));
+    match rx.try_recv().expect("recovered patch") {
+        Msg::Patch {
+            root,
+            path,
+            result: Ok(text),
+        } => {
+            assert_eq!(root.as_deref(), Some(dir.path()));
+            assert_eq!(path, "new.txt");
+            assert!(text.contains("+selected\n"), "{text}");
+            assert!(!text.contains("other.txt"), "{text}");
+        }
+        _ => panic!("expected the selected patch"),
+    }
+}
+
+#[test]
 fn unignored_drops_git_ignored_and_dot_paths() {
     let dir = repo();
     let kept = unignored(

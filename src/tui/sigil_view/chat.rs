@@ -1,4 +1,6 @@
+use std::iter::once;
 use std::ops::Range;
+use std::path::Path;
 use std::time::Instant;
 
 use sigil::prelude::*;
@@ -6,7 +8,8 @@ use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 use super::app::App;
-use super::canvas::{self, BASE, CYAN, DIM, GRAY, GREEN, TEXT};
+use super::canvas::{self, palette};
+use super::input::{self, Caret, Input};
 use super::model::{Entry, Model};
 use super::speed::Speed;
 use crate::tui::{Activity, Round, context, fmt_tokens, short_session};
@@ -15,14 +18,6 @@ use crate::tui::{Activity, Round, context, fmt_tokens, short_session};
 pub(crate) mod transcript;
 
 pub(super) use canvas::{Cell, rgb};
-pub(super) const YELLOW: Rgba8 = rgb(220, 200, 90);
-pub(super) const RED: Rgba8 = rgb(220, 90, 90);
-pub(super) const BLACK: Rgba8 = rgb(0, 0, 0);
-const USER_BG: Rgba8 = rgb(42, 44, 58);
-const CODE_BG: Rgba8 = rgb(30, 32, 42);
-const CODE_COMMENT: Rgba8 = rgb(96, 148, 102);
-const CODE_STRING: Rgba8 = rgb(226, 178, 106);
-const CODE_KEYWORD: Rgba8 = rgb(198, 146, 230);
 const SPARK: [char; 8] = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
 const INPUT_ROWS: u16 = 8;
 pub(super) const INPUT_HEIGHTS: [[StyleAtom; 1]; INPUT_ROWS as usize] = {
@@ -64,14 +59,14 @@ impl Source {
 
 impl Span {
     fn text(text: impl Into<String>) -> Self {
-        Self::styled(text, TEXT)
+        Self::styled(text, palette().text)
     }
 
     fn styled(text: impl Into<String>, fg: Rgba8) -> Self {
         Self {
             text: text.into(),
             fg,
-            bg: BASE,
+            bg: palette().base,
             bold: false,
             italic: false,
             source: None,
@@ -108,13 +103,55 @@ impl Span {
         self
     }
 
+    fn slice(&self, range: Range<usize>) -> Self {
+        let source = match &self.source {
+            Some(Source::Text(source)) => Some(Source::Text(
+                source.start + range.start..source.start + range.end,
+            )),
+            _ => self.source.clone(),
+        };
+        Self {
+            text: self.text[range].to_string(),
+            fg: self.fg,
+            bg: self.bg,
+            bold: self.bold,
+            italic: self.italic,
+            source,
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn parts(&self) -> (&str, Rgba8) {
         (&self.text, self.fg)
     }
 }
 
-type Line = Vec<Span>;
+struct Line {
+    spans: Vec<Span>,
+    bg: Rgba8,
+}
+
+impl From<Vec<Span>> for Line {
+    fn from(spans: Vec<Span>) -> Self {
+        Self {
+            spans,
+            bg: palette().base,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct Anchor {
+    entry: usize,
+    line: usize,
+    byte: usize,
+}
+
+pub(super) struct Row {
+    spans: Vec<Span>,
+    bg: Rgba8,
+    anchor: Anchor,
+}
 
 pub(super) struct Placed {
     line: usize,
@@ -137,41 +174,141 @@ impl Placed {
 
 #[derive(Default)]
 pub(super) struct History {
-    key: Option<(u64, usize)>,
-    lines: Vec<Line>,
-    offsets: Vec<usize>,
+    stamp: u64,
+    width: usize,
+    stable: usize,
+    lines: Vec<Row>,
     images: Vec<Placed>,
+    stream: Option<transcript::Stream>,
+    #[cfg(test)]
+    pub(super) rendered: usize,
 }
 
 impl History {
-    pub(super) fn extent(&self, rows: u16, draft: &str) -> Option<f32> {
-        self.key.map(|_| {
-            let height = usize::from(prompt_row(rows, draft).saturating_sub(1));
-            self.lines.len().saturating_sub(height) as f32 * canvas::cell().h
-        })
+    pub(super) fn anchor(&self, position: f32) -> Option<Anchor> {
+        self.lines
+            .get((position / canvas::cell().h) as usize)
+            .map(|row| row.anchor)
     }
 
-    fn lines(&mut self, model: &Model, width: usize, revision: u64) -> &[Line] {
-        if self.key != Some((revision, width)) {
-            self.lines.clear();
-            self.offsets.clear();
-            self.images.clear();
-            let rendered = transcript::entries(model, width, accent(&model.prefs.theme));
-            for (entry, lines) in model.entries.iter().zip(rendered) {
-                self.offsets.push(self.lines.len());
-                self.lines.extend(wrap(lines, width));
-                if let Entry::Image { source, .. } = entry {
-                    let (cols, rows) = transcript::image_cells(source, width);
-                    self.images.push(Placed {
-                        line: self.lines.len().saturating_sub(rows),
-                        cols,
-                        rows,
-                        source: source.clone(),
-                    });
-                }
+    pub(super) fn locate(&self, anchor: Anchor) -> Option<f32> {
+        let row = self
+            .lines
+            .partition_point(|row| row.anchor <= anchor)
+            .saturating_sub(1);
+        self.lines
+            .get(row)
+            .filter(|row| row.anchor.entry == anchor.entry)?;
+        Some(row as f32 * canvas::cell().h)
+    }
+
+    pub(super) fn extent(
+        &mut self,
+        model: &Model,
+        cols: u16,
+        rows: u16,
+        draft: &str,
+        stamp: u64,
+    ) -> f32 {
+        let width = usize::from(cols);
+        let inset = margin(width);
+        let height = usize::from(body_rows(cols, rows, draft, model.busy_since.is_some()));
+        self.lines(model, width.saturating_sub(inset * 2), stamp)
+            .len()
+            .saturating_sub(height) as f32
+            * canvas::cell().h
+    }
+
+    pub(super) fn lines(&mut self, model: &Model, width: usize, stamp: u64) -> &[Row] {
+        let len = model.entries.len();
+        if let Some(Entry::Assistant { text, done: false }) =
+            model.entries.get(len.saturating_sub(1))
+            && self.width == width
+            && self.stable == len
+            && self
+                .stream
+                .as_ref()
+                .is_some_and(|stream| stream.matches(text))
+        {
+            let index = len - 1;
+            let accent = accent(&model.prefs.theme);
+            let first = self.stream.as_ref().map_or(0, transcript::Stream::lines);
+            let (committed, mut tail) = self
+                .stream
+                .as_mut()
+                .expect("stream checked above")
+                .extend(text, width, accent);
+            let keep = self.lines.partition_point(|row| {
+                row.anchor.entry < index || (row.anchor.entry == index && row.anchor.line < first)
+            });
+            self.lines.truncate(keep);
+            self.images.retain(|placed| placed.line < keep);
+            if committed.is_empty() && tail.is_empty() && self.lines.is_empty() {
+                tail.push(Vec::new().into());
             }
-            self.key = Some((revision, width));
+            if let Some(last) = tail.last_mut() {
+                last.spans.push(Span::surface("▌", palette().dim, last.bg));
+            }
+            let tail_first = first + committed.len();
+            self.lines.extend(wrap(committed, width, index, first));
+            self.lines.extend(wrap(tail, width, index, tail_first));
+            self.stamp = stamp;
+            self.width = width;
+            self.stable = len;
+            return &self.lines;
         }
+        let start = if self.width != width || len < self.stable {
+            0
+        } else if len > self.stable || self.stamp != stamp {
+            self.stable.saturating_sub(1)
+        } else {
+            self.stable
+        };
+        if start == 0 {
+            self.lines.clear();
+            self.images.clear();
+        } else {
+            let split = self.lines.partition_point(|row| row.anchor.entry < start);
+            self.lines.truncate(split);
+            self.images.retain(|placed| placed.line < split);
+        }
+        let accent = accent(&model.prefs.theme);
+        let reasoning = model.prefs.reasoning;
+        let tools = model.prefs.tools;
+        let receipts = model.prefs.receipts;
+        let mut previous_tool =
+            start > 0 && matches!(&model.entries[start - 1], Entry::Tool { .. });
+        for index in start..len {
+            let entry = &model.entries[index];
+            let separated = index > 0 && !(previous_tool && matches!(entry, Entry::Tool { .. }));
+            let rendered = transcript::entry_lines(
+                entry, width, accent, reasoning, tools, receipts, separated,
+            );
+            self.lines.extend(wrap(rendered, width, index, 0));
+            if let Entry::Image { source, .. } = entry {
+                let (cols, rows) = transcript::image_cells(source, width);
+                self.images.push(Placed {
+                    line: self.lines.len().saturating_sub(rows),
+                    cols,
+                    rows,
+                    source: source.clone(),
+                });
+            }
+            previous_tool = matches!(entry, Entry::Tool { .. });
+        }
+        self.stream = match model.entries.last() {
+            Some(Entry::Assistant { text, done: false }) => {
+                Some(transcript::Stream::new(text, width, accent))
+            }
+            _ => None,
+        };
+        #[cfg(test)]
+        {
+            self.rendered += len - start;
+        }
+        self.stamp = stamp;
+        self.width = width;
+        self.stable = len;
         &self.lines
     }
 
@@ -180,32 +317,46 @@ impl History {
         &self.images
     }
 
+    #[cfg(test)]
+    pub(super) fn fingerprint(&self) -> Vec<(usize, usize, usize, String)> {
+        self.lines
+            .iter()
+            .map(|row| {
+                (
+                    row.anchor.entry,
+                    row.anchor.line,
+                    row.anchor.byte,
+                    row.spans.iter().map(|span| span.text.as_str()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(super) fn last_entry(&self) -> Option<usize> {
+        self.lines.last().map(|row| row.anchor.entry)
+    }
+
     pub(super) fn position(&mut self, app: &App, entry: usize) -> Result<Option<f32>, String> {
         let width = usize::from(app.chat_cols());
-        let left = if width > 28 {
-            2
-        } else {
-            usize::from(width > 2)
-        };
+        let left = margin(width);
         let width = width.saturating_sub(left * 2).max(1);
-        self.lines(&app.model.borrow(), width, app.panes.peek());
-        let Some(&start) = self.offsets.get(entry) else {
+        let model = app.model.borrow();
+        self.lines(&model, width, model.entries.stamp);
+        let start = self.lines.partition_point(|row| row.anchor.entry < entry);
+        let end = self.lines.partition_point(|row| row.anchor.entry <= entry);
+        if start == end {
             return Ok(None);
-        };
-        let end = self
-            .offsets
-            .get(entry + 1)
-            .copied()
-            .unwrap_or(self.lines.len());
+        }
         let lines = &self.lines[start..end];
         let pattern = app.search.pattern()?;
-        if let Some(Entry::Assistant { text, .. }) = app.model.borrow().entries.get(entry)
+        if let Some(Entry::Assistant { text, .. }) = model.entries.get(entry)
             && let Some(found) = pattern.find(text)
         {
             let row = lines
                 .iter()
                 .position(|line| {
-                    line.iter().any(|span| {
+                    line.spans.iter().any(|span| {
                         span.source.as_ref().is_some_and(|source| {
                             source.range().end > found.start() && source.range().start < found.end()
                         })
@@ -213,7 +364,7 @@ impl History {
                 })
                 .or_else(|| {
                     lines.iter().position(|line| {
-                        line.iter().any(|span| {
+                        line.spans.iter().any(|span| {
                             span.source
                                 .as_ref()
                                 .is_some_and(|source| source.range().start >= found.start())
@@ -223,21 +374,25 @@ impl History {
                 .unwrap_or_else(|| lines.len().saturating_sub(1));
             return Ok(Some((start + row) as f32 * canvas::cell().h));
         }
-        let text: String = lines
-            .iter()
-            .flatten()
-            .map(|span| span.text.as_str())
-            .collect();
-        let row = pattern.find(&text).map_or(0, |found| {
-            let mut bytes = 0;
-            lines
-                .iter()
-                .position(|line| {
-                    bytes += line.iter().map(|span| span.text.len()).sum::<usize>();
-                    bytes > found.start()
-                })
-                .unwrap_or(0)
-        });
+        let mut text = String::new();
+        let mut ends = Vec::with_capacity(lines.len());
+        let mut previous = None;
+        for line in lines {
+            if previous
+                .is_some_and(|(number, end)| line.anchor.line != number || line.anchor.byte > end)
+            {
+                text.push('\n');
+            }
+            let start = text.len();
+            for span in &line.spans {
+                text.push_str(&span.text);
+            }
+            previous = Some((line.anchor.line, line.anchor.byte + text.len() - start));
+            ends.push(text.len());
+        }
+        let row = pattern
+            .find(&text)
+            .map_or(0, |found| ends.partition_point(|end| *end <= found.start()));
         Ok(Some((start + row) as f32 * canvas::cell().h))
     }
 }
@@ -255,21 +410,25 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .gap(0.0),
         )
         .pointer_down(move |event| {
-            if event.button == Some(MouseButton::Left)
-                && let Some(byte) = composer_offset(&press, event.position)
-            {
-                press
-                    .editor
-                    .select(byte, event.modifiers.contains(ModifiersState::SHIFT));
+            if event.button != Some(MouseButton::Left) {
+                return;
+            }
+            if let Some(token) = approval_hit(&press, event.position) {
+                press.approval_answer(token);
+                event.stop_propagation();
+                return;
+            }
+            if let Some(caret) = composer_offset(&press, event.position) {
+                press.place(caret, event.modifiers.contains(ModifiersState::SHIFT));
                 event.capture_pointer();
                 event.stop_propagation();
             }
         })
         .pointer_move(move |event| {
             if event.is_captured()
-                && let Some(byte) = composer_offset(&drag, event.position)
+                && let Some(caret) = composer_offset(&drag, event.position)
             {
-                drag.editor.select(byte, true);
+                drag.place(caret, true);
                 event.stop_propagation();
             }
         })
@@ -298,11 +457,7 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
     if width == 0 || height == 0 {
         return cells;
     }
-    let content_left = if width > 28 {
-        2
-    } else {
-        usize::from(width > 2)
-    };
+    let content_left = margin(width);
     let content_width = width.saturating_sub(content_left * 2);
     let accent = accent(&model.prefs.theme);
     write_line_at(
@@ -316,11 +471,11 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
     if height < 5 {
         return cells;
     }
-    let prompt = usize::from(prompt_row(rows, draft));
+    let prompt = usize::from(prompt_row(cols, rows, draft));
     let busy = busy_status(model);
-    let body_height = prompt.saturating_sub(1 + usize::from(busy.is_some()));
+    let body_height = usize::from(body_rows(cols, rows, draft, busy.is_some()));
     let mut history = app.history.borrow_mut();
-    let visible = history.lines(model, content_width, app.panes.get());
+    let visible = history.lines(model, content_width, model.entries.stamp);
     let max_start = visible.len().saturating_sub(body_height);
     let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);
     if visible.is_empty() && body_height > 0 {
@@ -331,18 +486,25 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
             width,
             content_left,
             content_width,
-            1,
-            &[Span::text(" ".repeat(pad)), Span::styled(hint, DIM)],
+            2,
+            &[
+                Span::text(" ".repeat(pad)),
+                Span::styled(hint, palette().dim),
+            ],
         );
     }
     for (offset, line) in visible.iter().skip(start).take(body_height).enumerate() {
+        let start = (2 + offset) * width + content_left;
+        for cell in &mut cells[start..start + content_width] {
+            cell.bg = line.bg;
+        }
         write_line_at(
             &mut cells,
             width,
             content_left,
             content_width,
-            1 + offset,
-            line,
+            2 + offset,
+            &line.spans,
         );
     }
     if let Some(status) = &busy {
@@ -355,6 +517,17 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
             &busy_line(status, content_width, accent),
         );
     }
+    if let Some((detail, persist)) = app.approval.peek() {
+        let row = approval_row(&detail, content_width, persist);
+        write_line_at(
+            &mut cells,
+            width,
+            content_left,
+            content_width,
+            prompt.saturating_sub(1),
+            &[Span::styled(row.text, palette().yellow)],
+        );
+    }
     let editing = app
         .view_edit
         .peek()
@@ -364,12 +537,13 @@ fn grid(model: &Model, app: &App, draft: &str, cols: u16, rows: u16) -> Vec<Cell
         &mut cells,
         [width, content_left, content_width, prompt],
         model,
-        draft,
-        app.caret.peek(),
+        &Input::new(draft, input::width(cols)),
+        (app.caret.peek(), app.placement.get()),
         app.ticks.peek(),
         editing.as_deref(),
         app.select.peek(),
         app.editor.selection(),
+        app.pane_active().is_none(),
     );
     write_line_at(
         &mut cells,
@@ -387,13 +561,13 @@ fn pictures(model: &Model, app: &App, cols: u16, rows: u16) -> Vec<NodeBuilder> 
     if width == 0 || usize::from(rows) < 5 {
         return Vec::new();
     }
-    let content_left = if width > 28 {
-        2
-    } else {
-        usize::from(width > 2)
-    };
-    let prompt = usize::from(prompt_row(rows, &app.draft.peek()));
-    let body_height = prompt.saturating_sub(1 + usize::from(busy_status(model).is_some()));
+    let content_left = margin(width);
+    let body_height = usize::from(body_rows(
+        cols,
+        rows,
+        &app.draft.peek(),
+        model.busy_since.is_some(),
+    ));
     let history = app.history.borrow();
     let max_start = history.lines.len().saturating_sub(body_height);
     let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);
@@ -430,7 +604,7 @@ fn pictures(model: &Model, app: &App, cols: u16, rows: u16) -> Vec<NodeBuilder> 
                         LayoutStyle::block()
                             .position(Position::Absolute)
                             .inset_left(content_left as f32 * cell.w)
-                            .inset_top((1 + first - start) as f32 * cell.h)
+                            .inset_top((2 + first - start) as f32 * cell.h)
                             .width(placed.cols as f32 * cell.w)
                             .height(shown as f32 * cell.h),
                     )
@@ -440,11 +614,79 @@ fn pictures(model: &Model, app: &App, cols: u16, rows: u16) -> Vec<NodeBuilder> 
         .collect()
 }
 
+pub(super) struct ApprovalRow {
+    pub text: String,
+    pub allow: (usize, usize),
+    pub always: Option<(usize, usize)>,
+    pub deny: (usize, usize),
+}
+
+pub(super) fn approval_row(detail: &str, width: usize, persist: bool) -> ApprovalRow {
+    const ALLOW: &str = "[ allow ]";
+    const ALWAYS: &str = "[ always ]";
+    const DENY: &str = "[ deny ]";
+    let extra = if persist { cell_width(ALWAYS) + 1 } else { 0 };
+    let room = width.saturating_sub(cell_width(ALLOW) + cell_width(DENY) + extra + 18);
+    let mut text = format!("approve {}   ", ellipsize(detail, room));
+    let allow_from = cell_width(&text);
+    text.push_str(ALLOW);
+    let allow_to = cell_width(&text);
+    let always = persist.then(|| {
+        text.push(' ');
+        let from = cell_width(&text);
+        text.push_str(ALWAYS);
+        (from, cell_width(&text))
+    });
+    text.push(' ');
+    let deny_from = cell_width(&text);
+    text.push_str(DENY);
+    let deny_to = cell_width(&text);
+    text.push_str(if persist { "   y / Y / n" } else { "   y / n" });
+    ApprovalRow {
+        text,
+        allow: (allow_from, allow_to),
+        always,
+        deny: (deny_from, deny_to),
+    }
+}
+
+fn approval_hit(app: &App, point: Point) -> Option<&'static str> {
+    let (detail, persist) = app.approval.peek()?;
+    let cols = app.chat_cols();
+    let width = usize::from(cols);
+    let rows = app.viewport.peek().1;
+    if width == 0 || rows < 5 {
+        return None;
+    }
+    let content_left = margin(width);
+    let content_width = width.saturating_sub(content_left * 2);
+    let prompt = usize::from(prompt_row(cols, rows, &app.draft.peek())).saturating_sub(1);
+    let row = approval_row(&detail, content_width, persist);
+    let cell = canvas::cell();
+    let col = (point.x / cell.w).max(0.0) as usize;
+    let line = (point.y / cell.h).max(0.0) as usize;
+    if line != prompt {
+        return None;
+    }
+    if (content_left + row.allow.0..content_left + row.allow.1).contains(&col) {
+        return Some("y");
+    }
+    if let Some((from, to)) = row.always
+        && (content_left + from..content_left + to).contains(&col)
+    {
+        return Some("always");
+    }
+    if (content_left + row.deny.0..content_left + row.deny.1).contains(&col) {
+        return Some("n");
+    }
+    None
+}
+
 fn empty_hint(width: usize) -> &'static str {
     [
-        "ask anything · /auth setup · @file attaches · !cmd runs · /help",
-        "ask anything · /auth · @file · /help",
-        "ask anything · /auth",
+        "ask anything · /login setup · @file attaches · !cmd runs · /help",
+        "ask anything · /login · @file · /help",
+        "ask anything · /login",
         "ask anything",
     ]
     .into_iter()
@@ -452,61 +694,76 @@ fn empty_hint(width: usize) -> &'static str {
     .unwrap_or("")
 }
 
-pub(super) fn input_rows(draft: &str, rows: u16) -> u16 {
+pub(super) fn input_rows(draft: &str, cols: u16, rows: u16) -> u16 {
     let limit = rows.saturating_sub(6).clamp(1, INPUT_ROWS);
-    draft.split('\n').take(usize::from(limit)).count() as u16
+    Input::new(draft, input::width(cols))
+        .rows
+        .len()
+        .min(usize::from(limit)) as u16
 }
 
-pub(super) fn prompt_row(rows: u16, draft: &str) -> u16 {
-    rows.saturating_sub(input_rows(draft, rows) + 3)
+pub(super) fn margin(width: usize) -> usize {
+    if width > 100 {
+        3
+    } else if width > 28 {
+        2
+    } else {
+        usize::from(width > 2)
+    }
 }
 
-fn draft_rows(draft: &str, caret: usize, count: usize) -> (usize, usize) {
-    let current = draft[..caret].bytes().filter(|byte| *byte == b'\n').count();
-    let start = current
-        .saturating_sub(count.saturating_sub(1))
-        .min(draft.split('\n').count().saturating_sub(count));
-    (current, start)
+pub(super) fn prompt_row(cols: u16, rows: u16, draft: &str) -> u16 {
+    rows.saturating_sub(input_rows(draft, cols, rows) + 3)
 }
 
-fn composer_offset(app: &App, point: Point) -> Option<usize> {
+pub(super) fn body_rows(cols: u16, rows: u16, draft: &str, busy: bool) -> u16 {
+    prompt_row(cols, rows, draft).saturating_sub(2 + u16::from(busy))
+}
+
+fn composer_offset(app: &App, point: Point) -> Option<Caret> {
     if app.view_edit.peek() {
         return None;
     }
     let draft = app.draft.peek();
     let cols = usize::from(app.chat_cols());
     let rows = app.viewport.peek().1;
-    let left = if cols > 28 { 2 } else { usize::from(cols > 2) };
+    let left = margin(cols);
     let col = (point.x / canvas::cell().w).max(0.0) as usize;
     let row = (point.y / canvas::cell().h).max(0.0) as usize;
-    let top = usize::from(prompt_row(rows, &draft)) + 1;
-    let count = usize::from(input_rows(&draft, rows));
+    let top = usize::from(prompt_row(cols as u16, rows, &draft)) + 1;
+    let count = usize::from(input_rows(&draft, cols as u16, rows));
     if !(top..top + count).contains(&row) || !(left..cols.saturating_sub(left)).contains(&col) {
         return None;
     }
-    let caret = draft.floor_char_boundary(app.caret.peek().min(draft.len()));
-    let (current, start) = draft_rows(&draft, caret, count);
+    let input = Input::new(&draft, input::width(cols as u16));
+    let caret = input.caret(app.caret.peek(), app.placement.peek());
+    let start = input.start(caret, count);
     let index = start + row - top;
-    let byte: usize = draft
-        .split('\n')
-        .take(index)
-        .map(|line| line.len() + 1)
-        .sum();
-    let line = draft.split('\n').nth(index)?;
+    let range = input.rows.get(index)?;
+    let line = &draft[range.clone()];
     let window = Draft::new(
         line,
-        (index == current).then_some(caret.saturating_sub(byte)),
+        (index == caret.row).then_some(caret.byte.saturating_sub(range.start)),
         cols.saturating_sub(left * 2 + 6),
     );
-    Some(byte + window.offset(col.saturating_sub(left + 4)))
+    let byte = window.offset(col.saturating_sub(left + 4));
+    input.hit(index, cell_width(&line[..byte]))
 }
 
 fn stamp_menu(cells: &mut [Cell], stride: usize, menu: &super::suggest::Menu) {
     for (offset, line) in menu.lines.iter().enumerate() {
         let y = menu.top.saturating_add(offset);
         let selected = line.chars().nth(1) == Some('›');
-        let fg = if selected { TEXT } else { GRAY };
-        let bg = if selected { USER_BG } else { CODE_BG };
+        let fg = if selected {
+            palette().text
+        } else {
+            palette().gray
+        };
+        let bg = if selected {
+            palette().user_bg
+        } else {
+            palette().code_bg
+        };
         let mut span = Span::surface(line, fg, bg);
         span.bold = selected;
         write_line_at(
@@ -538,7 +795,7 @@ pub(super) fn write_at(
     );
 }
 
-fn header(model: &Model, width: usize, accent: Rgba8) -> Line {
+fn header(model: &Model, width: usize, accent: Rgba8) -> Vec<Span> {
     let mut left = vec![
         Span::styled("summoner ", accent).bold(),
         Span::text(model.model.clone()),
@@ -546,20 +803,24 @@ fn header(model: &Model, width: usize, accent: Rgba8) -> Line {
     if width >= 80
         && let Some(relay) = model.relay.as_deref().filter(|relay| !relay.is_empty())
     {
-        left.push(Span::styled(format!(" · {relay}"), DIM));
+        left.push(Span::styled(format!(" · {relay}"), palette().dim));
     }
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
-    let mode_color = if model.snapshot.plan { CYAN } else { GREEN };
+    let mode_color = if model.snapshot.plan {
+        palette().cyan
+    } else {
+        palette().green
+    };
     let mut right = Vec::new();
     if width >= 70 {
         right.push(Span::styled(
             format!("ses {} ", short_session(&model.session)),
-            DIM,
+            palette().dim,
         ));
     }
     right.push(Span::styled(format!("{mode} "), mode_color));
     if width >= 70 && model.snapshot.strict {
-        right.push(Span::styled("strict ", YELLOW));
+        right.push(Span::styled("strict ", palette().yellow));
     }
     if width >= 48 {
         right.push(Span::styled(
@@ -567,7 +828,7 @@ fn header(model: &Model, width: usize, accent: Rgba8) -> Line {
                 "{} tok ",
                 fmt_tokens(model.prompt_tokens + model.completion_tokens)
             ),
-            DIM,
+            palette().dim,
         ));
     }
     join(left, right, width)
@@ -581,22 +842,28 @@ fn prompt_rows(
     cells: &mut [Cell],
     area: [usize; 4],
     model: &Model,
-    draft: &str,
-    caret_position: usize,
+    input: &Input<'_>,
+    caret_position: (usize, Option<Caret>),
     ticks: u64,
     editing: Option<&str>,
     selecting: bool,
     selection: Option<Range<usize>>,
+    focused: bool,
 ) {
     let [stride, origin, width, top] = area;
     let height = cells.len().checked_div(stride).unwrap_or(0);
     let count = height.saturating_sub(top + 3).max(1);
-    let position = draft.floor_char_boundary(caret_position.min(draft.len()));
-    let (current, start) = draft_rows(draft, position, count);
-    let total = draft.split('\n').count();
+    let position = input.caret(caret_position.0, caret_position.1);
+    let current = position.row;
+    let start = input.start(position, count);
+    let total = input.rows.len();
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
     let mode_glyph = if model.snapshot.plan { '◇' } else { '●' };
-    let mode_color = if model.snapshot.plan { CYAN } else { GREEN };
+    let mode_color = if model.snapshot.plan {
+        palette().cyan
+    } else {
+        palette().green
+    };
     let range = if total > count {
         format!(
             " · lines {}–{}/{total}",
@@ -611,7 +878,7 @@ fn prompt_rows(
     let border = if busy {
         accent(&model.prefs.theme)
     } else {
-        GRAY
+        palette().gray
     };
     let model_width = width.saturating_sub(cell_width(left.as_str()) + 3);
     let shown_model = ellipsize(&model.model, model_width);
@@ -627,7 +894,7 @@ fn prompt_rows(
             Span::styled("╭", border),
             Span::styled(format!(" {mode_glyph} {mode}{range} "), mode_color),
             Span::styled("─".repeat(fill), border),
-            Span::styled(shown_model, DIM),
+            Span::styled(shown_model, palette().dim),
             Span::text(" "),
             Span::styled("╮", border),
         ],
@@ -638,11 +905,10 @@ fn prompt_rows(
     } else {
         ' '
     };
-    let mut byte = 0;
-    for (index, line) in draft.split('\n').enumerate() {
-        let line_start = byte;
-        let line_position = position.saturating_sub(byte).min(line.len());
-        byte += line.len() + 1;
+    for (index, range) in input.rows.iter().enumerate() {
+        let line = &input.text[range.clone()];
+        let line_start = range.start;
+        let line_position = position.byte.saturating_sub(range.start).min(line.len());
         if index < start {
             continue;
         }
@@ -651,7 +917,7 @@ fn prompt_rows(
         }
         let window = Draft::new(
             line,
-            (index == current).then_some(line_position),
+            (index == current && focused).then_some(line_position),
             interior.saturating_sub(2),
         );
         let (prompt, input) = match editing {
@@ -661,7 +927,14 @@ fn prompt_rows(
             ),
             Some(_) => (Span::text("  "), String::new()),
             None => (
-                Span::styled(if index == current { "❯ " } else { "  " }, mode_color),
+                Span::styled(
+                    if index == current && focused {
+                        "❯ "
+                    } else {
+                        "  "
+                    },
+                    mode_color,
+                ),
                 window.text(caret),
             ),
         };
@@ -690,19 +963,23 @@ fn prompt_rows(
                 let offset = line_start + window.offset(col);
                 if selected.contains(&offset) {
                     let cell = &mut cells[row * stride + origin + 4 + col];
-                    cell.bg = USER_BG;
+                    cell.bg = palette().user_bg;
                 }
             }
         }
     }
     let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
     let select = selecting.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-    let hint = composer_hint(
-        model.busy_since.map(|(activity, _)| activity),
-        width,
-        &options,
-        select.as_deref(),
-    );
+    let hint = if !focused && !selecting {
+        ellipsize(" pane controls · esc back ", width.saturating_sub(2))
+    } else {
+        composer_hint(
+            model.busy_since.map(|(activity, _)| activity),
+            width,
+            &options,
+            select.as_deref(),
+        )
+    };
     let hint_width = cell_width(hint.as_str());
     let dash = width.saturating_sub(hint_width + 2);
     write_line_at(
@@ -714,7 +991,7 @@ fn prompt_rows(
         &[
             Span::styled("╰", border),
             Span::styled("─".repeat(dash), border),
-            Span::styled(hint, DIM),
+            Span::styled(hint, palette().dim),
             Span::styled("╯", border),
         ],
     );
@@ -740,7 +1017,6 @@ pub(super) fn busy_status(model: &Model) -> Option<String> {
         let speed = model
             .speed
             .live(now)
-            .or_else(|| model.speed.last())
             .map(|rate| format!(" · {}", Speed::label(rate)))
             .unwrap_or_default();
         format!(
@@ -756,7 +1032,7 @@ fn busy_line(status: &str, width: usize, accent: Rgba8) -> Vec<Span> {
     let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
     vec![
         Span::styled(spinner.to_string(), accent),
-        Span::styled(rest.to_string(), DIM),
+        Span::styled(rest.to_string(), palette().dim),
     ]
 }
 
@@ -835,6 +1111,18 @@ impl<'a> Draft<'a> {
         let position = text.floor_char_boundary(caret.unwrap_or(text.len()).min(text.len()));
         let cursor = caret.is_some() && width > 0;
         let available = width.saturating_sub(usize::from(cursor));
+        if cell_width(text) <= available {
+            let (before, after) = text.split_at(position);
+            return Self {
+                before,
+                after,
+                start: 0,
+                position,
+                left: false,
+                right: false,
+                cursor,
+            };
+        }
         if caret.is_none() {
             let right = cell_width(text) > available && available > 0;
             let end = prefix(text, available.saturating_sub(usize::from(right)));
@@ -944,11 +1232,14 @@ pub(super) fn ellipsize(text: &str, width: usize) -> String {
     shown
 }
 
-fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
-    let mut left = vec![Span::styled(format!("📂 {}", app.info.workspace), DIM)];
+fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Vec<Span> {
+    let mut left = vec![
+        Span::styled("📂 ", palette().dim),
+        Span::styled(&app.info.workspace, palette().dim),
+    ];
     if let Some(branch) = &app.git_branch {
-        left.push(Span::styled("  ⎇ ", DIM));
-        left.push(Span::styled(branch, YELLOW));
+        left.push(Span::styled("  ⎇ ", palette().dim));
+        left.push(Span::styled(branch, palette().yellow));
     }
     if model.peers > 0 {
         left.push(Span::styled(
@@ -960,40 +1251,100 @@ fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Line {
             accent,
         ));
     }
-    let mut right = Vec::new();
-    right.push(Span::styled(
-        format!(
-            "ctx {} · ",
-            context(model.usage.last(), model.snapshot.context_window)
-        ),
-        DIM,
-    ));
-    let spark = sparkline(&model.usage);
-    if !spark.is_empty() {
-        right.push(Span::styled(format!("{spark} "), accent));
+    let mut right = usage(model, width);
+    if line_width(&left) + line_width(&right) >= width {
+        let name = Path::new(&app.info.workspace)
+            .file_name()
+            .unwrap_or_else(|| app.info.workspace.as_ref());
+        left[1].text = name.to_string_lossy().into_owned();
     }
-    right.push(Span::styled(
-        format!(
-            "⚡ {} tok",
-            fmt_tokens(model.prompt_tokens + model.completion_tokens)
+    if line_width(&left) + line_width(&right) >= width {
+        left.truncate(2);
+    }
+    if line_width(&left) + line_width(&right) >= width {
+        left.remove(0);
+    }
+    if !right.is_empty()
+        && model.busy_since.is_none()
+        && let Some(rate) = model.speed.last()
+    {
+        let speed = Span::styled(format!(" · {}", Speed::label(rate)), palette().dim);
+        if line_width(&left) + line_width(&right) + speed.width() < width {
+            right.push(speed);
+        }
+    }
+    let spark = sparkline(&model.usage);
+    if !right.is_empty()
+        && !spark.is_empty()
+        && line_width(&left) + line_width(&right) + cell_width(&spark) + 1 < width
+    {
+        right.insert(1, Span::styled(format!("{spark} "), accent));
+    }
+    let room = width.saturating_sub(line_width(&right) + 1);
+    if line_width(&left) > room {
+        if room < 4 {
+            left.clear();
+        } else {
+            left[0].text = ellipsize(&left[0].text, room);
+        }
+    }
+    join(left, right, width)
+}
+
+fn usage(model: &Model, width: usize) -> Vec<Span> {
+    let tokens = format!(
+        "{} tok",
+        fmt_tokens(model.prompt_tokens + model.completion_tokens)
+    );
+    let mut full = vec![
+        Span::styled(
+            format!(
+                "ctx {} · ",
+                context(model.usage.last(), model.snapshot.context_window, false)
+            ),
+            palette().dim,
         ),
-        DIM,
-    ));
+        Span::styled(format!("⚡ {tokens}"), palette().dim),
+    ];
+    if model.unreported_tokens > 0 {
+        full.push(Span::styled(
+            format!(" · {} unconfirmed", fmt_tokens(model.unreported_tokens)),
+            palette().yellow,
+        ));
+    }
     if model.cached_tokens > 0 && model.prompt_tokens > 0 {
-        right.push(Span::styled(
+        full.push(Span::styled(
             format!(
                 " · {}% cached",
                 model.cached_tokens * 100 / model.prompt_tokens
             ),
-            DIM,
+            palette().dim,
         ));
     }
-    if model.busy_since.is_none()
-        && let Some(rate) = model.speed.last()
-    {
-        right.push(Span::styled(format!(" · {}", Speed::label(rate)), DIM));
+    if line_width(&full) <= width {
+        return full;
     }
-    join(left, right, width)
+    let context = Span::styled(
+        format!(
+            "ctx {}",
+            context(model.usage.last(), model.snapshot.context_window, true)
+        ),
+        palette().dim,
+    );
+    if context.width() > width {
+        return Vec::new();
+    }
+    let mut compact = vec![context];
+    for part in full
+        .into_iter()
+        .skip(2)
+        .chain(once(Span::styled(format!(" · {tokens}"), palette().dim)))
+    {
+        if line_width(&compact) + part.width() <= width {
+            compact.push(part);
+        }
+    }
+    compact
 }
 
 fn sparkline(rounds: &[Round]) -> String {
@@ -1015,7 +1366,7 @@ fn sparkline(rounds: &[Round]) -> String {
         .collect()
 }
 
-fn join(mut left: Line, right: Line, width: usize) -> Line {
+fn join(mut left: Vec<Span>, right: Vec<Span>, width: usize) -> Vec<Span> {
     let right = clip_line(right, width);
     let right_width = line_width(&right);
     let gap = usize::from(right_width < width);
@@ -1026,7 +1377,7 @@ fn join(mut left: Line, right: Line, width: usize) -> Line {
     left
 }
 
-fn clip_line(mut line: Line, width: usize) -> Line {
+fn clip_line(mut line: Vec<Span>, width: usize) -> Vec<Span> {
     let mut used = 0;
     for span in &mut line {
         truncate(&mut span.text, width.saturating_sub(used));
@@ -1036,56 +1387,63 @@ fn clip_line(mut line: Line, width: usize) -> Line {
     line
 }
 
-fn pad(mut line: Line, width: usize, bg: Rgba8) -> Line {
-    let used = line_width(&line);
-    if used < width {
-        line.push(Span::surface(" ".repeat(width - used), TEXT, bg));
-    }
-    line
-}
-
-fn line_width(line: &Line) -> usize {
+fn line_width(line: &[Span]) -> usize {
     line.iter().map(Span::width).sum()
 }
 
-fn wrap(lines: Vec<Line>, width: usize) -> Vec<Line> {
+fn wrap(lines: Vec<Line>, width: usize, entry: usize, first_line: usize) -> Vec<Row> {
     let mut rows = Vec::new();
-    for line in lines {
-        if line_width(&line) <= width {
-            rows.push(line);
+    for (index, line) in lines.into_iter().enumerate() {
+        let anchor = Anchor {
+            entry,
+            line: first_line + index,
+            byte: 0,
+        };
+        if line_width(&line.spans) <= width
+            && line.spans.iter().all(|span| !span.text.contains('\n'))
+        {
+            rows.push(Row {
+                spans: line.spans,
+                bg: line.bg,
+                anchor,
+            });
             continue;
         }
-        let mut row = Vec::new();
-        let mut used = 0;
-        for mut span in line {
-            let mut chunk = String::new();
-            for grapheme in span.text.graphemes(true) {
-                let step = cell_width(grapheme);
-                if used + step > width && used > 0 {
-                    let mut part = span.clone();
-                    part.text = std::mem::take(&mut chunk);
-                    if let Some(Source::Text(source)) = &mut part.source {
-                        source.end = source.start + part.text.len();
-                    }
-                    if let Some(Source::Text(source)) = &mut span.source {
-                        source.start += part.text.len();
-                    }
-                    if !part.text.is_empty() {
-                        row.push(part);
-                    }
-                    rows.push(std::mem::take(&mut row));
-                    used = 0;
+        let text: String = line.spans.iter().map(|span| span.text.as_str()).collect();
+        let mut spans = line.spans.into_iter().peekable();
+        let mut offset = 0;
+        for range in Input::new(&text, width).rows {
+            let mut row = Vec::new();
+            while let Some(span) = spans.peek() {
+                let length = span.text.len();
+                if offset + length <= range.start {
+                    offset += length;
+                    drop(spans.next());
+                    continue;
                 }
-                chunk.push_str(grapheme);
-                used += step;
+                if offset >= range.end {
+                    break;
+                }
+                let start = range.start.saturating_sub(offset);
+                let end = range.end.saturating_sub(offset).min(length);
+                if start < end {
+                    row.push(span.slice(start..end));
+                }
+                if end < length {
+                    break;
+                }
+                offset += length;
+                drop(spans.next());
             }
-            if !chunk.is_empty() {
-                let mut part = span;
-                part.text = chunk;
-                row.push(part);
-            }
+            rows.push(Row {
+                spans: row,
+                bg: line.bg,
+                anchor: Anchor {
+                    byte: range.start,
+                    ..anchor
+                },
+            });
         }
-        rows.push(row);
     }
     rows
 }
@@ -1143,7 +1501,7 @@ pub(super) fn row(cells: &[Cell]) -> NodeBuilder {
                 .fill_width()
                 .gap(0.0),
         )
-        .style(Style::new().bg(BASE));
+        .style(Style::new().bg(palette().base));
     let mut start = 0;
     while start < cells.len() {
         let cell = &cells[start];
@@ -1201,12 +1559,8 @@ fn truncate(text: &mut String, width: usize) {
     }
 }
 
-pub(super) fn accent(name: &str) -> Rgba8 {
-    if name == "fantasy" {
-        rgb(255, 208, 96)
-    } else {
-        rgb(105, 140, 210)
-    }
+pub(super) fn accent(_name: &str) -> Rgba8 {
+    palette().accent
 }
 
 fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {

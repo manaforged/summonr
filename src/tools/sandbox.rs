@@ -157,6 +157,29 @@ impl Sandbox {
         }
     }
 
+    pub(crate) fn allow_network(&self) -> Result<Self> {
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        {
+            Self::discover(&self.workspace, false, &self.write)
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        {
+            let _ = self;
+            unreachable!("sandbox backend is unavailable")
+        }
+    }
+
+    pub(crate) fn denies_network(&self) -> bool {
+        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        {
+            self.deny_network
+        }
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        {
+            false
+        }
+    }
+
     #[cfg(any(target_os = "macos", target_os = "linux", windows))]
     pub(crate) fn command_line(
         &self,
@@ -403,4 +426,18 @@ fn profile_path(path: &Path) -> Result<String> {
         ))
     })?;
     Ok(path.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mac_profile_network_rule_follows_deny_flag() {
+        let path = Path::new("/tmp");
+        let denied = mac_profile(path, path, &[], true, false).expect("profile");
+        assert!(denied.contains("(deny network*)"), "{denied}");
+        let allowed = mac_profile(path, path, &[], false, false).expect("profile");
+        assert!(!allowed.contains("(deny network*)"), "{allowed}");
+    }
 }

@@ -108,7 +108,7 @@ fn render_handles_an_odd_height_without_reading_out_of_bounds() {
     );
     let rows = render(&image, 10).expect("odd-height PNG must render");
     assert_eq!(rows.len(), 2);
-    let base = super::super::BASE;
+    let base = super::super::canvas::palette().base;
     assert_eq!(rows[1][0].bg.r, base.r);
     assert_eq!(rows[1][0].bg.g, base.g);
     assert_eq!(rows[1][0].bg.b, base.b);

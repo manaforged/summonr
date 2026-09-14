@@ -6,8 +6,10 @@ mod desktop;
 mod editor;
 #[cfg(feature = "gui")]
 mod gui;
+mod help;
 mod hit;
 mod host;
+mod input;
 mod model;
 mod pane;
 mod panes;
@@ -18,6 +20,7 @@ mod sessions;
 mod settings;
 mod speed;
 mod suggest;
+mod theme;
 mod view;
 
 #[cfg(feature = "gui")]

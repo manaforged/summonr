@@ -4199,7 +4199,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-a11y"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "accesskit",
  "crossbeam-channel",
@@ -4210,7 +4210,7 @@ dependencies = [
 [[package]]
 name = "sigil-actions"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "sigil-actions-macros",
  "smallvec",
@@ -4219,7 +4219,7 @@ dependencies = [
 [[package]]
 name = "sigil-actions-macros"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4229,12 +4229,12 @@ dependencies = [
 [[package]]
 name = "sigil-animation"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 
 [[package]]
 name = "sigil-animation-runtime"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "sigil-animation",
  "sigil-reactive",
@@ -4244,7 +4244,7 @@ dependencies = [
 [[package]]
 name = "sigil-app"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "accesskit",
  "crossbeam-channel",
@@ -4272,7 +4272,7 @@ dependencies = [
 [[package]]
 name = "sigil-bidi"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "unicode-bidi",
 ]
@@ -4280,7 +4280,7 @@ dependencies = [
 [[package]]
 name = "sigil-events"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "accesskit",
  "sigil-hal",
@@ -4292,7 +4292,7 @@ dependencies = [
 [[package]]
 name = "sigil-hal"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "keyboard-types",
  "smol_str 0.3.6",
@@ -4301,7 +4301,7 @@ dependencies = [
 [[package]]
 name = "sigil-icons"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "lyon_geom",
  "smallvec",
@@ -4311,7 +4311,7 @@ dependencies = [
 [[package]]
 name = "sigil-ide-core"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "crossbeam-channel",
  "ignore",
@@ -4323,7 +4323,7 @@ dependencies = [
 [[package]]
 name = "sigil-kernel"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "accesskit",
  "ahash",
@@ -4336,7 +4336,7 @@ dependencies = [
 [[package]]
 name = "sigil-layout"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "ahash",
  "sigil-hal",
@@ -4351,12 +4351,12 @@ dependencies = [
 [[package]]
 name = "sigil-profile"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 
 [[package]]
 name = "sigil-reactive"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "sigil-actions",
  "smallvec",
@@ -4366,7 +4366,7 @@ dependencies = [
 [[package]]
 name = "sigil-renderer"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -4392,7 +4392,7 @@ dependencies = [
 [[package]]
 name = "sigil-shell"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4405,7 +4405,7 @@ dependencies = [
 [[package]]
 name = "sigil-style"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "phf",
  "sigil-hal",
@@ -4420,7 +4420,7 @@ dependencies = [
 [[package]]
 name = "sigil-style-macros"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "phf",
  "phf_codegen",
@@ -4433,7 +4433,7 @@ dependencies = [
 [[package]]
 name = "sigil-tasks"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "sigil-hal",
  "sigil-reactive",
@@ -4443,7 +4443,7 @@ dependencies = [
 [[package]]
 name = "sigil-text"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "ahash",
  "core-text",
@@ -4465,7 +4465,7 @@ dependencies = [
 [[package]]
 name = "sigil-tui"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "crossterm",
  "sigil-animation-runtime",
@@ -4485,7 +4485,7 @@ dependencies = [
 [[package]]
 name = "sigil-ui"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "arboard",
  "sigil-actions",
@@ -4504,7 +4504,7 @@ dependencies = [
 [[package]]
 name = "sigil-widgets"
 version = "0.1.0"
-source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=c99ae1e493c7e1b13647952ef68b2df409e4112a#c99ae1e493c7e1b13647952ef68b2df409e4112a"
+source = "git+ssh://git@github.com/ThomGardiner/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
 dependencies = [
  "sigil-animation-runtime",
  "sigil-bidi",
@@ -4790,6 +4790,7 @@ dependencies = [
  "tokio",
  "toml 0.8.23",
  "toml_edit 0.22.27",
+ "unicode-linebreak",
  "unicode-segmentation",
  "unicode-width",
  "uuid",

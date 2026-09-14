@@ -120,3 +120,25 @@ fn sandbox_write_paths_expand_the_home_prefix() {
     assert_eq!(paths[1], std::path::PathBuf::from("/opt/cache"));
     assert!(load_from(&path).expect("reload").sandbox.paths().len() == 2);
 }
+
+#[test]
+fn save_sandbox_write_appends_once() {
+    let home = tempfile::tempdir().expect("temp home");
+    let path = home.path().join("config.toml");
+    std::fs::write(&path, "theme = \"space\"\n").expect("seed");
+    save_sandbox_write(&path, "/opt/cache").expect("first");
+    save_sandbox_write(&path, "/opt/cache").expect("dup");
+    save_sandbox_write(&path, "~/store").expect("home");
+    let text = std::fs::read_to_string(&path).expect("read");
+    assert!(text.contains("theme = \"space\""), "{text}");
+    let file = load_from(&path).expect("load");
+    assert_eq!(file.sandbox.write.len(), 2, "{text}");
+    assert!(
+        file.sandbox.write.iter().any(|row| row == "/opt/cache"),
+        "{text}"
+    );
+    assert!(
+        file.sandbox.write.iter().any(|row| row == "~/store"),
+        "{text}"
+    );
+}

@@ -68,10 +68,12 @@ impl Reader {
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
             Cmd::Patch(root, path) => {
-                let root = root.as_deref().unwrap_or(&self.workspace);
-                let text = diff::patch(root, Some(&path))
-                    .unwrap_or_else(|error| format!("diff failed: {error}"));
-                self.send(Msg::Patch { path, text });
+                let result = diff::patch(
+                    root.as_deref().unwrap_or(&self.workspace),
+                    (!path.is_empty()).then_some(path.as_str()),
+                )
+                .map_err(|error| error.to_string());
+                self.send(Msg::Patch { root, path, result });
             }
             Cmd::Trees => self.trees(),
             Cmd::Save(file, text) => {
@@ -98,7 +100,7 @@ impl Reader {
     pub(super) fn diff(&self, root: &Path) {
         match diff::stats(root) {
             Ok(diff) => self.send(Msg::Diff(diff)),
-            Err(error) => self.send(Msg::System(format!("diff unavailable: {error}"))),
+            Err(error) => self.send(Msg::DiffFailed(error.to_string())),
         }
     }
 

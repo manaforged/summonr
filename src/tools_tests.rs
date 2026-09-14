@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider::ToolFunction;
 
 impl ToolRegistry {
     pub(crate) fn new(workspace: impl AsRef<Path>) -> Result<Self> {
@@ -304,7 +305,7 @@ fn read_file_describes_an_image_instead_of_dumping_bytes() -> Result<()> {
 }
 
 #[tokio::test]
-async fn plan_mode_writes_files_but_the_edit_tools_are_denied() -> Result<()> {
+async fn plan_mode_denies_writes_and_edits_through_the_dispatcher() -> Result<()> {
     let workspace = tempfile::tempdir()?;
     let mut tools = ToolRegistry::new(workspace.path())?;
     tools.set_read_only(true);
@@ -313,14 +314,6 @@ async fn plan_mode_writes_files_but_the_edit_tools_are_denied() -> Result<()> {
         "content": "# findings\n",
     })
     .to_string();
-    let wrote = tools.write_file(&plan).await?;
-    assert!(
-        wrote.text.contains("wrote docs/reviews/audit.md"),
-        "{}",
-        wrote.text
-    );
-    assert!(workspace.path().join("docs/reviews/audit.md").is_file());
-
     std::fs::write(workspace.path().join("note.md"), "one\ntwo\n")?;
     let edit = serde_json::json!({
         "path": "note.md",
@@ -328,13 +321,58 @@ async fn plan_mode_writes_files_but_the_edit_tools_are_denied() -> Result<()> {
         "replace": "three",
     })
     .to_string();
-    let refused = match tools.edit_operation("replace_text", &edit).await {
-        Err(error) => error,
-        Ok(_) => panic!("the edit tools are denied in plan mode"),
-    };
-    assert!(
-        refused.to_string().contains("does not edit"),
-        "the denial names plan mode: {refused}"
+    for (name, arguments) in [("write_file", plan), ("replace_text", edit)] {
+        let call = ToolCall {
+            id: name.to_string(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                name: name.to_string(),
+                arguments,
+            },
+            continuation: None,
+        };
+        let error = tools
+            .execute(&call)
+            .await
+            .expect_err("plan mode denies mutation");
+        assert!(
+            error
+                .to_string()
+                .contains("unavailable in the current mode")
+        );
+    }
+    assert!(!workspace.path().join("docs/reviews/audit.md").exists());
+    assert_eq!(
+        std::fs::read_to_string(workspace.path().join("note.md"))?,
+        "one\ntwo\n"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn write_file_reaches_an_approved_root() -> Result<()> {
+    let workspace = std::env::temp_dir().join(format!("mage-inside-{}", std::process::id()));
+    let outside = std::env::temp_dir().join(format!("mage-approved-{}", std::process::id()));
+    std::fs::create_dir_all(&workspace)?;
+    std::fs::create_dir_all(&outside)?;
+    let mut tools = ToolRegistry::new(&workspace)?;
+    tools.allow_path(outside.clone())?;
+    let target = outside.join("note.txt");
+    let args = serde_json::json!({"path": target, "content": "hello\n"}).to_string();
+    tools.write_file(&args).await?;
+    assert_eq!(std::fs::read_to_string(&target)?, "hello\n");
+    let denied = match tools
+        .write_file(
+            &serde_json::json!({"path": outside.with_extension("other"), "content": "x"})
+                .to_string(),
+        )
+        .await
+    {
+        Ok(_) => panic!("unapproved paths stay denied"),
+        Err(error) => error.to_string(),
+    };
+    assert!(denied.contains("/write "), "{denied}");
+    std::fs::remove_dir_all(&workspace)?;
+    std::fs::remove_dir_all(&outside)?;
     Ok(())
 }

@@ -1,7 +1,7 @@
 # Copy to ~/.mage/config.toml and edit.
 # A workspace `.mage/config.toml` may select an [lsp] module only.
 # Do not put secrets in the git repo. Keys belong in the sealed store:
-# `summon login NAME`; `summon endpoints` shows where each key lives.
+# `summonr login NAME`; `summonr endpoints` shows where each key lives.
 #
 # Completions seats: base_url + model, optional [endpoint.NAME.body].
 # Native seats set wire = "anthropic" or wire = "gemini".
@@ -16,7 +16,7 @@ default = "zai"
 # tools = "compact"      # show the last line or the full tool result
 # bus = true             # let incoming mail start a turn after MAGE_BUS joins
 #
-# Language modules route diagnostics, definition, and rename for Rust,
+# The lsp tool routes diagnostics, definition, and rename for Rust,
 # TypeScript/JavaScript, Python, and Go. Selection uses the file extension
 # and the nearest project marker. To force one curated module, use:
 # [lsp]
@@ -30,7 +30,7 @@ default = "zai"
 [endpoint.zai]
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
-# api_key = "…"   # plaintext; prefer `summon login zai` or ZAI_API_KEY
+# api_key = "…"   # plaintext; prefer `summonr login zai` or ZAI_API_KEY
 # context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
 # effort = "low"            # reasoning effort: none, low, medium, high
 #                           # (chat/completions `reasoning_effort`; Anthropic and
@@ -77,7 +77,7 @@ model = "grok-4.6"
 
 # OAuth2 token, then the same chat/completions POST.
 # grant: client_credentials | refresh_token | device_code
-# `summon login NAME` runs RFC 8628 device flow when device_url is set.
+# `summonr login NAME` runs RFC 8628 device flow when device_url is set.
 # [endpoint.azure]
 # base_url = "https://YOUR.openai.azure.com/openai/v1"
 # model = "gpt-4o"
@@ -87,7 +87,7 @@ model = "grok-4.6"
 # client_secret = "…"
 # scope = "https://cognitiveservices.azure.com/.default"
 #
-# Builtin `copilot`: `summon login copilot` then `summon copilot`.
+# Builtin `copilot`: `summonr login copilot` then `summonr copilot`.
 # Device token is exchanged at copilot_internal; overlay if GitHub moves URLs.
 # [endpoint.copilot]
 # base_url = "https://api.githubcopilot.com"
@@ -105,15 +105,23 @@ model = "grok-4.6"
 # wire = "anthropic"
 # [endpoint.gemini]
 # wire = "gemini"
+#
+# OpenCode Completions seats. `summonr login zen` / `summonr login go`.
+# [endpoint.zen]
+# base_url = "https://opencode.ai/zen/v1"
+# model = "glm-5.3-flash"
+# [endpoint.go]
+# base_url = "https://opencode.ai/zen/go/v1"
+# model = "glm-5.3-flash"
 
-# Sandbox: directories outside the workspace that contained commands may
-# write, such as a shared build cache. "~/" expands to your home directory.
-# `cp`, `ln`, `mv`, and `install` may target these paths too. `/write PATH`
-# approves one for the current session without editing this file.
+# Extra writable roots (union with the launch directory and temp).
+# File tools, shell commands, and the OS sandbox all use this list.
+# "~/" expands to your home directory. `/write PATH` appends here.
+# --add-dir DIR does the same for one launch.
 # [sandbox]
-# write = ["~/.cargo", "~/.cargo/registry"]
+# write = ["~/.cargo", "~/code"]
 
-# web_search: DuckDuckGo HTML needs no key. backend = "brave" with a key
+# web: DuckDuckGo HTML needs no key. backend = "brave" with a key
 # (or BRAVE_API_KEY) gives stable results; backend = "bing" keeps the RSS path.
 # [search]
 # backend = "brave"
@@ -124,7 +132,7 @@ model = "grok-4.6"
 
 # Workflows: one seat per step. A role the workflow does not name runs on
 # the session's driving seat (the endpoint you started with). Pick one with
-# `summon -w NAME`, `/workflow NAME`, or `workflow = "NAME"` here.
+# `summonr -w NAME`, `/workflow NAME`, or `workflow = "NAME"` here.
 # workflow = "cheap-scout"
 # [workflows.cheap-scout]
 # scout = "kimi"                                   # read-only reconnaissance

@@ -1,5 +1,5 @@
 use super::*;
-use crate::provider::ToolFunction;
+use crate::provider::{ToolCall, ToolFunction, ToolKind};
 
 impl ToolRegistry {
     pub(crate) fn new(workspace: impl AsRef<Path>) -> Result<Self> {
@@ -361,6 +361,24 @@ async fn write_file_reaches_an_approved_root() -> Result<()> {
     let args = serde_json::json!({"path": target, "content": "hello\n"}).to_string();
     tools.write_file(&args).await?;
     assert_eq!(std::fs::read_to_string(&target)?, "hello\n");
+    tools.enable_sandbox(false)?;
+    let os = outside.join("os.txt");
+    let out = tools
+        .execute(&ToolCall {
+            continuation: None,
+            id: "os".to_string(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                name: "run_command".to_string(),
+                arguments: serde_json::json!({
+                    "command": format!("printf os > '{}'", os.display())
+                })
+                .to_string(),
+            },
+        })
+        .await?;
+    assert!(out.starts_with("exit 0"), "{out}");
+    assert_eq!(std::fs::read_to_string(&os)?, "os");
     let denied = match tools
         .write_file(
             &serde_json::json!({"path": outside.with_extension("other"), "content": "x"})
@@ -371,6 +389,7 @@ async fn write_file_reaches_an_approved_root() -> Result<()> {
         Ok(_) => panic!("unapproved paths stay denied"),
         Err(error) => error.to_string(),
     };
+    assert!(denied.contains("[sandbox] write"), "{denied}");
     assert!(denied.contains("/write "), "{denied}");
     std::fs::remove_dir_all(&workspace)?;
     std::fs::remove_dir_all(&outside)?;

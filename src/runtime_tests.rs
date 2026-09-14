@@ -131,7 +131,7 @@ async fn observed_mail_is_paged_without_losing_replay_state() -> Result<()> {
     let mut loop_ = Loop::with_session(Capture(requests.clone()), "test", &workspace, "system")?;
     for index in 0..6 {
         loop_.mail.push_back(crate::bus::Mail {
-            kind: "summoner".to_string(),
+            kind: "summonr".to_string(),
             ts: index,
             from: "peer".to_string(),
             text: format!("message {index}"),
@@ -227,6 +227,12 @@ fn the_default_schema_stays_under_budget_and_hides_idle_tools() -> Result<()> {
     let bytes = serde_json::to_string(&definitions)?.len();
     assert!(!names.contains(&"diagnostics"), "{names:?}");
     assert!(!names.contains(&"definition"), "{names:?}");
+    assert!(!names.contains(&"lsp"), "{names:?}");
+    assert!(!names.contains(&"read_file"), "{names:?}");
+    assert!(!names.contains(&"grep"), "{names:?}");
+    assert!(names.contains(&"read"), "{names:?}");
+    assert!(names.contains(&"edit"), "{names:?}");
+    assert!(names.contains(&"write"), "{names:?}");
     assert_eq!(
         names.contains(&"skill"),
         crate::skills::catalog(workspace.path()).is_some()

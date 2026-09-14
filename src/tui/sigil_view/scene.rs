@@ -213,7 +213,7 @@ fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {
         |relay| format!("{} · {relay}", model.model),
     );
     let mut facts = vec![
-        ("summoner", app.info.version.clone()),
+        ("summonr", app.info.version.clone()),
         ("model", shown_model),
         ("session", short_session(&model.session)),
         ("workdir", app.info.workspace.clone()),

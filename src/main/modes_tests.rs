@@ -1,5 +1,5 @@
 use super::{exit, slash};
-use summoner::{Turn, Usage, WorkKind, WorkPhase, WorkProgress};
+use summonr::{Turn, Usage, WorkKind, WorkPhase, WorkProgress};
 
 #[test]
 fn a_leading_slash_line_is_a_command_not_a_prompt() {

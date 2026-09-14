@@ -1,5 +1,29 @@
 # Changelog
 
+## Unreleased
+
+- Crate and command are `summonr`. `summon` and `summoner` remain PATH
+  aliases of the same binary. Config stays under `~/.mage`.
+- The model sees four core tools every round: `read` (file, directory,
+  image, or search), `edit`, `write`, and `run_command`. Optional
+  modules add `skill`, `lsp`, `web`, `task`, and `bus`. Old names still
+  run and are not advertised.
+- Plan mode is read-only. `edit` and `write` are unavailable. The model
+  inspects with `read` and `run_command`, then proposes diffs in the
+  answer.
+- `--goal`, `--steps`, and `implement` children edit the directory you
+  launched from. Pass `--worktree` to isolate the whole session.
+- A sandboxed write or network denial pauses in the interface:
+  `[ allow ]`, `[ always ]`, or `[ deny ]`. `[ always ]` appends the
+  path to `[sandbox] write`. `/write PATH` and `/net on` / `/net once`
+  do the same without a prompt.
+- Built-in OpenCode seats: `zen`, `go`, and `opencode`
+  (`chat/completions`). Keys are `OPENCODE_API_KEY` and
+  `OPENCODE_GO_API_KEY`. Requests to `opencode.ai/zen` send
+  `x-opencode-session`.
+- Streamed reasoning is italic `thought` text on the canvas. There is no
+  separate reasoning band.
+
 ## 0.1.0 - 2026-09-10
 
 First public release of the Mage harness under the Summoner name.

@@ -10,7 +10,7 @@ pub(super) fn header(model: &Model) -> String {
         .map_or_else(String::new, |relay| format!(" · {relay}"));
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
     format!(
-        "summoner  {}{}   session {}   {mode}",
+        "summonr  {}{}   session {}   {mode}",
         model.model,
         relay,
         short_session(&model.session),
@@ -82,7 +82,7 @@ pub(super) fn facts(model: &Model, info: &Info) -> String {
         .as_deref()
         .map_or_else(String::new, |relay| format!(" · {relay}"));
     let mut rows = vec![
-        format!("summoner  {}", info.version),
+        format!("summonr  {}", info.version),
         format!("   model  {}{relay}", model.model),
         format!(" session  {}", short_session(&model.session)),
         format!(" workdir  {}", info.workspace),

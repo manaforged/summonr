@@ -404,7 +404,7 @@ struct Lock(OwnedHandle);
 
 impl Lock {
     fn acquire() -> io::Result<Self> {
-        let name = wide("Local\\Summoner.Sandbox.Acl")?;
+        let name = wide("Local\\Summonr.Sandbox.Acl")?;
         // SAFETY: This mutex serializes ACL read-modify-write operations across helpers.
         let raw = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
         if raw.is_null() {
@@ -432,7 +432,7 @@ impl Drop for Lock {
 }
 
 fn job(pid: u32) -> io::Result<OwnedHandle> {
-    let name = wide(format!("Local\\Summoner.Sandbox.{pid}"))?;
+    let name = wide(format!("Local\\Summonr.Sandbox.{pid}"))?;
     // SAFETY: The terminated name identifies the helper's command job; this handle is owned.
     let raw = unsafe { CreateJobObjectW(null(), name.as_ptr()) };
     if raw.is_null() {
@@ -558,7 +558,7 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
         .to_str()
         .and_then(|value| value.parse::<u32>().ok())
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid sandbox parent"))?;
-    let parent = if std::env::var_os("SUMMONER_SANDBOX_DETACHED").is_some() {
+    let parent = if std::env::var_os("SUMMONR_SANDBOX_DETACHED").is_some() {
         None
     } else {
         // SAFETY: The parent PID is supplied by the launcher; the returned handle is only waited on.
@@ -581,10 +581,10 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
         .collect::<io::Result<_>>()?;
     let executable = Path::new(&args[6]);
     let temp = tempfile::Builder::new()
-        .prefix("summoner-sandbox-")
+        .prefix("summonr-sandbox-")
         .tempdir()?;
     let name = format!(
-        "summoner.{}.{}",
+        "summonr.{}.{}",
         std::process::id(),
         temp.path()
             .file_name()
@@ -733,8 +733,8 @@ fn environment(temp: &Path, workspace: &Path, cwd: &Path) -> io::Result<Vec<u16>
             ![
                 "TEMP",
                 "TMP",
-                "SUMMONER_SANDBOX_ROOT",
-                "SUMMONER_SANDBOX_DIRECTORY",
+                "SUMMONR_SANDBOX_ROOT",
+                "SUMMONR_SANDBOX_DIRECTORY",
             ]
             .iter()
             .any(|name| key.eq_ignore_ascii_case(name))
@@ -744,11 +744,11 @@ fn environment(temp: &Path, workspace: &Path, cwd: &Path) -> io::Result<Vec<u16>
         (OsString::from("TEMP"), temp.as_os_str().to_owned()),
         (OsString::from("TMP"), temp.as_os_str().to_owned()),
         (
-            OsString::from("SUMMONER_SANDBOX_ROOT"),
+            OsString::from("SUMMONR_SANDBOX_ROOT"),
             simplified(workspace).as_os_str().to_owned(),
         ),
         (
-            OsString::from("SUMMONER_SANDBOX_DIRECTORY"),
+            OsString::from("SUMMONR_SANDBOX_DIRECTORY"),
             relative.as_os_str().to_owned(),
         ),
     ]);

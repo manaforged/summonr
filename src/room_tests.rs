@@ -6,7 +6,7 @@ fn usage_rejects_unknown_words() {
     let error = runtime
         .block_on(run(&["dance".to_string()], Path::new(".")))
         .expect_err("usage");
-    assert!(error.to_string().contains("summon room serve"));
+    assert!(error.to_string().contains("summonr room serve"));
 }
 
 #[test]

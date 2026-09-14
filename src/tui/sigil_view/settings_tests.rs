@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn endpoint_arrows_move_in_opposite_directions() {
-    sigil::reactive::Runtime::scope("summoner-endpoint-arrows", || {
+    sigil::reactive::Runtime::scope("summonr-endpoint-arrows", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         let names = crate::endpoint::ready();

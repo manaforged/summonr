@@ -24,7 +24,7 @@ fn app() -> (App, tokio::sync::mpsc::UnboundedReceiver<Cmd>) {
 
 #[test]
 fn desktop_composer_keeps_focus_between_editing_and_submission() {
-    Runtime::scope("summoner-desktop-composer-focus", || {
+    Runtime::scope("summonr-desktop-composer-focus", || {
         let (app, mut rx) = app();
         let tree = app.clone();
         let mut host = Host::cells();
@@ -74,7 +74,7 @@ fn desktop_composer_keeps_focus_between_editing_and_submission() {
 
 #[test]
 fn desktop_authentication_routes_masked_input_save_cancel_and_device_login() {
-    Runtime::scope("summoner-desktop-authentication", || {
+    Runtime::scope("summonr-desktop-authentication", || {
         let (app, mut rx) = app();
         app.replace("/auth glm".to_string());
         app.submit();
@@ -175,7 +175,7 @@ fn desktop_authentication_routes_masked_input_save_cancel_and_device_login() {
 
 #[test]
 fn desktop_options_explain_persistence_and_model_identity() {
-    Runtime::scope("summoner-desktop-option-cues", || {
+    Runtime::scope("summonr-desktop-option-cues", || {
         let (app, mut rx) = app();
         app.toggle_options();
         let tree = app.clone();
@@ -235,7 +235,7 @@ fn desktop_options_explain_persistence_and_model_identity() {
 #[test]
 fn saved_prompt_selection_stays_visible_in_a_short_desktop_window() {
     for branch in [false, true] {
-        sigil::reactive::Runtime::scope("summoner-desktop-prompts", || {
+        sigil::reactive::Runtime::scope("summonr-desktop-prompts", || {
             let (app, mut rx) = app();
             if branch {
                 app.replace("/branch".to_string());
@@ -321,7 +321,7 @@ fn saved_prompt_selection_stays_visible_in_a_short_desktop_window() {
 
 #[test]
 fn desktop_session_tree_shows_the_current_branch_and_selects_its_parent() {
-    sigil::reactive::Runtime::scope("summoner-desktop-tree", || {
+    sigil::reactive::Runtime::scope("summonr-desktop-tree", || {
         let (app, mut rx) = app();
         let current = app.model.borrow().session.clone();
         app.replace("/tree".to_string());
@@ -382,7 +382,7 @@ fn desktop_session_tree_shows_the_current_branch_and_selects_its_parent() {
 
 #[test]
 fn search_uses_desktop_message_bounds_and_keeps_the_draft() {
-    sigil::reactive::Runtime::scope("summoner-desktop-search", || {
+    sigil::reactive::Runtime::scope("summonr-desktop-search", || {
         let (app, mut rx) = app();
         for index in 0..40 {
             app.update(Msg::User(format!(
@@ -439,7 +439,7 @@ fn search_uses_desktop_message_bounds_and_keeps_the_draft() {
 
 #[test]
 fn the_window_shows_the_session_and_asks_for_the_diff() {
-    Runtime::scope("summoner-desktop-tree", || {
+    Runtime::scope("summonr-desktop-tree", || {
         let (app, mut rx) = app();
         let frame = present(move |cx: &mut Cx| cx.add(root(app)), 160, 80, &[]).expect("desktop");
         assert!(frame.contains("session-12345"), "{frame}");
@@ -450,7 +450,7 @@ fn the_window_shows_the_session_and_asks_for_the_diff() {
 
 #[test]
 fn the_right_rail_follows_the_open_pane() {
-    Runtime::scope("summoner-desktop-panes", || {
+    Runtime::scope("summonr-desktop-panes", || {
         let (app, mut rx) = app();
         app.update(Msg::Diff(Diff {
             base: "HEAD".to_string(),
@@ -493,7 +493,7 @@ fn the_right_rail_follows_the_open_pane() {
 
 #[test]
 fn the_desktop_hotkey_editor_shows_a_changed_binding() {
-    Runtime::scope("summoner-desktop-options", || {
+    Runtime::scope("summonr-desktop-options", || {
         let (app, _rx) = app();
         app.toggle_options();
         assert!(app.settings_open.peek());

@@ -41,6 +41,7 @@ async fn embedded_registry_can_disable_web_tools() -> Result<()> {
         .into_iter()
         .map(|tool| tool.function.name)
         .collect();
+    assert!(!names.iter().any(|n| n == "web"));
     assert!(!names.iter().any(|n| n == "web_search"));
     assert!(!names.iter().any(|n| n == "web_fetch"));
     let missing = tools
@@ -78,11 +79,10 @@ async fn native_web_search_hits_and_curl_is_allowed() -> Result<()> {
         .into_iter()
         .map(|tool| tool.function.name)
         .collect();
-    assert!(names.iter().any(|n| n == "web_search"));
-    assert!(names.iter().any(|n| n == "web_fetch"));
-    let out = tools
-        .execute(&call("web_search", r#"{"query":"tokio"}"#))
-        .await?;
+    assert!(names.iter().any(|n| n == "web"));
+    assert!(!names.iter().any(|n| n == "web_search"));
+    assert!(!names.iter().any(|n| n == "web_fetch"));
+    let out = tools.execute(&call("web", r#"{"query":"tokio"}"#)).await?;
     assert!(out.contains("Tokio"));
     assert!(out.contains("https://tokio.rs"));
     let curl = tools
@@ -98,9 +98,11 @@ async fn native_web_search_hits_and_curl_is_allowed() -> Result<()> {
         .into_iter()
         .map(|tool| tool.function.name)
         .collect();
-    assert!(plan.iter().any(|n| n == "web_search"));
-    assert!(!plan.iter().any(|n| n == "write_file"));
-    assert!(!plan.iter().any(|n| n == "read_file"));
+    assert!(plan.iter().any(|n| n == "web"));
+    assert!(plan.iter().any(|n| n == "read"));
+    assert!(!plan.iter().any(|n| n == "grep"));
+    assert!(!plan.iter().any(|n| n == "write"));
+    assert!(!plan.iter().any(|n| n == "edit"));
     tools
         .execute(&call("write_file", r#"{"path":"no","content":"no"}"#))
         .await
@@ -667,20 +669,25 @@ async fn a_write_denial_retries_after_allow() -> Result<()> {
         &workspace,
         "system",
     )?;
-    let queue = Arc::new(Mutex::new(std::collections::VecDeque::new()));
-    loop_.steer_with(queue.clone());
-    answer_later(queue, "y");
     let turn = loop_.turn("write it").await?;
     assert_eq!(std::fs::read_to_string(&target)?, "hello\n");
     assert!(
         turn.events.iter().any(|event| matches!(
+            event,
+            Event::Note { text } if text.contains("writes allowed under")
+        )),
+        "{:?}",
+        turn.events
+    );
+    assert!(
+        !turn.events.iter().any(|event| matches!(
             event,
             Event::Approval {
                 detail: Some(_),
                 ..
             }
         )),
-        "{:?}",
+        "auto mode must not prompt: {:?}",
         turn.events
     );
     assert!(
@@ -718,6 +725,7 @@ async fn a_write_denial_stays_denied_after_deny() -> Result<()> {
         &workspace,
         "system",
     )?;
+    loop_.set_manual(true);
     let queue = Arc::new(Mutex::new(std::collections::VecDeque::new()));
     loop_.steer_with(queue.clone());
     answer_later(queue, "n");

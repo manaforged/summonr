@@ -35,7 +35,7 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
     let killed = first.kill()?;
     assert!(
         !killed.success(),
-        "the first Summoner process exited normally before the kill"
+        "the first Summonr process exited normally before the kill"
     );
     fs::write(&fixture.release_first_step_two, b"release\n")?;
 
@@ -53,7 +53,7 @@ fn steps_resume_after_process_kill_at_first_unfinished_step()
     let status = second.wait(WAIT)?;
     assert!(
         status.success(),
-        "resumed Summoner exited with {status}; stderr: {}",
+        "resumed Summonr exited with {status}; stderr: {}",
         fs::read_to_string(fixture.stderr("second")).unwrap_or_default()
     );
     let resumed_output = fs::read_to_string(fixture.stdout("second"))?;
@@ -216,7 +216,7 @@ impl RunningChild {
             .truncate(true)
             .write(true)
             .open(fixture.stderr(name))?;
-        let child = Command::new(env!("CARGO_BIN_EXE_summon"))
+        let child = Command::new(env!("CARGO_BIN_EXE_summonr"))
             .args(args)
             .current_dir(&fixture.workspace)
             .env("MAGE_HOME", &fixture.home)

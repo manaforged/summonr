@@ -1052,10 +1052,15 @@ impl<P: Provider> Loop<P> {
             if matches!(grant, Grant::Write(_)) && self.tools.is_read_only() {
                 break;
             }
+            let persist = matches!(grant, Grant::Write(_));
+            if !self.manual && persist {
+                self.apply_grant(&grant, false, events, emit)?;
+                output = self.tools.execute_outcome(call).await;
+                continue;
+            }
             if self.steer_shared.is_none() {
                 break;
             }
-            let persist = matches!(grant, Grant::Write(_));
             match self.approve(grant.prompt(), persist, events, emit).await? {
                 GrantAnswer::Deny => break,
                 GrantAnswer::Allow => self.apply_grant(&grant, false, events, emit)?,

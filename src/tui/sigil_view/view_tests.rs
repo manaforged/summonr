@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn diff_commands_reveal_the_saved_pane_from_the_welcome_screen() {
-    sigil::reactive::Runtime::scope("summoner-welcome-command", || {
+    sigil::reactive::Runtime::scope("summonr-welcome-command", || {
         for command in ["/diff", "/diff file.txt"] {
             let (cmd, mut rx) = unbounded_channel();
             let mut start = info();
@@ -58,7 +58,7 @@ fn diff_commands_reveal_the_saved_pane_from_the_welcome_screen() {
 
 #[test]
 fn drafting_returns_pane_shortcuts_to_the_composer() {
-    sigil::reactive::Runtime::scope("summoner-pane-draft-focus", || {
+    sigil::reactive::Runtime::scope("summonr-pane-draft-focus", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(120, 40);
@@ -537,7 +537,7 @@ fn composer_history_survives_search_and_resize() {
 
 #[test]
 fn queue_edit_shortcut_does_not_cancel_or_modify_the_draft() {
-    sigil::reactive::Runtime::scope("summoner-queue-edit", || {
+    sigil::reactive::Runtime::scope("summonr-queue-edit", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(100, 24);
@@ -582,7 +582,7 @@ fn search_does_not_invent_matches_across_message_lines() {
         ("error", "alphabeta"),
         ("tool", "alpha    beta"),
     ] {
-        sigil::reactive::Runtime::scope("summoner-hard-line-search", || {
+        sigil::reactive::Runtime::scope("summonr-hard-line-search", || {
             let (cmd, _rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(100, 16);
@@ -642,7 +642,7 @@ fn search_does_not_invent_matches_across_message_lines() {
 #[test]
 fn search_follows_a_phrase_across_soft_wrapped_message_rows() {
     for width in [24, 40, 100] {
-        sigil::reactive::Runtime::scope("summoner-soft-line-search", || {
+        sigil::reactive::Runtime::scope("summonr-soft-line-search", || {
             let (cmd, _rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(width, 16);
@@ -682,7 +682,7 @@ fn search_follows_a_phrase_across_soft_wrapped_message_rows() {
 #[test]
 fn search_reveals_a_match_near_the_end_of_a_long_answer() {
     for width in [40, 100] {
-        sigil::reactive::Runtime::scope("summoner-long-answer-search", || {
+        sigil::reactive::Runtime::scope("summonr-long-answer-search", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(100, 24);
@@ -791,7 +791,7 @@ fn search_reveals_markdown_source_after_wrapping() {
 #[test]
 fn saved_prompt_search_inserts_at_the_caret_and_preserves_the_draft_image() {
     for width in [40, 100] {
-        sigil::reactive::Runtime::scope("summoner-saved-prompts", || {
+        sigil::reactive::Runtime::scope("summonr-saved-prompts", || {
             let dir = tempfile::tempdir().expect("workspace");
             let path = dir.path().join("draft.png");
             image::RgbImage::new(1, 1).save(&path).expect("draft image");
@@ -943,7 +943,7 @@ fn saved_prompt_search_inserts_at_the_caret_and_preserves_the_draft_image() {
 #[test]
 fn failed_or_empty_prompt_search_can_close_without_cancelling_an_active_operation() {
     for activity in [Activity::Turn, Activity::Login, Activity::Compact] {
-        sigil::reactive::Runtime::scope("summoner-prompt-search-errors", || {
+        sigil::reactive::Runtime::scope("summonr-prompt-search-errors", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(40, 16);
@@ -1009,7 +1009,7 @@ fn failed_or_empty_prompt_search_can_close_without_cancelling_an_active_operatio
 
 #[test]
 fn search_jumps_to_the_selected_message_after_resize_without_changing_the_draft() {
-    sigil::reactive::Runtime::scope("summoner-conversation-search", || {
+    sigil::reactive::Runtime::scope("summonr-conversation-search", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(100, 24);
@@ -1102,7 +1102,7 @@ fn search_jumps_to_the_selected_message_after_resize_without_changing_the_draft(
 
 #[test]
 fn empty_search_can_close_during_streaming_without_cancelling_the_turn() {
-    sigil::reactive::Runtime::scope("summoner-busy-search", || {
+    sigil::reactive::Runtime::scope("summonr-busy-search", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(40, 16);
@@ -1142,7 +1142,7 @@ fn empty_search_can_close_during_streaming_without_cancelling_the_turn() {
 
 #[test]
 fn image_paste_errors_preserve_the_draft_and_never_submit_an_attachment() {
-    sigil::reactive::Runtime::scope("summoner-image-errors", || {
+    sigil::reactive::Runtime::scope("summonr-image-errors", || {
         let dir = tempfile::tempdir().expect("workspace");
         std::fs::write(dir.path().join("wrong.png"), b"plain text").expect("wrong format");
         std::fs::write(dir.path().join("broken.png"), b"\x89PNG\r\n\x1a\n")
@@ -1177,7 +1177,7 @@ fn image_paste_errors_preserve_the_draft_and_never_submit_an_attachment() {
 
 #[test]
 fn image_paste_and_replay_render_the_saved_pixels() {
-    sigil::reactive::Runtime::scope("summoner-image-replay", || {
+    sigil::reactive::Runtime::scope("summonr-image-replay", || {
         let dir = tempfile::tempdir().expect("workspace");
         let path = dir.path().join("reference.png");
         image::RgbImage::from_pixel(4, 4, image::Rgb([255, 0, 0]))
@@ -1223,7 +1223,7 @@ fn image_paste_and_replay_render_the_saved_pixels() {
 #[test]
 #[ignore = "requires a native clipboard containing the 2x2 RGBA fixture"]
 fn clipboard_image_preserves_draft_pixels_and_input_scope() {
-    sigil::reactive::Runtime::scope("summoner-clipboard-image", || {
+    sigil::reactive::Runtime::scope("summonr-clipboard-image", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 20);
@@ -1266,7 +1266,7 @@ fn clipboard_image_preserves_draft_pixels_and_input_scope() {
 
 #[test]
 fn fork_updates_the_header_and_keeps_the_parent_available_for_resume() {
-    sigil::reactive::Runtime::scope("summoner-fork-identity", || {
+    sigil::reactive::Runtime::scope("summonr-fork-identity", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         let parent = app.info.session.clone();
@@ -1306,7 +1306,7 @@ fn fork_updates_the_header_and_keeps_the_parent_available_for_resume() {
 
 #[test]
 fn retry_keeps_the_draft_and_refuses_an_active_turn() {
-    sigil::reactive::Runtime::scope("summoner-retry", || {
+    sigil::reactive::Runtime::scope("summonr-retry", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 16);
@@ -1360,7 +1360,7 @@ fn retry_keeps_the_draft_and_refuses_an_active_turn() {
 
 #[test]
 fn returned_prompts_preserve_the_current_draft_and_pasted_images() {
-    sigil::reactive::Runtime::scope("summoner-pending-input-recovery", || {
+    sigil::reactive::Runtime::scope("summonr-pending-input-recovery", || {
         let dir = tempfile::tempdir().expect("workspace");
         let path = dir.path().join("pasted.png");
         image::RgbImage::new(1, 1).save(&path).expect("draft image");
@@ -1406,7 +1406,7 @@ fn returned_prompts_preserve_the_current_draft_and_pasted_images() {
 #[test]
 fn branching_selects_a_closed_turn_in_the_current_session_and_preserves_the_draft() {
     for width in [40, 100] {
-        sigil::reactive::Runtime::scope("summoner-branch-picker", || {
+        sigil::reactive::Runtime::scope("summonr-branch-picker", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(width, 16);
@@ -1548,7 +1548,7 @@ fn branching_selects_a_closed_turn_in_the_current_session_and_preserves_the_draf
 #[test]
 fn session_tree_keeps_relatives_in_order_and_resumes_the_parent() {
     for width in [40, 100] {
-        sigil::reactive::Runtime::scope("summoner-session-tree", || {
+        sigil::reactive::Runtime::scope("summonr-session-tree", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(width, 16);
@@ -1633,7 +1633,7 @@ fn session_tree_keeps_relatives_in_order_and_resumes_the_parent() {
 #[test]
 fn resume_picker_searches_projects_and_resumes_the_selected_session() {
     for width in [40, 100] {
-        sigil::reactive::Runtime::scope("summoner-session-picker", || {
+        sigil::reactive::Runtime::scope("summonr-session-picker", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(width, 16);
@@ -1709,7 +1709,7 @@ fn resume_picker_searches_projects_and_resumes_the_selected_session() {
 
 #[test]
 fn session_switch_keeps_unsent_text_and_images_until_the_user_discards_them() {
-    sigil::reactive::Runtime::scope("summoner-resume-draft", || {
+    sigil::reactive::Runtime::scope("summonr-resume-draft", || {
         let dir = tempfile::tempdir().expect("workspace");
         let image = dir.path().join("draft.png");
         image::RgbImage::new(1, 1)
@@ -1747,7 +1747,7 @@ fn session_switch_keeps_unsent_text_and_images_until_the_user_discards_them() {
 
 #[test]
 fn resume_picker_keeps_drafts_on_cancel_and_explains_empty_or_failed_lists() {
-    sigil::reactive::Runtime::scope("summoner-session-picker-recovery", || {
+    sigil::reactive::Runtime::scope("summonr-session-picker-recovery", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 16);
@@ -1892,7 +1892,7 @@ fn external_edits_undo_without_losing_the_original_caret() {
 
 #[test]
 fn file_completion_attaches_a_quoted_path_and_preserves_surrounding_text() {
-    sigil::reactive::Runtime::scope("summoner-file-completion", || {
+    sigil::reactive::Runtime::scope("summonr-file-completion", || {
         let dir = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(dir.path().join("docs")).expect("docs");
         std::fs::write(
@@ -2003,7 +2003,7 @@ fn file_completion_attaches_a_quoted_path_and_preserves_surrounding_text() {
 
 #[test]
 fn prompt_recall_preserves_the_draft_and_multiline_navigation() {
-    sigil::reactive::Runtime::scope("summoner-prompt-recall", || {
+    sigil::reactive::Runtime::scope("summonr-prompt-recall", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.update(Msg::User("first prompt".to_string()));
@@ -2125,7 +2125,7 @@ fn escape_cancels_busy_turn_with_slash_draft() {
 #[test]
 fn newline_replaces_selection_and_undo_restores_it_in_both_editors() {
     for editing in [false, true] {
-        sigil::reactive::Runtime::scope("summoner-newline-undo", || {
+        sigil::reactive::Runtime::scope("summonr-newline-undo", || {
             let (cmd, _rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(80, 24);

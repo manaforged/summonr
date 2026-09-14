@@ -35,14 +35,14 @@ const PLAIN: Palette = Palette {
 };
 
 const LOGO: [&str; 6] = [
-    "███████╗██╗   ██╗███╗   ███╗███╗   ███╗ ██████╗ ███╗   ██╗███████╗██████╗ ",
-    "██╔════╝██║   ██║████╗ ████║████╗ ████║██╔═══██╗████╗  ██║██╔════╝██╔══██╗",
-    "███████╗██║   ██║██╔████╔██║██╔████╔██║██║   ██║██╔██╗ ██║█████╗  ██████╔╝",
-    "╚════██║██║   ██║██║╚██╔╝██║██║╚██╔╝██║██║   ██║██║╚██╗██║██╔══╝  ██╔══██╗",
-    "███████║╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║╚██████╔╝██║ ╚████║███████╗██║  ██║",
-    "╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝",
+    "███████╗██╗   ██╗███╗   ███╗███╗   ███╗ ██████╗ ███╗   ██╗██████╗ ",
+    "██╔════╝██║   ██║████╗ ████║████╗ ████║██╔═══██╗████╗  ██║██╔══██╗",
+    "███████╗██║   ██║██╔████╔██║██╔████╔██║██║   ██║██╔██╗ ██║██████╔╝",
+    "╚════██║██║   ██║██║╚██╔╝██║██║╚██╔╝██║██║   ██║██║╚██╗██║██╔══██╗",
+    "███████║╚██████╔╝██║ ╚═╝ ██║██║ ╚═╝ ██║╚██████╔╝██║ ╚████║██║  ██║",
+    "╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝",
 ];
-const LOGO_WIDTH: usize = 74;
+const LOGO_WIDTH: usize = 66;
 const LABEL_WIDTH: usize = 8;
 
 pub fn logo() -> &'static [&'static str; 6] {
@@ -72,11 +72,11 @@ pub fn interactive(splash: &Splash, full: bool) {
 pub fn line(splash: &Splash) {
     match splash.relay {
         Some(relay) => eprintln!(
-            "summoner {} · {} @ {} · session {}",
+            "summonr {} · {} @ {} · session {}",
             splash.version, splash.model, relay, splash.session
         ),
         None => eprintln!(
-            "summoner {} · {} · session {}",
+            "summonr {} · {} · session {}",
             splash.version, splash.model, splash.session
         ),
     }
@@ -91,7 +91,7 @@ fn colored() -> bool {
 
 #[must_use]
 pub fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
-    let mut rows = vec![("summoner", splash.version.to_string())];
+    let mut rows = vec![("summonr", splash.version.to_string())];
     let model = match splash.relay {
         Some(relay) => format!("{} · {relay}", splash.model),
         None => splash.model.to_string(),
@@ -135,7 +135,7 @@ fn info_lines(splash: &Splash, palette: &Palette) -> Vec<String> {
     let mut rows = Vec::new();
     for (index, (label, value)) in facts(splash).into_iter().enumerate() {
         if index == 0 {
-            rows.push(format!("{}summoner {value}{}", palette.bold, palette.reset));
+            rows.push(format!("{}summonr {value}{}", palette.bold, palette.reset));
         } else {
             rows.push(row(palette, label, &value));
         }

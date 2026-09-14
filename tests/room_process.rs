@@ -16,7 +16,7 @@ struct Peer {
 
 impl Peer {
     fn spawn(home: &Path, cwd: &Path, env: &[(&str, &str)]) -> Peer {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_summon"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_summonr"));
         command
             .args(["room", "serve"])
             .current_dir(cwd)
@@ -29,7 +29,7 @@ impl Peer {
         for (key, value) in env {
             command.env(key, value);
         }
-        let mut child = command.spawn().expect("spawn summon room serve");
+        let mut child = command.spawn().expect("spawn summonr room serve");
         let stdin = child.stdin.take().expect("stdin");
         let stdout = child.stdout.take().expect("stdout");
         Peer {
@@ -188,7 +188,7 @@ fn two_peers_exchange_mail_by_push_and_by_wait() {
     assert!(!claude.tool("agents", json!({})).contains("codex-b"));
     codex.close();
     claude.close();
-    let roster = Command::new(env!("CARGO_BIN_EXE_summon"))
+    let roster = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .arg("room")
         .env("MAGE_HOME", &home)
         .output()
@@ -265,7 +265,7 @@ for line in sys.stdin:
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&wrapper, std::fs::Permissions::from_mode(0o755)).expect("chmod");
     }
-    let mut host = Command::new(env!("CARGO_BIN_EXE_summon"))
+    let mut host = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .args(["room", "host", "codex", "--id", "codex-pair", "--read-only"])
         .current_dir(&cwd)
         .env("MAGE_HOME", &home)

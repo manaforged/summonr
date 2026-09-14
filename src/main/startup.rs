@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use summoner::workflow;
-use summoner::{
+use summonr::workflow;
+use summonr::{
     Budget, Client, Endpoint, Loop, Result, add_worktree, finish_worktree, in_git, last_for,
     list_sessions, list_worktrees, resolve_endpoint, resolve_session, splash, sweep_worktrees,
     system_prompt_with,
@@ -15,8 +15,8 @@ use super::cli::{self, Args};
 use super::{diagnostics, modes};
 
 type Ui = (
-    Option<UnboundedSender<summoner::tui::Msg>>,
-    Option<UnboundedReceiver<summoner::tui::Msg>>,
+    Option<UnboundedSender<summonr::tui::Msg>>,
+    Option<UnboundedReceiver<summonr::tui::Msg>>,
 );
 enum SessionAction {
     Create,
@@ -30,8 +30,8 @@ enum Launch {
 }
 
 async fn probe_endpoints() -> Result<()> {
-    for name in summoner::endpoint_names()? {
-        let endpoint = match summoner::resolve_endpoint(Some(&name), None) {
+    for name in summonr::endpoint_names()? {
+        let endpoint = match summonr::resolve_endpoint(Some(&name), None) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 println!("{name:<14} unresolved · {error}");
@@ -61,7 +61,7 @@ async fn probe_endpoints() -> Result<()> {
             endpoint.model,
             endpoint
                 .source
-                .map_or("none", summoner::secret::Source::label)
+                .map_or("none", summonr::secret::Source::label)
         );
     }
     Ok(())
@@ -71,10 +71,10 @@ fn export_session_cmd(args: &Args) -> Result<()> {
     let path = match args.prompt.first() {
         Some(id) => resolve_session(id)?,
         None => last_for(&workspace()?)?.ok_or_else(|| {
-            summoner::Error::Config("no prior session for this directory".to_string())
+            summonr::Error::Config("no prior session for this directory".to_string())
         })?,
     };
-    print!("{}", summoner::export_session(&path)?);
+    print!("{}", summonr::export_session(&path)?);
     Ok(())
 }
 
@@ -87,7 +87,7 @@ fn print_sessions() -> Result<()> {
     for info in sessions.iter().rev() {
         println!(
             "{}\t{}\t{}\t{}",
-            summoner::short_session(&info.id),
+            summonr::short_session(&info.id),
             info.name.as_deref().unwrap_or("-"),
             info.cwd.as_deref().unwrap_or("-"),
             info.preview
@@ -129,7 +129,7 @@ fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
 fn apply_workflow(
     loop_: &mut Loop<Client>,
     name: &str,
-    ui: Option<&UnboundedSender<summoner::tui::Msg>>,
+    ui: Option<&UnboundedSender<summonr::tui::Msg>>,
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
@@ -142,10 +142,10 @@ fn apply_workflow(
 }
 
 fn workspace() -> Result<PathBuf> {
-    std::env::current_dir().map_err(|error| summoner::Error::Config(error.to_string()))
+    std::env::current_dir().map_err(|error| summonr::Error::Config(error.to_string()))
 }
 
-fn isolate(args: &Args, cwd: &Path) -> Result<(PathBuf, Option<summoner::Tree>, SessionAction)> {
+fn isolate(args: &Args, cwd: &Path) -> Result<(PathBuf, Option<summonr::Tree>, SessionAction)> {
     let action = load_session(args, cwd)?;
     match &action {
         SessionAction::Resume(path) | SessionAction::Fork(path) => {
@@ -155,8 +155,7 @@ fn isolate(args: &Args, cwd: &Path) -> Result<(PathBuf, Option<summoner::Tree>, 
                 .and_then(|trees| trees.into_iter().find(|tree| tree.path == workspace));
             Ok((workspace, tree, action))
         }
-        SessionAction::Create if args.here => Ok((cwd.to_path_buf(), None, action)),
-        SessionAction::Create if wants_tree(args) => {
+        SessionAction::Create if args.worktree => {
             if !in_git(cwd) {
                 if !args.json {
                     eprintln!("not a git repository; running in {}", cwd.display());
@@ -171,10 +170,6 @@ fn isolate(args: &Args, cwd: &Path) -> Result<(PathBuf, Option<summoner::Tree>, 
         }
         SessionAction::Create => Ok((cwd.to_path_buf(), None, action)),
     }
-}
-
-fn wants_tree(args: &Args) -> bool {
-    args.worktree || args.goal.is_some() || args.steps.is_some()
 }
 
 fn journal_workspace(path: &Path) -> Option<PathBuf> {
@@ -198,7 +193,7 @@ fn manage_worktrees(args: &Args) -> Result<()> {
         }
         return Ok(());
     }
-    let trees = summoner::worktree_status(&cwd)?;
+    let trees = summonr::worktree_status(&cwd)?;
     if args.json {
         let rows: Vec<serde_json::Value> = trees
             .iter()
@@ -226,7 +221,7 @@ fn manage_worktrees(args: &Args) -> Result<()> {
             row.tree.branch,
             row.ahead,
             if row.dirty { "dirty" } else { "clean" },
-            row.session.as_deref().map_or("-", summoner::short_session),
+            row.session.as_deref().map_or("-", summonr::short_session),
             row.tree.path.display()
         );
     }
@@ -234,9 +229,9 @@ fn manage_worktrees(args: &Args) -> Result<()> {
 }
 
 fn turn_paths(cwd: &Path, turn: &str) -> Result<Vec<String>> {
-    let journal = summoner::last_for(cwd)?
-        .ok_or_else(|| summoner::Error::Config(format!("no session for {}", cwd.display())))?;
-    let turns = summoner::diff::turns(&journal)?;
+    let journal = summonr::last_for(cwd)?
+        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
+    let turns = summonr::diff::turns(&journal)?;
     let index = if turn == "last" {
         turns.len().checked_sub(1)
     } else {
@@ -245,7 +240,7 @@ fn turn_paths(cwd: &Path, turn: &str) -> Result<Vec<String>> {
     index
         .and_then(|index| turns.get(index).cloned())
         .ok_or_else(|| {
-            summoner::Error::Config(format!(
+            summonr::Error::Config(format!(
                 "no turn `{turn}` — the session has {} turn{}",
                 turns.len(),
                 if turns.len() == 1 { "" } else { "s" }
@@ -267,13 +262,13 @@ fn print_diff(args: &Args) -> Result<()> {
                 .is_none_or(|only| only.iter().any(|file| file == candidate))
     };
     if args.json {
-        let mut diff = summoner::diff::stats(&cwd)?;
+        let mut diff = summonr::diff::stats(&cwd)?;
         diff.files.retain(|stat| keep(&stat.path));
         println!("{}", serde_json::to_string(&diff)?);
         return Ok(());
     }
     if args.stat {
-        let mut diff = summoner::diff::stats(&cwd)?;
+        let mut diff = summonr::diff::stats(&cwd)?;
         diff.files.retain(|stat| keep(&stat.path));
         for stat in &diff.files {
             let new = if stat.new { "  new" } else { "" };
@@ -283,13 +278,13 @@ fn print_diff(args: &Args) -> Result<()> {
         return Ok(());
     }
     match only {
-        None => print!("{}", summoner::diff::patch(&cwd, path)?),
+        None => print!("{}", summonr::diff::patch(&cwd, path)?),
         Some(only) => {
             for file in only
                 .iter()
                 .filter(|file| path.is_none_or(|path| path == *file))
             {
-                print!("{}", summoner::diff::patch(&cwd, Some(file))?);
+                print!("{}", summonr::diff::patch(&cwd, Some(file))?);
             }
         }
     }
@@ -297,7 +292,7 @@ fn print_diff(args: &Args) -> Result<()> {
 }
 
 fn adopt(args: &Args) -> Result<Vec<String>> {
-    let moved = summoner::adopt_keys()?;
+    let moved = summonr::adopt_keys()?;
     if !moved.is_empty() && !args.json {
         eprintln!(
             "moved {} out of config.toml into the credential store",
@@ -339,7 +334,7 @@ fn read_secret(prompt: &str) -> Result<String> {
         }
         match byte[0] {
             b'\r' | b'\n' => break Ok(()),
-            0x03 | 0x04 => break Err(summoner::Error::Config("cancelled".to_string())),
+            0x03 | 0x04 => break Err(summonr::Error::Config("cancelled".to_string())),
             0x7f | 0x08 => drop(key.pop()),
             other => key.push(other as char),
         }
@@ -351,32 +346,32 @@ fn read_secret(prompt: &str) -> Result<String> {
 
 async fn run_login(args: &Args) -> Result<()> {
     if args.endpoint.is_none() {
-        return Err(summoner::Error::Config(
+        return Err(summonr::Error::Config(
             "login needs an endpoint name, for example `summon login copilot`; `summon endpoints` lists them".to_string(),
         ));
     }
     let name = args.endpoint.as_deref().unwrap_or_default();
     if !args.prompt.is_empty() {
-        return Err(summoner::Error::Config(
+        return Err(summonr::Error::Config(
             "do not put credentials on the command line — `summon login NAME` asks for them"
                 .to_string(),
         ));
     }
     if key_login(name, args.key)? {
         let key = read_secret(&format!("key for {name}: "))?;
-        let source = summoner::save_key(name, key.trim())?;
+        let source = summonr::save_key(name, key.trim())?;
         println!("key for {name} stored in {}", source.label());
         return Ok(());
     }
-    let endpoint = summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?;
+    let endpoint = summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?;
     println!("login {}", endpoint.name);
-    summoner::Client::login(&endpoint, |line| println!("{line}")).await?;
+    summonr::Client::login(&endpoint, |line| println!("{line}")).await?;
     println!("ok");
     Ok(())
 }
 
 fn key_login(name: &str, force: bool) -> Result<bool> {
-    Ok(force || !summoner::auth_info(name)?.device_login)
+    Ok(force || !summonr::auth_info(name)?.device_login)
 }
 
 pub(super) async fn run() -> Result<i32> {
@@ -405,7 +400,7 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
         return diagnostics::doctor(log.map(diagnostics::Log::path));
     }
     if let Some(words) = &args.room {
-        return summoner::room::run(words, &std::env::current_dir()?).await;
+        return summonr::room::run(words, &std::env::current_dir()?).await;
     }
     let adopted = adopt(&args)?;
     if args.login {
@@ -413,11 +408,11 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     }
     if args.logout {
         let Some(name) = args.endpoint.as_deref() else {
-            return Err(summoner::Error::Config(
+            return Err(summonr::Error::Config(
                 "logout needs an endpoint name".to_string(),
             ));
         };
-        let gone = summoner::forget_key(name)?;
+        let gone = summonr::forget_key(name)?;
         println!(
             "{}",
             if gone {
@@ -443,7 +438,7 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.list_modules {
         println!(
             "{}",
-            summoner::modules::Switches::load(&workspace()?)?.table()
+            summonr::modules::Switches::load(&workspace()?)?.table()
         );
         return Ok(0);
     }
@@ -478,14 +473,14 @@ async fn launch_once(
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
     let endpoint = if use_tui(args) {
-        summoner::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
+        summonr::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
     } else {
-        summoner::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
+        summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
     };
     if let Some(name) = args.endpoint.as_deref() {
-        summoner::prefs::set_last_endpoint(name);
+        summonr::prefs::set_last_endpoint(name);
     }
-    if endpoint.source == Some(summoner::secret::Source::Config)
+    if endpoint.source == Some(summonr::secret::Source::Config)
         && !args.json
         && !adopted.contains(&endpoint.name)
     {
@@ -504,7 +499,7 @@ async fn launch_once(
     let checks = if args.no_verify {
         None
     } else {
-        summoner::check_commands(&workspace)?
+        summonr::check_commands(&workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
@@ -521,8 +516,8 @@ async fn launch_once(
     }
     let exit = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
     let code = match exit {
-        summoner::tui::Exit::Code(code) => code,
-        summoner::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
+        summonr::tui::Exit::Code(code) => code,
+        summonr::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
     };
     let Some(tree) = tree else {
         return Ok(Launch::Done(code));
@@ -535,7 +530,7 @@ async fn launch_once(
         );
         return Ok(Launch::Done(code));
     }
-    let live = summoner::live_jobs(&tree.path);
+    let live = summonr::live_jobs(&tree.path);
     if !live.is_empty() {
         eprintln!(
             "worktree kept {} ({}): background job{} still running — {}",
@@ -561,7 +556,7 @@ async fn launch_once(
                     .collect::<String>()
             );
             if args.json {
-                let event = summoner::Event::Merged {
+                let event = summonr::Event::Merged {
                     branch: tree.branch.clone(),
                     base: tree.base.clone(),
                     files,
@@ -607,7 +602,7 @@ fn build(
     check: Option<Vec<String>>,
     action: SessionAction,
 ) -> Result<Loop<Client>> {
-    let switches = summoner::modules::Switches::load(workspace)?;
+    let switches = summonr::modules::Switches::load(workspace)?;
     let prompt = system_prompt_with(workspace, args.trust, switches.enabled("skills"));
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
     let mut loop_ = match action {
@@ -647,6 +642,9 @@ fn configure(
     } else {
         loop_ = loop_.with_unrestricted_commands();
     }
+    for dir in &args.add_dir {
+        loop_.allow_path(dir)?;
+    }
     if args.plan {
         loop_ = loop_.with_plan();
     }
@@ -657,7 +655,7 @@ fn configure(
         loop_ = loop_.with_verify(check);
     }
     if args.max_turns.is_some() && args.goal.is_none() {
-        return Err(summoner::Error::Config(
+        return Err(summonr::Error::Config(
             "--max-turns only applies to --goal".to_string(),
         ));
     }
@@ -683,7 +681,7 @@ async fn dispatch(
     ui: Ui,
     goal_checks: Vec<String>,
     workflow: Option<workflow::Workflow>,
-) -> Result<summoner::tui::Exit> {
+) -> Result<summonr::tui::Exit> {
     let model = endpoint.model.as_str();
     let session = loop_.session_id();
     let splash = splash::Splash {
@@ -702,21 +700,21 @@ async fn dispatch(
         splash::line(&splash);
         modes::steps(loop_, args, plan_path)
             .await
-            .map(summoner::tui::Exit::Code)
+            .map(summonr::tui::Exit::Code)
     } else if let Some(objective) = args.goal.as_deref() {
         splash::line(&splash);
         modes::goal(loop_, args, objective, goal_checks)
             .await
-            .map(summoner::tui::Exit::Code)
+            .map(summonr::tui::Exit::Code)
     } else if args.print || !args.prompt.is_empty() {
         splash::line(&splash);
         modes::print(loop_, args)
             .await
-            .map(summoner::tui::Exit::Code)
+            .map(summonr::tui::Exit::Code)
     } else if let Some(ui_rx) = ui.1 {
-        let prefs = summoner::prefs::load()?;
+        let prefs = summonr::prefs::load()?;
         let splash = prefs.splash && !args.no_splash;
-        let info = summoner::tui::Info {
+        let info = summonr::tui::Info {
             version: env!("CARGO_PKG_VERSION").to_string(),
             model: model.to_string(),
             relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),
@@ -728,16 +726,16 @@ async fn dispatch(
             strict: args.strict,
             workspace: splash::short_path(&workspace),
             workflow,
-            config: summoner::prefs::path(),
+            config: summonr::prefs::path(),
         };
         let ui_tx =
-            ui.0.ok_or_else(|| summoner::Error::Config("tui sender missing".to_string()))?;
-        summoner::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
+            ui.0.ok_or_else(|| summonr::Error::Config("tui sender missing".to_string()))?;
+        summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
     } else {
         splash::line(&splash);
         modes::print(loop_, args)
             .await
-            .map(summoner::tui::Exit::Code)
+            .map(summonr::tui::Exit::Code)
     }
 }
 
@@ -756,27 +754,27 @@ fn channels(tui: bool) -> Ui {
 
 fn provider(
     endpoint: &Endpoint,
-    ui: Option<&UnboundedSender<summoner::tui::Msg>>,
+    ui: Option<&UnboundedSender<summonr::tui::Msg>>,
     json: bool,
 ) -> Result<Client> {
     let mut provider = Client::connect(endpoint)?;
     if let Some(ui) = ui {
         let text = ui.clone();
         provider = provider.on_delta(move |delta| {
-            drop(text.send(summoner::tui::Msg::Delta(delta.to_string())));
+            drop(text.send(summonr::tui::Msg::Delta(delta.to_string())));
         });
         let reasoning = ui.clone();
         provider = provider.on_reasoning(move |delta| {
-            drop(reasoning.send(summoner::tui::Msg::Thinking(delta.to_string())));
+            drop(reasoning.send(summonr::tui::Msg::Thinking(delta.to_string())));
         });
     } else if json {
         provider = provider.on_delta(|text| {
-            modes::print_json(&summoner::Event::Delta {
+            modes::print_json(&summonr::Event::Delta {
                 text: text.to_string(),
             });
         });
         provider = provider.on_reasoning(|text| {
-            modes::print_json(&summoner::Event::Reasoning {
+            modes::print_json(&summonr::Event::Reasoning {
                 text: text.to_string(),
             });
         });
@@ -820,7 +818,7 @@ fn candidates(workspace: &Path) -> Vec<PathBuf> {
 
 fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
     if (args.steps.is_some() || args.goal.is_some()) && args.fork {
-        return Err(summoner::Error::Config(
+        return Err(summonr::Error::Config(
             "cannot fork an active step or goal session".to_string(),
         ));
     }
@@ -829,9 +827,8 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
         return Ok(SessionAction::Resume(path));
     }
     if let Some(plan_path) = args.steps.as_deref() {
-        let markdown = std::fs::read_to_string(plan_path).map_err(|error| {
-            summoner::Error::Config(format!("cannot read {plan_path}: {error}"))
-        })?;
+        let markdown = std::fs::read_to_string(plan_path)
+            .map_err(|error| summonr::Error::Config(format!("cannot read {plan_path}: {error}")))?;
         let roots = candidates(workspace);
         if let Some(info) = list_sessions()?.into_iter().rev().find(|info| {
             roots
@@ -876,7 +873,7 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
     }
     if args.resume || args.fork {
         let path = last_for(workspace)?.ok_or_else(|| {
-            summoner::Error::Config("no prior session for this directory".to_string())
+            summonr::Error::Config("no prior session for this directory".to_string())
         })?;
         if args.fork {
             return Ok(SessionAction::Fork(path));

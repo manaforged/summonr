@@ -21,7 +21,7 @@ fn target_uses_the_herdr_binary_when_old_servers_do_not_export_one() {
     let target = target("session-1", "grok-4", Some(OsStr::new("summon")), |key| {
         env.get(key).cloned()
     })
-    .expect("a Summoner process in a Herdr pane should report");
+    .expect("a Summonr process in a Herdr pane should report");
 
     assert_eq!(target.bin, OsStr::new("herdr"));
     assert_eq!(target.pane, OsStr::new("w1:p2"));
@@ -41,7 +41,7 @@ fn target_prefers_the_binary_path_exported_by_newer_servers() {
     let target = target("session-1", "grok-4", Some(OsStr::new("summoner")), |key| {
         env.get(key).cloned()
     })
-    .expect("a Summoner process in a Herdr pane should report");
+    .expect("a Summonr process in a Herdr pane should report");
 
     assert_eq!(target.bin, OsStr::new("/opt/homebrew/bin/herdr"));
 }
@@ -57,7 +57,7 @@ fn target_ignores_other_processes_and_incomplete_herdr_environments() {
         target(
             "session-1",
             "grok-4",
-            Some(OsStr::new("summoner-tests")),
+            Some(OsStr::new("summonr-tests")),
             |key| complete.get(key).cloned(),
         )
         .is_none()
@@ -79,6 +79,10 @@ fn product_ignores_test_artifacts_named_like_the_real_binary() {
         Some(OsStr::new("summoner"))
     );
     assert_eq!(
+        product(Path::new("/usr/local/bin/summonr")),
+        Some(OsStr::new("summonr"))
+    );
+    assert_eq!(
         product(Path::new("/cache/units/test-123/out/summoner")),
         None
     );
@@ -98,9 +102,9 @@ fn lifecycle_arguments_carry_state_and_session_identity() {
             "report-agent",
             "w1:p2",
             "--source",
-            "summoner:lifecycle",
+            "summonr:lifecycle",
             "--agent",
-            "summoner",
+            "summonr",
             "--state",
             "working",
             "--agent-session-id",
@@ -118,9 +122,9 @@ fn lifecycle_arguments_carry_state_and_session_identity() {
             "release-agent",
             "w1:p2",
             "--source",
-            "summoner:lifecycle",
+            "summonr:lifecycle",
             "--agent",
-            "summoner",
+            "summonr",
             "--seq",
             "4",
         ]
@@ -137,13 +141,13 @@ fn display_arguments_carry_title_and_tokens() {
             "report-metadata",
             "w1:p2",
             "--source",
-            "summoner:display",
+            "summonr:display",
             "--agent",
-            "summoner",
+            "summonr",
             "--title",
             "auth review",
             "--display-agent",
-            "summoner",
+            "summonr",
             "--token",
             "model=grok-4",
             "--token",

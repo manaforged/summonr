@@ -193,16 +193,51 @@ impl Worker {
             None | Some("") => {
                 let roots = self.loop_.write_roots();
                 let list = if roots.is_empty() {
-                    "no extra write paths — /write PATH".to_string()
+                    "no extra write paths — /write PATH persists to [sandbox] write".to_string()
                 } else {
                     roots.join(" · ")
                 };
                 self.system(&format!("write paths: {list}"));
             }
-            Some(path) => match self.loop_.allow_path(path) {
-                Ok(()) => self.system(&format!("writes allowed under {path} for this session")),
-                Err(error) => self.fail(&error.to_string()),
-            },
+            Some(path) => {
+                let (persist, path) = match path.strip_prefix("--session ") {
+                    Some(rest) => (false, rest.trim()),
+                    None => (true, path),
+                };
+                if path.is_empty() {
+                    self.system("/write PATH  (or /write --session PATH)");
+                    return true;
+                }
+                match self.loop_.allow_path(path) {
+                    Ok(()) => {
+                        if persist {
+                            match crate::config::path() {
+                                Ok(config) => {
+                                    match crate::config::save_sandbox_write(
+                                        &config,
+                                        &crate::config::sandbox_entry(
+                                            &crate::policy::expand_path(path),
+                                        ),
+                                    ) {
+                                        Ok(()) => self.system(&format!(
+                                            "writes allowed under {path} and saved to [sandbox] write"
+                                        )),
+                                        Err(error) => self.system(&format!(
+                                            "writes allowed under {path} for this session; standing grant not saved: {error}"
+                                        )),
+                                    }
+                                }
+                                Err(error) => self.system(&format!(
+                                    "writes allowed under {path} for this session; standing grant not saved: {error}"
+                                )),
+                            }
+                        } else {
+                            self.system(&format!("writes allowed under {path} for this session"));
+                        }
+                    }
+                    Err(error) => self.fail(&error.to_string()),
+                }
+            }
         }
         true
     }
@@ -211,11 +246,13 @@ impl Worker {
         match argument.map(str::trim) {
             Some("on") => {
                 self.loop_.set_manual(true);
-                self.system("manual approval on — answer y or n before each shell command");
+                self.system("manual approval on — extra-root writes and shell commands ask first");
             }
             Some("off") => {
                 self.loop_.set_manual(false);
-                self.system("manual approval off — shell commands run without asking");
+                self.system(
+                    "manual approval off — auto mode grants extra-root writes for this session",
+                );
             }
             None | Some("") => {
                 let state = if self.loop_.manual() { "on" } else { "off" };
@@ -702,7 +739,7 @@ impl Worker {
                     .work_progress()
                     .ok()
                     .and_then(|progress| progress.reason)
-                    .unwrap_or_else(|| "resume with `summon --goal`".to_string());
+                    .unwrap_or_else(|| "resume with `summonr --goal`".to_string());
                 self.system(&format!("goal stopped (exit {code}) — {reason}"));
             }
         }

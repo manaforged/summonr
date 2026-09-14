@@ -23,7 +23,7 @@ fn repo() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     git(dir.path(), &["init", "-b", "main"]);
     git(dir.path(), &["config", "user.email", "summon@test"]);
-    git(dir.path(), &["config", "user.name", "Summoner"]);
+    git(dir.path(), &["config", "user.name", "Summonr"]);
     git(dir.path(), &["config", "core.autocrlf", "false"]);
     std::fs::write(dir.path().join("README"), "root\n").expect("write");
     git(dir.path(), &["add", "README"]);
@@ -36,7 +36,7 @@ fn add_creates_a_linked_checkout_on_a_summon_branch() {
     let dir = repo();
     let tree = add(dir.path()).expect("add");
     assert!(tree.path.is_dir());
-    assert!(tree.branch.starts_with("summon/"));
+    assert!(tree.branch.starts_with("summonr/"));
     assert_eq!(tree.base, "main");
     assert_eq!(
         primary(&tree.path)
@@ -162,7 +162,7 @@ fn finish_fast_forwards_main_and_removes_the_worktree() {
         list(dir.path())
             .expect("list")
             .iter()
-            .all(|item| !item.branch.starts_with("summon/"))
+            .all(|item| !item.branch.starts_with("summonr/") && !item.branch.starts_with("summon/"))
     );
 }
 
@@ -187,7 +187,7 @@ fn finish_commits_uncommitted_files_under_the_objective() {
         .expect("git log");
     assert_eq!(
         String::from_utf8_lossy(&log.stdout).trim(),
-        "summon: add the dirty file to the tree so the test"
+        "summonr: add the dirty file to the tree so the tes"
     );
 }
 
@@ -195,9 +195,9 @@ fn finish_commits_uncommitted_files_under_the_objective() {
 fn subject_fits_the_commit_line() {
     assert_eq!(
         subject("make cargo test pass."),
-        "summon: make cargo test pass"
+        "summonr: make cargo test pass"
     );
-    assert_eq!(subject("  Two\n  lines  "), "summon: two lines");
+    assert_eq!(subject("  Two\n  lines  "), "summonr: two lines");
     assert!(subject(&"x".repeat(100)).chars().count() <= 50);
 }
 
@@ -280,7 +280,7 @@ fn finish_commits_only_the_touched_paths_and_names_the_rest() {
         .expect("git show");
     let shown = String::from_utf8_lossy(&log.stdout);
     assert!(
-        shown.contains("summon: add f") && shown.contains("f.txt"),
+        shown.contains("summonr: add f") && shown.contains("f.txt"),
         "{shown}"
     );
     assert!(!shown.contains("junk.bin"), "{shown}");

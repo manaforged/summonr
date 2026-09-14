@@ -1,22 +1,18 @@
 [package]
-name = "summoner"
+name = "summonr"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
 authors = ["Thomas Gardiner"]
 description = "A small, provider-neutral agent harness"
 readme = "README.md"
-repository = "https://github.com/thomgardiner/summoner"
-homepage = "https://github.com/thomgardiner/summoner"
+repository = "https://github.com/thomgardiner/summonr"
+homepage = "https://github.com/thomgardiner/summonr"
 publish = false
 
 [[bin]]
-name = "summon"
+name = "summonr"
 path = "src/main.rs"
-
-[[bin]]
-name = "summoner"
-path = "src/summoner.rs"
 
 [dependencies]
 base64 = "0.22"
@@ -52,7 +48,7 @@ crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e
 
 [features]
 default = []
-# `summon --gui`: the same panes in a winit + wgpu window.
+# `summonr --gui`: the same panes in a winit + wgpu window.
 gui = ["sigil/clipboard", "sigil/desktop"]
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]

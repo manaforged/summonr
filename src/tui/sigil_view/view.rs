@@ -151,7 +151,7 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
     let split_right = app.clone();
     let shell = container()
         .role(Role::Main)
-        .label("Summoner agent harness")
+        .label("Summonr agent harness")
         .theme(Theme::dark())
         .layout(LayoutStyle::flex_column().fill_width().fill_height())
         .class("w-full h-full bg-surface");

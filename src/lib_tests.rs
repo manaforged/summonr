@@ -428,8 +428,8 @@ async fn openai_provider_completes_a_tool_round() -> Result<()> {
         .map_err(|error| Error::Tool(error.to_string()))?;
     assert_eq!(requests.len(), 2);
     assert!(requests[0].contains("\"model\":\"test-model\""));
-    assert!(requests[0].contains("read_file"));
-    assert!(requests[0].contains("replace_text"));
+    assert!(requests[0].contains("\"read\""));
+    assert!(requests[0].contains("\"edit\""));
     assert_work_receipt(&turn, "done");
     std::fs::remove_dir_all(workspace)?;
     Ok(())
@@ -473,10 +473,8 @@ fn sandbox_write_paths_reach_the_backend() -> Result<()> {
         "write path missing from backend arguments:\n{joined}"
     );
     let missing = workspace.path().join("absent");
-    assert!(
-        crate::tools::sandbox::Sandbox::discover(workspace.path(), false, &[missing]).is_err(),
-        "a missing write path must fail discovery"
-    );
+    crate::tools::sandbox::Sandbox::discover(workspace.path(), false, &[missing])
+        .expect("a missing extra write path does not fail discovery");
     Ok(())
 }
 

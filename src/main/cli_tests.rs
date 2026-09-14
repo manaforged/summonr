@@ -16,6 +16,10 @@ fn command_containment_is_the_default() {
     assert!(!defaults.no_sandbox);
     assert!(!defaults.network);
     assert!(args(&["--no-sandbox"]).no_sandbox);
+    assert_eq!(
+        args(&["--add-dir", "/opt/cache", "--add-dir", "~/store"]).add_dir,
+        ["/opt/cache", "~/store"]
+    );
     assert!(args(&["--net"]).network);
     assert!(!args(&["--sandbox", "--no-net"]).network);
 }
@@ -125,7 +129,7 @@ fn workflow_flag_and_subcommand() {
 fn effort_flag_takes_a_level_and_rejects_the_rest() {
     assert_eq!(
         args(&["--effort", "low"]).effort,
-        Some(summoner::Effort::Low)
+        Some(summonr::Effort::Low)
     );
     assert!(args(&[]).effort.is_none());
     let error = parse_from(["--effort", "turbo"].map(str::to_string))
@@ -180,7 +184,7 @@ fn steps_requires_a_real_plan_path() {
 #[test]
 fn help_lists_every_interactive_command() {
     let text = super::interactive();
-    for spec in summoner::command_specs() {
+    for spec in summonr::command_specs() {
         assert!(
             text.contains(spec.name),
             "{} missing from {text}",

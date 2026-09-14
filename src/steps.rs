@@ -179,7 +179,7 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
             .map(|check| format!("`{check}`"))
             .collect();
         text.push_str(&format!(
-            "\nWhen you are done, run {} and make it pass. Summoner runs it again afterwards; a red check means the step is not finished.\n",
+            "\nWhen you are done, run {} and make it pass. Summonr runs it again afterwards; a red check means the step is not finished.\n",
             list.join(" then ")
         ));
     }

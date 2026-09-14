@@ -49,7 +49,7 @@ fn terminal_clipboard_requests_are_unconfirmed_and_propagate_output_failures() {
         "failed flush must not look successful"
     );
 
-    sigil::reactive::Runtime::scope("summoner-copy-feedback", || {
+    sigil::reactive::Runtime::scope("summonr-copy-feedback", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.replace("retain this draft".to_string());
@@ -126,7 +126,7 @@ fn external_editor_accepts_arguments_and_keeps_file_names_literal() {
 
 #[test]
 fn clicking_transcript_text_preserves_typing_and_paste_focus() {
-    sigil::reactive::Runtime::scope("summoner-input-focus", || {
+    sigil::reactive::Runtime::scope("summonr-input-focus", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(80, 24);
@@ -241,7 +241,7 @@ fn clicking_transcript_text_preserves_typing_and_paste_focus() {
 #[test]
 fn native_pastes_show_small_drafts_and_fold_at_eight_lines() {
     for lines in [6, 8] {
-        sigil::reactive::Runtime::scope("summoner-native-paste", || {
+        sigil::reactive::Runtime::scope("summonr-native-paste", || {
             let (cmd, mut rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(80, 24);
@@ -321,7 +321,7 @@ fn native_pastes_show_small_drafts_and_fold_at_eight_lines() {
 #[test]
 fn paste_and_undo_target_each_open_editor() {
     for editor in ["auth", "model", "workflow", "file"] {
-        sigil::reactive::Runtime::scope("summoner-editor-paste", || {
+        sigil::reactive::Runtime::scope("summonr-editor-paste", || {
             let (cmd, _rx) = unbounded_channel();
             let app = App::new(info(), PathBuf::from("."), cmd);
             app.resize(80, 24);
@@ -408,7 +408,7 @@ fn paste_and_undo_target_each_open_editor() {
 fn wheel_scrolls_the_pane_under_the_pointer_without_moving_chat() {
     use crate::tui::Msg;
     use sigil_ide_core::buffer::Rope;
-    sigil::reactive::Runtime::scope("summoner-pane-wheel", || {
+    sigil::reactive::Runtime::scope("summonr-pane-wheel", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.splash.set(false);

@@ -8,6 +8,12 @@ use crate::error::{Error, Result};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 
+fn worktree_id(branch: &str) -> Option<&str> {
+    branch
+        .strip_prefix("summonr/")
+        .or_else(|| branch.strip_prefix("summon/"))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Tree {
     pub primary: PathBuf,
@@ -107,6 +113,7 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     add_from(&primary, &base, "HEAD")
 }
 
+#[cfg(test)]
 pub(crate) fn add_children(cwd: &Path, count: usize) -> Result<Vec<Tree>> {
     if count == 0 {
         return Ok(Vec::new());
@@ -144,7 +151,7 @@ pub(crate) fn add_children(cwd: &Path, count: usize) -> Result<Vec<Tree>> {
 
 fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     let id = new_id();
-    let branch = format!("summon/{id}");
+    let branch = format!("summonr/{id}");
     let path = worktree_dir(primary, &id)?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -338,7 +345,7 @@ pub(crate) fn remove_child(tree: &Tree) -> Result<()> {
             &head,
         ],
     )?;
-    if let Some(id) = tree.branch.strip_prefix("summon/")
+    if let Some(id) = worktree_id(&tree.branch)
         && let Ok(record) = base_record(&tree.primary, id)
     {
         drop(std::fs::remove_file(record));
@@ -420,14 +427,14 @@ fn subject(objective: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .chars()
-        .take(42)
+        .take(41)
         .collect();
     let mut chars = text.trim_end_matches(['.', ' ']).chars();
     let head: String = chars
         .next()
         .map(|c| c.to_lowercase().collect())
         .unwrap_or_default();
-    format!("summon: {head}{}", chars.as_str())
+    format!("summonr: {head}{}", chars.as_str())
 }
 
 pub(crate) fn remove(tree: &Tree) -> Result<()> {
@@ -439,7 +446,7 @@ pub(crate) fn remove(tree: &Tree) -> Result<()> {
     })?;
     git(&tree.primary, &["worktree", "remove", "--force", path])?;
     drop(git(&tree.primary, &["branch", "-d", &tree.branch]));
-    if let Some(id) = tree.branch.strip_prefix("summon/")
+    if let Some(id) = worktree_id(&tree.branch)
         && let Ok(record) = base_record(&tree.primary, id)
     {
         drop(std::fs::remove_file(record));
@@ -461,9 +468,9 @@ pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
     let text = git(&primary, &["worktree", "list", "--porcelain"])?;
     Ok(parse_list(&primary, &base, &text)
         .into_iter()
-        .filter(|tree| tree.branch.starts_with("summon/"))
+        .filter(|tree| worktree_id(&tree.branch).is_some())
         .map(|mut tree| {
-            if let Some(id) = tree.branch.strip_prefix("summon/")
+            if let Some(id) = worktree_id(&tree.branch)
                 && let Ok(record) = base_record(&primary, id)
                 && let Ok(recorded) = std::fs::read_to_string(record)
                 && !recorded.trim().is_empty()
@@ -479,7 +486,7 @@ fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
     let cwd = cwd.canonicalize().unwrap_or_else(|_| cwd.to_path_buf());
     Ok(list(primary)?
         .into_iter()
-        .find(|tree| tree.path == cwd && tree.branch.starts_with("summon/")))
+        .find(|tree| tree.path == cwd && worktree_id(&tree.branch).is_some()))
 }
 
 fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {

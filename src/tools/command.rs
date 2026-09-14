@@ -418,21 +418,21 @@ fn network_verb(command: &str) -> bool {
 fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: &str) -> String {
     match grant {
         Some(Grant::Network) => {
-            "\nnote: network is off in the sandbox. Ask the user to run /net on for this session or /net once, then retry.\n"
+            "\nnote: network is off in the sandbox. /net on for this session or /net once, then retry.\n"
                 .to_string()
         }
         Some(Grant::Write(path)) => format!(
-            "\nnote: the OS sandbox denied a write outside the workspace. Ask the user to approve the directory with /write {}, or add it to [sandbox] write in ~/.mage/config.toml.\n",
-            path.display()
+            "\nnote: {}\n",
+            crate::policy::write_denied(&path.display().to_string())
         ),
         None if registry.has_sandbox()
             && (raw.contains("Operation not permitted") || raw.contains("Permission denied")) =>
         {
             if registry.denies_network() {
-                "\nnote: the OS sandbox denied this command (network is off; writes outside the workspace need /write PATH).\n"
+                "\nnote: the OS sandbox denied this command (network is off, or the write is outside the writable roots).\n"
                     .to_string()
             } else {
-                "\nnote: the OS sandbox denied a write outside the workspace. Ask the user to approve the directory with /write PATH, or add it to [sandbox] write in ~/.mage/config.toml.\n"
+                "\nnote: the OS sandbox denied a write outside the writable roots — add the directory to [sandbox] write in ~/.mage/config.toml.\n"
                     .to_string()
             }
         }
@@ -499,7 +499,7 @@ fn spawn_command(
     let child = if background || sandbox.is_some() {
         cmd.kill_on_drop(false);
         if background && sandbox.is_some() {
-            cmd.env("SUMMONER_SANDBOX_DETACHED", "1");
+            cmd.env("SUMMONR_SANDBOX_DETACHED", "1");
         }
         cmd.spawn().map(|child| CommandChild {
             child: Box::new(child),

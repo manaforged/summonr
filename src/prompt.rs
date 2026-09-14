@@ -2,12 +2,6 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-const REVIEW: &str = "For a review, lead with verified findings in severity order. Cite the \
-file and line, explain the concrete failure, and distinguish evidence from inference. A failed \
-command proves nothing; report the failure. Do not list an inference as a finding; put it under \
-unverified risks. Put each repository count next to the command that produced it. Do not rank the \
-codebase against other codebases. If no findings remain, say so.";
-
 pub fn mage_home() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("MAGE_HOME") {
         if path.is_empty() {
@@ -57,16 +51,17 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
 #[must_use]
 pub fn harness_section(plan: bool, checks: &[String]) -> String {
     let mut parts = vec![if plan {
-        format!(
-            "Harness state: plan mode is active. The workspace is read-only. You can run inspection commands. Explore, analyze, and report; propose concrete changes as diffs in your answer. {REVIEW}"
-        )
+        "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer."
+            .to_string()
     } else {
-        format!(
-            "Harness state: Auto mode is active. Match the work to the request. For an answer, explanation, review, diagnosis, or status report, inspect the evidence and report without changing files or repository state. {REVIEW} For a requested change or build, implement it and run the narrowest useful check."
-        )
+        "Harness state: auto mode. Inspect unless they asked for a change, then implement it."
+            .to_string()
     }];
-    parts.push("Search with the grep tool. A shell grep -r or find from the repository root walks target/ and node_modules/ and can take minutes.".to_string());
-    parts.push("Shell commands run in the OS sandbox with network denied. In the interface, a write or network denial pauses for the user to allow the directory or network, then the tool retries. In a non-interactive session, ask the user to run /net on or /net once for network, or /write PATH for an outside write, then retry.".to_string());
+    parts.push(
+        "Search with read (pattern). A shell grep -r or find from the repository root walks target/ and node_modules/."
+            .to_string(),
+    );
+    parts.push("Shell commands run in the OS sandbox with network denied. Writes are allowed under the workspace and [sandbox] write roots. Auto mode grants a write outside those roots for this session and retries. /approve on asks first. Standing roots: [sandbox] write in ~/.mage/config.toml. Network: /net on or /net once.".to_string());
     #[cfg(windows)]
     parts.push("Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs. The sandbox uses a PowerShell drive rooted at the workspace. Use relative paths, or $PWD.ProviderPath when a native program needs the filesystem path. Git Bash and other MSYS programs cannot run inside the Windows sandbox.".to_string());
     if checks.is_empty() {
@@ -78,7 +73,7 @@ pub fn harness_section(plan: bool, checks: &[String]) -> String {
             .collect::<Vec<_>>()
             .join(" then ");
         parts.push(format!(
-            "Harness: before Work can complete, Summoner runs {list} as the completion check."
+            "Harness: before Work can complete, Summonr runs {list} as the completion check."
         ));
     }
     parts.join("\n\n")
@@ -93,12 +88,6 @@ fn push_file(parts: &mut Vec<String>, path: &Path) {
 }
 
 fn default_prompt() -> String {
-    "Complete the user's task in the current workspace. Keep reasoning brief. Match your \
-     actions to the request. \
-     For an answer, explanation, review, diagnosis, or status report, inspect the relevant \
-     evidence and report without changing files or repository state. For a requested change \
-     or build, make the smallest complete edit and run the narrowest useful check. Batch \
-     independent calls. Do not repeat a read, search, or check without new evidence. Stop \
-     when the task is proved. Do not claim work that you did not do."
+    "Complete the user's task in the current workspace. Inspect and report unless they asked for a change."
         .to_string()
 }

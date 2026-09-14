@@ -722,7 +722,7 @@ fn the_diff_pane_splits_wide_hunks_filters_by_turn_and_copies_the_patch() {
 
 #[test]
 fn rejected_attachments_keep_submit_and_queue_drafts() {
-    sigil::reactive::Runtime::scope("summoner-attachment-recovery", || {
+    sigil::reactive::Runtime::scope("summonr-attachment-recovery", || {
         let dir = tempfile::tempdir().expect("workspace");
         std::fs::write(dir.path().join("binary.dat"), [0xff, 0xfe]).expect("binary file");
         let (cmd, mut rx) = unbounded_channel();

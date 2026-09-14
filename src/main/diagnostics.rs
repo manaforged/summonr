@@ -44,16 +44,16 @@ struct RunInfo {
 impl Log {
     pub(super) fn start() -> Option<Self> {
         let run = format!("{}-{}", millis(), std::process::id());
-        let home = match summoner::mage_home() {
+        let home = match summonr::mage_home() {
             Ok(home) => home,
             Err(error) => {
-                eprintln!("summoner: cannot create the diagnostic log: {error}");
+                eprintln!("summonr: cannot create the diagnostic log: {error}");
                 return None;
             }
         };
         let dir = home.join("logs");
         if let Err(error) = fs::create_dir_all(&dir) {
-            eprintln!("summoner: cannot create the diagnostic log: {error}");
+            eprintln!("summonr: cannot create the diagnostic log: {error}");
             return None;
         }
         sweep(&dir);
@@ -61,13 +61,13 @@ impl Log {
             runs.iter()
                 .any(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
         }) {
-            eprintln!("summoner: a previous run ended without an exit record; run `summon logs`");
+            eprintln!("summonr: a previous run ended without an exit record; run `summonr logs`");
         }
         let path = dir.join(format!("{run}.jsonl"));
         let lock = match lock(&path) {
             Ok(lock) => lock,
             Err(error) => {
-                eprintln!("summoner: cannot lock the diagnostic log: {error}");
+                eprintln!("summonr: cannot lock the diagnostic log: {error}");
                 return None;
             }
         };
@@ -80,7 +80,7 @@ impl Log {
                 "pid": std::process::id(),
                 "binary": binary(),
                 "version": env!("CARGO_PKG_VERSION"),
-                "revision": summoner::revision(),
+                "revision": summonr::revision(),
                 "profile": if cfg!(debug_assertions) { "debug" } else { "release" },
                 "cwd": std::env::current_dir()
                     .ok()
@@ -88,7 +88,7 @@ impl Log {
             }),
         );
         if let Err(error) = result {
-            eprintln!("summoner: cannot create the diagnostic log: {error}");
+            eprintln!("summonr: cannot create the diagnostic log: {error}");
             return None;
         }
         hook(path.clone(), run.clone());
@@ -111,7 +111,7 @@ impl Log {
                 "workspace": workspace.display().to_string(),
             }),
         ) {
-            eprintln!("summoner: cannot write the diagnostic session record: {source}");
+            eprintln!("summonr: cannot write the diagnostic session record: {source}");
         }
     }
 
@@ -126,15 +126,15 @@ impl Log {
                 "error": error,
             }),
         ) {
-            eprintln!("summoner: cannot write the diagnostic exit record: {source}");
+            eprintln!("summonr: cannot write the diagnostic exit record: {source}");
         }
         drop(self.lock);
         drop(fs::remove_file(lock_path(&self.path)));
     }
 }
 
-pub(super) fn print_logs(exclude: Option<&Path>) -> summoner::Result<i32> {
-    let dir = summoner::mage_home()?.join("logs");
+pub(super) fn print_logs(exclude: Option<&Path>) -> summonr::Result<i32> {
+    let dir = summonr::mage_home()?.join("logs");
     println!("{}", dir.display());
     let runs = runs(&dir, exclude)?;
     if runs.is_empty() {
@@ -146,8 +146,8 @@ pub(super) fn print_logs(exclude: Option<&Path>) -> summoner::Result<i32> {
     Ok(0)
 }
 
-pub(super) fn doctor(exclude: Option<&Path>) -> summoner::Result<i32> {
-    let home = summoner::mage_home()?;
+pub(super) fn doctor(exclude: Option<&Path>) -> summonr::Result<i32> {
+    let home = summonr::mage_home()?;
     let dir = home.join("logs");
     let runs = runs(&dir, exclude)?;
     let incomplete = runs
@@ -155,7 +155,7 @@ pub(super) fn doctor(exclude: Option<&Path>) -> summoner::Result<i32> {
         .filter(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
         .count();
     println!("version\t{}", env!("CARGO_PKG_VERSION"));
-    println!("revision\t{}", summoner::revision());
+    println!("revision\t{}", summonr::revision());
     println!(
         "profile\t{}",
         if cfg!(debug_assertions) {
@@ -185,9 +185,9 @@ fn hook(path: PathBuf, run: String) {
             }),
         );
         match result {
-            Ok(()) => eprintln!("summoner: crash recorded in {}", path.display()),
+            Ok(()) => eprintln!("summonr: crash recorded in {}", path.display()),
             Err(error) => eprintln!(
-                "summoner: cannot write crash record to {}: {error}",
+                "summonr: cannot write crash record to {}: {error}",
                 path.display()
             ),
         }
@@ -328,7 +328,7 @@ fn binary() -> String {
         .map(|path| path.display().to_string())
         .unwrap_or_else(|_| {
             option_env!("CARGO_BIN_NAME")
-                .unwrap_or("summon")
+                .unwrap_or("summonr")
                 .to_string()
         })
 }

@@ -1,4 +1,4 @@
-# Summoner reference
+# Summonr reference
 
 This page documents every flag, key, slash command, pane, policy rule,
 workflow seat, child session, and the agent room. The
@@ -8,7 +8,7 @@ workflow seat, child session, and the agent room. The
 ## Usage
 
 ```sh
-summon grok
+summonr grok
 summon anthropic
 summon kimi -p "What is in Cargo.toml?"
 ```
@@ -22,14 +22,14 @@ model = "whatever-the-server-calls-it"
 api_key = "local"
 ```
 
-Then `summon local`. `effort = "low"` on a row (or `--effort LEVEL`,
+Then `summonr local`. `effort = "low"` on a row (or `--effort LEVEL`,
 `/effort LEVEL` in the interface) sets the reasoning effort for that
 seat. Set it only on a seat whose model reasons; a host that does not
 accept `reasoning_effort` rejects the request. `price = { input, output, cached }` in USD per million tokens
 prices every round in `/stats` and the footer. A workflow seat keeps
 its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say.
-`summon endpoints` probes `GET /models` for each name so a dead host fails before the first tool round. `summon login NAME`
+`summonr endpoints` probes `GET /models` for each name so a dead host fails before the first tool round. `summonr login NAME`
 prompts for an API key, or runs RFC 8628 device-code login when that row
 has `device_url`.
 
@@ -37,12 +37,12 @@ Keys live in `~/.mage/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
 32-byte item in the OS store (`summoner` / `seal`). `cat` of the file
 shows ciphertext. File mode also needs that keychain item: if the
-keychain is locked, Summoner reports an error and keeps `config.toml`
+keychain is locked, Summonr reports an error and keeps `config.toml`
 untouched. The key prompt disables echo and stores the key;
-`summon login NAME --key` forces it for a device-login endpoint.
-`summon logout NAME` forgets the key and any login
+`summonr login NAME --key` forces it for a device-login endpoint.
+`summonr logout NAME` forgets the key and any login
 token. A plaintext `api_key` in `config.toml` is moved into that file
-the first time Summoner runs, and it says so once. Resolution order is
+the first time Summonr runs, and it says so once. Resolution order is
 the host's environment variable, the store, then `api_key` in
 `config.toml`.
 
@@ -50,30 +50,32 @@ If you want the OS store instead, set `secrets = "keychain"` in
 `config.toml` (or `MAGE_SECRETS=keychain`). On macOS that is one
 Keychain entry holding every secret, read and written through
 `/usr/bin/security`, so the one-time "Always Allow" is granted to
-Apple's signed tool and survives every rebuild of Summoner; Windows uses
+Apple's signed tool and survives every rebuild of Summonr; Windows uses
 Credential Manager and Linux the Secret Service, one entry per secret.
 A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `muse`; native wires `anthropic`
-(Messages) and `gemini`. `summon login copilot` is GitHub device login;
+`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `muse`,
+`zen`, `go`, `opencode`; native wires `anthropic` (Messages) and
+`gemini`. `summonr login copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
 key (`KIMI_CODING_API_KEY`, `KIMI_API_KEY`, or `MOONSHOT_API_KEY`) or a
 token in `~/.kimi-code/credentials/kimi-code.json`. Environment keys are the host's own
 (`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
-`META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`). Overlay `wire = "anthropic"`
+`META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+`OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`). Overlay `wire = "anthropic"`
 on any `[endpoint.NAME]` row. See [`config.example.toml`](../config.example.toml).
 
 ```sh
-summon --goal "make cargo test pass"
-summon --steps PLAN.md
+summonr --goal "make cargo test pass"
+summonr --steps PLAN.md
 ```
 
-`summon --name TEXT` (or `/name TEXT`) names a session; `--session`
-takes a name or an id prefix, `summon sessions` lists both, and
-`summon export [ID|NAME]` prints the transcript as Markdown.
-`summon logs` lists the last 20 per-run diagnostic logs. `summon doctor`
+`summonr --name TEXT` (or `/name TEXT`) names a session; `--session`
+takes a name or an id prefix, `summonr sessions` lists both, and
+`summonr export [ID|NAME]` prints the transcript as Markdown.
+`summonr logs` lists the last 20 per-run diagnostic logs. `summonr doctor`
 prints the running binary path and reports crashed or incomplete runs.
 Logs older than 14 days are removed unless their process is still active.
 
@@ -93,13 +95,13 @@ complete while it runs. A `### Heading` under
 `## Steps` groups the items that follow it into a phase. Every turn
 carries the ledger to the model and to the transcript: phases as Roman
 numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked.
-Both isolate in a git worktree (`<repo>-worktrees/<id>`) when you are
-in a repo. Exit 0 commits the files the run changed as
+Both edit this directory. `--worktree` isolates in a git worktree
+(`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as
 `summon: <objective>` (files over 5 MB and anything the run did not
 touch are left in place and named), fast-forwards your branch, and
 removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
-`--here` stays put.
+`--here` is the default.
 
 Auto mode follows the request. Reviews, explanations, and diagnoses inspect
 the workspace without changing it. Change requests can edit and run checks.
@@ -110,8 +112,8 @@ commands, but commands cannot change workspace or repository state. Toggle plan
 keeps the journaled plan and returns to auto; your next prompt runs
 inside that Work, and the transcript and the model both see
 `plan accepted`. `/plan reject` leaves plan mode without implementing.
-`/plan` and `/auto` only switch the tool set. `diagnostics` and `definition` route each file to its
-language module (`definition` also lists references and applies rename).
+`/plan` and `/auto` only switch the tool set. `lsp` routes each file to
+its language module (diagnostics, definition, references, and rename).
 
 ### Workflows
 
@@ -129,8 +131,8 @@ review = "zai"
 judge = "grok"
 ```
 
-`summon -w cheap-scout`, `/workflow cheap-scout` in the interface, or the
-`workflow` key picks one; `summon workflows` lists them. In the
+`summonr -w cheap-scout`, `/workflow cheap-scout` in the interface, or the
+`workflow` key picks one; `summonr workflows` lists them. In the
 interface every card action has a verb too:
 
 ```
@@ -145,7 +147,7 @@ interface every card action has a verb too:
 
 ## Interface
 
-`summon --gui` opens the session in a desktop window (a build with
+`summonr --gui` opens the session in a desktop window (a build with
 `--features gui`). The window is the Codex shape on Sigil: a left rail
 that switches the Files, Changes, Worktrees, and Plan panes and lists this
 workspace's sessions; a main column with the transcript, a composer card,
@@ -168,13 +170,13 @@ as `layout`. `ctrl+o` opens the settings modal, where every hotkey is
 editable; the choice is stored under `[hotkeys]` in the same file.
 
 `ctrl+x` (or `/pane diff`, `/diff`) shows the changes against the base:
-the worktree base for a `--goal`/`--steps` run, `HEAD` otherwise. Each
+the worktree base when you passed `--worktree`, `HEAD` otherwise. Each
 row is `+added −removed path`; Enter or `→` opens that file's hunks,
 `↑↓` scroll them, `←` or `esc` returns to the list, and the right-click
 menu adds view hunks. `/diff PATH` jumps to one file. After a turn that
 changed the tree, the transcript gets one `changes: N files · +a −r · vs BASE ·
-/pane diff` line. The same data is `summon diff [PATH]` (the patch), `summon diff
---stat`, and `summon diff --json`.
+/pane diff` line. The same data is `summonr diff [PATH]` (the patch), `summonr diff
+--stat`, and `summonr diff --json`.
 
 `→` on a file in the tree (or `/view PATH`, or the menu's view file)
 reads it in the view pane with line numbers; lines the diff added are
@@ -190,7 +192,7 @@ In the diff pane `t` keeps only the files the last turn edited (the
 header says `· last turn`), `c` copies the patch on show to the clipboard
 (OSC 52 in the terminal; the system clipboard in the window), and a pane
 80 columns or wider shows a file's hunks side by side, old on the left.
-`summon diff --turn N` (or `--turn last`) is the same filter for the
+`summonr diff --turn N` (or `--turn last`) is the same filter for the
 latest session in this directory.
 
 While a turn runs, a row above the composer shows a spinner, what the
@@ -229,15 +231,15 @@ model round: `!cmd` shows the output as a tool card and then sends
 `$ cmd` plus the output as the prompt; `!!cmd` shows the output only.
 
 An image pasted from the clipboard, or attached with `@shot.png`, shows in
-the transcript, and so does any image the model shows you: the
-`show_image` tool takes a path, and a markdown image link such as
-`![plot](out/plot.png)` in a reply shows that file. In Ghostty, Kitty,
+the transcript, and so does any image the model shows you. `read` on an
+image path, or a markdown image link such as `![plot](out/plot.png)` in a
+reply, shows that file. In Ghostty, Kitty,
 WezTerm, and Konsole the picture renders through the Kitty graphics
 protocol; in iTerm2 and Warp through inline images; in other terminals as
 half-block cells. `SIGIL_GRAPHICS=kitty`, `iterm2`, or `none` overrides the
 detection, and tmux turns it off. A picture is 24 rows tall at most, and a
 picture scrolled partly off the screen shows the rows that are on it.
-`read_file` on an image reports its type and size, and the picture shows in
+`read` on an image reports its type and size, and the picture shows in
 the transcript; the model attaches it as `@path` to look at it. `/view
 shot.png`, or `→` on an image in the tree, shows the picture in the view
 pane.
@@ -249,13 +251,13 @@ kinds show their source in a frame. The drawing comes from Sigil's
 `mermaid` widget, so it looks the same in every terminal.
 
 A paste of eight or more lines, or a thousand or more bytes, folds into
-`[pasted N lines #k]` in the draft. Summoner expands every token back to
+`[pasted N lines #k]` in the draft. Summonr expands every token back to
 the pasted text when the prompt is sent or queued; `ctrl+c` discards
 them with the draft.
 
 While a turn runs, the composer status also counts waiting input
 (`2 queued, ctrl+q edits`). The terminal title reads
-`summon · <workspace> · working` or `· ready`, and the terminal bell
+`summonr · <workspace> · working` or `· ready`, and the terminal bell
 rings once when a turn ends while the terminal is not focused.
 
 `/tools` switches tool output between compact and full; `/reasoning`
@@ -271,13 +273,13 @@ transcript. Both use OSC 52 in the terminal and the system clipboard in the
 window. `ctrl+t` releases the mouse to the terminal so you can select and copy
 any transcript span; press it again to restore mouse interaction.
 
-`/pane worktrees` lists the `summon/*` worktrees of this repository:
+`/pane worktrees` lists the `summonr/*` worktrees of this repository:
 branch, commits ahead of the base, dirty or clean, the session that ran
 there, and the directory. Enter or `→` opens that worktree's diff (`esc`
 comes back); the right-click menu offers show diff, merge (the same
 ff-only merge a run ends with; a dirty tree is refused), remove
 worktree (only when clean and fully merged), and insert path. `summon
-worktrees` prints the same rows; `summon worktrees --json` as JSON.
+worktrees` prints the same rows; `summonr worktrees --json` as JSON.
 
 The card takes the keyboard (↑↓ role, enter picks a seat, `d` returns
 it to the driving seat, ←→ cycles saved workflows, `s` saves) and the
@@ -295,47 +297,73 @@ as the next instruction and counts as a failed check against
 ## Child sessions
 
 The `task` tool delegates work to fresh child sessions. A model can emit
-several `task` calls in one response. Summoner runs them concurrently.
-Each `implement` child edits a separate Git worktree from the same tracked
-`HEAD`; the tracked files must be clean. Implement children get the parent's file, shell, and language-server
-tools inside that worktree; background commands stay with the parent.
-Summoner applies every child patch in one child worktree first. A conflict
-keeps the child worktrees and leaves the parent unchanged. After a clean
-apply, Summoner removes the child worktrees. The parent verifies once and
-commits. Outside Git, only one implement child can write the current
-directory at a time.
+several `task` calls in one response. Summonr runs them concurrently.
+Each `implement` child edits the parent workspace. Implement children get
+the parent's file, shell, and language-server tools; background commands
+stay with the parent. The parent verifies after they finish. Pass
+`--worktree` on the session to isolate the whole run.
 
-A `research` child reads the parent workspace without a worktree. It
-cannot write files or start background commands; shell commands run only
-inside the sandbox. Each child uses the endpoint context window. If the
-parent has a token or time budget, the children share what remains of it;
-otherwise a child runs until it finishes or you cancel it. Children have no web tools or another `task` tool. Every child
-tool call, result, and answer streams into the parent transcript under the
-child id, and Esc during a batch removes child worktrees that hold no
-change. A research child that finished before you pressed Esc keeps its
-result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child reads the parent workspace. It cannot write files or
+start background commands; shell commands run only inside the sandbox.
+Each child uses the endpoint context window. If the parent has a token or
+time budget, the children share what remains of it; otherwise a child runs
+until it finishes or you cancel it. Children have no web tools or another
+`task` tool. Every child tool call, result, and answer streams into the
+parent transcript under the child id. A research child that finished
+before you pressed Esc keeps its result: the model reads it on the next
+turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at
 once. `task` with `child: ID` reports its state, elapsed time, and last
 action while it runs, and its full result once it finishes; `kill: true`
-stops it. A turn does not end while a background child runs: Summoner
+stops it. A turn does not end while a background child runs: Summonr
 waits, then defers the turn the way it does for a background command,
-until the child finishes or the model kills it. Background implement
-children need a Git repository.
+until the child finishes or the model kills it.
+
+## Tools
+
+The model receives the full advertised schema every round
+(`Loop::advertised_tools`). Core names live in `src/tools/catalog.rs`.
+
+Reads return `N:hash|text`. A stale or ambiguous tag fails before write.
+`read` lists a directory, shows an image, or searches (`pattern` / `glob`).
+Search hits are `path:N:hash|line`. `edit` covers substring replace
+(`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete
+(`op: delete`), and a batch (`edits`). `write` creates or overwrites.
+
+| Name | When | Notes |
+| --- | --- | --- |
+| `read` | always | File, directory, image, or search |
+| `edit` | not plan | One file; hashes from `read` |
+| `write` | not plan | New or empty files |
+| `run_command` | always | Sandbox; `background` / `job` / `kill` |
+| `skill` | skills catalog exists | Loads one `SKILL.md` by name |
+| `lsp` | `lsp` on | Diagnostics, definition, rename |
+| `web` | `search` on | `query` searches; `url` fetches |
+| `task` | `task` module | Child session |
+| `bus` | bus | `action` agents, inbox, send, get, set, list |
+
+The old names (`read_file`, `list_dir`, `grep`, `show_image`,
+`write_file`, `replace_text`, `replace_lines`, `insert_after`,
+`delete_lines`, `replace_texts`, `edit_file`, `diagnostics`,
+`definition`, `web_search`, `web_fetch`, `agents`, `inbox`, `board`,
+`send`) still execute and are not advertised. Plan mode advertises
+`read` and `run_command`, plus `skill` and `web`. It does not advertise
+`edit` or `write`.
 
 ## Modules
 
 Every optional capability is a module compiled into the binary: `search`,
-`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `summon modules` lists
+`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `summonr modules` lists
 them with their state; `/modules NAME on|off` in the interface switches one
 and writes `[modules]` in `~/.mage/config.toml`. A workspace
 `.mage/config.toml` may turn a module off for that project but cannot turn
-one on. Summoner runs no third-party code inside the harness; modules read
+one on. Summonr runs no third-party code inside the harness; modules read
 declarative files under `.mage` where they need user input.
 
-`grep` takes `glob`, honors `.gitignore`, and lists matching files
+`read` with `pattern` or `glob` honors `.gitignore`, and lists matching files
 when the pattern is empty.
-`web_search` reads DuckDuckGo HTML without a key (a `BRAVE_API_KEY` in the
+`web` with `query` reads DuckDuckGo HTML without a key (a `BRAVE_API_KEY` in the
 environment selects Brave instead). `[search] backend = "bing"`
 keeps the Bing RSS compatibility path; `[search] backend = "brave"` with
 `api_key` (or `BRAVE_API_KEY`) uses the Brave Search API. Every result says
@@ -358,7 +386,7 @@ Repository config cannot supply executable argv. A trusted
 built-in module does not fit.
 Language servers run as trusted host processes with the inherited environment,
 outside the command sandbox. They can access files and network resources with
-your account's permissions. Rename edits returned to Summoner still pass through
+your account's permissions. Rename edits returned to Summonr still pass through
 its file policy. Disable the `lsp` module when you do not trust the server or
 the project configuration it reads.
 
@@ -373,17 +401,17 @@ configured check completes with `verified: false`.
 
 ## Room
 
-`summon room` puts several coding agents on this machine in one
+`summonr room` puts several coding agents on this machine in one
 conversation. The room is the `bus` module's files under `~/.mage/bus`: a
-roster, one inbox per agent, and one blackboard per workspace. Summoner
+roster, one inbox per agent, and one blackboard per workspace. Summonr
 sessions join it natively. Claude Code and Codex join through
-`summon room serve`, a stdio MCP server over the same files with the
+`summonr room serve`, a stdio MCP server over the same files with the
 tools `join`, `agents`, `send`, `inbox`, `wait`, `board`, `status`, and
 `leave`. Mail is peer text, never user instructions, and each session's
 own permissions still apply.
 
 ```
-summon room setup claude     # installs the /summon-room skill and the .mcp.json entry here
+summonr room setup claude    # installs the /summon-room skill and the .mcp.json entry here
 claude --dangerously-load-development-channels server:summon-room
 /summon-room reviewer
 ```
@@ -392,12 +420,12 @@ The skill joins the room, starts Codex as a peer when none is present,
 and lays out the split: claims on the board, one brief per peer, `wait`
 only when blocked, then reconcile against the proving command.
 
-`summon room host codex [--cwd PATH] [--id NAME] [--read-only]` runs
+`summonr room host codex [--cwd PATH] [--id NAME] [--read-only]` runs
 Codex as a peer that answers mail. It spawns `codex mcp-server` on
 Codex's own login, keeps one thread, and sends each answer back to the
 sender. Codex cannot receive a push into a live session, so this is how
 Codex takes part without a second terminal polling `wait`.
-`summon room setup codex` installs the same skill and the
+`summonr room setup codex` installs the same skill and the
 `~/.codex/config.toml` entry for an interactive Codex session.
 
 Delivery: `wait` blocks until mail arrives or the deadline passes;
@@ -405,7 +433,7 @@ Delivery: `wait` blocks until mail arrives or the deadline passes;
 pushes each mail as a `notifications/claude/channel` event. The push is a
 copy, so a mail that the client did not surface is still in the inbox.
 `MAGE_ROOM_PUSH=off` in the server's env block turns the push off.
-`summon room` alone prints the roster.
+`summonr room` alone prints the roster.
 
 ## Limits
 
@@ -413,14 +441,15 @@ Each flag alone gives these modes:
 
 | Mode | File tools | Shell commands | Shell network |
 | --- | --- | --- | --- |
-| Default | Reads any path the sandbox can read; writes inside the workspace under policy | Contained; workspace and temporary storage writable | Denied |
-| `--plan` | Reads; write_file writes any path | write_file writes; edit tools, shell writes, and background jobs denied | Denied |
+| Default | Reads any path the sandbox can read; writes under the workspace and extra writable roots | Contained; workspace, extra writable roots, and temporary storage writable | Denied |
+| `--plan` | Reads; edit and write denied | Shell writes and background jobs denied | Denied |
 | `--no-sandbox` | Full access with your account's permissions | Uncontained; command policy bypassed | Your account's access |
 
-`read_file`, `list_dir`, `grep`, and `show_image` accept an absolute path outside the
-workspace, which is what the shell can already read; every edit and write
-tool stays inside it. For work that spans sibling repositories, launch
-Summoner in the parent directory or pass absolute paths to the read tools.
+`read` accepts an absolute path outside the workspace, which is what the
+shell can already read. `edit` and `write` stay inside the writable roots:
+the launch directory, `[sandbox] write` in `~/.mage/config.toml`, and
+`--add-dir`. For work that spans sibling repositories, put the parent on
+that list, launch Summonr in the parent directory, or pass `--add-dir`.
 
 Commands use Seatbelt, bubblewrap, or experimental Windows AppContainer.
 A missing backend is a hard stop. `--net` allows sockets inside the sandbox;
@@ -433,24 +462,25 @@ The interface also prompts when a sandboxed command fails with a network error:
 `[ allow ]` turns the session network on and retries the command; `[ deny ]`
 returns the failure to the model. `/net` alone reports the current state.
 
-`/approve on` makes the harness ask before each shell command. A bar appears
-above the composer with `[ allow ]` and `[ deny ]` buttons; click one, or press
-`y` or `n`. An approved command runs uncontained with your account's access, so
-review it first. `/approve off` returns to the sandbox; `/approve` alone shows
-the mode. A command the user denies is reported to the model as a failed tool.
+`/approve on` is manual mode: the harness asks before extra-root writes and
+before each shell command. A bar appears above the composer with
+`[ allow ]` and `[ deny ]` buttons; click one, or press `y` or `n`. An approved
+command runs uncontained with your account's access, so review it first.
+`/approve off` returns to auto mode; `/approve` alone shows the mode. A command
+the user denies is reported to the model as a failed tool.
 
-A path outside the workspace is writable only when the user approves it.
-The interface prompts on a grantable denial with the same bar
+Auto mode grants a write outside the writable roots for this session and
+retries the tool. It does not write `~/.mage/config.toml`. Plan mode still
+refuses writes. `/approve on` prompts with the same bar
 (`approve ~/.cargo/bin` plus `[ allow ]` / `[ always ]` / `[ deny ]`).
 `[ allow ]` or `y` grants the directory for this session and retries the tool.
-`[ always ]` or `Y` also appends the path to `[sandbox] write` in
-`~/.mage/config.toml`. `[ deny ]` or `n` returns the denial to the model.
-`/write PATH` grants a directory for this session without a prompt; `/write`
-alone lists them.
+`[ always ]` or `Y` appends the path to `[sandbox] write`.
+`/write PATH` persists to that list without a prompt.
+`/write --session PATH` grants for this session only. `/write` alone lists
+the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
-target those paths, and the OS sandbox allows the write. `write_file` and the
-edit tools accept files under them too, so a session can edit a dotfile or a
-sibling repo once the path is approved. `~` and `$HOME` expand before the check.
+target those paths, and the OS sandbox allows the write. `write` and `edit`
+accept files under them too. `~` and `$HOME` expand before the check.
 Hard denials never prompt: force-push, `sudo`, `rm -rf /`, deny-list matches,
 and protected paths (`.env`, `.git/hooks`, `.git/config`, `~/.ssh`, `~/.gnupg`,
 `~/.mage`, shell startup files). Reads of `.env` and `~/.ssh` / `~/.gnupg` are
@@ -461,21 +491,22 @@ command that fails with `Operation not permitted` offers the matching home
 directory (`~/.cargo`, `~/.npm`, or `GOPATH` / `~/go`) as the grant.
 
 `--no-sandbox` also bypasses file allow/write restrictions and permits file tools
-outside the workspace. `--plan` still limits writes to the write_file tool when combined with it,
-and refuses shell commands because read-only inspection requires a sandbox.
+outside the workspace. `--plan` still denies `edit` and `write` when combined with it,
+and refuses shell writes because read-only inspection requires a sandbox.
 `--strict` reapplies policy restrictions but does not restore process containment.
 
-A build tool that writes outside the workspace fails inside the sandbox with
-`Operation not permitted`. Name those directories in `~/.mage/config.toml`
-and every contained command, including a research child's, can write there:
+A build tool that writes outside the writable roots fails inside the sandbox
+with `Operation not permitted`. Name those directories in
+`~/.mage/config.toml` (or pass `--add-dir`) and every contained command,
+including a research child's, can write there:
 
 ```toml
 [sandbox]
-write = ["~/.cargo/registry", "/Volumes/build/cache"]
+write = ["~/.cargo/registry", "~/code"]
 ```
 
 A `~/` prefix expands to your home directory. A listed path that does not
-exist stops startup.
+exist is skipped at startup; it is still a writable root for policy checks.
 
 A provider reply of 429, a 5xx status, or a transport error is retried up
 to six times with a wait that doubles from 2 s to 60 s. A `Retry-After`
@@ -483,18 +514,20 @@ header in seconds replaces that wait, up to 600 s. A reply that already
 streamed output is not retried.
 
 User policy is `~/.mage/policy.toml`; repository policy is `.mage/policy.toml`.
-An action must match every configured nonempty allow/write list. Deny lists
-accumulate. Empty lists add no restriction, except that `strict = true` with an
-empty allow list denies all commands. Repository policy can narrow user
-permissions, never widen them. Children inherit these restrictions.
-In plan mode the write_file tool writes any path, so the plan or review file
-lands. The edit tools and shell commands stay read-only, so source edits and
-builds are refused.
+A nonempty command allow list must match on every overlay (intersection).
+Deny lists accumulate. `write` globs in policy.toml are a narrowing filter
+on paths relative to a writable root; extra roots themselves come only from
+`[sandbox] write`, `--add-dir`, and `/write`. Empty lists add no restriction,
+except that `strict = true` with an empty allow list denies all commands.
+Repository policy can narrow user permissions, never widen them. Children
+inherit these restrictions.
+In plan mode `edit` and `write` are denied. Shell commands stay read-only, so
+source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables
 background commands; file tools still use the list.
 
 - Home is still `~/.mage`. Env is still `MAGE_*`.
-- An older `mage` binary may still be on `PATH`. Use `summon`.
+- An older `mage` binary may still be on `PATH`. Use `summonr`.
 - No MCP client for third-party servers, hook API, or runtime plugin
   loader. Language modules are compiled into the binary. A CLI with a README is a tool the
   model already knows how to run through `run_command`; a skill under
@@ -518,17 +551,17 @@ Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
 `/theme` toggles the preset and re-applies both theme files. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
 `green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,
-`code_bg`, `thought_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,
+`code_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,
 `code_string`, and `code_keyword`.
 
 ## Herdr
 
-When `summon` runs inside a [Herdr](https://herdr.dev) pane, it reports
+When `summonr` runs inside a [Herdr](https://herdr.dev) pane, it reports
 lifecycle state through Herdr's CLI (`pane report-agent`). `idle` is the
-prompt; `working` is a turn. The Summoner session id is the native session
+prompt; `working` is a turn. The Summonr session id is the native session
 reference. `/name TEXT` becomes the pane title and `$summary` token.
 Child sessions do not report, so a nested `task` does not steal the pane.
-Herdr has no built-in `summoner` kind. This reporter is the integration.
+Herdr has no built-in `summonr` kind. This reporter is the integration.
 
 ## Docs
 

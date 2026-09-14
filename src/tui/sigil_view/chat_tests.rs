@@ -168,7 +168,7 @@ fn headless_frame_is_painted_by_sigil() {
             println!("{frame}");
         }
         assert!(
-            frame.contains("summoner glm-5.3"),
+            frame.contains("summonr glm-5.3"),
             "header missing:\n{frame}"
         );
         assert!(

@@ -27,6 +27,6 @@ fn main() {
         revision.push_str("-dirty");
     }
     if !revision.is_empty() {
-        println!("cargo:rustc-env=SUMMON_REVISION={revision}");
+        println!("cargo:rustc-env=SUMMONR_REVISION={revision}");
     }
 }

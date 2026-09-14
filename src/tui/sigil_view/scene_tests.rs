@@ -49,15 +49,15 @@ fn splash_is_one_compact_terminal_composition() {
         );
         let first_logo = logo_rows.first().copied().unwrap_or(0);
         assert_eq!(
-            row("summoner 0.1.0"),
+            row("summonr  0.1.0"),
             first_logo + crate::splash::logo().len() + 1
         );
-        assert_eq!(row("model    glm-5.3"), row("summoner 0.1.0") + 1);
+        assert_eq!(row("model    glm-5.3"), row("summonr  0.1.0") + 1);
         assert_eq!(row("setup    /auth · /model · /help"), row("workdir") + 1);
         assert!(row("╭ ● auto") > row("policy   strict"));
         assert!(!frame.contains("Enter Mage"), "redundant button:\n{frame}");
         assert!(
-            !frame.contains("Enter Summoner"),
+            !frame.contains("Enter Summonr"),
             "redundant button:\n{frame}"
         );
     });
@@ -142,7 +142,7 @@ fn composer_preserves_graphemes_and_its_right_border() {
         set_cell_width(mode);
         for symbol in ["👍🏽", "e\u{301}", "👩\u{200d}💻", "🇳🇿", "1️⃣", "a\u{200c}"]
         {
-            sigil::reactive::Runtime::scope("summoner-composer-graphemes", || {
+            sigil::reactive::Runtime::scope("summonr-composer-graphemes", || {
                 let (cmd, _rx) = unbounded_channel();
                 let app = App::new(info(), PathBuf::from("."), cmd);
                 app.resize(40, 12);
@@ -260,7 +260,7 @@ fn login_and_compaction_name_the_operation_and_queue_input() {
         (Activity::Compact, "compacting"),
     ] {
         for width in [40, 80] {
-            sigil::reactive::Runtime::scope("summoner-operation-controls", || {
+            sigil::reactive::Runtime::scope("summonr-operation-controls", || {
                 let (cmd, mut rx) = unbounded_channel();
                 let app = App::new(info(), PathBuf::from("."), cmd);
                 app.resize(width, 16);
@@ -352,7 +352,7 @@ fn chat_chrome_keeps_a_horizontal_gutter() {
         let composer = lines[8];
 
         assert!(
-            lines[0].contains("summoner glm-5.3") && lines[0].contains("auto"),
+            lines[0].contains("summonr glm-5.3") && lines[0].contains("auto"),
             "narrow header hid its primary facts:\n{frame}"
         );
         assert!(
@@ -581,7 +581,7 @@ fn splash_reveal_and_scene_advance_on_ticks() {
             .frame(&mut host, &mut router, [], (100, 30))
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
             .clone();
-        assert!(!initial.text().contains("summoner 0.1.0"));
+        assert!(!initial.text().contains("summonr  0.1.0"));
         assert!(!initial.text().contains("❯ "));
 
         for _ in 0..20 {
@@ -592,7 +592,7 @@ fn splash_reveal_and_scene_advance_on_ticks() {
             .unwrap_or_else(|error| panic!("layout failed: {error}"))
             .clone();
         assert!(app.splash_revealed.peek());
-        assert!(animated.text().contains("summoner 0.1.0"));
+        assert!(animated.text().contains("summonr  0.1.0"));
         assert!(animated.text().contains("❯ "));
         assert_ne!(initial, animated, "animated scene stayed frozen");
     });

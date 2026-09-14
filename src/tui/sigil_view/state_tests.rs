@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn peer_updates_do_not_invalidate_the_history_cache() {
-    sigil::reactive::Runtime::scope("summoner-peers-skip-rerender", || {
+    sigil::reactive::Runtime::scope("summonr-peers-skip-rerender", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("/tmp/mage-view-test"), cmd);
         apply(&app, Msg::System("before".to_string()));
@@ -15,7 +15,7 @@ fn peer_updates_do_not_invalidate_the_history_cache() {
 }
 #[test]
 fn an_empty_patch_has_a_visible_completed_state() {
-    sigil::reactive::Runtime::scope("summoner-empty-patch", || {
+    sigil::reactive::Runtime::scope("summonr-empty-patch", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(120, 30);
@@ -69,7 +69,7 @@ fn an_empty_patch_has_a_visible_completed_state() {
 
 #[test]
 fn copying_a_loading_patch_requests_the_selected_file() {
-    sigil::reactive::Runtime::scope("summoner-patch-copy-loading", || {
+    sigil::reactive::Runtime::scope("summonr-patch-copy-loading", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.diff_open("selected.txt".to_string());
@@ -117,7 +117,7 @@ fn copying_a_loading_patch_requests_the_selected_file() {
 
 #[test]
 fn patch_errors_wrap_scroll_and_leave_the_clipboard_untouched() {
-    sigil::reactive::Runtime::scope("summoner-patch-errors", || {
+    sigil::reactive::Runtime::scope("summonr-patch-errors", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(120, 30);
@@ -234,7 +234,7 @@ fn patch_errors_wrap_scroll_and_leave_the_clipboard_untouched() {
 
 #[test]
 fn patch_responses_follow_the_requested_workspace() {
-    sigil::reactive::Runtime::scope("summoner-patch-root", || {
+    sigil::reactive::Runtime::scope("summonr-patch-root", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         let first = PathBuf::from("first");
@@ -297,7 +297,7 @@ fn patch_responses_follow_the_requested_workspace() {
 
 #[test]
 fn wide_patch_scrolling_stops_at_the_last_visible_pair() {
-    sigil::reactive::Runtime::scope("summoner-patch-pair-scroll", || {
+    sigil::reactive::Runtime::scope("summonr-patch-pair-scroll", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(220, 30);
@@ -357,7 +357,7 @@ fn wide_patch_scrolling_stops_at_the_last_visible_pair() {
 
 #[test]
 fn restored_panes_request_their_initial_data() {
-    sigil::reactive::Runtime::scope("summoner-restored-pane-data", || {
+    sigil::reactive::Runtime::scope("summonr-restored-pane-data", || {
         for pane in ["diff", "files", "worktrees", "ledger"] {
             let (cmd, mut rx) = unbounded_channel();
             let mut start = info();
@@ -376,7 +376,7 @@ fn restored_panes_request_their_initial_data() {
 
 #[test]
 fn diff_failure_settles_loading_and_retry_restores_the_pane() {
-    sigil::reactive::Runtime::scope("summoner-diff-recovery", || {
+    sigil::reactive::Runtime::scope("summonr-diff-recovery", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.resize(120, 40);
@@ -431,7 +431,7 @@ fn diff_failure_settles_loading_and_retry_restores_the_pane() {
 
 #[test]
 fn restored_conversation_keeps_roles_and_one_copy_of_the_reply() {
-    sigil::reactive::Runtime::scope("summoner-restored-view", || {
+    sigil::reactive::Runtime::scope("summonr-restored-view", || {
         let (cmd, _rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         apply(&app, Msg::User("fix arithmetic".to_string()));
@@ -1052,7 +1052,7 @@ fn the_workflow_card_routes_seat_picks_saves_and_cycles() {
 
 #[test]
 fn ctrl_c_needs_two_presses_to_quit_and_escape_twice_opens_the_tree() {
-    sigil::reactive::Runtime::scope("summoner-repeat-keys", || {
+    sigil::reactive::Runtime::scope("summonr-repeat-keys", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.splash.set(false);
@@ -1091,7 +1091,7 @@ fn ctrl_c_needs_two_presses_to_quit_and_escape_twice_opens_the_tree() {
 
 #[test]
 fn a_long_paste_folds_into_a_token_and_expands_on_submit() {
-    sigil::reactive::Runtime::scope("summoner-paste-fold", || {
+    sigil::reactive::Runtime::scope("summonr-paste-fold", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.splash.set(false);
@@ -1119,7 +1119,7 @@ fn a_long_paste_folds_into_a_token_and_expands_on_submit() {
 
 #[test]
 fn ctrl_d_in_the_picker_deletes_the_selected_session_on_the_second_press() {
-    sigil::reactive::Runtime::scope("summoner-picker-delete", || {
+    sigil::reactive::Runtime::scope("summonr-picker-delete", || {
         let (cmd, mut rx) = unbounded_channel();
         let app = App::new(info(), PathBuf::from("."), cmd);
         app.splash.set(false);

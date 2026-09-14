@@ -3,8 +3,8 @@ use std::process::{Command, Stdio};
 
 use super::Log;
 
-const PROBE: &str = "SUMMONER_PANIC_PROBE";
-const SESSION_PROBE: &str = "SUMMONER_SESSION_PROBE";
+const PROBE: &str = "SUMMONR_PANIC_PROBE";
+const SESSION_PROBE: &str = "SUMMONR_SESSION_PROBE";
 
 fn log(home: &std::path::Path) -> std::io::Result<std::path::PathBuf> {
     fs::read_dir(home.join("logs"))?

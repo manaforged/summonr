@@ -175,7 +175,7 @@ async fn task_runs_one_durable_depth_one_child() -> Result<()> {
         request.tools.iter().all(|tool| {
             !matches!(
                 tool.function.name.as_str(),
-                "task" | "web_search" | "web_fetch"
+                "task" | "web" | "web_search" | "web_fetch"
             )
         })
     }));
@@ -325,7 +325,7 @@ async fn more_than_four_research_children_run_concurrently() -> Result<()> {
 }
 
 #[tokio::test]
-async fn concurrent_implement_children_require_git() -> Result<()> {
+async fn concurrent_implement_children_run_without_git() -> Result<()> {
     let home = tempfile::tempdir()?;
     let mut loop_ = Loop::with_session(Script::new(), "test-model", home.path(), "system")?;
     let calls = vec![
@@ -338,10 +338,13 @@ async fn concurrent_implement_children_require_git() -> Result<()> {
         .await;
 
     assert_eq!(results.len(), 2);
-    assert!(results.into_iter().all(|result| result.is_err()));
-    assert!(loop_.session.children().is_empty());
-    assert_eq!(crate::session::list_in(home.path())?.len(), 1);
+    assert!(results.into_iter().all(|result| result.is_ok()));
+    assert_eq!(loop_.session.children().len(), 2);
     Ok(())
+}
+
+fn same_workspace(left: &std::path::Path, right: &std::path::Path) -> bool {
+    left == right || left.canonicalize().ok() == right.canonicalize().ok()
 }
 
 fn repository() -> tempfile::TempDir {
@@ -349,7 +352,7 @@ fn repository() -> tempfile::TempDir {
     for args in [
         vec!["init", "-b", "main"],
         vec!["config", "user.email", "summon@test"],
-        vec!["config", "user.name", "Summoner"],
+        vec!["config", "user.name", "Summonr"],
         vec!["config", "core.autocrlf", "false"],
     ] {
         assert!(
@@ -523,7 +526,7 @@ async fn more_than_four_implement_children_reconcile_without_leftover_trees() ->
     assert!(records.iter().all(|record| {
         record.access == Access::Implement
             && matches!(record.state, ChildState::Completed(_))
-            && !record.workspace.exists()
+            && same_workspace(&record.workspace, workspace.path())
     }));
     assert!(crate::worktree::list(workspace.path())?.is_empty());
     let requests = requests
@@ -543,7 +546,7 @@ async fn more_than_four_implement_children_reconcile_without_leftover_trees() ->
 }
 
 #[tokio::test]
-async fn conflicting_implement_children_leave_parent_unchanged_and_keep_worktrees() -> Result<()> {
+async fn implement_children_share_the_parent_and_leave_no_worktrees() -> Result<()> {
     let workspace = repository();
     let mut loop_ = Loop::with_session(
         Writers::conflicting(),
@@ -555,25 +558,14 @@ async fn conflicting_implement_children_leave_parent_unchanged_and_keep_worktree
     let turn = loop_.turn("implement conflicting files").await?;
 
     assert!(turn.text.starts_with("parent finished"));
-    assert!(!workspace.path().join("shared.txt").exists());
+    assert!(workspace.path().join("shared.txt").exists());
     let records = loop_.session.children();
     assert_eq!(records.len(), CHILDREN);
     assert!(records.iter().all(|record| {
-        record.workspace.exists()
-            && matches!(
-                &record.state,
-                ChildState::Failed(result)
-                    if result
-                        .diagnostic
-                        .as_deref()
-                        .is_some_and(|text| text.contains("conflict"))
-            )
+        same_workspace(&record.workspace, workspace.path())
+            && matches!(record.state, ChildState::Completed(_))
     }));
-    let trees = crate::worktree::list(workspace.path())?;
-    assert_eq!(trees.len(), CHILDREN);
-    for tree in trees {
-        crate::worktree::remove_child(&tree)?;
-    }
+    assert!(crate::worktree::list(workspace.path())?.is_empty());
     Ok(())
 }
 
@@ -1129,12 +1121,12 @@ async fn child_tools_keep_commands_and_inherit_restrictions() -> Result<()> {
 
     assert!(child.is_strict());
     assert!(child.is_read_only());
-    assert!(
-        child
-            .definitions()
-            .iter()
-            .all(|tool| !matches!(tool.function.name.as_str(), "web_search" | "web_fetch"))
-    );
+    assert!(child.definitions().iter().all(|tool| {
+        !matches!(
+            tool.function.name.as_str(),
+            "web" | "web_search" | "web_fetch"
+        )
+    }));
     assert!(
         child
             .definitions()

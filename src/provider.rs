@@ -599,6 +599,7 @@ impl Client {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(20))
+            .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")))
             .build()
             .map_err(|error| Error::Config(error.to_string()))?;
         auth.login(&http, notice).await
@@ -625,9 +626,22 @@ impl Client {
                 }
             }
         }
-        let mut builder = reqwest::Client::builder().connect_timeout(Duration::from_secs(20));
+        let mut builder = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(20))
+            .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")));
         if let Some(timeout) = idle_timeout {
             builder = builder.read_timeout(timeout);
+        }
+        let mut headers = headers;
+        if base.contains("opencode.ai/zen")
+            && !headers
+                .iter()
+                .any(|(key, _)| key.eq_ignore_ascii_case("x-opencode-session"))
+        {
+            headers.push((
+                "x-opencode-session".to_string(),
+                uuid::Uuid::now_v7().to_string(),
+            ));
         }
         let http = builder
             .build()
@@ -666,9 +680,7 @@ impl Client {
 
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("MAGE_API_KEY").map_err(|error| {
-            Error::Config(format!(
-                "set MAGE_API_KEY before starting Summoner: {error}"
-            ))
+            Error::Config(format!("set MAGE_API_KEY before starting Summonr: {error}"))
         })?;
         let base_url =
             std::env::var("MAGE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());

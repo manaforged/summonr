@@ -39,12 +39,12 @@ pub const ALL: [Module; 7] = [
     },
     Module {
         name: "bus",
-        summary: "mail and a blackboard between summoner sessions on this machine",
+        summary: "mail and a blackboard between summonr sessions on this machine",
         default: false,
     },
     Module {
         name: "gui",
-        summary: "the desktop window (`summon --gui`, a `--features gui` build)",
+        summary: "the desktop window (`summonr --gui`, a `--features gui` build)",
         default: true,
     },
 ];

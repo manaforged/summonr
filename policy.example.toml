@@ -2,7 +2,7 @@
 # Each nonempty allow/write list must permit the action; deny lists accumulate.
 # Project policy can narrow user permissions, never widen them.
 
-# When true, only `allow` commands run (also set by `summon --strict`).
+# When true, only `allow` commands run (also set by `summonr --strict`).
 # A policy file with strict = true and an empty allow list denies all commands.
 strict = false
 
@@ -11,8 +11,9 @@ strict = false
 # Commands are also contained: rm, mv, cp, chmod, tee, and redirects may not
 # name a path outside the workspace, and after a `cd` outside it every such
 # target counts as outside. Reads and builds outside the workspace run.
-# Paths in [sandbox] write (config.toml) and paths approved with /write are
-# inside: those targets accept rm, cp, ln, mv, install, and redirects.
+# Extra writable roots live in [sandbox] write (config.toml), --add-dir, and
+# /write. Those targets accept rm, cp, ln, mv, install, and redirects.
+# This file's `write` globs only narrow relative paths under a root.
 # deny = ["npm publish"]
 
 # When non-empty (or strict = true), only these commands run.

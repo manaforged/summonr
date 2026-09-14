@@ -797,7 +797,7 @@ pub(super) fn write_at(
 
 fn header(model: &Model, width: usize, accent: Rgba8) -> Vec<Span> {
     let mut left = vec![
-        Span::styled("summoner ", accent).bold(),
+        Span::styled("summonr ", accent).bold(),
         Span::text(model.model.clone()),
     ];
     if width >= 80

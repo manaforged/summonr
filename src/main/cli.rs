@@ -1,9 +1,9 @@
-use summoner::{Error, Result, is_endpoint};
+use summonr::{Error, Result, is_endpoint};
 
 #[derive(Debug, Default)]
 pub(super) struct Args {
     pub(super) print: bool,
-    pub(super) effort: Option<summoner::Effort>,
+    pub(super) effort: Option<summonr::Effort>,
     pub(super) json: bool,
     pub(super) list: bool,
     pub(super) list_sessions: bool,
@@ -19,6 +19,7 @@ pub(super) struct Args {
     pub(super) trust: bool,
     pub(super) strict: bool,
     pub(super) no_sandbox: bool,
+    pub(super) add_dir: Vec<String>,
     pub(super) network: bool,
     pub(super) plan: bool,
     pub(super) no_verify: bool,
@@ -75,6 +76,10 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--strict" => args.strict = true,
             "--sandbox" => args.no_sandbox = false,
             "--no-sandbox" => args.no_sandbox = true,
+            "--add-dir" => {
+                args.add_dir
+                    .push(value(&mut input, "--add-dir", "a directory")?);
+            }
             "--net" => args.network = true,
             "--no-net" => args.network = false,
             "--plan" => args.plan = true,
@@ -126,7 +131,7 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--max-secs" => args.max_secs = Some(number(&mut input, "--max-secs")?),
             "--effort" => {
                 let level = value(&mut input, "--effort", "none, low, medium, or high")?;
-                args.effort = Some(summoner::Effort::parse(&level).ok_or_else(|| {
+                args.effort = Some(summonr::Effort::parse(&level).ok_or_else(|| {
                     Error::Config(format!(
                         "--effort takes none, low, medium, or high, not `{level}`"
                     ))
@@ -196,7 +201,7 @@ where
 
 fn interactive() -> String {
     let mut lines = vec![String::new()];
-    for spec in summoner::command_specs() {
+    for spec in summonr::command_specs() {
         let last = lines.last_mut().expect("one line");
         if last.len() + spec.name.len() + 3 > 70 {
             lines.push(String::new());
@@ -215,24 +220,27 @@ fn interactive() -> String {
 }
 
 fn exit_help() -> ! {
-    let bin = option_env!("CARGO_BIN_NAME").unwrap_or("summon");
+    let bin = option_env!("CARGO_BIN_NAME").unwrap_or("summonr");
     let commands = interactive();
-    let endpoints = summoner::endpoint_names().map_or_else(
+    let endpoints = summonr::endpoint_names().map_or_else(
         |_| "the built-in endpoint names".to_string(),
         |names| names.join(", "),
     );
     println!(
-        "{bin} — Summoner, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} workflows\n  {bin} modules\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} endpoints\n  {bin} login NAME [--key]\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Optional continuation-turn limit for goal mode\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.mage/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox\n      --no-sandbox     Full file access; uncontained commands (unsafe)\n      --no-verify      Skip the .mage/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --gui            Open the desktop window instead of the terminal (a `--features gui` build)\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short (budget, stall, impossible, abort)\n\nInteractive:\n{commands}\n  @path attach a workspace file · ctrl+e files · ctrl+l ledger · ctrl+x diff\n  ctrl+y copy reply · ctrl+t select text · ctrl+o settings · ctrl+p hide/show pane\n  ctrl+→/← focus · ctrl+shift+←/→ resize\n\nEndpoints:\n  Available endpoints: {endpoints}\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints probes them\n  {bin} login NAME  securely ask for an API key, or use device login when supported\n  {bin} login NAME --key  force an API-key prompt instead of device login\n  {bin} logout NAME  forget the stored key or token\n\nKeys: the named endpoint environment, then ~/.mage/credentials.toml (0600; `secrets = \"keychain\"` in config.toml uses the OS store), then api_key in config.toml. MAGE_API_KEY applies only with MAGE_BASE_URL.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nMuse: META_API_KEY / MODEL_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
+        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} workflows\n  {bin} modules\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} endpoints\n  {bin} login NAME [--key]\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Optional continuation-turn limit for goal mode\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.mage/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox\n      --no-sandbox     Full file access; uncontained commands (unsafe)
+      --add-dir DIR    Extra writable root (repeatable; same as [sandbox] write)\n      --no-verify      Skip the .mage/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --gui            Open the desktop window instead of the terminal (a `--features gui` build)\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short (budget, stall, impossible, abort)\n\nInteractive:\n{commands}\n  @path attach a workspace file · ctrl+e files · ctrl+l ledger · ctrl+x diff\n  ctrl+y copy reply · ctrl+t select text · ctrl+o settings · ctrl+p hide/show pane\n  ctrl+→/← focus · ctrl+shift+←/→ resize\n\nEndpoints:\n  Available endpoints: {endpoints}\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints probes them\n  {bin} login NAME  securely ask for an API key, or use device login when supported\n  {bin} login NAME --key  force an API-key prompt instead of device login\n  {bin} logout NAME  forget the stored key or token\n\nKeys: the named endpoint environment, then ~/.mage/credentials.toml (0600; `secrets = \"keychain\"` in config.toml uses the OS store), then api_key in config.toml. MAGE_API_KEY applies only with MAGE_BASE_URL.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nMuse: META_API_KEY / MODEL_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
+OpenCode: OPENCODE_API_KEY / OPENCODE_GO_API_KEY.
 Qwen needs no key. Completions seats speak OpenAI chat/completions; anthropic and gemini use native APIs. Override URLs in ~/.mage/config.toml.\nPolicy: ~/.mage/policy.toml and .mage/policy.toml both restrict access; repository rules cannot widen user permissions (see policy.example.toml).\nLong commands: run_command background true, then poll job."
     );
     println!(
-        "\nDiagnostics: `summon logs` lists recent per-run JSONL files; `summon doctor` reports incomplete or crashed runs.\n\nSandbox: commands and post-edit checks are contained by default, with network denied.\n\
+        "\nDiagnostics: `summonr logs` lists recent per-run JSONL files; `summonr doctor` reports incomplete or crashed runs.\n\nSandbox: commands and post-edit checks are contained by default, with network denied.\n\
+Writes are allowed under the launch directory, temp, [sandbox] write in ~/.mage/config.toml, and --add-dir.\n\
 Use --net to allow sandboxed sockets, or /net on|once in the interface. --no-sandbox permits file access outside the workspace\n\
 and bypasses command/file policy. --plan still denies writes and refuses uncontained commands.\n\
 --strict reapplies policy but does not restore containment. Language servers run as trusted host processes.\n\
-Summoner exits with a configuration error when the selected backend is unavailable.\n\
-Worktrees: `summon --goal` and `summon --steps` add a git worktree (branch summon/<id>), merge --ff-only on success, and remove it. `--here` stays in this directory. `--worktree` isolates an interactive session. `summon worktrees` lists; `summon worktrees prune` drops records for directories that are already gone.\n\
-Diff: `summon diff` prints the patch against the worktree base (HEAD outside a worktree); `--stat` per-file counts; `--json` the same as JSON; `--turn N` (or `last`) keeps only the files that turn of the latest session here edited; `/pane diff` shows it in the interface."
+Summonr exits with a configuration error when the selected backend is unavailable.\n\
+Worktrees: sessions run in this directory. `--worktree` isolates a session in a git worktree (branch summonr/<id>), merge --ff-only on success, and remove it. `--here` is the default. `summonr worktrees` lists; `summonr worktrees prune` drops records for directories that are already gone.\n\
+Diff: `summonr diff` prints the patch against the worktree base (HEAD outside a worktree); `--stat` per-file counts; `--json` the same as JSON; `--turn N` (or `last`) keeps only the files that turn of the latest session here edited; `/pane diff` shows it in the interface."
     );
     std::process::exit(0)
 }
@@ -240,9 +248,9 @@ Diff: `summon diff` prints the patch against the worktree base (HEAD outside a w
 fn exit_version() -> ! {
     println!(
         "{} {} ({})",
-        option_env!("CARGO_BIN_NAME").unwrap_or("summon"),
+        option_env!("CARGO_BIN_NAME").unwrap_or("summonr"),
         env!("CARGO_PKG_VERSION"),
-        summoner::revision()
+        summonr::revision()
     );
     std::process::exit(0)
 }

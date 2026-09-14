@@ -268,13 +268,13 @@ fn to_chat(request: &CompletionRequest, wire: Wire) -> Result<ChatRequest> {
     let mut messages = Vec::new();
     for message in &request.messages {
         match message.role {
-            Role::System => {
+            Role::System if messages.is_empty() => {
                 if !system.is_empty() {
                     system.push('\n');
                 }
                 system.push_str(&message.content);
             }
-            Role::User => {
+            Role::User | Role::System => {
                 let mut parts = Vec::with_capacity(message.images.len() + 1);
                 if !message.content.is_empty() {
                     parts.push(ContentPart::Text(message.content.clone()));

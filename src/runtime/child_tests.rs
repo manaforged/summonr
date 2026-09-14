@@ -769,6 +769,7 @@ enum SettlementMode {
     Automatic,
     Poll,
     Cancel,
+    Fail,
 }
 
 #[derive(Clone)]
@@ -800,13 +801,18 @@ impl Provider for SettlementProbe {
                     tokio::time::sleep(std::time::Duration::from_millis(1_500)).await;
                     Ok(message("child finished", 6, 4))
                 }
-                SettlementMode::Cancel => {
+                SettlementMode::Cancel | SettlementMode::Fail => {
                     if self.child_calls.fetch_add(1, Ordering::SeqCst) == 0 {
                         Ok(message_with_tool(
                             "read_file",
                             r#"{"path":"missing.txt"}"#,
                             6,
                             4,
+                        ))
+                    } else if matches!(self.mode, SettlementMode::Fail) {
+                        Err(Error::provider(
+                            crate::error::ProviderFailureKind::Http,
+                            "fixture provider failure",
                         ))
                     } else {
                         std::future::pending().await
@@ -852,6 +858,42 @@ fn child_settlement_call(id: &str, kill: bool) -> ToolCall {
             arguments: serde_json::json!({"child": id, "kill": kill}).to_string(),
         },
     }
+}
+
+#[tokio::test]
+async fn failed_children_keep_reported_usage_separate_from_reservations() -> Result<()> {
+    let (_home, mut parent) = settlement_loop(SettlementMode::Fail)?;
+    let mut live = Vec::new();
+    let turn = parent
+        .turn_with("delegate", |event| live.push(event.clone()))
+        .await?;
+    assert_eq!(
+        (turn.usage.prompt_tokens, turn.usage.completion_tokens),
+        (6, 4)
+    );
+    let reserved = parent.unreported_tokens();
+    assert!(reserved > 0);
+    assert_eq!(parent.spent_tokens(), reserved + 10);
+    assert!(
+        live.iter()
+            .any(|event| matches!(event, Event::Unreported { tokens } if *tokens == reserved))
+    );
+    let lines = log::read(parent.session_path()).expect("parent journal");
+    assert_eq!(lines.iter().filter(|line| matches!(line, log::Line::Charge { reported: true, usage, .. } if usage.input == 6 && usage.output == 4)).count(), 1);
+    let result = parent
+        .session
+        .children()
+        .into_iter()
+        .find_map(|child| match child.state {
+            ChildState::Failed(result) => Some(result),
+            _ => None,
+        })
+        .expect("failed child receipt");
+    assert_eq!(
+        (result.usage.prompt_tokens, result.usage.completion_tokens),
+        (6, 4)
+    );
+    Ok(())
 }
 
 #[tokio::test]

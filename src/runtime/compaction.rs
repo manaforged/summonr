@@ -93,7 +93,7 @@ impl<P: Provider> Loop<P> {
                 let deadline = matches!(wait_error, WaitError::Deadline(_));
                 let error = wait_error.error();
                 self.session
-                    .fail_provider(attempt, &error.to_string(), millis)
+                    .fail_provider(attempt, &error.to_string(), millis, super::billable(&error))
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.session.replay().spent_tokens;
                 if deadline {
@@ -123,6 +123,7 @@ impl<P: Provider> Loop<P> {
                         attempt,
                         "compaction summary failed",
                         super::elapsed_millis(started),
+                        true,
                     )
                     .map_err(super::session_err)?;
                 self.spent_tokens = self.session.replay().spent_tokens;
@@ -212,6 +213,10 @@ impl<P: Provider> Loop<P> {
     }
 
     pub async fn compact(&mut self) -> Result<bool> {
+        self.compact_with(|_| {}).await
+    }
+
+    pub(crate) async fn compact_with(&mut self, mut emit: impl FnMut(&Event)) -> Result<bool> {
         let mut messages = Vec::with_capacity(self.history.len() + 1);
         messages.push(Message::system(self.system_prompt.clone()));
         messages.extend(self.history.iter().cloned());
@@ -249,6 +254,7 @@ impl<P: Provider> Loop<P> {
                         super::meter(&Usage::default(), wait_error.millis(started)),
                         "manual compaction failed",
                         &request.model,
+                        false,
                     )
                     .map_err(super::session_err)?;
                 return Err(wait_error.error());
@@ -259,8 +265,18 @@ impl<P: Provider> Loop<P> {
                 super::meter(&reply.usage, super::elapsed_millis(started)),
                 "manual compaction",
                 &request.model,
+                true,
             )
             .map_err(super::session_err)?;
+        self.record_usage(
+            &reply,
+            request.prefix_hash(),
+            workflow::Role::Summary,
+            Some(super::elapsed_millis(started)),
+            &mut Usage::default(),
+            &mut Vec::new(),
+            &mut emit,
+        )?;
         self.spent_tokens = self.session.replay().spent_tokens;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));

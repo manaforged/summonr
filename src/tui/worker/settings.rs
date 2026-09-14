@@ -65,9 +65,10 @@ impl Worker {
 
     pub(super) fn set_verify(&mut self, on: bool) {
         if on {
-            match &self.check {
-                Some(commands) => self.loop_.set_verify(Some(commands.clone())),
-                None => self.fail("no verify check configured — add one to .mage/check.toml"),
+            match crate::verify::check_commands(self.loop_.workspace()) {
+                Ok(Some(commands)) => self.loop_.set_verify(Some(commands)),
+                Ok(None) => self.fail("Add a check to .mage/check.toml, then enable Verify again."),
+                Err(error) => self.fail(&error.to_string()),
             }
         } else {
             self.loop_.set_verify(None);
@@ -313,6 +314,7 @@ impl Worker {
             model: self.loop_.model().to_string(),
             relay: self.relay.clone(),
             plan: self.loop_.is_plan(),
+            pending_plan: self.loop_.pending_plan(),
             verify: verify_display(self.loop_.verify_commands()),
             strict: self.loop_.is_strict(),
             endpoint: self.endpoint.clone(),

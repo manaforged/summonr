@@ -35,6 +35,57 @@ fn schema_loop(
 }
 
 #[tokio::test]
+async fn plan_decisions_preserve_other_jobs_and_resolve_pending_plans() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let mut loop_ = schema_loop(workspace.path(), Arc::new(Mutex::new(Vec::new())))?;
+    assert!(
+        loop_
+            .reject_plan()
+            .unwrap_err()
+            .to_string()
+            .contains("No pending plan")
+    );
+    for steps in [false, true] {
+        if steps {
+            loop_.select_steps("## Steps\n1. Inspect the file.", &[])?;
+        } else {
+            loop_.select_goal("Keep this objective", &[], 2)?;
+        }
+        let path = loop_.session_path().with_file_name("work.json");
+        let saved = std::fs::read(&path)?;
+        for accept in [false, true] {
+            let error = if accept {
+                loop_.accept_plan()
+            } else {
+                loop_.reject_plan()
+            }
+            .unwrap_err();
+            assert!(error.to_string().contains("No pending plan"));
+            assert_eq!(std::fs::read(&path)?, saved);
+        }
+        loop_.abandon_work("test job ended")?;
+    }
+    loop_.set_plan(true);
+    loop_.turn("Plan an inspection").await?;
+    loop_.reject_plan()?;
+    assert_eq!(
+        loop_.work_progress()?.reason.as_deref(),
+        Some("plan rejected by the user")
+    );
+    loop_.turn("Plan another inspection").await?;
+    loop_.accept_plan()?;
+    assert!(
+        loop_
+            .reject_plan()
+            .unwrap_err()
+            .to_string()
+            .contains("No pending plan")
+    );
+    assert_eq!(loop_.work_progress()?.phase, crate::WorkPhase::Execute);
+    Ok(())
+}
+
+#[tokio::test]
 async fn usage_records_provider_time() -> Result<()> {
     struct Timed;
     impl Provider for Timed {
@@ -430,6 +481,11 @@ async fn transient_provider_error_retries_with_note() -> Result<()> {
                 } else {
                     Ok(AssistantMessage {
                         content: Some("recovered".to_string()),
+                        usage: Usage {
+                            prompt_tokens: 10,
+                            completion_tokens: 5,
+                            ..Usage::default()
+                        },
                         ..Default::default()
                     })
                 }
@@ -450,6 +506,18 @@ async fn transient_provider_error_retries_with_note() -> Result<()> {
         .turn_with("hi", |event| live.push(event.clone()))
         .await?;
     assert_work_receipt(&turn, "recovered");
+    let reserved = live
+        .iter()
+        .filter_map(|event| match event {
+            Event::Unreported { tokens } => Some(*tokens),
+            _ => None,
+        })
+        .next_back()
+        .expect("failed request reservation");
+    assert!(reserved > 0);
+    assert_eq!(turn.usage.prompt_tokens + turn.usage.completion_tokens, 15);
+    assert_eq!(loop_.replay_session().spent_tokens, reserved + 15);
+    assert_eq!(loop_.spent_tokens(), reserved + 15);
     assert!(
         live.iter().any(|event| matches!(
             event,
@@ -523,7 +591,27 @@ async fn permanent_error_does_not_retry() -> Result<()> {
         &workspace,
         "test",
     )?;
-    loop_.turn("hi").await.unwrap_err();
+    let mut live = Vec::new();
+    loop_
+        .turn_with("hi", |event| live.push(event.clone()))
+        .await
+        .unwrap_err();
+    let reserved = live
+        .iter()
+        .filter_map(|event| match event {
+            Event::Unreported { tokens } => Some(*tokens),
+            _ => None,
+        })
+        .next_back()
+        .expect("failed request reservation");
+    assert!(reserved > 0);
+    assert_eq!(loop_.spent_tokens(), reserved);
+    assert_eq!(loop_.replay_session().spent_tokens, reserved);
+    assert!(
+        !live
+            .iter()
+            .any(|event| matches!(event, Event::Usage { .. }))
+    );
     assert_eq!(
         calls.load(Ordering::SeqCst),
         1,
@@ -1406,7 +1494,20 @@ async fn manual_compact_summarizes_everything_before_the_last_request() -> Resul
     }
     let before = loop_.history_len();
     let spent = loop_.spent_tokens();
-    assert!(loop_.compact().await?);
+    let mut events = Vec::new();
+    assert!(
+        loop_
+            .compact_with(|event| events.push(event.clone()))
+            .await?
+    );
+    assert!(matches!(
+        events.as_slice(),
+        [Event::Usage {
+            prompt_tokens: 90,
+            completion_tokens: 10,
+            ..
+        }]
+    ));
     let after = loop_.history_len();
     assert!(after < before, "{after} < {before}");
     assert_eq!(loop_.spent_tokens(), spent + 100, "the summary is charged");

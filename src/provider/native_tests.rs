@@ -113,6 +113,22 @@ async fn conversation(
         tokio::try_join!(server, turn)
     })
     .await??;
+    let continued = &requests[2];
+    for field in ["system", "systemInstruction", "system_instruction"] {
+        assert!(
+            !continued[field].to_string().contains("Turn receipt"),
+            "{continued}"
+        );
+    }
+    let conversation = if wire == Wire::Gemini {
+        &continued["contents"]
+    } else {
+        &continued["messages"]
+    };
+    assert!(
+        conversation.to_string().contains("Turn receipt"),
+        "{continued}"
+    );
     for request in &requests {
         let image = if wire == Wire::Gemini {
             &request["contents"][0]["parts"][1]["inline_data"]["data"]

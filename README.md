@@ -31,6 +31,20 @@ summon -V
 Prints `summon 0.1.0 (<git revision>)`. `summoner` is the same binary
 under a second name. Not on crates.io.
 
+To run this checkout instead of a released copy, link your `PATH` at the dev
+wrapper once:
+
+```sh
+ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summon
+ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summoner
+summon -V
+```
+
+`scripts/summon-dev` rebuilds `--release` when `src/` or the Cargo files are
+newer than `target/release/summon`, then execs that binary, so `summon` always
+runs the current commit and `summon -V` shows it. `sh scripts/dev-link.sh`
+links straight at the binary instead if you would rather rebuild by hand.
+
 ## Usage
 
 ```sh
@@ -41,7 +55,7 @@ summon --steps PLAN.md
 ```
 
 Built-in endpoints: `zai`, `zai-cn`, `glm`, `glm-intl`, `qwen`, `kimi`,
-`grok`, `copilot`, `openai`, `openrouter`, `anthropic`, and `gemini`.
+`grok`, `copilot`, `openai`, `openrouter`, `muse`, `anthropic`, and `gemini`.
 Each reads its host's environment variable (`XAI_API_KEY`,
 `ANTHROPIC_API_KEY`, and so on) or a key you store with
 `summon login NAME`. Keys live in `~/.mage/credentials.toml`, a
@@ -71,7 +85,9 @@ session in a desktop window when the binary was built with
 - Shell commands run in Seatbelt, bubblewrap, or the Windows
   AppContainer with the network denied. A missing backend is a hard
   stop, not a fallback. `--net` allows sockets; `--no-sandbox` removes
-  containment and file policy together.
+  containment and file policy together. In the interface, a write or
+  network denial asks to allow the directory or network, then retries;
+  `[ always ]` saves a write grant to `[sandbox] write`.
 - A turn with no configured check completes with `verified: false`.
   A red check exits 2. A budget breach, a stalled goal, or an aborted
   turn exits 3.
@@ -88,7 +104,8 @@ session in a desktop window when the binary was built with
 - [Reference](docs/reference.md): every flag, key, slash command,
   pane, policy rule, workflow seat, child session, and the agent room.
 - [Work](docs/architecture.md): how a turn plans, executes, and verifies.
-- [`config.example.toml`](config.example.toml) and
-  [`policy.example.toml`](policy.example.toml).
+- [`config.example.toml`](config.example.toml),
+  [`policy.example.toml`](policy.example.toml), and
+  [`theme.example.toml`](theme.example.toml).
 
 MIT. Copyright (c) 2026 Thomas Gardiner.

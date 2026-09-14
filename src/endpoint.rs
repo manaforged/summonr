@@ -12,6 +12,8 @@ const QWEN_LOCAL: &str = "http://127.0.0.1:8081/v1";
 const KIMI: &str = "https://api.kimi.com/coding/v1";
 const GROK: &str = "https://api.x.ai/v1";
 const MUSE: &str = "https://api.meta.ai/v1";
+const ZEN: &str = "https://opencode.ai/zen/v1";
+const GO: &str = "https://opencode.ai/zen/go/v1";
 const COPILOT: &str = "https://api.githubcopilot.com";
 const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
@@ -298,7 +300,7 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
 
     let mut endpoint = endpoint.ok_or_else(|| {
         Error::Config(format!(
-            "unknown endpoint `{chosen}` — try zai, zai-cn, kimi, grok, qwen, copilot, openai, openrouter, muse, anthropic, gemini, or a name from ~/.mage/config.toml"
+            "unknown endpoint `{chosen}` — try zai, zai-cn, kimi, grok, qwen, copilot, openai, openrouter, muse, anthropic, gemini, zen, go, or a name from ~/.mage/config.toml"
         ))
     })?;
 
@@ -582,6 +584,42 @@ const PRESETS: &[Preset] = &[
         env_keys: &["META_API_KEY", "MODEL_API_KEY"],
         default_key: None,
         missing: "set META_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "zen",
+        base_url: ZEN,
+        model: "glm-5.3-flash",
+        env_keys: &["OPENCODE_API_KEY"],
+        default_key: None,
+        missing: "set OPENCODE_API_KEY, or `summon login zen`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "go",
+        base_url: GO,
+        model: "glm-5.3-flash",
+        env_keys: &["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"],
+        default_key: None,
+        missing: "set OPENCODE_GO_API_KEY, or `summon login go`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "opencode",
+        base_url: ZEN,
+        model: "glm-5.3-flash",
+        env_keys: &["OPENCODE_API_KEY"],
+        default_key: None,
+        missing: "set OPENCODE_API_KEY, or `summon login opencode`",
         aliases: &[],
         oauth: None,
         headers: &[],

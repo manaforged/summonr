@@ -104,6 +104,23 @@ fn muse_builtin_points_at_the_model_api() {
 }
 
 #[test]
+fn zen_and_go_builtins_point_at_opencode() {
+    let zen = builtin("zen").expect("zen");
+    assert_eq!(zen.base_url.as_deref(), Some(ZEN));
+    assert_eq!(zen.model, "glm-5.3-flash");
+    let go = builtin("go").expect("go");
+    assert_eq!(go.base_url.as_deref(), Some(GO));
+    assert_eq!(go.model, "glm-5.3-flash");
+    assert!(
+        preset("go")
+            .expect("go preset")
+            .env_keys
+            .contains(&"OPENCODE_GO_API_KEY")
+    );
+    assert!(builtin("opencode").is_some());
+}
+
+#[test]
 fn kimi_builtin_is_coding_plan() {
     let Some(endpoint) = builtin("kimi") else {
         panic!("kimi builtin missing");

@@ -14,7 +14,7 @@ pub struct Module {
 pub const ALL: [Module; 8] = [
     Module {
         name: "search",
-        summary: "web_search and web_fetch (DuckDuckGo without a key, Brave with one)",
+        summary: "web_search and web_fetch through Leyline with a browser identity",
         default: true,
     },
     Module {
@@ -73,7 +73,10 @@ impl Switches {
     }
 
     #[must_use]
-    pub fn from_maps(user: &BTreeMap<String, bool>, project: &BTreeMap<String, bool>) -> Self {
+    pub(crate) fn from_maps(
+        user: &BTreeMap<String, bool>,
+        project: &BTreeMap<String, bool>,
+    ) -> Self {
         let mut off = BTreeSet::new();
         for module in ALL {
             let on = user.get(module.name).copied().unwrap_or(module.default);

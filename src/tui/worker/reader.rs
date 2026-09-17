@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -301,31 +300,19 @@ fn unignored(workspace: &Path, mut paths: Vec<String>) -> Vec<String> {
     if paths.is_empty() {
         return paths;
     }
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(workspace)
-        .args(["check-ignore", "--stdin", "-z"])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()
-        .and_then(|mut child| {
-            if let Some(mut stdin) = child.stdin.take() {
-                use std::io::Write as _;
-                for path in &paths {
-                    drop(stdin.write_all(path.as_bytes()));
-                    drop(stdin.write_all(b"\0"));
-                }
-            }
-            child.wait_with_output()
-        });
-    let Ok(output) = output else {
+    let joined: Vec<u8> = paths
+        .iter()
+        .flat_map(|path| path.bytes().chain(std::iter::once(0)))
+        .collect();
+    let Ok(output) = crate::diff::git_output(
+        workspace,
+        &[],
+        &["check-ignore", "--stdin", "-z"],
+        Some(&joined),
+    ) else {
         return paths;
     };
-    if output.status.code() == Some(128) {
-        return paths;
-    }
-    let ignored: Vec<String> = String::from_utf8_lossy(&output.stdout)
+    let ignored: Vec<String> = String::from_utf8_lossy(&output)
         .split('\0')
         .filter(|path| !path.is_empty())
         .map(str::to_string)

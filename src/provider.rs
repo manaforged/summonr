@@ -402,11 +402,25 @@ pub struct Price {
 
 impl Price {
     #[must_use]
-    pub fn cost(&self, prompt: u64, completion: u64, cached: u64) -> f64 {
+    pub(crate) fn cost(&self, prompt: u64, completion: u64, cached: u64) -> f64 {
         let cached = cached.min(prompt);
         let fresh = prompt - cached;
         (fresh as f64 * self.input + cached as f64 * self.cached + completion as f64 * self.output)
             / 1_000_000.0
+    }
+}
+
+#[must_use]
+pub(crate) fn compact(count: u64) -> String {
+    let value = count as f64;
+    if value >= 1e9 {
+        format!("{:.2}b", value / 1e9)
+    } else if value >= 1e6 {
+        format!("{:.1}m", value / 1e6)
+    } else if value >= 1e3 {
+        format!("{:.1}k", value / 1e3)
+    } else {
+        count.to_string()
     }
 }
 
@@ -524,6 +538,7 @@ pub struct Partial {
 }
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
+const STREAM_IDLE: Duration = crate::runtime::JOB_WAIT.saturating_mul(2);
 
 fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     match seconds {
@@ -531,7 +546,7 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
             "endpoint idle_timeout_secs must be at least 1".to_string(),
         )),
         Some(seconds) => Ok(Some(Duration::from_secs(seconds))),
-        None => Ok(None),
+        None => Ok(Some(STREAM_IDLE)),
     }
 }
 
@@ -728,7 +743,7 @@ impl Client {
         let field = match self.wire {
             Wire::Anthropic => Some("max_input_tokens"),
             Wire::Gemini => Some("inputTokenLimit"),
-            Wire::Completions | Wire::Responses => None,
+            Wire::Completions | Wire::Responses | Wire::Decisions => None,
         };
         if let Some(field) = field {
             let mut url = reqwest::Url::parse(&format!("{base}/models/")).ok()?;
@@ -826,7 +841,7 @@ impl Client {
         session: Option<&str>,
     ) -> reqwest::RequestBuilder {
         request = match self.wire {
-            Wire::Completions | Wire::Responses => request.bearer_auth(token),
+            Wire::Completions | Wire::Responses | Wire::Decisions => request.bearer_auth(token),
             Wire::Anthropic => request
                 .header("x-api-key", token)
                 .header("anthropic-version", "2023-06-01"),

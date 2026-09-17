@@ -848,10 +848,11 @@ impl SessionDriver {
 
     #[must_use]
     pub(crate) fn has_selected_plan(&self) -> bool {
-        self.work
-            .as_ref()
-            .is_some_and(|work| work.plan.as_ref().is_some_and(|text| !text.trim().is_empty()))
-            || crate::plan::read(&self.workspace).is_some()
+        self.work.as_ref().is_some_and(|work| {
+            work.plan
+                .as_ref()
+                .is_some_and(|text| !text.trim().is_empty())
+        }) || crate::plan::read(&self.workspace).is_some()
     }
 
     /// Select the model-written plan and start execution in the same turn.

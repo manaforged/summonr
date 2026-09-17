@@ -17,6 +17,7 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
     "dist",
     "__pycache__",
 ];
+pub mod decisions;
 mod endpoint;
 mod error;
 mod goal;
@@ -55,10 +56,12 @@ pub mod workflow;
 
 pub use command::{CommandSpec, SlashCommand, command_specs, parse_command};
 pub use config::sandbox_on;
+pub use config::tilde;
 pub use durable::work::{WorkKind, WorkPhase, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, adopt_keys, auth_info, fallbacks as endpoint_fallbacks, forget_key,
-    is_named as is_endpoint, names as endpoint_names, resolve as resolve_endpoint,
+    AuthInfo, Endpoint, adopt_keys, auth_info, fallbacks as endpoint_fallbacks,
+    first_decisions as decisions_endpoint, forget_key, is_named as is_endpoint,
+    names as endpoint_names, resolve as resolve_endpoint,
     resolve_unauthed as resolve_endpoint_unauthed, save_key,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
@@ -72,8 +75,8 @@ pub use provider::{
 pub use runtime::{Budget, Loop, RunMode, Turn};
 pub use session::{
     Replay, SessionInfo, Spend, export as export_session, last_for, list as list_sessions,
-    profile as profile_session,
-    resolve_id as resolve_session, set_name as name_session, short as short_session,
+    profile as profile_session, resolve_id as resolve_session, set_name as name_session,
+    short as short_session,
 };
 #[cfg(windows)]
 pub use tools::sandbox::windows::entry as sandbox_entry;

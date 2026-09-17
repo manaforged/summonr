@@ -11,7 +11,6 @@ impl SessionId {
     pub(crate) fn new() -> Self {
         Self(Uuid::now_v7().as_u128())
     }
-
 }
 
 impl fmt::Debug for SessionId {

@@ -57,13 +57,13 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub fn bus_heartbeat(&mut self, status: &str) {
+    pub(crate) fn bus_heartbeat(&mut self, status: &str) {
         if let Some(bus) = &mut self.bus {
             bus.heartbeat(&self.model.clone(), &self.workspace.clone(), status);
         }
     }
 
-    pub fn bus_poll(&mut self) -> Result<Vec<crate::bus::Mail>> {
+    pub(crate) fn bus_poll(&mut self) -> Result<Vec<crate::bus::Mail>> {
         let mail = match &mut self.bus {
             Some(bus) => bus.poll()?,
             None => Vec::new(),
@@ -88,7 +88,7 @@ impl<P: Provider> Loop<P> {
         Ok(self.mail.drain(..).collect())
     }
 
-    pub fn bus_agents(&self) -> Vec<crate::bus::Agent> {
+    pub(crate) fn bus_agents(&self) -> Vec<crate::bus::Agent> {
         match &self.bus {
             Some(bus) => bus.agents(),
             None => Vec::new(),

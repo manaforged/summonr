@@ -1,6 +1,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use leyline::http::Uri;
+use leyline::{RedirectAction, RedirectPolicy, Session};
+use url::Url;
+
 use crate::config;
 use crate::error::{Error, Result};
 
@@ -10,47 +14,11 @@ const HITS_MAX: usize = 8;
 const QUERY_MAX: usize = 400;
 
 const SEARCH_URL: &str = "https://www.bing.com/search";
-const BRAVE_URL: &str = "https://api.search.brave.com/res/v1/web/search";
-const DUCKDUCKGO_URL: &str = "https://html.duckduckgo.com/html/";
-
-#[derive(Clone, Debug)]
-enum Backend {
-    Brave(String),
-    DuckDuckGo,
-    Bing,
-    Searxng(String),
-}
-
-fn select_backend(
-    backend: Option<&str>,
-    key: Option<String>,
-    url: Option<String>,
-) -> Result<Backend> {
-    match backend.map(str::trim) {
-        Some("brave") => key
-            .ok_or_else(|| {
-                Error::Config(
-                    "[search] backend = \"brave\" needs api_key or BRAVE_API_KEY".to_string(),
-                )
-            })
-            .map(Backend::Brave),
-        Some("duckduckgo") | Some("ddg") => Ok(Backend::DuckDuckGo),
-        Some("bing") | Some("bing-rss") => Ok(Backend::Bing),
-        Some("searxng") | Some("searx") => url
-            .ok_or_else(|| Error::Config("[search] backend = \"searxng\" needs url".to_string()))
-            .map(Backend::Searxng),
-        None => Ok(key.map_or(Backend::DuckDuckGo, Backend::Brave)),
-        Some(other) => Err(Error::Config(format!(
-            "[search] backend takes brave, duckduckgo, bing, or searxng, not `{other}`"
-        ))),
-    }
-}
-
 mod fetch;
 mod results;
 
 use fetch::{host_blocked, resolves_blocked};
-use results::{Hit, clip, format_hits, parse_brave, parse_duckduckgo, parse_rss, parse_searxng};
+use results::{Hit, flat, format_hits, parse_rss};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -74,12 +42,11 @@ impl Format {
 
 #[derive(Clone)]
 pub(crate) struct Search {
-    http: reqwest::Client,
+    http: Session,
     count: usize,
     allowed: Vec<String>,
     excluded: Vec<String>,
     origin: Option<String>,
-    backend: Backend,
     logs: Arc<Mutex<Vec<tempfile::TempDir>>>,
 }
 
@@ -89,23 +56,12 @@ impl Search {
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);
         let allowed = normalize_domains(file.allowed_domains.unwrap_or_default());
         let excluded = normalize_domains(file.excluded_domains.unwrap_or_default());
-        let key = file
-            .api_key
-            .filter(|key| !key.trim().is_empty())
-            .or_else(|| std::env::var("BRAVE_API_KEY").ok())
-            .filter(|key| !key.trim().is_empty());
-        let backend = select_backend(
-            file.backend.as_deref(),
-            key,
-            file.url.filter(|url| !url.trim().is_empty()),
-        )?;
         Ok(Self {
             http: client()?,
             count,
             allowed,
             excluded,
             origin: None,
-            backend,
             logs: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -124,110 +80,13 @@ impl Search {
             return Err(Error::Tool("web_search query is too long".to_string()));
         }
         let count = count.unwrap_or(self.count).clamp(1, HITS_MAX);
-        let (hits, via) = match &self.backend {
-            Backend::Brave(key) => (self.brave(query, count, freshness, key).await?, "brave"),
-            Backend::DuckDuckGo => (
-                self.duckduckgo(query, freshness).await?,
-                "duckduckgo html — set [search] backend = \"brave\" with api_key for an API-backed search",
-            ),
-            Backend::Bing => (self.rss(query, freshness).await?, "bing rss"),
-            Backend::Searxng(base) => (
-                self.searxng(query, count, freshness, base).await?,
-                "searxng",
-            ),
-        };
+        let hits = self.rss(query, freshness).await?;
         let hits = self
             .filter_hits(hits)
             .into_iter()
             .take(count)
             .collect::<Vec<_>>();
-        Ok(format!("{}\nvia {via}", format_hits(query, &hits)))
-    }
-
-    async fn brave(
-        &self,
-        query: &str,
-        count: usize,
-        freshness: Option<&str>,
-        key: &str,
-    ) -> Result<Vec<Hit>> {
-        let endpoint = self.origin.clone().unwrap_or_else(|| BRAVE_URL.to_string());
-        let mut url = reqwest::Url::parse(&endpoint)
-            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
-        {
-            let mut pairs = url.query_pairs_mut();
-            pairs.append_pair("q", query);
-            pairs.append_pair("count", &count.to_string());
-            if let Some(filter) = match freshness {
-                Some("day") => Some("pd"),
-                Some("week") => Some("pw"),
-                Some("month") => Some("pm"),
-                _ => None,
-            } {
-                pairs.append_pair("freshness", filter);
-            }
-        }
-        let response = self
-            .http
-            .get(url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .header("X-Subscription-Token", key)
-            .send()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        if !status.is_success() {
-            return Err(Error::Tool(format!(
-                "web_search HTTP {status}: {}",
-                clip(&body, 200)
-            )));
-        }
-        parse_brave(&body)
-    }
-
-    async fn duckduckgo(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {
-        let endpoint = self
-            .origin
-            .clone()
-            .unwrap_or_else(|| DUCKDUCKGO_URL.to_string());
-        let mut url = reqwest::Url::parse(&endpoint)
-            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
-        {
-            let mut pairs = url.query_pairs_mut();
-            pairs.append_pair("q", query);
-            if let Some(filter) = duckduckgo_freshness(freshness) {
-                pairs.append_pair("df", filter);
-            }
-        }
-        let response = self
-            .http
-            .get(url)
-            .header(reqwest::header::ACCEPT, "text/html")
-            .send()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        if !status.is_success() {
-            return Err(Error::Tool(format!(
-                "web_search HTTP {status}: {}",
-                clip(&body, 200)
-            )));
-        }
-        let hits = parse_duckduckgo(&body);
-        if hits.is_empty() && !body.contains("No results.") {
-            return Err(Error::Tool(
-                "web_search returned an unexpected response".to_string(),
-            ));
-        }
-        Ok(hits)
+        Ok(format!("{}\nvia bing rss", format_hits(query, &hits)))
     }
 
     async fn rss(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {
@@ -235,7 +94,7 @@ impl Search {
             .origin
             .clone()
             .unwrap_or_else(|| SEARCH_URL.to_string());
-        let mut url = reqwest::Url::parse(&endpoint)
+        let mut url = Url::parse(&endpoint)
             .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
         {
             let mut pairs = url.query_pairs_mut();
@@ -247,23 +106,20 @@ impl Search {
         }
         let response = self
             .http
-            .get(url)
-            .header(
-                reqwest::header::ACCEPT,
-                "application/rss+xml, application/xml",
-            )
+            .get(url.as_str())
+            .accept("application/rss+xml, application/xml")
             .send()
             .await
             .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
         let status = response.status();
         let body = response
-            .text()
+            .into_text()
             .await
             .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
         if !status.is_success() {
             return Err(Error::Tool(format!(
                 "web_search HTTP {status}: {}",
-                clip(&body, 200)
+                crate::child::bounded(&flat(&body), 200)
             )));
         }
         if !body.contains("<rss") {
@@ -272,54 +128,6 @@ impl Search {
             ));
         }
         Ok(parse_rss(&body))
-    }
-
-    async fn searxng(
-        &self,
-        query: &str,
-        count: usize,
-        freshness: Option<&str>,
-        base: &str,
-    ) -> Result<Vec<Hit>> {
-        let endpoint = self
-            .origin
-            .clone()
-            .unwrap_or_else(|| format!("{}/search", base.trim_end_matches('/')));
-        let mut url = reqwest::Url::parse(&endpoint)
-            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
-        {
-            let mut pairs = url.query_pairs_mut();
-            pairs.append_pair("q", query);
-            pairs.append_pair("format", "json");
-            pairs.append_pair("count", &count.to_string());
-            if let Some(range) = match freshness {
-                Some("day") => Some("day"),
-                Some("week") => Some("week"),
-                Some("month") => Some("month"),
-                _ => None,
-            } {
-                pairs.append_pair("time_range", range);
-            }
-        }
-        let response = self
-            .http
-            .get(url)
-            .header(reqwest::header::ACCEPT, "application/json")
-            .send()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
-        if !status.is_success() {
-            return Err(Error::Tool(format!(
-                "web_search HTTP {status}: {}",
-                clip(&body, 200)
-            )));
-        }
-        parse_searxng(&body)
     }
 
     fn filter_hits(&self, hits: Vec<Hit>) -> Vec<Hit> {
@@ -341,34 +149,34 @@ impl Search {
     }
 }
 
-fn client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+fn client() -> Result<Session> {
+    Session::builder()
+        .chrome()
         .timeout(SEARCH_TIMEOUT)
         .connect_timeout(Duration::from_secs(8))
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            if attempt.previous().len() >= 5 {
-                return attempt.stop();
-            }
-            let url = attempt.url();
-            let host = url.host_str().unwrap_or("");
-            if url.scheme() != "https"
-                || !url.username().is_empty()
-                || url.password().is_some()
-                || host_blocked(host)
-                || resolves_blocked(host)
-            {
-                attempt.stop()
+        .redirect_policy(RedirectPolicy::custom(|attempt| {
+            if attempt.previous.len() >= 5 || !safe_redirect(attempt.url) {
+                RedirectAction::Stop
             } else {
-                attempt.follow()
+                RedirectAction::Follow
             }
         }))
-        .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|error| Error::Tool(format!("http client: {error}")))
 }
 
+fn safe_redirect(url: &Uri) -> bool {
+    let host = url.host().unwrap_or("");
+    url.scheme_str() == Some("https")
+        && url
+            .authority()
+            .is_none_or(|authority| !authority.as_str().contains('@'))
+        && !host_blocked(host)
+        && !resolves_blocked(host)
+}
+
 fn host_of(url: &str) -> String {
-    reqwest::Url::parse(url)
+    Url::parse(url)
         .ok()
         .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
         .unwrap_or_default()
@@ -390,15 +198,6 @@ fn freshness_filter(value: Option<&str>) -> Option<&'static str> {
         Some("day") => Some("ex1:\"ez1\""),
         Some("week") => Some("ex1:\"ez2\""),
         Some("month") => Some("ex1:\"ez3\""),
-        _ => None,
-    }
-}
-
-fn duckduckgo_freshness(value: Option<&str>) -> Option<&'static str> {
-    match value {
-        Some("day") => Some("d"),
-        Some("week") => Some("w"),
-        Some("month") => Some("m"),
         _ => None,
     }
 }

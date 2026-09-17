@@ -18,11 +18,11 @@ pub(super) mod profile;
 mod scene;
 mod search;
 mod sessions;
-mod usage;
 mod settings;
 mod speed;
 mod suggest;
 mod theme;
+mod usage;
 mod view;
 
 #[cfg(feature = "gui")]

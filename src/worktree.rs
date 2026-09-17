@@ -1,8 +1,5 @@
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use std::io::Write;
 
 use crate::durable::store;
 use crate::error::{Error, Result};
@@ -37,7 +34,7 @@ pub fn status(cwd: &Path) -> Result<Vec<Status>> {
         .into_iter()
         .map(|tree| {
             let range = format!("{}..{}", tree.base, tree.branch);
-            let ahead = git(&tree.primary, &["rev-list", "--count", &range])
+            let ahead = crate::diff::git_env(&tree.primary, &[], &["rev-list", "--count", &range])
                 .ok()
                 .and_then(|count| count.parse().ok())
                 .unwrap_or(0);
@@ -66,7 +63,7 @@ pub(crate) fn discard(tree: &Tree) -> Result<()> {
         )));
     }
     let range = format!("{}..{}", tree.base, tree.branch);
-    let ahead: u32 = git(&tree.primary, &["rev-list", "--count", &range])?
+    let ahead: u32 = crate::diff::git_env(&tree.primary, &[], &["rev-list", "--count", &range])?
         .parse()
         .unwrap_or(0);
     if ahead > 0 {
@@ -86,7 +83,7 @@ pub fn in_git(path: &Path) -> bool {
 }
 
 pub(crate) fn primary(path: &Path) -> Result<PathBuf> {
-    let text = git(path, &["worktree", "list", "--porcelain"])
+    let text = crate::diff::git_env(path, &[], &["worktree", "list", "--porcelain"])
         .map_err(|_error| Error::Config(format!("{} is not a git repository", path.display())))?;
     for line in text.lines() {
         if let Some(rest) = line.strip_prefix("worktree ") {
@@ -104,7 +101,7 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     if let Some(existing) = locate(&primary, cwd)? {
         return Ok(existing);
     }
-    let base = git(&primary, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let base = crate::diff::git_env(&primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if base == "HEAD" {
         return Err(Error::Config(format!(
             "{} is on a detached HEAD; check out a branch first, or run with --here",
@@ -121,8 +118,9 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    git(
+    crate::diff::git_env(
         primary,
+        &[],
         &[
             "worktree",
             "add",
@@ -170,8 +168,12 @@ pub(crate) fn reconcile_children(
     if children.is_empty() {
         return Ok(Vec::new());
     }
-    let start = git(target, &["rev-parse", "HEAD"])?;
-    let dirty = git(target, &["status", "--porcelain", "--untracked-files=no"])?;
+    let start = crate::diff::git_env(target, &[], &["rev-parse", "HEAD"])?;
+    let dirty = crate::diff::git_env(
+        target,
+        &[],
+        &["status", "--porcelain", "--untracked-files=no"],
+    )?;
     if !dirty.is_empty() {
         return Err(Error::Config(
             "the parent tracked files changed while writable children ran; their worktrees were kept"
@@ -179,7 +181,7 @@ pub(crate) fn reconcile_children(
         ));
     }
     for (tree, _) in children {
-        let head = git(&tree.path, &["rev-parse", "HEAD"])?;
+        let head = crate::diff::git_env(&tree.path, &[], &["rev-parse", "HEAD"])?;
         if head != start {
             return Err(Error::Config(format!(
                 "{} moved from the parent base; its worktree was kept",
@@ -209,8 +211,12 @@ pub(crate) fn reconcile_children(
     paths.dedup();
     let combined = patch(integration, &paths)?;
 
-    let current = git(target, &["rev-parse", "HEAD"])?;
-    let dirty = git(target, &["status", "--porcelain", "--untracked-files=no"])?;
+    let current = crate::diff::git_env(target, &[], &["rev-parse", "HEAD"])?;
+    let dirty = crate::diff::git_env(
+        target,
+        &[],
+        &["status", "--porcelain", "--untracked-files=no"],
+    )?;
     if current != start || !dirty.is_empty() {
         return Err(Error::Config(
             "the parent tracked files changed before reconciliation; child worktrees were kept"
@@ -257,11 +263,11 @@ fn patch(tree: &Path, paths: &[String]) -> Result<Vec<u8>> {
         "--",
     ];
     list.extend(paths.iter().map(String::as_str));
-    let untracked = git(tree, &list)?;
+    let untracked = crate::diff::git_env(tree, &[], &list)?;
     if !untracked.is_empty() {
         let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
         mark.extend(untracked.lines());
-        git(tree, &mark)?;
+        crate::diff::git_env(tree, &[], &mark)?;
     }
     let mut diff = vec![
         "--literal-pathspecs",
@@ -272,34 +278,37 @@ fn patch(tree: &Path, paths: &[String]) -> Result<Vec<u8>> {
         "--",
     ];
     diff.extend(paths.iter().map(String::as_str));
-    git_bytes(tree, &diff)
+    crate::diff::git_output(tree, &[], &diff, None)
 }
 
 fn apply(tree: &Path, patch: &[u8]) -> Result<()> {
-    git_input(
+    crate::diff::git_output(
         tree,
+        &[],
         &["apply", "--check", "--binary", "--whitespace=nowarn", "-"],
-        patch,
+        Some(patch),
     )?;
-    git_input(
+    crate::diff::git_output(
         tree,
+        &[],
         &["apply", "--binary", "--whitespace=nowarn", "-"],
-        patch,
+        Some(patch),
     )?;
     Ok(())
 }
 
 pub(crate) fn remove_child(tree: &Tree) -> Result<()> {
-    let head = git(&tree.primary, &["rev-parse", &tree.branch])?;
+    let head = crate::diff::git_env(&tree.primary, &[], &["rev-parse", &tree.branch])?;
     let path = tree.path.to_str().ok_or_else(|| {
         Error::Config(format!(
             "worktree path is not utf-8: {}",
             tree.path.display()
         ))
     })?;
-    git(&tree.primary, &["worktree", "remove", "--force", path])?;
-    git(
+    crate::diff::git_env(&tree.primary, &[], &["worktree", "remove", "--force", path])?;
+    crate::diff::git_env(
         &tree.primary,
+        &[],
         &[
             "update-ref",
             "-d",
@@ -321,7 +330,7 @@ pub(crate) fn remove_child(tree: &Tree) -> Result<()> {
 pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<String>> {
     let mut committed = Vec::new();
     if dirty(&tree.path)? {
-        let tracked = git(&tree.path, &["ls-files"])?;
+        let tracked = crate::diff::git_env(&tree.path, &[], &["ls-files"])?;
         let tracked: std::collections::HashSet<&str> = tracked.lines().collect();
         let small: Vec<&str> = paths
             .iter()
@@ -336,11 +345,15 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
         if !small.is_empty() {
             let mut args = vec!["add", "--all", "--"];
             args.extend(small.iter().copied());
-            git(&tree.path, &args)?;
-            git(&tree.path, &["commit", "-q", "-m", &subject(objective)])?;
+            crate::diff::git_env(&tree.path, &[], &args)?;
+            crate::diff::git_env(
+                &tree.path,
+                &[],
+                &["commit", "-q", "-m", &subject(objective)],
+            )?;
             committed = small.iter().map(|path| (*path).to_string()).collect();
         }
-        let leftover = git(&tree.path, &["status", "--porcelain"])?;
+        let leftover = crate::diff::git_env(&tree.path, &[], &["status", "--porcelain"])?;
         if !leftover.is_empty() {
             return Err(Error::Config(format!(
                 "left uncommitted in {} (not part of this run, or over {} bytes):\n{leftover}",
@@ -349,8 +362,9 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             )));
         }
     }
-    let big: Vec<String> = git(
+    let big: Vec<String> = crate::diff::git_env(
         &tree.primary,
+        &[],
         &[
             "diff",
             "--name-only",
@@ -370,7 +384,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             big.join(", ")
         )));
     }
-    let head = git(&tree.primary, &["rev-parse", "--abbrev-ref", "HEAD"])?;
+    let head = crate::diff::git_env(&tree.primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])?;
     if head != tree.base {
         return Err(Error::Config(format!(
             "{} is on {head}; the run started on {}",
@@ -378,7 +392,11 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
             tree.base
         )));
     }
-    git(&tree.primary, &["merge", "--ff-only", "--", &tree.branch])?;
+    crate::diff::git_env(
+        &tree.primary,
+        &[],
+        &["merge", "--ff-only", "--", &tree.branch],
+    )?;
     remove(tree)?;
     Ok(committed)
 }
@@ -406,8 +424,12 @@ pub(crate) fn remove(tree: &Tree) -> Result<()> {
             tree.path.display()
         ))
     })?;
-    git(&tree.primary, &["worktree", "remove", "--force", path])?;
-    drop(git(&tree.primary, &["branch", "-d", &tree.branch]));
+    crate::diff::git_env(&tree.primary, &[], &["worktree", "remove", "--force", path])?;
+    drop(crate::diff::git_env(
+        &tree.primary,
+        &[],
+        &["branch", "-d", &tree.branch],
+    ));
     if let Some(id) = worktree_id(&tree.branch)
         && let Ok(record) = base_record(&tree.primary, id)
     {
@@ -420,14 +442,15 @@ pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
     let Ok(primary) = primary(cwd) else {
         return Ok(Vec::new());
     };
-    drop(git(&primary, &["worktree", "prune"]));
+    drop(crate::diff::git_env(&primary, &[], &["worktree", "prune"]));
     Ok(Vec::new())
 }
 
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
     let primary = primary(cwd)?;
-    let base = git(&primary, &["rev-parse", "--abbrev-ref", "HEAD"]).unwrap_or_default();
-    let text = git(&primary, &["worktree", "list", "--porcelain"])?;
+    let base = crate::diff::git_env(&primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])
+        .unwrap_or_default();
+    let text = crate::diff::git_env(&primary, &[], &["worktree", "list", "--porcelain"])?;
     Ok(parse_list(&primary, &base, &text)
         .into_iter()
         .filter(|tree| worktree_id(&tree.branch).is_some())
@@ -452,7 +475,7 @@ fn locate(primary: &Path, cwd: &Path) -> Result<Option<Tree>> {
 }
 
 fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
-    let common = git(primary, &["rev-parse", "--git-common-dir"])?;
+    let common = crate::diff::git_env(primary, &[], &["rev-parse", "--git-common-dir"])?;
     let common = Path::new(&common);
     let common = if common.is_absolute() {
         common.to_path_buf()
@@ -479,7 +502,7 @@ pub(crate) fn dirty(path: &Path) -> Result<bool> {
     if !path.exists() {
         return Ok(false);
     }
-    Ok(!git(path, &["status", "--porcelain"])?.is_empty())
+    Ok(!crate::diff::git_env(path, &[], &["status", "--porcelain"])?.is_empty())
 }
 
 fn parse_list(primary: &Path, base: &str, text: &str) -> Vec<Tree> {
@@ -515,56 +538,4 @@ fn new_id() -> String {
         .unwrap_or_default()
         .as_nanos();
     format!("{nanos:x}")
-}
-
-fn git(repo: &Path, args: &[&str]) -> Result<String> {
-    let output = git_bytes(repo, args)?;
-    Ok(String::from_utf8_lossy(&output).trim().to_string())
-}
-
-fn git_bytes(repo: &Path, args: &[&str]) -> Result<Vec<u8>> {
-    let output = Command::new("git")
-        .current_dir(repo)
-        .args(["-C"])
-        .arg(repo)
-        .args(args)
-        .output()?;
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        let err = err.trim();
-        return Err(Error::Config(if err.is_empty() {
-            format!("git {} failed", args.first().unwrap_or(&"command"))
-        } else {
-            err.to_string()
-        }));
-    }
-    Ok(output.stdout)
-}
-
-fn git_input(repo: &Path, args: &[&str], input: &[u8]) -> Result<()> {
-    let mut child = Command::new("git")
-        .current_dir(repo)
-        .args(["-C"])
-        .arg(repo)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    child
-        .stdin
-        .take()
-        .ok_or_else(|| Error::Config("git command has no stdin".to_string()))?
-        .write_all(input)?;
-    let output = child.wait_with_output()?;
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        let err = err.trim();
-        return Err(Error::Config(if err.is_empty() {
-            format!("git {} failed", args.first().unwrap_or(&"command"))
-        } else {
-            err.to_string()
-        }));
-    }
-    Ok(())
 }

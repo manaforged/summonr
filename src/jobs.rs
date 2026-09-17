@@ -189,10 +189,7 @@ pub(crate) fn stamp(
     background: bool,
     session: Option<String>,
 ) -> Result<Record> {
-    let started = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| Error::Config(error.to_string()))?
-        .as_secs();
+    let started = crate::bus::now();
     Ok(Record {
         id: id.to_string(),
         pid,
@@ -232,10 +229,7 @@ pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
         let Some(elapsed) = elapsed else {
             return true;
         };
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
-        now.saturating_sub(elapsed) <= started.saturating_add(5)
+        crate::bus::now().saturating_sub(elapsed) <= started.saturating_add(5)
     }
 }
 

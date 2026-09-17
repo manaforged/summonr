@@ -5,13 +5,14 @@ use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u64);
+
+const WALK_LIMIT: usize = 20_000;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Snapshot(BTreeMap<String, Entry>);
@@ -25,8 +26,8 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
         }
         let metadata = match path.symlink_metadata() {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error),
+            Err(error) if skippable(&error) => continue,
+            Err(error) => return Err(at(&path, error)),
         };
         if !metadata.is_file() && !metadata.is_symlink() {
             continue;
@@ -36,7 +37,11 @@ pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapsh
             .ok()
             .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
             .unwrap_or_default();
-        let mark = fingerprint(&path, &metadata)?;
+        let mark = match fingerprint(&path, &metadata) {
+            Ok(mark) => mark,
+            Err(error) if skippable(&error) => continue,
+            Err(error) => return Err(at(&path, error)),
+        };
         files.insert(
             relative.to_string_lossy().replace('\\', "/"),
             Entry(metadata.len(), modified.as_secs(), mark),
@@ -67,8 +72,7 @@ fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
     }
 }
 
-impl Snapshot {
-}
+impl Snapshot {}
 
 pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     let mut paths: Vec<String> = capture
@@ -88,22 +92,19 @@ pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
 }
 
 pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args([
+    if let Ok(output) = crate::diff::git_output(
+        root,
+        &[],
+        &[
             "ls-files",
             "-z",
             "--cached",
             "--others",
             "--exclude-standard",
-        ])
-        .output();
-    if let Ok(output) = output
-        && output.status.success()
-    {
+        ],
+        None,
+    ) {
         return Ok(output
-            .stdout
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
             .map(|name| PathBuf::from(String::from_utf8_lossy(name).into_owned()))
@@ -120,11 +121,34 @@ pub(crate) fn walked(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(found)
 }
 
+fn skippable(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::NotFound | io::ErrorKind::PermissionDenied
+    )
+}
+
+fn at(path: &Path, error: io::Error) -> io::Error {
+    io::Error::new(error.kind(), format!("{}: {error}", path.display()))
+}
+
 fn walk(root: &Path, dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if dir != root && skippable(&error) => return Ok(()),
+        Err(error) => return Err(at(dir, error)),
+    };
+    for entry in entries {
+        if found.len() >= WALK_LIMIT {
+            return Ok(());
+        }
+        let entry = entry.map_err(|error| at(dir, error))?;
         let path = entry.path();
-        let kind = entry.file_type()?;
+        let kind = match entry.file_type() {
+            Ok(kind) => kind,
+            Err(error) if skippable(&error) => continue,
+            Err(error) => return Err(at(&path, error)),
+        };
         if kind.is_dir() {
             let name = entry.file_name();
             if crate::SKIP_DIRS.iter().any(|skip| name == *skip) {

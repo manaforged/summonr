@@ -47,6 +47,15 @@ pub(super) struct Args {
     pub(super) login: bool,
     pub(super) key: bool,
     pub(super) logout: bool,
+    pub(super) decide: bool,
+    pub(super) questions: Option<String>,
+    pub(super) noul: Vec<String>,
+    pub(super) review: bool,
+    pub(super) set: Option<String>,
+    pub(super) eval: Option<String>,
+    pub(super) gate: Option<f64>,
+    pub(super) review_diff: bool,
+    pub(super) digest: bool,
 }
 
 pub(super) fn parse() -> Result<Args> {
@@ -96,6 +105,24 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "sessions" => args.list_sessions = true,
             "logs" => args.logs = true,
             "doctor" => args.doctor = true,
+            "decide" => args.decide = true,
+            "--questions" => {
+                args.questions = Some(value(&mut input, "--questions", "JSON or @file")?);
+            }
+            "--noul" => args
+                .noul
+                .push(value(&mut input, "--noul", "a yes/no question")?),
+            "--review" => args.review = true,
+            "--digest" => args.digest = true,
+            "--diff" if args.decide => args.review_diff = true,
+            "--set" => args.set = Some(value(&mut input, "--set", "a question set name")?),
+            "--eval" => args.eval = Some(value(&mut input, "--eval", "a labelled .jsonl path")?),
+            "--gate" => {
+                let raw = value(&mut input, "--gate", "a confidence from 0 to 1")?;
+                args.gate = Some(raw.parse().map_err(|error| {
+                    Error::Config(format!("--gate wants a number from 0 to 1: {error}"))
+                })?);
+            }
             "export" if args.prompt.is_empty() && !args.print => args.export = true,
             "profile" if args.prompt.is_empty() && !args.print => args.profile = true,
             "--name" => args.name = Some(value(&mut input, "--name", "a session name")?),

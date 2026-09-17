@@ -1,3 +1,4 @@
+use crate::tui::short_session;
 use std::path::Path;
 
 use sigil::prelude::Rgba8;
@@ -7,7 +8,6 @@ use super::super::canvas::palette;
 use super::super::model::Model;
 use super::super::speed::Speed;
 use super::{Span, ellipsize, truncate};
-use crate::tui::{fmt_tokens, short_session};
 
 pub(super) fn header(model: &Model, fps: u32, width: usize, accent: Rgba8) -> Vec<Span> {
     let mut left = vec![
@@ -208,8 +208,8 @@ pub(super) fn context_card(model: &Model) -> Vec<Vec<Span>> {
         lines.push(vec![Span::styled(
             format!(
                 "{} / {}",
-                fmt_tokens(u64::from(used)),
-                fmt_tokens(u64::from(window))
+                crate::provider::compact(u64::from(used)),
+                crate::provider::compact(u64::from(window))
             ),
             palette().dim,
         )]);
@@ -219,13 +219,13 @@ pub(super) fn context_card(model: &Model) -> Vec<Vec<Span>> {
         .saturating_sub(model.reasoning_tokens);
     if model.reasoning_tokens > 0 {
         lines.push(vec![Span::styled(
-            format!("think {}", fmt_tokens(model.reasoning_tokens)),
+            format!("think {}", crate::provider::compact(model.reasoning_tokens)),
             palette().gray,
         )]);
     }
     if out > 0 {
         lines.push(vec![Span::styled(
-            format!("out {}", fmt_tokens(out)),
+            format!("out {}", crate::provider::compact(out)),
             palette().gray,
         )]);
     }
@@ -240,18 +240,18 @@ pub(super) fn cache_card(model: &Model) -> Vec<Vec<Span>> {
     }
     if model.cached_tokens > 0 {
         lines.push(vec![Span::styled(
-            format!("cached {}", fmt_tokens(model.cached_tokens)),
+            format!("cached {}", crate::provider::compact(model.cached_tokens)),
             palette().gray,
         )]);
     }
     if model.prompt_tokens > 0 {
         lines.push(vec![Span::styled(
-            format!("in {}", fmt_tokens(model.prompt_tokens)),
+            format!("in {}", crate::provider::compact(model.prompt_tokens)),
             palette().gray,
         )]);
         let fresh = model.prompt_tokens.saturating_sub(model.cached_tokens);
         lines.push(vec![Span::styled(
-            format!("fresh {}", fmt_tokens(fresh)),
+            format!("fresh {}", crate::provider::compact(fresh)),
             palette().gray,
         )]);
     }

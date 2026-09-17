@@ -357,6 +357,15 @@ pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
     Ok(lines)
 }
 
+pub(crate) fn scan(path: &Path) -> io::Result<impl Iterator<Item = Line>> {
+    use std::io::BufRead;
+    let file = File::open(path)?;
+    Ok(io::BufReader::new(file)
+        .lines()
+        .map_while(|line| line.ok())
+        .filter_map(|line| serde_json::from_str(&line).ok()))
+}
+
 pub(crate) fn header(path: &Path) -> io::Result<Line> {
     let bytes = fs::read(path)?;
     let end = bytes

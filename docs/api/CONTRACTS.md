@@ -55,14 +55,51 @@ edits that miss a hash fail before write.
 
 ## Endpoints
 
-20 built-in rows (`README.md`): `zai`, `zai-cn`, `glm`, `glm-intl`, `qwen`,
+22 built-in rows (`README.md`): `zai`, `zai-cn`, `glm`, `glm-intl`, `qwen`,
 `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`, `groq`,
 `cerebras`, `mistral`, `muse`, `anthropic`, `gemini`, `zen`, `go`,
-`opencode`.
+`opencode`, `jev`, `typesafe`.
 
 Wires: `chat/completions` (most), `responses` (selectable), Anthropic
-Messages, Gemini. `together`, `groq`, `cerebras`, and `mistral` set no
-default model.
+Messages, Gemini, `decisions`. `together`, `groq`, `cerebras`, and
+`mistral` set no default model.
+
+A `decisions` endpoint answers typed questions instead of streaming text.
+Its `base_url` is the whole URL it posts to, and `summonr decide` picks
+the first one that has a key. Any endpoint declares itself one with
+`wire = "decisions"` in `~/.mage/config.toml`, so a new model of this
+type needs no code change:
+
+```toml
+[endpoint.my-judge]
+base_url = "https://provider.example/v1/decide"
+model = "their-model-name"
+wire = "decisions"
+```
+
+Chat pickers skip these rows, so a decisions endpoint is never offered
+as a chat provider.
+
+Question sets ship by name: `errors` classifies one failure, `diff`
+asks about one file of a patch, `commit` asks about a whole patch, and
+`review` scores a session. Granularity is part of the question: asking
+`untested` per file answers no every time, because a production file
+never holds its own test, while the same question over a whole patch
+scores every example right.
+
+A question set is scored against labelled examples, one JSON object per
+line with `state` and `expect`. `scripts/diff-corpus.py` builds such a
+corpus from a repository's own history, writing it outside the tree,
+because the examples hold verbatim source. The score separates plain
+accuracy from accuracy above the confidence gate, and the gated number
+is the one that decides whether a set is usable. Repeat runs vary by
+about two points, so read a smaller difference as noise.
+
+State larger than the context is split into windows on line boundaries,
+every window is asked in parallel, and the answers merge: the highest
+probability wins a Noul, the worst level wins a Score, and Choice
+distributions blend weighted by confidence. Nothing is truncated, so a
+failure in the middle of a long transcript still reaches the answer.
 
 ## Environment
 

@@ -15,6 +15,28 @@ impl<P: Provider> Loop<P> {
             .err()
     }
 
+    pub(super) async fn tool_text(
+        &mut self,
+        call: &ToolCall,
+        success: bool,
+        text: String,
+    ) -> String {
+        let mut text =
+            self.guard
+                .observe(&call.function.name, &call.function.arguments, success, text);
+        let payload = json!({
+            "event": "post_tool",
+            "tool": call.function.name,
+            "arguments": arguments(&call.function.arguments),
+            "success": success,
+            "output": text,
+        });
+        if let Some(note) = self.hook(self.hooks.post_tool.clone(), payload).await {
+            text = format!("{text}\n[post_tool hook: {note}]");
+        }
+        text
+    }
+
     pub(super) async fn screen(
         &mut self,
         planned: Vec<Call>,

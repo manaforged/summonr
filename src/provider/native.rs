@@ -29,7 +29,7 @@ impl Client {
             Wire::Responses => Some(AdapterKind::OpenAIResp),
             Wire::Anthropic => Some(AdapterKind::Anthropic),
             Wire::Gemini => Some(AdapterKind::Gemini),
-            Wire::Completions => None,
+            Wire::Completions | Wire::Decisions => None,
         }
     }
 

@@ -39,7 +39,7 @@ impl Http {
             .get("protocolVersion")
             .and_then(Value::as_str)
             .map(str::to_string);
-        let body = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+        let body = rpc::notification("notifications/initialized", json!({}));
         drop(
             self.post("notifications/initialized", &Value::Null, &body)
                 .await?,
@@ -50,7 +50,7 @@ impl Http {
     pub(super) async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = json!(self.next);
         self.next += 1;
-        let body = json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+        let body = rpc::request(&id, method, params.clone());
         let response = self.post(method, &params, &body).await?;
         if let Some(session) = response
             .headers()

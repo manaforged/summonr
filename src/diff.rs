@@ -1,5 +1,5 @@
 use std::path::Path;
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use serde::Serialize;
 
@@ -192,7 +192,7 @@ pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
     Ok(text)
 }
 
-pub fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
+pub(crate) fn hunks(root: &Path, path: &str) -> Result<Vec<(usize, usize)>> {
     let tracked = !git(root, &["ls-files", "-z", "--", path])?.is_empty();
     let text = if tracked {
         let base = reference(root, base(root)?.as_deref())?;
@@ -292,12 +292,35 @@ pub(crate) fn git_env(
     env: &[(&str, &std::ffi::OsStr)],
     args: &[&str],
 ) -> Result<String> {
-    let output = Command::new("git")
+    Ok(String::from_utf8_lossy(&git_output(root, env, args, None)?)
+        .trim()
+        .to_string())
+}
+
+pub(crate) fn git_output(
+    root: &Path,
+    env: &[(&str, &std::ffi::OsStr)],
+    args: &[&str],
+    input: Option<&[u8]>,
+) -> Result<Vec<u8>> {
+    use std::io::Write;
+    let mut child = Command::new("git")
         .arg("-C")
         .arg(root)
         .envs(env.iter().copied())
         .args(args)
-        .output()?;
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
+        stdin.write_all(input)?;
+    }
+    let output = child.wait_with_output()?;
     let different = args.starts_with(&["diff", "--no-index"])
         && output.status.code() == Some(1)
         && !output.stdout.is_empty();
@@ -309,5 +332,5 @@ pub(crate) fn git_env(
             stderr.trim()
         )));
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    Ok(output.stdout)
 }

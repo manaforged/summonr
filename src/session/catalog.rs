@@ -1,4 +1,3 @@
-use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -359,31 +358,28 @@ fn info(path: PathBuf) -> SessionInfo {
 }
 
 fn peek(path: &Path) -> (Option<String>, Option<String>, String, Option<String>, u8) {
-    let Ok(file) = std::fs::File::open(path) else {
+    let Ok(lines) = log::scan(path) else {
         return (None, None, String::new(), None, 0);
     };
     let mut cwd = None;
     let mut model = None;
     let mut parent = None;
     let mut depth = 0;
-    for line in std::io::BufReader::new(file).lines() {
-        let Ok(line) = line else {
-            break;
-        };
-        match serde_json::from_str(&line) {
-            Ok(Line::Session {
+    for line in lines {
+        match line {
+            Line::Session {
                 workspace,
                 model: name,
                 parent: recorded_parent,
                 depth: recorded_depth,
                 ..
-            }) => {
+            } => {
                 cwd = Some(workspace.display().to_string());
                 model = Some(name);
                 parent = recorded_parent.map(|id| id.to_string());
                 depth = recorded_depth;
             }
-            Ok(Line::User { text, source, .. }) if !text.is_empty() => {
+            Line::User { text, source, .. } if !text.is_empty() => {
                 return (
                     cwd,
                     model,

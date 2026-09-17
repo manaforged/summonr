@@ -1,3 +1,4 @@
+use crate::tui::context;
 use sigil::prelude::{
     AlignItems, IntoNode, JustifyContent, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle,
     LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, ObjectFit, Shortcut,
@@ -11,7 +12,6 @@ use super::super::pane::Pane;
 use super::{hairline, hit, icons, open, spacer};
 use crate::prefs::ToolOutput;
 use crate::session;
-use crate::tui::{context, fmt_tokens};
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
     let title = app.clone();
@@ -455,7 +455,10 @@ fn status_strip(app: App) -> NodeBuilder {
         .child(hairline())
         .child(metric("context", context))
         .child(hairline())
-        .child(metric("session", format!("{} tokens", fmt_tokens(tokens))));
+        .child(metric(
+            "session",
+            format!("{} tokens", crate::provider::compact(tokens)),
+        ));
     if let Some(cached) = cached {
         strip =
             strip.child(label(format!("{cached}% cached")).class(classes!("text-xs text-gray-11")));

@@ -5,15 +5,15 @@ root=$(cd "$(dirname "$0")" && pwd)
 run=${1:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 tasks=${2:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 shift 2
-harnesses=("${@:-summonr pi omp opencode hermes goose}")
+harnesses=("${@:-summonr pi omp opencode hermes}")
 read -ra harnesses <<< "${harnesses[*]}"
 seed=${BENCH_SEED:-20260916}
 effort=${BENCH_EFFORT:-}
-concurrent=${BENCH_CONCURRENT:-3}
+concurrent=${BENCH_CONCURRENT:-2}
 repeats=${BENCH_REPEATS:-1}
 dataset=${BENCH_DATASET:-$root/datasets/tb2/terminal-bench-2}
 export PATH=$HOME/.local/bin:$PATH PYTHONPATH=$root
-set -a; . "$root/deepseek.env"; set +a
+set -a; . "$root/glm.env"; set +a
 
 mkdir -p "$root/jobs/$run"
 cp "$root/tools/versions.txt" "$root/tools/manifest.sha256" "$root/harness.sh" "$tasks" "$root/jobs/$run/"
@@ -42,7 +42,7 @@ trial() {
   [ -f "$root/jobs/$run/$name/result.json" ] && return 0
   harbor run -p "$dataset" -i "$task" --agent-import-path agent:Bench -o "$root/jobs/$run" --job-name "$name" \
     --mounts-json "$mounts" --ae BENCH_HARNESS="$harness" --ae BENCH_RUN="$run" \
-    --ae BENCH_PROXY=http://172.17.0.1:8094 ${effort:+--ae BENCH_EFFORT="$effort"} -n 1 \
+    --ae BENCH_PROXY=http://172.17.0.1:8095 ${effort:+--ae BENCH_EFFORT="$effort"} -n 1 \
     > "$root/jobs/$run/$name.log" 2>&1 || echo "harbor failed: $name" >> "$root/jobs/$run/failures.txt"
   echo "$(date -u +%FT%TZ) done $name"
 }

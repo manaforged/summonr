@@ -1,5 +1,5 @@
 use std::io::{BufReader, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::Value;
@@ -10,10 +10,13 @@ use crate::hashline::{
 };
 use crate::provider::{Image, Source, UserInput};
 
-use super::{ToolOutput, ToolRegistry, nonempty_path, object_string, object_usize, parse_args};
+use super::{
+    ToolOutput, ToolRegistry, nonempty_path, object_bool, object_string, object_usize, parse_args,
+};
 use crate::SKIP_DIRS;
 
-const READ_DEFAULT_LIMIT: usize = 300;
+const READ_DEFAULT_LIMIT: usize = 2000;
+const READ_PAGE_BYTES: usize = 50 * 1024;
 const READ_MAX_LIMIT: usize = 1000;
 const READ_MAX_BYTES: usize = 2 * 1024 * 1024;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
@@ -27,9 +30,20 @@ pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 impl ToolRegistry {
     pub(super) fn read(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("read", arguments)?;
+        match args.get("op").and_then(Value::as_str) {
+            Some("file") => return self.read_file(arguments),
+            Some("list") => return self.list_dir(arguments),
+            Some("search") => return self.grep(arguments),
+            Some("image") => return self.show_image(arguments),
+            Some(operation) => {
+                return Err(Error::Tool(format!("unknown read operation `{operation}`")));
+            }
+            None => {}
+        }
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = args
             .get("glob")
+            .or_else(|| args.get("include"))
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|glob| !glob.is_empty());
@@ -97,7 +111,7 @@ impl ToolRegistry {
             if !output_truncated && total >= first && total < first.saturating_add(limit) {
                 let (line, clipped) = decode(path, total, raw, partial)?;
                 let size = line.len().saturating_add(1);
-                if window.is_empty() || window_bytes.saturating_add(size) <= READ_MAX_BYTES {
+                if window.is_empty() || window_bytes.saturating_add(size) <= READ_PAGE_BYTES {
                     window_bytes = window_bytes.saturating_add(size);
                     line_clipped |= clipped;
                     window.push(line);
@@ -136,7 +150,7 @@ impl ToolRegistry {
                 )
             } else {
                 format!(
-                    "[truncated at {READ_MAX_BYTES} bytes after line {}; continue with offset {}]",
+                    "[truncated at {READ_PAGE_BYTES} bytes after line {}; continue with offset {}]",
                     first + shown,
                     first + shown + 1
                 )
@@ -148,20 +162,125 @@ impl ToolRegistry {
 
     pub(super) async fn edit_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("edit_file", arguments)?;
+        if let Some(files) = args.get("files").and_then(Value::as_array) {
+            return self.edit_files(files).await;
+        }
         self.apply_edit("edit_file", &args).await
     }
 
-    pub(super) async fn edit_operation(&self, name: &str, arguments: &str) -> Result<ToolOutput> {
-        let mut args: Value = parse_args(name, arguments)?;
-        if name == "delete_lines" {
-            args.as_object_mut()
-                .ok_or_else(|| Error::Tool(format!("{name} arguments must be an object")))?
-                .insert("op".to_string(), Value::String("delete".to_string()));
+    /// Apply one edit per named file. Every file is read and its edit resolved
+    /// before any write, so a bad tag leaves the whole batch untouched.
+    async fn edit_files(&self, files: &[Value]) -> Result<ToolOutput> {
+        struct Prepared {
+            display: String,
+            dest: PathBuf,
+            original: String,
+            edited: String,
+            endings: Vec<&'static str>,
         }
-        self.apply_edit(name, &args).await
+        if files.is_empty() {
+            return Err(Error::Tool("files is empty".to_string()));
+        }
+        let mut prepared = Vec::with_capacity(files.len());
+        let mut moves: Vec<(String, String)> = Vec::new();
+        for file in files {
+            let path = nonempty_path(file, "edit")?.to_string();
+            if let Some(to) = move_target(file) {
+                moves.push((path, to.to_string()));
+                continue;
+            }
+            let dest = self.resolve_existing(&path)?;
+            self.check_write(&dest)?;
+            let raw = std::fs::read_to_string(&dest)
+                .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+            if raw.is_empty() {
+                return Err(Error::Tool(format!(
+                    "`{path}` is empty — there is no line to anchor an edit; use write"
+                )));
+            }
+            let endings = terminators(&raw);
+            let original = raw.replace("\r\n", "\n");
+            let edited = match file.get("edits").and_then(Value::as_array) {
+                Some(ops) if !ops.is_empty() => apply_many(&original, ops)?,
+                Some(_) => return Err(Error::Tool("edits is empty".to_string())),
+                None => apply_one(&original, file)
+                    .map_err(|error| edit_error_context(error, &original, file))?,
+            };
+            prepared.push(Prepared {
+                display: path,
+                dest,
+                original,
+                edited,
+                endings,
+            });
+        }
+        let mut out = String::new();
+        for item in &prepared {
+            let edited = restore(&item.endings, &item.original, &item.edited);
+            atomic_write(&item.dest, &item.display, &edited)?;
+            out.push_str(&format!(
+                "edited {}\n{}",
+                item.display,
+                edit_view(&item.original, &edited)
+            ));
+            if let Some(diff) = crate::hashline::diff_hunk(&item.original, &edited) {
+                out.push('\n');
+                out.push_str(&diff);
+            }
+            out.push('\n');
+        }
+        for item in &prepared {
+            if let Some(check) = self.check_after_edit(&item.dest).await {
+                out.push_str(&check.text);
+                out.push('\n');
+            }
+        }
+        for (path, to) in &moves {
+            out.push_str(&self.move_file(path, to).await?);
+            out.push('\n');
+        }
+        Ok(ToolOutput {
+            text: out,
+            success: true,
+            mutated: true,
+            grant: None,
+        })
+    }
+
+    /// Rename or move one file, creating the destination's parent directories.
+    async fn move_file(&self, path: &str, to: &str) -> Result<String> {
+        let source = self.resolve_existing(path)?;
+        self.check_write(&source)?;
+        let dest = self.resolve_write(to)?;
+        self.check_write(&dest)?;
+        if dest.exists() {
+            return Err(Error::Tool(format!("`{to}` already exists")));
+        }
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|error| Error::Tool(format!("cannot create `{to}`: {error}")))?;
+        }
+        std::fs::rename(&source, &dest)
+            .map_err(|error| Error::Tool(format!("cannot move `{path}` to `{to}`: {error}")))?;
+        let mut out = format!("moved {path} -> {to}");
+        if let Some(check) = self.check_after_edit(&dest).await {
+            out.push('\n');
+            out.push_str(&check.text);
+        }
+        Ok(out)
     }
 
     async fn apply_edit(&self, name: &str, args: &Value) -> Result<ToolOutput> {
+        if let Some(to) = move_target(args) {
+            let path = nonempty_path(args, name)?.to_string();
+            let text = self.move_file(&path, to).await?;
+            return Ok(ToolOutput {
+                text,
+                success: true,
+                mutated: true,
+                grant: None,
+            });
+        }
         let path = nonempty_path(args, name)?;
         let dest = self.resolve_existing(path)?;
         self.check_write(&dest)?;
@@ -175,7 +294,10 @@ impl ToolRegistry {
         let endings = terminators(&raw);
         let original = raw.replace("\r\n", "\n");
         let edited = match args.get("edits").and_then(Value::as_array) {
-            Some(ops) if !ops.is_empty() && name == "replace_texts" => {
+            Some(ops)
+                if !ops.is_empty()
+                    && args.get("op").and_then(Value::as_str) == Some("sequence") =>
+            {
                 apply_sequence(&original, ops)?
             }
             Some(ops) if !ops.is_empty() => apply_many(&original, ops)?,
@@ -204,6 +326,9 @@ impl ToolRegistry {
 
     pub(super) async fn write_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("write_file", arguments)?;
+        if let Some(files) = args.get("files").and_then(Value::as_array) {
+            return self.write_files(files).await;
+        }
         let path = nonempty_path(&args, "write_file")?;
         let content = args
             .get("content")
@@ -240,6 +365,60 @@ impl ToolRegistry {
         })
     }
 
+    /// Create or replace several files in one call. Every path is resolved and
+    /// checked before the first write.
+    async fn write_files(&self, files: &[Value]) -> Result<ToolOutput> {
+        struct Planned {
+            display: String,
+            dest: PathBuf,
+            content: String,
+        }
+        if files.is_empty() {
+            return Err(Error::Tool("files is empty".to_string()));
+        }
+        let mut planned = Vec::with_capacity(files.len());
+        for file in files {
+            let path = nonempty_path(file, "write")?.to_string();
+            let content = file
+                .get("content")
+                .and_then(Value::as_str)
+                .ok_or_else(|| Error::Tool(format!("write requires content for `{path}`")))?;
+            let dest = self.resolve_write(&path)?;
+            self.check_write(&dest)?;
+            planned.push(Planned {
+                display: path,
+                dest,
+                content: content.to_string(),
+            });
+        }
+        let mut out = String::new();
+        for item in &planned {
+            if let Some(parent) = item.dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| {
+                    Error::Tool(format!("cannot create `{}`: {error}", item.display))
+                })?;
+            }
+            atomic_write(&item.dest, &item.display, &item.content)?;
+            out.push_str(&format!(
+                "wrote {} ({} lines)\n",
+                item.display,
+                item.content.lines().count()
+            ));
+        }
+        for item in &planned {
+            if let Some(check) = self.check_after_edit(&item.dest).await {
+                out.push_str(&check.text);
+                out.push('\n');
+            }
+        }
+        Ok(ToolOutput {
+            text: out,
+            success: true,
+            mutated: true,
+            grant: None,
+        })
+    }
+
     pub(super) fn list_dir(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("list_dir", arguments)?;
         let path = args
@@ -263,6 +442,7 @@ impl ToolRegistry {
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = args
             .get("glob")
+            .or_else(|| args.get("include"))
             .and_then(Value::as_str)
             .map(str::trim)
             .filter(|glob| !glob.is_empty());
@@ -272,17 +452,23 @@ impl ToolRegistry {
         let limit = object_usize(&args, "limit")
             .unwrap_or(GREP_DEFAULT)
             .clamp(1, GREP_MAX);
+        let literal = object_bool(&args, "literal");
+        let case_sensitive = args
+            .get("caseSensitive")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
         let root = match args.get("path").and_then(Value::as_str) {
             Some(path) if !path.trim().is_empty() && path != "." => self.resolve_read(path)?,
             _ => self.workspace.clone(),
         };
         let regex = if pattern.is_empty() {
             None
+        } else if literal {
+            Some(build_regex(&regex::escape(pattern), case_sensitive)?)
         } else {
-            Some(match Regex::new(pattern) {
+            Some(match build_regex(pattern, case_sensitive) {
                 Ok(regex) => regex,
-                Err(_) => Regex::new(&regex::escape(pattern))
-                    .map_err(|error| Error::Tool(format!("grep pattern is invalid: {error}")))?,
+                Err(_) => build_regex(&regex::escape(pattern), case_sensitive)?,
             })
         };
         let glob = glob.map(glob_regex).transpose()?;
@@ -427,6 +613,12 @@ fn format_directory(path: &str, dir: &Path) -> Result<String> {
 }
 
 pub(super) fn atomic_write(dest: &Path, display: &str, content: &str) -> Result<()> {
+    let before = std::fs::read_to_string(dest).unwrap_or_default();
+    if let Some((option, detail)) = crate::prefs::banned_edit(dest, &before, content) {
+        return Err(Error::Denied(format!(
+            "{detail} is banned by the `{option}` option in options; remove it or turn the option off"
+        )));
+    }
     let parent = dest
         .parent()
         .ok_or_else(|| Error::Tool(format!("cannot write `{display}` without a parent")))?;
@@ -606,6 +798,13 @@ pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
+fn move_target(args: &Value) -> Option<&str> {
+    args.get("to")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|to| !to.is_empty())
+}
+
 fn edit_view(before: &str, after: &str) -> String {
     let lines = after.lines().count();
     if lines <= SMALL_FILE_LINES {
@@ -666,6 +865,13 @@ fn grep_file(
         }
     }
     Ok(())
+}
+
+fn build_regex(pattern: &str, case_sensitive: bool) -> Result<Regex> {
+    regex::RegexBuilder::new(pattern)
+        .case_insensitive(!case_sensitive)
+        .build()
+        .map_err(|error| Error::Tool(format!("grep pattern is invalid: {error}")))
 }
 
 fn glob_regex(glob: &str) -> Result<Regex> {
@@ -966,7 +1172,10 @@ fn delete_patch(text: &str, tag: &str, end_tag: Option<&str>) -> Result<Patch> {
 }
 
 fn lines(text: &str) -> Vec<String> {
-    text.lines().map(str::to_string).collect()
+    if text.is_empty() {
+        return vec![String::new()];
+    }
+    text.split('\n').map(str::to_string).collect()
 }
 
 fn apply_many(original: &str, ops: &[Value]) -> Result<String> {
@@ -1011,10 +1220,12 @@ fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<String> {
     patches.sort_by_key(|patch| (patch.start, patch.start != patch.end));
     let mut lines = lines(original);
     for patch in patches.into_iter().rev() {
-        lines.splice(patch.start..patch.end, patch.replacement);
+        let end = patch.end.min(lines.len());
+        let start = patch.start.min(end);
+        lines.splice(start..end, patch.replacement);
     }
     let mut text = lines.join("\n");
-    if original.ends_with('\n') {
+    if original.ends_with('\n') && !text.ends_with('\n') {
         text.push('\n');
     }
     Ok(text)
@@ -1078,3 +1289,7 @@ fn restore(endings: &[&'static str], original: &str, edited: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+#[path = "workspace_tests.rs"]
+mod tests;

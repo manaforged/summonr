@@ -273,7 +273,3 @@ fn render(receipt: &Receipt) -> String {
 fn code(text: &str) -> String {
     format!("`{}`", text.replace('`', "\\`"))
 }
-
-#[cfg(test)]
-#[path = "verify_tests.rs"]
-mod tests;

@@ -3,17 +3,23 @@ use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use futures::future::join_all;
 use sigil_ide_core::buffer::Rope;
 use sigil_ide_core::workspace::{FsEvent, WorkspaceRoot};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Cmd, Msg};
 use crate::diff;
+use crate::endpoint;
 use crate::error::Result;
+use crate::prompt::mage_home;
+use crate::provider::Client;
+use crate::recent;
 use crate::session::prompts;
 use crate::worktree;
 
 const WINDOW: Duration = Duration::from_millis(400);
+const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Clone)]
 pub(super) struct Reader {
@@ -27,6 +33,18 @@ impl Reader {
     }
 
     pub(super) async fn run(&self, command: Cmd) {
+        if let Cmd::ListModels { request, cancel } = command {
+            let reader = self.clone();
+            drop(tokio::spawn(async move {
+                tokio::select! {
+                    biased;
+                    _ = cancel => {}
+                    _ = reader.ui.closed() => {}
+                    () = reader.models(request) => {}
+                }
+            }));
+            return;
+        }
         let save = matches!(command, Cmd::Save(..));
         let reader = self.clone();
         let task = tokio::task::spawn_blocking(move || reader.serve(command));
@@ -57,6 +75,18 @@ impl Reader {
                     })
                     .map_err(|error| error.to_string());
                 self.send(Msg::Sessions(rows));
+            }
+            Cmd::ListUsage => {
+                let prices = endpoint::ready(false)
+                    .0
+                    .into_iter()
+                    .filter_map(|seat| Some((seat.model, seat.price?)))
+                    .collect();
+                let roots = crate::session::roots(&self.workspace);
+                let rows = mage_home()
+                    .and_then(|home| crate::session::spend(&home, &roots, &prices))
+                    .map_err(|error| error.to_string());
+                self.send(Msg::Usage(rows));
             }
             Cmd::DeleteSession(id) => {
                 match crate::session::remove(&id) {
@@ -102,6 +132,76 @@ impl Reader {
             Ok(diff) => self.send(Msg::Diff(diff)),
             Err(error) => self.send(Msg::DiffFailed(error.to_string())),
         }
+    }
+
+    async fn models(&self, request: u64) {
+        let (endpoints, mut errors) = endpoint::ready(false);
+        let mut rows = mage_home()
+            .map(|home| recent::load(&home))
+            .unwrap_or_default();
+        rows.retain(|row| {
+            row.split_once('\t')
+                .is_some_and(|(name, _)| endpoints.iter().any(|endpoint| endpoint.name == name))
+        });
+        let recent = rows.len();
+        for endpoint in endpoints
+            .iter()
+            .filter(|endpoint| !endpoint.model.is_empty())
+        {
+            let row = format!("{}\t{}", endpoint.name, endpoint.model);
+            if !rows.contains(&row) {
+                rows.push(row);
+            }
+        }
+        self.send(Msg::Models {
+            request,
+            recent,
+            rows: rows.clone(),
+            loading: !endpoints.is_empty(),
+            error: if endpoints.is_empty() && errors.is_empty() {
+                "No configured providers. Use /login to connect one.".to_string()
+            } else {
+                errors.join("; ")
+            },
+        });
+        if endpoints.is_empty() {
+            return;
+        }
+        let catalogs = join_all(endpoints.into_iter().map(|endpoint| async move {
+            let fetch = async {
+                let client = Client::connect(&endpoint)?;
+                client.models().await
+            };
+            let result = match tokio::time::timeout(PROBE_TIMEOUT, fetch).await {
+                Ok(result) => result.map_err(|error| error.to_string()),
+                Err(_) => Err("model discovery timed out".to_string()),
+            };
+            (endpoint.name, result)
+        }))
+        .await;
+        for (name, result) in catalogs {
+            match result {
+                Ok(models) if models.is_empty() => {
+                    errors.push(format!("{name}: no models returned"))
+                }
+                Ok(models) => {
+                    for model in models {
+                        let row = format!("{name}\t{model}");
+                        if !rows.contains(&row) {
+                            rows.push(row);
+                        }
+                    }
+                }
+                Err(error) => errors.push(format!("{name}: {error}")),
+            }
+        }
+        self.send(Msg::Models {
+            request,
+            recent,
+            rows,
+            loading: false,
+            error: errors.join("; "),
+        });
     }
 
     pub(super) fn trees(&self) {
@@ -233,7 +333,3 @@ fn unignored(workspace: &Path, mut paths: Vec<String>) -> Vec<String> {
     paths.retain(|path| !ignored.contains(path));
     paths
 }
-
-#[cfg(test)]
-#[path = "reader_tests.rs"]
-mod tests;

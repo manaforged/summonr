@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use toml_edit::{DocumentMut, value};
 
+use crate::durable::store;
 use crate::error::{Error, Result};
 use crate::prefs::Prefs;
 use crate::prompt::mage_home;
@@ -22,11 +22,14 @@ pub(crate) struct File {
     pub theme: Option<String>,
     pub splash: Option<bool>,
     pub animations: Option<bool>,
+    pub fps: Option<u32>,
     pub reasoning: Option<ReasoningSetting>,
     pub tools: Option<String>,
     pub receipts: Option<String>,
     pub bus: Option<bool>,
     pub layout: Option<String>,
+    pub ban_comments: Option<bool>,
+    pub ban_tests: Option<bool>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,
@@ -39,6 +42,10 @@ pub(crate) struct File {
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
     #[serde(default)]
     pub modules: BTreeMap<String, bool>,
+    #[serde(default)]
+    pub mcp: BTreeMap<String, crate::mcp::Entry>,
+    #[serde(default)]
+    pub hooks: crate::hooks::Hooks,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +67,8 @@ pub(crate) enum ReasoningSetting {
 
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Sandbox {
+    #[serde(default)]
+    pub on: bool,
     #[serde(default)]
     pub write: Vec<String>,
 }
@@ -101,6 +110,9 @@ pub(crate) struct Endpoint {
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
     pub wire: Option<String>,
+    #[serde(default)]
+    pub fallback: Vec<String>,
+    pub compact_tokens: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
@@ -125,6 +137,7 @@ pub(crate) struct Search {
     pub excluded_domains: Option<Vec<String>>,
     pub backend: Option<String>,
     pub api_key: Option<String>,
+    pub url: Option<String>,
 }
 
 pub(crate) fn path() -> Result<PathBuf> {
@@ -133,6 +146,10 @@ pub(crate) fn path() -> Result<PathBuf> {
 
 pub(crate) fn load() -> Result<File> {
     load_from(&path()?)
+}
+
+pub fn sandbox_on() -> Result<bool> {
+    Ok(load()?.sandbox.on)
 }
 
 pub(crate) fn load_from(path: &Path) -> Result<File> {
@@ -152,14 +169,26 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
             "config.toml: `tools` must be `compact` or `full`".to_string(),
         ));
     }
-    if file
-        .theme
-        .as_deref()
-        .is_some_and(|theme| !matches!(theme, "space" | "fantasy"))
-    {
+    if file.theme.as_deref().is_some_and(|theme| {
+        !matches!(
+            theme,
+            "space" | "fantasy" | "nord" | "gruvbox" | "solarized" | "light"
+        )
+    }) {
         return Err(Error::Config(
-            "config.toml: `theme` must be `space` or `fantasy`".to_string(),
+            "config.toml: `theme` must be space, fantasy, nord, gruvbox, solarized, or light"
+                .to_string(),
         ));
+    }
+    if file
+        .fps
+        .is_some_and(|fps| !(crate::prefs::FPS_MIN..=crate::prefs::FPS_MAX).contains(&fps))
+    {
+        return Err(Error::Config(format!(
+            "config.toml: `fps` must be a whole number from {} to {}",
+            crate::prefs::FPS_MIN,
+            crate::prefs::FPS_MAX
+        )));
     }
     match file.secrets.as_deref().map(str::trim) {
         None | Some("") | Some("file") | Some("keychain") => {}
@@ -200,10 +229,13 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["theme"] = value(&prefs.theme);
     document["splash"] = value(prefs.splash);
     document["animations"] = value(prefs.animations);
+    document["fps"] = value(i64::from(prefs.fps));
     document["reasoning"] = value(prefs.reasoning.name());
     document["receipts"] = value(prefs.receipts.name());
     document["tools"] = value(prefs.tools.name());
     document["bus"] = value(prefs.bus);
+    document["ban_comments"] = value(prefs.ban_comments);
+    document["ban_tests"] = value(prefs.ban_tests);
     document["layout"] = value(&prefs.layout);
     let mut hotkeys = toml_edit::InlineTable::new();
     for (action, binding) in prefs.hotkeys.entries() {
@@ -216,7 +248,8 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
             document.as_table_mut().remove("last_endpoint");
         }
     }
-    persist(path, &document)
+    store::write(path, document.to_string())?;
+    Ok(())
 }
 
 pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
@@ -225,7 +258,7 @@ pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
         .as_table_like_mut()
         .is_some_and(|row| row.remove("api_key").is_some());
     if removed {
-        persist(path, &document)?;
+        store::write(path, document.to_string())?;
     }
     Ok(removed)
 }
@@ -248,7 +281,8 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     if let Some(parent) = document["workflows"].as_table_mut() {
         parent.set_implicit(true);
     }
-    persist(path, &document)
+    store::write(path, document.to_string())?;
+    Ok(())
 }
 
 pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
@@ -257,13 +291,15 @@ pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
     if let Some(table) = document["modules"].as_table_mut() {
         table.set_implicit(true);
     }
-    persist(path, &document)
+    store::write(path, document.to_string())?;
+    Ok(())
 }
 
 pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
     let mut document = read_document(path)?;
     document["workflow"] = value(name);
-    persist(path, &document)
+    store::write(path, document.to_string())?;
+    Ok(())
 }
 
 fn read_document(path: &Path) -> Result<DocumentMut> {
@@ -321,21 +357,6 @@ pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
     if let Some(table) = document["sandbox"].as_table_mut() {
         table.set_implicit(true);
     }
-    persist(path, &document)
-}
-
-fn persist(path: &Path, document: &DocumentMut) -> Result<()> {
-    let parent = path
-        .parent()
-        .ok_or_else(|| Error::Config("config.toml has no parent directory".to_string()))?;
-    std::fs::create_dir_all(parent)?;
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    temp.write_all(document.to_string().as_bytes())?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|error| Error::Io(error.error))?;
+    store::write(path, document.to_string())?;
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "config_tests.rs"]
-mod tests;

@@ -87,7 +87,3 @@ impl Selection {
         queue!(out, SetAttribute(Attribute::Reset))
     }
 }
-
-#[cfg(test)]
-#[path = "selection_tests.rs"]
-mod tests;

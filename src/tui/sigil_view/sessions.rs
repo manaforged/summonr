@@ -1,9 +1,13 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use sigil::prelude::*;
-
 use crate::session::SessionInfo;
+#[cfg(feature = "gui")]
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, NodeStyleExt, WidgetLayoutExt, classes, container, label,
+    virtual_list,
+};
+use sigil::prelude::{NodeBuilder, Signal, signal, text_edit};
 
 use super::super::short_session;
 use super::app::App;
@@ -363,7 +367,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let rows = picker.rows();
     let selected = picker.selected.get().min(rows.len().saturating_sub(1));
     let count = height.saturating_sub(6) / 2;
-    let start = selected.saturating_add(1).saturating_sub(count);
+    let start = super::hit::window(app, selected, rows.len(), count);
     for (offset, info) in rows.iter().enumerate().skip(start).take(count) {
         let y = 5 + (offset - start) * 2;
         let title = picker.title(info);

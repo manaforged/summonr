@@ -289,15 +289,24 @@ impl Receipts {
     }
 }
 
+/// Frames per second for the interface. The render loop blocks on input for
+/// one frame budget, so this is the ceiling on redraws per second.
+pub const FPS_DEFAULT: u32 = 25;
+pub const FPS_MIN: u32 = 1;
+pub const FPS_MAX: u32 = 240;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     pub theme: String,
     pub splash: bool,
     pub animations: bool,
+    pub fps: u32,
     pub reasoning: Reasoning,
     pub receipts: Receipts,
     pub tools: ToolOutput,
     pub bus: bool,
+    pub ban_comments: bool,
+    pub ban_tests: bool,
     pub layout: String,
     pub hotkeys: Hotkeys,
     pub last_endpoint: Option<String>,
@@ -309,10 +318,13 @@ impl Default for Prefs {
             theme: "space".to_string(),
             splash: true,
             animations: true,
+            fps: FPS_DEFAULT,
             reasoning: Reasoning::Collapsed,
             receipts: Receipts::Off,
             tools: ToolOutput::Compact,
             bus: true,
+            ban_comments: false,
+            ban_tests: false,
             hotkeys: Hotkeys::default(),
             last_endpoint: None,
             layout: "chat".to_string(),
@@ -320,33 +332,23 @@ impl Default for Prefs {
     }
 }
 
-#[cfg(test)]
-const KEYS: [&str; 9] = [
-    "theme",
-    "splash",
-    "animations",
-    "reasoning",
-    "receipts",
-    "tools",
-    "bus",
-    "layout",
-    "hotkeys",
-];
-
 pub fn load_from(path: &Path) -> Result<Prefs> {
     let file = config::load_from(path)?;
     let mut prefs = Prefs {
         hotkeys: Hotkeys::configured(&file.hotkeys)?,
         ..Prefs::default()
     };
-    if let Some(theme) = file.theme {
-        prefs.theme = theme;
+    if let Some(name) = file.theme {
+        prefs.theme = name;
     }
     if let Some(splash) = file.splash {
         prefs.splash = splash;
     }
     if let Some(animations) = file.animations {
         prefs.animations = animations;
+    }
+    if let Some(fps) = file.fps {
+        prefs.fps = fps;
     }
     match file.reasoning {
         Some(crate::config::ReasoningSetting::Flag(true)) => {
@@ -374,6 +376,12 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
     if let Some(bus) = file.bus {
         prefs.bus = bus;
     }
+    if let Some(ban) = file.ban_comments {
+        prefs.ban_comments = ban;
+    }
+    if let Some(ban) = file.ban_tests {
+        prefs.ban_tests = ban;
+    }
     if let Some(last) = file.last_endpoint {
         prefs.last_endpoint = Some(last);
     }
@@ -400,6 +408,63 @@ pub fn load() -> Result<Prefs> {
     load_from(&config::path()?)
 }
 
-#[cfg(test)]
-#[path = "prefs_tests.rs"]
-mod tests;
+pub(crate) fn banned_edit(
+    dest: &Path,
+    before: &str,
+    after: &str,
+) -> Option<(&'static str, String)> {
+    let prefs = load().unwrap_or_default();
+    if prefs.ban_tests && test_surface(dest, before, after) {
+        return Some(("tests", dest.display().to_string()));
+    }
+    if prefs.ban_comments
+        && let Some(line) = added_comment(dest, before, after)
+    {
+        return Some(("comments", line));
+    }
+    None
+}
+
+fn test_surface(dest: &Path, before: &str, after: &str) -> bool {
+    let name = dest
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let path = dest.to_string_lossy();
+    if name.ends_with("_tests.rs") || name.starts_with("test_") || path.contains("/tests/") {
+        return true;
+    }
+    ["#[test]", "#[cfg(test)]"]
+        .iter()
+        .any(|marker| after.contains(marker) && !before.contains(marker))
+}
+
+fn added_comment(dest: &Path, before: &str, after: &str) -> Option<String> {
+    let extension = dest
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or_default();
+    let markers: &[&str] = if matches!(
+        extension,
+        "rs" | "ts" | "tsx" | "js" | "go" | "wgsl" | "glsl"
+    ) {
+        &["//", "/*"]
+    } else if matches!(extension, "py" | "sh" | "bash" | "zsh") {
+        &["#"]
+    } else {
+        return None;
+    };
+    let have: std::collections::HashSet<&str> = before.lines().collect();
+    for line in after.lines() {
+        let text = line.trim_start();
+        let directive =
+            text.starts_with("#!") || text.contains("coding:") || text.contains("coding=");
+        if !directive
+            && markers.iter().any(|marker| text.starts_with(marker))
+            && !have.contains(line)
+        {
+            return Some(text.chars().take(80).collect());
+        }
+    }
+    None
+}

@@ -5,13 +5,14 @@ use super::super::model::Model;
 
 pub(super) fn header(model: &Model) -> String {
     let relay = model
+        .snapshot
         .relay
         .as_deref()
         .map_or_else(String::new, |relay| format!(" · {relay}"));
     let mode = if model.snapshot.plan { "plan" } else { "auto" };
     format!(
         "summonr  {}{}   session {}   {mode}",
-        model.model,
+        model.snapshot.model,
         relay,
         short_session(&model.session),
     )
@@ -29,11 +30,7 @@ pub(super) fn status(model: &Model, info: &Info) -> String {
                 .live_tool
                 .as_ref()
                 .map_or_else(String::new, |(name, arg)| format!(" · {name} {arg}"));
-            format!(
-                "working · r{} · {}s{tool}",
-                model.rounds.max(1),
-                start.elapsed().as_secs()
-            )
+            format!("working · {}s{tool}", start.elapsed().as_secs())
         },
     );
     let cost = if model.usage.iter().any(|round| round.cost.is_some()) {
@@ -49,8 +46,8 @@ pub(super) fn status(model: &Model, info: &Info) -> String {
         info.workspace,
         fmt_tokens(total),
         cache_rate(model),
-        model.peers,
-        if model.peers == 1 { "" } else { "s" },
+        model.peers.len(),
+        if model.peers.len() == 1 { "" } else { "s" },
     )
 }
 
@@ -78,12 +75,13 @@ pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
 
 pub(super) fn facts(model: &Model, info: &Info) -> String {
     let relay = model
+        .snapshot
         .relay
         .as_deref()
         .map_or_else(String::new, |relay| format!(" · {relay}"));
     let mut rows = vec![
         format!("summonr  {}", info.version),
-        format!("   model  {}{relay}", model.model),
+        format!("   model  {}{relay}", model.snapshot.model),
         format!(" session  {}", short_session(&model.session)),
         format!(" workdir  {}", info.workspace),
     ];

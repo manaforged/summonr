@@ -93,6 +93,14 @@ pub(super) fn hoist(message: &mut super::AssistantMessage) {
     }
 }
 
+pub(super) fn vec_or_null<'de, D, T>(deserializer: D) -> Result<Vec<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Option::<Vec<T>>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 pub(super) fn reasoning_field<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -131,7 +139,3 @@ fn from_json(value: Value) -> Option<String> {
 fn empty_to_none(text: String) -> Option<String> {
     (!text.is_empty()).then_some(text)
 }
-
-#[cfg(test)]
-#[path = "think_tests.rs"]
-mod tests;

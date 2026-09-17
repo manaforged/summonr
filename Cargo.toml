@@ -23,25 +23,22 @@ serde_json = "1"
 smol_str = { version = "0.3.6", default-features = false }
 thiserror = "2"
 tempfile = "3"
+zeroize = "1"
 toml = "0.8"
 toml_edit = "0.22"
-unicode-width = "0.2"
 unicode-segmentation = "1.13.3"
 unicode-linebreak = "0.1.5"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls"] }
+reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls-vendored"] }
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483", default-features = false, features = ["tui", "clipboard-image"] }
-sigil-hal = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-tui = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-ide-core = { git = "ssh://git@github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil = { package = "sigil-ui", git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483", default-features = false, features = ["tui", "clipboard-image"] }
+sigil-hal = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil-tui = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil-ide-core = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
 chacha20poly1305 = "0.10"
-
-[dev-dependencies]
-vt100 = "=0.16.2"
 
 [patch.crates-io]
 crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e35d24a2f643c61760e1eb05b8ca9e63" }
@@ -52,12 +49,11 @@ default = []
 gui = ["sigil/clipboard", "sigil/desktop"]
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust"] }
+keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(windows)'.dependencies]
 dunce = "1.0"
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
-winapi-util = "0.1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 
 [lints.rust]

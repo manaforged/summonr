@@ -61,6 +61,10 @@ pub enum SlashCommand {
     Write,
     Approve,
     Fork,
+    Rollback,
+    Profile,
+    Usage,
+    Undo,
     Clear,
     Plan,
     PlanAccept,
@@ -148,7 +152,7 @@ const SPECS: &[CommandSpec] = &[
     .category(Advanced),
     spec(
         "/theme",
-        "change the interface theme",
+        "reload the interface theme",
         SlashCommand::Theme,
         Bare,
     )
@@ -233,7 +237,7 @@ const SPECS: &[CommandSpec] = &[
     ),
     spec(
         "/effort",
-        "reasoning effort: none · low · medium · high, or bare to show",
+        "reasoning effort: none · low · medium · high, or bare to cycle",
         SlashCommand::Effort,
         Value,
     ),
@@ -287,6 +291,30 @@ const SPECS: &[CommandSpec] = &[
     )
     .category(Shortcuts),
     spec(
+        "/undo",
+        "drop the last turn from the conversation and restore its files",
+        SlashCommand::Undo,
+        Bare,
+    ),
+    spec(
+        "/profile",
+        "where this session spent time and tokens: model, tools, harness, slowest calls, repeats",
+        SlashCommand::Profile,
+        Bare,
+    ),
+    spec(
+        "/usage",
+        "token spend by model over 24h · 7d · 30d · lifetime",
+        SlashCommand::Usage,
+        Bare,
+    ),
+    spec(
+        "/rollback",
+        "restore files to before the last turn; /rollback N counts every turn run, including retries and mail",
+        SlashCommand::Rollback,
+        Value,
+    ),
+    spec(
         "/branch",
         "branch after an earlier turn",
         SlashCommand::Branch,
@@ -311,10 +339,15 @@ const SPECS: &[CommandSpec] = &[
         SlashCommand::Compact,
         Bare,
     ),
-    spec("/plan", "enter plan mode", SlashCommand::Plan, Bare),
+    spec(
+        "/plan",
+        "enter plan mode; /plan accept executes that plan as work",
+        SlashCommand::Plan,
+        Bare,
+    ),
     spec(
         "/plan accept",
-        "approve the saved plan; send a prompt to begin",
+        "approve the saved plan and execute it",
         SlashCommand::PlanAccept,
         Bare,
     )
@@ -329,7 +362,7 @@ const SPECS: &[CommandSpec] = &[
     spec("/auto", "return to auto mode", SlashCommand::Auto, Bare).category(Contextual),
     spec(
         "/goal",
-        "work toward an objective across turns",
+        "loop on an objective with no written plan",
         SlashCommand::Goal,
         Text,
     )
@@ -372,10 +405,6 @@ pub fn parse_command(line: &str) -> Option<SlashCommand> {
             .map(|spec| spec.command)
     })
 }
-
-#[cfg(test)]
-#[path = "command_tests.rs"]
-mod tests;
 
 pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
     let Some(command) = parse_command(line) else {

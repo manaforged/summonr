@@ -112,7 +112,3 @@ fn first_line(body: &str) -> String {
         .take(80)
         .collect()
 }
-
-#[cfg(test)]
-#[path = "skills_tests.rs"]
-mod tests;

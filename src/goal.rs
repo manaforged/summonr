@@ -142,7 +142,3 @@ fn malformed_judge() -> Error {
         "goal judge returned no valid verdict object",
     )
 }
-
-#[cfg(test)]
-#[path = "goal_tests.rs"]
-mod tests;

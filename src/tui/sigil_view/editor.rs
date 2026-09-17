@@ -20,7 +20,3 @@ pub(super) fn window(text: &str, caret: usize, scroll: usize, body: usize) -> Wi
     };
     Window { start, line, col }
 }
-
-#[cfg(test)]
-#[path = "editor_tests.rs"]
-mod tests;

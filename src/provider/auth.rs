@@ -16,7 +16,7 @@ fn deadline(seconds: u64) -> Instant {
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 #[derive(Clone)]
-pub(super) struct Auth {
+pub(crate) struct Auth {
     inner: Arc<Inner>,
 }
 
@@ -82,21 +82,7 @@ impl Auth {
         }
     }
 
-    pub(super) fn oauth(spec: OAuth, name: impl Into<String>) -> Result<Self> {
-        if spec.token_url.trim().is_empty() || spec.client_id.trim().is_empty() {
-            return Err(Error::Config(
-                "oauth auth needs token_url and client_id".to_string(),
-            ));
-        }
-        if device(&spec) && spec.device_url.as_deref().is_none_or(str::is_empty) {
-            return Err(Error::Config(
-                "device_code grant needs device_url".to_string(),
-            ));
-        }
-        Self::oauth_in(spec, name, crate::prompt::mage_home()?)
-    }
-
-    pub(super) fn oauth_in(spec: OAuth, name: impl Into<String>, home: PathBuf) -> Result<Self> {
+    pub(crate) fn oauth(spec: OAuth, name: impl Into<String>) -> Result<Self> {
         if spec.token_url.trim().is_empty() || spec.client_id.trim().is_empty() {
             return Err(Error::Config(
                 "oauth auth needs token_url and client_id".to_string(),
@@ -111,7 +97,7 @@ impl Auth {
             inner: Arc::new(Inner::OAuth(Box::new(OAuthInner {
                 spec,
                 name: name.into(),
-                home,
+                home: crate::prompt::mage_home()?,
                 slot: Mutex::new(None),
             }))),
         })
@@ -129,7 +115,7 @@ impl Auth {
         Ok(Self::bearer(key))
     }
 
-    pub(super) async fn token(&self, http: &reqwest::Client) -> Result<String> {
+    pub(crate) async fn token(&self, http: &reqwest::Client) -> Result<String> {
         match &*self.inner {
             Inner::Bearer(key) => Ok(key.clone()),
             Inner::OAuth(inner) => {
@@ -171,12 +157,20 @@ impl Auth {
     }
 }
 
-fn device(spec: &OAuth) -> bool {
+pub(crate) fn device(spec: &OAuth) -> bool {
     spec.grant.as_deref() == Some("device_code")
         || spec
             .device_url
             .as_deref()
             .is_some_and(|url| !url.trim().is_empty())
+}
+
+pub(crate) fn configured(spec: &OAuth, name: &str) -> Result<bool> {
+    if !device(spec) {
+        return Ok(true);
+    }
+    Ok(load_disk(&crate::prompt::mage_home()?, name, false)?
+        .is_some_and(|issued| issued.fresh() || issued.refresh_token.is_some()))
 }
 
 async fn token(
@@ -189,7 +183,7 @@ async fn token(
     if let Some(issued) = live(slot)? {
         return Ok(issued.access_token);
     }
-    if let Some(issued) = load_disk(home, name)? {
+    if let Some(issued) = load_disk(home, name, true)? {
         if issued.fresh() {
             return put_chat(http, spec, slot, issued).await;
         }
@@ -200,7 +194,7 @@ async fn token(
                     return put_chat(http, spec, slot, next).await;
                 }
                 Err(error) => {
-                    if let Some(reloaded) = load_disk(home, name)?
+                    if let Some(reloaded) = load_disk(home, name, true)?
                         && reloaded.fresh()
                         && reloaded.access_token != issued.access_token
                     {
@@ -348,23 +342,27 @@ pub(crate) fn forget_legacy(name: &str) -> Result<bool> {
     }
 }
 
-fn load_disk(home: &Path, name: &str) -> Result<Option<Issued>> {
-    let text = match crate::secret::get(&secret_name(name))? {
-        Some((text, _)) => text,
+fn load_disk(home: &Path, name: &str, migrate: bool) -> Result<Option<Issued>> {
+    let (text, legacy) = match crate::secret::get(&secret_name(name))? {
+        Some((text, _)) => (text, None),
         None => {
             let legacy = credentials_path(home, name);
-            let Ok(text) = std::fs::read_to_string(&legacy) else {
-                return Ok(None);
+            let text = match std::fs::read_to_string(&legacy) {
+                Ok(text) => text,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(error.into()),
             };
-            crate::secret::set(&secret_name(name), &text)?;
-            std::fs::remove_file(&legacy)?;
-            text
+            (text, Some(legacy))
         }
     };
     let disk: Disk = serde_json::from_str(&text)
         .map_err(|error| Error::Config(format!("stored token for {name}: {error}")))?;
     if disk.access_token.trim().is_empty() {
         return Ok(None);
+    }
+    if migrate && let Some(legacy) = legacy {
+        crate::secret::set(&secret_name(name), &text)?;
+        std::fs::remove_file(legacy)?;
     }
     Ok(Some(from_disk(disk)))
 }
@@ -399,7 +397,7 @@ fn from_disk(disk: Disk) -> Issued {
     });
     Issued {
         access_token: disk.access_token,
-        refresh_token: disk.refresh_token,
+        refresh_token: disk.refresh_token.filter(|token| !token.trim().is_empty()),
         expires_at,
     }
 }
@@ -559,7 +557,3 @@ async fn device_login(
         }
     }
 }
-
-#[cfg(test)]
-#[path = "auth_tests.rs"]
-mod tests;

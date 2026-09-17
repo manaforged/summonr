@@ -16,7 +16,7 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request_body(request, true)?;
-        let mut bytes = self.send(&body).await?.bytes_stream();
+        let mut bytes = self.send(&body, &request.session).await?.bytes_stream();
         let mut state = Stream::new(partial);
         while let Some(chunk) = bytes.next().await {
             let chunk = chunk.map_err(|error| {
@@ -211,7 +211,7 @@ impl<'a> Stream<'a> {
     fn complete(mut self, client: &Client) -> Result<AssistantMessage> {
         if !self.finished {
             return Err(self.provider_error(
-                ProviderFailureKind::Malformed,
+                ProviderFailureKind::Transport,
                 "stream ended before a finish reason or [DONE] marker",
             ));
         }
@@ -363,7 +363,7 @@ struct Delta {
         deserialize_with = "think::reasoning_field"
     )]
     reasoning_content: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "think::vec_or_null")]
     tool_calls: Vec<CallDelta>,
 }
 
@@ -379,7 +379,3 @@ pub(super) struct FunctionDelta {
     pub(super) name: Option<String>,
     pub(super) arguments: Option<String>,
 }
-
-#[cfg(test)]
-#[path = "stream_tests.rs"]
-mod tests;

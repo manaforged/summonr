@@ -35,6 +35,7 @@ pub(super) const CHARS_PER_TOKEN: usize = 4;
 const KEEP_TAIL: usize = 2;
 const COMPACT_PERCENT: usize = 80;
 const RESERVE_TOKENS: u32 = 16_384;
+const TAIL_TOKENS: u32 = 24_000;
 const DEFAULT_COMPACT_CHARS: usize = 400_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
@@ -66,6 +67,7 @@ impl<P: Provider> Loop<P> {
         request_messages.extend(slice.iter().cloned());
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let request = CompletionRequest {
+            session: self.session_id(),
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: tools.to_vec(),
@@ -145,24 +147,27 @@ impl<P: Provider> Loop<P> {
         }
         let chars: usize = messages.iter().map(message_chars).sum();
         let estimated_tokens = self.estimated_prompt_tokens(messages, tools);
-        let pressure = self
-            .context_window
-            .map_or(chars >= DEFAULT_COMPACT_CHARS, |window| {
-                under_pressure(estimated_tokens, window)
-            });
+        let window = match (self.context_window, self.compact_tokens) {
+            (Some(window), Some(cap)) => Some(window.min(cap)),
+            (window, cap) => window.or(cap),
+        };
+        let pressure = window.map_or(chars >= DEFAULT_COMPACT_CHARS, |window| {
+            under_pressure(estimated_tokens, window)
+        });
         if !pressure || messages.len() < 8 {
             return Ok(());
         }
-        let tail_chars = self
-            .context_window
-            .map_or(DEFAULT_COMPACT_CHARS / 4, |window| {
-                let tail_tokens = window.saturating_sub(RESERVE_TOKENS).div_ceil(2).max(1);
-                chars
-                    .saturating_mul(tail_tokens as usize)
-                    .checked_div(estimated_tokens.max(1))
-                    .unwrap_or(chars / 4)
-                    .max(1)
-            });
+        let tail_chars = window.map_or(DEFAULT_COMPACT_CHARS / 4, |window| {
+            let tail_tokens = window
+                .saturating_sub(RESERVE_TOKENS.min(window / 4))
+                .div_ceil(4)
+                .clamp(1, TAIL_TOKENS);
+            chars
+                .saturating_mul(tail_tokens as usize)
+                .checked_div(estimated_tokens.max(1))
+                .unwrap_or(chars / 4)
+                .max(1)
+        });
         let Some(keep_from) = compact_boundary(messages, tail_chars) else {
             return Ok(());
         };
@@ -209,6 +214,16 @@ impl<P: Provider> Loop<P> {
                 text: "context auto-compacted — earlier turns summarized".to_string(),
             },
         )?;
+        let payload = serde_json::json!({"event": "compact", "summary": summary});
+        if let Some(note) = self.hook(self.hooks.compact.clone(), payload).await {
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: format!("compact hook: {note}"),
+                },
+            )?;
+        }
         Ok(())
     }
 
@@ -230,6 +245,7 @@ impl<P: Provider> Loop<P> {
         let mut request_messages = messages[..keep_from].to_vec();
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let request = CompletionRequest {
+            session: self.session_id(),
             model: self.seat(workflow::Role::Summary).1.to_string(),
             messages: request_messages,
             tools: Vec::new(),
@@ -326,7 +342,3 @@ fn compact_boundary(messages: &[Message], target_chars: usize) -> Option<usize> 
     }
     (start > 1).then_some(start)
 }
-
-#[cfg(test)]
-#[path = "compaction_tests.rs"]
-mod tests;

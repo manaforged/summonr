@@ -1,4 +1,3 @@
-use sigil::prelude::*;
 use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -8,6 +7,10 @@ use super::chat::row;
 use super::input::Input;
 use super::pane::Pane;
 use super::patch::{self, Kind, SPLIT};
+use sigil::prelude::{
+    ImageSource, LayoutBuilderExt, LayoutStyle, NodeBuilder, ObjectFit, Position, Rgba8, container,
+    image,
+};
 
 #[derive(Clone)]
 struct Line {
@@ -96,8 +99,7 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
 fn picture(source: &ImageSource, width: usize, rows: usize) -> NodeBuilder {
     let (cols, tall) = super::chat::transcript::image_cells(source, width.saturating_sub(2));
     let tall = tall.min(rows.saturating_sub(3)).max(1);
-    let cols =
-        cols.min((tall * 2 * source.width() as usize / source.height().max(1) as usize).max(1));
+    let source = super::chat::transcript::paint_source(source, cols, tall);
     let cell = super::canvas::cell();
     container()
         .layout(
@@ -110,7 +112,7 @@ fn picture(source: &ImageSource, width: usize, rows: usize) -> NodeBuilder {
         )
         .child(
             image(source.clone())
-                .fit(ObjectFit::Fill)
+                .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().fill_width().fill_height()),
         )
 }
@@ -144,28 +146,46 @@ fn close_header(lines: &mut [Vec<Line>], width: usize) {
 fn ledger(app: &App) -> Vec<Line> {
     let model = app.model.borrow();
     let accent = super::chat::accent(&model.prefs.theme);
+    let done = model
+        .ledger
+        .iter()
+        .filter(|line| line.trim_start().starts_with("[x] ") || line.trim_start().starts_with("✓ "))
+        .count();
+    let total = model.ledger.len();
+    let title = if total == 0 {
+        "todos".to_string()
+    } else {
+        format!("todos · {done}/{total}")
+    };
     let mut lines = vec![
-        Line::new("ledger".to_string(), accent),
+        Line::new(title, accent),
         Line::new(String::new(), palette().text),
     ];
     if model.ledger.is_empty() {
-        lines.push(Line::new(
-            "no plan is running — /steps PLAN.md or --goal".to_string(),
-            palette().dim,
-        ));
+        lines.push(Line::new("no todos yet".to_string(), palette().dim));
         return lines;
     }
     for line in &model.ledger {
-        let color = if line.starts_with("[/]") || line.starts_with("  [/]") {
-            accent
-        } else if line.starts_with("[x]") || line.starts_with("  [x]") {
-            palette().dim
-        } else {
-            palette().text
-        };
-        lines.push(Line::new(line.clone(), color));
+        lines.push(plan_line(line, accent));
     }
     lines
+}
+
+fn plan_line(line: &str, accent: Rgba8) -> Line {
+    let indent = line.len() - line.trim_start().len();
+    let body = line.trim_start();
+    let (mark, rest, fg) = if let Some(rest) = body.strip_prefix("[x] ") {
+        ("✓ ", rest, palette().dim)
+    } else if let Some(rest) = body.strip_prefix("[/] ") {
+        ("● ", rest, accent)
+    } else if let Some(rest) = body.strip_prefix("[ ] ") {
+        ("○ ", rest, palette().text)
+    } else if let Some(rest) = body.strip_prefix("[!] ") {
+        ("! ", rest, palette().error)
+    } else {
+        return Line::new(line.to_string(), palette().dim);
+    };
+    Line::new(format!("{}{mark}{rest}", " ".repeat(indent)), fg)
 }
 
 fn files(app: &App, rows: usize) -> Vec<Line> {

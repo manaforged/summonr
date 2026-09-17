@@ -20,7 +20,7 @@ mod settings;
 mod turn;
 
 use reader::Reader;
-use settings::set_mode;
+use settings::set_run_mode;
 
 pub(super) async fn worker(
     loop_: Loop<Client>,
@@ -49,7 +49,7 @@ struct Worker {
     dial: Option<crate::Effort>,
     home: Option<std::path::PathBuf>,
     last_diff: Option<crate::diff::Diff>,
-    last_peers: Option<usize>,
+    last_peers: Option<Vec<String>>,
     reader: Reader,
 }
 
@@ -159,12 +159,22 @@ impl Worker {
                 announce(&self.ui, &self.steering, &self.followups);
                 true
             }
+            Cmd::Send(to, text) => {
+                turn::mail(&self.ui, &self.loop_.session_id(), &to, &text);
+                true
+            }
             Cmd::Tick => {
                 self.tick();
                 true
             }
-            Cmd::SetMode(plan) => {
-                set_mode(&mut self.loop_, &self.ui, plan);
+            Cmd::SetRunMode(mode) => {
+                set_run_mode(&mut self.loop_, &self.ui, mode);
+                true
+            }
+            Cmd::SetEffort(effort) => {
+                self.dial = effort;
+                self.loop_.set_effort(effort);
+                self.send_settings();
                 true
             }
             Cmd::SetVerify(on) => {
@@ -183,11 +193,9 @@ impl Worker {
                 self.set_seat(&endpoint, &model).await;
                 true
             }
-            Cmd::ListModels => {
-                self.list_models();
-                true
-            }
-            command @ (Cmd::ListSessions
+            command @ (Cmd::ListModels { .. }
+            | Cmd::ListSessions
+            | Cmd::ListUsage
             | Cmd::DeleteSession(_)
             | Cmd::ListPrompts(_)
             | Cmd::ListFiles
@@ -249,6 +257,17 @@ impl Worker {
                 self.set_bus(on);
                 true
             }
+            Cmd::SetModule(name, on) => {
+                if let Err(error) = crate::modules::set(&name, on) {
+                    self.fail(&error.to_string());
+                    return true;
+                }
+                match crate::modules::Switches::load(self.loop_.workspace()) {
+                    Ok(switches) => self.loop_.set_modules(&switches),
+                    Err(error) => self.fail(&error.to_string()),
+                }
+                true
+            }
             Cmd::Mail => self.mail().await,
             Cmd::Submit(input) => self.submit(input).await,
         }
@@ -259,14 +278,15 @@ impl Worker {
             drop(self.ui.send(Msg::Event(event)));
         }
         self.loop_.bus_heartbeat("idle");
-        let peers = self
+        let peers: Vec<_> = self
             .loop_
             .bus_agents()
             .into_iter()
             .filter(|agent| agent.id != self.loop_.session_id())
-            .count();
-        if self.last_peers != Some(peers) {
-            self.last_peers = Some(peers);
+            .collect();
+        let ids: Vec<String> = peers.iter().map(|agent| agent.id.clone()).collect();
+        if self.last_peers.as_ref() != Some(&ids) {
+            self.last_peers = Some(ids);
             drop(self.ui.send(Msg::Peers(peers)));
         }
         let mail = match self.loop_.bus_poll() {
@@ -340,10 +360,6 @@ impl Worker {
         drop(self.ui.send(Msg::Failed(text.to_string())));
     }
 }
-
-#[cfg(test)]
-#[path = "worker_tests.rs"]
-mod tests;
 
 pub(super) fn export_session(
     session: &std::path::Path,

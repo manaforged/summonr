@@ -1,7 +1,7 @@
 use super::compaction::force_compact;
 use super::*;
 use crate::ProviderFailureKind;
-use crate::durable::driver::Verdict;
+use crate::durable::driver::{TurnWork, Verdict};
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
@@ -14,12 +14,13 @@ use crate::prompt::harness_section;
 use crate::provider::StopReason;
 use crate::session::decorate;
 use crate::tools::{ToolOutput, needed_grant, readonly};
-use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
+use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, verify};
 
 const RETRY_LIMIT: usize = 6;
 const RETRY_BASE_SECS: u64 = 2;
 const RETRY_MAX_SECS: u64 = 60;
 const RETRY_AFTER_MAX_SECS: u64 = 600;
+const FALLBACK_RETRIES: usize = 2;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum GrantAnswer {
@@ -124,6 +125,8 @@ impl<P: Provider> Loop<P> {
         let role = self.round_role();
         let mut retries = 0_usize;
         let mut repairs = 0_usize;
+        let mut overflows = 0_usize;
+        let mut usage = Usage::default();
         loop {
             let request = self.completion_request(role, messages, tools);
             let prefix_hash = request.prefix_hash();
@@ -184,6 +187,20 @@ impl<P: Provider> Loop<P> {
                             return Err(error);
                         }
                         repairs += 1;
+                        for message in messages.iter_mut().rev() {
+                            if message.role == crate::provider::Role::Assistant {
+                                for call in &mut message.tool_calls {
+                                    if serde_json::from_str::<serde_json::Value>(
+                                        &call.function.arguments,
+                                    )
+                                    .is_err()
+                                    {
+                                        call.function.arguments = "{}".to_string();
+                                    }
+                                }
+                                break;
+                            }
+                        }
                         let input = UserInput::from(
                             "[summon control: the provider rejected the previous tool call because \
                              its arguments were invalid JSON. Retry that action with one valid tool \
@@ -204,9 +221,16 @@ impl<P: Provider> Loop<P> {
                     if failure
                         .is_some_and(|failure| failure.kind == ProviderFailureKind::ContextOverflow)
                     {
-                        if !force_compact(messages) {
+                        if overflows >= RETRY_LIMIT {
                             return Err(error);
                         }
+                        overflows += 1;
+                        if let Some(cap) = crate::provider::input_cap(&text) {
+                            self.set_context_window(Some(cap));
+                        }
+                        self.auto_compact(messages, tools, &mut usage, events, emit)
+                            .await?;
+                        force_compact(messages);
                         self.push_event(
                             events,
                             emit,
@@ -218,7 +242,7 @@ impl<P: Provider> Loop<P> {
                         continue;
                     }
                     let retryable = failure.is_some_and(|failure| {
-                        !failure.partial_output
+                        (!failure.partial_output || failure.kind == ProviderFailureKind::Transport)
                             && matches!(
                                 failure.kind,
                                 ProviderFailureKind::RateLimited
@@ -226,8 +250,50 @@ impl<P: Provider> Loop<P> {
                                     | ProviderFailureKind::Transport
                             )
                     });
-                    if !retryable || retries >= RETRY_LIMIT {
-                        return Err(error);
+                    if self.boosted(role)
+                        && failure.is_some_and(|failure| {
+                            failure.kind == ProviderFailureKind::Http && failure.status == Some(400)
+                        })
+                    {
+                        self.guard.reject();
+                        self.push_event(
+                            events,
+                            emit,
+                            Event::Note {
+                                text: "the endpoint rejected the raised effort; continuing at the configured effort"
+                                    .to_string(),
+                            },
+                        )?;
+                        continue;
+                    }
+                    let limit = if self.fallbacks.is_empty() || self.seats.contains_key(&role) {
+                        RETRY_LIMIT
+                    } else {
+                        FALLBACK_RETRIES
+                    };
+                    if !retryable || retries >= limit {
+                        if self.seats.contains_key(&role) {
+                            return Err(error);
+                        }
+                        let Some((provider, model)) = self.fallbacks.pop_front() else {
+                            return Err(error);
+                        };
+                        let from = std::mem::replace(&mut self.model, model);
+                        self.provider = provider;
+                        self.context_sample = None;
+                        retries = 0;
+                        self.push_event(
+                            events,
+                            emit,
+                            Event::Note {
+                                text: format!(
+                                    "{from} failed: {} — falling back to {}",
+                                    text.lines().next().unwrap_or("unknown"),
+                                    self.model
+                                ),
+                            },
+                        )?;
+                        continue;
                     }
                     let wait = failure
                         .and_then(|failure| failure.retry_after)
@@ -240,7 +306,7 @@ impl<P: Provider> Loop<P> {
                         emit,
                         Event::Note {
                             text: format!(
-                                "provider error — retrying in {wait}s ({retries}/{RETRY_LIMIT}): {}",
+                                "provider error — retrying in {wait}s ({retries}/{limit}): {}",
                                 text.lines().next().unwrap_or("unknown")
                             ),
                         },
@@ -258,6 +324,7 @@ impl<P: Provider> Loop<P> {
         tools: &[ToolDefinition],
     ) -> CompletionRequest {
         CompletionRequest {
+            session: self.session_id(),
             model: self.seat(role).1.to_string(),
             messages: messages.to_vec(),
             tools: tools.to_vec(),
@@ -348,6 +415,18 @@ impl<P: Provider> Loop<P> {
                 .map_err(super::session_err)?;
         }
         self.sync_usage(&mut emit);
+        if let Ok(Ok(turn)) = &result {
+            let payload = serde_json::json!({
+                "event": "stop",
+                "text": turn.text,
+                "aborted": turn.aborted,
+            });
+            if let Some(note) = self.hook(self.hooks.stop.clone(), payload).await {
+                emit(&Event::Note {
+                    text: format!("stop hook: {note}"),
+                });
+            }
+        }
         match result {
             Ok(result) => result,
             Err(()) => {
@@ -385,6 +464,8 @@ impl<P: Provider> Loop<P> {
         reached: &mut usize,
     ) -> Result<Turn> {
         let abort_reason;
+        self.settle_mcp(events, &mut emit).await?;
+        self.checkpoint(events, &mut emit)?;
         let tools = self.advertised_tools().to_vec();
         if std::mem::take(&mut self.accepted) {
             self.push_event(
@@ -395,6 +476,8 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
         }
+        self.plan_first(&mut messages, usage, events, &mut emit)
+            .await?;
         self.scout(&mut messages, usage, events, &mut emit).await?;
 
         loop {
@@ -403,6 +486,14 @@ impl<P: Provider> Loop<P> {
             }
             *reached = reached.saturating_add(1);
             let round = *reached;
+            if let Some(reason) = self.guard.stuck() {
+                let question = format!("{reason}. Let the turn continue?");
+                if self.approve(question, false, events, &mut emit).await? == GrantAnswer::Deny {
+                    abort_reason = Some(reason);
+                    break;
+                }
+                self.guard.forgive();
+            }
             if let Some(reason) = self.round_abort() {
                 abort_reason = Some(reason);
                 break;
@@ -509,6 +600,59 @@ impl<P: Provider> Loop<P> {
             .await
     }
 
+    async fn plan_first(
+        &mut self,
+        messages: &mut Vec<Message>,
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if self.is_plan() || !self.plan_first || !self.session.needs_turn_plan() {
+            return Ok(());
+        }
+        let objective = self.session.objective().map_err(super::session_err)?;
+        let before = usage.clone();
+        self.tools.set_read_only(true);
+        self.schema = None;
+        let drafted = plan::draft(self, &objective, usage).await;
+        self.tools.set_read_only(self.is_plan());
+        self.schema = None;
+        self.seat_usage(workflow::Role::Plan, &before, usage, events, emit)?;
+        let commands = self.verify.clone().unwrap_or_default();
+        match drafted {
+            Ok(text) => {
+                self.session
+                    .select_plan(&text, &commands)
+                    .map_err(super::session_err)?;
+                messages.push(Message::user(UserInput::from(plan::note(&text))));
+                self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: "plan written before execution".to_string(),
+                    },
+                )?;
+            }
+            Err(error) => {
+                self.session
+                    .begin_without_plan(&commands)
+                    .map_err(super::session_err)?;
+                self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: format!(
+                            "planning unavailable — executing without a written plan: {error}"
+                        ),
+                    },
+                )?;
+            }
+        }
+        let progress = self.work_progress()?;
+        self.push_event(events, emit, Event::Work { progress })?;
+        Ok(())
+    }
+
     async fn scout(
         &mut self,
         messages: &mut Vec<Message>,
@@ -516,7 +660,8 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if self.seat_model(workflow::Role::Scout).is_none() || !self.session.needs_scout(self.plan)
+        if self.seat_model(workflow::Role::Scout).is_none()
+            || !self.session.needs_scout(self.is_plan())
         {
             return Ok(());
         }
@@ -555,22 +700,47 @@ impl<P: Provider> Loop<P> {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
         let child_read_only = self.depth > 0 && self.tools.is_read_only();
-        self.tools.set_read_only(self.plan || child_read_only);
+        let read_only = self.is_plan() || child_read_only;
+        if read_only != self.tools.is_read_only() {
+            self.schema = None;
+        }
+        self.tools.set_read_only(read_only);
         self.summary_failed = false;
+        self.guard = super::guard::Guard::default();
         self.turn_started = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
-        let commands = self.verify.as_deref().unwrap_or_default();
-        if self.plan {
+        let commands = self.verify.clone().unwrap_or_default();
+        if self.is_plan() {
             self.session
                 .prepare_plan_work(&input.text)
                 .map_err(super::session_err)?;
-        } else if self
-            .session
-            .prepare_turn_work(&input.text, commands)
-            .map_err(super::session_err)?
-        {
-            self.accepted = true;
+        } else if self.is_goal() {
+            if self
+                .session
+                .goal_objective()
+                .map_err(super::session_err)?
+                .is_none()
+            {
+                self.select_goal(&input.text, &commands, 0)?;
+            }
+            match self
+                .session
+                .prepare_turn_work(&input.text, &commands, self.plan_first)
+                .map_err(super::session_err)?
+            {
+                TurnWork::Ready { accepted } => self.accepted = accepted,
+                TurnWork::NeedsPlan => {}
+            }
+        } else {
+            match self
+                .session
+                .prepare_turn_work(&input.text, &commands, self.plan_first)
+                .map_err(super::session_err)?
+            {
+                TurnWork::Ready { accepted } => self.accepted = accepted,
+                TurnWork::NeedsPlan => {}
+            }
         }
         let mut harness = self.harness_note(&self.work_progress()?);
         if self.accepted {
@@ -596,26 +766,19 @@ impl<P: Provider> Loop<P> {
     }
 
     fn harness_note(&self, progress: &WorkProgress) -> String {
-        let mut note = harness_section(self.plan, self.verify.as_deref().unwrap_or_default());
-        if self.plan {
-            note.push_str("\n\nHarness: Work remains in Plan until you select and accept it.");
-        } else if progress.kind != WorkKind::Single {
-            note.push_str("\n\nHarness: the Steps or Goal runner owns this Work.");
-        }
+        let mut note = harness_section(
+            self.mode,
+            self.verify.as_deref().unwrap_or_default(),
+            !self.denies_network(),
+            self.tools.has_sandbox(),
+        );
         if progress.kind == WorkKind::Goal {
             note.push_str(&format!(
                 "\n\nHarness objective (verbatim, this is what must be met):\n{}",
                 progress.objective
             ));
         }
-        if progress.kind == WorkKind::Goal && progress.max_turns > 0 {
-            note.push_str(&format!(
-                "\n\nHarness: goal round {} of {}.",
-                progress.rounds + 1,
-                progress.max_turns
-            ));
-        }
-        if !progress.ledger.is_empty() {
+        if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
             note.push_str(
                 "\n\nHarness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n",
             );
@@ -753,7 +916,7 @@ impl<P: Provider> Loop<P> {
                 "assistant returned neither text nor a tool call",
             ));
         }
-        if self.plan {
+        if self.is_plan() {
             let receipt = Receipt::new(Vec::new(), Vec::new(), snapshot, events);
             let context = verify::context(&receipt);
             self.session
@@ -770,6 +933,16 @@ impl<P: Provider> Loop<P> {
             let progress = self.work_progress()?;
             self.push_event(events, &mut emit, Event::Work { progress })?;
             self.push_event(events, &mut emit, Event::Receipt { receipt })?;
+            self.push_event(
+                events,
+                &mut emit,
+                Event::Note {
+                    text: format!(
+                        "plan saved to {}",
+                        crate::plan::file(&self.workspace).display()
+                    ),
+                },
+            )?;
             let text = message.content;
             self.push_event(events, &mut emit, Event::Assistant { text: text.clone() })?;
             return Ok(Turn {
@@ -784,7 +957,9 @@ impl<P: Provider> Loop<P> {
         self.session
             .finish_provider(attempt, &message.content, &reasoning, meter)
             .map_err(super::session_err)?;
-        let (text, checks, receipt) = if self.session.stage() == Some(Stage::Execute) {
+        let (text, checks, receipt) = if self.session.stage() == Some(Stage::Execute)
+            && (self.is_work() || self.is_goal())
+        {
             let (mut checks, mut running, unsettled) = self.await_jobs(events, &mut emit).await?;
             let before_children = self.spent_tokens;
             running.extend(self.await_children(events, &mut emit, usage).await?);
@@ -1049,19 +1224,65 @@ impl<P: Provider> Loop<P> {
             let Some(grant) = needed_grant(&output) else {
                 break;
             };
-            if matches!(grant, Grant::Write(_)) && self.tools.is_read_only() {
+            if self.tools.is_read_only() && !matches!(grant, Grant::Network) {
                 break;
             }
             let persist = matches!(grant, Grant::Write(_));
-            if !self.manual && persist {
+            let question = grant.prompt();
+            if self.asked.contains(&question) {
+                break;
+            }
+            if !self.manual
+                && !matches!(
+                    grant,
+                    Grant::Guarded(_) | Grant::Command(_) | Grant::Danger(_)
+                )
+            {
                 self.apply_grant(&grant, false, events, emit)?;
                 output = self.tools.execute_outcome(call).await;
                 continue;
             }
+            if let Grant::Danger(command) = &grant
+                && !self.manual
+            {
+                let reason = crate::policy::danger(command, &self.workspace)
+                    .unwrap_or("it looked destructive");
+                match self.review(command, reason).await {
+                    super::approval::Verdict::Allow => {
+                        self.push_event(
+                            events,
+                            emit,
+                            Event::Note {
+                                text: format!("reviewer allowed: {command}"),
+                            },
+                        )?;
+                        self.tools.approve_once();
+                        output = self.tools.execute_outcome(call).await;
+                        continue;
+                    }
+                    super::approval::Verdict::Block(why) => {
+                        output = Ok(blocked(command, &why));
+                        self.push_event(
+                            events,
+                            emit,
+                            Event::Note {
+                                text: format!("reviewer blocked {command}: {why}"),
+                            },
+                        )?;
+                        break;
+                    }
+                    super::approval::Verdict::Ask(why) if self.steer_shared.is_none() => {
+                        output = Ok(blocked(command, &why));
+                        break;
+                    }
+                    super::approval::Verdict::Ask(_) => {}
+                }
+            }
             if self.steer_shared.is_none() {
                 break;
             }
-            match self.approve(grant.prompt(), persist, events, emit).await? {
+            self.asked.push(question.clone());
+            match self.approve(question, persist, events, emit).await? {
                 GrantAnswer::Deny => break,
                 GrantAnswer::Allow => self.apply_grant(&grant, false, events, emit)?,
                 GrantAnswer::Always => self.apply_grant(&grant, true, events, emit)?,
@@ -1079,7 +1300,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         match grant {
-            Grant::Write(path) => {
+            Grant::Write(path) | Grant::Guarded(path) => {
                 self.allow_path(&path.to_string_lossy())?;
                 let mut text = format!("writes allowed under {} for this session", path.display());
                 if standing {
@@ -1099,6 +1320,17 @@ impl<P: Provider> Loop<P> {
                     }
                 }
                 self.push_event(events, emit, Event::Note { text })?;
+            }
+            Grant::Danger(_) => self.tools.approve_once(),
+            Grant::Command(command) => {
+                self.tools.approve_once();
+                self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: format!("running this command without the sandbox: {command}"),
+                    },
+                )?;
             }
             Grant::Network => {
                 self.set_network(true)?;
@@ -1130,6 +1362,11 @@ impl<P: Provider> Loop<P> {
                 arguments: call.function.arguments.clone(),
             };
             self.push_event(events, emit, event)?;
+        }
+        let (planned, calls) = self.screen(planned, calls, messages, events, emit).await?;
+        if calls.is_empty() {
+            self.commit(messages);
+            return Ok(());
         }
         let outputs = if calls.iter().all(|call| call.function.name == "task") {
             self.tasks_execute(&calls, events, emit)
@@ -1163,6 +1400,18 @@ impl<P: Provider> Loop<P> {
                         Ok(execution) => (Ok(execution.output), Some(execution.usage)),
                         Err(error) => (Err(error), None),
                     }
+                } else if let Some(hub) =
+                    self.mcp.clone().filter(|hub| hub.owns(&call.function.name))
+                {
+                    (
+                        hub.call(
+                            &call.function.name,
+                            &call.function.arguments,
+                            self.tools.is_read_only(),
+                        )
+                        .await,
+                        None,
+                    )
                 } else if is_bus_tool(&call.function.name) {
                     (
                         self.bus_execute(&call).map(|text| ToolOutput {
@@ -1225,7 +1474,8 @@ impl<P: Provider> Loop<P> {
                     messages,
                     events,
                     emit,
-                )?;
+                )
+                .await?;
             }
             self.commit(messages);
             return Ok(());
@@ -1236,13 +1486,14 @@ impl<P: Provider> Loop<P> {
             if let Some(child_usage) = child_usage {
                 usage.add(&child_usage);
             }
-            self.finish_call(planned, call, (output, millis), messages, events, emit)?;
+            self.finish_call(planned, call, (output, millis), messages, events, emit)
+                .await?;
         }
         self.commit(messages);
         Ok(())
     }
 
-    fn finish_call(
+    pub(super) async fn finish_call(
         &mut self,
         planned: Call,
         call: ToolCall,
@@ -1256,6 +1507,19 @@ impl<P: Provider> Loop<P> {
             Ok(output) => (output.success, output.mutated, output.text),
             Err(error) => (false, false, error.to_string()),
         };
+        let mut text =
+            self.guard
+                .observe(&call.function.name, &call.function.arguments, success, text);
+        let payload = serde_json::json!({
+            "event": "post_tool",
+            "tool": call.function.name,
+            "arguments": super::hooks::arguments(&call.function.arguments),
+            "success": success,
+            "output": text,
+        });
+        if let Some(note) = self.hook(self.hooks.post_tool.clone(), payload).await {
+            text = format!("{text}\n[post_tool hook: {note}]");
+        }
         self.session
             .finish_tools(&[(planned, text.as_str(), success, millis)])
             .map_err(super::session_err)?;
@@ -1264,9 +1528,39 @@ impl<P: Provider> Loop<P> {
             success,
             mutated,
             output: text.clone(),
+            millis: Some(millis),
         };
         self.push_event(events, emit, event)?;
         messages.push(Message::tool(call.id, text));
+        if success
+            && call.function.name == "todo"
+            && let Ok(todos) = crate::tools::todos_from_args(&call.function.arguments)
+        {
+            let items: Vec<(String, crate::durable::work::StepState)> = todos
+                .iter()
+                .map(|todo| {
+                    (
+                        todo.text.clone(),
+                        match todo.status {
+                            crate::tools::TodoStatus::Done => {
+                                crate::durable::work::StepState::Completed
+                            }
+                            crate::tools::TodoStatus::Active => {
+                                crate::durable::work::StepState::Active
+                            }
+                            crate::tools::TodoStatus::Pending => {
+                                crate::durable::work::StepState::Pending
+                            }
+                        },
+                    )
+                })
+                .collect();
+            if self.session.apply_todos(&items).is_ok()
+                && let Ok(progress) = self.work_progress()
+            {
+                self.push_event(events, emit, Event::Work { progress })?;
+            }
+        }
         Ok(())
     }
 
@@ -1509,5 +1803,16 @@ fn verify_call(command: &str) -> ToolCall {
             })
             .to_string(),
         },
+    }
+}
+
+fn blocked(command: &str, why: &str) -> ToolOutput {
+    ToolOutput {
+        text: format!(
+            "summon: blocked `{command}` {why}. Take a safer approach, or ask the user to run it."
+        ),
+        success: false,
+        mutated: false,
+        grant: None,
     }
 }

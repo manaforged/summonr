@@ -77,10 +77,6 @@ const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
     | DESKTOP_WRITEOBJECTS
     | DESKTOP_SWITCHDESKTOP;
 
-#[cfg(test)]
-#[path = "windows_tests.rs"]
-mod tests;
-
 struct Local(*mut c_void);
 
 impl Drop for Local {

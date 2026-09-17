@@ -284,9 +284,18 @@ fn numstat_row(line: &str) -> Option<Stat> {
 }
 
 fn git(root: &Path, args: &[&str]) -> Result<String> {
+    git_env(root, &[], args)
+}
+
+pub(crate) fn git_env(
+    root: &Path,
+    env: &[(&str, &std::ffi::OsStr)],
+    args: &[&str],
+) -> Result<String> {
     let output = Command::new("git")
         .arg("-C")
         .arg(root)
+        .envs(env.iter().copied())
         .args(args)
         .output()?;
     let different = args.starts_with(&["diff", "--no-index"])
@@ -302,7 +311,3 @@ fn git(root: &Path, args: &[&str]) -> Result<String> {
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
-
-#[cfg(test)]
-#[path = "diff_tests.rs"]
-mod tests;

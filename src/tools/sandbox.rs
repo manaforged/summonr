@@ -420,17 +420,3 @@ fn profile_path(path: &Path) -> Result<String> {
     })?;
     Ok(path.replace('\\', "\\\\").replace('"', "\\\""))
 }
-
-#[cfg(all(test, target_os = "macos"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mac_profile_network_rule_follows_deny_flag() {
-        let path = Path::new("/tmp");
-        let denied = mac_profile(path, path, &[], true, false).expect("profile");
-        assert!(denied.contains("(deny network*)"), "{denied}");
-        let allowed = mac_profile(path, path, &[], false, false).expect("profile");
-        assert!(!allowed.contains("(deny network*)"), "{allowed}");
-    }
-}

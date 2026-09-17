@@ -5,11 +5,13 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Stdout};
 
+use super::short;
 use crate::bus::{Bus, Mail};
+use crate::durable::store;
 use crate::error::{Error, Result};
 use crate::rpc::{self, Frame};
 
-const TICK: Duration = Duration::from_millis(500);
+pub(super) const TICK: Duration = Duration::from_millis(500);
 const WAIT_DEFAULT: u64 = 60;
 const WAIT_MAX: u64 = 300;
 const REPEAT: Duration = Duration::from_secs(5);
@@ -110,7 +112,7 @@ impl Server {
         self.push = self.client.contains("claude")
             && std::env::var_os("MAGE_ROOM_PUSH").is_none_or(|value| value != "off");
         if let Some(path) = std::env::var_os("MAGE_ROOM_LOG") {
-            drop(std::fs::write(path, params.to_string()));
+            drop(store::write(Path::new(&path), params.to_string()));
         }
         json!({
             "protocolVersion": rpc::PROTOCOL,
@@ -335,11 +337,6 @@ fn render(mail: impl Iterator<Item = Mail>) -> String {
         return "no new mail".to_string();
     }
     lines.join("\n\n")
-}
-
-fn short() -> String {
-    let seed = std::process::id() as u64 ^ crate::bus::now();
-    format!("{:04x}", seed & 0xffff)
 }
 
 fn tool(name: &str, description: &str, schema: Value) -> Value {

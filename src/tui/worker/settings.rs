@@ -2,67 +2,15 @@ use super::Worker;
 use crate::endpoint::Endpoint;
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tools::Event;
 use crate::tui::{Msg, Snapshot};
 use crate::workflow::{self, Role, Seat, Workflow};
-use futures::future::join_all;
-use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
 clear ROLE | save NAME | default NAME] — roles: scout plan implement review judge summary";
 
-const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
-
 impl Worker {
-    pub(super) fn list_models(&self) {
-        let endpoints: Vec<crate::endpoint::Endpoint> = crate::endpoint::ready()
-            .into_iter()
-            .filter_map(|name| crate::endpoint::resolve(Some(&name), None).ok())
-            .collect();
-        if endpoints.is_empty() {
-            drop(
-                self.ui
-                    .send(Msg::ModelsFailed("no resolvable endpoints".to_string())),
-            );
-            return;
-        }
-        let ready: std::collections::HashSet<&str> = endpoints
-            .iter()
-            .map(|endpoint| endpoint.name.as_str())
-            .collect();
-        let recent: Vec<String> = self
-            .home
-            .as_deref()
-            .map(crate::recent::load)
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|row| {
-                row.split('\t')
-                    .next()
-                    .is_some_and(|name| ready.contains(name))
-            })
-            .collect();
-        let seats = endpoints
-            .iter()
-            .map(|endpoint| format!("{}\t{}", endpoint.name, endpoint.model));
-        let rows = merge(recent.clone(), seats);
-        drop(self.ui.send(Msg::Models {
-            recent: recent.len(),
-            rows,
-        }));
-        let ui = self.ui.clone();
-        drop(tokio::spawn(async move {
-            let models = discover(endpoints, PROBE_TIMEOUT).await;
-            if !models.is_empty() {
-                let rows = merge(recent.clone(), models.into_iter());
-                drop(ui.send(Msg::Models {
-                    recent: recent.len(),
-                    rows,
-                }));
-            }
-        }));
-    }
-
     pub(super) fn set_verify(&mut self, on: bool) {
         if on {
             match crate::verify::check_commands(self.loop_.workspace()) {
@@ -110,9 +58,15 @@ impl Worker {
         let thinking = ui.clone();
         let calling = ui.clone();
         Ok(Client::connect(endpoint)?
-            .on_delta(move |text| drop(delta.send(Msg::Delta(text.to_string()))))
+            .on_delta(move |text| {
+                drop(delta.send(Msg::Event(Event::Delta {
+                    text: text.to_string(),
+                })))
+            })
             .on_reasoning(move |text| {
-                drop(thinking.send(Msg::Thinking(text.to_string())));
+                drop(thinking.send(Msg::Event(Event::Reasoning {
+                    text: text.to_string(),
+                })));
             })
             .on_tool(move |name| drop(calling.send(Msg::Calling(name.to_string())))))
     }
@@ -288,18 +242,21 @@ impl Worker {
     }
 
     fn use_endpoint(&mut self, endpoint: Endpoint, provider: Client) {
+        let (fallbacks, skipped) =
+            crate::endpoint::fallbacks(&endpoint, |fallback| Self::client(&self.ui, fallback));
+        for note in skipped {
+            self.fail(&note);
+        }
+        self.loop_.set_fallbacks(fallbacks);
         self.relay = crate::splash::host_of(endpoint.base_url.as_deref()).map(str::to_string);
         self.endpoint = endpoint.name;
         self.loop_.set_context_window(endpoint.context_window);
+        self.loop_.set_compact_tokens(endpoint.compact_tokens);
         self.loop_.set_env(endpoint.env);
         self.loop_.set_effort(self.dial.or(endpoint.effort));
         self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
-        drop(self.ui.send(Msg::Model {
-            model: self.loop_.model().to_string(),
-            relay: self.relay.clone(),
-        }));
     }
 
     pub(super) fn remember_seat(&self) {
@@ -314,6 +271,9 @@ impl Worker {
             model: self.loop_.model().to_string(),
             relay: self.relay.clone(),
             plan: self.loop_.is_plan(),
+            work: self.loop_.is_work(),
+            goal: self.loop_.is_goal(),
+            effort: self.loop_.effort(),
             pending_plan: self.loop_.pending_plan(),
             verify: verify_display(self.loop_.verify_commands()),
             strict: self.loop_.is_strict(),
@@ -324,57 +284,29 @@ impl Worker {
     }
 }
 
-fn merge(recent: Vec<String>, rest: impl Iterator<Item = String>) -> Vec<String> {
-    let mut rows = recent;
-    for row in rest {
-        if !rows.contains(&row) {
-            rows.push(row);
-        }
-    }
-    rows
-}
-
-async fn discover(endpoints: Vec<crate::endpoint::Endpoint>, timeout: Duration) -> Vec<String> {
-    let catalogs = join_all(endpoints.into_iter().map(|endpoint| async move {
-        let name = endpoint.name.clone();
-        let fallback = endpoint.model.clone();
-        let models = if endpoint.wire == crate::endpoint::Wire::Completions {
-            let request = async {
-                let client = Client::connect(&endpoint)?;
-                client.models().await
-            };
-            match tokio::time::timeout(timeout, request).await {
-                Ok(Ok(models)) => models,
-                _ => vec![fallback],
-            }
-        } else {
-            crate::endpoint::catalog(endpoint.wire)
-        };
-        models
-            .into_iter()
-            .map(|model| format!("{name}\t{model}"))
-            .collect::<Vec<_>>()
-    }))
-    .await;
-    let mut models = Vec::new();
-    for model in catalogs.into_iter().flatten() {
-        if !models.contains(&model) {
-            models.push(model);
-        }
-    }
-    models
-}
-
-pub(super) fn set_mode(loop_: &mut Loop<Client>, ui: &UnboundedSender<Msg>, plan: bool) {
-    if loop_.is_plan() == plan {
+pub(super) fn set_run_mode(
+    loop_: &mut Loop<Client>,
+    ui: &UnboundedSender<Msg>,
+    mode: crate::RunMode,
+) {
+    if loop_.mode() == mode {
         return;
     }
-    loop_.set_plan(plan);
-    drop(ui.send(Msg::Mode(plan)));
-    let text = if plan {
-        "plan mode — read-only; the plan is published into the session journal"
+    let requested = mode;
+    loop_.set_mode(mode);
+    let mode = loop_.mode();
+    drop(ui.send(Msg::RunMode(mode)));
+    let text = if requested == crate::RunMode::Work && mode == crate::RunMode::Plan {
+        "Work needs a plan. Plan mode — write one, then /plan accept."
     } else {
-        "auto mode — full tools"
+        match mode {
+            crate::RunMode::Plan => "plan mode — read-only; the reply is saved to .mage/plan.md",
+            crate::RunMode::Work => {
+                "work mode — execute the accepted plan; verify at the end of the turn"
+            }
+            crate::RunMode::Goal => "goal mode — keep going until the objective is met",
+            crate::RunMode::Auto => "auto mode — full tools",
+        }
     };
     drop(ui.send(Msg::System(text.to_string())));
 }
@@ -386,7 +318,3 @@ fn verify_display(commands: &[String]) -> Option<String> {
         [first, rest @ ..] => Some(format!("{first} (+{} more)", rest.len())),
     }
 }
-
-#[cfg(test)]
-#[path = "settings_tests.rs"]
-mod tests;

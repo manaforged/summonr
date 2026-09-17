@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 #[cfg(windows)]
@@ -128,14 +128,29 @@ impl ToolRegistry {
             let status = crate::jobs::status(&self.workspace, id)?;
             return Ok(ToolOutput {
                 success: status.running || status.exit_code == Some(0),
-                text: status.text,
+                text: crate::askpass::scrub(&status.text),
                 mutated: false,
                 grant: None,
             });
         }
         let command = object_string(&args, "command")?;
         let approved = self.take_approval();
-        if !approved {
+        if !approved
+            && self.policy.is_unrestricted()
+            && let Some(reason) = crate::policy::danger(command, &self.workspace)
+        {
+            return Ok(ToolOutput {
+                text: format!(
+                    "summon: not run — `{command}` needs the user's approval because {reason}"
+                ),
+                success: false,
+                mutated: false,
+                grant: Some(Grant::Danger(command.to_string())),
+            });
+        }
+        if approved {
+            self.check_policy(command)?;
+        } else {
             self.check_command(command)?;
         }
         let background = object_bool(&args, "background");
@@ -164,11 +179,14 @@ impl ToolRegistry {
                 "background commands are unavailable in child sessions".to_string(),
             ));
         }
-        let started = self.start_command(command, background, read_only, approved)?;
+        let cwd = self.command_dir(&args)?;
+        let started = self.start_command(command, background, read_only, approved, cwd)?;
         if background {
             return Ok(background_result(started));
         }
-        let timeout = object_usize(&args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
+        let timeout = object_usize(&args, "timeout_secs")
+            .and_then(|secs| u64::try_from(secs).ok())
+            .or(Some(crate::runtime::JOB_WAIT_SECS));
         self.wait_command(started, command, timeout, read_only, !approved)
             .await
     }
@@ -196,12 +214,35 @@ impl ToolRegistry {
         self.policy.command(command, &self.workspace)
     }
 
+    fn check_policy(&self, command: &str) -> Result<()> {
+        self.policy.command_policy(command)
+    }
+
+    /// The working directory for a command: the workspace, or a named
+    /// directory inside it.
+    fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {
+        let Some(dir) = args
+            .get("workdir")
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|dir| !dir.is_empty())
+        else {
+            return Ok(self.workspace.clone());
+        };
+        let path = self.resolve_read(dir)?;
+        if !path.is_dir() {
+            return Err(Error::Tool(format!("`{dir}` is not a directory")));
+        }
+        Ok(path)
+    }
+
     fn start_command(
         &self,
         command: &str,
         background: bool,
         read_only: bool,
         approved: bool,
+        cwd: PathBuf,
     ) -> Result<StartedCommand> {
         let temp = if background {
             None
@@ -211,9 +252,17 @@ impl ToolRegistry {
         let job_workspace = temp
             .as_ref()
             .map_or(self.workspace.as_path(), tempfile::TempDir::path);
-        let (id, rec_path, log_path, exit_path) = crate::jobs::prepare(job_workspace)?;
+        let (id, rec_path, log_path, exit_path) = match temp.as_ref() {
+            Some(dir) => (
+                String::new(),
+                dir.path().join("record.json"),
+                dir.path().join("output.log"),
+                dir.path().join("exit"),
+            ),
+            None => crate::jobs::prepare(job_workspace)?,
+        };
         let script = if background {
-            crate::shell::wrap(command, &exit_path, &self.workspace)
+            crate::shell::wrap(command, &exit_path, &cwd)
         } else {
             command.to_string()
         };
@@ -232,13 +281,13 @@ impl ToolRegistry {
             self.sandbox.clone()
         };
         let child = spawn_command(
-            &self.workspace,
             &self.env,
             sandbox.as_ref(),
             &script,
             &log_path,
             background,
             read_only,
+            &cwd,
         )?;
         let pid = child
             .id()
@@ -265,6 +314,31 @@ impl ToolRegistry {
         })
     }
 
+    /// Point the model at the full log when the digest dropped lines.
+    fn full_output_note(&self, log_path: &Path, raw: &str) -> String {
+        if !digest_is_lossy(raw) {
+            return String::new();
+        }
+        format!(
+            "\n[full output: {} — {} lines]",
+            log_path.display(),
+            raw.lines().count()
+        )
+    }
+
+    /// Keep the log's directory alive for the session when the digest dropped
+    /// lines, so the model can read the path the note names.
+    fn keep_log(&self, temp: Option<tempfile::TempDir>, raw: &str) {
+        if !digest_is_lossy(raw) {
+            return;
+        }
+        if let Some(temp) = temp
+            && let Ok(mut logs) = self.logs.lock()
+        {
+            logs.push(temp);
+        }
+    }
+
     async fn wait_command(
         &self,
         started: StartedCommand,
@@ -279,7 +353,7 @@ impl ToolRegistry {
             log_path,
             exit_path,
             mut child,
-            temp: _temp,
+            temp,
         } = started;
         let mut group = ProcessGroup::new(pid, contained);
         let started = std::time::Instant::now();
@@ -304,17 +378,21 @@ impl ToolRegistry {
                 group.disarm();
                 let code = status.code().unwrap_or(-1);
                 crate::jobs::write_exit(&exit_path, code)?;
-                let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
+                crate::askpass::scrub_file(&log_path);
+                let raw = crate::askpass::scrub(&crate::jobs::preview(&log_path, LOG_READ_BYTES)?);
                 let grant = (code != 0)
                     .then(|| sandbox_grant(self, command, &raw))
                     .flatten();
+                let full = self.full_output_note(&log_path, &raw);
                 let output = format!(
-                    "exit {code}\n{}{}{}{}",
+                    "exit {code}\n{}{}{}{}{}",
                     super::digest(command, &raw),
+                    full,
                     slow_search_note(command, started.elapsed().as_secs()),
                     plan_write_note(read_only, &raw),
                     sandbox_note(grant.as_ref(), self, &raw)
                 );
+                self.keep_log(temp, &raw);
                 Ok(ToolOutput {
                     text: output,
                     success: code == 0,
@@ -332,7 +410,9 @@ impl ToolRegistry {
                     .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
                 group.disarm();
                 crate::jobs::write_exit(&exit_path, status.code().unwrap_or(-1))?;
-                let raw = crate::jobs::preview(&log_path, LOG_READ_BYTES)?;
+                crate::askpass::scrub_file(&log_path);
+                let raw = crate::askpass::scrub(&crate::jobs::preview(&log_path, LOG_READ_BYTES)?);
+                let full = self.full_output_note(&log_path, &raw);
                 let timeout = timeout.map_or_else(
                     || "command timed out".to_string(),
                     |seconds| format!("command timed out after {seconds}s"),
@@ -342,8 +422,13 @@ impl ToolRegistry {
                 } else {
                     "the command may have changed workspace files before timeout"
                 };
+                self.keep_log(temp, &raw);
                 Ok(ToolOutput {
-                    text: format!("{timeout}\n{warning}\n{}", super::digest(command, &raw)),
+                    text: format!(
+                        "{timeout}\n{warning}\n{}{}",
+                        super::digest(command, &raw),
+                        full
+                    ),
                     success: false,
                     mutated: !read_only,
                     grant: None,
@@ -364,6 +449,7 @@ fn plan_write_note(read_only: bool, raw: &str) -> String {
 
 fn sandbox_grant(registry: &ToolRegistry, command: &str, raw: &str) -> Option<Grant> {
     let eperm = raw.contains("Operation not permitted") || raw.contains("Permission denied");
+    let sandbox_denied = raw.contains("Operation not permitted");
     if eperm
         && let Some(grant) = crate::policy::outside_write(
             command,
@@ -378,6 +464,9 @@ fn sandbox_grant(registry: &ToolRegistry, command: &str, raw: &str) -> Option<Gr
     }
     if registry.denies_network() && (network_text(raw) || (eperm && network_verb(command))) {
         return Some(Grant::Network);
+    }
+    if sandbox_denied {
+        return Some(Grant::Command(command.to_string()));
     }
     None
 }
@@ -421,10 +510,15 @@ fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: &str) -> St
             "\nnote: network is off in the sandbox. /net on for this session or /net once, then retry.\n"
                 .to_string()
         }
-        Some(Grant::Write(path)) => format!(
+        Some(Grant::Write(path) | Grant::Guarded(path)) => format!(
             "\nnote: {}\n",
             crate::policy::write_denied(&path.display().to_string())
         ),
+        Some(Grant::Command(_)) => {
+            "\nnote: the OS sandbox denied this command. Approving runs it without the sandbox.\n"
+                .to_string()
+        }
+        Some(Grant::Danger(_)) => String::new(),
         None if registry.has_sandbox()
             && (raw.contains("Operation not permitted") || raw.contains("Permission denied")) =>
         {
@@ -455,13 +549,13 @@ fn slow_search_note(command: &str, secs: u64) -> String {
 }
 
 fn spawn_command(
-    workspace: &std::path::Path,
     env: &[(String, String)],
     sandbox: Option<&Sandbox>,
     script: &str,
     log_path: &std::path::Path,
     background: bool,
     read_only: bool,
+    cwd: &std::path::Path,
 ) -> Result<CommandChild> {
     let log = std::fs::File::create(log_path)
         .map_err(|error| Error::Tool(format!("cannot create job log: {error}")))?;
@@ -469,21 +563,22 @@ fn spawn_command(
         .try_clone()
         .map_err(|error| Error::Tool(format!("cannot clone job log: {error}")))?;
     let shell = crate::shell::program()?;
-    let args = crate::shell::arguments(script, workspace);
+    let args = crate::shell::arguments(script, cwd);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut cmd = if let Some(sandbox) = sandbox {
         if read_only {
-            sandbox.read_command(&shell, &args, workspace)
+            sandbox.read_command(&shell, &args, cwd)
         } else {
-            sandbox.command(&shell, &args, workspace)
+            sandbox.command(&shell, &args, cwd)
         }
     } else {
         let mut cmd = Command::new(&shell);
-        cmd.args(&args).current_dir(workspace);
+        cmd.args(&args).current_dir(cwd);
         cmd
     };
     cmd.env_clear()
         .envs(command_env())
+        .envs(crate::askpass::env())
         .envs(env.iter().cloned())
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(err))
@@ -536,6 +631,10 @@ fn background_result(started: StartedCommand) -> ToolOutput {
         mutated: false,
         grant: None,
     }
+}
+
+pub(super) fn digest_is_lossy(raw: &str) -> bool {
+    raw.lines().count() > TAIL_LINES
 }
 
 pub(super) fn digest(command: &str, raw: &str) -> String {

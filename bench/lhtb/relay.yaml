@@ -1,0 +1,6 @@
+services:
+  bench-relay:
+    image: gogost/gost@sha256:afc0137758ab4ce399d47a299f9abbacbf522b52a17e59cbb4b4e7a1a66e9196
+    command: ["-L", "tcp://:8094/172.17.0.1:8094"]
+    restart: "no"
+    networks: [default]

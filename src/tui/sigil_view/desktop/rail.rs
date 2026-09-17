@@ -1,4 +1,7 @@
-use sigil::prelude::*;
+use sigil::prelude::{
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, PathNode, Role, classes,
+    container, label,
+};
 
 use super::super::app::App;
 use super::super::pane::Pane;
@@ -124,7 +127,7 @@ fn status_dot(live: bool) -> NodeBuilder {
 }
 
 fn seat(app: &App) -> NodeBuilder {
-    let model = app.model.borrow().model.clone();
+    let model = app.model.borrow().snapshot.model.clone();
     container()
         .layout(
             LayoutStyle::flex_row()

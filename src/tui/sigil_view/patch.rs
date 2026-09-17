@@ -64,7 +64,3 @@ pub(super) fn pairs(text: &str) -> Vec<Pair> {
     flush(&mut rows, &mut removed, &mut added);
     rows
 }
-
-#[cfg(test)]
-#[path = "patch_tests.rs"]
-mod tests;

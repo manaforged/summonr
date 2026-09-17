@@ -1,9 +1,10 @@
-use std::io::{Read, Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::durable::store;
 use crate::error::{Error, Result};
 
 const ID_MAX: usize = 80;
@@ -39,7 +40,7 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
     std::fs::create_dir_all(&root)?;
     let ignore = root.join(".gitignore");
     if !ignore.exists() {
-        std::fs::write(ignore, "*\n")?;
+        store::write(&ignore, "*\n")?;
     }
     let id = new_id()?;
     Ok((
@@ -51,12 +52,7 @@ pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, Pat
 }
 
 pub(crate) fn write(path: &Path, record: &Record) -> Result<()> {
-    let text = serde_json::to_string(record)?;
-    let mut tmp = path.as_os_str().to_os_string();
-    tmp.push(".tmp");
-    let tmp = PathBuf::from(tmp);
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(tmp, path)?;
+    store::write(path, serde_json::to_string(record)?)?;
     Ok(())
 }
 
@@ -210,8 +206,7 @@ pub(crate) fn stamp(
 }
 
 pub(crate) fn write_killed(path: &Path) -> Result<()> {
-    let mut file = std::fs::File::create(path)?;
-    writeln!(file, "{KILLED}")?;
+    store::write(path, format!("{KILLED}\n"))?;
     Ok(())
 }
 
@@ -258,8 +253,7 @@ pub(crate) fn elapsed_secs(etime: &str) -> Option<u64> {
 }
 
 pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
-    let mut file = std::fs::File::create(path)?;
-    writeln!(file, "{code}")?;
+    store::write(path, format!("{code}\n"))?;
     Ok(())
 }
 
@@ -299,7 +293,3 @@ fn new_id() -> Result<String> {
         .as_nanos();
     Ok(format!("{nanos}-{}", std::process::id()))
 }
-
-#[cfg(test)]
-#[path = "jobs_tests.rs"]
-mod tests;

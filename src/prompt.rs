@@ -31,42 +31,64 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
     {
         return prompt;
     }
-    let mut parts = Vec::new();
+    let mut preamble = Vec::new();
     if let Some(home) = home {
-        push_file(&mut parts, &home.join("SYSTEM.md"));
+        push_file(&mut preamble, &home.join("SYSTEM.md"));
     }
-    push_file(&mut parts, &workspace.join("SYSTEM.md"));
+    push_file(&mut preamble, &workspace.join("SYSTEM.md"));
+    let mut parts = if preamble.is_empty() {
+        vec![DEFAULT.to_string()]
+    } else {
+        preamble
+    };
     if trust {
-        push_file(&mut parts, &workspace.join("AGENTS.md"));
-    }
-    if parts.is_empty() {
-        parts.push(default_prompt());
+        let mut context = Vec::new();
+        push_file(&mut context, &workspace.join("AGENTS.md"));
+        if let Some(text) = context.pop() {
+            parts.push(format!(
+                "<project_context path=\"AGENTS.md\">\n{}\n</project_context>",
+                text.trim()
+            ));
+        }
     }
     if skills && let Some(catalog) = crate::skills::catalog(workspace) {
-        parts.push(catalog);
+        parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
+    parts.push(format!("<cwd>{}</cwd>", workspace.display()));
     parts.join("\n\n")
 }
 
 #[must_use]
-pub fn harness_section(plan: bool, checks: &[String]) -> String {
-    let mut parts = vec![if plan {
-        "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer."
-            .to_string()
-    } else {
-        "Harness state: auto mode. Inspect unless they asked for a change, then implement it."
-            .to_string()
-    }];
+pub fn harness_section(
+    mode: crate::RunMode,
+    checks: &[String],
+    network: bool,
+    sandboxed: bool,
+) -> String {
+    let mut parts = vec![
+        match mode {
+            crate::RunMode::Plan => "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer.",
+            crate::RunMode::Work => "Harness state: work mode. Execute the accepted plan. Keep the itemized list.",
+            crate::RunMode::Goal => "Harness state: goal mode. Keep going until the objective is met. A failed check continues the loop.",
+            crate::RunMode::Auto => "Harness state: auto mode.",
+        }
+        .to_string(),
+    ];
+    let auto = mode == crate::RunMode::Auto;
+    if sandboxed {
+        parts.push(if network {
+            "Shell commands run in the OS sandbox with network allowed. Writes stay under the workspace and [sandbox] write roots."
+        } else {
+            "Shell commands run in the OS sandbox with network denied. Writes stay under the workspace and [sandbox] write roots."
+        }
+        .to_string());
+    }
+    #[cfg(windows)]
     parts.push(
-        "Search with read (pattern). A shell grep -r or find from the repository root walks target/ and node_modules/."
+        "Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs."
             .to_string(),
     );
-    parts.push("Shell commands run in the OS sandbox with network denied. Writes are allowed under the workspace and [sandbox] write roots. Auto mode grants a write outside those roots for this session and retries. /approve on asks first. Standing roots: [sandbox] write in ~/.mage/config.toml. Network: /net on or /net once.".to_string());
-    #[cfg(windows)]
-    parts.push("Shell commands use Windows PowerShell. Use PowerShell syntax and native Windows programs. The sandbox uses a PowerShell drive rooted at the workspace. Use relative paths, or $PWD.ProviderPath when a native program needs the filesystem path. Git Bash and other MSYS programs cannot run inside the Windows sandbox.".to_string());
-    if checks.is_empty() {
-        parts.push("Harness: no completion check is configured.".to_string());
-    } else {
+    if !checks.is_empty() {
         let list = checks
             .iter()
             .map(|check| format!("`{check}`"))
@@ -75,6 +97,15 @@ pub fn harness_section(plan: bool, checks: &[String]) -> String {
         parts.push(format!(
             "Harness: before Work can complete, Summonr runs {list} as the completion check."
         ));
+    }
+    if matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
+        parts.push(
+            "Spawn a child only for disjoint paths. The parent runs the completion check."
+                .to_string(),
+        );
+    }
+    if auto && parts.len() == 1 {
+        return String::new();
     }
     parts.join("\n\n")
 }
@@ -87,7 +118,19 @@ fn push_file(parts: &mut Vec<String>, path: &Path) {
     }
 }
 
-fn default_prompt() -> String {
-    "Complete the user's task in the current workspace. Inspect and report unless they asked for a change."
-        .to_string()
-}
+const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You help the user by reading files, running commands, editing code, and writing new files.
+
+<tools>
+- read: read a file, list a directory, or search file contents
+- run_command: run a shell command in the workspace
+- edit: change lines in an existing file using the tags that read returns
+- write: create or replace a file
+Other tools may be available depending on configuration.
+</tools>
+
+<rules>
+- Use run_command for ls, rg, find, builds, and tests
+- Make the smallest change that does the job: reuse existing code, and add no new layers, abstractions, config, or dependencies the task does not need
+- Be concise in your responses
+- Show file paths clearly when working with files
+</rules>";

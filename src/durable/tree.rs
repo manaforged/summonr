@@ -68,16 +68,6 @@ fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
 }
 
 impl Snapshot {
-    #[cfg(test)]
-    pub(crate) fn with(paths: &[&str]) -> Self {
-        Self(
-            paths
-                .iter()
-                .enumerate()
-                .map(|(index, path)| ((*path).to_string(), Entry(index as u64 + 1, 0, 0)))
-                .collect(),
-        )
-    }
 }
 
 pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {

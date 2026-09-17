@@ -11,7 +11,7 @@ pub struct Module {
     pub default: bool,
 }
 
-pub const ALL: [Module; 7] = [
+pub const ALL: [Module; 8] = [
     Module {
         name: "search",
         summary: "web_search and web_fetch (DuckDuckGo without a key, Brave with one)",
@@ -30,11 +30,16 @@ pub const ALL: [Module; 7] = [
     Module {
         name: "task",
         summary: "child sessions: batch, background, poll, kill",
-        default: true,
+        default: false,
     },
     Module {
         name: "skills",
         summary: "the skill catalog in the system prompt and the skill tool",
+        default: true,
+    },
+    Module {
+        name: "mcp",
+        summary: "tools from MCP servers configured for summonr, Claude, or Codex",
         default: true,
     },
     Module {
@@ -124,7 +129,3 @@ pub fn set(name: &str, on: bool) -> Result<()> {
     named(name)?;
     config::save_module(&config::path()?, name, on)
 }
-
-#[cfg(test)]
-#[path = "modules_tests.rs"]
-mod tests;

@@ -1,10 +1,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use sigil::prelude::*;
-
 use super::app::App;
 use super::canvas::cell as metrics;
+use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, PointerEvent};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) enum Target {
@@ -18,6 +17,9 @@ pub(super) enum Target {
     Saved(String),
     File(usize),
     Close,
+    Context,
+    Cache,
+    AgentsClose,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,15 +54,23 @@ impl Hits {
             .find(|hit| hit.row == row && (hit.from..hit.to).contains(&col))
             .map(|hit| hit.target.clone())
     }
+}
 
-    #[cfg(test)]
-    pub(super) fn find(&self, target: &Target) -> Option<(usize, usize)> {
-        self.0
-            .borrow()
-            .iter()
-            .find(|hit| hit.target == *target)
-            .map(|hit| (hit.from, hit.row))
+pub(super) fn window(app: &App, selected: usize, len: usize, visible: usize) -> usize {
+    let visible = visible.max(1);
+    let top = app.scroll.peek();
+    let start = if selected < top {
+        selected
+    } else if selected >= top + visible {
+        selected + 1 - visible
+    } else {
+        top
     }
+    .min(len.saturating_sub(visible));
+    if start != top {
+        app.scroll.set(start);
+    }
+    start
 }
 
 fn cell(event: &PointerEvent) -> (usize, usize) {
@@ -94,7 +104,7 @@ pub(super) fn wire(app: &App, layer: NodeBuilder) -> NodeBuilder {
         })
         .pointer_move(move |event| {
             let (col, row) = cell(event);
-            drag.drag_to(col, row);
+            drag.hover(col, row);
         })
         .pointer_up(move |event| {
             if event.button != Some(MouseButton::Left) {

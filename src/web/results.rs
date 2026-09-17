@@ -66,6 +66,37 @@ pub(super) fn parse_brave(json: &str) -> crate::error::Result<Vec<Hit>> {
         .collect())
 }
 
+pub(super) fn parse_searxng(json: &str) -> crate::error::Result<Vec<Hit>> {
+    let value: serde_json::Value = serde_json::from_str(json).map_err(|error| {
+        crate::error::Error::Tool(format!(
+            "web_search returned an unexpected response (enable JSON on the SearXNG instance): {error}"
+        ))
+    })?;
+    let results = value
+        .get("results")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Ok(results
+        .iter()
+        .filter_map(|item| {
+            let text = |key: &str| {
+                item.get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            };
+            let url = text("url");
+            (!url.is_empty()).then(|| Hit {
+                title: text("title"),
+                url,
+                snippet: clip(&text("content"), 240),
+            })
+        })
+        .collect())
+}
+
 pub(super) fn parse_duckduckgo(html: &str) -> Vec<Hit> {
     let mut hits = Vec::new();
     let mut from = 0;

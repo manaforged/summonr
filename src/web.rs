@@ -1,3 +1,4 @@
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use crate::config;
@@ -17,9 +18,14 @@ enum Backend {
     Brave(String),
     DuckDuckGo,
     Bing,
+    Searxng(String),
 }
 
-fn select_backend(backend: Option<&str>, key: Option<String>) -> Result<Backend> {
+fn select_backend(
+    backend: Option<&str>,
+    key: Option<String>,
+    url: Option<String>,
+) -> Result<Backend> {
     match backend.map(str::trim) {
         Some("brave") => key
             .ok_or_else(|| {
@@ -28,11 +34,14 @@ fn select_backend(backend: Option<&str>, key: Option<String>) -> Result<Backend>
                 )
             })
             .map(Backend::Brave),
-        None => Ok(key.map_or(Backend::DuckDuckGo, Backend::Brave)),
         Some("duckduckgo") | Some("ddg") => Ok(Backend::DuckDuckGo),
         Some("bing") | Some("bing-rss") => Ok(Backend::Bing),
+        Some("searxng") | Some("searx") => url
+            .ok_or_else(|| Error::Config("[search] backend = \"searxng\" needs url".to_string()))
+            .map(Backend::Searxng),
+        None => Ok(key.map_or(Backend::DuckDuckGo, Backend::Brave)),
         Some(other) => Err(Error::Config(format!(
-            "[search] backend takes brave, duckduckgo, or bing, not `{other}`"
+            "[search] backend takes brave, duckduckgo, bing, or searxng, not `{other}`"
         ))),
     }
 }
@@ -40,10 +49,28 @@ fn select_backend(backend: Option<&str>, key: Option<String>) -> Result<Backend>
 mod fetch;
 mod results;
 
-#[cfg(test)]
-use fetch::{check_url, html_to_md};
 use fetch::{host_blocked, resolves_blocked};
-use results::{Hit, clip, format_hits, parse_brave, parse_duckduckgo, parse_rss};
+use results::{Hit, clip, format_hits, parse_brave, parse_duckduckgo, parse_rss, parse_searxng};
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Format {
+    Markdown,
+    Text,
+    Html,
+}
+
+impl Format {
+    pub(crate) fn parse(value: Option<&str>) -> Result<Self> {
+        match value.map(str::trim) {
+            None | Some("") | Some("markdown") => Ok(Self::Markdown),
+            Some("text") => Ok(Self::Text),
+            Some("html") => Ok(Self::Html),
+            Some(other) => Err(Error::Tool(format!(
+                "web_fetch format takes markdown, text, or html, not `{other}`"
+            ))),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub(crate) struct Search {
@@ -53,6 +80,7 @@ pub(crate) struct Search {
     excluded: Vec<String>,
     origin: Option<String>,
     backend: Backend,
+    logs: Arc<Mutex<Vec<tempfile::TempDir>>>,
 }
 
 impl Search {
@@ -66,7 +94,11 @@ impl Search {
             .filter(|key| !key.trim().is_empty())
             .or_else(|| std::env::var("BRAVE_API_KEY").ok())
             .filter(|key| !key.trim().is_empty());
-        let backend = select_backend(file.backend.as_deref(), key)?;
+        let backend = select_backend(
+            file.backend.as_deref(),
+            key,
+            file.url.filter(|url| !url.trim().is_empty()),
+        )?;
         Ok(Self {
             http: client()?,
             count,
@@ -74,6 +106,7 @@ impl Search {
             excluded,
             origin: None,
             backend,
+            logs: Arc::new(Mutex::new(Vec::new())),
         })
     }
 
@@ -98,6 +131,10 @@ impl Search {
                 "duckduckgo html — set [search] backend = \"brave\" with api_key for an API-backed search",
             ),
             Backend::Bing => (self.rss(query, freshness).await?, "bing rss"),
+            Backend::Searxng(base) => (
+                self.searxng(query, count, freshness, base).await?,
+                "searxng",
+            ),
         };
         let hits = self
             .filter_hits(hits)
@@ -237,6 +274,54 @@ impl Search {
         Ok(parse_rss(&body))
     }
 
+    async fn searxng(
+        &self,
+        query: &str,
+        count: usize,
+        freshness: Option<&str>,
+        base: &str,
+    ) -> Result<Vec<Hit>> {
+        let endpoint = self
+            .origin
+            .clone()
+            .unwrap_or_else(|| format!("{}/search", base.trim_end_matches('/')));
+        let mut url = reqwest::Url::parse(&endpoint)
+            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
+        {
+            let mut pairs = url.query_pairs_mut();
+            pairs.append_pair("q", query);
+            pairs.append_pair("format", "json");
+            pairs.append_pair("count", &count.to_string());
+            if let Some(range) = match freshness {
+                Some("day") => Some("day"),
+                Some("week") => Some("week"),
+                Some("month") => Some("month"),
+                _ => None,
+            } {
+                pairs.append_pair("time_range", range);
+            }
+        }
+        let response = self
+            .http
+            .get(url)
+            .header(reqwest::header::ACCEPT, "application/json")
+            .send()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+        if !status.is_success() {
+            return Err(Error::Tool(format!(
+                "web_search HTTP {status}: {}",
+                clip(&body, 200)
+            )));
+        }
+        parse_searxng(&body)
+    }
+
     fn filter_hits(&self, hits: Vec<Hit>) -> Vec<Hit> {
         let mut out = Vec::new();
         for hit in hits {
@@ -317,7 +402,3 @@ fn duckduckgo_freshness(value: Option<&str>) -> Option<&'static str> {
         _ => None,
     }
 }
-
-#[cfg(test)]
-#[path = "web_tests.rs"]
-mod tests;

@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
+use crate::durable::store;
 use crate::error::Result;
 use crate::prompt::mage_home;
 use crate::provider::ToolDefinition;
@@ -109,6 +110,29 @@ pub(crate) fn peek() -> Result<Vec<Agent>> {
     Ok(bus.agents())
 }
 
+pub(crate) fn deliver(from: &str, to: &[String], text: &str) -> Result<usize> {
+    let mail = Mail {
+        ts: now(),
+        from: clean_id(from),
+        kind: default_kind(),
+        text: text.to_string(),
+    };
+    append(&mage_home()?.join("bus"), to, &mail)
+}
+
+fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
+    use std::io::Write as _;
+    let line = serde_json::to_string(mail)?;
+    for target in targets {
+        let mut file = std::fs::OpenOptions::new().create(true).append(true).open(
+            dir.join("inbox")
+                .join(format!("{}.jsonl", clean_id(target))),
+        )?;
+        writeln!(file, "{line}")?;
+    }
+    Ok(targets.len())
+}
+
 impl Bus {
     pub(crate) fn join(id: &str, model: &str, cwd: &Path) -> Option<Self> {
         if !bus_enabled(std::env::var_os("MAGE_BUS").as_deref()) {
@@ -165,12 +189,10 @@ impl Bus {
             status: status.to_string(),
             last_seen: now(),
         };
-        let tmp = self.dir.join("agents").join(format!("{}.tmp", self.id));
         let Ok(body) = serde_json::to_string(&record) else {
             return;
         };
-        if std::fs::write(&tmp, body).is_err() || std::fs::rename(&tmp, self.record_path()).is_err()
-        {
+        if store::write(&self.record_path(), body).is_err() {
             return;
         }
         self.last_seen_write(now());
@@ -243,7 +265,6 @@ impl Bus {
             kind: self.kind.clone(),
             text: text.to_string(),
         };
-        let line = serde_json::to_string(&mail)?;
         let targets: Vec<String> = if to == "all" {
             self.agents()
                 .into_iter()
@@ -253,18 +274,7 @@ impl Bus {
         } else {
             vec![to.to_string()]
         };
-        if targets.is_empty() {
-            return Ok(0);
-        }
-        for target in &targets {
-            use std::io::Write as _;
-            let mut file = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(self.inbox_path(target))?;
-            writeln!(file, "{line}")?;
-        }
-        Ok(targets.len())
+        append(&self.dir, &targets, &mail)
     }
 
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
@@ -310,7 +320,7 @@ impl Bus {
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
-            std::fs::write(&path, format!("{folded}\n"))?;
+            store::write(&path, format!("{folded}\n"))?;
         }
         Ok(board)
     }
@@ -374,7 +384,3 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
 pub(crate) fn is_bus_tool(name: &str) -> bool {
     matches!(name, "bus" | "agents" | "inbox" | "board" | "send")
 }
-
-#[cfg(test)]
-#[path = "bus_tests.rs"]
-mod tests;

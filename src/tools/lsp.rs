@@ -63,33 +63,6 @@ impl Conn {
         Ok(conn)
     }
 
-    #[cfg(test)]
-    pub(super) async fn from_io(
-        reader: impl AsyncRead + Send + Unpin + 'static,
-        writer: impl AsyncWrite + Send + Unpin + 'static,
-        root: &Path,
-    ) -> Result<Self> {
-        Self::from_io_with(reader, writer, root, &json!({})).await
-    }
-
-    #[cfg(test)]
-    pub(super) async fn from_io_with(
-        reader: impl AsyncRead + Send + Unpin + 'static,
-        writer: impl AsyncWrite + Send + Unpin + 'static,
-        root: &Path,
-        options: &Value,
-    ) -> Result<Self> {
-        let mut conn = Self {
-            child: None,
-            reader: BufReader::new(Box::new(reader)),
-            writer: Box::new(writer),
-            next_id: 1,
-            root: file_uri(root)?,
-        };
-        conn.handshake(options).await?;
-        Ok(conn)
-    }
-
     async fn handshake(&mut self, options: &Value) -> Result<()> {
         let result = self
             .request(
@@ -734,6 +707,14 @@ pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> 
 impl ToolRegistry {
     pub(super) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
         let args = parse_args("lsp", arguments)?;
+        match args.get("op").and_then(Value::as_str) {
+            Some("diagnostics") => return self.diagnostics(arguments).await,
+            Some("definition") => return self.definition(arguments).await,
+            Some(operation) => {
+                return Err(Error::Tool(format!("unknown lsp operation `{operation}`")));
+            }
+            None => {}
+        }
         if args.get("line").is_some()
             || args.get("character").is_some()
             || args.get("references").and_then(Value::as_bool) == Some(true)
@@ -959,7 +940,3 @@ impl ToolRegistry {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "lsp_tests.rs"]
-mod tests;

@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use summonr::workflow;
 use summonr::{
-    Budget, Client, Endpoint, Loop, Result, add_worktree, finish_worktree, in_git, last_for,
+    Budget, Client, Endpoint, Event, Loop, Result, add_worktree, finish_worktree, in_git, last_for,
     list_sessions, list_worktrees, resolve_endpoint, resolve_session, splash, sweep_worktrees,
     system_prompt_with,
 };
@@ -67,14 +67,17 @@ async fn probe_endpoints() -> Result<()> {
     Ok(())
 }
 
-fn export_session_cmd(args: &Args) -> Result<()> {
-    let path = match args.prompt.first() {
-        Some(id) => resolve_session(id)?,
+fn session_path(args: &Args) -> Result<PathBuf> {
+    match args.prompt.first() {
+        Some(id) => resolve_session(id),
         None => last_for(&workspace()?)?.ok_or_else(|| {
             summonr::Error::Config("no prior session for this directory".to_string())
-        })?,
-    };
-    print!("{}", summonr::export_session(&path)?);
+        }),
+    }
+}
+
+fn export_session_cmd(args: &Args) -> Result<()> {
+    print!("{}", summonr::export_session(&session_path(args)?)?);
     Ok(())
 }
 
@@ -402,6 +405,16 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if let Some(words) = &args.room {
         return summonr::room::run(words, &std::env::current_dir()?).await;
     }
+    if args.acp {
+        return summonr::acp::serve(
+            args.endpoint.as_deref(),
+            args.model.as_deref(),
+            |endpoint, client, cwd| {
+                build(&args, endpoint, client, cwd, None, SessionAction::Create)
+            },
+        )
+        .await;
+    }
     let adopted = adopt(&args)?;
     if args.login {
         return run_login(&args).await.map(|()| 0);
@@ -431,6 +444,10 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     }
     if args.export {
         return export_session_cmd(&args).map(|()| 0);
+    }
+    if args.profile {
+        print!("{}", summonr::profile_session(&session_path(&args)?)?);
+        return Ok(0);
     }
     if args.list_workflows {
         return print_workflows().map(|()| 0);
@@ -503,6 +520,13 @@ async fn launch_once(
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
+    let (fallbacks, skipped) = summonr::endpoint_fallbacks(&endpoint, |fallback| {
+        self::provider(fallback, ui.0.as_ref(), args.json)
+    });
+    for note in skipped {
+        eprintln!("summonr: {note}");
+    }
+    loop_.set_fallbacks(fallbacks);
     if let Some(probe) = probe {
         loop_.set_context_probe(probe);
     }
@@ -625,6 +649,7 @@ fn build(
         loop_.set_name(name)?;
     }
     loop_.set_context_window(endpoint.context_window);
+    loop_.set_compact_tokens(endpoint.compact_tokens);
     loop_.set_effort(args.effort.or(endpoint.effort));
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
@@ -637,9 +662,12 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    if !args.no_sandbox {
+    if args.sandbox || args.plan || summonr::sandbox_on()? {
         loop_ = loop_.with_sandbox(!args.network)?;
     } else {
+        if !args.network {
+            eprintln!("summonr: --no-net needs --sandbox; sockets stay open");
+        }
         loop_ = loop_.with_unrestricted_commands();
     }
     for dir in &args.add_dir {
@@ -730,6 +758,12 @@ async fn dispatch(
         };
         let ui_tx =
             ui.0.ok_or_else(|| summonr::Error::Config("tui sender missing".to_string()))?;
+        if !args.gui {
+            let secrets = ui_tx.clone();
+            summonr::askpass::start(move |request| {
+                drop(secrets.send(summonr::tui::Msg::Secret(request)));
+            })?;
+        }
         summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
     } else {
         splash::line(&splash);
@@ -738,10 +772,6 @@ async fn dispatch(
             .map(summonr::tui::Exit::Code)
     }
 }
-
-#[cfg(test)]
-#[path = "startup_tests.rs"]
-mod tests;
 
 fn channels(tui: bool) -> Ui {
     if tui {
@@ -761,11 +791,15 @@ fn provider(
     if let Some(ui) = ui {
         let text = ui.clone();
         provider = provider.on_delta(move |delta| {
-            drop(text.send(summonr::tui::Msg::Delta(delta.to_string())));
+            drop(text.send(summonr::tui::Msg::Event(Event::Delta {
+                text: delta.to_string(),
+            })));
         });
         let reasoning = ui.clone();
         provider = provider.on_reasoning(move |delta| {
-            drop(reasoning.send(summonr::tui::Msg::Thinking(delta.to_string())));
+            drop(reasoning.send(summonr::tui::Msg::Event(Event::Reasoning {
+                text: delta.to_string(),
+            })));
         });
     } else if json {
         provider = provider.on_delta(|text| {

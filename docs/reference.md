@@ -56,14 +56,17 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `muse`,
-`zen`, `go`, `opencode`; native wires `anthropic` (Messages) and
-`gemini`. `summonr login copilot` is GitHub device login;
+`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
+`groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`; native
+wires `anthropic` (Messages) and `gemini`. `together`, `groq`, `cerebras`,
+and `mistral` carry no default model: pass `--model`. `summonr login
+copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
 key (`KIMI_CODING_API_KEY`, `KIMI_API_KEY`, or `MOONSHOT_API_KEY`) or a
 token in `~/.kimi-code/credentials/kimi-code.json`. Environment keys are the host's own
 (`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
-`META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
+`TOGETHER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`,
+`MISTRAL_API_KEY`, `META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
 `OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`). Overlay `wire = "anthropic"`
 on any `[endpoint.NAME]` row. See [`config.example.toml`](../config.example.toml).
 
@@ -103,16 +106,28 @@ removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
 `--here` is the default.
 
+### Modes
+
+| Mode | Enter | Leave | Job |
+| --- | --- | --- | --- |
+| Auto | default, `/auto`, shift+tab from plan | `/plan`, `/goal` | Follow the request this turn. |
+| Plan | `/plan`, `--plan`, shift+tab from auto | `/plan accept`, `/plan reject`, `/auto` | Read-only. Reply is saved as `.mage/plan.md`. |
+| Work | `/plan accept` only | job ends (auto), `/auto` | Execute the accepted plan, then `.mage/check.toml`. |
+| Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto` | Loop on an objective with no written plan until checks pass and the judge says `done`. |
+
+Work is plan after accept. Without a selected plan, a request for work
+stays in plan mode. `/plan reject` discards the plan and returns to auto.
+`shift+tab` does not enter work or goal.
+
 Auto mode follows the request. Reviews, explanations, and diagnoses inspect
 the workspace without changing it. Change requests can edit and run checks.
 
-Plan mode adds a read-only workspace boundary. The model can run inspection
-commands, but commands cannot change workspace or repository state. Toggle plan
-`/plan accept`
-keeps the journaled plan and returns to auto; your next prompt runs
-inside that Work, and the transcript and the model both see
-`plan accepted`. `/plan reject` leaves plan mode without implementing.
-`/plan` and `/auto` only switch the tool set. `lsp` routes each file to
+Plan mode adds a read-only workspace boundary. The model inspects and
+returns a plan; it cannot edit source or run mutating commands. The
+harness writes that reply to `.mage/plan.md`. Edit the file, then
+`/plan accept` to bind it and enter work: that turn executes the plan
+and runs the completion check. Destructive writes and network still pause
+for `[ allow ]`, `[ always ]`, or `[ deny ]`. `lsp` routes each file to
 its language module (diagnostics, definition, references, and rename).
 
 ### Workflows
@@ -237,7 +252,7 @@ reply, shows that file. In Ghostty, Kitty,
 WezTerm, and Konsole the picture renders through the Kitty graphics
 protocol; in iTerm2 and Warp through inline images; in other terminals as
 half-block cells. `SIGIL_GRAPHICS=kitty`, `iterm2`, or `none` overrides the
-detection, and tmux turns it off. A picture is 24 rows tall at most, and a
+detection, and tmux turns it off. A picture is 48 rows tall at most, and a
 picture scrolled partly off the screen shows the rows that are on it.
 `read` on an image reports its type and size, and the picture shows in
 the transcript; the model attaches it as `@path` to look at it. `/view
@@ -246,9 +261,11 @@ pane.
 
 A fenced `mermaid` block in a reply renders as a diagram in the
 transcript: flowcharts and state diagrams with box-drawing edges, sequence
-diagrams with lifelines and frames, and pie charts as bars. Other Mermaid
-kinds show their source in a frame. The drawing comes from Sigil's
-`mermaid` widget, so it looks the same in every terminal.
+diagrams with lifelines and frames, pie charts as bars, and `xychart` /
+`xychart-beta` as labeled bars. A fenced `chart` block with `label value`
+rows draws the same bars. Other Mermaid kinds show their source in a
+frame. Flow, sequence, and pie drawings come from Sigil's `mermaid`
+widget, so they look the same in every terminal.
 
 A paste of eight or more lines, or a thousand or more bytes, folds into
 `[pasted N lines #k]` in the draft. Summonr expands every token back to
@@ -326,20 +343,24 @@ The model receives the full advertised schema every round
 (`Loop::advertised_tools`). Core names live in `src/tools/catalog.rs`.
 
 Reads return `N:hash|text`. A stale or ambiguous tag fails before write.
-`read` lists a directory, shows an image, or searches (`pattern` / `glob`).
-Search hits are `path:N:hash|line`. `edit` covers substring replace
-(`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete
-(`op: delete`), and a batch (`edits`). `write` creates or overwrites.
+`read` lists a directory, shows an image, or searches (`pattern` / `glob`
+or `include`, with `literal` and `caseSensitive`). Search hits are
+`path:N:hash|line`. `edit` covers substring replace (`old`/`new`), line
+replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a
+batch (`edits`), several files (`files`), and a rename or move (`path`
+with `to`). `write` creates or overwrites one file, or several (`files`).
+`run_command` takes `workdir`; when the output is longer than the digest
+the full log is kept and its path named.
 
 | Name | When | Notes |
 | --- | --- | --- |
-| `read` | always | File, directory, image, or search |
-| `edit` | not plan | One file; hashes from `read` |
-| `write` | not plan | New or empty files |
-| `run_command` | always | Sandbox; `background` / `job` / `kill` |
+| `read` | always | File, directory, image, or search (`literal`, `caseSensitive`, `include`) |
+| `edit` | not plan | Change or move files; hashes from `read`; `files` for several |
+| `write` | not plan | New or empty files; `files` for several |
+| `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics, definition, rename |
-| `web` | `search` on | `query` searches; `url` fetches |
+| `web` | `search` on | `query` searches; `url` fetches as markdown, text, or html |
 | `task` | `task` module | Child session |
 | `bus` | bus | `action` agents, inbox, send, get, set, list |
 
@@ -354,9 +375,9 @@ The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 ## Modules
 
 Every optional capability is a module compiled into the binary: `search`,
-`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `summonr modules` lists
-them with their state; `/modules NAME on|off` in the interface switches one
-and writes `[modules]` in `~/.mage/config.toml`. A workspace
+`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `task` is off by default.
+`summonr modules` lists them with their state; `/modules NAME on|off` in the
+interface switches one and writes `[modules]` in `~/.mage/config.toml`. A workspace
 `.mage/config.toml` may turn a module off for that project but cannot turn
 one on. Summonr runs no third-party code inside the harness; modules read
 declarative files under `.mage` where they need user input.
@@ -437,27 +458,33 @@ copy, so a mail that the client did not surface is still in the inbox.
 
 ## Limits
 
+Everything in this section describes a contained session. Without
+`--sandbox`, or `on = true` under `[sandbox]`, none of it applies: the shell
+is uncontained and the command and file policy is off.
+
 Each flag alone gives these modes:
 
 | Mode | File tools | Shell commands | Shell network |
 | --- | --- | --- | --- |
-| Default | Reads any path the sandbox can read; writes under the workspace and extra writable roots | Contained; workspace, extra writable roots, and temporary storage writable | Denied |
-| `--plan` | Reads; edit and write denied | Shell writes and background jobs denied | Denied |
-| `--no-sandbox` | Full access with your account's permissions | Uncontained; command policy bypassed | Your account's access |
+| Default | Full access with your account's permissions | Uncontained; command policy bypassed | Your account's access |
+| `--sandbox` | Reads any path the sandbox can read; writes under the workspace and extra writable roots | Contained; workspace, extra writable roots, and temporary storage writable | Allowed, or denied with `--no-net` |
+| `--plan` | Reads; edit and write denied | Contained; shell writes and background jobs denied | Denied |
 
-`read` accepts an absolute path outside the workspace, which is what the
-shell can already read. `edit` and `write` stay inside the writable roots:
+With containment on, `read` accepts an absolute path outside the workspace,
+which is what the shell can already read. `edit` and `write` stay inside the
+writable roots:
 the launch directory, `[sandbox] write` in `~/.mage/config.toml`, and
 `--add-dir`. For work that spans sibling repositories, put the parent on
 that list, launch Summonr in the parent directory, or pass `--add-dir`.
 
 Commands use Seatbelt, bubblewrap, or experimental Windows AppContainer.
-A missing backend is a hard stop. `--net` allows sockets inside the sandbox;
-it does not change file permissions. Model requests and language servers use
+A missing backend is a hard stop. Sandboxed sockets are allowed by default.
+`--no-net` or `/net off` denies them. `--net` turns them back on. That flag
+does not change file permissions. Model requests and language servers use
 host networking separately from shell commands.
 
-When a command needs the network, `/net on` allows sockets for the rest of the
-session, `/net once` allows only the next command, and `/net off` denies again.
+`/net on` allows sockets for the rest of the session, `/net once` allows only
+the next command, and `/net off` denies again.
 The interface also prompts when a sandboxed command fails with a network error:
 `[ allow ]` turns the session network on and retries the command; `[ deny ]`
 returns the failure to the model. `/net` alone reports the current state.
@@ -481,18 +508,21 @@ the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
 target those paths, and the OS sandbox allows the write. `write` and `edit`
 accept files under them too. `~` and `$HOME` expand before the check.
-Hard denials never prompt: force-push, `sudo`, `rm -rf /`, deny-list matches,
-and protected paths (`.env`, `.git/hooks`, `.git/config`, `~/.ssh`, `~/.gnupg`,
-`~/.mage`, shell startup files). Reads of `.env` and `~/.ssh` / `~/.gnupg` are
-blocked too.
+Hard denials never prompt: force-push, `sudo`, `rm -rf /`, and deny-list matches.
+A protected path outside the workspace (`.git/hooks`, `.git/config`, `~/.ssh`,
+`~/.gnupg`, `~/.mage`, shell startup files) prompts as `protected path <dir>`,
+never with `[ always ]`. A protected file inside the workspace (`.env`) is
+denied with no prompt. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
 
 A sandboxed `cargo`, `rustup`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, or `go`
 command that fails with `Operation not permitted` offers the matching home
 directory (`~/.cargo`, `~/.npm`, or `GOPATH` / `~/go`) as the grant.
 
-`--no-sandbox` also bypasses file allow/write restrictions and permits file tools
-outside the workspace. `--plan` still denies `edit` and `write` when combined with it,
-and refuses shell writes because read-only inspection requires a sandbox.
+Containment is opt-in: `--sandbox`, or `on = true` under `[sandbox]` in
+`~/.mage/config.toml`. An uncontained session writes anywhere your account can and
+bypasses command and file policy. `--no-sandbox` is accepted and changes nothing.
+`--plan` contains commands, still denies `edit` and `write`, and refuses shell writes
+because read-only inspection requires a sandbox.
 `--strict` reapplies policy restrictions but does not restore process containment.
 
 A build tool that writes outside the writable roots fails inside the sandbox
@@ -536,8 +566,8 @@ background commands; file tools still use the list.
 
 ## Theme
 
-`theme` in `config.toml` selects a preset accent: `space` (blue) or `fantasy`
-(gold). Every other color is a named token you can override in a theme file:
+`theme` in `config.toml` selects the `space` preset. Every other color is a
+named token you can override in a theme file:
 
 ```toml
 accent = "#698cd2"
@@ -548,7 +578,7 @@ code_bg = "#1e202a"
 Copy [`theme.example.toml`](../theme.example.toml) to `~/.mage/theme.toml`, or to
 `<workspace>/.mage/theme.toml` for one project. Unset tokens keep the preset.
 Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
-`/theme` toggles the preset and re-applies both theme files. The tokens are
+`/theme` re-applies both theme files. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
 `green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,
 `code_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,

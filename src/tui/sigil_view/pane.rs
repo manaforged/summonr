@@ -53,7 +53,7 @@ impl Default for Layout {
 
 impl Layout {
     pub(super) const MIN_CHAT: u16 = 48;
-    pub(super) const MIN_SIDE: u16 = 24;
+    pub(super) const MIN_SIDE: u16 = 20;
 
     pub(super) fn parse(text: &str) -> Option<Self> {
         if let Some(preset) = Self::preset(text) {
@@ -87,7 +87,7 @@ impl Layout {
             "focus" => Some(Self::default()),
             "run" => Some(Self {
                 secondary: Some(Pane::Ledger),
-                share: 40,
+                share: 20,
             }),
             "files" | "explore" => Some(Self {
                 secondary: Some(Pane::Files),
@@ -127,7 +127,3 @@ impl Layout {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "pane_tests.rs"]
-mod tests;

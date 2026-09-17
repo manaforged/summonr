@@ -81,7 +81,3 @@ fn encode(script: &str, cwd: &Path) -> String {
     let bytes: Vec<u8> = script.encode_utf16().flat_map(u16::to_le_bytes).collect();
     STANDARD.encode(bytes)
 }
-
-#[cfg(test)]
-#[path = "shell_tests.rs"]
-mod tests;

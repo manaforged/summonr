@@ -45,6 +45,13 @@ enum Purpose {
     Judge,
     Review,
     Scout,
+    Plan,
+}
+
+/// What a turn must do before it can execute: write a plan, or run now.
+pub(crate) enum TurnWork {
+    NeedsPlan,
+    Ready { accepted: bool },
 }
 
 struct Round {
@@ -294,7 +301,8 @@ impl SessionDriver {
         let purpose = match role {
             Role::Scout => Purpose::Scout,
             Role::Review => Purpose::Review,
-            Role::Plan | Role::Implement | Role::Judge | Role::Summary => {
+            Role::Plan => Purpose::Plan,
+            Role::Implement | Role::Judge | Role::Summary => {
                 return Err(DriverError::State(format!("{role} is not an aside")));
             }
         };
@@ -372,6 +380,12 @@ impl SessionDriver {
                 reported: true,
                 usage,
                 note: "scout".to_string(),
+                model: round.model,
+            },
+            Purpose::Plan => Line::Charge {
+                reported: true,
+                usage,
+                note: "plan".to_string(),
                 model: round.model,
             },
         };
@@ -684,11 +698,6 @@ impl SessionDriver {
         self.state.children.get(&id).cloned()
     }
 
-    #[cfg(test)]
-    pub(crate) fn children(&self) -> Vec<crate::child::ChildRecord> {
-        self.state.children.values().cloned().collect()
-    }
-
     fn interrupt_children(&mut self, reason: &str) -> Result<(), DriverError> {
         let records = self
             .state
@@ -809,11 +818,6 @@ impl SessionDriver {
         self.turn.as_ref().and_then(|turn| turn.stage)
     }
 
-    #[cfg(test)]
-    pub(crate) fn busy(&self) -> bool {
-        self.turn.is_some()
-    }
-
     pub(crate) fn replay(&self) -> Replay {
         self.state.replay()
     }
@@ -834,8 +838,69 @@ impl SessionDriver {
         self.state.depth
     }
 
+    pub(crate) fn needs_turn_plan(&self) -> bool {
+        self.active().is_some_and(|work| {
+            work.policy == Policy::Single
+                && work.stage() == Some(Stage::Plan)
+                && work.plan.is_none()
+        })
+    }
+
+    #[must_use]
+    pub(crate) fn has_selected_plan(&self) -> bool {
+        self.work
+            .as_ref()
+            .is_some_and(|work| work.plan.as_ref().is_some_and(|text| !text.trim().is_empty()))
+            || crate::plan::read(&self.workspace).is_some()
+    }
+
+    /// Select the model-written plan and start execution in the same turn.
+    pub(crate) fn select_plan(
+        &mut self,
+        markdown: &str,
+        commands: &[String],
+    ) -> Result<(), DriverError> {
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        if work.policy != Policy::Single || work.stage() != Some(Stage::Plan) {
+            return Err(DriverError::State(
+                "no single-policy plan stage is open".to_string(),
+            ));
+        }
+        work.select(markdown, commands)?;
+        self.checkpoint()?;
+        self.execute()
+    }
+
+    /// The planning round could not run; execute against the objective alone.
+    pub(crate) fn begin_without_plan(&mut self, commands: &[String]) -> Result<(), DriverError> {
+        let objective = self
+            .work
+            .as_ref()
+            .ok_or(DriverError::NoWork)?
+            .objective
+            .clone();
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        if work.policy != Policy::Single || work.stage() != Some(Stage::Plan) || work.plan.is_some()
+        {
+            return Ok(());
+        }
+        work.select(&objective, commands)?;
+        self.checkpoint()?;
+        self.execute()
+    }
+
     pub(crate) fn work_progress(&self) -> Result<WorkProgress, DriverError> {
         Ok(self.work.as_ref().ok_or(DriverError::NoWork)?.progress())
+    }
+
+    pub(crate) fn apply_todos(
+        &mut self,
+        items: &[(String, super::work::StepState)],
+    ) -> Result<(), DriverError> {
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        work.apply_todos(items);
+        self.checkpoint()?;
+        Ok(())
     }
 
     pub(crate) fn abandon_work(&mut self, reason: &str) -> Result<(), DriverError> {
@@ -910,6 +975,7 @@ impl SessionDriver {
             .ok_or(DriverError::NoWork)?
             .select(markdown, commands)?;
         self.checkpoint()?;
+        crate::plan::write(&self.workspace, markdown)?;
         self.append(Line::Receipt {
             text: receipt.to_string(),
         })?;
@@ -918,6 +984,22 @@ impl SessionDriver {
 
     pub(crate) fn accept_plan(&mut self) -> Result<(), DriverError> {
         self.pending_plan()?;
+        if let Some(text) = crate::plan::read(&self.workspace) {
+            let commands: Vec<String> = self
+                .work
+                .as_ref()
+                .ok_or(DriverError::NoWork)?
+                .checks
+                .iter()
+                .filter(|check| check.observation.is_none())
+                .map(|check| check.command.clone())
+                .collect();
+            self.work
+                .as_mut()
+                .ok_or(DriverError::NoWork)?
+                .select(&text, &commands)?;
+            self.checkpoint()?;
+        }
         self.execute()
     }
 
@@ -994,16 +1076,30 @@ impl SessionDriver {
         &mut self,
         objective: &str,
         commands: &[String],
-    ) -> Result<bool, DriverError> {
+        plan_first: bool,
+    ) -> Result<TurnWork, DriverError> {
         let created = self.active().is_none();
         if created {
             self.set_work(objective, Policy::Single)?;
+            if plan_first {
+                self.work
+                    .as_mut()
+                    .ok_or(DriverError::NoWork)?
+                    .set_checks(commands)?;
+                self.checkpoint()?;
+                return Ok(TurnWork::NeedsPlan);
+            }
             self.work
                 .as_mut()
                 .ok_or(DriverError::NoWork)?
                 .select(objective, commands)?;
         }
         let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        if plan_first && work.policy == Policy::Single && work.plan.is_none() {
+            work.set_checks(commands)?;
+            self.checkpoint()?;
+            return Ok(TurnWork::NeedsPlan);
+        }
         if work.policy == Policy::Single
             && work
                 .checks
@@ -1027,13 +1123,13 @@ impl SessionDriver {
                     .ok_or(DriverError::NoWork)?
                     .select(objective, commands)?;
                 self.execute()?;
-                Ok(false)
+                Ok(TurnWork::Ready { accepted: false })
             }
             Some(Stage::Plan) => {
                 self.execute()?;
-                Ok(!created)
+                Ok(TurnWork::Ready { accepted: !created })
             }
-            Some(Stage::Execute) => Ok(false),
+            Some(Stage::Execute) => Ok(TurnWork::Ready { accepted: false }),
             Some(Stage::Verify | Stage::Review) => Err(DriverError::State(
                 "Work is still in Verify after an interrupted turn".to_string(),
             )),

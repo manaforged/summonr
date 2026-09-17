@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -11,19 +12,15 @@ use serde_json::{Value, json};
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
 mod auth;
-pub(crate) use auth::forget_legacy;
+pub(crate) use auth::{configured, device, forget_legacy};
 mod native;
 mod stream;
 mod think;
 
-#[cfg(test)]
-use stream::{CallDelta, FunctionDelta, merge_call};
 use stream::{Completion, finish};
 
 use crate::endpoint::Wire;
-use auth::Auth;
-
-pub(crate) const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+pub(crate) use auth::Auth;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -120,7 +117,11 @@ pub struct Message {
     pub content: String,
     #[serde(default, skip_serializing)]
     pub images: Vec<Image>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(
+        default,
+        deserialize_with = "think::vec_or_null",
+        skip_serializing_if = "Vec::is_empty"
+    )]
     pub tool_calls: Vec<ToolCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_call_id: Option<String>,
@@ -193,6 +194,10 @@ pub enum Continuation {
         blocks: Vec<Value>,
     },
     Gemini {
+        model: String,
+        signatures: Vec<String>,
+    },
+    Responses {
         model: String,
         signatures: Vec<String>,
     },
@@ -283,7 +288,7 @@ impl Usage {
 pub struct AssistantMessage {
     #[serde(default)]
     pub content: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "think::vec_or_null")]
     pub tool_calls: Vec<ToolCall>,
     #[serde(
         default,
@@ -323,6 +328,7 @@ impl AssistantMessage {
 
 #[derive(Clone, Debug)]
 pub struct CompletionRequest {
+    pub session: String,
     pub model: String,
     pub messages: Vec<Message>,
     pub tools: Vec<ToolDefinition>,
@@ -372,6 +378,16 @@ impl Effort {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+        }
+    }
+
+    #[must_use]
+    pub fn next(self) -> Self {
+        match self {
+            Self::None => Self::Low,
+            Self::Low => Self::Medium,
+            Self::Medium => Self::High,
+            Self::High => Self::None,
         }
     }
 }
@@ -526,6 +542,7 @@ pub struct Client {
     auth: Auth,
     body: Option<Value>,
     headers: Vec<(String, String)>,
+    opencode: bool,
     wire: Wire,
     genai: Option<genai::Client>,
     on_delta: Option<DeltaFn>,
@@ -580,7 +597,7 @@ impl Client {
             })
             .transpose()
             .map_err(native::map_genai)?;
-        Self::build(
+        let mut client = Self::build(
             base,
             Auth::from_endpoint(endpoint)?,
             endpoint.body.clone(),
@@ -588,7 +605,9 @@ impl Client {
             endpoint.wire,
             genai,
             idle_timeout,
-        )
+        )?;
+        client.opencode |= matches!(endpoint.name.as_str(), "opencode-go" | "opencode-zen");
+        Ok(client)
     }
 
     pub async fn login(
@@ -652,6 +671,8 @@ impl Client {
             auth,
             body,
             headers,
+            opencode: reqwest::Url::parse(base)
+                .is_ok_and(|url| url.host_str() == Some("opencode.ai")),
             wire,
             genai,
             on_delta: None,
@@ -678,21 +699,14 @@ impl Client {
         self
     }
 
-    pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("MAGE_API_KEY").map_err(|error| {
-            Error::Config(format!("set MAGE_API_KEY before starting Summonr: {error}"))
-        })?;
-        let base_url =
-            std::env::var("MAGE_BASE_URL").unwrap_or_else(|_| DEFAULT_BASE_URL.to_string());
-        Self::new(api_key, base_url)
-    }
-
     pub async fn models(&self) -> Result<Vec<String>> {
         let base = self
             .url
             .strip_suffix("/chat/completions")
             .unwrap_or(&self.url);
-        if let Some(kind) = Self::native_kind(self.wire) {
+        if let Some(kind) = Self::native_kind(self.wire)
+            && self.wire != Wire::Responses
+        {
             return self.list_native(kind).await;
         }
         let value = self.get(format!("{base}/models")).await?;
@@ -714,7 +728,7 @@ impl Client {
         let field = match self.wire {
             Wire::Anthropic => Some("max_input_tokens"),
             Wire::Gemini => Some("inputTokenLimit"),
-            Wire::Completions => None,
+            Wire::Completions | Wire::Responses => None,
         };
         if let Some(field) = field {
             let mut url = reqwest::Url::parse(&format!("{base}/models/")).ok()?;
@@ -741,7 +755,7 @@ impl Client {
     async fn get(&self, url: String) -> Result<Value> {
         let token = self.auth.token(&self.http).await?;
         let response = self
-            .attach(self.http.get(url), &token)
+            .attach(self.http.get(url), &token, None)
             .send()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
@@ -759,11 +773,7 @@ impl Client {
     }
 
     fn request_body(&self, request: &CompletionRequest, stream: bool) -> Result<Value> {
-        let messages = request
-            .messages
-            .iter()
-            .map(message_value)
-            .collect::<Result<Vec<_>>>()?;
+        let messages = wire_messages(&request.messages)?;
         let mut body = json!({
             "model": request.model,
             "messages": messages,
@@ -792,29 +802,51 @@ impl Client {
         Ok(body)
     }
 
-    fn attach(&self, mut request: reqwest::RequestBuilder, token: &str) -> reqwest::RequestBuilder {
+    fn headers(&self, session: Option<&str>) -> HashMap<String, String> {
+        let mut headers: HashMap<_, _> = self
+            .headers
+            .iter()
+            .map(|(key, value)| (key.to_ascii_lowercase(), value.clone()))
+            .collect();
+        headers
+            .entry("user-agent".to_string())
+            .or_insert_with(|| concat!("summonr/", env!("CARGO_PKG_VERSION")).to_string());
+        if self.opencode
+            && let Some(session) = session
+        {
+            headers.insert("x-opencode-session".to_string(), session.to_string());
+        }
+        headers
+    }
+
+    fn attach(
+        &self,
+        mut request: reqwest::RequestBuilder,
+        token: &str,
+        session: Option<&str>,
+    ) -> reqwest::RequestBuilder {
         request = match self.wire {
-            Wire::Completions => request.bearer_auth(token),
+            Wire::Completions | Wire::Responses => request.bearer_auth(token),
             Wire::Anthropic => request
                 .header("x-api-key", token)
                 .header("anthropic-version", "2023-06-01"),
             Wire::Gemini => request.header("x-goog-api-key", token),
         };
-        for (key, value) in &self.headers {
+        for (key, value) in self.headers(session) {
             request = request.header(key.as_str(), value.as_str());
         }
         request
     }
 
-    async fn send(&self, body: &Value) -> Result<reqwest::Response> {
-        let response = self.post_json(body).await?;
+    async fn send(&self, body: &Value, session: &str) -> Result<reqwest::Response> {
+        let response = self.post_json(body, session).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
             self.auth.forget_live();
-            let retry = self.post_json(body).await?;
+            let retry = self.post_json(body, session).await?;
             let code = retry.status().as_u16();
             if retry.status().is_success() {
                 return Ok(retry);
@@ -828,9 +860,9 @@ impl Client {
         Err(response_failure(status.as_u16(), text.trim(), after))
     }
 
-    async fn post_json(&self, body: &Value) -> Result<reqwest::Response> {
+    async fn post_json(&self, body: &Value, session: &str) -> Result<reqwest::Response> {
         let token = self.auth.token(&self.http).await?;
-        self.attach(self.http.post(&self.url), &token)
+        self.attach(self.http.post(&self.url), &token, Some(session))
             .json(body)
             .send()
             .await
@@ -839,10 +871,12 @@ impl Client {
 
     async fn complete_once(&self, request: &CompletionRequest) -> Result<AssistantMessage> {
         let body = self.request_body(request, false)?;
-        let reply: Completion =
-            self.send(&body).await?.json().await.map_err(|error| {
-                Error::provider(ProviderFailureKind::Malformed, error.to_string())
-            })?;
+        let reply: Completion = self
+            .send(&body, &request.session)
+            .await?
+            .json()
+            .await
+            .map_err(|error| Error::provider(ProviderFailureKind::Malformed, error.to_string()))?;
         let mut message = reply
             .choices
             .into_iter()
@@ -906,6 +940,12 @@ fn listed(value: &Value, model: &str) -> Option<u32> {
     .find_map(tokens)
 }
 
+pub(crate) fn input_cap(text: &str) -> Option<u32> {
+    let rest = text.split("maximum allowed length (").nth(1)?;
+    let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
+    digits.parse().ok().filter(|value| *value > 0)
+}
+
 fn tokens(value: &Value) -> Option<u32> {
     value
         .as_u64()
@@ -929,19 +969,23 @@ fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
     let kind = match code {
         401 | 403 => ProviderFailureKind::Authentication,
         429 => ProviderFailureKind::RateLimited,
-        500..=599
+        400 | 500..=599
             if lower.contains("tool call")
                 && lower.contains("arguments")
                 && lower.contains("json")
-                && (lower.contains("parse") || lower.contains("invalid")) =>
+                && (lower.contains("parse")
+                    || lower.contains("invalid")
+                    || lower.contains("valid")) =>
         {
             ProviderFailureKind::MalformedToolCall
         }
         500..=599 => ProviderFailureKind::Server,
-        400 if lower.contains("context")
+        400 if (lower.contains("context")
             && ["window", "length", "too long", "exceed"]
                 .iter()
-                .any(|word| lower.contains(word)) =>
+                .any(|word| lower.contains(word)))
+            || lower.contains("maximum allowed length")
+            || (lower.contains("input length") && lower.contains("exceed")) =>
         {
             ProviderFailureKind::ContextOverflow
         }
@@ -950,10 +994,45 @@ fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
     Error::Provider(ProviderFailure {
         kind,
         status: Some(code),
-        message: format!("HTTP {code}: {text}"),
+        message: format!("HTTP {code}: {}", reason(text)),
         partial_output: false,
         retry_after,
     })
+}
+
+fn reason(text: &str) -> String {
+    let body: Value = serde_json::from_str(text).unwrap_or_default();
+    let error = body.get("error").unwrap_or(&body);
+    error
+        .get("message")
+        .or(Some(error))
+        .and_then(Value::as_str)
+        .map_or_else(|| text.to_string(), str::to_string)
+}
+
+fn wire_messages(messages: &[Message]) -> Result<Vec<Value>> {
+    let mut prefix = String::new();
+    let mut rest = Vec::new();
+    for message in messages {
+        if message.role == Role::System && rest.is_empty() {
+            if !prefix.is_empty() {
+                prefix.push_str("\n\n");
+            }
+            prefix.push_str(&message.content);
+            continue;
+        }
+        if message.role == Role::System {
+            rest.push(message_value(&Message::user(message.content.clone()))?);
+        } else {
+            rest.push(message_value(message)?);
+        }
+    }
+    let mut out = Vec::new();
+    if !prefix.is_empty() {
+        out.push(message_value(&Message::system(prefix))?);
+    }
+    out.extend(rest);
+    Ok(out)
 }
 
 fn message_value(message: &Message) -> Result<Value> {
@@ -962,6 +1041,12 @@ fn message_value(message: &Message) -> Result<Value> {
         for call in calls {
             if let Some(call) = call.as_object_mut() {
                 call.remove("continuation");
+                if let Some(function) = call.get_mut("function").and_then(Value::as_object_mut)
+                    && let Some(arguments) = function.get("arguments").and_then(Value::as_str)
+                    && serde_json::from_str::<Value>(arguments).is_err()
+                {
+                    function.insert("arguments".to_string(), json!("{}"));
+                }
             }
         }
     }

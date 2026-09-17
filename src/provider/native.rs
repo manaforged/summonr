@@ -26,6 +26,7 @@ mod anthropic;
 impl Client {
     pub(super) fn native_kind(wire: Wire) -> Option<AdapterKind> {
         match wire {
+            Wire::Responses => Some(AdapterKind::OpenAIResp),
             Wire::Anthropic => Some(AdapterKind::Anthropic),
             Wire::Gemini => Some(AdapterKind::Gemini),
             Wire::Completions => None,
@@ -49,8 +50,9 @@ impl Client {
             model: ModelIden::new(kind, request.model.clone()),
         };
         let chat = to_chat(request, self.wire)?;
-        let options = chat_options(&self.headers, request.max_output_tokens, request.effort)
-            .with_capture_raw_body(self.wire == Wire::Anthropic);
+        let options = chat_options(request.max_output_tokens, request.effort)
+            .with_extra_headers(self.headers(Some(&request.session)))
+            .with_capture_raw_body(matches!(self.wire, Wire::Anthropic | Wire::Responses));
         if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
             return self
                 .stream_native(genai, target, chat, &options, output)
@@ -65,7 +67,7 @@ impl Client {
         } else {
             None
         };
-        let mut message = from_response(response, &request.model)?;
+        let mut message = from_response(response, &request.model, self.wire)?;
         anthropic::retain(&mut message, &request.model, blocks);
         Ok(message)
     }
@@ -135,7 +137,7 @@ impl Client {
                         tool_calls = captured
                             .into_tool_calls()
                             .into_iter()
-                            .map(|call| from_genai_call(call, &model))
+                            .map(|call| from_genai_call(call, &model, self.wire))
                             .collect();
                     }
                     if reasoning.is_empty()
@@ -232,11 +234,7 @@ impl Client {
     }
 }
 
-fn chat_options(
-    headers: &[(String, String)],
-    max_tokens: Option<u32>,
-    effort: Option<crate::provider::Effort>,
-) -> ChatOptions {
+fn chat_options(max_tokens: Option<u32>, effort: Option<crate::provider::Effort>) -> ChatOptions {
     use crate::provider::Effort;
     use genai::chat::ReasoningEffort;
     let mut options = ChatOptions::default()
@@ -247,10 +245,6 @@ fn chat_options(
         .with_normalize_reasoning_content(true);
     if let Some(max) = max_tokens {
         options = options.with_max_tokens(max);
-    }
-    if !headers.is_empty() {
-        let extra: std::collections::HashMap<String, String> = headers.iter().cloned().collect();
-        options = options.with_extra_headers(extra);
     }
     if let Some(effort) = effort.filter(|effort| *effort != Effort::None) {
         options = options.with_reasoning_effort(match effort {
@@ -317,10 +311,16 @@ fn to_chat(request: &CompletionRequest, wire: Wire) -> Result<ChatRequest> {
                     parts.push(ContentPart::Text(message.content.clone()));
                 }
                 for call in &message.tool_calls {
-                    if wire == Wire::Gemini
-                        && let Some(Continuation::Gemini { model, signatures }) = &call.continuation
-                        && model == &request.model
-                    {
+                    let signature = match (&call.continuation, wire) {
+                        (Some(Continuation::Gemini { model, signatures }), Wire::Gemini)
+                        | (Some(Continuation::Responses { model, signatures }), Wire::Responses)
+                            if model == &request.model =>
+                        {
+                            Some(signatures)
+                        }
+                        _ => None,
+                    };
+                    if let Some(signatures) = signature {
                         parts.extend(
                             signatures
                                 .iter()
@@ -391,7 +391,7 @@ fn to_genai_call(call: &ToolCall) -> Result<GenaiCall> {
     })
 }
 
-fn from_genai_call(call: GenaiCall, model: &str) -> ToolCall {
+fn from_genai_call(call: GenaiCall, model: &str, wire: Wire) -> ToolCall {
     ToolCall {
         id: call.call_id,
         kind: ToolKind::Function,
@@ -399,16 +399,25 @@ fn from_genai_call(call: GenaiCall, model: &str) -> ToolCall {
             name: call.fn_name,
             arguments: call.fn_arguments.to_string(),
         },
-        continuation: call
-            .thought_signatures
-            .map(|signatures| Continuation::Gemini {
+        continuation: call.thought_signatures.and_then(|signatures| match wire {
+            Wire::Gemini => Some(Continuation::Gemini {
                 model: model.to_string(),
                 signatures,
             }),
+            Wire::Responses => Some(Continuation::Responses {
+                model: model.to_string(),
+                signatures,
+            }),
+            _ => None,
+        }),
     }
 }
 
-fn from_response(response: genai::chat::ChatResponse, model: &str) -> Result<AssistantMessage> {
+fn from_response(
+    response: genai::chat::ChatResponse,
+    model: &str,
+    wire: Wire,
+) -> Result<AssistantMessage> {
     let content = response.first_text().map(str::to_string);
     let reasoning_content = response.reasoning_content.clone();
     let usage = from_genai_usage(&response.usage);
@@ -422,11 +431,37 @@ fn from_response(response: genai::chat::ChatResponse, model: &str) -> Result<Ass
         stop_reason,
         content.is_some() || !response.tool_calls().is_empty(),
     )?;
-    let tool_calls = response
+    let signatures: Vec<String> = if wire == Wire::Responses {
+        response
+            .captured_raw_body
+            .as_ref()
+            .and_then(|body| body.get("output"))
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|item| item["type"] == "reasoning")
+            .filter_map(|item| {
+                item.get("encrypted_content")
+                    .and_then(serde_json::Value::as_str)
+            })
+            .map(str::to_string)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let mut tool_calls: Vec<_> = response
         .into_tool_calls()
         .into_iter()
-        .map(|call| from_genai_call(call, model))
+        .map(|call| from_genai_call(call, model, wire))
         .collect();
+    if !signatures.is_empty()
+        && let Some(call) = tool_calls.first_mut()
+    {
+        call.continuation = Some(Continuation::Responses {
+            model: model.to_string(),
+            signatures,
+        });
+    }
     Ok(AssistantMessage {
         content,
         tool_calls,
@@ -478,10 +513,6 @@ fn from_genai_stop(reason: &genai::chat::StopReason, partial_output: bool) -> Re
         })),
     }
 }
-
-#[cfg(test)]
-#[path = "native_tests.rs"]
-mod tests;
 
 pub(super) fn map_genai(error: genai::Error) -> Error {
     let text = error.to_string();

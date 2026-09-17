@@ -57,7 +57,10 @@ impl Worker {
                 ..
             } => {
                 if !reasoning.is_empty() {
-                    drop(self.ui.send(Msg::Thinking(reasoning)));
+                    drop(
+                        self.ui
+                            .send(Msg::Event(Event::Reasoning { text: reasoning })),
+                    );
                 }
                 if !text.is_empty() {
                     drop(self.ui.send(Msg::Event(Event::Assistant { text })));
@@ -73,7 +76,10 @@ impl Worker {
             }
             Line::Interrupted { text, reasoning } => {
                 if !reasoning.is_empty() {
-                    drop(self.ui.send(Msg::Thinking(reasoning)));
+                    drop(
+                        self.ui
+                            .send(Msg::Event(Event::Reasoning { text: reasoning })),
+                    );
                 }
                 if !text.is_empty() {
                     drop(self.ui.send(Msg::Event(Event::Assistant { text })));
@@ -93,13 +99,14 @@ impl Worker {
                 call,
                 text,
                 success,
-                ..
+                millis,
             } => {
                 drop(self.ui.send(Msg::Event(Event::ToolResult {
                     id: call,
                     output: text,
                     success,
                     mutated: false,
+                    millis: Some(millis),
                 })));
             }
             Line::Receipt { text } => drop(self.ui.send(Msg::Receipt(text))),

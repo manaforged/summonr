@@ -1,6 +1,9 @@
 use std::sync::PoisonError;
 
-use super::{Cmd, Msg, Worker, set_mode};
+use tokio::sync::mpsc::UnboundedSender;
+
+use super::settings::set_run_mode;
+use super::{Cmd, Msg, Worker};
 use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
@@ -26,7 +29,7 @@ impl Worker {
         drop(self.ui.send(Msg::Busy(Some(Activity::Turn))));
         let sender = self.ui.clone();
         let emit = move |event: &Event| drop(sender.send(Msg::Event(event.clone())));
-        let (cancelled, result, mode, quit) = {
+        let (cancelled, result, quit) = {
             let session_path = self.loop_.session_path().to_path_buf();
             let session_id = self.loop_.session_id();
             let turn = async {
@@ -36,7 +39,7 @@ impl Worker {
                 }
             };
             tokio::pin!(turn);
-            let (mut cancelled, mut mode, mut quit) = (false, None, false);
+            let (mut cancelled, mut quit) = (false, false);
             let result = loop {
                 tokio::select! {
                     done = &mut turn => break Some(done),
@@ -46,17 +49,20 @@ impl Worker {
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
                         Some(Cmd::Export(target)) => super::export_session(&session_path, &session_id, target, &self.ui),
-                        Some(command @ (Cmd::ListSessions | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
+                        Some(command @ (Cmd::ListModels { .. } | Cmd::ListSessions | Cmd::ListUsage | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
                         Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Merge(_) | Cmd::Discard(_))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
                         Some(Cmd::Cancel) => { cancelled = true; break None; }
                         Some(Cmd::Quit) => { drop(self.ui.send(Msg::Bye)); quit = true; break None; }
-                        Some(Cmd::SetMode(plan)) => {
-                            mode = Some(plan);
-                            drop(self.ui.send(Msg::Mode(plan)));
+                        Some(Cmd::SetRunMode(mode)) => {
+                            self.deferred.push_back(Cmd::SetRunMode(mode));
+                            drop(self.ui.send(Msg::RunMode(mode)));
                             drop(self.ui.send(Msg::System(MODE_LATER.to_string())));
+                        }
+                        Some(Cmd::SetEffort(effort)) => {
+                            self.deferred.push_back(Cmd::SetEffort(effort));
                         }
                         Some(Cmd::SetBus(on)) => {
                             self.auto_reply = on;
@@ -77,7 +83,7 @@ impl Worker {
                             }
                             super::announce(&self.ui, &self.steering, &self.followups);
                         }
-                        Some(command @ (Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::ListModels | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows)) => {
+                        Some(command @ (Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows | Cmd::SetModule(_, _))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
@@ -86,12 +92,13 @@ impl Worker {
                             super::announce(&self.ui, &self.steering, &self.followups);
                         }
                         Some(Cmd::Mail) => {}
+                        Some(Cmd::Send(to, text)) => mail(&self.ui, &session_id, &to, &text),
                         Some(Cmd::Tick) => {}
                         None => { quit = true; break None; }
                     }
                 }
             };
-            (cancelled, result, mode, quit)
+            (cancelled, result, quit)
         };
         if quit {
             if let Err(error) = self.abort("shutdown") {
@@ -103,9 +110,6 @@ impl Worker {
             Some(Ok(turn)) => Some(turn.clone()),
             _ => None,
         };
-        if let Some(plan) = mode {
-            set_mode(&mut self.loop_, &self.ui, plan);
-        }
         self.finish_turn(cancelled, result);
         self.send_settings();
         true
@@ -137,6 +141,14 @@ impl Worker {
         } else {
             self.send_diff(true);
             drop(self.ui.send(Msg::Busy(None)));
+            if self.loop_.is_work()
+                && self
+                    .loop_
+                    .work_progress()
+                    .is_ok_and(|progress| progress.terminal())
+            {
+                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
+            }
         }
     }
 
@@ -216,4 +228,18 @@ impl Worker {
                 crate::error::Error::Config(format!("no worktree at {}", path.display()))
             })
     }
+}
+
+pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &str) {
+    let note = match crate::bus::deliver(from, to, text) {
+        Ok(_) => format!(
+            "sent to {}",
+            to.iter()
+                .map(|id| format!("@{id}"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        Err(error) => format!("mail failed: {error}"),
+    };
+    drop(ui.send(Msg::System(note)));
 }

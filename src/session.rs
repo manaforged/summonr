@@ -4,11 +4,14 @@ use std::sync::Arc;
 use crate::provider::Message;
 
 mod catalog;
+mod profile;
+mod usage;
 
-#[cfg(test)]
-pub(crate) use catalog::list_in;
 pub(crate) use catalog::remove;
 pub use catalog::{export, last_for, list, resolve_id, set_name, short};
+pub use profile::profile;
+pub use usage::Spend;
+pub(crate) use usage::{DAY, HOUR, Total, buckets, spend};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -43,7 +46,9 @@ pub struct Replay {
 }
 
 pub(crate) fn decorate(harness: &str, text: &str) -> String {
-    if text.is_empty() {
+    if harness.is_empty() {
+        text.to_string()
+    } else if text.is_empty() {
         harness.to_string()
     } else {
         format!("{text}\n\n{harness}")

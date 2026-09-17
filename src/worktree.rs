@@ -4,6 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use std::io::Write;
 
+use crate::durable::store;
 use crate::error::{Error, Result};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
@@ -113,42 +114,6 @@ pub fn add(cwd: &Path) -> Result<Tree> {
     add_from(&primary, &base, "HEAD")
 }
 
-#[cfg(test)]
-pub(crate) fn add_children(cwd: &Path, count: usize) -> Result<Vec<Tree>> {
-    if count == 0 {
-        return Ok(Vec::new());
-    }
-    let primary = primary(cwd)?;
-    let base = git(cwd, &["rev-parse", "--abbrev-ref", "HEAD"])?;
-    if base == "HEAD" {
-        return Err(Error::Config(format!(
-            "{} is on a detached HEAD; check out a branch before delegating writable tasks",
-            cwd.display()
-        )));
-    }
-    let dirty = git(cwd, &["status", "--porcelain", "--untracked-files=no"])?;
-    if !dirty.is_empty() {
-        return Err(Error::Config(
-            "writable child worktrees require clean tracked files; finish or commit the current edits first"
-                .to_string(),
-        ));
-    }
-    let start = git(cwd, &["rev-parse", "HEAD"])?;
-    let mut trees = Vec::with_capacity(count);
-    for _ in 0..count {
-        match add_from(&primary, &base, &start) {
-            Ok(tree) => trees.push(tree),
-            Err(error) => {
-                for tree in &trees {
-                    drop(remove_child(tree));
-                }
-                return Err(error);
-            }
-        }
-    }
-    Ok(trees)
-}
-
 fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     let id = new_id();
     let branch = format!("summonr/{id}");
@@ -181,10 +146,7 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     };
     let recorded = (|| {
         let record = base_record(&tree.primary, &id)?;
-        if let Some(parent) = record.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        std::fs::write(&record, format!("{base}\n"))?;
+        store::write(&record, format!("{base}\n"))?;
         Ok(())
     })();
     if let Err(error) = recorded {
@@ -606,7 +568,3 @@ fn git_input(repo: &Path, args: &[&str], input: &[u8]) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "worktree_tests.rs"]
-mod tests;

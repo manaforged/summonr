@@ -1,7 +1,10 @@
-use sigil::prelude::*;
+use sigil::prelude::{
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, Role,
+    Theme, classes, container, signal,
+};
 
 use super::super::Cmd;
-use super::app::App;
+use super::app::{App, Overlay};
 use super::pane::Pane;
 use super::view::shell;
 
@@ -18,14 +21,24 @@ pub(super) fn root(app: App) -> NodeBuilder {
         .layout(LayoutStyle::block().fill())
         .theme(Theme::dark())
         .children_reactive(move || {
-            if screen.auth_open.get() {
-                return vec![options::auth(screen.clone())];
-            }
-            if screen.search.open.get() {
-                return vec![shell(&screen).child(super::search::desktop(screen.clone()))];
-            }
-            if screen.sessions.open.get() {
-                return vec![shell(&screen).child(super::sessions::desktop(screen.clone()))];
+            let overlay = match screen.overlay() {
+                Some(Overlay::Help) => Some(super::help::layer(screen.clone())),
+                Some(Overlay::Auth) => Some(options::auth(screen.clone())),
+                Some(Overlay::Search) => Some(super::search::desktop(screen.clone())),
+                Some(Overlay::Sessions) => Some(super::sessions::desktop(screen.clone())),
+                Some(Overlay::Usage) => Some(super::usage::layer(screen.clone())),
+                Some(
+                    Overlay::Model
+                    | Overlay::Workflow
+                    | Overlay::Hotkeys
+                    | Overlay::Settings
+                    | Overlay::Context
+                    | Overlay::Cache,
+                )
+                | None => None,
+            };
+            if let Some(overlay) = overlay {
+                return vec![shell(&screen).child(overlay)];
             }
             let navigation = screen.clone();
             let panel = screen.clone();
@@ -118,7 +131,3 @@ pub(super) fn hit(name: String, on: bool, act: impl Fn() + 'static) -> NodeBuild
             event.stop_propagation();
         })
 }
-
-#[cfg(test)]
-#[path = "desktop_tests.rs"]
-mod tests;

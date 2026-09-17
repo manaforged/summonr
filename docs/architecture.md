@@ -19,17 +19,26 @@ have to (`src/durable/work.rs`).
 
 ## What Work is
 
-Work is one coding job:
+Work is one coding job the harness holds so the model does not have to
+(`src/durable/work.rs`):
 
 - an objective
 - a policy: one turn, numbered steps, or a standing goal
-- a stage: Plan, Execute, or Verify
+- a stage: Plan, Execute, Verify, or Review
 - steps, their checks, and (when verifying) a candidate capture of the
   workspace
 
-`summonr --steps` and `summonr --goal` are how you start Work from the
-CLI. A plain `summonr` turn still opens Work if the session has none
-(`src/runtime/turn.rs`).
+Plan and Work are one pipeline. Plan writes `.mage/plan.md`. `/plan
+accept` selects that file, sets `RunMode::Work`, and starts Execute in
+the same turn (`src/tui/worker/command.rs`). A work request with no
+selected plan stays in Plan (`Loop::set_mode`). When Work is terminal,
+the interface returns to Auto. Goal (`/goal`, `--goal`) is the loop
+without a written plan. `shift+tab` switches Auto and Plan only
+(`RunMode::next`).
+
+`summonr --steps` and `summonr --goal` start Work from the CLI. A plain
+`summonr` turn still opens an internal Work record if the session has
+none (`src/runtime/turn.rs`). That is Auto, not the Work UI mode.
 
 The model never owns this. It sees one step, or one objective, and
 the tools. Summonr re-reads the rest.
@@ -46,8 +55,9 @@ the old names.
 | `write` | Create or overwrite |
 | `run_command` | Sandboxed shell |
 
-On when the module is on: `skill`, `lsp`, `web`, `task`, `bus`. Plan mode
-advertises `read` and `run_command` (plus `skill` and `web`).
+On when the module is on: `skill`, `lsp`, `web`, `task`, `bus`. `task` is
+off until `/modules task on`. Plan mode advertises `read` and `run_command`
+(plus `skill` and `web`).
 
 ## What the harness holds between turns
 
@@ -76,6 +86,8 @@ before verification.
 | Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
 | Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
+| Plan file `.mage/plan.md` | `src/plan.rs` |
+| RunMode Plan → Work | `src/runtime.rs` `next`, `Loop::set_mode` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
 | Advertised tools | `src/tools/catalog.rs` |

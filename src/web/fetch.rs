@@ -1,7 +1,8 @@
 use std::net::{IpAddr, ToSocketAddrs};
+use std::path::PathBuf;
 use std::time::Duration;
 
-use super::Search;
+use super::{Format, Search};
 use crate::error::{Error, Result};
 
 const TIMEOUT: Duration = Duration::from_secs(20);
@@ -9,7 +10,7 @@ const MAX_BYTES: usize = 512 * 1024;
 const OUT_MAX: usize = 32 * 1024;
 
 impl Search {
-    pub(crate) async fn fetch(&self, raw: &str) -> Result<String> {
+    pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
         let url = check_url(raw)?;
         if resolves_blocked(url.host_str().unwrap_or("")) {
             return Err(Error::Tool(
@@ -25,12 +26,35 @@ impl Search {
         }
         let text = std::str::from_utf8(&bytes)
             .map_err(|error| Error::Tool(format!("web_fetch: binary body: {error}")))?;
-        let body = if ctype.contains("html") || looks_like_html(text) {
-            html_to_md(text)
-        } else {
-            text.trim().to_string()
-        };
-        Ok(output(&url, &body))
+        let body = page_body(text, &ctype, format);
+        Ok(self.output(&url, &body))
+    }
+
+    pub(super) fn output(&self, url: &reqwest::Url, body: &str) -> String {
+        let mut out = format!("web_fetch {url}\n");
+        if body.chars().count() <= OUT_MAX {
+            out.push_str(body);
+            return out;
+        }
+        out.extend(body.chars().take(OUT_MAX));
+        out.push_str("\n… truncated");
+        if let Some(path) = self.keep(body) {
+            out.push_str(&format!(
+                "\n[full text: {} — {} bytes]",
+                path.display(),
+                body.len()
+            ));
+        }
+        out
+    }
+
+    fn keep(&self, body: &str) -> Option<PathBuf> {
+        let dir = tempfile::tempdir().ok()?;
+        let path = dir.path().join("page.md");
+        std::fs::write(&path, body).ok()?;
+        let shown = path.clone();
+        self.logs.lock().ok()?.push(dir);
+        Some(shown)
     }
 
     async fn request(&self, url: reqwest::Url) -> Result<reqwest::Response> {
@@ -82,15 +106,15 @@ fn validate(response: &reqwest::Response, ctype: &str) -> Result<()> {
     Ok(())
 }
 
-fn output(url: &reqwest::Url, body: &str) -> String {
-    let mut out = format!("web_fetch {url}\n");
-    if body.chars().count() > OUT_MAX {
-        out.extend(body.chars().take(OUT_MAX));
-        out.push_str("\n… truncated");
-    } else {
-        out.push_str(body);
+pub(super) fn page_body(text: &str, ctype: &str, format: Format) -> String {
+    if !(ctype.contains("html") || looks_like_html(text)) {
+        return text.trim().to_string();
     }
-    out
+    match format {
+        Format::Markdown => html_to_md(text),
+        Format::Text => html_to_text(text),
+        Format::Html => text.trim().to_string(),
+    }
 }
 
 pub(super) fn check_url(raw: &str) -> Result<reqwest::Url> {
@@ -237,6 +261,24 @@ pub(super) fn html_to_md(html: &str) -> String {
         let ch = rest.chars().next().unwrap_or('?');
         out.push(ch);
         i += ch.len_utf8();
+    }
+    decode_entities(&collapse_space(&out))
+}
+
+pub(super) fn html_to_text(html: &str) -> String {
+    let without = strip_blocks(
+        &strip_blocks(&strip_blocks(html, "script"), "style"),
+        "noscript",
+    );
+    let mut out = String::with_capacity(without.len());
+    let mut in_tag = false;
+    for ch in without.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(ch),
+            _ => {}
+        }
     }
     decode_entities(&collapse_space(&out))
 }

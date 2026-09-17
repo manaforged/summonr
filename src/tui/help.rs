@@ -1,0 +1,58 @@
+use crate::command::Category;
+use crate::prefs::{Hotkey, Hotkeys};
+
+pub(super) fn help_text(keys: &Hotkeys) -> String {
+    let specs = crate::command_specs();
+    let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
+    let mut lines = Vec::new();
+    for category in Category::ALL {
+        if !lines.is_empty() {
+            lines.push(String::new());
+        }
+        lines.push(category.title().to_string());
+        lines.extend(
+            specs
+                .iter()
+                .filter(|spec| spec.category == category)
+                .map(|spec| format!("  {:<width$}  {}", spec.name, spec.description)),
+        );
+    }
+    lines.extend(
+        [
+            "".to_string(),
+            "composer".to_string(),
+            "  enter        send, or steer the running turn".to_string(),
+            "  tab          complete a /command or @path; queue while busy".to_string(),
+            "  ctrl+q       pull queued input back into the editor".to_string(),
+            "  shift+tab    switch between auto and plan mode".to_string(),
+            "  esc          cancel; twice on an idle composer opens /tree".to_string(),
+            "  ctrl+c       clear the draft; twice on an empty draft quits".to_string(),
+            "  ctrl+d       quit when the draft is empty".to_string(),
+            format!("  {:<12} newline", keys.label(Hotkey::Newline)),
+            format!("  {:<12} edit the draft in $EDITOR", keys.label(Hotkey::Editor)),
+            "  ctrl+z/y     undo or redo the draft".to_string(),
+            "  alt+←/→      word left or right · alt+b/f the same".to_string(),
+            "  ctrl+w       delete the word before the caret · alt+d after".to_string(),
+            "  ctrl+u/k     delete to the line start or end".to_string(),
+            "  ↑↓           recall prompts at the first or last line".to_string(),
+            "  @path        attach text or an image".to_string(),
+            "  !cmd         run in the sandbox and send the output; !!cmd runs only".to_string(),
+            "  a paste of 8+ lines folds into [pasted N lines #k] until sent".to_string(),
+            "".to_string(),
+            "interface".to_string(),
+            format!("  {:<12} options (hotkeys are editable there)", keys.label(Hotkey::Options)),
+            format!("  {:<12} search the conversation · /search TEXT", keys.label(Hotkey::Search)),
+            format!("  {:<12} prompt history · /history TEXT", keys.label(Hotkey::History)),
+            format!("  {:<12} files · {} ledger · {} diff · /pane worktrees", keys.label(Hotkey::Files), keys.label(Hotkey::Ledger), keys.label(Hotkey::Diff)),
+            format!("  {:<12} hide or show the pane · ctrl+→ focus it · ctrl+← composer", keys.label(Hotkey::Pane)),
+            format!("  {:<12} copy the last reply · /copy all · {} select text", keys.label(Hotkey::Copy), keys.label(Hotkey::Select)),
+            "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll".to_string(),
+            "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
+            "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),
+            "  diff         t last turn only · c copy the patch".to_string(),
+            "  sessions     ↑↓ · enter resume · tab scope · ctrl+d twice deletes · esc".to_string(),
+            "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save".to_string(),
+        ],
+    );
+    lines.join("\n")
+}

@@ -10,9 +10,9 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-RATES = {"hit": 0.006, "miss": 0.30, "output": 1.20}
-RATE_CARD = "DeepSeek V4.1 Flash peak list price, USD per 1M tokens, api-docs.deepseek.com/quick_start/pricing, 2026-09-16"
-HARNESSES = ["summonr", "pi", "omp", "opencode", "hermes", "goose"]
+RATES = {"hit": 0.03, "miss": 0.15, "output": 0.50}
+RATE_CARD = "GLM-5.3-Flash pay-as-you-go list price (input $0.15, cached input $0.03, output $0.50 per 1M tokens), docs.z.ai/guides/overview/pricing, 2026-09-17; runs used the flat-rate GLM Coding Plan, so this is a list-price equivalent, not money spent"
+HARNESSES = ["summonr", "pi", "omp", "opencode", "hermes"]
 SUSPECT = re.compile(rb"terminal-bench|harbor-framework|laude-institute|tbench\.ai|marginlab\.ai|/logs/verifier|reward\.txt|/solution/|/tests/test", re.I)
 
 
@@ -64,6 +64,18 @@ def covered(spans):
     return total
 
 
+def hit_tokens(usage):
+    if "prompt_cache_hit_tokens" in usage:
+        return usage["prompt_cache_hit_tokens"]
+    return (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+
+
+def miss_tokens(usage):
+    if "prompt_cache_miss_tokens" in usage:
+        return usage["prompt_cache_miss_tokens"]
+    return usage.get("prompt_tokens", 0) - hit_tokens(usage)
+
+
 def requests(paths):
     by_label = defaultdict(list)
     for path in paths:
@@ -83,8 +95,8 @@ def trials(jobs, run, by_label):
         calls = sorted(by_label.get(label, []) + by_label.get(opaque, []), key=lambda row: row["started"])
         usage = [row.get("usage") or {} for row in calls]
         prompt = sum(u.get("prompt_tokens", 0) for u in usage)
-        hit = sum(u.get("prompt_cache_hit_tokens", 0) for u in usage)
-        miss = sum(u.get("prompt_cache_miss_tokens", 0) for u in usage)
+        hit = sum(hit_tokens(u) for u in usage)
+        miss = sum(miss_tokens(u) for u in usage)
         output = sum(u.get("completion_tokens", 0) for u in usage)
         reasoning = sum((u.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) for u in usage)
         agent = seconds(data.get("agent_execution"))
@@ -112,9 +124,9 @@ def trials(jobs, run, by_label):
                 "output": output,
                 "reasoning": reasoning,
                 "cost": (hit * RATES["hit"] + miss * RATES["miss"] + output * RATES["output"]) / 1_000_000,
-                "first_hit": ((first or {}).get("usage") or {}).get("prompt_cache_hit_tokens"),
+                "first_hit": hit_tokens((first or {}).get("usage") or {}),
                 "first_prompt": ((first or {}).get("usage") or {}).get("prompt_tokens"),
-                "effort": sorted({str(row["request"].get("reasoning_effort")) for row in calls}),
+                "effort": sorted({f'{row["request"].get("reasoning_effort")}/{(row["request"].get("thinking") or {}).get("type")}' for row in calls}),
                 "models": sorted({str(row.get("response_model")) for row in calls}),
                 "max_prompt": max((u.get("prompt_tokens", 0) for u in usage), default=0),
                 "suspect": suspect(result.parent / "agent"),
@@ -263,7 +275,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run")
     parser.add_argument("--jobs", default=str(Path(__file__).parent / "jobs"))
-    parser.add_argument("--proxy", nargs="+", default=[str(Path(__file__).parent / "logs" / "smoke.jsonl")])
+    parser.add_argument("--proxy", nargs="+", default=[str(Path(__file__).parent / "logs" / "glm.jsonl")])
     parser.add_argument("--csv")
     parser.add_argument("--tasks")
     args = parser.parse_args()

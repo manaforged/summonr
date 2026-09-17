@@ -5,8 +5,8 @@ NODE=22.19.0
 BUN=1.4.2
 PI=0.85.1
 OMP=18.2.2
-OPENCODE=1.18.31
-GOOSE=1.50.1
+OPENCODE=2.0.5
+MODELS_DEV=https://models.opencode.ai/api.json
 HERMES=v2026.9.14
 UV=0.12.15
 
@@ -33,11 +33,9 @@ unzip -q -j /tmp/bun.zip -d bun
 rm -rf omp && mkdir -p omp
 PATH=/opt/bench/node/bin:/opt/bench/bun:\$PATH npm install -g --prefix /opt/bench/omp @oh-my-pi/pi-coding-agent@$OMP >/dev/null
 
-rm -rf opencode && mkdir -p opencode/bin
-curl -fsSL https://github.com/anomalyco/opencode/releases/download/v$OPENCODE/opencode-linux-x64-baseline.tar.gz | tar -xz -C opencode/bin
-
-rm -rf goose && mkdir -p goose/bin
-curl -fsSL https://github.com/block/goose/releases/download/v$GOOSE/goose-x86_64-unknown-linux-musl.tar.gz | tar -xz -C goose/bin
+rm -rf opencode && mkdir -p opencode
+curl -fsSL https://registry.npmjs.org/@opencode/cli-linux-x64/-/cli-linux-x64-$OPENCODE.tgz | tar -xz -C opencode --strip-components=1 package/bin/opencode
+curl -fsSL -o opencode/models.json $MODELS_DEV
 
 rm -rf hermes hermes-python uv && mkdir -p uv
 curl -fsSL https://github.com/astral-sh/uv/releases/download/$UV/uv-x86_64-unknown-linux-gnu.tar.gz | tar -xz --strip-components=1 -C uv
@@ -52,10 +50,10 @@ bun $BUN
 pi $PI
 omp $OMP
 opencode $OPENCODE
-goose $GOOSE
+opencode-models $MODELS_DEV $(sha256sum "$out/opencode/models.json" | cut -d' ' -f1) $(date -u +%F)
 hermes $HERMES
 uv $UV
 summonr $(sha256sum "$summonr" | cut -d' ' -f1)
 EOF
-(cd "$out" && find . -type f \( -perm -u+x \( -path './*/bin/*' -o -name 'cli.js' \) -o -name cacert.pem \) -print0 | sort -z | xargs -0 sha256sum) > "$out/manifest.sha256"
+(cd "$out" && find . -type f \( -perm -u+x \( -path './*/bin/*' -o -name 'cli.js' \) -o -name cacert.pem -o -path ./opencode/models.json \) -print0 | sort -z | xargs -0 sha256sum) > "$out/manifest.sha256"
 echo "tools ready in $out"

@@ -20,7 +20,17 @@ def shape(body):
         entry = roles.setdefault(role, {"count": 0, "bytes": 0})
         entry["count"] += 1
         entry["bytes"] += size
+    last = max((i for i, m in enumerate(messages) if m.get("role") == "assistant"), default=None)
+    calls, results = [], []
+    if last is not None:
+        for call in messages[last].get("tool_calls") or []:
+            function = call.get("function") or {}
+            calls.append({"name": function.get("name"), "args": (function.get("arguments") or "")[:240]})
+        for message in messages[last + 1:]:
+            results.append({"role": message.get("role"), "bytes": len(json.dumps(message.get("content"), ensure_ascii=False))})
     return {
+        "round_calls": calls,
+        "round_results": results,
         "model": body.get("model"),
         "stream": bool(body.get("stream")),
         "temperature": body.get("temperature"),
@@ -28,6 +38,7 @@ def shape(body):
         "max_tokens": body.get("max_tokens") or body.get("max_completion_tokens"),
         "reasoning_effort": body.get("reasoning_effort"),
         "thinking": body.get("thinking"),
+        "tool_stream": body.get("tool_stream"),
         "messages": len(messages),
         "roles": roles,
         "tools": len(body.get("tools") or []),
@@ -63,8 +74,17 @@ def usage_from_body(raw):
     return body.get("usage"), body.get("model"), choices[0].get("finish_reason")
 
 
+def cached(usage):
+    if not usage:
+        return None
+    if "prompt_cache_hit_tokens" in usage:
+        return usage["prompt_cache_hit_tokens"]
+    return (usage.get("prompt_tokens_details") or {}).get("cached_tokens")
+
+
 class Proxy(BaseHTTPRequestHandler):
     upstream = ""
+    strip = []
     log = None
     lock = threading.Lock()
 
@@ -82,6 +102,10 @@ class Proxy(BaseHTTPRequestHandler):
         labeled = len(parts) > 2 and parts[1] != "v1"
         label = parts[1] if labeled else "unlabeled"
         path = "/" + parts[2] if labeled else self.path
+        for prefix in self.strip:
+            if path.startswith(prefix + "/"):
+                path = path[len(prefix):]
+                break
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else None
         record = None
@@ -112,16 +136,20 @@ class Proxy(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.send_header("Connection", "close")
         self.end_headers()
-        while True:
-            chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
-            if not chunk:
-                break
-            if first is None:
-                first = time.time()
-            chunks.append(chunk)
-            self.wfile.write(chunk)
-            self.wfile.flush()
-        self.write(record, started, first, status, b"".join(chunks), None)
+        cut = None
+        try:
+            while True:
+                chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
+                if not chunk:
+                    break
+                if first is None:
+                    first = time.time()
+                chunks.append(chunk)
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError) as error:
+            cut = f"cut off: {type(error).__name__}"
+        self.write(record, started, first, status, b"".join(chunks), cut)
 
     def write(self, record, started, first, status, raw, error):
         if record is None:
@@ -141,6 +169,9 @@ class Proxy(BaseHTTPRequestHandler):
                 "response_model": model,
                 "finish_reason": finish,
                 "usage": usage,
+                "cached_tokens": cached(usage),
+                "reasoning_tokens": ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens"),
+                "cut_off": bool(error) and error.startswith("cut off"),
                 "error": error or (raw[:500].decode("utf-8", "replace") if status >= 400 else None),
             }
         )
@@ -155,8 +186,10 @@ def main():
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--upstream", default="https://api.deepseek.com")
     parser.add_argument("--log", required=True)
+    parser.add_argument("--strip", action="append", default=[])
     args = parser.parse_args()
     Proxy.upstream = args.upstream.rstrip("/")
+    Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]
     Proxy.log = open(args.log, "a")
     ThreadingHTTPServer((args.bind, args.port), Proxy).serve_forever()
 

@@ -12,8 +12,7 @@ Two jobs:
    a count may fall, it may never rise. `--update` rewrites the baseline after a
    cut lands.
 
-Item scanning matches scripts/api-census.py so the two
-agree; that script writes docs/api/callable-audit.md.
+Item scanning matches the local callable census so the two agree.
 
     python3 scripts/api-census.py            # census, and ratchet report
     python3 scripts/api-census.py --check    # non-zero if a count rose
@@ -74,14 +73,14 @@ SOURCE_RULES: list[tuple[str, str, str]] = [
     ("name collision: Kind", r"enum Kind\b", "one word, one domain"),
     ("name collision: Role", r"enum Role\b", "one word, one domain"),
     ("name collision: Event", r"enum Event\b", "one word, one domain"),
-    # Base API (docs/api/base-api.md). Each count may only fall.
+    # Base API. Each count may only fall.
     ("clip-shaped helper", r"fn\s+(clip|clip_line|truncate|truncate_line|abbreviate)\b", "check the job, then name it"),
     ("short-shaped helper", r"fn\s+short(_model|_path|_session)?\b", "check the job, then name it"),
     ("wrap-shaped helper", r"fn\s+(wrap|words)\b", "check the job, then name it"),
     ("surface painter", r"fn\s+(grid|paint_bars|paint_source|paint_table)\b", "rows::paint"),
     ("sigil prelude glob", r"use sigil::prelude::\*", "named imports"),
     ("direct file write", r"fs::write\(|File::create", "store::write"),
-    # Rounds 2 and 3 (docs/api/census-rounds.md). Each count may only fall.
+    # Rounds 2 and 3. Each count may only fall.
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
     ("match wildcard arm", r"_\s*(?:=>|\|\s*\w)", "name the arm"),
     ("duration literal", r"Duration::from_(?:secs|millis|micros)", "one timeout policy"),

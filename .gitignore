@@ -13,3 +13,8 @@ docs/api/function-map.md
 /.cargo/config.toml
 .DS_Store
 __pycache__/
+.crucible/
+.crucible.json
+.mage/
+/mines/
+.ruff_cache/

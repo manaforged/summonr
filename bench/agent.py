@@ -8,7 +8,7 @@ from harbor.agents.base import BaseAgent
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
-VERSIONS = Path.home() / "bench" / "tools" / "versions.txt"
+VERSIONS = Path(os.environ.get("BENCH_VERSIONS", "tools/versions.txt"))
 
 
 class Bench(BaseAgent):
@@ -39,8 +39,8 @@ class Bench(BaseAgent):
         await environment.exec(f"cat > {prompt} <<'BENCH_EOF'\n{instruction}\nBENCH_EOF")
         variables = {
             "BENCH_BASE": f"{env['BENCH_PROXY']}/{label}/v1",
-            "BENCH_MODEL": env.get("BENCH_MODEL", "deepseek-flash"),
-            "DEEPSEEK_API_KEY": os.environ["DEEPSEEK_API_KEY"],
+            "BENCH_MODEL": env.get("BENCH_MODEL", "glm-5.3-flash"),
+            "ZAI_API_KEY": os.environ["ZAI_API_KEY"],
             "BENCH_LOGS": "/logs/agent",
         }
         if env.get("BENCH_EFFORT"):

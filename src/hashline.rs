@@ -191,61 +191,6 @@ pub(crate) fn resolve_span(
 }
 
 #[must_use]
-pub(crate) fn diff_hunk(before: &str, after: &str) -> Option<String> {
-    const CONTEXT: usize = 3;
-
-    let old: Vec<&str> = before.lines().collect();
-    let new: Vec<&str> = after.lines().collect();
-    let mut prefix = 0;
-    while prefix < old.len() && prefix < new.len() && old[prefix] == new[prefix] {
-        prefix += 1;
-    }
-    let mut suffix = 0;
-    while suffix < old.len().saturating_sub(prefix)
-        && suffix < new.len().saturating_sub(prefix)
-        && old[old.len() - 1 - suffix] == new[new.len() - 1 - suffix]
-    {
-        suffix += 1;
-    }
-    let removed = &old[prefix..old.len() - suffix];
-    let added = &new[prefix..new.len() - suffix];
-    if removed.is_empty() && added.is_empty() {
-        return None;
-    }
-    let head = CONTEXT.min(prefix);
-    let tail = CONTEXT.min(suffix);
-    let start = prefix - head;
-    let mut out = format!(
-        "@@ -{},{} +{},{} @@",
-        start + 1,
-        removed.len() + head + tail,
-        start + 1,
-        added.len() + head + tail,
-    );
-    for line in &old[start..prefix] {
-        out.push('\n');
-        out.push(' ');
-        out.push_str(line);
-    }
-    for line in removed {
-        out.push('\n');
-        out.push('-');
-        out.push_str(line);
-    }
-    for line in added {
-        out.push('\n');
-        out.push('+');
-        out.push_str(line);
-    }
-    for line in &new[new.len() - suffix..new.len() - suffix + tail] {
-        out.push('\n');
-        out.push(' ');
-        out.push_str(line);
-    }
-    Some(out)
-}
-
-#[must_use]
 pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
@@ -268,4 +213,3 @@ pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
     let last = new_back.saturating_sub(1).max(first);
     (first, last)
 }
-

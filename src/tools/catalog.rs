@@ -113,7 +113,7 @@ fn read() -> ToolDefinition {
 fn edit() -> ToolDefinition {
     tool(
         "edit",
-        "Change an existing file, or move one with path and to. Tags are N:hash from read. old+new replaces a unique substring; tag+new replaces lines through optional end_tag; tag+text inserts after; op=delete removes tagged lines; edits applies several atomically; op=sequence resolves edits in order; files applies several files atomically. Empty files: write.",
+        "Change an existing file, or move one with path and to. Tags are N:hash from read. old+new replaces a unique substring; tag+new replaces lines through optional end_tag; tag+text inserts after; op=delete removes tagged lines; edits applies several atomically; op=sequence resolves edits in order. Empty files: write.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -138,41 +138,6 @@ fn edit() -> ToolDefinition {
                             "text": {"type": "string"},
                             "op": {"type": "string", "enum": ["delete"]}
                         },
-                        "additionalProperties": false
-                    }
-                },
-                "files": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "path": {"type": "string"},
-                            "to": {"type": "string"},
-                            "old": {"type": "string"},
-                            "new": {"type": "string"},
-                            "tag": {"type": "string"},
-                            "end_tag": {"type": "string"},
-                            "text": {"type": "string"},
-                            "op": {"type": "string", "enum": ["delete"]},
-                            "edits": {
-                                "type": "array",
-                                "minItems": 1,
-                                "items": {
-                                    "type": "object",
-                                    "properties": {
-                                        "old": {"type": "string"},
-                                        "new": {"type": "string"},
-                                        "tag": {"type": "string"},
-                                        "end_tag": {"type": "string"},
-                                        "text": {"type": "string"},
-                                        "op": {"type": "string", "enum": ["delete"]}
-                                    },
-                                    "additionalProperties": false
-                                }
-                            }
-                        },
-                        "required": ["path"],
                         "additionalProperties": false
                     }
                 }
@@ -285,7 +250,7 @@ fn run_command(network: bool) -> ToolDefinition {
     tool(
         "run_command",
         &format!(
-            "Run a shell command in the workspace sandbox. {net} workdir picks the directory. A command stops after {wait}s unless timeout_secs sets a longer limit. background true returns a job id; pass job to poll, kill true to stop. Output is the exit code and a digest; a long log is kept at the path the output names. For a password use `sudo -A` or plain ssh; the user types it in a masked prompt. `summonr askpass \"<label>\"` prints a user-typed secret for piping into a command such as `ssh host sudo -S`; never echo or store it.",
+            "Run a shell command in the workspace sandbox. {net} workdir picks the directory. A command stops after {wait}s unless timeout_secs sets a longer limit. background true returns a job id; pass job to poll, kill true to stop. Output is the exit code and a digest; a long log is kept at the path the output names. For a password use `sudo -A` or plain ssh (masked prompt); `summonr askpass \"<label>\"` prints a user-typed secret to pipe into a command; never echo or store it.",
             wait = crate::runtime::JOB_WAIT_SECS
         ),
         serde_json::json!({

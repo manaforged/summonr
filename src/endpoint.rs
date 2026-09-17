@@ -46,6 +46,7 @@ pub enum Wire {
     Responses,
     Anthropic,
     Gemini,
+    Decisions,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,11 +76,12 @@ impl AuthInfo {
 }
 
 impl Wire {
-    fn parse(value: &str) -> Self {
+    pub(crate) fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "responses" => Self::Responses,
             "anthropic" | "claude" => Self::Anthropic,
             "gemini" | "google" => Self::Gemini,
+            "decisions" | "systemone" | "system-one" => Self::Decisions,
             _ => Self::Completions,
         }
     }
@@ -192,6 +194,7 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
     for endpoint in names
         .into_iter()
         .filter_map(|name| resolve_inner(Some(&name), None, true, require_model).ok())
+        .filter(|endpoint| endpoint.wire != Wire::Decisions)
     {
         let available = endpoint
             .oauth
@@ -204,6 +207,18 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
         }
     }
     (endpoints, errors)
+}
+
+pub fn first_decisions() -> Option<String> {
+    let configured = names().unwrap_or_default();
+    let shipped = PRESETS
+        .iter()
+        .filter(|row| row.wire == Wire::Decisions)
+        .map(|row| row.name.to_string());
+    configured.into_iter().chain(shipped).find(|name| {
+        resolve_inner(Some(name), None, true, false)
+            .is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
+    })
 }
 
 pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
@@ -585,6 +600,33 @@ const PRESETS: &[Preset] = &[
         wire: Wire::Completions,
     },
     Preset {
+        name: "jev",
+        base_url: "https://openrouter.ai/api/alpha/decisions",
+        model: "~typesafe/jev-latest",
+        env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
+        default_key: None,
+        missing: "set OPENROUTER_API_KEY, or `summon login jev`",
+        aliases: &[
+            ("jev-latest", "~typesafe/jev-latest"),
+            ("jev", "~typesafe/jev-latest"),
+        ],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Decisions,
+    },
+    Preset {
+        name: "typesafe",
+        base_url: "https://api.typesafe.ai/v1/systemone",
+        model: "jev-latest",
+        env_keys: &["TYPESAFE_API_KEY"],
+        default_key: None,
+        missing: "set TYPESAFE_API_KEY, or `summon login typesafe`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Decisions,
+    },
+    Preset {
         name: "together",
         base_url: "https://api.together.ai/v1",
         model: "",
@@ -817,10 +859,7 @@ fn kimi_cli_token() -> Option<String> {
     let expires = value
         .get("expires_at")
         .and_then(serde_json::Value::as_i64)?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs() as i64;
+    let now = i64::try_from(crate::bus::now()).ok()?;
     if expires <= now + 60 {
         return None;
     }

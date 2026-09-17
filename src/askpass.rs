@@ -16,7 +16,7 @@ pub struct Request {
 }
 
 impl Request {
-    pub fn answer(self, secret: Option<Secret>) {
+    pub(crate) fn answer(self, secret: Option<Secret>) {
         drop(self.reply.send(secret));
     }
 }

@@ -45,7 +45,7 @@ pub struct Agent {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Mail {
+pub(crate) struct Mail {
     pub ts: u64,
     pub from: String,
     #[serde(default = "default_kind")]

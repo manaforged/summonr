@@ -1,5 +1,5 @@
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 pub struct Splash<'a> {
     pub version: &'a str,
@@ -45,18 +45,13 @@ const LOGO: [&str; 6] = [
 const LOGO_WIDTH: usize = 66;
 const LABEL_WIDTH: usize = 8;
 
-pub fn logo() -> &'static [&'static str; 6] {
+pub(crate) fn logo() -> &'static [&'static str; 6] {
     &LOGO
 }
 
 #[must_use]
-pub fn logo_width() -> usize {
+pub(crate) fn logo_width() -> usize {
     LOGO_WIDTH
-}
-
-#[must_use]
-pub fn short_path(path: &Path) -> String {
-    display_path(path)
 }
 
 pub fn interactive(splash: &Splash, full: bool) {
@@ -90,7 +85,7 @@ fn colored() -> bool {
 }
 
 #[must_use]
-pub fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
+pub(crate) fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
     let mut rows = vec![("summonr", splash.version.to_string())];
     let model = match splash.relay {
         Some(relay) => format!("{} · {relay}", splash.model),
@@ -102,7 +97,7 @@ pub fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
     if splash.resumed && splash.history > 0 {
         rows.push(("history", format!("{} messages", splash.history)));
     }
-    rows.push(("workdir", display_path(splash.workspace)));
+    rows.push(("workdir", crate::config::tilde(splash.workspace)));
     if splash.plan {
         rows.push(("mode", "plan · read-only".to_string()));
     }
@@ -155,22 +150,4 @@ pub fn host_of(url: Option<&str>) -> Option<&str> {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
     let host = rest.split('/').next().unwrap_or("");
     (!host.is_empty()).then_some(host)
-}
-
-fn abbreviate(path: &Path, home: Option<&Path>) -> String {
-    if let Some(home) = home
-        && let Ok(rest) = path.strip_prefix(home)
-    {
-        let rest = rest.to_string_lossy();
-        if rest.is_empty() {
-            return "~".to_string();
-        }
-        return format!("~/{rest}");
-    }
-    path.to_string_lossy().into_owned()
-}
-
-fn display_path(path: &Path) -> String {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
-    abbreviate(path, home.as_deref())
 }

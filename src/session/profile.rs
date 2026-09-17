@@ -110,41 +110,45 @@ fn render(
     line(
         &mut out,
         format!(
-        "{model} · {turns} turn(s) · {} model round(s) · {} tool call(s) · {}",
-        rounds.len(),
-        calls.len(),
-        secs(total)
-    ));
+            "{model} · {turns} turn(s) · {} model round(s) · {} tool call(s) · {}",
+            rounds.len(),
+            calls.len(),
+            secs(total)
+        ),
+    );
     line(
         &mut out,
         format!(
-        "time    model {} ({}) · tools {} ({}) · harness {} ({})",
-        secs(model_ms),
-        share(model_ms, total),
-        secs(tool_ms),
-        share(tool_ms, total),
-        secs(harness),
-        share(harness, total)
-    ));
+            "time    model {} ({}) · tools {} ({}) · harness {} ({})",
+            secs(model_ms),
+            share(model_ms, total),
+            secs(tool_ms),
+            share(tool_ms, total),
+            secs(harness),
+            share(harness, total)
+        ),
+    );
     line(
         &mut out,
         format!(
-        "tokens  in {} ({} cached) · out {} · prompt {} → {}",
-        count(input),
-        share(cached, input),
-        count(output),
-        count(rounds.first().map_or(0, |round| round.input)),
-        count(rounds.last().map_or(0, |round| round.input))
-    ));
+            "tokens  in {} ({} cached) · out {} · prompt {} → {}",
+            count(input),
+            share(cached, input),
+            count(output),
+            count(rounds.first().map_or(0, |round| round.input)),
+            count(rounds.last().map_or(0, |round| round.input))
+        ),
+    );
     if extra.0 > 0 {
         line(
             &mut out,
             format!(
-            "        compaction and side calls {} · in {} · out {}",
-            secs(extra.0),
-            count(extra.1),
-            count(extra.3)
-        ));
+                "        compaction and side calls {} · in {} · out {}",
+                secs(extra.0),
+                count(extra.1),
+                count(extra.3)
+            ),
+        );
     }
     let failed = calls.iter().filter(|call| !call.success).count();
     if failed > 0 {
@@ -153,29 +157,51 @@ fn render(
 
     let mut slow: Vec<&Call> = calls.iter().collect();
     slow.sort_by_key(|call| std::cmp::Reverse(call.millis));
-    section(&mut out, "slowest tools", slow.iter().take(TOP).map(|call| {
-        format!("{:>8}  {:<12} {}", secs(call.millis), call.name, brief(&call.arguments))
-    }));
+    section(
+        &mut out,
+        "slowest tools",
+        slow.iter().take(TOP).map(|call| {
+            format!(
+                "{:>8}  {:<12} {}",
+                secs(call.millis),
+                call.name,
+                brief(&call.arguments)
+            )
+        }),
+    );
 
     let mut waits: Vec<&Round> = rounds.iter().collect();
     waits.sort_by_key(|round| std::cmp::Reverse(round.millis));
-    section(&mut out, "slowest model rounds", waits.iter().take(TOP).map(|round| {
-        format!(
-            "{:>8}  round {:<3} in {} ({} cached) · out {} · {} call(s)",
-            secs(round.millis),
-            round.index,
-            count(round.input),
-            share(round.cached, round.input),
-            count(round.output),
-            round.calls
-        )
-    }));
+    section(
+        &mut out,
+        "slowest model rounds",
+        waits.iter().take(TOP).map(|round| {
+            format!(
+                "{:>8}  round {:<3} in {} ({} cached) · out {} · {} call(s)",
+                secs(round.millis),
+                round.index,
+                count(round.input),
+                share(round.cached, round.input),
+                count(round.output),
+                round.calls
+            )
+        }),
+    );
 
     let mut large: Vec<&Call> = calls.iter().collect();
     large.sort_by_key(|call| std::cmp::Reverse(call.chars));
-    section(&mut out, "largest results", large.iter().take(TOP).map(|call| {
-        format!("{:>8}  {:<12} {}", count(call.chars as u64), call.name, brief(&call.arguments))
-    }));
+    section(
+        &mut out,
+        "largest results",
+        large.iter().take(TOP).map(|call| {
+            format!(
+                "{:>8}  {:<12} {}",
+                count(call.chars as u64),
+                call.name,
+                brief(&call.arguments)
+            )
+        }),
+    );
 
     let mut seen: BTreeMap<(&str, &str), usize> = BTreeMap::new();
     for call in calls {
@@ -183,9 +209,13 @@ fn render(
     }
     let mut repeats: Vec<_> = seen.into_iter().filter(|(_, times)| *times > 1).collect();
     repeats.sort_by_key(|(_, times)| std::cmp::Reverse(*times));
-    section(&mut out, "repeated calls", repeats.iter().take(TOP).map(|((name, arguments), times)| {
-        format!("{:>7}×  {:<12} {}", times, name, brief(arguments))
-    }));
+    section(
+        &mut out,
+        "repeated calls",
+        repeats.iter().take(TOP).map(|((name, arguments), times)| {
+            format!("{:>7}×  {:<12} {}", times, name, brief(arguments))
+        }),
+    );
     out
 }
 
@@ -214,12 +244,7 @@ fn brief(arguments: &str) -> String {
         .or_else(|| value.get("url"))
         .and_then(serde_json::Value::as_str)
         .map_or_else(|| arguments.to_string(), str::to_string);
-    let flat: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    if flat.chars().count() > 80 {
-        format!("{}…", flat.chars().take(79).collect::<String>())
-    } else {
-        flat
-    }
+    crate::child::bounded(&text.split_whitespace().collect::<Vec<_>>().join(" "), 80)
 }
 
 fn secs(millis: u64) -> String {

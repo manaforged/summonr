@@ -30,7 +30,7 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    pub fn rollback(&mut self, turn: Option<usize>) -> Result<(usize, Vec<String>)> {
+    pub(crate) fn rollback(&mut self, turn: Option<usize>) -> Result<(usize, Vec<String>)> {
         let checkpoints = self
             .checkpoints()
             .ok_or_else(|| Error::Config("rollback needs a git workspace".to_string()))?;
@@ -38,7 +38,7 @@ impl<P: Provider> Loop<P> {
         Ok((turn, checkpoints.restore(turn)?))
     }
 
-    pub fn undo(&mut self) -> Result<(Option<Vec<String>>, Option<String>)> {
+    pub(crate) fn undo(&mut self) -> Result<(Option<Vec<String>>, Option<String>)> {
         let turns = log::read(self.session_path())
             .map_err(super::session_err)?
             .iter()

@@ -19,7 +19,7 @@ pub struct Contract {
     pub items: Vec<Item>,
 }
 
-pub fn contract(markdown: &str) -> Result<Contract> {
+pub(crate) fn contract(markdown: &str) -> Result<Contract> {
     let mut items = Vec::new();
     let mut in_section = false;
     for line in markdown.lines() {

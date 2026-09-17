@@ -7,7 +7,7 @@ use super::canvas::{Cell, palette};
 use super::chat::{accent, ellipsize, write_at};
 use super::settings::{footer, frame};
 use crate::bus::now;
-use crate::provider::dollars;
+use crate::provider::{compact, dollars};
 use crate::session::{DAY, HOUR, Spend, Total, buckets};
 
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "lifetime"];
@@ -70,20 +70,12 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     super::settings::layer(app, grid, input)
 }
 
-fn compact(value: f64) -> String {
-    if value >= 1e9 {
-        format!("{:.2}B", value / 1e9)
-    } else if value >= 1e6 {
-        format!("{:.1}M", value / 1e6)
-    } else if value >= 1e3 {
-        format!("{:.0}K", value / 1e3)
-    } else {
-        format!("{value:.0}")
-    }
-}
-
 fn label(value: f64, cost: bool) -> String {
-    if cost { dollars(value) } else { compact(value) }
+    if cost {
+        dollars(value)
+    } else {
+        compact(value as u64)
+    }
 }
 
 fn colors() -> [Rgba8; 6] {
@@ -206,8 +198,8 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     };
     let summary = format!(
         "input {}   cached {cached:.1}%   output {}   cost {}",
-        compact(total.input as f64),
-        compact(total.output as f64),
+        compact(total.input),
+        compact(total.output),
         total.cost.map_or_else(|| "–".to_string(), dollars),
     );
     write_at(
@@ -336,9 +328,9 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         let line = format!(
             "{:<name$}{:>9}{:>7.0}%{:>9}{:>10}",
             ellipsize(model_name, name - 1),
-            compact(model.input as f64),
+            compact(model.input),
             cached,
-            compact(model.output as f64),
+            compact(model.output),
             model.cost.map_or_else(|| "–".to_string(), dollars),
         );
         write_at(&mut cells, width, inner + 2, y, &line, palette().text);

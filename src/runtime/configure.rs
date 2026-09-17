@@ -156,17 +156,7 @@ impl<P: Provider> Loop<P> {
         })
     }
 
-    pub fn steer(&mut self, input: impl Into<UserInput>) {
-        if let Some(shared) = &self.steer_shared
-            && let Ok(mut queue) = shared.lock()
-        {
-            queue.push_back(input.into());
-            return;
-        }
-        self.steer.push_back(input.into());
-    }
-
-    pub fn steer_with(
+    pub(crate) fn steer_with(
         &mut self,
         source: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>,
     ) {
@@ -197,7 +187,7 @@ impl<P: Provider> Loop<P> {
         Ok(self)
     }
 
-    pub fn set_network(&mut self, allow: bool) -> Result<()> {
+    pub(crate) fn set_network(&mut self, allow: bool) -> Result<()> {
         if self.tools.has_sandbox() {
             self.tools.enable_sandbox(!allow)?;
         }
@@ -205,16 +195,16 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
-    pub fn allow_network_once(&self) {
+    pub(crate) fn allow_network_once(&self) {
         self.tools.allow_network_once();
     }
 
-    pub fn set_manual(&mut self, on: bool) {
+    pub(crate) fn set_manual(&mut self, on: bool) {
         self.manual = on;
     }
 
     #[must_use]
-    pub fn manual(&self) -> bool {
+    pub(crate) fn manual(&self) -> bool {
         self.manual
     }
 
@@ -223,17 +213,17 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn write_roots(&self) -> Vec<String> {
+    pub(crate) fn write_roots(&self) -> Vec<String> {
         self.tools.write_roots()
     }
 
     #[must_use]
-    pub fn has_sandbox(&self) -> bool {
+    pub(crate) fn has_sandbox(&self) -> bool {
         self.tools.has_sandbox()
     }
 
     #[must_use]
-    pub fn denies_network(&self) -> bool {
+    pub(crate) fn denies_network(&self) -> bool {
         self.tools.denies_network()
     }
 
@@ -290,7 +280,7 @@ impl<P: Provider> Loop<P> {
     }
 
     /// Write a model plan before an ordinary turn executes.
-    pub fn set_mode(&mut self, mode: crate::RunMode) {
+    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) {
         let mode = if mode == crate::RunMode::Work && !self.session.has_selected_plan() {
             crate::RunMode::Plan
         } else {
@@ -305,22 +295,17 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn has_selected_plan(&self) -> bool {
-        self.session.has_selected_plan()
-    }
-
-    #[must_use]
-    pub fn is_plan(&self) -> bool {
+    pub(crate) fn is_plan(&self) -> bool {
         self.mode == crate::RunMode::Plan
     }
 
     #[must_use]
-    pub fn is_work(&self) -> bool {
+    pub(crate) fn is_work(&self) -> bool {
         self.mode == crate::RunMode::Work
     }
 
     #[must_use]
-    pub fn is_goal(&self) -> bool {
+    pub(crate) fn is_goal(&self) -> bool {
         self.mode == crate::RunMode::Goal
     }
 
@@ -345,21 +330,21 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn spent_tokens(&self) -> u64 {
+    pub(crate) fn spent_tokens(&self) -> u64 {
         self.spent_tokens
     }
 
     #[must_use]
-    pub fn elapsed_secs(&self) -> u64 {
+    pub(crate) fn elapsed_secs(&self) -> u64 {
         self.session.replay().elapsed_millis / 1000
     }
 
     #[must_use]
-    pub fn is_strict(&self) -> bool {
+    pub(crate) fn is_strict(&self) -> bool {
         self.tools.is_strict()
     }
 
-    pub fn set_provider(&mut self, provider: P, model: impl Into<String>) {
+    pub(crate) fn set_provider(&mut self, provider: P, model: impl Into<String>) {
         if let Some(probe) = self.probe.take() {
             probe.abort();
         }
@@ -376,7 +361,7 @@ impl<P: Provider> Loop<P> {
         self.fallbacks = fallbacks.into_iter().collect();
     }
 
-    pub fn set_seat(
+    pub(crate) fn set_seat(
         &mut self,
         role: workflow::Role,
         provider: P,
@@ -388,7 +373,7 @@ impl<P: Provider> Loop<P> {
         self.tuning.insert(role, (effort, price));
     }
 
-    pub fn clear_seat(&mut self, role: workflow::Role) {
+    pub(crate) fn clear_seat(&mut self, role: workflow::Role) {
         self.seats.remove(&role);
         self.tuning.remove(&role);
     }
@@ -398,11 +383,11 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn seat_model(&self, role: workflow::Role) -> Option<&str> {
+    pub(crate) fn seat_model(&self, role: workflow::Role) -> Option<&str> {
         self.seats.get(&role).map(|(_, model)| model.as_str())
     }
 
-    pub fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
+    pub(crate) fn set_workflow(&mut self, name: Option<&str>) -> Result<()> {
         self.session.set_workflow(name).map_err(super::session_err)
     }
 
@@ -431,7 +416,7 @@ impl<P: Provider> Loop<P> {
         self.session.workflow().map(str::to_string)
     }
 
-    pub fn set_verify(&mut self, commands: Option<Vec<String>>) {
+    pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) {
         if self.verify == commands {
             return;
         }
@@ -484,7 +469,7 @@ impl<P: Provider> Loop<P> {
         self.session.work_progress().map_err(super::session_err)
     }
 
-    pub fn active_goal(&self) -> Result<Option<(String, crate::WorkProgress)>> {
+    pub(crate) fn active_goal(&self) -> Result<Option<(String, crate::WorkProgress)>> {
         let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
             return Ok(None);
         };
@@ -493,7 +478,7 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn goal_status(&self) -> Option<String> {
+    pub(crate) fn goal_status(&self) -> Option<String> {
         let (objective, progress) = self.active_goal().ok().flatten()?;
         let round = if progress.max_turns == 0 {
             progress.rounds.to_string()
@@ -531,13 +516,13 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
+    pub(crate) fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
         self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
         self
     }
 
-    pub fn fork_live(&mut self) -> Result<String> {
+    pub(crate) fn fork_live(&mut self) -> Result<String> {
         self.fork_at(None)
     }
 
@@ -625,13 +610,13 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub fn clear_history(&mut self) -> Result<()> {
+    pub(crate) fn clear_history(&mut self) -> Result<()> {
         self.session.clear().map_err(super::session_err)?;
         self.history.clear();
         Ok(())
     }
 
-    pub fn abort_note(&mut self, reason: &str) -> Result<()> {
+    pub(crate) fn abort_note(&mut self, reason: &str) -> Result<()> {
         self.abort_with(reason, |_| {})
     }
 
@@ -675,7 +660,7 @@ impl<P: Provider> Loop<P> {
             .map_err(super::session_err)
     }
 
-    pub fn accept_plan(&mut self) -> Result<()> {
+    pub(crate) fn accept_plan(&mut self) -> Result<()> {
         self.session.accept_plan().map_err(super::session_err)
     }
 
@@ -683,7 +668,7 @@ impl<P: Provider> Loop<P> {
         self.session.pending_plan().is_ok()
     }
 
-    pub fn reject_plan(&mut self) -> Result<()> {
+    pub(crate) fn reject_plan(&mut self) -> Result<()> {
         self.session.reject_plan().map_err(super::session_err)
     }
 

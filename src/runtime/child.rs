@@ -466,7 +466,11 @@ impl<P: Provider> Loop<P> {
                     events,
                     emit,
                     Event::Note {
-                        text: format!("child {} finished: {}", short(&id), execution.output.text),
+                        text: format!(
+                            "child {} finished: {}",
+                            crate::child::tag(&id),
+                            execution.output.text
+                        ),
                     },
                 )?;
             }
@@ -523,7 +527,7 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub fn child_events(&mut self) -> Vec<Event> {
+    pub(crate) fn child_events(&mut self) -> Vec<Event> {
         let mut drained = Vec::new();
         while let Ok(event) = self.mailbox.1.try_recv() {
             self.saw(&event);
@@ -950,10 +954,6 @@ fn empty(diagnostic: Option<&str>) -> ChildResult {
         elapsed_millis: 0,
         diagnostic: diagnostic.map(str::to_string),
     }
-}
-
-fn short(id: &str) -> String {
-    id.chars().take(8).collect()
 }
 
 fn access_name(access: Access) -> &'static str {

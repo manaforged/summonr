@@ -139,7 +139,7 @@ pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
     })
 }
 
-pub fn save(workflow: &Workflow) -> Result<()> {
+pub(crate) fn save(workflow: &Workflow) -> Result<()> {
     let name = workflow.name.trim();
     if name.is_empty() {
         return Err(Error::Config("workflow name is empty".to_string()));
@@ -152,7 +152,7 @@ pub fn save(workflow: &Workflow) -> Result<()> {
     config::save_workflow(&config::path()?, workflow)
 }
 
-pub fn set_default(name: &str) -> Result<()> {
+pub(crate) fn set_default(name: &str) -> Result<()> {
     let path = config::path()?;
     from_file(&config::load_from(&path)?, name)?;
     config::save_default_workflow(&path, name)

@@ -577,13 +577,8 @@ impl Work {
                 StepState::Blocked => "[!]",
             };
             let indent = if phase.is_some() { "  " } else { "" };
-            let title: String = step.title.chars().take(LEDGER_WIDTH).collect();
-            let ellipsis = if step.title.chars().count() > LEDGER_WIDTH {
-                "…"
-            } else {
-                ""
-            };
-            lines.push(format!("{indent}{mark} {title}{ellipsis}"));
+            let title = crate::child::bounded(&step.title, LEDGER_WIDTH);
+            lines.push(format!("{indent}{mark} {title}"));
         }
         lines
     }

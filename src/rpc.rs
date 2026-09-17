@@ -70,6 +70,10 @@ pub(crate) fn hello(name: &str) -> Value {
     })
 }
 
+pub(crate) fn request(id: &Value, method: &str, params: Value) -> Value {
+    json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+}
+
 pub(crate) fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
@@ -168,8 +172,7 @@ impl Client {
     ) -> Result<Value> {
         let id = json!(self.next);
         self.next += 1;
-        self.write(&json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}))
-            .await?;
+        self.write(&request(&id, method, params)).await?;
         loop {
             let Some(line) = self.lines.next_line().await? else {
                 return Err(Error::Tool(format!("the child exited during `{method}`")));

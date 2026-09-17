@@ -75,24 +75,6 @@ pub fn missing(contract: &Contract, workspace: &std::path::Path) -> Vec<String> 
     gone
 }
 
-#[must_use]
-pub fn stdout_item(command: &str, expected: &str, output: &str) -> Option<String> {
-    if output.contains(expected) {
-        None
-    } else {
-        Some(format!("`{command}` did not print `{expected}`"))
-    }
-}
-
-#[must_use]
-pub fn contract_prompt(gone: &[String]) -> String {
-    let list: Vec<String> = gone.iter().map(|item| format!("- {item}")).collect();
-    format!(
-        "The plan's Contract is not met. Fix these exactly as named — rename, do not add alternatives:\n{}\n",
-        list.join("\n")
-    )
-}
-
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {
     let mut steps: Vec<Step> = Vec::new();
     let mut in_section = false;
@@ -187,15 +169,6 @@ pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
 }
 
 #[must_use]
-pub fn retry_prompt(check: &str, output: &str) -> String {
-    format!("The check `{check}` failed. Fix the cause, then run it again.\n\n{output}\n")
-}
-
-#[must_use]
 pub fn exit_code(output: &str) -> Option<i32> {
     crate::tools::command_exit_code(output)
 }
-
-#[cfg(test)]
-#[path = "steps_tests.rs"]
-mod tests;

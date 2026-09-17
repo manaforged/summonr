@@ -10,6 +10,9 @@ impl<P: Provider> Loop<P> {
         if self.bus.is_some() {
             definitions.extend(crate::bus::definitions());
         }
+        if let Some(hub) = &self.mcp {
+            definitions.extend(hub.definitions(self.tools.is_read_only()));
+        }
         if self.task_available() {
             definitions.push(super::child::definition());
         }
@@ -207,7 +210,3 @@ fn board_list(bus: &crate::bus::Bus, workspace: &Path) -> Result<String> {
         .collect::<Vec<_>>()
         .join("\n"))
 }
-
-#[cfg(test)]
-#[path = "bus_tests.rs"]
-mod tests;

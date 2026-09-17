@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use crate::durable::store;
+
 const FILE: &str = "recent.json";
 const CAP: usize = 8;
 
@@ -20,10 +22,6 @@ pub(crate) fn record(home: &Path, seat: &str) {
     seats.insert(0, seat.to_string());
     seats.truncate(CAP);
     if let Ok(text) = serde_json::to_string(&seats) {
-        drop(std::fs::write(path(home), text));
+        drop(store::write(&path(home), text));
     }
 }
-
-#[cfg(test)]
-#[path = "recent_tests.rs"]
-mod tests;

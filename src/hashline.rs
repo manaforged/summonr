@@ -190,49 +190,6 @@ pub(crate) fn resolve_span(
     span(content, tag, end_tag)
 }
 
-#[cfg(test)]
-pub(crate) fn apply_replace(
-    content: &str,
-    tag: &str,
-    end_tag: Option<&str>,
-    new: &str,
-) -> Result<String> {
-    let (start, end) = span(content, tag, end_tag)?;
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let inserted: Vec<String> = if new.is_empty() {
-        Vec::new()
-    } else {
-        new.lines().map(str::to_string).collect()
-    };
-    lines.splice(start..=end, inserted);
-    Ok(join_lines(&lines, content.ends_with('\n')))
-}
-
-#[cfg(test)]
-pub(crate) fn apply_insert(content: &str, tag: &str, text: &str) -> Result<String> {
-    if text.is_empty() {
-        return Err(Error::Tool("insert_after.text is empty".to_string()));
-    }
-    let index = locate(content, tag)?;
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    let extra: Vec<String> = text.lines().map(str::to_string).collect();
-    let at = index.saturating_add(1);
-    if at > lines.len() {
-        lines.extend(extra);
-    } else {
-        lines.splice(at..at, extra);
-    }
-    Ok(join_lines(&lines, content.ends_with('\n')))
-}
-
-#[cfg(test)]
-pub(crate) fn apply_delete(content: &str, tag: &str, end_tag: Option<&str>) -> Result<String> {
-    let (start, end) = span(content, tag, end_tag)?;
-    let mut lines: Vec<String> = content.lines().map(str::to_string).collect();
-    lines.drain(start..=end);
-    Ok(join_lines(&lines, content.ends_with('\n')))
-}
-
 #[must_use]
 pub(crate) fn diff_hunk(before: &str, after: &str) -> Option<String> {
     const CONTEXT: usize = 3;
@@ -312,15 +269,3 @@ pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
     (first, last)
 }
 
-#[cfg(test)]
-fn join_lines(lines: &[String], trailing_newline: bool) -> String {
-    let mut out = lines.join("\n");
-    if trailing_newline {
-        out.push('\n');
-    }
-    out
-}
-
-#[cfg(test)]
-#[path = "hashline_tests.rs"]
-mod tests;

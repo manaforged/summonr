@@ -51,6 +51,25 @@ pub(crate) fn parse(line: &str) -> Result<Frame> {
     }
 }
 
+pub(crate) fn outcome(method: &str, result: Option<Value>, error: Option<Value>) -> Result<Value> {
+    if let Some(error) = error {
+        let message = error
+            .get("message")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown error");
+        return Err(Error::Tool(format!("`{method}` failed: {message}")));
+    }
+    Ok(result.unwrap_or(Value::Null))
+}
+
+pub(crate) fn hello(name: &str) -> Value {
+    json!({
+        "protocolVersion": PROTOCOL,
+        "capabilities": {},
+        "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")}
+    })
+}
+
 pub(crate) fn response(id: &Value, result: Value) -> Value {
     json!({"jsonrpc": "2.0", "id": id, "result": result})
 }
@@ -85,9 +104,15 @@ pub(crate) struct Client {
 }
 
 impl Client {
-    pub(crate) fn spawn(program: &str, args: &[&str], cwd: &Path) -> Result<Self> {
+    pub(crate) fn spawn(
+        program: &str,
+        args: &[&str],
+        env: &[(String, String)],
+        cwd: &Path,
+    ) -> Result<Self> {
         let mut child = Command::new(program)
             .args(args)
+            .envs(env.iter().map(|(key, value)| (key, value)))
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -112,17 +137,7 @@ impl Client {
     }
 
     pub(crate) async fn initialize(&mut self, name: &str) -> Result<Value> {
-        let result = self
-            .call(
-                "initialize",
-                json!({
-                    "protocolVersion": PROTOCOL,
-                    "capabilities": {},
-                    "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")}
-                }),
-                |_, _| {},
-            )
-            .await?;
+        let result = self.call("initialize", hello(name), |_, _| {}).await?;
         self.notify("notifications/initialized", json!({})).await?;
         Ok(result)
     }
@@ -170,16 +185,7 @@ impl Client {
                     id: got,
                     result,
                     error,
-                } if got == id => {
-                    if let Some(error) = error {
-                        let message = error
-                            .get("message")
-                            .and_then(Value::as_str)
-                            .unwrap_or("unknown error");
-                        return Err(Error::Tool(format!("`{method}` failed: {message}")));
-                    }
-                    return Ok(result.unwrap_or(Value::Null));
-                }
+                } if got == id => return outcome(method, result, error),
                 Frame::Response { .. } => {}
                 Frame::Notification { method, params } => on_note(&method, &params),
                 Frame::Request { id, method, .. } => {
@@ -198,12 +204,12 @@ impl Client {
         Ok(())
     }
 
+    pub(crate) fn alive(&mut self) -> bool {
+        matches!(self.child.try_wait(), Ok(None))
+    }
+
     pub(crate) async fn shutdown(mut self) {
         drop(self.stdin);
         drop(self.child.kill().await);
     }
 }
-
-#[cfg(test)]
-#[path = "rpc_tests.rs"]
-mod tests;

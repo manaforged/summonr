@@ -1,11 +1,10 @@
 use std::ops::Range;
 
-use sigil::prelude::*;
-
 use super::app::App;
 use super::canvas::{Cell, palette};
 use super::chat::{accent, draft_view, ellipsize, write_at};
 use super::input::Input;
+use sigil::prelude::{NodeBuilder, Signal, signal, text_edit};
 
 #[derive(Clone, Copy)]
 pub(super) struct View {

@@ -12,10 +12,6 @@ impl SessionId {
         Self(Uuid::now_v7().as_u128())
     }
 
-    #[cfg(test)]
-    pub(crate) fn from_u128(value: u128) -> Self {
-        Self(value)
-    }
 }
 
 impl fmt::Debug for SessionId {

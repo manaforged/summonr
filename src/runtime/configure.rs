@@ -81,27 +81,6 @@ impl<P: Provider> Loop<P> {
         Ok(loop_)
     }
 
-    pub fn with_session(
-        provider: P,
-        model: impl Into<String>,
-        workspace: impl AsRef<Path>,
-        system_prompt: impl Into<String>,
-    ) -> Result<Self> {
-        let workspace = workspace.as_ref();
-        let model = model.into();
-        let system_prompt = system_prompt.into();
-        let session = open_driver(workspace, workspace, &model, &system_prompt)?;
-        Self::with_parts(
-            provider,
-            model,
-            workspace,
-            system_prompt,
-            session,
-            Policy::builtin(),
-            None,
-        )
-    }
-
     pub(super) fn with_parts(
         provider: P,
         model: impl Into<String>,
@@ -121,10 +100,8 @@ impl<P: Provider> Loop<P> {
         let depth = session.depth();
         let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
         tools.set_session(&session.id().to_string());
-        let herdr = crate::herdr::Reporter::discover(&session.id().to_string(), &model, depth);
-        if let Some(name) = crate::session::catalog_name(session.path()) {
-            herdr.label(&name);
-        }
+        let herdr =
+            crate::herdr::Reporter::discover(&session.id().to_string(), workspace, &model, depth);
         Ok(Self {
             provider,
             model,
@@ -132,7 +109,8 @@ impl<P: Provider> Loop<P> {
             tuning: BTreeMap::new(),
             price: None,
             system_prompt,
-            plan: false,
+            mode: crate::RunMode::Auto,
+            plan_first: false,
             tools,
             schema: None,
             history: Vec::new(),
@@ -156,12 +134,23 @@ impl<P: Provider> Loop<P> {
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
             bus: None,
+            mcp: None,
+            guard: super::guard::Guard::default(),
+            checkpoints: None,
+            fallbacks: VecDeque::new(),
+            compact_tokens: None,
+            hooks: crate::config::load()
+                .map(|file| file.hooks)
+                .unwrap_or_default(),
+            mcp_start: None,
             mail: std::collections::VecDeque::new(),
             steer: std::collections::VecDeque::new(),
             steer_shared: None,
             depth,
             tasks: true,
             manual: false,
+            asked: Vec::new(),
+            blocks: (0, 0),
             spawned: BTreeMap::new(),
             mailbox: tokio::sync::mpsc::unbounded_channel(),
         })
@@ -195,6 +184,7 @@ impl<P: Provider> Loop<P> {
         if !switches.enabled("bus") {
             self.bus = None;
         }
+        self.switch_mcp(switches.enabled("mcp"));
         self.schema = None;
     }
 
@@ -211,6 +201,7 @@ impl<P: Provider> Loop<P> {
         if self.tools.has_sandbox() {
             self.tools.enable_sandbox(!allow)?;
         }
+        self.schema = None;
         Ok(())
     }
 
@@ -255,9 +246,6 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) async fn settle_probe(&mut self) {
-        if self.context_window.is_some() {
-            self.probe = None;
-        }
         if self
             .probe
             .as_ref()
@@ -265,7 +253,7 @@ impl<P: Provider> Loop<P> {
             && let Some(probe) = self.probe.take()
             && let Ok(Some(window)) = probe.await
         {
-            self.context_window = Some(window);
+            self.context_window = Some(self.context_window.map_or(window, |have| have.min(window)));
         }
     }
 
@@ -297,22 +285,48 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn with_plan(mut self) -> Self {
-        self.set_plan(true);
+        self.set_mode(crate::RunMode::Plan);
         self
     }
 
-    pub fn set_plan(&mut self, plan: bool) {
-        if self.plan == plan {
+    /// Write a model plan before an ordinary turn executes.
+    pub fn set_mode(&mut self, mode: crate::RunMode) {
+        let mode = if mode == crate::RunMode::Work && !self.session.has_selected_plan() {
+            crate::RunMode::Plan
+        } else {
+            mode
+        };
+        if self.mode == mode {
             return;
         }
-        self.plan = plan;
-        self.tools.set_read_only(plan);
+        self.mode = mode;
+        self.tools.set_read_only(mode == crate::RunMode::Plan);
         self.schema = None;
     }
 
     #[must_use]
+    pub fn has_selected_plan(&self) -> bool {
+        self.session.has_selected_plan()
+    }
+
+    #[must_use]
     pub fn is_plan(&self) -> bool {
-        self.plan
+        self.mode == crate::RunMode::Plan
+    }
+
+    #[must_use]
+    pub fn is_work(&self) -> bool {
+        self.mode == crate::RunMode::Work
+    }
+
+    #[must_use]
+    pub fn is_goal(&self) -> bool {
+        self.mode == crate::RunMode::Goal
+    }
+
+    #[must_use]
+    pub fn mode(&self) -> crate::RunMode {
+        self.mode
     }
 
     #[must_use]
@@ -346,9 +360,20 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn set_provider(&mut self, provider: P, model: impl Into<String>) {
+        if let Some(probe) = self.probe.take() {
+            probe.abort();
+        }
         self.provider = provider;
         self.model = model.into();
         self.context_sample = None;
+    }
+
+    pub fn set_compact_tokens(&mut self, tokens: Option<u32>) {
+        self.compact_tokens = tokens;
+    }
+
+    pub fn set_fallbacks(&mut self, fallbacks: impl IntoIterator<Item = (P, String)>) {
+        self.fallbacks = fallbacks.into_iter().collect();
     }
 
     pub fn set_seat(
@@ -440,14 +465,8 @@ impl<P: Provider> Loop<P> {
         self.session.path()
     }
 
-    #[cfg(test)]
-    pub(crate) fn replay_session(&self) -> crate::session::Replay {
-        self.session.replay()
-    }
-
     pub fn set_name(&self, name: &str) -> Result<()> {
         crate::session::set_name(self.session.path(), name)?;
-        self.herdr.label(name);
         Ok(())
     }
 
@@ -546,9 +565,6 @@ impl<P: Provider> Loop<P> {
         self.join_bus();
         self.schema = None;
         self.herdr.retarget(&self.session.id().to_string());
-        if let Some(name) = crate::session::catalog_name(self.session.path()) {
-            self.herdr.label(&name);
-        }
     }
 
     #[must_use]
@@ -558,6 +574,7 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) async fn judge(&mut self, system: &str, user: &str) -> Result<(String, Usage)> {
         let request = CompletionRequest {
+            session: self.session_id(),
             model: self.seat(workflow::Role::Judge).1.to_string(),
             messages: vec![
                 Message::system(system.to_string()),
@@ -606,20 +623,6 @@ impl<P: Provider> Loop<P> {
                 Err(error)
             }
         }
-    }
-
-    #[must_use]
-    pub fn tool_names(&self) -> Vec<String> {
-        if let Some(schema) = &self.schema {
-            return schema
-                .iter()
-                .map(|tool| tool.function.name.clone())
-                .collect();
-        }
-        self.tool_definitions()
-            .into_iter()
-            .map(|tool| tool.function.name)
-            .collect()
     }
 
     pub fn clear_history(&mut self) -> Result<()> {

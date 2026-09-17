@@ -5,6 +5,14 @@ use super::{ToolRegistry, object_string, object_usize, parse_args};
 impl ToolRegistry {
     pub(super) async fn web(&self, arguments: &str) -> Result<String> {
         let args: serde_json::Value = parse_args("web", arguments)?;
+        match args.get("op").and_then(serde_json::Value::as_str) {
+            Some("search") => return self.web_search(arguments).await,
+            Some("fetch") => return self.web_fetch(arguments).await,
+            Some(operation) => {
+                return Err(Error::Tool(format!("unknown web operation `{operation}`")));
+            }
+            None => {}
+        }
         if args
             .get("url")
             .and_then(serde_json::Value::as_str)
@@ -32,6 +40,8 @@ impl ToolRegistry {
         })?;
         let args: serde_json::Value = parse_args("web_fetch", arguments)?;
         let url = object_string(&args, "url")?;
-        search.fetch(url).await
+        let format =
+            crate::web::Format::parse(args.get("format").and_then(serde_json::Value::as_str))?;
+        search.fetch(url, format).await
     }
 }

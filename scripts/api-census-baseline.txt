@@ -1,0 +1,47 @@
+# Shrink-only. Rewrite with: python3 scripts/api-census.py --update
+# label	count	keep
+shadow editor apply_replace	0	delete
+shadow editor apply_insert	0	delete
+shadow editor apply_delete	0	delete
+shadow editor join_lines	0	delete
+orphan token_labels	0	delete
+orphan with_session	0	delete
+orphan tool_names	0	delete
+orphan from_env	0	delete
+orphan file_via_security	0	delete
+orphan with_security	0	delete
+orphan fps_parse	0	delete
+orphan fps_cycle	0	delete
+orphan set_plan	0	delete
+orphan with_plan_first	0	delete
+orphan stdout_item	0	delete
+orphan contract_prompt	0	delete
+orphan retry_prompt	0	delete
+orphan add_children	0	delete
+orphan from_u128	0	delete
+orphan file_only	0	delete
+orphan from_io	0	delete
+orphan last_entry	0	delete
+orphan placements	0	delete
+orphan replay_session	0	delete
+session dialect Msg	1	one session event
+session dialect Cmd	1	one session event
+session dialect Line	1	one session event
+session dialect Entry	1	one session event
+name collision: Backend	3	one word, one domain
+name collision: Source	2	one word, one domain
+name collision: Kind	1	one word, one domain
+name collision: Role	2	one word, one domain
+name collision: Event	2	one word, one domain
+clip-shaped helper	5	check the job, then name it
+short-shaped helper	7	check the job, then name it
+wrap-shaped helper	7	check the job, then name it
+surface painter	7	rows::paint
+sigil prelude glob	0	named imports
+direct file write	3	store::write
+legacy tool alias literal	52	one alias table
+match wildcard arm	143	name the arm
+duration literal	44	one timeout policy
+timeout mention	28	one timeout policy
+dead dependency unicode-width	0	delete
+dead dependency winapi-util	0	delete

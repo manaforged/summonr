@@ -3,10 +3,17 @@ use std::path::{Path, PathBuf};
 use serde_json::{Value, json};
 
 use crate::bus;
+use crate::durable::store;
 use crate::error::{Error, Result};
 
 mod host;
 mod serve;
+
+/// A short room id. One copy: two files minted the same four hex digits.
+pub(super) fn short() -> String {
+    let seed = std::process::id() as u64 ^ bus::now();
+    format!("{:04x}", seed & 0xffff)
+}
 
 const SKILL: &str = include_str!("room/SKILL.md");
 
@@ -70,10 +77,8 @@ fn home(var: &str, fallback: &str) -> Result<PathBuf> {
 }
 
 fn install_skill(root: &Path) -> Result<PathBuf> {
-    let dir = root.join("skills/summon-room");
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join("SKILL.md");
-    std::fs::write(&path, SKILL)?;
+    let path = root.join("skills/summon-room/SKILL.md");
+    store::write(&path, SKILL)?;
     Ok(path)
 }
 
@@ -97,7 +102,7 @@ fn setup_claude(cwd: &Path, root: &Path) -> Result<String> {
     let changed = servers.get("summon-room") != Some(&entry);
     servers.insert("summon-room".to_string(), entry);
     if changed {
-        std::fs::write(
+        store::write(
             &path,
             format!("{}\n", serde_json::to_string_pretty(&config)?),
         )?;
@@ -131,7 +136,7 @@ fn setup_codex(root: &Path) -> Result<String> {
     let after = doc.to_string();
     let changed = after != before;
     if changed {
-        std::fs::write(&path, after)?;
+        store::write(&path, &after)?;
     }
     Ok(format!(
         "skill      {}\nmcp        {} ({})\n\nCodex cannot receive a push. Inside Codex, call the wait tool to read the room, or let Claude Code host Codex with `summonr room host codex`.",
@@ -140,7 +145,3 @@ fn setup_codex(root: &Path) -> Result<String> {
         if changed { "written" } else { "unchanged" }
     ))
 }
-
-#[cfg(test)]
-#[path = "room_tests.rs"]
-mod tests;

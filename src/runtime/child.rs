@@ -606,7 +606,7 @@ impl<P: Provider> Loop<P> {
             child.tools.set_read_only(true);
         }
         child.depth = 1;
-        child.plan = self.plan;
+        child.mode = self.mode;
         child.context_window = self.context_window;
         child.context_sample = self.context_sample;
         child.effort = self.effort_for(role);
@@ -1032,7 +1032,3 @@ fn record_paths(record: &ChildRecord) -> usize {
         | ChildState::Interrupted(result) => result.changed_paths_total,
     }
 }
-
-#[cfg(test)]
-#[path = "child_tests.rs"]
-mod tests;

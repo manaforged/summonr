@@ -1,4 +1,8 @@
-use sigil::prelude::*;
+use sigil::prelude::{
+    AlignItems, JustifyContent, Key, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt,
+    NodeStyleExt, Overflow, WidgetLayoutExt, button, classes, container, label, request_focus,
+    text_edit, text_field,
+};
 
 use super::super::app::App;
 use super::{hit, spacer};
@@ -65,7 +69,9 @@ pub(super) fn auth(app: App) -> NodeBuilder {
             } else {
                 for (index, choice) in choices.iter().enumerate() {
                     let pick = app.clone();
-                    let action = if choice.device_login {
+                    let action = if choice.device_login && choice.configured {
+                        "Sign in again"
+                    } else if choice.device_login {
                         "Sign in"
                     } else if choice.configured {
                         "Replace key"
@@ -118,76 +124,25 @@ pub(super) fn auth(app: App) -> NodeBuilder {
 
 pub(super) fn main(app: App) -> NodeBuilder {
     let close = app.clone();
-    let model = app.model.borrow();
-    let verify = model
-        .snapshot
-        .verify
-        .as_deref()
-        .map_or_else(|| "off".to_string(), |command| format!("on · {command}"));
-    let endpoint = model.snapshot.relay.as_deref().map_or_else(
-        || model.snapshot.endpoint.clone(),
-        |relay| format!("{} · {relay}", model.snapshot.endpoint),
-    );
-    let rows = [
-        (
-            "mode",
-            if model.snapshot.plan {
-                "plan · read-only"
-            } else {
-                "auto"
-            }
-            .to_string(),
-        ),
-        ("verify", verify),
-        ("endpoint", endpoint),
-        ("model", model.snapshot.model.clone()),
-        (
-            "workflow",
-            model
-                .snapshot
-                .workflow
-                .clone()
-                .unwrap_or_else(|| "off".to_string()),
-        ),
-        ("theme", model.prefs.theme.clone()),
-        ("splash", on_off(model.prefs.splash).to_string()),
-        ("motion", on_off(model.prefs.animations).to_string()),
-        ("reasoning", model.prefs.reasoning.name().to_string()),
-        ("receipts", model.prefs.receipts.name().to_string()),
-        ("tools", model.prefs.tools.name().to_string()),
-        (
-            "bus",
-            if model.prefs.bus {
-                "mail starts a turn"
-            } else {
-                "mail waits"
-            }
-            .to_string(),
-        ),
-        ("hotkeys", format!("{} bindings", Hotkey::ALL.len())),
-    ];
-    drop(model);
-
-    let mut panel = pane()
-        .child(header("Options", move || close.toggle_options()))
-        .child(section("Session · not saved"));
-    for (index, (name, value)) in rows.into_iter().enumerate() {
-        if index == 3 {
-            panel = panel.child(section("Provider · not saved"));
-        } else if index == 6 {
-            panel = panel.child(section("Interface · auto-save"));
+    let rows = super::super::settings::setting_rows(&app);
+    let mut panel = pane().child(header("Options", move || close.toggle_options()));
+    let mut group = "";
+    for (index, row) in rows.into_iter().enumerate() {
+        if row.group != group {
+            group = row.group;
+            panel = panel.child(section(group));
         }
         let change = app.clone();
         let selected = app.settings_sel.peek() == index;
         panel = panel.child(
-            hit(name.to_string(), selected, move || {
+            hit(row.label.clone(), selected, move || {
                 change.settings_sel.set(index);
                 change.adjust_setting();
             })
-            .child(label(name).class(classes!("text-sm text-gray-12")))
+            .child(label(row.label).class(classes!("text-sm text-gray-12")))
             .child(spacer())
             .child(
-                label(value)
+                label(row.value)
                     .ellipsize()
                     .layout(
                         LayoutStyle::block()
@@ -259,7 +214,6 @@ pub(super) fn models(app: App) -> NodeBuilder {
                 .placeholder("Filter models")
                 .change(move |draft| {
                     changed.replace_model_draft(draft.to_string());
-                    changed.model_sel.set(0);
                 })
                 .submit(move |_| submit.commit_model_edit())
                 .height(34.0)
@@ -296,10 +250,7 @@ pub(super) fn models(app: App) -> NodeBuilder {
         panel = panel.child(label("Loading models…").class(classes!("text-xs text-gray-11")));
     } else if choices.is_empty() {
         panel = panel
-            .child(label("No models match.").class(classes!("text-xs text-gray-11")))
-            .child(
-                label("Enter uses this exact model ID.").class(classes!("text-xs text-gray-11")),
-            );
+            .child(label("No matches. Change the filter.").class(classes!("text-xs text-gray-11")));
     }
     let error = app.model_error.peek();
     if !error.is_empty() {
@@ -455,8 +406,4 @@ fn section(title: &'static str) -> NodeBuilder {
                 .padding_y(6.0),
         )
         .child(label(title).class(classes!("text-xs text-gray-11")))
-}
-
-const fn on_off(value: bool) -> &'static str {
-    if value { "on" } else { "off" }
 }

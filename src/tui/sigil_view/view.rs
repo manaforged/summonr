@@ -1,10 +1,13 @@
-use sigil::prelude::*;
-
 use super::super::{Cmd, Msg};
 use super::app::{App, Overlay};
 use super::chat as chat_surface;
 use super::scene;
 use super::settings;
+use sigil::prelude::{
+    Key, KeyEvent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
+    NodeEventsExt, NodeStyleExt, Position, Rgba8, Role, ScrollDelta, Shortcut, Style, Theme,
+    ThemeValue, WidgetLayoutExt, container, text_edit,
+};
 
 const SCRIM: Rgba8 = Rgba8 {
     r: 10,
@@ -24,26 +27,18 @@ pub(super) fn root(app: App) -> NodeBuilder {
             }
             screen.search.target.set(None);
         }
-        let view = if screen.help.open.get() {
-            super::help::layer(screen.clone())
-        } else if screen.search.open.get() {
-            super::search::layer(screen.clone())
-        } else if screen.sessions.open.get() {
-            super::sessions::layer(screen.clone())
-        } else if screen.auth_open.get() {
-            settings::auth_layer(screen.clone())
-        } else if screen.editing_model.get() {
-            settings::model_picker_layer(screen.clone())
-        } else if screen.workflow_open.get() {
-            settings::workflow_layer(screen.clone())
-        } else if screen.hotkeys_open.get() {
-            settings::hotkeys_layer(screen.clone())
-        } else if screen.settings_open.get() {
-            settings::settings_layer(screen.clone())
-        } else if screen.splash.get() {
-            splash(screen.clone())
-        } else {
-            chat(screen.clone())
+        let view = match screen.overlay() {
+            Some(Overlay::Help) => super::help::layer(screen.clone()),
+            Some(Overlay::Search) => super::search::layer(screen.clone()),
+            Some(Overlay::Sessions) => super::sessions::layer(screen.clone()),
+            Some(Overlay::Usage) => super::usage::layer(screen.clone()),
+            Some(Overlay::Auth) => settings::auth_layer(screen.clone()),
+            Some(Overlay::Model) => settings::model_picker_layer(screen.clone()),
+            Some(Overlay::Workflow) => settings::workflow_layer(screen.clone()),
+            Some(Overlay::Hotkeys) => settings::hotkeys_layer(screen.clone()),
+            Some(Overlay::Settings) => settings::settings_layer(screen.clone()),
+            None if screen.splash.get() => splash(screen.clone()),
+            Some(Overlay::Context | Overlay::Cache) | None => chat(screen.clone()),
         };
         vec![
             container()
@@ -71,6 +66,7 @@ pub(super) fn watch(app: &App) {
         app.status.get(),
         app.select.get(),
         app.approval.get(),
+        app.secret.get(),
         app.draft.get(),
         app.caret.get(),
         app.placement.get(),
@@ -109,350 +105,322 @@ pub(super) fn watch(app: &App) {
         app.view_edit.get(),
         app.view_text.get(),
         app.view_caret.get(),
+        app.context_open.get(),
+        app.cache_open.get(),
+        app.meter_hover.get(),
     ));
 }
 
 pub(super) fn shell(app: &App) -> NodeBuilder {
-    let cancel = app.clone();
-    let interrupt = app.clone();
-    let eof = app.clone();
-    let complete = app.clone();
-    let enter = app.clone();
-    let retry = app.clone();
-    let allow = app.clone();
-    let always = app.clone();
-    let deny = app.clone();
-    let page_up = app.clone();
-    let page_down = app.clone();
-    let setting_up = app.clone();
-    let dequeue = app.clone();
-    let setting_down = app.clone();
-    let setting_left = app.clone();
-    let setting_right = app.clone();
-    let setting_space = app.clone();
-    let setting_increase = app.clone();
-    let setting_decrease = app.clone();
-    let seat_clear = app.clone();
-    let seat_save = app.clone();
-    let hotkey_reset = app.clone();
-    let scroll = app.clone();
-    let split_left = app.clone();
-    let focus_chat = app.clone();
-    let focus_pane = app.clone();
-    let open_view = app.clone();
-    let recent = app.clone();
-    let edit = app.clone();
-    let save = app.clone();
-    let copy = app.clone();
-    let home = app.clone();
-    let end = app.clone();
-    let left = app.clone();
-    let right = app.clone();
-    let split_right = app.clone();
-    let shell = container()
+    type Handler = fn(&App, &mut KeyEvent);
+    let mut shell = container()
         .role(Role::Main)
         .label("Summonr agent harness")
         .theme(Theme::dark())
         .layout(LayoutStyle::flex_column().fill_width().fill_height())
         .class("w-full h-full bg-surface");
-    let shell = shell
-        .key_capture(
+    let bindings: &[(Shortcut, Handler)] = &[
+        (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
-            move |event| {
-                if always.approval.peek().is_some_and(|(_, persist)| persist) {
+            |app, event| {
+                if app.approval.peek().is_some_and(|(_, persist)| persist) {
                     event.stop_propagation();
-                    always.approval_answer("always");
+                    app.approval_answer("always");
                 }
             },
-        )
-        .key_capture(LogicalKey::character("y"), move |event| {
-            if allow.approval.peek().is_some() {
+        ),
+        (LogicalKey::character("y").into(), |app, event| {
+            if app.approval.peek().is_some() {
                 event.stop_propagation();
-                allow.approval_answer("y");
+                app.approval_answer("y");
             }
-        })
-        .key_capture(LogicalKey::character("n"), move |event| {
-            if deny.approval.peek().is_some() {
+        }),
+        (LogicalKey::character("n").into(), |app, event| {
+            if app.approval.peek().is_some() {
                 event.stop_propagation();
-                deny.approval_answer("n");
+                app.approval_answer("n");
             }
-        })
-        .key_capture(Key::F5, move |event| {
-            if !retry.options_active() && !retry.view_edit.peek() {
+        }),
+        (Key::F5.into(), |app, event| {
+            if !app.options_active() && !app.view_edit.peek() {
                 event.stop_propagation();
-                retry.retry();
+                app.retry();
             }
-        })
-        .key_capture(Key::Escape, move |event| {
+        }),
+        (Key::Escape.into(), |app, event| {
             event.stop_propagation();
-            if cancel.options_active() {
-                escape(&cancel);
-            } else if cancel.edit_stop() {
-            } else if cancel.context.peek().is_some() {
-                cancel.context_close();
-            } else if cancel.pane_back() {
-            } else if cancel.pane_focus.peek() {
-                cancel.focus_pane(false);
+            if app.options_active() {
+                escape(app);
+            } else if app.edit_stop() {
+            } else if app.context.peek().is_some() {
+                app.context_close();
+            } else if app.pane_back() {
+            } else if app.pane_focus.peek() {
+                app.focus_pane(false);
             } else {
-                escape(&cancel);
+                escape(app);
             }
-        })
-        .key_capture(LogicalKey::character("e"), move |event| {
-            if edit.pane_active() == Some(super::pane::Pane::View) {
+        }),
+        (LogicalKey::character("e").into(), |app, event| {
+            if app.pane_active() == Some(super::pane::Pane::View) {
                 event.stop_propagation();
-                edit.edit_start();
+                app.edit_start();
             }
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("s")), move |event| {
-            if save.view_edit.peek() && !save.hotkey_recording.peek() {
+        }),
+        (Shortcut::ctrl(LogicalKey::character("s")), |app, event| {
+            if app.view_edit.peek() && !app.hotkey_recording.peek() {
                 event.stop_propagation();
-                save.edit_save();
+                app.edit_save();
             }
-        })
-        .key_capture(LogicalKey::character("t"), move |event| {
-            if recent.pane_active() == Some(super::pane::Pane::Diff) {
+        }),
+        (LogicalKey::character("t").into(), |app, event| {
+            if app.pane_active() == Some(super::pane::Pane::Diff) {
                 event.stop_propagation();
-                recent.toggle_recent();
+                app.toggle_recent();
             }
-        })
-        .key_capture(LogicalKey::character("c"), move |event| {
-            if copy.pane_active() == Some(super::pane::Pane::Diff) {
+        }),
+        (LogicalKey::character("c").into(), |app, event| {
+            if app.pane_active() == Some(super::pane::Pane::Diff) {
                 event.stop_propagation();
-                copy.copy_patch();
+                app.copy_patch();
             }
-        })
-        .key_capture(LogicalKey::character("o"), move |event| {
-            if open_view.pane_active() == Some(super::pane::Pane::View) {
+        }),
+        (LogicalKey::character("o").into(), |app, event| {
+            if app.pane_active() == Some(super::pane::Pane::View) {
                 event.stop_propagation();
-                open_view.view_external();
+                app.view_external();
             }
-        })
-        .key_capture(Key::Home, move |event| {
-            if home.pane_active().is_some() {
+        }),
+        (Key::Home.into(), |app, event| {
+            if app.pane_active().is_some() {
                 event.stop_propagation();
-                home.pane_edge(false);
-            } else if home.edge(false, false) {
-                event.stop_propagation();
-            }
-        })
-        .key_capture(Key::End, move |event| {
-            if end.pane_active().is_some() {
-                event.stop_propagation();
-                end.pane_edge(true);
-            } else if end.edge(true, false) {
+                app.pane_edge(false);
+            } else if app.edge(false, false) {
                 event.stop_propagation();
             }
-        })
-        .key_capture(Key::ArrowLeft, move |event| {
-            left.placement.set(None);
-            if left.pane_active().is_some() {
+        }),
+        (Key::End.into(), |app, event| {
+            if app.pane_active().is_some() {
                 event.stop_propagation();
-                left.pane_collapse();
-            }
-        })
-        .key_capture(Key::ArrowRight, move |event| {
-            right.placement.set(None);
-            if right.pane_active().is_some() {
+                app.pane_edge(true);
+            } else if app.edge(true, false) {
                 event.stop_propagation();
-                right.pane_expand();
             }
-        })
-        .child(tab_shortcuts(&complete))
-        .key_capture(Key::Enter, move |event| {
-            if enter.view_edit.peek() && !enter.options_active() {
+        }),
+        (Key::ArrowLeft.into(), |app, event| {
+            app.placement.set(None);
+            if app.pane_active().is_some() {
+                event.stop_propagation();
+                app.pane_collapse();
+            }
+        }),
+        (Key::ArrowRight.into(), |app, event| {
+            app.placement.set(None);
+            if app.pane_active().is_some() {
+                event.stop_propagation();
+                app.pane_expand();
+            }
+        }),
+        (Key::Enter.into(), |app, event| {
+            if app.view_edit.peek() && !app.options_active() {
                 return;
             }
             event.stop_propagation();
-            if enter.overlay_enter() {
-            } else if enter.context.peek().is_some() {
-                enter.context_enter();
-            } else if enter.pane_active().is_some() {
-                enter.pane_enter();
-            } else if !enter.accept() {
-                enter.submit();
+            if app.overlay_enter() {
+            } else if app.context.peek().is_some() {
+                app.context_enter();
+            } else if app.pane_active().is_some() {
+                app.pane_enter();
+            } else if !app.accept() {
+                app.submit();
             }
-        })
-        .key_capture(Shortcut::ctrl(Key::ArrowLeft), move |event| {
+        }),
+        (Shortcut::ctrl(Key::ArrowLeft), |app, event| {
             event.stop_propagation();
-            focus_chat.focus_pane(false);
-        })
-        .key_capture(Shortcut::ctrl(Key::ArrowRight), move |event| {
+            app.focus_pane(false);
+        }),
+        (Shortcut::ctrl(Key::ArrowRight), |app, event| {
             event.stop_propagation();
-            focus_pane.focus_pane(true);
-        })
-        .key_capture(
+            app.focus_pane(true);
+        }),
+        (
             Shortcut::new(
                 Key::ArrowLeft,
                 ModifiersState::CONTROL | ModifiersState::SHIFT,
             ),
-            move |event| {
+            |app, event| {
                 event.stop_propagation();
-                split_left.nudge_split(-5);
+                app.nudge_split(-5);
             },
-        )
-        .key_capture(
+        ),
+        (
             Shortcut::new(
                 Key::ArrowRight,
                 ModifiersState::CONTROL | ModifiersState::SHIFT,
             ),
-            move |event| {
+            |app, event| {
                 event.stop_propagation();
-                split_right.nudge_split(5);
+                app.nudge_split(5);
             },
-        )
-        .key_capture(Shortcut::ctrl(LogicalKey::character("c")), move |event| {
-            if !interrupt.hotkey_recording.peek() {
+        ),
+        (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
+            if !app.hotkey_recording.peek() {
                 event.stop_propagation();
-                interrupt.interrupt();
+                app.interrupt();
             }
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("d")), move |event| {
-            if eof.overlay() == Some(Overlay::Sessions) {
+        }),
+        (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
+            if app.overlay() == Some(Overlay::Sessions) {
                 event.stop_propagation();
-                eof.delete_session();
-            } else if !eof.hotkey_recording.peek()
-                && !eof.options_active()
-                && eof.draft.peek().is_empty()
-                && eof.model.borrow().busy_since.is_none()
+                app.delete_session();
+            } else if !app.hotkey_recording.peek()
+                && !app.options_active()
+                && app.draft.peek().is_empty()
+                && app.model.borrow().busy_since.is_none()
             {
                 event.stop_propagation();
-                eof.quit.set(true);
+                app.quit.set(true);
             }
-        })
-        .key_capture(Key::PageUp, move |event| {
+        }),
+        (Key::PageUp.into(), |app, event| {
             event.stop_propagation();
-            if page_up.overlay_move(-8) {
+            if app.overlay_move(-8) {
                 return;
             }
-            if page_up.pane_active().is_some() {
-                page_up.pane_page(-1);
+            if app.pane_active().is_some() {
+                app.pane_page(-1);
             } else {
-                page_up.page_history(-1.0);
+                app.page_history(-1.0);
             }
-        })
-        .key_capture(Key::PageDown, move |event| {
+        }),
+        (Key::PageDown.into(), |app, event| {
             event.stop_propagation();
-            if page_down.overlay_move(8) {
+            if app.overlay_move(8) {
                 return;
             }
-            if page_down.pane_active().is_some() {
-                page_down.pane_page(1);
+            if app.pane_active().is_some() {
+                app.pane_page(1);
             } else {
-                page_down.page_history(1.0);
+                app.page_history(1.0);
             }
-        })
-        .key_capture(Shortcut::ctrl(LogicalKey::character("q")), move |event| {
+        }),
+        (Shortcut::ctrl(LogicalKey::character("q")), |app, event| {
             event.stop_propagation();
-            dequeue.dequeue();
-        })
-        .key_capture(Key::ArrowUp, move |event| {
-            if setting_up.overlay_move(-1) {
+            app.dequeue();
+        }),
+        (Key::ArrowUp.into(), |app, event| {
+            if app.overlay_move(-1) {
                 event.stop_propagation();
-            } else if setting_up.context.peek().is_some() {
+            } else if app.context.peek().is_some() {
                 event.stop_propagation();
-                setting_up.context_move(-1);
-            } else if setting_up.pane_active().is_some() {
+                app.context_move(-1);
+            } else if app.pane_active().is_some() {
                 event.stop_propagation();
-                setting_up.pane_move(-1);
-            } else if setting_up.suggesting() {
+                app.pane_move(-1);
+            } else if app.suggesting() {
                 event.stop_propagation();
-                setting_up.shift(-1);
-            } else if setting_up.vertical(-1, false) || setting_up.recall(true) {
-                event.stop_propagation();
-            }
-        })
-        .key_capture(Key::ArrowDown, move |event| {
-            if setting_down.overlay_move(1) {
-                event.stop_propagation();
-            } else if setting_down.context.peek().is_some() {
-                event.stop_propagation();
-                setting_down.context_move(1);
-            } else if setting_down.pane_active().is_some() {
-                event.stop_propagation();
-                setting_down.pane_move(1);
-            } else if setting_down.suggesting() {
-                event.stop_propagation();
-                setting_down.shift(1);
-            } else if setting_down.vertical(1, false) || setting_down.recall(false) {
+                app.shift(-1);
+            } else if app.vertical(-1, false) || app.recall(true) {
                 event.stop_propagation();
             }
-        })
-        .key_capture(Key::ArrowLeft, move |event| {
-            if setting_left.overlay_adjust(-1) {
+        }),
+        (Key::ArrowDown.into(), |app, event| {
+            if app.overlay_move(1) {
+                event.stop_propagation();
+            } else if app.context.peek().is_some() {
+                event.stop_propagation();
+                app.context_move(1);
+            } else if app.pane_active().is_some() {
+                event.stop_propagation();
+                app.pane_move(1);
+            } else if app.suggesting() {
+                event.stop_propagation();
+                app.shift(1);
+            } else if app.vertical(1, false) || app.recall(false) {
                 event.stop_propagation();
             }
-        })
-        .key_capture(Key::ArrowRight, move |event| {
-            if setting_right.overlay_adjust(1) {
+        }),
+        (Key::ArrowLeft.into(), |app, event| {
+            if app.overlay_adjust(-1) {
                 event.stop_propagation();
             }
-        })
-        .key_capture(LogicalKey::character("d"), move |event| {
-            if seat_clear.workflow_keys() {
-                event.stop_propagation();
-                seat_clear.clear_workflow_seat();
-            }
-        })
-        .key_capture(LogicalKey::character("s"), move |event| {
-            if seat_save.workflow_keys() {
-                event.stop_propagation();
-                seat_save.begin_workflow_save();
-            }
-        })
-        .key_capture(LogicalKey::character(" "), move |event| {
-            if setting_space.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                setting_space.adjust_setting();
-            }
-        })
-        .key_capture(LogicalKey::character("+"), move |event| {
-            if setting_increase.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                setting_increase.overlay_adjust(1);
-            }
-        })
-        .key_capture(LogicalKey::character("-"), move |event| {
-            if setting_decrease.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                setting_decrease.overlay_adjust(-1);
-            }
-        })
-        .key_capture(LogicalKey::character("r"), move |event| {
-            if hotkey_reset.overlay() == Some(Overlay::Hotkeys)
-                && !hotkey_reset.hotkey_recording.peek()
-            {
-                event.stop_propagation();
-                hotkey_reset.reset_hotkeys();
-            }
-        })
-        .on_scroll(move |event| {
-            let lines = match event.delta {
-                ScrollDelta::Pixels(point) => point.y / super::canvas::cell().h,
-                ScrollDelta::Lines(point) => point.y,
-            };
-            if scroll.overlay_move(-lines.round() as isize) {
-                event.stop_propagation();
-                return;
-            }
-            if !scroll.options_active()
-                && !scroll.splash.peek()
-                && scroll.layout.peek().secondary.is_some()
-                && event.position.x >= f32::from(scroll.chat_cols()) * super::canvas::cell().w
-            {
-                scroll.pane_move(-lines.round() as isize);
-                event.stop_propagation();
-                return;
-            }
-            let delta = match event.delta {
-                ScrollDelta::Pixels(point) => point.y,
-                ScrollDelta::Lines(point) => point.y * super::canvas::cell().h * 3.0,
-            };
-            let before = scroll.scroll_y.peek();
-            scroll.scroll_history(delta);
-            if scroll.scroll_y.peek() != before {
+        }),
+        (Key::ArrowRight.into(), |app, event| {
+            if app.overlay_adjust(1) {
                 event.stop_propagation();
             }
-        });
+        }),
+        (LogicalKey::character("d").into(), |app, event| {
+            if app.workflow_keys() {
+                event.stop_propagation();
+                app.clear_workflow_seat();
+            }
+        }),
+        (LogicalKey::character("s").into(), |app, event| {
+            if app.workflow_keys() {
+                event.stop_propagation();
+                app.begin_workflow_save();
+            }
+        }),
+        (LogicalKey::character(" ").into(), |app, event| {
+            if app.overlay() == Some(Overlay::Settings) {
+                event.stop_propagation();
+                app.adjust_setting();
+            }
+        }),
+        (LogicalKey::character("+").into(), |app, event| {
+            if app.overlay() == Some(Overlay::Settings) {
+                event.stop_propagation();
+                app.overlay_adjust(1);
+            }
+        }),
+        (LogicalKey::character("-").into(), |app, event| {
+            if app.overlay() == Some(Overlay::Settings) {
+                event.stop_propagation();
+                app.overlay_adjust(-1);
+            }
+        }),
+        (LogicalKey::character("r").into(), |app, event| {
+            if app.overlay() == Some(Overlay::Hotkeys) && !app.hotkey_recording.peek() {
+                event.stop_propagation();
+                app.reset_hotkeys();
+            }
+        }),
+    ];
+    for (shortcut, action) in bindings {
+        let app = app.clone();
+        let action = *action;
+        shell = shell.key_capture(shortcut.clone(), move |event| action(&app, event));
+    }
+    let scroll = app.clone();
+    let shell = shell.child(tab_shortcuts(app)).on_scroll(move |event| {
+        let lines = match event.delta {
+            ScrollDelta::Pixels(point) => point.y / super::canvas::cell().h,
+            ScrollDelta::Lines(point) => point.y,
+        };
+        if scroll.overlay_move(-lines.round() as isize) {
+            event.stop_propagation();
+            return;
+        }
+        if !scroll.options_active()
+            && !scroll.splash.peek()
+            && scroll.layout.peek().secondary.is_some()
+            && event.position.x >= f32::from(scroll.chat_cols()) * super::canvas::cell().w
+        {
+            scroll.pane_move(-lines.round() as isize);
+            event.stop_propagation();
+            return;
+        }
+        let delta = match event.delta {
+            ScrollDelta::Pixels(point) => point.y,
+            ScrollDelta::Lines(point) => point.y * super::canvas::cell().h,
+        };
+        let before = scroll.scroll_y.peek();
+        scroll.scroll_history(delta);
+        if scroll.scroll_y.peek() != before {
+            event.stop_propagation();
+        }
+    });
     hotkey_shortcuts(composer_keys(shell, app), app)
 }
 
@@ -628,44 +596,50 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
         .style(Style::new().bg(SCRIM))
         .child(
             container()
-                .layout(LayoutStyle::flex_column().fill_width().fill_height())
-                .child(
-                    container()
-                        .layout(LayoutStyle::flex_column().fill_width())
-                        .class("grow"),
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .fill_height()
+                        .padding_bottom(super::canvas::cell().h)
+                        .gap(super::canvas::cell().h),
                 )
                 .child(
                     container()
-                        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-                        .style_reactive(move || {
-                            let rows = chat_surface::input_rows(
-                                &app.draft.get(),
-                                cols,
-                                app.viewport.get().1,
-                            );
-                            &chat_surface::INPUT_HEIGHTS[usize::from(rows - 1)]
-                        })
+                        .layout(LayoutStyle::flex_column().fill_width().grow(1.0))
                         .child(
-                            editor
-                                .placeholder("")
-                                .change(move |draft| {
-                                    if !editing {
-                                        changed.pane_focus.set(false);
-                                        changed.change(draft);
-                                    }
+                            container()
+                                .layout(LayoutStyle::flex_column().fill_width())
+                                .class("grow"),
+                        )
+                        .child(
+                            container()
+                                .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+                                .style_reactive(move || {
+                                    let rows = chat_surface::input_rows(
+                                        &app.draft.get(),
+                                        cols,
+                                        chat_surface::overlay_rows(app.viewport.get().1),
+                                    );
+                                    &chat_surface::INPUT_HEIGHTS[usize::from(rows - 1)]
                                 })
-                                .submit(move |_| submit.submit())
-                                .layout(LayoutStyle::flex_column().fill().min_size(0.0, 0.0))
-                                .class("w-full"),
+                                .child(
+                                    editor
+                                        .placeholder("")
+                                        .change(move |draft| {
+                                            if !editing {
+                                                changed.pane_focus.set(false);
+                                                changed.change(draft);
+                                            }
+                                        })
+                                        .submit(move |_| submit.submit())
+                                        .layout(
+                                            LayoutStyle::flex_column().fill().min_size(0.0, 0.0),
+                                        )
+                                        .class("w-full"),
+                                ),
                         ),
                 )
-                .child(
-                    container().layout(
-                        LayoutStyle::flex_row()
-                            .fill_width()
-                            .height(super::canvas::cell().h),
-                    ),
-                ),
+                .child(chat_surface::footer_bar(surface.clone())),
         )
         .child(chat_surface::layer(surface))
 }

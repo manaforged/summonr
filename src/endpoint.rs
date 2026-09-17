@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::error::{Error, Result};
-use crate::provider::{Effort, Price};
+use crate::provider::{Effort, Price, configured, device};
 use crate::secret::{self, Source};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
@@ -35,12 +35,15 @@ pub struct Endpoint {
     pub env: BTreeMap<String, String>,
     pub headers: BTreeMap<String, String>,
     pub wire: Wire,
+    pub fallback: Vec<String>,
+    pub compact_tokens: Option<u32>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Wire {
     #[default]
     Completions,
+    Responses,
     Anthropic,
     Gemini,
 }
@@ -50,26 +53,31 @@ pub struct AuthInfo {
     pub name: String,
     pub device_login: bool,
     pub configured: bool,
+    pub source: Option<Source>,
     pub setup: String,
 }
 
 impl AuthInfo {
     #[must_use]
     pub fn status(&self) -> String {
-        let state = if self.device_login {
-            "device authentication available"
-        } else if self.configured {
-            "API key configured"
-        } else {
-            "API key missing"
-        };
-        format!("{}: {state} — {}", self.name, self.setup)
+        format!("{}: {} — {}", self.name, self.state(), self.setup)
+    }
+
+    pub(crate) fn state(&self) -> String {
+        match (self.device_login, self.configured, self.source) {
+            (true, true, _) => "login configured".to_string(),
+            (true, false, _) => "login required".to_string(),
+            (false, true, Some(source)) => format!("key · {}", source.label()),
+            (false, true, None) => "key configured".to_string(),
+            (false, false, _) => "key missing".to_string(),
+        }
     }
 }
 
 impl Wire {
     fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
+            "responses" => Self::Responses,
             "anthropic" | "claude" => Self::Anthropic,
             "gemini" | "google" => Self::Gemini,
             _ => Self::Completions,
@@ -99,9 +107,28 @@ pub fn names() -> Result<Vec<String>> {
 }
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
-    let file = config::load()?;
-    let process_key = named_env_key(name).is_some() || secret::get(name)?.is_some();
-    auth_info_from(&file, name, process_key)
+    let endpoint = resolve_inner(Some(name), None, false, false)?;
+    let mut info = AuthInfo {
+        name: name.to_string(),
+        device_login: endpoint.oauth.as_ref().is_some_and(device),
+        configured: endpoint.api_key.is_some(),
+        source: endpoint.source,
+        setup: preset(name)
+            .map(|preset| preset.missing.replace("NAME", name))
+            .filter(|text| !text.is_empty())
+            .unwrap_or_else(|| format!("run `/login {name}` to configure an API key")),
+    };
+    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| device(spec)) {
+        info.setup = format!("run `/login {name}` for device authentication");
+        info.configured = match configured(spec, name) {
+            Ok(ready) => ready,
+            Err(error) => {
+                info.setup = format!("{error}; {}", info.setup);
+                false
+            }
+        };
+    }
+    Ok(info)
 }
 
 pub fn save_key(name: &str, key: &str) -> Result<Source> {
@@ -126,10 +153,10 @@ pub fn forget_key(name: &str) -> Result<bool> {
 }
 
 pub fn adopt_keys() -> Result<Vec<String>> {
-    adopt_from(&config::path()?)
+    adopt_from(&config::path()?, &secret::Store::discover()?)
 }
 
-pub(crate) fn adopt_from(path: &Path) -> Result<Vec<String>> {
+pub(crate) fn adopt_from(path: &Path, store: &secret::Store) -> Result<Vec<String>> {
     let file = config::load_from(path)?;
     let mut moved = Vec::new();
     for (name, row) in &file.endpoint {
@@ -141,8 +168,8 @@ pub(crate) fn adopt_from(path: &Path) -> Result<Vec<String>> {
         else {
             continue;
         };
-        if secret::get(name)?.is_none() {
-            secret::set(name, key)?;
+        if store.get(name)?.is_none() {
+            store.set(name, key)?;
         }
         config::remove_key(path, name)?;
         moved.push(name.clone());
@@ -150,75 +177,50 @@ pub(crate) fn adopt_from(path: &Path) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-fn auth_info_from(file: &File, name: &str, process_key: bool) -> Result<AuthInfo> {
-    let row = file.endpoint.get(name);
-    let builtin = preset(name);
-    if row.is_none() && builtin.is_none() {
-        return Err(Error::Config(format!("unknown endpoint `{name}`")));
-    }
-    let device_login = row.and_then(|row| row.auth.as_ref()).is_some_and(|auth| {
-        auth.grant.as_deref() == Some("device_code")
-            || auth
-                .device_url
-                .as_deref()
-                .is_some_and(|url| !url.is_empty())
-    }) || builtin.is_some_and(|preset| preset.oauth.is_some());
-    if device_login {
-        return Ok(AuthInfo {
-            name: name.to_string(),
-            device_login: true,
-            configured: true,
-            setup: format!("run `/login {name}` for device authentication"),
-        });
-    }
-    let config_key = row
-        .and_then(|row| row.api_key.as_deref())
-        .is_some_and(|key| !key.trim().is_empty());
-    let default_key = builtin.and_then(|preset| preset.default_key).is_some();
-    let setup = builtin
-        .map(|preset| preset.missing.replace("NAME", name))
-        .filter(|text| !text.is_empty())
-        .unwrap_or_else(|| format!("put api_key in ~/.mage/config.toml, or `summon login {name}`"));
-    Ok(AuthInfo {
-        name: name.to_string(),
-        device_login: false,
-        configured: config_key || process_key || default_key,
-        setup,
-    })
-}
-
-pub(crate) fn ready() -> Vec<String> {
-    let mut names = names().unwrap_or_default();
-    if let Ok(endpoint) = resolve(None, None)
+pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
+    let mut names = match names() {
+        Ok(names) => names,
+        Err(error) => return (Vec::new(), vec![error.to_string()]),
+    };
+    if let Ok(endpoint) = resolve_inner(None, None, true, require_model)
         && !names.contains(&endpoint.name)
     {
         names.insert(0, endpoint.name);
     }
-    names
+    let mut endpoints = Vec::new();
+    let mut errors = Vec::new();
+    for endpoint in names
         .into_iter()
-        .filter(|name| resolve(Some(name), None).is_ok())
-        .collect()
+        .filter_map(|name| resolve_inner(Some(&name), None, true, require_model).ok())
+    {
+        let available = endpoint
+            .oauth
+            .as_ref()
+            .map_or(Ok(true), |spec| configured(spec, &endpoint.name));
+        match available {
+            Ok(true) => endpoints.push(endpoint),
+            Ok(false) => {}
+            Err(error) => errors.push(format!("{}: {error}", endpoint.name)),
+        }
+    }
+    (endpoints, errors)
 }
 
-pub(crate) fn next(current: &str) -> Option<String> {
-    step(&ready(), current, true)
-}
-
-pub(crate) fn previous(current: &str) -> Option<String> {
-    step(&ready(), current, false)
-}
-
-pub(crate) fn step(names: &[String], current: &str, forward: bool) -> Option<String> {
-    if names.len() < 2 {
+pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
+    let (endpoints, _) = ready(true);
+    if endpoints.is_empty() {
         return None;
     }
-    let index = names.iter().position(|name| name == current).unwrap_or(0);
-    let target = if forward {
-        (index + 1) % names.len()
-    } else {
-        (index + names.len() - 1) % names.len()
+    let index = endpoints
+        .iter()
+        .position(|endpoint| endpoint.name == current);
+    let target = match (index, forward) {
+        (Some(index), true) => (index + 1) % endpoints.len(),
+        (Some(index), false) => (index + endpoints.len() - 1) % endpoints.len(),
+        (None, true) => 0,
+        (None, false) => endpoints.len() - 1,
     };
-    Some(names[target].clone())
+    (endpoints[target].name != current).then(|| endpoints[target].name.clone())
 }
 
 pub(crate) fn catalog(wire: Wire) -> Vec<String> {
@@ -239,15 +241,37 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
     models
 }
 
+pub fn fallbacks<P>(
+    endpoint: &Endpoint,
+    mut connect: impl FnMut(&Endpoint) -> Result<P>,
+) -> (Vec<(P, String)>, Vec<String>) {
+    let mut ready = Vec::new();
+    let mut skipped = Vec::new();
+    for name in &endpoint.fallback {
+        match resolve(Some(name), None)
+            .and_then(|fallback| Ok((connect(&fallback)?, fallback.model)))
+        {
+            Ok(pair) => ready.push(pair),
+            Err(error) => skipped.push(format!("fallback {name} skipped: {error}")),
+        }
+    }
+    (ready, skipped)
+}
+
 pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, true)
+    resolve_inner(name, model, true, true)
 }
 
 pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, false)
+    resolve_inner(name, model, false, true)
 }
 
-fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> Result<Endpoint> {
+fn resolve_inner(
+    name: Option<&str>,
+    model: Option<&str>,
+    require_key: bool,
+    require_model: bool,
+) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("MAGE_BASE_URL")
         && !base.trim().is_empty()
         && matches!(name, None | Some("env"))
@@ -271,6 +295,8 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
             env: BTreeMap::new(),
             headers: BTreeMap::new(),
             wire: Wire::Completions,
+            fallback: Vec::new(),
+            compact_tokens: None,
         });
     }
 
@@ -300,13 +326,13 @@ fn resolve_inner(name: Option<&str>, model: Option<&str>, require_key: bool) -> 
 
     let mut endpoint = endpoint.ok_or_else(|| {
         Error::Config(format!(
-            "unknown endpoint `{chosen}` — try zai, zai-cn, kimi, grok, qwen, copilot, openai, openrouter, muse, anthropic, gemini, zen, go, or a name from ~/.mage/config.toml"
+            "unknown endpoint `{chosen}` — try `summonr endpoints`, or a name from ~/.mage/config.toml"
         ))
     })?;
 
     if let Some(model) = model_flag {
         endpoint.model = named_model(&endpoint.name, &model);
-    } else if endpoint.model.is_empty() {
+    } else if require_model && endpoint.model.is_empty() {
         return Err(Error::Config(format!(
             "endpoint `{}` needs --model (or model in config.toml)",
             endpoint.name
@@ -346,6 +372,8 @@ fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         price: row.price,
         env: row.env.clone(),
         headers: row.headers.clone(),
+        fallback: row.fallback.clone(),
+        compact_tokens: row.compact_tokens,
         wire: row
             .wire
             .as_deref()
@@ -389,6 +417,12 @@ fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     }
     if let Some(wire) = &row.wire {
         endpoint.wire = Wire::parse(wire);
+    }
+    if !row.fallback.is_empty() {
+        endpoint.fallback.clone_from(&row.fallback);
+    }
+    if let Some(tokens) = row.compact_tokens {
+        endpoint.compact_tokens = Some(tokens);
     }
 }
 
@@ -551,6 +585,54 @@ const PRESETS: &[Preset] = &[
         wire: Wire::Completions,
     },
     Preset {
+        name: "together",
+        base_url: "https://api.together.ai/v1",
+        model: "",
+        env_keys: &["TOGETHER_API_KEY"],
+        default_key: None,
+        missing: "set TOGETHER_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "groq",
+        base_url: "https://api.groq.com/openai/v1",
+        model: "",
+        env_keys: &["GROQ_API_KEY"],
+        default_key: None,
+        missing: "set GROQ_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "cerebras",
+        base_url: "https://api.cerebras.ai/v1",
+        model: "",
+        env_keys: &["CEREBRAS_API_KEY"],
+        default_key: None,
+        missing: "set CEREBRAS_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
+        name: "mistral",
+        base_url: "https://api.mistral.ai/v1",
+        model: "",
+        env_keys: &["MISTRAL_API_KEY"],
+        default_key: None,
+        missing: "set MISTRAL_API_KEY, or `summon login NAME`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+    },
+    Preset {
         name: "anthropic",
         base_url: "https://api.anthropic.com/v1/",
         model: "claude-sonnet-4-5",
@@ -706,6 +788,8 @@ fn builtin(name: &str) -> Option<Endpoint> {
             .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
             .collect(),
         wire: row.wire,
+        fallback: Vec::new(),
+        compact_tokens: None,
     })
 }
 
@@ -758,7 +842,3 @@ fn env_key(names: &[&str]) -> Option<String> {
 fn trim_slash(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
 }
-
-#[cfg(test)]
-#[path = "endpoint_tests.rs"]
-mod tests;

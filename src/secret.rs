@@ -12,6 +12,7 @@ use chacha20poly1305::aead::{Aead, KeyInit, OsRng, rand_core::RngCore};
 use chacha20poly1305::{ChaCha20Poly1305, Key, Nonce};
 use toml_edit::{DocumentMut, value};
 
+use crate::durable::store;
 use crate::error::{Error, Result};
 
 const SERVICE: &str = "summoner";
@@ -27,6 +28,13 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 #[cfg(test)]
 const TIMEOUT: Duration = Duration::from_millis(600);
 const LOCKED: &str = "the keychain did not answer — unlock it";
+#[cfg_attr(
+    test,
+    expect(
+        dead_code,
+        reason = "discover() is elided under test, so the choice parser has no caller"
+    )
+)]
 const CHOICES: &str = "secrets must be \"file\" or \"keychain\"";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -53,6 +61,13 @@ impl Source {
 enum Backend {
     File,
     #[cfg(any(target_os = "macos", all(test, unix)))]
+    #[cfg_attr(
+        test,
+        expect(
+            dead_code,
+            reason = "discover() is elided under test, so platform() never builds this"
+        )
+    )]
     Security(PathBuf),
     #[cfg(not(target_os = "macos"))]
     Native,
@@ -90,38 +105,11 @@ impl Store {
     }
 
     #[cfg(test)]
-    pub(crate) fn file_only(file: PathBuf) -> Self {
-        let mut seal = [0_u8; KEY_LEN];
-        OsRng.fill_bytes(&mut seal);
-        Self::file_with_seal(file, seal)
-    }
-
-    #[cfg(test)]
     pub(crate) fn file_with_seal(file: PathBuf, seal: [u8; KEY_LEN]) -> Self {
         Self {
             file,
             backend: Backend::File,
             seal: Some(seal),
-            wrap_tool: None,
-        }
-    }
-
-    #[cfg(all(test, unix))]
-    pub(crate) fn file_via_security(file: PathBuf, security: PathBuf) -> Self {
-        Self {
-            file,
-            backend: Backend::File,
-            seal: None,
-            wrap_tool: Some(security),
-        }
-    }
-
-    #[cfg(all(test, unix))]
-    pub(crate) fn with_security(file: PathBuf, security: PathBuf) -> Self {
-        Self {
-            file,
-            backend: Backend::Security(security),
-            seal: None,
             wrap_tool: None,
         }
     }
@@ -348,6 +336,13 @@ fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Result<String>
     Err(Error::Config(format!("security exit {code}: {reason}")))
 }
 
+#[cfg_attr(
+    test,
+    expect(
+        dead_code,
+        reason = "discover() is elided under test, so nothing parses the choice"
+    )
+)]
 fn backend(choice: &str) -> Result<Backend> {
     match choice.trim().to_ascii_lowercase().as_str() {
         "" | "file" => Ok(Backend::File),
@@ -371,6 +366,13 @@ fn native_get(name: &str) -> Result<Option<String>> {
     }
 }
 
+#[cfg_attr(
+    test,
+    expect(
+        dead_code,
+        reason = "discover() is elided under test, so backend() never asks for it"
+    )
+)]
 fn platform() -> Backend {
     #[cfg(target_os = "macos")]
     {
@@ -558,16 +560,10 @@ fn test_seal(file: &Path) -> [u8; KEY_LEN] {
 }
 
 pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
-    use std::io::Write;
     let dir = path
         .parent()
         .ok_or_else(|| Error::Config(format!("{} has no directory", path.display())))?;
-    let mut temp = tempfile::Builder::new()
-        .prefix(".credentials-")
-        .tempfile_in(dir)?;
-    temp.write_all(bytes)?;
-    temp.as_file().sync_all()?;
-    temp.persist(path).map_err(|error| Error::Io(error.error))?;
+    store::write(path, bytes)?;
     #[cfg(unix)]
     File::open(dir)?.sync_all()?;
     Ok(())
@@ -584,7 +580,3 @@ pub fn set(name: &str, secret: &str) -> Result<Source> {
 pub fn forget(name: &str) -> Result<bool> {
     Store::discover()?.forget(name)
 }
-
-#[cfg(test)]
-#[path = "secret_tests.rs"]
-mod tests;

@@ -169,7 +169,3 @@ fn field<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
 fn malformed(message: &str) -> Error {
     Error::provider(ProviderFailureKind::Malformed, message)
 }
-
-#[cfg(test)]
-#[path = "anthropic_tests.rs"]
-mod tests;

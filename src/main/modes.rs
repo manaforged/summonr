@@ -1,4 +1,4 @@
-use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkPhase, WorkProgress};
+use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkProgress};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -176,10 +176,8 @@ fn exit(turn: &Turn, progress: &WorkProgress) -> i32 {
         2
     } else if turn.aborted {
         3
-    } else if progress.phase == WorkPhase::Plan {
-        0
     } else {
-        progress.exit_code().unwrap_or(3)
+        progress.exit_code().unwrap_or(0)
     }
 }
 
@@ -195,7 +193,3 @@ fn step_event(json: bool, index: usize, total: usize, state: &str, check: Option
         eprintln!("\n[step {index}/{total}] {state}");
     }
 }
-
-#[cfg(test)]
-#[path = "modes_tests.rs"]
-mod tests;

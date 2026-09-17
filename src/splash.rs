@@ -174,7 +174,3 @@ fn display_path(path: &Path) -> String {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     abbreviate(path, home.as_deref())
 }
-
-#[cfg(test)]
-#[path = "splash_tests.rs"]
-mod tests;

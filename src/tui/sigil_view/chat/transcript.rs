@@ -1,15 +1,28 @@
+use base64::Engine;
 use sigil::prelude::ImageSource;
 
 use sigil::prelude::Rgba8;
 use sigil_tui::cell_width;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 
 use super::super::canvas::palette;
-use super::{Line, Source, Span, blend, fmt_tokens, rgb};
+use super::{Line, Source, Span, blend, rgb};
 use crate::prefs::{Reasoning, Receipts, ToolOutput};
+use crate::tui::fmt_tokens;
 use crate::tui::{Round, ToolState};
 
 use super::super::model::Entry;
+
+const CACHE_MAX: usize = 32;
+
+thread_local! {
+    static CACHE: RefCell<HashMap<(u64, u32, u32), ImageSource>> = RefCell::new(HashMap::new());
+}
+
+type Picture = (usize, usize, usize, ImageSource);
+type Rendered = (Vec<Line>, Vec<Picture>);
 
 pub(super) fn entry_lines(
     entry: &Entry,
@@ -19,8 +32,9 @@ pub(super) fn entry_lines(
     tools: ToolOutput,
     receipts: Receipts,
     separated: bool,
-) -> Vec<Line> {
+) -> Rendered {
     let mut lines = Vec::new();
+    let mut pictures = Vec::new();
     if separated {
         lines.push(Vec::new().into());
     }
@@ -29,6 +43,7 @@ pub(super) fn entry_lines(
         Entry::Thinking(text) => match reasoning {
             Reasoning::Off => {}
             Reasoning::Collapsed => {
+                lines.push(Vec::new().into());
                 let count = text.lines().count();
                 lines.push(
                     vec![
@@ -39,6 +54,7 @@ pub(super) fn entry_lines(
                 );
             }
             Reasoning::Expanded => {
+                lines.push(Vec::new().into());
                 for (index, line) in text.lines().enumerate() {
                     lines.push(
                         vec![
@@ -71,18 +87,23 @@ pub(super) fn entry_lines(
             ),
         },
         Entry::Assistant { text, done } => {
-            let mut rendered = markdown(text, width, accent);
+            let skip = lines.len();
+            let (mut rendered, pics) = markdown(text, width, accent);
             if !done && let Some(line) = rendered.last_mut() {
                 line.spans.push(Span::surface("▌", palette().dim, line.bg));
             }
             lines.extend(rendered);
+            pictures.extend(
+                pics.into_iter()
+                    .map(|(line, cols, rows, source)| (line + skip, cols, rows, source)),
+            );
         }
         Entry::Tool {
             name,
             arg,
             state,
             output,
-        } => lines.extend(tool_lines(name, arg, state, tools.text(output))),
+        } => lines.extend(tool_lines(name, arg, state, output, tools, width)),
         Entry::Verify { command, passed } => lines.push(
             vec![
                 Span::styled(
@@ -133,7 +154,7 @@ pub(super) fn entry_lines(
             lines.extend((0..rows).map(|_| vec![Span::text(" ")].into()));
         }
     }
-    lines
+    (lines, pictures)
 }
 
 fn user(text: &str, accent: Rgba8) -> Vec<Line> {
@@ -161,7 +182,35 @@ fn user(text: &str, accent: Rgba8) -> Vec<Line> {
     rows
 }
 
-fn tool_lines(name: &str, arg: &str, state: &ToolState, tail: &str) -> Vec<Line> {
+fn tool_lines(
+    name: &str,
+    arg: &str,
+    state: &ToolState,
+    output: &str,
+    tools: ToolOutput,
+    width: usize,
+) -> Vec<Line> {
+    if matches!(name, "edit" | "edit_file") {
+        return edit_card(arg, state, output, tools, width);
+    }
+    let tail = tools.text(output);
+    let mut lines = tool_header(name, arg, state, width);
+    let background = palette().tool_bg;
+    lines.extend(tail.lines().map(|line| {
+        let prefix = "  ";
+        let (fg, bg) = output_color(line);
+        Line {
+            spans: vec![
+                Span::surface(prefix, palette().dim, background),
+                Span::surface(line, fg, bg),
+            ],
+            bg: background,
+        }
+    }));
+    lines
+}
+
+fn tool_header(name: &str, arg: &str, state: &ToolState, width: usize) -> Vec<Line> {
     let (icon, color) = match state {
         ToolState::Running => ("⠋", palette().yellow),
         ToolState::Ok => ("✓", palette().green),
@@ -176,37 +225,129 @@ fn tool_lines(name: &str, arg: &str, state: &ToolState, tail: &str) -> Vec<Line>
         "web" | "web_search" => "search",
         "web_fetch" => "fetch",
         "lsp" | "diagnostics" => "lsp",
+        "agent" => "agent",
         other => other,
     };
     let background = palette().tool_bg;
-    let mut header = vec![
-        Span::surface(format!(" {icon} "), color, background),
-        Span::surface(label, palette().text, background),
-    ];
-    if !arg.is_empty() {
-        header.push(Span::surface(format!(" {arg}"), palette().dim, background));
-    }
-    let mut lines = vec![Line {
-        spans: header,
+    let icon_text = format!(" {icon} ");
+    let room = width.saturating_sub(cell_width(&icon_text) + cell_width(label) + 1);
+    let arg = if arg.is_empty() {
+        String::new()
+    } else {
+        format!(" {}", super::ellipsize(arg, room.saturating_sub(1)))
+    };
+    vec![Line {
+        spans: vec![
+            Span::surface(icon_text, color, background),
+            Span::surface(label, palette().text, background),
+            Span::surface(arg, palette().gray, background),
+        ],
         bg: background,
-    }];
-    lines.extend(tail.lines().enumerate().map(|(index, line)| {
-        let prefix = if index == 0 { "  ⎿ " } else { "    " };
-        let (fg, bg) = output_color(line);
-        Line {
-            spans: vec![
-                Span::surface(prefix, palette().dim, background),
-                Span::surface(line, fg, bg),
-            ],
-            bg: background,
+    }]
+}
+
+fn edit_card(
+    arg: &str,
+    state: &ToolState,
+    output: &str,
+    tools: ToolOutput,
+    width: usize,
+) -> Vec<Line> {
+    let mut lines = tool_header("edit", arg, state, width);
+    let limit = if tools == ToolOutput::Compact {
+        24
+    } else {
+        usize::MAX
+    };
+    let mut old = 0usize;
+    let mut new = 0usize;
+    let mut shown = 0usize;
+    let mut extra = false;
+    for line in output.lines().skip_while(|line| !line.starts_with("@@")) {
+        if shown >= limit {
+            extra = true;
+            break;
         }
-    }));
+        if let Some((from, to)) = hunk_starts(line) {
+            old = from;
+            new = to;
+            lines.push(band(
+                format!(" {line}"),
+                palette().cyan,
+                palette().tool_bg,
+                width,
+            ));
+            shown += 1;
+            continue;
+        }
+        let (row, fg, bg) = match line.as_bytes().first().copied() {
+            Some(b'+') => {
+                let row = format!(" {:>3} {:>3} + {}", "", new, &line[1..]);
+                new = new.saturating_add(1);
+                (row, palette().green, palette().diff_add_bg)
+            }
+            Some(b'-') => {
+                let row = format!(" {:>3} {:>3} - {}", old, "", &line[1..]);
+                old = old.saturating_add(1);
+                (row, palette().red, palette().diff_del_bg)
+            }
+            Some(b' ') => {
+                let row = format!(" {:>3} {:>3}   {}", old, new, &line[1..]);
+                old = old.saturating_add(1);
+                new = new.saturating_add(1);
+                (row, palette().text, palette().tool_bg)
+            }
+            _ => (format!(" {line}"), palette().gray, palette().tool_bg),
+        };
+        lines.push(band(row, fg, bg, width));
+        shown += 1;
+    }
+    if extra {
+        lines.push(band(
+            "  …".to_string(),
+            palette().gray,
+            palette().tool_bg,
+            width,
+        ));
+    }
+    if shown == 0 {
+        let tail = tools.text(output);
+        if !tail.is_empty() {
+            lines.push(band(
+                format!("  ⎿ {tail}"),
+                palette().gray,
+                palette().tool_bg,
+                width,
+            ));
+        }
+    }
     lines
+}
+
+fn hunk_starts(line: &str) -> Option<(usize, usize)> {
+    let rest = line.strip_prefix("@@")?;
+    let minus = rest.find('-')?;
+    let after = &rest[minus + 1..];
+    let old = after.split([',', ' ']).next()?.parse().ok()?;
+    let plus = after.find('+')?;
+    let new = after[plus + 1..].split([',', ' ']).next()?.parse().ok()?;
+    Some((old, new))
+}
+
+fn band(text: String, fg: Rgba8, bg: Rgba8, width: usize) -> Line {
+    let pad = width.saturating_sub(cell_width(&text));
+    Line {
+        spans: vec![
+            Span::surface(text, fg, bg),
+            Span::surface(" ".repeat(pad), fg, bg),
+        ],
+        bg,
+    }
 }
 
 fn output_color(line: &str) -> (Rgba8, Rgba8) {
     if line.starts_with("+++") || line.starts_with("---") {
-        (palette().dim, palette().tool_bg)
+        (palette().gray, palette().tool_bg)
     } else if line.starts_with('+') {
         (palette().green, palette().diff_add_bg)
     } else if line.starts_with('-') {
@@ -214,45 +355,72 @@ fn output_color(line: &str) -> (Rgba8, Rgba8) {
     } else if line.starts_with("@@") {
         (palette().cyan, palette().tool_bg)
     } else {
-        (palette().dim, palette().tool_bg)
+        (palette().gray, palette().tool_bg)
     }
 }
 
-fn markdown(text: &str, width: usize, accent: Rgba8) -> Vec<Line> {
+fn markdown(text: &str, width: usize, accent: Rgba8) -> Rendered {
     let mut lines = Vec::new();
+    let mut pictures = Vec::new();
     let mut fence = None;
+    let mut table = None;
     let mut byte = 0;
     for raw in text.split_inclusive('\n') {
         let offset = byte;
         byte += raw.len();
-        push_markdown_line(&mut lines, text, offset, byte, &mut fence, width, accent);
+        push_markdown_line(
+            &mut lines,
+            &mut pictures,
+            text,
+            offset,
+            byte,
+            &mut fence,
+            &mut table,
+            width,
+            accent,
+        );
     }
+    flush_table(&mut lines, &mut table, text, width, accent);
     if lines.is_empty() {
         lines.push(Vec::new().into());
     }
     if let Some((true, start)) = fence {
         lines.extend(literal(&text[start..], start));
     }
-    lines
+    (lines, pictures)
 }
 
+#[derive(Clone)]
+struct TableBuf {
+    header: (usize, usize),
+    rows: Vec<Vec<String>>,
+    sep: bool,
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one call per markdown line, from the buffer it writes"
+)]
 fn push_markdown_line(
     lines: &mut Vec<Line>,
+    pictures: &mut Vec<(usize, usize, usize, ImageSource)>,
     text: &str,
     offset: usize,
     end: usize,
     fence: &mut Option<(bool, usize)>,
+    table: &mut Option<TableBuf>,
     width: usize,
     accent: Rgba8,
 ) {
     let raw = text[offset..end].trim_end_matches(['\r', '\n']);
     if let Some(info) = raw.trim_start().strip_prefix("```") {
+        flush_table(lines, table, text, width, accent);
         match fence.take() {
             Some((true, start)) => {
                 lines.extend(diagram(&text[start..offset], width, start..offset));
             }
             Some((false, _)) => {}
-            None => *fence = Some((info.trim().starts_with("mermaid"), end)),
+            None => *fence = Some((diagram_fence(info), end)),
         }
         return;
     }
@@ -260,6 +428,9 @@ fn push_markdown_line(
         if !mermaid {
             lines.extend(literal(&text[offset..end], offset));
         }
+        return;
+    }
+    if feed_table(lines, table, text, raw, offset, end, width, accent) {
         return;
     }
     let trimmed = raw.trim_start();
@@ -287,15 +458,225 @@ fn push_markdown_line(
         let mut line = vec![Span::styled(format!("{number}. "), accent)];
         line.extend(inline(item, accent, offset + raw.len() - item.len()));
         lines.push(line.into());
+    } else if let Some((alt, url)) = markdown_image(trimmed) {
+        if let Some(source) = decode_markdown_image(url) {
+            let (cols, rows) = image_cells(&source, width);
+            lines.push(vec![Span::styled(alt, palette().dim)].into());
+            let line = lines.len();
+            lines.extend((0..rows).map(|_| vec![Span::text(" ")].into()));
+            pictures.push((line, cols, rows, source));
+        } else {
+            lines.push(vec![Span::styled(format!("[{alt}]"), palette().dim)].into());
+        }
     } else {
         lines.push(inline(raw, accent, offset).into());
     }
+}
+
+fn markdown_image(line: &str) -> Option<(&str, &str)> {
+    let rest = line.trim().strip_prefix("![")?;
+    let mid = rest.find("](")?;
+    let alt = &rest[..mid];
+    let url = rest[mid + 2..].strip_suffix(')')?;
+    let url = url.trim().trim_matches(|c| c == '<' || c == '>' || c == '"');
+    Some((alt, url))
+}
+
+fn decode_markdown_image(url: &str) -> Option<ImageSource> {
+    if let Some(data) = url.strip_prefix("data:") {
+        let (meta, payload) = data.split_once(',')?;
+        if !meta.contains("base64") || meta.contains("svg") {
+            return None;
+        }
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(payload)
+            .ok()?;
+        return super::super::model::preview(&bytes).ok();
+    }
+    if url.contains("://") {
+        return None;
+    }
+    let path = std::path::Path::new(url);
+    let bytes = std::fs::read(path).ok()?;
+    super::super::model::preview(&bytes).ok()
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "one call per table row, from the fence that produced it"
+)]
+fn feed_table(
+    lines: &mut Vec<Line>,
+    table: &mut Option<TableBuf>,
+    text: &str,
+    raw: &str,
+    offset: usize,
+    end: usize,
+    width: usize,
+    accent: Rgba8,
+) -> bool {
+    if is_table_sep(raw) {
+        if let Some(buf) = table.as_mut() {
+            buf.sep = true;
+            return true;
+        }
+        return false;
+    }
+    let Some(cells) = pipe_row(raw) else {
+        flush_table(lines, table, text, width, accent);
+        return false;
+    };
+    if let Some(buf) = table.as_mut() {
+        if buf.sep {
+            buf.rows.push(cells);
+            return true;
+        }
+        flush_table(lines, table, text, width, accent);
+    }
+    *table = Some(TableBuf {
+        header: (offset, end),
+        rows: vec![cells],
+        sep: false,
+    });
+    true
+}
+
+fn flush_table(
+    lines: &mut Vec<Line>,
+    table: &mut Option<TableBuf>,
+    text: &str,
+    width: usize,
+    accent: Rgba8,
+) {
+    let Some(buf) = table.take() else {
+        return;
+    };
+    if buf.sep && !buf.rows.is_empty() {
+        lines.extend(paint_table(&buf.rows, width, accent));
+        return;
+    }
+    let raw = text[buf.header.0..buf.header.1].trim_end_matches(['\r', '\n']);
+    lines.push(inline(raw, accent, buf.header.0).into());
+}
+
+fn pipe_row(line: &str) -> Option<Vec<String>> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') {
+        return None;
+    }
+    let cells: Vec<String> = trimmed
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().to_string())
+        .collect();
+    if cells.is_empty() {
+        return None;
+    }
+    Some(cells)
+}
+
+fn is_table_sep(line: &str) -> bool {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') {
+        return false;
+    }
+    trimmed.trim_matches('|').split('|').all(|cell| {
+        let cell = cell.trim();
+        !cell.is_empty() && cell.chars().all(|ch| ch == '-' || ch == ':' || ch == ' ')
+    })
+}
+
+fn paint_table(rows: &[Vec<String>], width: usize, accent: Rgba8) -> Vec<Line> {
+    let cols = rows.iter().map(Vec::len).max().unwrap_or(0);
+    if cols == 0 || width < 4 {
+        return Vec::new();
+    }
+    let mut widths = vec![1; cols];
+    for row in rows {
+        for (index, cell) in row.iter().enumerate() {
+            widths[index] = widths[index].max(cell_width(cell).max(1));
+        }
+    }
+    let frame = cols * 3 + 1;
+    let mut inner: usize = widths.iter().sum();
+    let mut used = frame + inner;
+    while used > width && inner > cols {
+        if let Some(widest) = widths.iter_mut().max() {
+            *widest -= 1;
+        }
+        inner = widths.iter().sum();
+        used = frame + inner;
+    }
+    let rule = |left: char, mid: char, right: char| {
+        let mut line = String::new();
+        line.push(left);
+        for (index, w) in widths.iter().enumerate() {
+            line.push_str(&"─".repeat(*w + 2));
+            line.push(if index + 1 == cols { right } else { mid });
+        }
+        line
+    };
+    let mut out = vec![band(
+        rule('┌', '┬', '┐'),
+        palette().gray,
+        palette().code_bg,
+        width,
+    )];
+    for (row_index, row) in rows.iter().enumerate() {
+        let mut spans = vec![Span::surface("│", palette().gray, palette().code_bg)];
+        for (index, w) in widths.iter().enumerate() {
+            let cell = row.get(index).map(String::as_str).unwrap_or("");
+            let mut shown = cell.to_string();
+            if cell_width(&shown) > *w {
+                shown = super::ellipsize(cell, *w);
+            }
+            let pad = w.saturating_sub(cell_width(&shown));
+            let mut body = Span::surface(
+                format!(" {shown}{} ", " ".repeat(pad)),
+                if row_index == 0 {
+                    accent
+                } else {
+                    palette().text
+                },
+                palette().code_bg,
+            );
+            body.bold = row_index == 0;
+            spans.push(body);
+            spans.push(Span::surface("│", palette().gray, palette().code_bg));
+        }
+        let pad = width.saturating_sub(cell_width(
+            &spans.iter().map(|span| span.text.as_str()).collect::<String>(),
+        ));
+        if pad > 0 {
+            spans.push(Span::surface(" ".repeat(pad), palette().gray, palette().code_bg));
+        }
+        out.push(Line {
+            spans,
+            bg: palette().code_bg,
+        });
+        if row_index == 0 && rows.len() > 1 {
+            out.push(band(
+                rule('├', '┼', '┤'),
+                palette().gray,
+                palette().code_bg,
+                width,
+            ));
+        }
+    }
+    out.push(band(
+        rule('└', '┴', '┘'),
+        palette().gray,
+        palette().code_bg,
+        width,
+    ));
+    out
 }
 
 pub(super) struct Stream {
     head: u64,
     cursor: usize,
     fence: Option<(bool, usize)>,
+    table: Option<TableBuf>,
     lines: usize,
     usable: bool,
 }
@@ -304,21 +685,35 @@ impl Stream {
     pub(super) fn new(text: &str, width: usize, accent: Rgba8) -> Self {
         let commit = final_line_start(text);
         let mut fence = None;
+        let mut table = None;
         let mut lines = 0;
         let mut byte = 0;
         while byte < commit {
             let end = line_end(text, byte, commit);
             let mut scratch = Vec::new();
-            push_markdown_line(&mut scratch, text, byte, end, &mut fence, width, accent);
+            let mut pictures = Vec::new();
+            push_markdown_line(
+                &mut scratch,
+                &mut pictures,
+                text,
+                byte,
+                end,
+                &mut fence,
+                &mut table,
+                width,
+                accent,
+            );
             lines += scratch.len();
             byte = end;
         }
+        let usable = !matches!(fence, Some((true, _))) && table.as_ref().is_none_or(|buf| buf.sep);
         Self {
             head: head(text),
             cursor: commit,
             fence,
+            table,
             lines,
-            usable: !matches!(fence, Some((true, _))),
+            usable,
         }
     }
 
@@ -344,12 +739,15 @@ impl Stream {
         let mut byte = self.cursor;
         while byte < commit {
             let end = line_end(text, byte, commit);
+            let mut pictures = Vec::new();
             push_markdown_line(
                 &mut committed,
+                &mut pictures,
                 text,
                 byte,
                 end,
                 &mut self.fence,
+                &mut self.table,
                 width,
                 accent,
             );
@@ -357,16 +755,20 @@ impl Stream {
         }
         self.cursor = commit;
         self.lines += committed.len();
-        self.usable = !matches!(self.fence, Some((true, _)));
+        self.usable = !matches!(self.fence, Some((true, _))) && self.table.as_ref().is_none_or(|t| t.sep);
         let mut tail = Vec::new();
         if commit < text.len() {
             let mut fence = self.fence;
+            let mut table = self.table.clone();
+            let mut pictures = Vec::new();
             push_markdown_line(
                 &mut tail,
+                &mut pictures,
                 text,
                 commit,
                 text.len(),
                 &mut fence,
+                &mut table,
                 width,
                 accent,
             );
@@ -415,8 +817,13 @@ fn literal(text: &str, offset: usize) -> impl Iterator<Item = Line> + '_ {
     })
 }
 
+fn diagram_fence(info: &str) -> bool {
+    let info = info.trim();
+    info.starts_with("mermaid") || info.eq_ignore_ascii_case("chart")
+}
+
 fn diagram(source: &str, width: usize, range: Range<usize>) -> Vec<Line> {
-    let drawing = sigil_tui::widgets::mermaid_draw(source);
+    let drawing = bars(source).unwrap_or_else(|| sigil_tui::widgets::mermaid_draw(source));
     if drawing.iter().any(|line| cell_width(line) + 2 > width) {
         let mut lines = vec![Line {
             spans: vec![Span::surface(
@@ -448,12 +855,62 @@ pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) 
     if width == 0 || pixel_width == 0 || pixel_height == 0 {
         return (0, 0);
     }
-    let cols = width.min(pixel_width).max(1);
-    let rows = (pixel_height * cols / pixel_width)
-        .div_ceil(2)
-        .clamp(1, IMAGE_ROWS);
-    let cols = cols.min((rows * 2 * pixel_width / pixel_height).max(1));
-    (cols, rows)
+    let aspect = super::super::canvas::cell_aspect();
+    let cols = if aspect <= 1.0 {
+        width.max(1)
+    } else {
+        width.min(pixel_width).max(1)
+    };
+    let rows = ((pixel_height as f32 * cols as f32) / (pixel_width as f32 * aspect))
+        .ceil()
+        .clamp(1.0, IMAGE_ROWS as f32) as usize;
+    let cols = ((rows as f32 * aspect * pixel_width as f32) / pixel_height as f32)
+        .round()
+        .clamp(1.0, width as f32) as usize;
+    (cols.max(1), rows.max(1))
+}
+
+pub(crate) fn paint_source(source: &ImageSource, cols: usize, rows: usize) -> ImageSource {
+    if super::super::canvas::cell_aspect() <= 1.0 || sigil_tui::protocol().is_some() {
+        source.clone()
+    } else {
+        display_source(source, cols, rows)
+    }
+}
+
+pub(crate) fn display_source(source: &ImageSource, cols: usize, rows: usize) -> ImageSource {
+    if cols == 0 || rows == 0 || sigil_tui::protocol().is_some() {
+        return source.clone();
+    }
+    let width = u32::try_from(cols).unwrap_or(u32::MAX);
+    let height = u32::try_from(rows.saturating_mul(2)).unwrap_or(u32::MAX);
+    let key = (source.id(), width, height);
+    if let Some(hit) = CACHE.with(|cache| cache.borrow().get(&key).cloned()) {
+        return hit;
+    }
+    let resized = resized(source, width, height);
+    CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= CACHE_MAX {
+            cache.clear();
+        }
+        cache.insert(key, resized.clone());
+    });
+    resized
+}
+
+fn resized(source: &ImageSource, width: u32, height: u32) -> ImageSource {
+    ::image::RgbaImage::from_raw(source.width(), source.height(), source.rgba().to_vec())
+        .map(|buffer| {
+            ::image::imageops::resize(
+                &buffer,
+                width,
+                height,
+                ::image::imageops::FilterType::Lanczos3,
+            )
+        })
+        .and_then(|buffer| ImageSource::from_rgba8(width, height, buffer.into_raw()))
+        .unwrap_or_else(|| source.clone())
 }
 
 pub(crate) fn numbered(line: &str) -> Option<(&str, &str)> {
@@ -506,7 +963,161 @@ fn inline(text: &str, accent: Rgba8, offset: usize) -> Vec<Span> {
     spans
 }
 
-const IMAGE_ROWS: usize = 24;
+const IMAGE_ROWS: usize = 48;
+
+const BAR: usize = 24;
+
+fn bars(source: &str) -> Option<Vec<String>> {
+    xychart(source).or_else(|| series(source))
+}
+
+fn xychart(source: &str) -> Option<Vec<String>> {
+    let mut title = None;
+    let mut labels = Vec::new();
+    let mut values = Vec::new();
+    let mut saw = false;
+    for line in source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("%%"))
+    {
+        let token = line.split_whitespace().next().unwrap_or("");
+        if token == "xychart" || token.starts_with("xychart-beta") {
+            saw = true;
+            continue;
+        }
+        if !saw {
+            return None;
+        }
+        if let Some(rest) = line.strip_prefix("title") {
+            title = Some(rest.trim().trim_matches('"').to_string());
+            continue;
+        }
+        if line.starts_with("x-axis") {
+            labels = csv_items(line);
+            continue;
+        }
+        if line.starts_with("y-axis") {
+            continue;
+        }
+        if line.starts_with("bar") || line.starts_with("line") {
+            values = csv_items(line)
+                .into_iter()
+                .filter_map(|item| item.parse::<f64>().ok())
+                .collect();
+        }
+    }
+    if !saw || values.is_empty() {
+        return None;
+    }
+    if labels.len() != values.len() {
+        labels = (1..=values.len()).map(|index| index.to_string()).collect();
+    }
+    Some(paint_bars(
+        title,
+        &labels
+            .into_iter()
+            .zip(values)
+            .collect::<Vec<(String, f64)>>(),
+    ))
+}
+
+fn series(source: &str) -> Option<Vec<String>> {
+    let mut title = None;
+    let mut rows = Vec::new();
+    for line in source
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with("%%"))
+    {
+        let token = line.split_whitespace().next().unwrap_or("");
+        if matches!(
+            token,
+            "graph"
+                | "flowchart"
+                | "stateDiagram"
+                | "stateDiagram-v2"
+                | "sequenceDiagram"
+                | "pie"
+                | "xychart"
+                | "xychart-beta"
+        ) {
+            return None;
+        }
+        if rows.is_empty()
+            && line
+                .split_whitespace()
+                .all(|word| word.parse::<f64>().is_err())
+            && !line.contains(':')
+            && !line.contains(',')
+        {
+            title = Some(line.trim_matches('"').to_string());
+            continue;
+        }
+        rows.push(pair(line)?);
+    }
+    (!rows.is_empty()).then(|| paint_bars(title, &rows))
+}
+
+fn pair(line: &str) -> Option<(String, f64)> {
+    if let Some((label, value)) = line.rsplit_once(':') {
+        let value: f64 = value.trim().parse().ok()?;
+        let label = label.trim().trim_matches('"').to_string();
+        return (!label.is_empty() && value >= 0.0).then_some((label, value));
+    }
+    if let Some((label, value)) = line.rsplit_once(',') {
+        let value: f64 = value.trim().parse().ok()?;
+        let label = label.trim().trim_matches('"').to_string();
+        return (!label.is_empty() && value >= 0.0).then_some((label, value));
+    }
+    let value = line.split_whitespace().next_back()?;
+    let label = line[..line.len() - value.len()].trim().trim_matches('"');
+    let value: f64 = value.parse().ok()?;
+    (!label.is_empty() && value >= 0.0).then_some((label.to_string(), value))
+}
+
+fn csv_items(line: &str) -> Vec<String> {
+    let Some(open) = line.find('[') else {
+        return Vec::new();
+    };
+    let Some(close) = line.rfind(']') else {
+        return Vec::new();
+    };
+    if close <= open {
+        return Vec::new();
+    }
+    line[open + 1..close]
+        .split(',')
+        .map(|item| item.trim().trim_matches('"').to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
+}
+
+fn paint_bars(title: Option<String>, rows: &[(String, f64)]) -> Vec<String> {
+    let peak = rows.iter().map(|(_, value)| *value).fold(0.0, f64::max);
+    let width = rows
+        .iter()
+        .map(|(label, _)| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    let mut out = Vec::new();
+    if let Some(title) = title {
+        out.push(title);
+    }
+    for (label, value) in rows {
+        let share = if peak > 0.0 { value / peak } else { 0.0 };
+        let filled = usize::try_from((share.clamp(0.0, 1.0) * BAR as f64).round() as u64)
+            .unwrap_or(BAR)
+            .min(BAR);
+        let pad = " ".repeat(width.saturating_sub(label.chars().count()));
+        out.push(format!(
+            "{label}{pad}  {}{}  {value}",
+            "█".repeat(filled),
+            "░".repeat(BAR.saturating_sub(filled)),
+        ));
+    }
+    out
+}
 
 const KEYWORDS: [&str; 44] = [
     "as",
@@ -614,7 +1225,7 @@ fn words(spans: &mut Vec<Span>, text: &str) {
     }
 }
 
-fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {
+pub(in crate::tui::sigil_view) fn chart(rounds: &[Round], accent: Rgba8) -> Vec<Line> {
     if rounds.is_empty() {
         return vec![
             vec![Span::styled(

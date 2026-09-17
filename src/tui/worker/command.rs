@@ -3,7 +3,8 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::reader::Reader;
-use super::{Cmd, Msg, Worker, set_mode};
+use super::settings::set_run_mode;
+use super::{Cmd, Msg, Worker};
 use crate::command::argument;
 use crate::durable::log::{self, Line};
 use crate::provider::UserInput;
@@ -32,7 +33,7 @@ async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<
                 Some(Cmd::Cancel) => break Attended::Cancelled,
                 Some(Cmd::Quit) | None => break Attended::Quit,
                 Some(Cmd::Tick) => {}
-                Some(command @ Cmd::ListPrompts(_)) => inbox.reader.run(command).await,
+                Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_))) => inbox.reader.run(command).await,
                 Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => {
                     inbox.followups.push_back(input);
                     drop(inbox.ui.send(Msg::Queued {
@@ -68,6 +69,7 @@ impl Worker {
             name: "run_command".to_string(),
             arguments: serde_json::json!({ "command": command }).to_string(),
         })));
+        let started = std::time::Instant::now();
         let (output, success) = match self.loop_.shell(command).await {
             Ok(result) => result,
             Err(error) => (error.to_string(), false),
@@ -77,6 +79,7 @@ impl Worker {
             success,
             mutated: false,
             output: output.clone(),
+            millis: u64::try_from(started.elapsed().as_millis()).ok(),
         })));
         drop(self.ui.send(Msg::Busy(None)));
         if send {
@@ -117,20 +120,27 @@ impl Worker {
             }
             Some(crate::SlashCommand::Clear) => self.clear(),
             Some(crate::SlashCommand::Compact) => self.compact().await,
-            Some(crate::SlashCommand::PlanAccept) => self.accept_plan(),
+            Some(crate::SlashCommand::PlanAccept) => return Some(self.accept_plan().await),
             Some(crate::SlashCommand::PlanReject) => self.reject_plan(),
             Some(crate::SlashCommand::Plan) => {
-                set_mode(&mut self.loop_, &self.ui, true);
+                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Plan);
                 true
             }
             Some(crate::SlashCommand::Auto) => {
-                set_mode(&mut self.loop_, &self.ui, false);
+                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
                 true
             }
             Some(crate::SlashCommand::Goal) => {
                 return Some(self.goal(argument.unwrap_or_default()).await);
             }
             Some(crate::SlashCommand::Session) => self.session(),
+            Some(crate::SlashCommand::Profile) => {
+                match crate::profile_session(self.loop_.session_path()) {
+                    Ok(report) => self.system(report.trim_end()),
+                    Err(error) => self.fail(&error.to_string()),
+                }
+                true
+            }
             Some(crate::SlashCommand::Resume) => self.resume(argument),
             Some(crate::SlashCommand::Retry) => return Some(self.retry().await),
             Some(crate::SlashCommand::Name) => self.name(argument),
@@ -142,6 +152,8 @@ impl Worker {
             Some(crate::SlashCommand::Write) => self.write(argument),
             Some(crate::SlashCommand::Approve) => self.approve(argument),
             Some(crate::SlashCommand::Fork) => self.fork(),
+            Some(crate::SlashCommand::Rollback) => self.rollback(argument),
+            Some(crate::SlashCommand::Undo) => self.undo(),
             Some(crate::SlashCommand::Agents) => self.agents(),
             Some(crate::SlashCommand::Modules) => self.modules(argument),
             Some(_) => self.unknown(line).unwrap_or(true),
@@ -208,9 +220,10 @@ impl Worker {
                     self.system("/write PATH  (or /write --session PATH)");
                     return true;
                 }
+                let protected = crate::policy::protected_write(&crate::policy::expand_path(path));
                 match self.loop_.allow_path(path) {
                     Ok(()) => {
-                        if persist {
+                        if persist && !protected {
                             match crate::config::path() {
                                 Ok(config) => {
                                     match crate::config::save_sandbox_write(
@@ -231,6 +244,10 @@ impl Worker {
                                     "writes allowed under {path} for this session; standing grant not saved: {error}"
                                 )),
                             }
+                        } else if protected {
+                            self.system(&format!(
+                                "writes allowed under {path} for this session; a protected path is never saved to [sandbox] write"
+                            ));
                         } else {
                             self.system(&format!("writes allowed under {path} for this session"));
                         }
@@ -288,14 +305,16 @@ impl Worker {
         .await
     }
 
-    fn accept_plan(&mut self) -> bool {
+    async fn accept_plan(&mut self) -> bool {
         if let Err(error) = self.loop_.accept_plan() {
             self.fail(&error.to_string());
             return true;
         }
-        set_mode(&mut self.loop_, &self.ui, false);
-        self.system("Plan accepted. Send a prompt to start implementing it.");
-        true
+        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Work);
+        if self.loop_.mode() != crate::RunMode::Work {
+            return true;
+        }
+        self.turn("Execute the accepted plan.".into()).await
     }
 
     fn reject_plan(&mut self) -> bool {
@@ -303,7 +322,7 @@ impl Worker {
             self.fail(&error.to_string());
             return true;
         }
-        set_mode(&mut self.loop_, &self.ui, false);
+        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
         self.system("plan rejected");
         true
     }
@@ -355,6 +374,62 @@ impl Worker {
                 Some(name) => self.system(&format!("session name: {name}")),
                 None => self.system("this session has no name — /name TEXT"),
             },
+        }
+        true
+    }
+
+    fn undo(&mut self) -> bool {
+        match self.loop_.undo() {
+            Ok((files, session)) => {
+                self.last_turn = None;
+                match session {
+                    Some(id) => {
+                        drop(self.ui.send(Msg::Reset));
+                        self.replay();
+                        drop(self.ui.send(Msg::Session(id)));
+                    }
+                    None => drop(self.ui.send(Msg::Cleared)),
+                }
+                self.send_settings();
+                self.system(&match files {
+                    Some(paths) if paths.is_empty() => {
+                        "Undid the last turn. No files had changed.".to_string()
+                    }
+                    Some(paths) => format!(
+                        "Undid the last turn and restored {} file(s): {}.",
+                        paths.len(),
+                        paths.join(", ")
+                    ),
+                    None => "Undid the last turn. Files were not restored: no git checkpoint."
+                        .to_string(),
+                });
+            }
+            Err(error) => self.fail(&error.to_string()),
+        }
+        true
+    }
+
+    fn rollback(&mut self, argument: Option<&str>) -> bool {
+        let turn = match argument.map(str::trim).filter(|text| !text.is_empty()) {
+            None => None,
+            Some(text) => match text.parse::<usize>() {
+                Ok(turn) => Some(turn),
+                Err(_) => {
+                    self.fail("/rollback takes a turn number");
+                    return true;
+                }
+            },
+        };
+        match self.loop_.rollback(turn) {
+            Ok((turn, paths)) if paths.is_empty() => {
+                self.system(&format!("Nothing changed since before turn {turn}."));
+            }
+            Ok((turn, paths)) => self.system(&format!(
+                "Restored {} file(s) to before turn {turn}: {}. The conversation is unchanged.",
+                paths.len(),
+                paths.join(", ")
+            )),
+            Err(error) => self.fail(&error.to_string()),
         }
         true
     }
@@ -694,6 +769,7 @@ impl Worker {
             self.fail(&error.to_string());
             return true;
         }
+        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Goal);
         let code = loop {
             let progress = match self.loop_.work_progress() {
                 Ok(progress) => progress,
@@ -748,7 +824,11 @@ impl Worker {
 
     fn effort(&mut self, level: Option<&str>) -> bool {
         match level {
-            None => {}
+            None => {
+                let next = self.loop_.effort().unwrap_or(crate::Effort::None).next();
+                self.dial = Some(next);
+                self.loop_.set_effort(Some(next));
+            }
             Some(level) => match crate::Effort::parse(level) {
                 Some(effort) => {
                     self.dial = Some(effort);
@@ -772,6 +852,7 @@ impl Worker {
             ""
         };
         self.system(&format!("effort: {current}{scope}"));
+        self.send_settings();
         true
     }
 

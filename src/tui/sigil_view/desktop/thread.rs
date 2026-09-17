@@ -1,4 +1,9 @@
-use sigil::prelude::*;
+use sigil::prelude::{
+    AlignItems, IntoNode, JustifyContent, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle,
+    LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, ObjectFit, Shortcut,
+    Tone, WidgetLayoutExt, badge, chart, classes, container, effect, image, label, scroll, signal,
+    text, text_edit, text_live,
+};
 
 use super::super::app::App;
 use super::super::model::Entry;
@@ -137,7 +142,7 @@ fn transcript(app: App) -> NodeBuilder {
                 .gap(16.0),
         )
         .children_reactive(move || {
-            let _ = live.panes.get();
+            let _revision = live.panes.get();
             let entries: Vec<Entry> = live.model.borrow().entries.to_vec();
             let tools = live.model.borrow().prefs.tools;
             let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
@@ -380,7 +385,7 @@ fn composer(app: App, editing: bool) -> NodeBuilder {
                         .child(
                             text_live(move || {
                                 drop(model.header.get());
-                                model.model.borrow().model.clone()
+                                model.model.borrow().snapshot.model.clone()
                             })
                             .class(classes!("text-sm text-gray-12")),
                         )

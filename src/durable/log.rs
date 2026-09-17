@@ -2,6 +2,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::id::SessionId;
@@ -329,6 +330,10 @@ fn now_millis() -> u64 {
 }
 
 pub(crate) fn read(path: &Path) -> io::Result<Vec<Line>> {
+    records(path)
+}
+
+pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
     let bytes = fs::read(path)?;
     let complete = bytes
         .iter()

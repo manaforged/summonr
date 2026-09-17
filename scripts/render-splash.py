@@ -3,8 +3,8 @@
 
 The dump comes from the env-gated unit test:
 
-    MAGE_DUMP=fantasy cargo test --lib dump_splash_json
-    python3 scripts/render-splash.py /tmp/mage-fantasy.json /tmp/fantasy.png
+    MAGE_DUMP=space cargo test --lib dump_splash_json
+    python3 scripts/render-splash.py /tmp/mage-space.json /tmp/space.png
 
 Requires Pillow. Cell glyphs are drawn with Menlo, so block and
 box-drawing characters render close to a real terminal.

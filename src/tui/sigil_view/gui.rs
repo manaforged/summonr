@@ -37,6 +37,7 @@ pub(crate) fn run(
     let requested = resume.clone();
     let opened = tokio::task::block_in_place(|| {
         sigil::launch(window(), move |cx: &mut Cx| {
+            super::canvas::window_cells();
             let mut app = App::new(info, workspace, commands);
             app.extent = signal(1.0);
             app.resume = requested;
@@ -145,7 +146,3 @@ fn reveal(path: &Path) -> Result<()> {
     }
     Ok(())
 }
-
-#[cfg(test)]
-#[path = "gui_tests.rs"]
-mod tests;

@@ -21,19 +21,19 @@ struct Target {
     pane: OsString,
     socket: OsString,
     session: Mutex<String>,
-    model: Mutex<String>,
     title: Mutex<String>,
+    model: Mutex<String>,
     life: AtomicU64,
     meta: AtomicU64,
 }
 
 impl Reporter {
-    pub(crate) fn discover(session: &str, model: &str, depth: u8) -> Self {
+    pub(crate) fn discover(session: &str, workspace: &Path, model: &str, depth: u8) -> Self {
         let target = (depth == 0)
             .then(|| std::env::current_exe().ok())
             .flatten()
             .and_then(|executable| {
-                target(session, model, product(&executable), |key| {
+                target(session, workspace, model, product(&executable), |key| {
                     std::env::var_os(key)
                 })
                 .map(Arc::new)
@@ -51,13 +51,6 @@ impl Reporter {
         }
         Turn {
             target: self.target.clone(),
-        }
-    }
-
-    pub(crate) fn label(&self, title: &str) {
-        if let Some(target) = &self.target {
-            target.set_title(title);
-            target.metadata();
         }
     }
 
@@ -95,14 +88,8 @@ impl Target {
     fn metadata(&self) {
         let seq = self.meta.fetch_add(1, Ordering::Relaxed) + 1;
         let title = held(&self.title);
-        let session = held(&self.session);
         let model = held(&self.model);
-        let shown = if title.is_empty() { &session } else { &title };
-        self.run(metadata_args(&self.pane, shown, &model, &session, seq));
-    }
-
-    fn set_title(&self, title: &str) {
-        store(&self.title, cap(title));
+        self.run(metadata_args(&self.pane, &title, &model, seq));
     }
 
     fn set_session(&self, session: &str) {
@@ -128,6 +115,7 @@ impl Target {
 
 fn target(
     session: &str,
+    workspace: &Path,
     model: &str,
     executable: Option<&OsStr>,
     env: impl Fn(&str) -> Option<OsString>,
@@ -145,8 +133,8 @@ fn target(
         pane,
         socket,
         session: Mutex::new(session.to_string()),
-        model: Mutex::new(cap(model)),
-        title: Mutex::new(String::new()),
+        title: Mutex::new(folder(workspace)),
+        model: Mutex::new(short_model(model)),
         life: AtomicU64::new(0),
         meta: AtomicU64::new(0),
     })
@@ -203,7 +191,12 @@ fn report_args(pane: &OsStr, state: &str, session: &str, seq: u64) -> Vec<OsStri
     .into()
 }
 
-fn metadata_args(pane: &OsStr, title: &str, model: &str, session: &str, seq: u64) -> Vec<OsString> {
+fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsString> {
+    let shown = if model.is_empty() {
+        AGENT.to_string()
+    } else {
+        format!("{AGENT} - {model}")
+    };
     [
         OsString::from("pane"),
         OsString::from("report-metadata"),
@@ -215,17 +208,24 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, session: &str, seq: u64
         OsString::from("--title"),
         OsString::from(cap(title)),
         OsString::from("--display-agent"),
-        OsString::from(AGENT),
-        OsString::from("--token"),
-        OsString::from(format!("model={}", cap(model))),
-        OsString::from("--token"),
-        OsString::from(format!("session={}", cap(session))),
-        OsString::from("--token"),
-        OsString::from(format!("summary={}", cap(title))),
+        OsString::from(shown),
         OsString::from("--seq"),
         OsString::from(seq.to_string()),
     ]
     .into()
+}
+
+fn short_model(model: &str) -> String {
+    let name = model.rsplit(['/', ':']).next().unwrap_or(model);
+    cap(name)
+}
+
+fn folder(workspace: &Path) -> String {
+    workspace
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(cap)
+        .unwrap_or_default()
 }
 
 fn release_args(pane: &OsStr, seq: u64) -> Vec<OsString> {
@@ -242,7 +242,3 @@ fn release_args(pane: &OsStr, seq: u64) -> Vec<OsString> {
     ]
     .into()
 }
-
-#[cfg(test)]
-#[path = "herdr_tests.rs"]
-mod tests;

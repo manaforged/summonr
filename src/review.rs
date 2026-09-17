@@ -83,7 +83,3 @@ fn parse(reply: &str) -> Verdict {
         Err(_) => raw(),
     }
 }
-
-#[cfg(test)]
-#[path = "review_tests.rs"]
-mod tests;

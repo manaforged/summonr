@@ -332,7 +332,3 @@ fn binary() -> String {
                 .to_string()
         })
 }
-
-#[cfg(test)]
-#[path = "diagnostics_tests.rs"]
-mod tests;

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use super::{Prompt, SessionInfo, user_text};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
+use crate::durable::store;
 use crate::error::{Error, Result};
 use crate::prompt::mage_home;
 
@@ -97,7 +98,7 @@ pub fn set_name(path: &Path, name: &str) -> Result<()> {
             "a session name is one non-empty line".to_string(),
         ));
     }
-    std::fs::write(log::name_path(path), format!("{name}\n"))?;
+    store::write(&log::name_path(path), format!("{name}\n"))?;
     Ok(())
 }
 

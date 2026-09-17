@@ -4,6 +4,9 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 
+mod danger;
+pub(crate) use danger::danger;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Policy {
     pub strict: bool,
@@ -18,6 +21,9 @@ pub(crate) struct Policy {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Grant {
     Write(PathBuf),
+    Guarded(PathBuf),
+    Command(String),
+    Danger(String),
     Network,
 }
 
@@ -26,6 +32,9 @@ impl Grant {
     pub(crate) fn prompt(&self) -> String {
         match self {
             Self::Write(path) => path.display().to_string(),
+            Self::Guarded(path) => format!("protected path {}", path.display()),
+            Self::Command(command) => format!("a shell command without the sandbox: {command}"),
+            Self::Danger(command) => format!("a destructive command: {command}"),
             Self::Network => "network".to_string(),
         }
     }
@@ -128,17 +137,11 @@ impl Policy {
     }
 
     pub(crate) fn command(&self, command: &str, workspace: &Path) -> Result<()> {
-        let command = command.trim();
-        if command.is_empty() {
-            return Err(Error::Denied("command is empty".to_string()));
-        }
+        self.command_policy(command)?;
         if self.unrestricted {
             return Ok(());
         }
-        if builtin_deny(command) {
-            return Err(Error::Denied(format!("blocked command `{command}`")));
-        }
-        match write_block(command, workspace, &self.roots) {
+        match write_block(command.trim(), workspace, &self.roots) {
             Some(Block::Protected(path)) => {
                 return Err(Error::Denied(format!("`{path}` is a protected path")));
             }
@@ -149,6 +152,20 @@ impl Policy {
                 )));
             }
             None => {}
+        }
+        Ok(())
+    }
+
+    pub(crate) fn command_policy(&self, command: &str) -> Result<()> {
+        let command = command.trim();
+        if command.is_empty() {
+            return Err(Error::Denied("command is empty".to_string()));
+        }
+        if self.unrestricted {
+            return Ok(());
+        }
+        if builtin_deny(command) {
+            return Err(Error::Denied(format!("blocked command `{command}`")));
         }
         for pattern in &self.deny {
             if matches_deny(command, pattern) {
@@ -250,13 +267,22 @@ pub(crate) fn grant_from_message(message: &str) -> Option<Grant> {
 pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
     match write_block(command, workspace, roots) {
         Some(Block::Outside(path)) => write_grant(write_directory(&path)),
-        Some(Block::Protected(_)) | None => None,
+        Some(Block::Protected(path)) => {
+            write_grant(write_directory(&locate(&path, workspace).to_string_lossy()))
+        }
+        None => None,
     }
 }
 
 fn write_grant(path: PathBuf) -> Option<Grant> {
-    ((path.is_absolute() || path.has_root()) && !protected_write(&path))
-        .then_some(Grant::Write(path))
+    if !(path.is_absolute() || path.has_root()) {
+        return None;
+    }
+    Some(if protected_write(&path) {
+        Grant::Guarded(path)
+    } else {
+        Grant::Write(path)
+    })
 }
 
 pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
@@ -632,8 +658,19 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool, extra: &[PathBuf]
     if let Some(target) = expand_home(word) {
         return !is_inside(&target, workspace, extra);
     }
-    if word.starts_with('~') || word.starts_with('$') {
+    if word.starts_with('~') {
         return true;
+    }
+    if word.starts_with('$') {
+        let name = word
+            .trim_start_matches('$')
+            .trim_start_matches('{')
+            .trim_end_matches('}');
+        let head = name.split(['/', '\\']).next().unwrap_or(name);
+        return matches!(
+            head,
+            "HOME" | "TMPDIR" | "TMP" | "TEMP" | "TEMPDIR" | "PWD"
+        );
     }
     if Path::new(word).has_root() {
         return !is_inside(Path::new(word), workspace, extra);
@@ -659,7 +696,67 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool, extra: &[PathBuf]
 }
 
 pub(crate) fn expand_path(word: &str) -> PathBuf {
-    expand_home(word).unwrap_or_else(|| PathBuf::from(word))
+    remap_volume(expand_home(word).unwrap_or_else(|| PathBuf::from(word)))
+}
+
+fn remap_volume(path: PathBuf) -> PathBuf {
+    #[cfg(not(target_os = "macos"))]
+    {
+        return path;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut components = path.components();
+        if components.next() != Some(Component::RootDir) {
+            return path;
+        }
+        match components.next() {
+            Some(Component::Normal(volumes)) if volumes == "Volumes" => {}
+            _ => return path,
+        }
+        let Some(Component::Normal(asked)) = components.next() else {
+            return path;
+        };
+        let asked = asked.to_string_lossy();
+        let Ok(entries) = std::fs::read_dir("/Volumes") else {
+            return path;
+        };
+        let names: Vec<std::ffi::OsString> = entries
+            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
+            .collect();
+        let equal: Vec<_> = names
+            .iter()
+            .filter(|name| name.to_string_lossy().eq_ignore_ascii_case(&asked))
+            .cloned()
+            .collect();
+        let hits = if equal.len() == 1 {
+            equal
+        } else {
+            let prefix: Vec<_> = names
+                .iter()
+                .filter(|name| {
+                    name.to_string_lossy()
+                        .to_ascii_lowercase()
+                        .starts_with(&asked.to_ascii_lowercase())
+                })
+                .cloned()
+                .collect();
+            if prefix.len() == 1 {
+                prefix
+            } else {
+                return path;
+            }
+        };
+        if hits[0].to_string_lossy() == asked {
+            return path;
+        }
+        let mut out = PathBuf::from("/Volumes");
+        out.push(&hits[0]);
+        for rest in components {
+            out.push(rest);
+        }
+        out
+    }
 }
 
 fn expand_home(word: &str) -> Option<PathBuf> {

@@ -2,12 +2,32 @@
 
 ## Unreleased
 
+- `/plan accept` enters work and runs the plan in that turn. Work is not
+  a sibling of plan: without a selected plan, a work request stays in
+  plan mode. `shift+tab` switches auto and plan only.
+- The `task` module is off by default. Turn it on with `/modules task on`
+  when the work has disjoint paths. The harness prompt tells the model
+  to spawn a child only then, and that the completion check decides done.
+- Transcript pictures keep the full preview bitmap in the overlay.
+  A picture is 48 rows tall at most.
+- A fenced `chart` block, or mermaid `xychart` / `xychart-beta`,
+  renders as labeled bars.
 - Crate and command are `summonr`. `summon` and `summoner` remain PATH
   aliases of the same binary. Config stays under `~/.mage`.
 - The model sees four core tools every round: `read` (file, directory,
   image, or search), `edit`, `write`, and `run_command`. Optional
   modules add `skill`, `lsp`, `web`, `task`, and `bus`. Old names still
   run and are not advertised.
+- Ordinary chat executes immediately. `shift+tab` and `/plan` enter
+  plan mode. The reply is saved to `.mage/plan.md`. Sandboxed network
+  is on by default; `--no-net` denies it. Destructive writes still ask.
+- The four core tools got deeper without growing: `read` search takes
+  `literal`, `caseSensitive`, and `include`; `edit` takes a `files`
+  batch and a `to` rename; `write` takes a `files` batch;
+  `run_command` takes `workdir` and names the full log for a long
+  output.
+- `web` fetches as markdown, text, or html, and keeps the full page
+  when the output is truncated.
 - Plan mode is read-only. `edit` and `write` are unavailable. The model
   inspects with `read` and `run_command`, then proposes diffs in the
   answer.
@@ -17,12 +37,18 @@
   `[ allow ]`, `[ always ]`, or `[ deny ]`. `[ always ]` appends the
   path to `[sandbox] write`. `/write PATH` and `/net on` / `/net once`
   do the same without a prompt.
+- Built-in endpoints add `together`, `groq`, `cerebras`, `mistral`, and
+  `muse` (chat/completions). They set no default model: name one with
+  `--model`. `muse` defaults to `muse-spark-1.3`.
 - Built-in OpenCode seats: `zen`, `go`, and `opencode`
   (`chat/completions`). Keys are `OPENCODE_API_KEY` and
-  `OPENCODE_GO_API_KEY`. Requests to `opencode.ai/zen` send
-  `x-opencode-session`.
+  `OPENCODE_GO_API_KEY`. Every wire sends `x-opencode-session`, and
+  `responses` is a selectable wire.
+- The Sigil dependency fetches over https, so a checkout needs no SSH
+  key once the repository is visible.
 - Streamed reasoning is italic `thought` text on the canvas. There is no
   separate reasoning band.
+- The interface ships the `space` preset only. `/theme` reloads theme files.
 
 ## 0.1.0 - 2026-09-10
 

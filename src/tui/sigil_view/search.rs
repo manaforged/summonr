@@ -3,7 +3,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use regex::{Regex, RegexBuilder, escape};
-use sigil::prelude::*;
 
 use super::app::App;
 use super::canvas::{Cell, palette};
@@ -11,6 +10,12 @@ use super::chat::{accent, draft_view, ellipsize, write_at};
 use super::hit::Target;
 use super::model::{Entry, Model, entry_markdown};
 use crate::session::Prompt;
+#[cfg(feature = "gui")]
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, NodeStyleExt, WidgetLayoutExt, classes, container, label,
+    virtual_list,
+};
+use sigil::prelude::{NodeBuilder, Signal, signal, text_edit};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -229,7 +234,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
 
 #[cfg(feature = "gui")]
 pub(super) fn desktop(app: App) -> NodeBuilder {
-    let _ = app.panes.get();
+    let _revision = app.panes.get();
     let picker = app.search;
     let close = app.clone();
     let mut body = container()
@@ -375,7 +380,7 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let selected = app.search.selected.get().min(rows.len().saturating_sub(1));
     let stride = if app.search.is_history() { 2 } else { 1 };
     let count = height.saturating_sub(top + 2) / stride;
-    let start = selected.saturating_add(1).saturating_sub(count);
+    let start = super::hit::window(app, selected, rows.len(), count);
     for (offset, (entry, preview)) in rows.iter().enumerate().skip(start).take(count) {
         let y = top + (offset - start) * stride;
         let marker = if offset == selected { "›" } else { " " };

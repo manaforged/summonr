@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Component, Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -15,6 +16,21 @@ mod lsp;
 pub(crate) mod sandbox;
 mod search;
 mod workspace;
+
+fn volume_unmounted(path: &Path) -> bool {
+    let mut parts = path.components();
+    if parts.next() != Some(Component::RootDir) {
+        return false;
+    }
+    match parts.next() {
+        Some(Component::Normal(volumes)) if volumes == "Volumes" => {}
+        _ => return false,
+    }
+    let Some(Component::Normal(name)) = parts.next() else {
+        return false;
+    };
+    !Path::new("/Volumes").join(name).is_dir()
+}
 
 pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
     command::exit_code(output)
@@ -34,6 +50,8 @@ pub enum Event {
         #[serde(default)]
         mutated: bool,
         output: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        millis: Option<u64>,
     },
     Assistant {
         text: String,
@@ -105,11 +123,11 @@ pub(crate) struct ToolRegistry {
     background: bool,
     language: bool,
     skills: bool,
-    history: std::sync::Mutex<std::collections::VecDeque<String>>,
     lsp: std::sync::Mutex<
         std::collections::BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>>,
     >,
     session: std::sync::Mutex<Option<String>>,
+    logs: std::sync::Mutex<Vec<tempfile::TempDir>>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::atomic::AtomicBool,
 }
@@ -165,9 +183,9 @@ impl ToolRegistry {
             background: true,
             language: true,
             skills: true,
-            history: std::sync::Mutex::new(std::collections::VecDeque::new()),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
+            logs: std::sync::Mutex::new(Vec::new()),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::atomic::AtomicBool::new(false),
         })
@@ -219,13 +237,13 @@ impl ToolRegistry {
     }
 
     pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
-        if crate::policy::protected_write(&path) {
-            return Err(Error::Denied(format!(
-                "`{}` is a protected path",
-                path.display()
-            )));
-        }
         if !path.exists() {
+            if volume_unmounted(&path) {
+                return Err(Error::Config(format!(
+                    "write path {}: volume is not mounted",
+                    path.display()
+                )));
+            }
             std::fs::create_dir_all(&path).map_err(|error| {
                 Error::Config(format!(
                     "cannot create write path {}: {error}",
@@ -239,12 +257,6 @@ impl ToolRegistry {
                 path.display()
             ))
         })?;
-        if crate::policy::protected_write(&resolved) {
-            return Err(Error::Denied(format!(
-                "`{}` is a protected path",
-                resolved.display()
-            )));
-        }
         if !resolved.is_dir() {
             return Err(Error::Config(format!(
                 "write path {} is not a directory",
@@ -313,12 +325,8 @@ impl ToolRegistry {
         self.policy.set_read_only(on);
     }
 
-    #[cfg(test)]
-    pub(crate) async fn execute(&self, call: &ToolCall) -> Result<String> {
-        self.execute_outcome(call).await.map(|output| output.text)
-    }
-
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {
+        let call = normalize(call)?;
         if !self.enabled(&call.function.name) {
             return if catalog::known(&call.function.name) {
                 Err(Error::Denied(format!(
@@ -332,68 +340,19 @@ impl ToolRegistry {
                 )))
             };
         }
-        let repeats = self.note_call(&call.function.name, &call.function.arguments);
-        let result = self.dispatch(call).await;
-        if repeats < 3 {
-            return result;
-        }
-        let note = format!(
-            "[{repeats} identical calls in a row — the result will not change; re-read the step, \
-             change the approach, or ask]"
-        );
-        match result {
-            Ok(mut output) => {
-                output.text = format!("{note}\n{}", output.text);
-                Ok(output)
-            }
-            Err(Error::Tool(text)) => Err(Error::Tool(format!("{note}\n{text}"))),
-            Err(other) => Err(other),
-        }
-    }
-
-    fn note_call(&self, name: &str, arguments: &str) -> usize {
-        let signature = format!("{name}\u{0}{arguments}");
-        let Ok(mut history) = self.history.lock() else {
-            return 1;
-        };
-        history.push_back(signature.clone());
-        if history.len() > 8 {
-            history.pop_front();
-        }
-        history
-            .iter()
-            .rev()
-            .take_while(|past| **past == signature)
-            .count()
+        self.dispatch(&call).await
     }
 
     async fn dispatch(&self, call: &ToolCall) -> Result<ToolOutput> {
         match call.function.name.as_str() {
             "read" => self.read(&call.function.arguments).map(ToolOutput::ok),
-            "read_file" => self.read_file(&call.function.arguments).map(ToolOutput::ok),
-            "edit" | "edit_file" => self.edit_file(&call.function.arguments).await,
-            name @ ("replace_text" | "replace_texts" | "replace_lines" | "insert_after"
-            | "delete_lines") => self.edit_operation(name, &call.function.arguments).await,
-            "write" | "write_file" => self.write_file(&call.function.arguments).await,
-            "list_dir" => self.list_dir(&call.function.arguments).map(ToolOutput::ok),
-            "grep" => self.grep(&call.function.arguments).map(ToolOutput::ok),
-            "show_image" => self
-                .show_image(&call.function.arguments)
-                .map(ToolOutput::ok),
+            "edit" => self.edit_file(&call.function.arguments).await,
+            "write" => self.write_file(&call.function.arguments).await,
             "skill" => self.skill(&call.function.arguments).map(ToolOutput::ok),
             "run_command" => self.run_command(&call.function.arguments).await,
+            "todo" => parse_todo(&call.function.arguments).map(ToolOutput::ok),
             "web" => self.web(&call.function.arguments).await.map(ToolOutput::ok),
-            "web_search" => self
-                .web_search(&call.function.arguments)
-                .await
-                .map(ToolOutput::ok),
-            "web_fetch" => self
-                .web_fetch(&call.function.arguments)
-                .await
-                .map(ToolOutput::ok),
             "lsp" => self.lsp(&call.function.arguments).await,
-            "diagnostics" => self.diagnostics(&call.function.arguments).await,
-            "definition" => self.definition(&call.function.arguments).await,
             name => Err(Error::Tool(format!("unknown tool `{name}`"))),
         }
     }
@@ -463,8 +422,9 @@ impl ToolRegistry {
             });
         }
         if relative.is_absolute() {
-            self.ensure_inside(relative)?;
-            return Ok(relative.to_path_buf());
+            let path = crate::policy::expand_path(path);
+            self.ensure_inside(&path)?;
+            return Ok(path);
         }
         let mut out = self.workspace.clone();
         for component in relative.components() {
@@ -544,8 +504,112 @@ impl ToolRegistry {
         }
         path.strip_prefix(&self.workspace)
             .map(|relative| relative.to_string_lossy().into_owned())
-            .map_err(|_| Error::Tool(crate::policy::write_denied(&path.display().to_string())))
+            .map_err(|_error| Error::Tool(crate::policy::write_denied(&path.display().to_string())))
     }
+}
+
+fn normalize(call: &ToolCall) -> Result<Cow<'_, ToolCall>> {
+    let Some((_, name, operation)) = catalog::RETIRED
+        .iter()
+        .find(|(retired, _, _)| *retired == call.function.name)
+    else {
+        return Ok(Cow::Borrowed(call));
+    };
+    let mut call = call.clone();
+    if let Some(operation) = operation {
+        let mut args = parse_args(&call.function.name, &call.function.arguments)?;
+        args.as_object_mut()
+            .ok_or_else(|| {
+                Error::Tool(format!(
+                    "{} arguments must be an object",
+                    call.function.name
+                ))
+            })?
+            .insert("op".to_string(), Value::String((*operation).to_string()));
+        call.function.arguments = args.to_string();
+    }
+    call.function.name = (*name).to_string();
+    Ok(Cow::Owned(call))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TodoStatus {
+    Pending,
+    Active,
+    Done,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Todo {
+    pub text: String,
+    pub status: TodoStatus,
+}
+
+impl Todo {
+    pub(crate) fn mark(&self) -> &'static str {
+        match self.status {
+            TodoStatus::Done => "✓",
+            TodoStatus::Active => "●",
+            TodoStatus::Pending => "○",
+        }
+    }
+
+    pub(crate) fn line(&self) -> String {
+        format!("{} {}", self.mark(), self.text)
+    }
+
+    pub(crate) fn ledger_line(&self) -> String {
+        let mark = match self.status {
+            TodoStatus::Done => "[x]",
+            TodoStatus::Active => "[/]",
+            TodoStatus::Pending => "[ ]",
+        };
+        format!("{mark} {}", self.text)
+    }
+}
+
+pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
+    let value = parse_args("todo", arguments)?;
+    let items = value
+        .get("items")
+        .or_else(|| value.get("todos"))
+        .or_else(|| value.get("tasks"))
+        .and_then(Value::as_array)
+        .or_else(|| value.as_array())
+        .ok_or_else(|| Error::Tool("todo requires items".to_string()))?;
+    let mut todos = Vec::new();
+    for item in items {
+        let text = item
+            .get("text")
+            .or_else(|| item.get("title"))
+            .or_else(|| item.get("content"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| Error::Tool("todo item needs text".to_string()))?;
+        let status = match item
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("pending")
+        {
+            "done" | "completed" => TodoStatus::Done,
+            "active" | "in_progress" => TodoStatus::Active,
+            _ => TodoStatus::Pending,
+        };
+        todos.push(Todo {
+            text: text.to_string(),
+            status,
+        });
+    }
+    Ok(todos)
+}
+
+fn parse_todo(arguments: &str) -> Result<String> {
+    let todos = todos_from_args(arguments)?;
+    if todos.is_empty() {
+        return Ok("no todos".to_string());
+    }
+    Ok(todos.iter().map(Todo::line).collect::<Vec<_>>().join("\n"))
 }
 
 pub(crate) fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {

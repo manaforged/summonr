@@ -1,13 +1,12 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::{Value, json};
 
+use super::serve::TICK;
+use super::short;
 use crate::bus::Bus;
 use crate::error::{Error, Result};
 use crate::rpc::{self, Client};
-
-const TICK: Duration = Duration::from_millis(500);
 
 const BRIEF: &str = "You are one agent in a room with other coding agents on this machine. Each message you receive is mail from a peer, prefixed with the sender's id and kind. Your reply is sent back to that peer as mail, so answer them directly and concisely; put findings, diffs, and file paths in the reply. You may edit files and run commands in your working directory within your sandbox. Do not wait for a human.";
 
@@ -51,7 +50,7 @@ impl Options {
 
 pub(super) async fn codex(options: Options) -> Result<()> {
     let program = std::env::var("MAGE_CODEX").unwrap_or_else(|_| "codex".to_string());
-    let mut client = Client::spawn(&program, &["mcp-server"], &options.cwd)?;
+    let mut client = Client::spawn(&program, &["mcp-server"], &[], &options.cwd)?;
     client.initialize("summon-room").await?;
     let id = options
         .id
@@ -149,9 +148,4 @@ fn first(text: &str) -> String {
         .chars()
         .take(120)
         .collect()
-}
-
-fn short() -> String {
-    let seed = std::process::id() as u64 ^ crate::bus::now();
-    format!("{:04x}", seed & 0xffff)
 }

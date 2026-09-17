@@ -9,7 +9,7 @@ impl<P: Provider> Loop<P> {
         user: &str,
     ) -> Result<(String, Usage)> {
         let tools = self.advertised_tools().to_vec();
-        let plan = self.plan;
+        let plan = self.is_plan();
         self.tools.set_read_only(true);
         let result = self.aside_rounds(role, system, user, &tools).await;
         self.tools.set_read_only(plan);
@@ -33,6 +33,7 @@ impl<P: Provider> Loop<P> {
                 return Err(Error::Config(reason));
             }
             let request = CompletionRequest {
+                session: self.session_id(),
                 model: self.seat(role).1.to_string(),
                 messages: messages.clone(),
                 tools: tools.to_vec(),

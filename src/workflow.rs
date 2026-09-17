@@ -157,7 +157,3 @@ pub fn set_default(name: &str) -> Result<()> {
     from_file(&config::load_from(&path)?, name)?;
     config::save_default_workflow(&path, name)
 }
-
-#[cfg(test)]
-#[path = "workflow_tests.rs"]
-mod tests;

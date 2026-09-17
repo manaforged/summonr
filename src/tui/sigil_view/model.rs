@@ -37,11 +37,23 @@ pub(super) enum Entry {
     Aborted(String),
     System(String),
     Error(String),
+    #[expect(
+        dead_code,
+        reason = "nothing constructs this: the arms are unreachable, tracked in docs/api/AUDIT.md"
+    )]
     Chart(Vec<Round>),
     Image {
         source: ImageSource,
         label: String,
     },
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct Agent {
+    pub(super) id: String,
+    pub(super) last: String,
+    pub(super) done: bool,
+    pub(super) failed: bool,
 }
 
 #[derive(Clone, Default)]
@@ -111,6 +123,9 @@ pub(super) struct Model {
     pub(super) session: String,
     pub(super) entries: Entries,
     pub(super) ledger: Vec<String>,
+    pub(super) plan_current: Option<usize>,
+    pub(super) plan_total: usize,
+    pub(super) plan_objective: String,
     pub(super) files: Vec<String>,
     pub(super) diff: crate::diff::Diff,
     pub(super) diff_error: Option<String>,
@@ -131,11 +146,11 @@ pub(super) struct Model {
     pub(super) queued: (usize, usize),
     pub(super) busy_since: Option<(Activity, Instant)>,
     pub(super) live_tool: Option<(String, String)>,
+    pub(super) agents: Vec<Agent>,
+    pub(super) agents_hidden: bool,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
-    pub(super) model: String,
-    pub(super) relay: Option<String>,
-    pub(super) peers: usize,
+    pub(super) peers: Vec<crate::bus::Agent>,
 }
 
 impl Model {
@@ -144,7 +159,7 @@ impl Model {
             Some((endpoint, name)) => {
                 endpoint == self.snapshot.endpoint && name == self.snapshot.model
             }
-            None => choice == self.model,
+            None => choice == self.snapshot.model,
         }
     }
 
@@ -153,6 +168,9 @@ impl Model {
             session: info.session.clone(),
             entries: Entries::default(),
             ledger: Vec::new(),
+            plan_current: None,
+            plan_total: 0,
+            plan_objective: String::new(),
             files: Vec::new(),
             diff: crate::diff::Diff::default(),
             diff_error: None,
@@ -173,6 +191,8 @@ impl Model {
             queued: (0, 0),
             busy_since: None,
             live_tool: None,
+            agents: Vec::new(),
+            agents_hidden: false,
             prefs: info.prefs.clone(),
             snapshot: Snapshot {
                 model: info.model.clone(),
@@ -182,9 +202,7 @@ impl Model {
                 endpoint: info.endpoint.clone(),
                 ..Snapshot::default()
             },
-            model: info.model.clone(),
-            relay: info.relay.clone(),
-            peers: 0,
+            peers: Vec::new(),
         }
     }
 
@@ -201,28 +219,6 @@ impl Model {
             }),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::Bye => return false,
-            Msg::Thinking(text) if self.prefs.reasoning == Reasoning::Off => {
-                self.speed.delta(text.chars().count(), Instant::now());
-                self.live_tool = Some(("thinking".to_string(), String::new()));
-            }
-            Msg::Thinking(text) => {
-                self.speed.delta(text.chars().count(), Instant::now());
-                match self.entries.last_mut() {
-                    Some(Entry::Thinking(body)) => body.push_str(&text),
-                    _ => self.entries.push(Entry::Thinking(text)),
-                }
-            }
-            Msg::Delta(text) => {
-                self.speed.delta(text.chars().count(), Instant::now());
-                self.live_tool = None;
-                match self.entries.last_mut() {
-                    Some(Entry::Assistant {
-                        text: body,
-                        done: false,
-                    }) => body.push_str(&text),
-                    _ => self.entries.push(Entry::Assistant { text, done: false }),
-                }
-            }
             Msg::Calling(name) => self.live_tool = Some((name, "…".to_string())),
             Msg::Event(event) => self.apply_event(event),
             Msg::Busy(busy) => self.set_busy(busy),
@@ -238,6 +234,9 @@ impl Model {
                 self.entries.clear();
                 self.tools.clear();
                 self.ledger.clear();
+                self.plan_current = None;
+                self.plan_total = 0;
+                self.plan_objective.clear();
                 self.recent.clear();
                 self.usage.clear();
                 self.prompt_tokens = 0;
@@ -247,20 +246,17 @@ impl Model {
                 self.unreported_tokens = 0;
                 self.rounds = 0;
                 self.live_tool = None;
+                self.agents.clear();
                 self.speed = Speed::default();
             }
-            Msg::Mode(plan) => self.snapshot.plan = plan,
-            Msg::OpenSettings | Msg::OpenHelp => {}
-            Msg::Settings(snapshot) => self.snapshot = snapshot,
-            Msg::Model { model, relay } => {
-                self.model = model;
-                self.relay = relay;
+            Msg::RunMode(mode) => {
+                self.snapshot.plan = mode == crate::RunMode::Plan;
+                self.snapshot.work = mode == crate::RunMode::Work;
+                self.snapshot.goal = mode == crate::RunMode::Goal;
             }
-            Msg::Models { .. }
-            | Msg::ModelsFailed(_)
-            | Msg::Sessions(_)
-            | Msg::Prompts { .. }
-            | Msg::Workflow { .. } => {}
+            Msg::OpenSettings | Msg::OpenHelp | Msg::Secret(_) => {}
+            Msg::Settings(snapshot) => self.snapshot = snapshot,
+            Msg::Models { .. } | Msg::Sessions(_) | Msg::Usage(_) | Msg::Prompts { .. } | Msg::Workflow { .. } => {}
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
             Msg::Files(files) => self.files = files,
@@ -309,6 +305,7 @@ impl Model {
             self.spinner = 0;
         } else {
             self.live_tool = None;
+            self.agents.retain(|agent| !agent.done);
         }
     }
 
@@ -327,12 +324,39 @@ impl Model {
     fn clear(&mut self) {
         self.entries.clear();
         self.tools.clear();
+        self.agents.clear();
+        self.ledger.clear();
+        self.plan_current = None;
+        self.plan_total = 0;
+        self.plan_objective.clear();
         self.entries
             .push(Entry::System("history cleared".to_string()));
     }
 
     fn apply_event(&mut self, event: Event) {
         match event {
+            Event::Reasoning { text } if self.prefs.reasoning == Reasoning::Off => {
+                self.speed.delta(text.chars().count(), Instant::now());
+                self.live_tool = Some(("thinking".to_string(), String::new()));
+            }
+            Event::Reasoning { text } => {
+                self.speed.delta(text.chars().count(), Instant::now());
+                match self.entries.last_mut() {
+                    Some(Entry::Thinking(body)) => body.push_str(&text),
+                    _ => self.entries.push(Entry::Thinking(text)),
+                }
+            }
+            Event::Delta { text } => {
+                self.speed.delta(text.chars().count(), Instant::now());
+                self.live_tool = None;
+                match self.entries.last_mut() {
+                    Some(Entry::Assistant {
+                        text: body,
+                        done: false,
+                    }) => body.push_str(&text),
+                    _ => self.entries.push(Entry::Assistant { text, done: false }),
+                }
+            }
             Event::ToolCall {
                 id,
                 name,
@@ -343,6 +367,9 @@ impl Model {
                     "read" | "read_file" => Some((arguments.clone(), true)),
                     _ => None,
                 };
+                if name == "todo" {
+                    self.apply_todos(&arguments, None);
+                }
                 self.start_tool(id, name, arguments);
                 if let Some((arguments, quiet)) = shown {
                     self.show_call(&arguments, quiet);
@@ -374,11 +401,17 @@ impl Model {
             }
             Event::Receipt { receipt } => self.entries.push(Entry::Receipt(receipt.text)),
             Event::Work { progress } => {
-                self.ledger = progress.ledger.clone();
-                self.entries.push(Entry::System(progress.to_string()));
-                if !progress.ledger.is_empty() {
-                    self.entries
-                        .push(Entry::System(progress.ledger.join("\n> ")));
+                self.ledger = progress
+                    .ledger
+                    .iter()
+                    .filter(|line| itemized(line))
+                    .cloned()
+                    .collect();
+                self.plan_current = progress.current;
+                self.plan_total = progress.total;
+                self.plan_objective = progress.objective.clone();
+                if progress.kind != crate::WorkKind::Single || progress.reason.is_some() {
+                    self.entries.push(Entry::System(progress.to_string()));
                 }
             }
             Event::Usage {
@@ -397,39 +430,105 @@ impl Model {
                 prefix_hash,
                 cost,
             ),
-            Event::Delta { .. } | Event::Reasoning { .. } | Event::Approval { .. } => {}
+            Event::Approval { .. } => {}
             Event::Unreported { tokens } => self.unreported_tokens = tokens,
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
     }
 
+    fn apply_todos(&mut self, arguments: &str, child: Option<&str>) {
+        let Ok(items) = crate::tools::todos_from_args(arguments) else {
+            return;
+        };
+        if items.is_empty() && child.is_none() {
+            self.ledger.clear();
+            self.entries.invalidate();
+            return;
+        }
+        let lines: Vec<String> = items
+            .iter()
+            .map(|todo| match child {
+                Some(tag) => format!("  {} {tag} · {}", todo.mark(), todo.text),
+                None => todo.ledger_line(),
+            })
+            .collect();
+        if let Some(tag) = child {
+            let needle = format!(" {tag} · ");
+            self.ledger.retain(|line| !line.contains(&needle));
+            self.ledger.extend(lines);
+        } else {
+            self.ledger = lines;
+        }
+        self.entries.invalidate();
+    }
+
     fn apply_child(&mut self, id: &str, event: Event) {
+        if let Event::ToolCall {
+            name, arguments, ..
+        } = &event
+            && name == "todo"
+        {
+            let tag: String = id.chars().take(8).collect();
+            self.apply_todos(arguments, Some(&tag));
+        }
         let tag: String = id.chars().take(8).collect();
-        let line = match event {
+        let compact = ToolOutput::Compact;
+        let (last, done, failed) = match event {
             Event::ToolCall {
                 name, arguments, ..
-            } => {
-                format!("child {tag} → {name} {}", tool_arg(&arguments))
-            }
+            } => (
+                format!("{name} {}", tool_arg(&arguments))
+                    .trim()
+                    .to_string(),
+                false,
+                false,
+            ),
             Event::ToolResult {
                 success: false,
                 output,
                 ..
-            } => {
-                format!("child {tag} ✗ {}", ToolOutput::Compact.text(&output))
-            }
-            Event::Assistant { text } => {
-                format!("child {tag}: {}", ToolOutput::Compact.text(&text))
-            }
-            Event::Note { text } | Event::Aborted { reason: text } => {
-                format!("child {tag}: {text}")
-            }
-            Event::Verify { command, passed } => {
-                format!("child {tag} {} {command}", if passed { "✓" } else { "✗" })
-            }
+            } => (format!("✗ {}", compact.text(&output)), false, true),
+            Event::Assistant { text } => (compact.text(&text).to_string(), true, false),
+            Event::Aborted { reason } => (reason, true, true),
+            Event::Note { text } => (text, false, false),
+            Event::Verify { command, passed } => (
+                format!("{} {command}", if passed { "✓" } else { "✗" }),
+                false,
+                !passed,
+            ),
             _ => return,
         };
-        self.entries.push(Entry::System(line));
+        if let Some(agent) = self.agents.iter_mut().find(|agent| agent.id == tag) {
+            agent.last = last.clone();
+            agent.done = done;
+            agent.failed |= failed;
+        } else {
+            self.agents.push(Agent {
+                id: tag.clone(),
+                last: last.clone(),
+                done,
+                failed,
+            });
+            self.agents_hidden = false;
+        }
+        self.entries.invalidate();
+        if done {
+            let failed = self
+                .agents
+                .iter()
+                .find(|agent| agent.id == tag)
+                .is_some_and(|agent| agent.failed);
+            self.entries.push(Entry::Tool {
+                name: "agent".to_string(),
+                arg: tag,
+                state: if failed {
+                    ToolState::Failed
+                } else {
+                    ToolState::Ok
+                },
+                output: last,
+            });
+        }
     }
 
     fn start_tool(&mut self, id: String, name: String, arguments: String) {
@@ -627,10 +726,25 @@ fn linked(text: &str) -> Vec<String> {
     paths
 }
 
+pub(super) fn itemized(line: &str) -> bool {
+    let text = line.trim_start();
+    text.starts_with("[x] ")
+        || text.starts_with("[/] ")
+        || text.starts_with("[ ] ")
+        || text.starts_with("[!] ")
+        || text.chars().next().is_some_and(|c| c.is_ascii_digit()) && text.contains(". ")
+}
+
+const PREVIEW_WIDTH: u32 = 1920;
+const PREVIEW_HEIGHT: u32 = 1200;
+
 pub(super) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {
     let image = load_from_memory(bytes).map_err(|error| format!("invalid image: {error}"))?;
     let rgba = image
-        .thumbnail(image.width().min(560), image.height().min(336))
+        .thumbnail(
+            image.width().min(PREVIEW_WIDTH),
+            image.height().min(PREVIEW_HEIGHT),
+        )
         .into_rgba8();
     ImageSource::from_rgba8(rgba.width(), rgba.height(), rgba.into_raw())
         .ok_or_else(|| "image has no pixels".to_string())

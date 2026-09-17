@@ -6,6 +6,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use super::store;
 use super::tree::{Snapshot, changed};
 
 const LEDGER_WIDTH: usize = 72;
@@ -196,6 +197,12 @@ impl Work {
         Ok(())
     }
 
+    /// Store the completion checks without selecting a plan yet.
+    pub(crate) fn set_checks(&mut self, commands: &[String]) -> Result<(), WorkError> {
+        self.checks = checks(&self.objective, self.policy, commands)?;
+        Ok(())
+    }
+
     pub(crate) fn execute(&mut self, base: Snapshot) -> Result<(), WorkError> {
         if self.plan.is_none() {
             return Err(WorkError("Execute requires a selected plan".to_string()));
@@ -252,9 +259,23 @@ impl Work {
         if !passed {
             return self.fail("Repair the failed completion check.".to_string());
         }
-        let active = self
-            .active
-            .ok_or_else(|| WorkError("Verify has no active item".to_string()))?;
+        let active = match self.active.or_else(|| {
+            self.steps
+                .iter()
+                .position(|step| step.state == StepState::Active)
+                .or_else(|| {
+                    self.steps
+                        .iter()
+                        .position(|step| step.state == StepState::Pending)
+                })
+        }) {
+            Some(active) => active,
+            None => {
+                self.status = Status::Completed;
+                return Ok(());
+            }
+        };
+        self.active = Some(active);
         let policy = self.policy;
         let step = self
             .steps
@@ -334,9 +355,18 @@ impl Work {
     }
 
     fn fail(&mut self, continuation: String) -> Result<(), WorkError> {
-        let active = self
-            .active
-            .ok_or_else(|| WorkError("Verify has no active item".to_string()))?;
+        let active = match self.active.or_else(|| {
+            self.steps
+                .iter()
+                .position(|step| step.state != StepState::Completed)
+        }) {
+            Some(active) => active,
+            None => {
+                self.status = Status::Failed(continuation);
+                return Ok(());
+            }
+        };
+        self.active = Some(active);
         let step = self
             .steps
             .get_mut(active)
@@ -402,6 +432,36 @@ impl Work {
             .unwrap_or_default()
     }
 
+    pub(crate) fn apply_todos(&mut self, items: &[(String, StepState)]) {
+        if items.is_empty() {
+            return;
+        }
+        let mut steps = Vec::new();
+        for (title, state) in items {
+            let mut step = self
+                .steps
+                .iter()
+                .find(|step| step.title == *title)
+                .cloned()
+                .unwrap_or_else(|| Step::new(title, None, Vec::new()));
+            step.state = *state;
+            steps.push(step);
+        }
+        self.steps = steps;
+        if self.policy == Policy::Single {
+            self.policy = Policy::Steps;
+        }
+        self.active = self
+            .steps
+            .iter()
+            .position(|step| step.state == StepState::Active)
+            .or_else(|| {
+                self.steps
+                    .iter()
+                    .position(|step| step.state == StepState::Pending)
+            });
+    }
+
     pub(crate) fn progress(&self) -> WorkProgress {
         let (kind, max_turns) = match self.policy {
             Policy::Single => (WorkKind::Single, 0),
@@ -442,7 +502,30 @@ impl Work {
         }
     }
 
+    /// The model-written plan lines shown while a single-policy turn runs.
+    fn planned_ledger(&self) -> Vec<String> {
+        let Some(plan) = self.plan.as_deref() else {
+            return Vec::new();
+        };
+        if let Ok(parsed) = crate::steps::parse(plan) {
+            return parsed
+                .iter()
+                .take(LEDGER_MAX)
+                .map(|step| format!("{}. {}", step.index, step.text))
+                .collect();
+        }
+        plan.lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+            .take(LEDGER_MAX)
+            .map(str::to_string)
+            .collect()
+    }
+
     fn ledger(&self) -> Vec<String> {
+        if self.policy == Policy::Single {
+            return self.planned_ledger();
+        }
         if self.policy != Policy::Steps {
             return Vec::new();
         }
@@ -506,9 +589,7 @@ impl Work {
     }
 
     pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
-        let temp = path.with_extension("json.tmp");
-        std::fs::write(&temp, serde_json::to_vec_pretty(self)?)?;
-        std::fs::rename(temp, path)
+        store::write(path, serde_json::to_vec_pretty(self)?)
     }
 
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
@@ -519,6 +600,10 @@ impl Work {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "work_tests.rs"]
+mod tests;
 
 pub(crate) fn roman(number: usize) -> String {
     const DIGITS: [(usize, &str); 13] = [

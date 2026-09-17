@@ -9,7 +9,8 @@ impl ToolRegistry {
             if self.skill_ready() {
                 all.push(skill());
             }
-            all.push(run_command());
+            all.push(run_command(!self.denies_network()));
+            all.push(todo());
             if self.search.is_some() {
                 all.push(web());
             }
@@ -22,7 +23,8 @@ impl ToolRegistry {
         if self.language && super::lsp::available(&self.workspace) {
             all.push(lsp());
         }
-        all.push(run_command());
+        all.push(run_command(!self.denies_network()));
+        all.push(todo());
         if self.search.is_some() {
             all.push(web());
         }
@@ -35,68 +37,61 @@ impl ToolRegistry {
 
     pub(super) fn enabled(&self, name: &str) -> bool {
         match name {
-            "read" | "read_file" | "list_dir" | "grep" | "show_image" => true,
+            "read" => true,
             "skill" => self.skills,
-            "lsp" | "diagnostics" | "definition" => self.language,
-            "edit" | "edit_file" | "replace_text" | "replace_texts" | "replace_lines"
-            | "insert_after" | "delete_lines" | "write" | "write_file" => {
-                !self.policy.is_read_only()
-            }
-            "run_command" => true,
-            "web" | "web_search" | "web_fetch" => self.search.is_some(),
+            "lsp" => self.language,
+            "edit" | "write" => !self.policy.is_read_only(),
+            "run_command" | "todo" => true,
+            "web" => self.search.is_some(),
             _ => false,
         }
     }
 }
 
+/// Retired names that still dispatch, and the row each one answers to. Not
+/// advertised. One spelling per row: a synonym is a defect.
+pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
+    ("read_file", "read", Some("file")),
+    ("list_dir", "read", Some("list")),
+    ("grep", "read", Some("search")),
+    ("show_image", "read", Some("image")),
+    ("edit_file", "edit", None),
+    ("replace_text", "edit", None),
+    ("replace_texts", "edit", Some("sequence")),
+    ("replace_lines", "edit", None),
+    ("insert_after", "edit", None),
+    ("delete_lines", "edit", Some("delete")),
+    ("write_file", "write", None),
+    ("diagnostics", "lsp", Some("diagnostics")),
+    ("definition", "lsp", Some("definition")),
+    ("web_search", "web", Some("search")),
+    ("web_fetch", "web", Some("fetch")),
+];
+
+/// The advertised name for any name the dispatcher accepts.
+#[must_use]
+pub(crate) fn canonical(name: &str) -> &str {
+    RETIRED
+        .iter()
+        .find(|(retired, _, _)| *retired == name)
+        .map_or(name, |(_, live, _)| live)
+}
+
 pub(crate) fn readonly(name: &str) -> bool {
-    matches!(
-        name,
-        "read"
-            | "read_file"
-            | "list_dir"
-            | "grep"
-            | "show_image"
-            | "diagnostics"
-            | "skill"
-            | "web"
-            | "web_search"
-            | "web_fetch"
-    )
+    matches!(canonical(name), "read" | "lsp" | "skill" | "todo" | "web")
 }
 
 pub(super) fn known(name: &str) -> bool {
     matches!(
         name,
-        "read"
-            | "read_file"
-            | "edit"
-            | "edit_file"
-            | "replace_text"
-            | "replace_texts"
-            | "replace_lines"
-            | "insert_after"
-            | "delete_lines"
-            | "write"
-            | "write_file"
-            | "list_dir"
-            | "grep"
-            | "show_image"
-            | "lsp"
-            | "diagnostics"
-            | "definition"
-            | "skill"
-            | "run_command"
-            | "web"
-            | "web_search"
-            | "web_fetch"
+        "read" | "edit" | "write" | "lsp" | "skill" | "run_command" | "todo" | "web"
     )
 }
 
 fn read() -> ToolDefinition {
     tool(
         "read",
-        "Read a file as N:hash|text (offset/limit), list a directory, show an image, or search (pattern/glob). Hits are path:N:hash|line.",
+        "Read a file as N:hash|text (offset/limit), list a directory, show an image, or search (pattern/glob). Hits are path:N:hash|line. literal skips regex; caseSensitive defaults true.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -104,7 +99,11 @@ fn read() -> ToolDefinition {
                 "offset": {"type": "integer", "minimum": 1},
                 "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                 "pattern": {"type": "string"},
-                "glob": {"type": "string"}
+                "glob": {"type": "string"},
+                "include": {"type": "string"},
+                "literal": {"type": "boolean"},
+                "caseSensitive": {"type": "boolean"},
+                "op": {"type": "string", "enum": ["file", "list", "search", "image"]}
             },
             "additionalProperties": false
         }),
@@ -114,17 +113,18 @@ fn read() -> ToolDefinition {
 fn edit() -> ToolDefinition {
     tool(
         "edit",
-        "Change an existing file. Tags are N:hash from read. old+new replaces a unique substring; tag+new replaces lines through optional end_tag; tag+text inserts after; op=delete removes tagged lines; edits applies several atomically. Empty files: write.",
+        "Change an existing file, or move one with path and to. Tags are N:hash from read. old+new replaces a unique substring; tag+new replaces lines through optional end_tag; tag+text inserts after; op=delete removes tagged lines; edits applies several atomically; op=sequence resolves edits in order; files applies several files atomically. Empty files: write.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
+                "to": {"type": "string"},
                 "old": {"type": "string"},
                 "new": {"type": "string"},
                 "tag": {"type": "string"},
                 "end_tag": {"type": "string"},
                 "text": {"type": "string"},
-                "op": {"type": "string", "enum": ["delete"]},
+                "op": {"type": "string", "enum": ["delete", "sequence"]},
                 "edits": {
                     "type": "array",
                     "minItems": 1,
@@ -140,6 +140,41 @@ fn edit() -> ToolDefinition {
                         },
                         "additionalProperties": false
                     }
+                },
+                "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "to": {"type": "string"},
+                            "old": {"type": "string"},
+                            "new": {"type": "string"},
+                            "tag": {"type": "string"},
+                            "end_tag": {"type": "string"},
+                            "text": {"type": "string"},
+                            "op": {"type": "string", "enum": ["delete"]},
+                            "edits": {
+                                "type": "array",
+                                "minItems": 1,
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "old": {"type": "string"},
+                                        "new": {"type": "string"},
+                                        "tag": {"type": "string"},
+                                        "end_tag": {"type": "string"},
+                                        "text": {"type": "string"},
+                                        "op": {"type": "string", "enum": ["delete"]}
+                                    },
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "required": ["path"],
+                        "additionalProperties": false
+                    }
                 }
             },
             "required": ["path"],
@@ -151,14 +186,58 @@ fn edit() -> ToolDefinition {
 fn write() -> ToolDefinition {
     tool(
         "write",
-        "Create or overwrite a file.",
+        "Create or overwrite one file, or several at once with files.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "content": {"type": "string"}
+                "content": {"type": "string"},
+                "files": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string"},
+                            "content": {"type": "string"}
+                        },
+                        "required": ["path", "content"],
+                        "additionalProperties": false
+                    }
+                }
             },
-            "required": ["path", "content"],
+            "anyOf": [
+                {"required": ["path", "content"]},
+                {"required": ["files"]}
+            ],
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn todo() -> ToolDefinition {
+    tool(
+        "todo",
+        "Replace the Work todo list (itemized steps). status is pending, active, or done. Not a plan document.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": { "type": "string" },
+                            "status": {
+                                "type": "string",
+                                "enum": ["pending", "active", "done"]
+                            }
+                        },
+                        "required": ["text"]
+                    }
+                }
+            },
+            "required": ["items"],
             "additionalProperties": false
         }),
     )
@@ -188,6 +267,7 @@ fn lsp() -> ToolDefinition {
                 "line": {"type": "integer", "minimum": 1},
                 "character": {"type": "integer", "minimum": 1},
                 "references": {"type": "boolean"},
+                "op": {"type": "string", "enum": ["diagnostics", "definition"]},
                 "new_name": {"type": "string"}
             },
             "required": ["path"],
@@ -196,14 +276,23 @@ fn lsp() -> ToolDefinition {
     )
 }
 
-fn run_command() -> ToolDefinition {
+fn run_command(network: bool) -> ToolDefinition {
+    let net = if network {
+        "Network is on. /net off denies sockets."
+    } else {
+        "Network is off. /net on allows sockets."
+    };
     tool(
         "run_command",
-        "Run a shell command in the workspace sandbox. Network is off unless the user runs /net on or /net once. background true returns a job id; pass job to poll, kill true to stop. Output is the exit code and a digest.",
+        &format!(
+            "Run a shell command in the workspace sandbox. {net} workdir picks the directory. A command stops after {wait}s unless timeout_secs sets a longer limit. background true returns a job id; pass job to poll, kill true to stop. Output is the exit code and a digest; a long log is kept at the path the output names. For a password use `sudo -A` or plain ssh; the user types it in a masked prompt. `summonr askpass \"<label>\"` prints a user-typed secret for piping into a command such as `ssh host sudo -S`; never echo or store it.",
+            wait = crate::runtime::JOB_WAIT_SECS
+        ),
         serde_json::json!({
             "type": "object",
             "properties": {
                 "command": {"type": "string"},
+                "workdir": {"type": "string"},
                 "timeout_secs": {"type": "integer", "minimum": 1},
                 "background": {"type": "boolean"},
                 "job": {"type": "string"},
@@ -217,14 +306,16 @@ fn run_command() -> ToolDefinition {
 fn web() -> ToolDefinition {
     tool(
         "web",
-        "Search the public web (query) or fetch one https URL as markdown (url). freshness: day, week, or month.",
+        "Search the public web (query) or fetch one https URL as markdown, text, or html (url). format defaults to markdown. freshness: day, week, or month.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
                 "url": {"type": "string"},
                 "count": {"type": "integer", "minimum": 1, "maximum": 8},
-                "freshness": {"type": "string", "enum": ["day", "week", "month"]}
+                "freshness": {"type": "string", "enum": ["day", "week", "month"]},
+                "op": {"type": "string", "enum": ["search", "fetch"]},
+                "format": {"type": "string", "enum": ["markdown", "text", "html"]}
             },
             "additionalProperties": false
         }),

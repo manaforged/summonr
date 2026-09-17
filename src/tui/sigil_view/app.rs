@@ -12,6 +12,7 @@ use sigil::widgets::TextEditState;
 use sigil_ide_core::buffer::Rope;
 use sigil_tui::cell_width;
 use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::oneshot;
 
 use crate::command::argument;
 use crate::prefs::{self, Hotkey, Prefs, ToolOutput};
@@ -31,6 +32,7 @@ use super::suggest::Picker;
 use super::theme;
 
 pub(super) mod presentation;
+mod secret;
 
 use presentation::{facts, header, settings_text, status};
 
@@ -49,6 +51,9 @@ pub(super) enum Overlay {
     Workflow,
     Hotkeys,
     Settings,
+    Context,
+    Cache,
+    Usage,
 }
 
 #[derive(Clone)]
@@ -75,7 +80,12 @@ pub(super) struct App {
     pub(super) facts: Signal<String>,
     pub(super) panes: Signal<u64>,
     pub(super) settings_open: Signal<bool>,
+    pub(super) context_open: Signal<bool>,
+    pub(super) cache_open: Signal<bool>,
+    pub(super) meter_hover: Signal<Option<super::hit::Target>>,
+    pub(super) scroll: Signal<usize>,
     pub(super) settings_sel: Signal<usize>,
+    pub(super) modules: Signal<std::collections::BTreeMap<&'static str, bool>>,
     pub(super) hotkeys_open: Signal<bool>,
     pub(super) hotkey_sel: Signal<usize>,
     pub(super) hotkey_recording: Signal<bool>,
@@ -88,6 +98,8 @@ pub(super) struct App {
     pub(super) model_sel: Signal<usize>,
     pub(super) model_loading: Signal<bool>,
     pub(super) model_error: Signal<String>,
+    model_request: Rc<Cell<u64>>,
+    model_cancel: Rc<RefCell<Option<oneshot::Sender<()>>>>,
     pub(super) model_for: Signal<Option<usize>>,
     pub(super) workflow_open: Signal<bool>,
     pub(super) workflow_name: Signal<String>,
@@ -107,6 +119,7 @@ pub(super) struct App {
     pub(super) auth_key: Signal<String>,
     pub(super) auth_caret: Signal<usize>,
     pub(super) ticks: Signal<u64>,
+    pub(super) fps: Signal<u32>,
     pub(super) splash_revealed: Signal<bool>,
     pub(super) splash: Signal<bool>,
     pub(super) theme_name: Signal<String>,
@@ -132,6 +145,8 @@ pub(super) struct App {
     discard_armed: Signal<bool>,
     pub(super) copy: Signal<Option<String>>,
     pub(super) approval: Signal<Option<(String, bool)>>,
+    pub(super) secret: Signal<Option<(String, usize)>>,
+    pending: Rc<RefCell<Option<(crate::askpass::Request, crate::askpass::Secret)>>>,
     pub(super) select: Signal<bool>,
     copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
     pub(super) open_file: Signal<Option<PathBuf>>,
@@ -143,8 +158,36 @@ pub(super) struct App {
     pub(super) editor_requested: Signal<bool>,
     pub(super) commands: Picker,
     pub(super) sessions: super::sessions::Picker,
-    pasted_images: Rc<RefCell<Vec<crate::provider::Image>>>,
+    pub(super) usage: super::usage::Panel,
+    attachments: Rc<RefCell<Vec<Attachment>>>,
+    pub(super) attached: Signal<usize>,
     pasted_text: Rc<RefCell<Vec<String>>>,
+}
+
+pub(super) struct Attachment {
+    pub(super) image: crate::provider::Image,
+    pub(super) source: Option<ImageSource>,
+    pub(super) label: String,
+}
+
+impl Attachment {
+    fn new(image: crate::provider::Image, source: ImageSource, label: String) -> Self {
+        Self {
+            image,
+            source: Some(source),
+            label,
+        }
+    }
+
+    fn restore(image: crate::provider::Image) -> Self {
+        let source = preview(&image.bytes).ok();
+        let label = format!("📷 {}", image.media_type);
+        Self {
+            image,
+            source,
+            label,
+        }
+    }
 }
 
 impl App {
@@ -173,7 +216,23 @@ impl App {
             facts: signal(String::new()),
             panes: signal(0),
             settings_open: signal(false),
+            context_open: signal(false),
+            cache_open: signal(false),
+            meter_hover: signal(None),
+            scroll: signal(0),
             settings_sel: signal(0),
+            modules: signal({
+                let switches = crate::modules::Switches::load(&workspace).ok();
+                crate::modules::ALL
+                    .iter()
+                    .map(|module| {
+                        let on = switches
+                            .as_ref()
+                            .is_none_or(|switches| switches.enabled(module.name));
+                        (module.name, on)
+                    })
+                    .collect()
+            }),
             hotkeys_open: signal(false),
             hotkey_sel: signal(0),
             hotkey_recording: signal(false),
@@ -186,6 +245,8 @@ impl App {
             model_sel: signal(0),
             model_loading: signal(false),
             model_error: signal(String::new()),
+            model_request: Rc::new(Cell::new(0)),
+            model_cancel: Rc::new(RefCell::new(None)),
             model_for: signal(None),
             workflow_open: signal(false),
             workflow_name: signal(String::new()),
@@ -205,6 +266,7 @@ impl App {
             auth_key: signal(String::new()),
             auth_caret: signal(0),
             ticks: signal(0),
+            fps: signal(0),
             splash_revealed: signal(!info.prefs.animations),
             splash: signal(info.splash),
             theme_name: signal(info.prefs.theme.clone()),
@@ -230,6 +292,8 @@ impl App {
             discard_armed: signal(false),
             copy: signal(None),
             approval: signal(None),
+            secret: signal(None),
+            pending: Rc::new(RefCell::new(None)),
             select: signal(false),
             copy_pending: signal(None),
             open_file: signal(None),
@@ -241,7 +305,9 @@ impl App {
             editor_requested: signal(false),
             commands: Picker::new(),
             sessions: super::sessions::Picker::new(),
-            pasted_images: Rc::new(RefCell::new(Vec::new())),
+            usage: super::usage::Panel::new(),
+            attachments: Rc::new(RefCell::new(Vec::new())),
+            attached: signal(0),
             pasted_text: Rc::new(RefCell::new(Vec::new())),
             git_branch,
             workspace,
@@ -251,6 +317,32 @@ impl App {
     }
 
     pub(super) fn update(&self, msg: Msg) {
+        let msg = match msg {
+            Msg::Secret(request) => {
+                self.secret_open(request);
+                return;
+            }
+            msg => msg,
+        };
+        let reveal_plan = match &msg {
+            Msg::Event(crate::Event::Work { progress }) => {
+                self.model.borrow().ledger.is_empty()
+                    && progress
+                        .ledger
+                        .iter()
+                        .any(|line| super::model::itemized(line))
+            }
+            Msg::Event(crate::Event::ToolCall {
+                name, arguments, ..
+            }) if name == "todo" => {
+                crate::tools::todos_from_args(arguments).is_ok_and(|items| !items.is_empty())
+            }
+            Msg::Event(crate::Event::Child { event, .. }) => matches!(
+                event.as_ref(),
+                crate::Event::ToolCall { name, .. } if name == "todo"
+            ),
+            _ => false,
+        };
         if matches!(msg, Msg::Event(crate::Event::Work { .. })) {
             self.load();
         }
@@ -266,6 +358,7 @@ impl App {
         }
         if matches!(msg, Msg::Busy(None)) {
             self.approval.set(None);
+            self.secret_finish(false);
         }
         if let Msg::Patch { root, path, result } = &msg {
             if self
@@ -344,33 +437,40 @@ impl App {
             }
             Msg::Resume(id) => self.request_resume(id),
             Msg::Sessions(rows) => self.sessions.update(rows),
-            Msg::Models { mut rows, recent } => {
+            Msg::Usage(rows) => self.usage.update(rows),
+            Msg::Models {
+                request,
+                mut rows,
+                recent,
+                loading,
+                error,
+            } => {
+                if !self.editing_model.peek() || request != self.model_request.get() {
+                    return;
+                }
                 let snapshot = self.model.borrow().snapshot.clone();
                 let current = format!("{}\t{}", snapshot.endpoint, snapshot.model);
                 let mut recent = recent.min(rows.len());
-                if !rows
-                    .iter()
-                    .any(|row| row == &current || row == &snapshot.model)
+                if rows.iter().any(|row| {
+                    row.split_once('\t')
+                        .is_some_and(|(name, _)| name == snapshot.endpoint)
+                }) && !rows.contains(&current)
                 {
                     rows.insert(0, current);
                     recent = recent.saturating_add(1);
                 }
-                let selected = self
-                    .model_choices
-                    .peek()
-                    .get(self.model_sel.peek())
-                    .cloned();
-                let sel = selected
-                    .and_then(|row| rows.iter().position(|candidate| *candidate == row))
-                    .unwrap_or(0);
+                let selected = self.filtered_models().get(self.model_sel.peek()).cloned();
                 self.model_choices.set(rows);
+                let sel = selected
+                    .and_then(|row| {
+                        self.filtered_models()
+                            .iter()
+                            .position(|candidate| *candidate == row)
+                    })
+                    .unwrap_or(0);
                 self.model_recent.set(recent);
                 self.model_sel.set(sel);
-                self.model_loading.set(false);
-                self.model_error.set(String::new());
-            }
-            Msg::ModelsFailed(error) => {
-                self.model_loading.set(false);
+                self.model_loading.set(loading);
                 self.model_error.set(error);
             }
             Msg::Workflow { name, names, seats } => {
@@ -390,6 +490,22 @@ impl App {
                 }
             }
         }
+        if reveal_plan {
+            self.reveal_plan();
+        }
+    }
+
+    fn reveal_plan(&self) {
+        let layout = self.layout.peek();
+        if layout.secondary.is_some() {
+            return;
+        }
+        self.layout.set(Layout {
+            secondary: Some(Pane::Ledger),
+            share: 20,
+        });
+        self.constrain();
+        self.refresh();
     }
 
     pub(super) fn approval_answer(&self, token: &str) {
@@ -401,7 +517,7 @@ impl App {
     }
 
     pub(super) fn request_resume(&self, id: String) {
-        if !self.draft.peek().is_empty() || !self.pasted_images.borrow().is_empty() {
+        if !self.draft.peek().is_empty() || !self.attachments.borrow().is_empty() {
             self.model.borrow_mut().entries.push(Entry::Error(
                 "Draft kept. Send it or press Ctrl+C to discard it before switching sessions."
                     .to_string(),
@@ -420,15 +536,16 @@ impl App {
         let draft = self.draft.peek();
         let caret = self.caret.peek();
         let mut prompts = Vec::new();
-        let mut images = Vec::new();
+        let mut pending = Vec::new();
         for input in inputs {
             if !input.text.is_empty() {
                 prompts.push(input.text);
             }
-            images.extend(input.images);
+            pending.extend(input.images.into_iter().map(Attachment::restore));
         }
-        images.extend(self.take_pasted());
-        *self.pasted_images.borrow_mut() = images;
+        pending.extend(self.take_attachments());
+        self.attached.set(pending.len());
+        *self.attachments.borrow_mut() = pending;
         if !draft.is_empty() {
             prompts.push(draft.clone());
         }
@@ -472,6 +589,12 @@ impl App {
         });
     }
 
+    pub(super) fn note_fps(&self, fps: u32) {
+        if self.fps.peek() != fps {
+            self.fps.set(fps);
+        }
+    }
+
     pub(super) fn tick(&self) {
         let busy = {
             let mut model = self.model.borrow_mut();
@@ -482,7 +605,12 @@ impl App {
             busy
         };
         let ticks = self.ticks.peek().saturating_add(1);
-        if busy || !self.splash_revealed.peek() {
+        // The splash scene keeps moving while the cover is up: the stars
+        // drift and twinkle behind the wordmark until the first prompt.
+        // Revealing the wordmark is not the end of the animation, so an
+        // idle session with the cover still shown must keep ticking.
+        let splash = self.splash.peek() && self.model.borrow().prefs.animations;
+        if busy || splash || !self.splash_revealed.peek() {
             self.ticks.set(ticks);
         }
         if !self.splash_revealed.peek() && ticks.saturating_mul(40) > 760 {
@@ -494,10 +622,14 @@ impl App {
         let page = f32::from(
             body_rows(
                 self.chat_cols(),
-                self.viewport.peek().1,
+                super::chat::overlay_rows(self.viewport.peek().1),
                 &self.draft.peek(),
                 self.model.borrow().busy_since.is_some(),
             )
+            .saturating_sub(super::chat::agent_strip_rows(
+                &self.model.borrow().agents,
+                self.model.borrow().agents_hidden,
+            ))
             .max(1),
         ) * cell().h;
         self.scroll_history(-direction * page);
@@ -565,7 +697,6 @@ impl App {
     }
 
     pub(super) fn scroll_history(&self, delta: f32) {
-        self.reflow(&self.draft.peek());
         let extent = self.extent.peek();
         let next = self.scroll_y.peek() - delta;
         self.scroll_y.set(next.clamp(0.0, extent));
@@ -608,7 +739,7 @@ impl App {
             return;
         }
         let text = self.expand_pastes(&self.draft.peek());
-        if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
+        if text.trim().is_empty() && self.attachments.borrow().is_empty() {
             return;
         }
         let argument = match argument(&text) {
@@ -630,20 +761,41 @@ impl App {
             drop(self.cmd.send(Cmd::Command(text)));
             return;
         }
+        let peers = super::suggest::peers(&text, &self.model.borrow());
+        if !peers.is_empty() {
+            self.replace(String::new());
+            self.splash.set(false);
+            self.model
+                .borrow_mut()
+                .entries
+                .push(Entry::User(text.clone()));
+            drop(self.cmd.send(Cmd::Send(peers, text)));
+            self.refresh();
+            return;
+        }
         let Some(mut input) = self.attach(&text) else {
             return;
         };
+        let pending = self.take_attachments();
         self.replace(String::new());
         self.pasted_text.borrow_mut().clear();
-        input.images.extend(self.take_pasted());
-        if input.text.trim().is_empty() && input.images.is_empty() {
+        if input.text.trim().is_empty() && input.images.is_empty() && pending.is_empty() {
             return;
         }
         self.splash.set(false);
-        self.model
-            .borrow_mut()
-            .entries
-            .push(Entry::User(text.clone()));
+        {
+            let mut model = self.model.borrow_mut();
+            model.entries.push(Entry::User(text.clone()));
+            for attachment in pending {
+                input.images.push(attachment.image);
+                if let Some(source) = attachment.source {
+                    model.entries.push(Entry::Image {
+                        source,
+                        label: attachment.label,
+                    });
+                }
+            }
+        }
         let activity = self.model.borrow().busy_since.map(|(activity, _)| activity);
         let command = match activity {
             Some(Activity::Turn) => Cmd::Steer(input),
@@ -774,17 +926,26 @@ impl App {
         }
         self.splash.set(false);
         let text = self.expand_pastes(&self.draft.peek());
-        if text.trim().is_empty() && self.pasted_images.borrow().is_empty() {
+        if text.trim().is_empty() && self.attachments.borrow().is_empty() {
             return;
         }
         let Some(mut input) = self.attach(&text) else {
             return;
         };
+        let pending = self.take_attachments();
         self.replace(String::new());
         self.pasted_text.borrow_mut().clear();
-        input.images.extend(self.take_pasted());
         let mut model = self.model.borrow_mut();
         model.entries.push(Entry::User(text.clone()));
+        for attachment in pending {
+            input.images.push(attachment.image);
+            if let Some(source) = attachment.source {
+                model.entries.push(Entry::Image {
+                    source,
+                    label: attachment.label,
+                });
+            }
+        }
         model
             .entries
             .push(Entry::System("queued for the next turn".to_string()));
@@ -966,7 +1127,17 @@ impl App {
                     .unwrap_or(draft.len() - caret)
         };
         let following = draft[end..].chars().next().filter(|ch| ch.is_whitespace());
-        let mut reference = super::suggest::reference(value);
+        let peer = self
+            .model
+            .borrow()
+            .peers
+            .iter()
+            .any(|agent| agent.id == value);
+        let mut reference = if peer {
+            format!("@{value}")
+        } else {
+            super::suggest::reference(value)
+        };
         if following.is_none() {
             reference.push(' ');
         }
@@ -995,31 +1166,46 @@ impl App {
         }
     }
 
-    fn take_pasted(&self) -> Vec<crate::provider::Image> {
-        std::mem::take(&mut *self.pasted_images.borrow_mut())
+    fn take_attachments(&self) -> Vec<Attachment> {
+        let taken = std::mem::take(&mut *self.attachments.borrow_mut());
+        self.attached.set(0);
+        taken
+    }
+
+    fn attach_picture(&self, image: crate::provider::Image, source: ImageSource, label: String) {
+        let mut attachments = self.attachments.borrow_mut();
+        attachments.push(Attachment::new(image, source, label));
+        let count = attachments.len();
+        drop(attachments);
+        self.attached.set(count);
+        self.splash.set(false);
     }
 
     pub(super) fn paste(&self, text: &str) -> bool {
         if self.options_active() || self.view_edit.peek() {
             return false;
         }
-        let Some(path) = image_path(&self.workspace, text) else {
-            return false;
-        };
-        match read_image(&path) {
-            Ok(Some((image, source))) => {
-                self.paste_image(image, source, format!("📷 {}", path.display()));
+        if let Some(path) = image_path(&self.workspace, text) {
+            match read_image(&path) {
+                Ok(Some((image, source))) => {
+                    self.paste_image(image, source, format!("📷 {}", path.display()));
+                }
+                Ok(None) => return false,
+                Err(error) => {
+                    self.model.borrow_mut().entries.push(Entry::Error(format!(
+                        "cannot attach image {}: {error}",
+                        path.display()
+                    )));
+                    self.refresh();
+                }
             }
-            Ok(None) => return false,
-            Err(error) => {
-                self.model.borrow_mut().entries.push(Entry::Error(format!(
-                    "cannot attach image {}: {error}",
-                    path.display()
-                )));
-                self.refresh();
-            }
+            return true;
         }
-        true
+        if let Some((image, source)) = image_from_bytes(text.as_bytes()) {
+            self.paste_image(image, source, "📷 pasted image".to_string());
+            return true;
+        }
+        false
     }
 
     pub(super) fn clipboard(&self) -> bool {
@@ -1061,20 +1247,17 @@ impl App {
             return Err("image exceeds the 10 MB limit".to_string());
         }
         let preview = preview(&bytes)?;
-        self.paste_image(
+        self.attach_picture(
             Image::encode("image/png", &bytes),
             preview,
             "📷 Clipboard image".to_string(),
         );
+        self.refresh();
         Ok(())
     }
 
     fn paste_image(&self, image: Image, source: ImageSource, label: String) {
-        self.pasted_images.borrow_mut().push(image);
-        self.model
-            .borrow_mut()
-            .entries
-            .push(Entry::Image { source, label });
+        self.attach_picture(image, source, label);
         self.refresh();
     }
 
@@ -1112,6 +1295,10 @@ impl App {
                     drop(self.cmd.send(Cmd::ListSessions));
                 }
             }
+            Some(crate::SlashCommand::Usage) => {
+                self.usage.start();
+                drop(self.cmd.send(Cmd::ListUsage));
+            }
             Some(crate::SlashCommand::Settings) => {
                 self.hotkeys_open.set(false);
                 self.settings_open.set(true);
@@ -1131,17 +1318,8 @@ impl App {
             Some(crate::SlashCommand::Workflow) if argument.is_none() => {
                 self.open_workflow();
             }
-            Some(crate::SlashCommand::Stats) => {
-                let rounds = self.model.borrow().usage.clone();
-                self.model.borrow_mut().entries.push(Entry::Chart(rounds));
-                let unreported = self.model.borrow().unreported_tokens;
-                if unreported > 0 {
-                    self.model.borrow_mut().entries.push(Entry::System(format!(
-                        "{unreported} additional tokens are unconfirmed and count toward the budget. Failed requests reserve an estimate; older charge records may lack usage provenance."
-                    )));
-                }
-                self.refresh();
-            }
+            Some(crate::SlashCommand::Effort) => self.effort_command(argument),
+            Some(crate::SlashCommand::Stats) => self.toggle_meter(super::hit::Target::Context),
             Some(crate::SlashCommand::Theme) => self.toggle_theme(),
             Some(crate::SlashCommand::Tools) => self.toggle_tools(),
             Some(crate::SlashCommand::Reasoning) => self.reasoning_command(argument),
@@ -1161,9 +1339,25 @@ impl App {
     }
 
     pub(super) fn toggle_mode(&self) {
-        let plan = !self.model.borrow().snapshot.plan;
-        self.model.borrow_mut().snapshot.plan = plan;
-        drop(self.cmd.send(Cmd::SetMode(plan)));
+        let mode = {
+            let snapshot = &self.model.borrow().snapshot;
+            if snapshot.plan {
+                crate::RunMode::Plan
+            } else if snapshot.work {
+                crate::RunMode::Work
+            } else if snapshot.goal {
+                crate::RunMode::Goal
+            } else {
+                crate::RunMode::Auto
+            }
+        };
+        let next = mode.next();
+        let mut model = self.model.borrow_mut();
+        model.snapshot.plan = next == crate::RunMode::Plan;
+        model.snapshot.work = next == crate::RunMode::Work;
+        model.snapshot.goal = next == crate::RunMode::Goal;
+        drop(model);
+        drop(self.cmd.send(Cmd::SetRunMode(next)));
         self.refresh();
     }
 
@@ -1178,12 +1372,7 @@ impl App {
 
     fn cycle_seat(&self, forward: bool) {
         let current = self.model.borrow().snapshot.endpoint.clone();
-        let step = if forward {
-            crate::endpoint::next(&current)
-        } else {
-            crate::endpoint::previous(&current)
-        };
-        match step {
+        match crate::endpoint::step(&current, forward) {
             Some(next) => drop(self.cmd.send(Cmd::SetEndpoint(next))),
             None => {
                 self.model.borrow_mut().entries.push(Entry::System(
@@ -1198,48 +1387,65 @@ impl App {
         if self.editing_model.peek() {
             return;
         }
+        let last = super::settings::setting_rows(self).len().saturating_sub(1);
         self.settings_sel.set(
             self.settings_sel
                 .peek()
                 .saturating_add_signed(delta)
-                .min(11),
+                .min(last),
         );
     }
 
+    fn selected_setting(&self) -> Option<super::settings::Setting> {
+        super::settings::setting_rows(self)
+            .get(self.settings_sel.peek())
+            .map(|row| row.setting)
+    }
+
     pub(super) fn adjust_setting(&self) {
+        use super::settings::Setting;
+
         if self.editing_model.peek() {
             return;
         }
-        match self.settings_sel.peek() {
-            0 => self.toggle_mode(),
-            1 => self.toggle_verify(),
-            2 => self.cycle_endpoint(),
-            3 => self.begin_model_edit(),
-            4 => self.open_workflow(),
-            5 => self.toggle_theme(),
-            6 => {
-                let mut model = self.model.borrow_mut();
-                model.prefs.splash = !model.prefs.splash;
-                let prefs = model.prefs.clone();
-                drop(model);
-                self.persist(&prefs);
-                self.refresh();
+        let Some(setting) = self.selected_setting() else {
+            return;
+        };
+        match setting {
+            Setting::Mode => self.toggle_mode(),
+            Setting::Verify => self.toggle_verify(),
+            Setting::Workflow => self.open_workflow(),
+            Setting::Endpoint => self.cycle_endpoint(),
+            Setting::Model => self.begin_model_edit(),
+            Setting::Reasoning => self.reasoning_command(None),
+            Setting::Tools => self.toggle_tools(),
+            Setting::Bus => self.toggle_bus(),
+            Setting::Module(index) => {
+                if let Some(module) = crate::modules::ALL.get(index) {
+                    self.toggle_module(module.name);
+                }
             }
-            7 => {
-                let mut model = self.model.borrow_mut();
-                model.prefs.animations = !model.prefs.animations;
-                let prefs = model.prefs.clone();
-                self.splash_revealed.set(!model.prefs.animations);
-                drop(model);
-                self.persist(&prefs);
-                self.refresh();
+            Setting::Theme => self.toggle_theme(),
+            Setting::Receipts => self.receipts_command(None),
+            Setting::Hotkeys => self.open_hotkeys(),
+            Setting::Comments => self.flip(|prefs| prefs.ban_comments = !prefs.ban_comments),
+            Setting::Tests => self.flip(|prefs| prefs.ban_tests = !prefs.ban_tests),
+            Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
+            Setting::Motion => {
+                self.flip(|prefs| prefs.animations = !prefs.animations);
+                self.splash_revealed
+                    .set(!self.model.borrow().prefs.animations);
             }
-            8 => self.reasoning_command(None),
-            9 => self.toggle_tools(),
-            10 => self.toggle_bus(),
-            11 => self.open_hotkeys(),
-            _ => {}
         }
+    }
+
+    fn flip(&self, change: impl FnOnce(&mut crate::prefs::Prefs)) {
+        let mut model = self.model.borrow_mut();
+        change(&mut model.prefs);
+        let prefs = model.prefs.clone();
+        drop(model);
+        self.persist(&prefs);
+        self.refresh();
     }
 
     pub(super) fn toggle_options(&self) {
@@ -1348,22 +1554,28 @@ impl App {
     }
 
     pub(super) fn overlay(&self) -> Option<Overlay> {
-        if self.help.open.peek() {
+        if self.help.open.get() {
             Some(Overlay::Help)
-        } else if self.search.open.peek() {
+        } else if self.search.open.get() {
             Some(Overlay::Search)
-        } else if self.sessions.open.peek() {
+        } else if self.sessions.open.get() {
             Some(Overlay::Sessions)
-        } else if self.auth_open.peek() {
+        } else if self.usage.open.get() {
+            Some(Overlay::Usage)
+        } else if self.auth_open.get() {
             Some(Overlay::Auth)
-        } else if self.editing_model.peek() {
+        } else if self.editing_model.get() {
             Some(Overlay::Model)
-        } else if self.workflow_open.peek() {
+        } else if self.workflow_open.get() {
             Some(Overlay::Workflow)
-        } else if self.hotkeys_open.peek() {
+        } else if self.hotkeys_open.get() {
             Some(Overlay::Hotkeys)
-        } else if self.settings_open.peek() {
+        } else if self.settings_open.get() {
             Some(Overlay::Settings)
+        } else if self.context_open.get() {
+            Some(Overlay::Context)
+        } else if self.cache_open.get() {
+            Some(Overlay::Cache)
         } else {
             None
         }
@@ -1383,6 +1595,7 @@ impl App {
             Some(Overlay::Workflow) => self.move_workflow(delta),
             Some(Overlay::Hotkeys) => self.move_hotkey(delta),
             Some(Overlay::Settings) => self.move_setting(delta),
+            Some(Overlay::Context | Overlay::Cache | Overlay::Usage) => {}
             None => return false,
         }
         true
@@ -1391,6 +1604,10 @@ impl App {
     pub(super) fn overlay_tab(&self, delta: isize) -> bool {
         if self.overlay() == Some(Overlay::Sessions) {
             self.sessions.scope();
+            return true;
+        }
+        if self.overlay() == Some(Overlay::Usage) {
+            self.usage.metric();
             return true;
         }
         self.overlay_move(delta)
@@ -1406,12 +1623,18 @@ impl App {
             Some(Overlay::Workflow) => self.pick_workflow_seat(),
             Some(Overlay::Hotkeys) => self.edit_hotkey(),
             Some(Overlay::Settings) => self.adjust_setting(),
+            Some(Overlay::Usage) => self.usage.scope(),
+            Some(Overlay::Context | Overlay::Cache) => {
+                self.context_open.set(false);
+                self.cache_open.set(false);
+            }
             None => return false,
         }
         true
     }
 
     pub(super) fn overlay_close(&self) -> bool {
+        self.scroll.set(0);
         match self.overlay() {
             Some(Overlay::Help) => self.help.open.set(false),
             Some(Overlay::Search) => self.search.open.set(false),
@@ -1425,18 +1648,47 @@ impl App {
             }
             Some(Overlay::Hotkeys) => self.close_hotkeys(),
             Some(Overlay::Settings) => self.settings_open.set(false),
+            Some(Overlay::Usage) => self.usage.open.set(false),
+            Some(Overlay::Context | Overlay::Cache) => {
+                self.context_open.set(false);
+                self.cache_open.set(false);
+            }
             None => return false,
         }
         true
     }
 
+    pub(super) fn toggle_meter(&self, target: super::hit::Target) {
+        match target {
+            super::hit::Target::Context => {
+                let open = !self.context_open.peek();
+                self.context_open.set(open);
+                if open {
+                    self.cache_open.set(false);
+                }
+            }
+            super::hit::Target::Cache => {
+                let open = !self.cache_open.peek();
+                self.cache_open.set(open);
+                if open {
+                    self.context_open.set(false);
+                }
+            }
+            _ => return,
+        }
+        self.refresh();
+    }
+
     pub(super) fn overlay_adjust(&self, delta: isize) -> bool {
         match self.overlay() {
             Some(Overlay::Workflow) if !self.workflow_naming.peek() => self.cycle_workflow(delta),
-            Some(Overlay::Settings) if self.settings_sel.peek() == 2 => {
+            Some(Overlay::Settings)
+                if self.selected_setting() == Some(super::settings::Setting::Endpoint) =>
+            {
                 self.cycle_seat(delta >= 0);
             }
             Some(Overlay::Settings) => self.adjust_setting(),
+            Some(Overlay::Usage) => self.usage.shift(delta),
             _ => return false,
         }
         true
@@ -1463,10 +1715,38 @@ impl App {
         false
     }
 
-    pub(super) fn drag_to(&self, col: usize, row: usize) {
-        if self.drag_from.peek().is_none() {
+    pub(super) fn hover(&self, col: usize, row: usize) {
+        if self.drag_from.peek().is_some() {
+            self.drag_to(col, row);
             return;
         }
+        let (selected, index) = match self.hits.at(col, row) {
+            Some(Target::Setting(index)) => (self.settings_sel, index),
+            Some(Target::Hotkey(index)) if !self.hotkey_recording.peek() => {
+                (self.hotkey_sel, index)
+            }
+            Some(Target::Model(index)) => (self.model_sel, index),
+            Some(Target::Session(index)) => (self.sessions.selected, index),
+            Some(Target::Search(index)) => (self.search.selected, index),
+            Some(Target::Auth(index)) => (self.auth_sel, index),
+            Some(Target::Role(index)) => (self.workflow_sel, index),
+            Some(
+                Target::Hotkey(_)
+                | Target::Saved(_)
+                | Target::File(_)
+                | Target::Close
+                | Target::Context
+                | Target::Cache
+                | Target::AgentsClose,
+            )
+            | None => return,
+        };
+        if selected.peek() != index {
+            selected.set(index);
+        }
+    }
+
+    fn drag_to(&self, col: usize, row: usize) {
         self.drag_over.set(match self.hits.at(col, row) {
             Some(Target::Role(index)) => Some(index),
             _ => None,
@@ -1543,6 +1823,8 @@ impl App {
                 self.pane_enter();
             }
             Target::Close => self.toggle_side(),
+            Target::AgentsClose => self.hide_agents(),
+            Target::Context | Target::Cache => self.toggle_meter(target),
             Target::Saved(name) => {
                 drop(self.cmd.send(Cmd::Command(format!("/workflow {name}"))));
             }
@@ -1643,14 +1925,21 @@ impl App {
 
     pub(super) fn begin_model_edit(&self) {
         self.replace_model_draft(String::new());
-        let snapshot = self.model.borrow().snapshot.clone();
-        self.model_choices
-            .set(vec![format!("{}\t{}", snapshot.endpoint, snapshot.model)]);
+        self.model_choices.set(Vec::new());
         self.model_sel.set(0);
+        self.model_recent.set(0);
         self.model_error.set(String::new());
         self.model_loading.set(true);
         self.editing_model.set(true);
-        drop(self.cmd.send(Cmd::ListModels));
+        let request = self.model_request.get().wrapping_add(1);
+        self.model_request.set(request);
+        let (sender, cancel) = oneshot::channel();
+        *self.model_cancel.borrow_mut() = Some(sender);
+        if self.cmd.send(Cmd::ListModels { request, cancel }).is_err() {
+            self.model_loading.set(false);
+            self.model_error
+                .set("Model discovery is unavailable.".to_string());
+        }
     }
 
     pub(super) fn begin_auth(&self, focus: Option<&str>) {
@@ -1733,24 +2022,21 @@ impl App {
     }
 
     pub(super) fn replace_model_draft(&self, draft: String) {
-        self.model_caret.set(draft.len());
-        self.model_draft.set(draft);
+        if self.model_draft.peek() != draft {
+            self.model_caret.set(draft.len());
+            self.model_draft.set(draft);
+        }
+        self.model_sel.set(0);
     }
 
     pub(super) fn commit_model_edit(&self) {
         let choices = self.filtered_models();
-        let draft = self.model_draft.peek();
         let selected = self.model_sel.peek().min(choices.len().saturating_sub(1));
-        let picked = choices
-            .get(selected)
-            .cloned()
-            .unwrap_or_else(|| draft.trim().to_string());
-        if picked.trim().is_empty() {
+        let Some(picked) = choices.get(selected).cloned() else {
             return;
-        }
-        self.editing_model.set(false);
+        };
         let target = self.model_for.peek();
-        self.model_for.set(None);
+        self.cancel_model_edit();
         if let Some(role) = target.and_then(|index| Role::ALL.get(index)) {
             let current = self.model.borrow().snapshot.endpoint.clone();
             let (endpoint, model) = picked
@@ -1777,7 +2063,9 @@ impl App {
     }
 
     pub(super) fn cancel_model_edit(&self) {
+        drop(self.model_cancel.borrow_mut().take());
         self.editing_model.set(false);
+        self.model_loading.set(false);
         self.model_for.set(None);
         self.replace_model_draft(String::new());
     }
@@ -1793,7 +2081,10 @@ impl App {
         self.model_choices
             .peek()
             .into_iter()
-            .filter(|model| query.is_empty() || model.to_lowercase().contains(&query))
+            .filter(|model| {
+                let model = model.to_lowercase();
+                query.split_whitespace().all(|word| model.contains(word))
+            })
             .collect()
     }
 
@@ -2604,17 +2895,23 @@ impl App {
     }
 
     pub(super) fn toggle_theme(&self) {
+        let names = theme::Palette::ALL;
         let mut model = self.model.borrow_mut();
-        model.prefs.theme = if model.prefs.theme == "fantasy" {
-            "space".to_string()
-        } else {
-            "fantasy".to_string()
-        };
+        let next = names
+            .iter()
+            .position(|(name, _)| *name == model.prefs.theme)
+            .map_or(names[0].0, |index| names[(index + 1) % names.len()].0);
+        model.prefs.theme = next.to_string();
         model.entries.invalidate();
         let prefs = model.prefs.clone();
         drop(model);
         theme::install(&prefs.theme, &self.workspace, self.info.config.as_deref());
         self.persist(&prefs);
+        self.refresh();
+    }
+
+    pub(super) fn hide_agents(&self) {
+        self.model.borrow_mut().agents_hidden = true;
         self.refresh();
     }
 
@@ -2626,6 +2923,40 @@ impl App {
         drop(model);
         self.persist(&prefs);
         drop(self.cmd.send(Cmd::SetBus(on)));
+        self.refresh();
+    }
+
+    pub(super) fn toggle_module(&self, name: &'static str) {
+        let mut modules = self.modules.peek();
+        let on = !modules.get(name).copied().unwrap_or(false);
+        modules.insert(name, on);
+        self.modules.set(modules);
+        drop(self.cmd.send(Cmd::SetModule(name.to_string(), on)));
+        self.refresh();
+    }
+
+    pub(super) fn effort_command(&self, argument: Option<&str>) {
+        let next = match argument {
+            None => self
+                .model
+                .borrow()
+                .snapshot
+                .effort
+                .unwrap_or(crate::provider::Effort::None)
+                .next(),
+            Some(level) => match crate::provider::Effort::parse(level) {
+                Some(effort) => effort,
+                None => {
+                    self.model.borrow_mut().entries.push(Entry::Error(format!(
+                        "effort takes none, low, medium, or high, not `{level}`"
+                    )));
+                    self.refresh();
+                    return;
+                }
+            },
+        };
+        self.model.borrow_mut().snapshot.effort = Some(next);
+        drop(self.cmd.send(Cmd::SetEffort(Some(next))));
         self.refresh();
     }
 
@@ -2666,22 +2997,14 @@ impl App {
     }
 
     pub(super) fn interrupt(&self) {
-        if matches!(
-            self.overlay(),
-            Some(
-                Overlay::Help
-                    | Overlay::Search
-                    | Overlay::Sessions
-                    | Overlay::Auth
-                    | Overlay::Workflow
-            )
-        ) {
-            self.overlay_close();
-        } else if let Some((activity, _)) = self.model.borrow().busy_since {
+        if self.overlay_close() {
+            return;
+        }
+        if let Some((activity, _)) = self.model.borrow().busy_since {
             if activity != Activity::Branch {
                 drop(self.cmd.send(Cmd::Cancel));
             }
-        } else if self.draft.peek().is_empty() && self.pasted_images.borrow().is_empty() {
+        } else if self.draft.peek().is_empty() && self.attachments.borrow().is_empty() {
             if armed(&self.quit_armed, REPEAT_WINDOW) {
                 self.quit.set(true);
             } else {
@@ -2694,8 +3017,7 @@ impl App {
         } else {
             self.replace(String::new());
             self.pasted_text.borrow_mut().clear();
-            if !self.pasted_images.borrow().is_empty() {
-                self.pasted_images.borrow_mut().clear();
+            if !self.take_attachments().is_empty() {
                 self.model.borrow_mut().entries.push(Entry::System(
                     "Draft discarded. Attached images were removed.".to_string(),
                 ));
@@ -2756,21 +3078,84 @@ fn save(path: Option<&Path>, prefs: &Prefs) -> Result<(), String> {
     prefs::save_in(path, prefs).map_err(|error| format!("settings not saved: {error}"))
 }
 
+fn image_from_bytes(bytes: &[u8]) -> Option<(Image, ImageSource)> {
+    let media = crate::tools::image_type(bytes)?;
+    let source = preview(bytes).ok()?;
+    Some((Image::encode(media, bytes), source))
+}
+
+fn file_url(text: &str) -> Option<PathBuf> {
+    let rest = text.strip_prefix("file:")?;
+    let decoded = percent_decode(rest);
+    let (host, path) = if let Some(rest) = decoded.strip_prefix("//") {
+        match rest.find('/') {
+            Some(split) => (&rest[..split], &rest[split..]),
+            None => (rest, ""),
+        }
+    } else {
+        ("", decoded.as_str())
+    };
+    if path.is_empty() {
+        return None;
+    }
+    if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
+        return None;
+    }
+    let path = match path.as_bytes() {
+        [b'/', drive, b':', ..] if drive.is_ascii_alphabetic() => &path[1..],
+        _ => path,
+    };
+    Some(PathBuf::from(path))
+}
+
+fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%'
+            && let Some(high) = bytes.get(index + 1).and_then(|byte| hex_digit(*byte))
+            && let Some(low) = bytes.get(index + 2).and_then(|byte| hex_digit(*byte))
+        {
+            out.push(high * 16 + low);
+            index += 3;
+            continue;
+        }
+        out.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_digit(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}
+
 fn image_path(workspace: &Path, text: &str) -> Option<PathBuf> {
-    let text = text.trim();
-    let quoted = text.starts_with(['"', '\'', '(']);
-    let text = text
+    let trimmed = text.trim();
+    if let Some(path) = file_url(trimmed) {
+        return (path.is_file() || image::ImageFormat::from_path(&path).is_ok()).then_some(path);
+    }
+    let quoted = trimmed.starts_with(['"', '\'', '(']);
+    let text = trimmed
         .strip_prefix('"')
         .and_then(|value| value.strip_suffix('"'))
         .or_else(|| {
-            text.strip_prefix('\'')
+            trimmed
+                .strip_prefix('\'')
                 .and_then(|value| value.strip_suffix('\''))
         })
         .or_else(|| {
-            text.strip_prefix('(')
+            trimmed
+                .strip_prefix('(')
                 .and_then(|value| value.strip_suffix(')'))
         })
-        .unwrap_or(text)
+        .unwrap_or(trimmed)
         .trim();
     if text.is_empty() || text.contains('\n') {
         return None;

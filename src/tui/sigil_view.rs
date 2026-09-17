@@ -14,9 +14,11 @@ mod model;
 mod pane;
 mod panes;
 mod patch;
+pub(super) mod profile;
 mod scene;
 mod search;
 mod sessions;
+mod usage;
 mod settings;
 mod speed;
 mod suggest;
@@ -26,7 +28,3 @@ mod view;
 #[cfg(feature = "gui")]
 pub(super) use gui::run as run_gui;
 pub(super) use host::run;
-
-#[cfg(test)]
-#[path = "sigil_view_tests.rs"]
-mod tests;

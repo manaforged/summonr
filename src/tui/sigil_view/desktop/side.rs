@@ -1,6 +1,9 @@
-use sigil::prelude::*;
+use sigil::prelude::{
+    AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
+    Tone, WidgetLayoutExt, badge, classes, container, label, text, text_edit,
+};
 
-use super::super::app::{App, FileRow};
+use super::super::app::{App, FileRow, Overlay};
 use super::super::pane::Pane;
 use super::{hit, options, spacer};
 
@@ -8,16 +11,24 @@ const WIDTH: f32 = 360.0;
 
 pub(super) fn slot(app: App) -> NodeBuilder {
     let mut slot = container().layout(LayoutStyle::flex_row().fill_height().shrink(0.0));
-    if app.editing_model.peek() {
-        slot = slot.child(options::models(app));
-    } else if app.workflow_open.peek() {
-        slot = slot.child(options::workflow(app));
-    } else if app.hotkeys_open.peek() {
-        slot = slot.child(options::hotkeys(app));
-    } else if app.settings_open.peek() {
-        slot = slot.child(options::main(app));
-    } else if let Some(pane) = app.layout.peek().secondary {
-        slot = slot.child(pane_body(app, pane));
+    let panel = match app.overlay() {
+        Some(Overlay::Model) => Some(options::models(app)),
+        Some(Overlay::Workflow) => Some(options::workflow(app)),
+        Some(Overlay::Hotkeys) => Some(options::hotkeys(app)),
+        Some(Overlay::Settings) => Some(options::main(app)),
+        Some(
+            Overlay::Help
+            | Overlay::Search
+            | Overlay::Sessions
+            | Overlay::Usage
+            | Overlay::Auth
+            | Overlay::Context
+            | Overlay::Cache,
+        )
+        | None => app.layout.peek().secondary.map(|pane| pane_body(app, pane)),
+    };
+    if let Some(panel) = panel {
+        slot = slot.child(panel);
     }
     slot
 }
@@ -341,21 +352,46 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
 }
 
 fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
-    let lines = app.model.borrow().ledger.clone();
-    column = column.child(header(app, "Plan".to_string(), String::new()));
+    let model = app.model.borrow();
+    let count = match (model.plan_current, model.plan_total) {
+        (Some(current), total) if total > 0 => format!("{current}/{total}"),
+        _ => String::new(),
+    };
+    let lines = model.ledger.clone();
+    drop(model);
+    column = column.child(header(app, "Todos".to_string(), count));
     if lines.is_empty() {
-        return column.child(
-            label("no plan is running — /steps PLAN.md or --goal")
-                .class(classes!("text-xs text-gray-11")),
-        );
+        return column.child(label("no todos yet").class(classes!("text-xs text-gray-11")));
     }
     for line in lines {
-        let done = line.contains("[x]");
-        column = column.child(text(line).class(if done {
+        let (shown, done) = plan_mark(&line);
+        column = column.child(text(shown).class(if done {
             classes!("text-xs text-gray-11")
         } else {
             classes!("text-xs text-gray-12")
         }));
     }
     column
+}
+
+fn plan_mark(line: &str) -> (String, bool) {
+    let pad = " ".repeat(line.len() - line.trim_start().len());
+    let body = line.trim_start();
+    if let Some(rest) = body.strip_prefix("[x] ") {
+        (format!("{pad}✓ {rest}"), true)
+    } else if let Some(rest) = body.strip_prefix("[/] ") {
+        (format!("{pad}● {rest}"), false)
+    } else if let Some(rest) = body.strip_prefix("[ ] ") {
+        (format!("{pad}○ {rest}"), false)
+    } else if let Some(rest) = body.strip_prefix("[!] ") {
+        (format!("{pad}! {rest}"), false)
+    } else if let Some(rest) = body.strip_prefix("✓ ") {
+        (format!("{pad}✓ {rest}"), true)
+    } else if let Some(rest) = body.strip_prefix("● ") {
+        (format!("{pad}● {rest}"), false)
+    } else if let Some(rest) = body.strip_prefix("○ ") {
+        (format!("{pad}○ {rest}"), false)
+    } else {
+        (line.to_string(), false)
+    }
 }

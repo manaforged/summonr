@@ -1,0 +1,138 @@
+# Summonr API (locked)
+
+Status: locked
+
+Every job this harness performs is a row on this page. A job not on this page
+is not a job; a second name for a row is a defect.
+
+Two piles, and both get said out loud:
+
+| Pile | What | Home |
+| --- | --- | --- |
+| **Menu** | jobs the model, the CLI, or a config file may call | this page |
+| **Kitchen** | everything rustc still lets you call | `docs/api/callable-audit.md`, generated locally (see below) |
+
+Never answer "that's all the API" from this page alone. Nine menu jobs sit on
+999 functions; the other 990 are plumbing, and the census says which is which.
+
+## The rule
+
+1. A new shared helper is a row on this page in the same change, or it stays
+   private.
+2. One job, one name. A synonym is not a job.
+3. Names come from source. Do not mint one for a surface that has no identifier.
+4. A public item that is not a row here is a candidate for `pub(crate)`.
+
+## Model-facing jobs
+
+The tool schemas. Four core, five behind modules.
+
+| Job | Where | Gating |
+| --- | --- | --- |
+| `read` | `tools/catalog.rs:101` | always |
+| `edit` | `tools/catalog.rs:122` | always |
+| `write` | `tools/catalog.rs:195` | always |
+| `run_command` | `tools/catalog.rs:287` | always; the schema text follows the network switch |
+| `todo` | `tools/catalog.rs:227` | always; owns the itemized Work step list |
+| `skill` | `tools/catalog.rs:255` | `.mage/skills` present |
+| `lsp` | `tools/catalog.rs:268` | `lsp` module on |
+| `web` | `tools/catalog.rs:313` | `web` module on |
+| `task` | `runtime/child.rs:95` | `task` module off until `/modules task on` |
+| `<server>__<tool>` | `mcp.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode keeps `readOnlyHint` tools |
+
+Plan mode advertises `read`, `run_command`, `skill`, and `web` only.
+
+The agent room is its own server with its own seven names — `join`, `agents`,
+`send`, `inbox`, `wait`, `board`, `status` (`room/serve.rs:349`). It is a
+menu, but not the model's; it is the room's.
+
+## Harness jobs
+
+No tool schema. Driven by a flag, a config row, or a file in the workspace.
+
+| Job | Where | What it owns |
+| --- | --- | --- |
+| verify | `verify.rs`, `.mage/check.toml` | the commands that decide pass or fail |
+| steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
+| goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
+| plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.mage/plan.md` |
+| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume |
+| worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
+| workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
+| endpoint | `endpoint.rs`, `~/.mage/config.toml` | 20 built-in rows, four wires |
+| policy | `policy.rs`, `~/.mage/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
+| sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
+| skills | `skills.rs`, `.mage/skills` | the catalog `skill` loads from |
+| persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
+| mcp | `mcp.rs`, `[mcp.NAME]`, Claude and Codex configs | server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth` |
+| hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
+| checkpoint | `checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; restore and turn undo |
+| loop guard | `runtime/guard.rs` | repeated identical results: warn at 3, ask or stop at 6, raise `low` effort to `medium` |
+| fallback | `endpoint.rs::fallbacks`, `[endpoint.NAME] fallback` | switch to the next endpoint after retries run out |
+| approval | `policy/danger.rs`, `runtime/approval.rs`, `Grant::Danger` | a static check flags destructive commands; the judge seat reviews each one against the user's messages, earlier tool calls, and `git status`, then allows or blocks with a rule; 3 blocks in a row or 20 in a session ask the user, or keep denying headless |
+| askpass | `askpass.rs`, `summonr askpass`, `SUDO_ASKPASS`, `SSH_ASKPASS` | a masked TUI prompt for a password a command asks for; the secret goes to the command over a 0600 socket, never into events or tool output, and later command output replaces it with `[secret]` |
+| acp | `acp.rs`, `summonr acp` | Agent Client Protocol v1 over stdio through `rpc.rs` |
+| mail | `bus.rs::deliver`, `@id` | a prompt that names a live session goes to its inbox |
+| profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, slowest tools and rounds, largest results, repeated calls, all from `session.jsonl` |
+
+Process surface: 34 flags in `main/cli.rs`, 46 commands in `command.rs`, exit
+codes 0/1/2/3. Keys, env, config, and disk are in
+[`CONTRACTS.md`](CONTRACTS.md).
+
+## Names we delete
+
+The kitchen has more than one name for some jobs. Verified against the source,
+not against the name.
+
+| Delete | Keep | Evidence |
+| --- | --- | --- |
+| `Line`, `Event`, `Msg`/`Cmd`, `Entry` | one session event, plus projections | four types describe the same session facts: 13, 16, 38/37, and 12 variants |
+| 23 orphan functions | nothing | 13 live, 10 `cfg(test)`-only, zero callers |
+| `unicode-width`, `winapi-util` | nothing | declared in `Cargo.toml`, zero references in `src` |
+
+### Checked and kept
+
+These look like duplicates by name. They are not. The difference is payload or
+layer, and each one was read before it was written down here:
+
+- `Policy {Single, Steps, Goal {max_turns}}` is not `WorkKind {Single, Steps,
+  Goal}`. `Policy` is the configured budget, `WorkKind` is the reported kind,
+  and `work.rs:467` converts one to the other on purpose.
+- `work::Observation {File, Stdout}` is not `steps::Item {File, Stdout {command,
+  expected}}`. The plan contract names the command and the expectation; the
+  recorded observation does not.
+- `web::Backend` (search provider), `secret::Backend` (key store), and
+  `tools::sandbox::Backend` (platform) are three domains that share a word.
+- `Role` is a message role in `provider.rs` and a workflow seat in
+  `workflow.rs`. `Source` is span provenance in `chat.rs` and credential origin
+  in `secret.rs`.
+- `Frame` is JSON-RPC framing and the Anthropic `Event` is a wire event.
+  Neither belongs to the session family.
+- The progress types describe different lifecycles: a step can be `Blocked`, a
+turn cannot. `diag` is about rendering progress once, not about one enum for
+  every object.
+
+Full evidence and line numbers: the local audit, systems S1, S2, and S7.
+
+## Unify order
+
+Ranked from the census, by job.
+
+1. One session event. Four types describe the same facts today, so this needs
+   a design pass before code moves: the on-disk log has to stay readable.
+   Proof is replay: a captured `session.jsonl` re-reads to an identical
+   transcript through the shipped `session::Replay`.
+2. The three god objects: `App` 125 functions in one file, `Loop` 84 in
+   `runtime/configure.rs` (74 `pub`), `SessionDriver` 65.
+3. Ten grid builders onto one row painter. `settings.rs` is 915 of 1,029 lines.
+4. One atomic writer. Landed at `durable/store.rs::write`: the census rule
+   `direct file write` is 3, and each survivor is a different job.
+5. `pub` that is not reachable: 203 `pub` functions, many inside private
+   modules.
+
+## How this is enforced
+
+- Census: `python3 scripts/api-census.py` writes
+  `callable-audit.md`. Re-run it in the same change that adds a row.
+- The binding for agents working in this repo belongs in `AGENTS.md`, as a
+  line pointing here. Not added yet — it is a change to a tracked file.

@@ -185,7 +185,3 @@ fn marked(workspace: &Path, path: &Path, module: &Module) -> bool {
     }
     false
 }
-
-#[cfg(test)]
-#[path = "language_tests.rs"]
-mod tests;

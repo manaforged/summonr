@@ -1,10 +1,75 @@
-use sigil::prelude::*;
 use sigil_tui::cell_width;
 
 use super::app::App;
 use super::canvas::{Cell, palette};
 use super::chat::{accent, draft_view, ellipsize, row, write_at};
 use super::hit::{self, Target};
+use sigil::prelude::{
+    IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Position, Rgba8, container, signal,
+    text_edit, text_field,
+};
+
+pub(super) fn frame(
+    cells: &mut [Cell],
+    width: usize,
+    bounds: (usize, usize, usize, usize),
+    color: Rgba8,
+) {
+    let (left, top, card_width, card_height) = bounds;
+    write_at(
+        cells,
+        width,
+        left,
+        top,
+        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        color,
+    );
+    for y in top + 1..top + card_height - 1 {
+        write_at(cells, width, left, y, "│", color);
+        write_at(cells, width, left + card_width - 1, y, "│", color);
+    }
+    write_at(
+        cells,
+        width,
+        left,
+        top + card_height - 1,
+        &format!("╰{}╯", "─".repeat(card_width - 2)),
+        color,
+    );
+}
+
+pub(super) fn card(width: usize, height: usize, rows: usize) -> (usize, usize, usize, usize) {
+    let card_width = (width * 4 / 5).max(60).min(width.saturating_sub(4));
+    let card_height = rows.min(height.saturating_sub(2)).max(8.min(height));
+    (
+        width.saturating_sub(card_width) / 2,
+        height.saturating_sub(card_height) / 2,
+        card_width,
+        card_height,
+    )
+}
+
+pub(super) fn footer(
+    cells: &mut [Cell],
+    width: usize,
+    bounds: (usize, usize, usize, usize),
+    hints: &[&str],
+) {
+    let (left, top, card_width, card_height) = bounds;
+    let hint = hints
+        .iter()
+        .copied()
+        .find(|hint| cell_width(hint) <= card_width.saturating_sub(2))
+        .unwrap_or("");
+    write_at(
+        cells,
+        width,
+        left + card_width.saturating_sub(cell_width(hint) + 1),
+        top + card_height - 1,
+        hint,
+        palette().dim,
+    );
+}
 
 pub(super) fn settings_layer(app: App) -> NodeBuilder {
     let input = text_field(signal(String::new())).class("w-full h-full");
@@ -17,8 +82,10 @@ pub(super) fn hotkeys_layer(app: App) -> NodeBuilder {
 }
 
 pub(super) fn model_picker_layer(app: App) -> NodeBuilder {
+    let changed = app.clone();
     let input = text_edit(app.model_draft)
         .caret_position(app.model_caret)
+        .change(move |draft| changed.replace_model_draft(draft.to_string()))
         .class("w-full h-full");
     layer(app, model_picker_grid, input)
 }
@@ -32,9 +99,6 @@ pub(super) fn workflow_layer(app: App) -> NodeBuilder {
 
 fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    for cell in &mut cells {
-        cell.bg = palette().black;
-    }
     if width < 20 || height < 8 {
         write_at(&mut cells, width, 1, 0, "workflow", palette().gray);
         write_at(
@@ -49,23 +113,11 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let model = app.model.borrow();
     let accent = accent(&model.prefs.theme);
-    let card_width = 72.min(width.saturating_sub(4));
-    let card_height = 15.min(height.saturating_sub(2)).max(8);
-    let left = width.saturating_sub(card_width) / 2;
-    let top = height.saturating_sub(card_height) / 2;
-    for y in top..top + card_height {
-        for x in left..left + card_width {
-            if let Some(cell) = cells.get_mut(y * width + x) {
-                *cell = Cell::blank();
-            }
-        }
-    }
-    write_at(
+    let (left, top, card_width, card_height) = card(width, height, 15);
+    frame(
         &mut cells,
         width,
-        left,
-        top,
-        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        (left, top, card_width, card_height),
         accent,
     );
     let name = app.workflow_name.peek();
@@ -75,18 +127,6 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         format!(" ⚙ workflow {name} ")
     };
     write_at(&mut cells, width, left + 1, top, &title, accent);
-    for y in top + 1..top + card_height - 1 {
-        write_at(&mut cells, width, left, y, "│", accent);
-        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
-    }
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top + card_height - 1,
-        &format!("╰{}╯", "─".repeat(card_width - 2)),
-        accent,
-    );
     let seats = app.workflow_seats.peek();
     let selected = app.workflow_sel.peek();
     let dragging = app.drag_from.peek();
@@ -207,18 +247,11 @@ fn workflow_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             " enter · esc ",
         ]
     };
-    let hint = hints
-        .iter()
-        .copied()
-        .find(|hint| cell_width(hint) <= card_width.saturating_sub(2))
-        .unwrap_or("");
-    write_at(
+    footer(
         &mut cells,
         width,
-        left + card_width.saturating_sub(hint.chars().count() + 1),
-        top + card_height - 1,
-        hint,
-        palette().dim,
+        (left, top, card_width, card_height),
+        hints,
     );
     cells
 }
@@ -232,9 +265,6 @@ pub(super) fn auth_layer(app: App) -> NodeBuilder {
 
 fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    for cell in &mut cells {
-        cell.bg = palette().black;
-    }
     if width < 20 || height < 8 {
         write_at(&mut cells, width, 1, 0, "authentication", palette().gray);
         write_at(
@@ -249,38 +279,14 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let model = app.model.borrow();
     let accent = accent(&model.prefs.theme);
-    let card_width = 70.min(width.saturating_sub(4));
-    let card_height = 20.min(height.saturating_sub(2)).max(8);
-    let left = width.saturating_sub(card_width) / 2;
-    let top = height.saturating_sub(card_height) / 2;
-    for y in top..top + card_height {
-        for x in left..left + card_width {
-            if let Some(cell) = cells.get_mut(y * width + x) {
-                *cell = Cell::blank();
-            }
-        }
-    }
-    write_at(
+    let (left, top, card_width, card_height) = card(width, height, height);
+    frame(
         &mut cells,
         width,
-        left,
-        top,
-        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        (left, top, card_width, card_height),
         accent,
     );
     write_at(&mut cells, width, left + 2, top, "authentication", accent);
-    for y in top + 1..top + card_height - 1 {
-        write_at(&mut cells, width, left, y, "│", accent);
-        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
-    }
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top + card_height - 1,
-        &format!("╰{}╯", "─".repeat(card_width - 2)),
-        accent,
-    );
     let choices = app.auth_choices.peek();
     let selected = app.auth_sel.peek().min(choices.len().saturating_sub(1));
     app.hits.clear();
@@ -321,21 +327,22 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             "Saves in the credential store",
             palette().dim,
         );
-        let hint = " enter save · esc back ";
-        write_at(
+        footer(
             &mut cells,
             width,
-            left + card_width.saturating_sub(hint.chars().count() + 1),
-            top + card_height - 1,
-            hint,
-            palette().dim,
+            (left, top, card_width, card_height),
+            &[" enter save · esc back ", " enter · esc "],
         );
         return cells;
     }
     let visible = card_height.saturating_sub(4);
-    let start = selected
-        .saturating_sub(visible / 2)
-        .min(choices.len().saturating_sub(visible));
+    let start = hit::window(app, selected, choices.len(), visible);
+    let status_width = choices
+        .iter()
+        .map(|choice| cell_width(&choice.state()))
+        .max()
+        .unwrap_or(0);
+    let name_width = 14.min(card_width.saturating_sub(status_width + 9));
     for (offset, (index, choice)) in choices
         .iter()
         .enumerate()
@@ -343,13 +350,9 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         .take(visible)
         .enumerate()
     {
-        let status = if choice.device_login {
-            "device login"
-        } else if choice.configured {
-            "key configured"
-        } else {
-            "key missing"
-        };
+        let status = choice.state();
+        let name = ellipsize(&choice.name, name_width);
+        let padding = " ".repeat(name_width.saturating_sub(cell_width(&name)));
         let marker = if index == selected { '›' } else { ' ' };
         app.hits.add(
             top + 2 + offset,
@@ -363,7 +366,7 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             left + 3,
             top + 2 + offset,
             &ellipsize(
-                &format!("{marker} {:<14} {status}", choice.name),
+                &format!("{marker} {name}{padding} {status}"),
                 card_width.saturating_sub(6),
             ),
             if index == selected {
@@ -373,18 +376,15 @@ fn auth_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             },
         );
     }
-    let hint = if card_width >= 50 {
-        " ↑↓ select · enter configure/login · esc close "
-    } else {
-        " ↑↓ · enter · esc "
-    };
-    write_at(
+    footer(
         &mut cells,
         width,
-        left + card_width.saturating_sub(hint.chars().count() + 1),
-        top + card_height - 1,
-        hint,
-        palette().dim,
+        (left, top, card_width, card_height),
+        &[
+            " ↑↓ select · enter configure/login · esc close ",
+            " ↑↓ · enter · esc ",
+            " enter · esc ",
+        ],
     );
     cells
 }
@@ -410,9 +410,6 @@ fn list_rows(count: usize, recent: usize, sections: bool) -> Vec<ModelRow> {
 
 fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    for cell in &mut cells {
-        cell.bg = palette().black;
-    }
     if width == 0 || height == 0 {
         return cells;
     }
@@ -438,38 +435,14 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let model = app.model.borrow();
     let accent = accent(&model.prefs.theme);
-    let card_width = 76.min(width.saturating_sub(4));
-    let card_height = 24.min(height.saturating_sub(2)).max(8);
-    let left = width.saturating_sub(card_width) / 2;
-    let top = height.saturating_sub(card_height) / 2;
-    for y in top..top + card_height {
-        for x in left..left + card_width {
-            if let Some(cell) = cells.get_mut(y * width + x) {
-                *cell = Cell::blank();
-            }
-        }
-    }
-    write_at(
+    let (left, top, card_width, card_height) = card(width, height, height);
+    frame(
         &mut cells,
         width,
-        left,
-        top,
-        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        (left, top, card_width, card_height),
         accent,
     );
     write_at(&mut cells, width, left + 2, top, "models", accent);
-    for y in top + 1..top + card_height - 1 {
-        write_at(&mut cells, width, left, y, "│", accent);
-        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
-    }
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top + card_height - 1,
-        &format!("╰{}╯", "─".repeat(card_width - 2)),
-        accent,
-    );
     let query_width = card_width.saturating_sub(14);
     let query = draft_view(
         &app.model_draft.peek(),
@@ -515,234 +488,181 @@ fn model_picker_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             "loading models…",
             palette().dim,
         );
-    } else {
-        if !error.is_empty() {
-            write_at(
-                &mut cells,
-                width,
-                left + 3,
-                list_y,
-                "couldn't load the host list — type an exact id",
-                palette().yellow,
-            );
-            write_at(
-                &mut cells,
-                width,
-                left + 3,
-                list_y + 1,
-                &ellipsize(
-                    &error.lines().collect::<Vec<_>>().join(" "),
-                    card_width.saturating_sub(6),
-                ),
-                palette().error,
-            );
-            list_y += 2;
-        } else if choices.is_empty() {
-            write_at(
-                &mut cells,
-                width,
-                left + 3,
-                list_y,
-                "no matching models — type an exact id",
-                palette().yellow,
-            );
-        }
-        if !choices.is_empty() {
-            let recent = app.model_recent.peek().min(choices.len());
-            let sections = app.model_draft.peek().is_empty() && recent > 0;
-            let rows = list_rows(choices.len(), recent, sections);
-            let selected_row = rows
-                .iter()
-                .position(|row| matches!(row, ModelRow::Seat(index) if *index == selected))
-                .unwrap_or(0);
-            let visible = card_height.saturating_sub(list_y.saturating_sub(top) + 2);
-            let start = selected_row
-                .saturating_sub(visible / 2)
-                .min(rows.len().saturating_sub(visible));
-            for (offset, row) in rows.iter().skip(start).take(visible).enumerate() {
-                let y = list_y + offset;
-                match row {
-                    ModelRow::Header(label) => {
-                        write_at(&mut cells, width, left + 3, y, label, palette().dim);
-                    }
-                    ModelRow::Seat(index) => {
-                        let choice = &choices[*index];
-                        let current = model.is_model(choice);
-                        let marker = if *index == selected { '›' } else { ' ' };
-                        let active = if current { '●' } else { ' ' };
-                        let label = match choice.split_once('\t') {
-                            Some((name, model)) => format!("{name:<12} {model}"),
-                            None => choice.clone(),
-                        };
-                        app.hits
-                            .add(y, left + 1, left + card_width - 1, Target::Model(*index));
-                        write_at(
-                            &mut cells,
-                            width,
-                            left + 3,
-                            y,
-                            &format!(
-                                "{marker} {active} {}",
-                                ellipsize(&label, card_width.saturating_sub(10))
-                            ),
-                            if *index == selected {
-                                palette().text
-                            } else {
-                                palette().dim
-                            },
-                        );
-                    }
+        list_y += 1;
+    }
+    if !error.is_empty() {
+        write_at(
+            &mut cells,
+            width,
+            left + 3,
+            list_y,
+            &ellipsize(
+                &error.lines().collect::<Vec<_>>().join(" "),
+                card_width.saturating_sub(6),
+            ),
+            palette().error,
+        );
+        list_y += 1;
+    }
+    if choices.is_empty() && !app.model_loading.peek() {
+        write_at(
+            &mut cells,
+            width,
+            left + 3,
+            list_y,
+            &ellipsize(
+                "No matches. Change the filter.",
+                card_width.saturating_sub(6),
+            ),
+            palette().yellow,
+        );
+    }
+    if !choices.is_empty() {
+        let recent = app.model_recent.peek().min(choices.len());
+        let sections = app.model_draft.peek().is_empty() && recent > 0;
+        let rows = list_rows(choices.len(), recent, sections);
+        let selected_row = rows
+            .iter()
+            .position(|row| matches!(row, ModelRow::Seat(index) if *index == selected))
+            .unwrap_or(0);
+        let visible = card_height.saturating_sub(list_y.saturating_sub(top) + 2);
+        let start = hit::window(app, selected_row, rows.len(), visible);
+        for (offset, row) in rows.iter().skip(start).take(visible).enumerate() {
+            let y = list_y + offset;
+            match row {
+                ModelRow::Header(label) => {
+                    write_at(&mut cells, width, left + 3, y, label, palette().dim);
+                }
+                ModelRow::Seat(index) => {
+                    let choice = &choices[*index];
+                    let current = model.is_model(choice);
+                    let marker = if *index == selected { '›' } else { ' ' };
+                    let active = if current { '●' } else { ' ' };
+                    let label = match choice.split_once('\t') {
+                        Some((name, model)) => format!("{name:<12} {model}"),
+                        None => choice.clone(),
+                    };
+                    app.hits
+                        .add(y, left + 1, left + card_width - 1, Target::Model(*index));
+                    write_at(
+                        &mut cells,
+                        width,
+                        left + 3,
+                        y,
+                        &format!(
+                            "{marker} {active} {}",
+                            ellipsize(&label, card_width.saturating_sub(10))
+                        ),
+                        if *index == selected {
+                            palette().text
+                        } else {
+                            palette().dim
+                        },
+                    );
                 }
             }
         }
     }
-    let hint = " ↑↓ select · type to filter · enter use · esc close ";
-    write_at(
+    footer(
         &mut cells,
         width,
-        left + card_width.saturating_sub(hint.chars().count() + 1),
-        top + card_height - 1,
-        hint,
-        palette().dim,
+        (left, top, card_width, card_height),
+        &[
+            " ↑↓ select · type to filter · enter use · esc close ",
+            " ↑↓ · enter use · esc close ",
+            " enter · esc ",
+        ],
     );
     cells
 }
 
-fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
-    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    for cell in &mut cells {
-        cell.bg = palette().black;
-    }
-    if width < 8 || height < 3 {
-        return cells;
-    }
-    if width < 20 {
-        let labels = [
-            "mode",
-            "verify",
-            "endpoint",
-            "model",
-            "workflow",
-            "theme",
-            "splash",
-            "motion",
-            "reasoning",
-            "tools",
-            "bus",
-            "hotkeys",
-        ];
-        let selected = labels[app.settings_sel.peek().min(labels.len() - 1)];
-        write_at(&mut cells, width, 1, 0, "options", palette().gray);
-        write_at(
-            &mut cells,
-            width,
-            1,
-            height / 2,
-            &format!("› {selected}"),
-            palette().text,
-        );
-        write_at(&mut cells, width, 1, height - 1, "↑↓ ←→ esc", palette().dim);
-        return cells;
-    }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Setting {
+    Mode,
+    Verify,
+    Workflow,
+    Endpoint,
+    Model,
+    Reasoning,
+    Tools,
+    Bus,
+    Comments,
+    Tests,
+    Module(usize),
+    Theme,
+    Splash,
+    Motion,
+    Receipts,
+    Hotkeys,
+}
+
+pub(super) struct Row {
+    pub(super) group: &'static str,
+    pub(super) setting: Setting,
+    pub(super) label: String,
+    pub(super) value: String,
+}
+
+pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     let model = app.model.borrow();
-    let expanded = height >= 21;
-    let card_width = 68.min(width.saturating_sub(4));
-    let card_height = if expanded { 21 } else { 15.min(height) };
-    let left = width.saturating_sub(card_width) / 2;
-    let top = (height / 2).saturating_sub(card_height / 2);
-    for y in top..top + card_height {
-        for x in left..left + card_width {
-            if let Some(cell) = cells.get_mut(y * width + x) {
-                *cell = Cell::blank();
-            }
-        }
-    }
-    let accent = accent(&model.prefs.theme);
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top,
-        &format!("╭{}╮", "─".repeat(card_width - 2)),
-        accent,
-    );
-    let title = if expanded {
-        " ⚙ options "
-    } else if app.settings_sel.peek() < 6 {
-        " ⚙ options · not saved "
+    let snapshot = &model.snapshot;
+    let prefs = &model.prefs;
+    let mode = if snapshot.plan {
+        "plan · read-only"
+    } else if snapshot.work {
+        "work · execute the plan"
+    } else if snapshot.goal {
+        "goal · loop until met"
     } else {
-        " ⚙ options · auto-save "
+        "auto"
     };
-    let title = ellipsize(title, card_width.saturating_sub(2));
-    write_at(&mut cells, width, left + 1, top, &title, accent);
-    for y in top + 1..top + card_height - 1 {
-        write_at(&mut cells, width, left, y, "│", accent);
-        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
-    }
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top + card_height - 1,
-        &format!("╰{}╯", "─".repeat(card_width - 2)),
-        accent,
-    );
-    let hints: &[&str] = &[
-        " ↑↓ select · ←→ change · enter open · esc close ",
-        " ↑↓ · ←→ · enter · esc ",
-        " ↑↓ ←→ esc ",
-    ];
-    let hint = hints
-        .iter()
-        .copied()
-        .find(|hint| cell_width(hint) <= card_width.saturating_sub(2))
-        .unwrap_or("");
-    write_at(
-        &mut cells,
-        width,
-        left + card_width.saturating_sub(hint.chars().count() + 1),
-        top + card_height - 1,
-        hint,
-        palette().dim,
-    );
-    let verify = model
-        .snapshot
-        .verify
-        .as_deref()
-        .map_or_else(|| "off".to_string(), |command| format!("on · {command}"));
-    let endpoint = model.snapshot.relay.as_deref().map_or_else(
-        || model.snapshot.endpoint.clone(),
-        |relay| format!("{} · {relay}", model.snapshot.endpoint),
-    );
-    let rows = [
+    let mut rows = vec![
+        ("session", Setting::Mode, "mode", mode.to_string()),
         (
-            "mode",
-            if model.snapshot.plan {
-                "plan · read-only"
-            } else {
-                "auto"
-            }
-            .to_string(),
+            "session",
+            Setting::Verify,
+            "verify",
+            snapshot
+                .verify
+                .as_deref()
+                .map_or_else(|| "off".to_string(), |command| format!("on · {command}")),
         ),
-        ("verify", verify),
-        ("endpoint", endpoint),
-        ("model", model.snapshot.model.clone()),
         (
+            "session",
+            Setting::Workflow,
             "workflow",
-            model
-                .snapshot
+            snapshot
                 .workflow
                 .clone()
                 .unwrap_or_else(|| "off".to_string()),
         ),
-        ("theme", model.prefs.theme.clone()),
-        ("splash", on_off(model.prefs.splash).to_string()),
-        ("motion", on_off(model.prefs.animations).to_string()),
-        ("reasoning", model.prefs.reasoning.name().to_string()),
-        ("tools", model.prefs.tools.name().to_string()),
         (
+            "model",
+            Setting::Endpoint,
+            "endpoint",
+            snapshot.relay.as_deref().map_or_else(
+                || snapshot.endpoint.clone(),
+                |relay| format!("{} · {relay}", snapshot.endpoint),
+            ),
+        ),
+        ("model", Setting::Model, "model", snapshot.model.clone()),
+        (
+            "model",
+            Setting::Reasoning,
+            "reasoning",
+            prefs.reasoning.name().to_string(),
+        ),
+        (
+            "agent",
+            Setting::Tools,
+            "tools",
+            prefs.tools.name().to_string(),
+        ),
+        (
+            "agent",
+            Setting::Bus,
             "bus",
-            if model.prefs.bus {
+            if prefs.bus {
                 "mail starts a turn"
             } else {
                 "mail waits"
@@ -750,73 +670,156 @@ fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
             .to_string(),
         ),
         (
+            "agent",
+            Setting::Comments,
+            "comments",
+            banned(prefs.ban_comments).to_string(),
+        ),
+        (
+            "agent",
+            Setting::Tests,
+            "tests",
+            banned(prefs.ban_tests).to_string(),
+        ),
+    ];
+    let modules = app.modules.peek();
+    for (index, module) in crate::modules::ALL.iter().enumerate() {
+        rows.push((
+            "modules",
+            Setting::Module(index),
+            module.name,
+            on_off(modules.get(module.name).copied().unwrap_or(module.default)).to_string(),
+        ));
+    }
+    rows.extend([
+        ("interface", Setting::Theme, "theme", prefs.theme.clone()),
+        (
+            "interface",
+            Setting::Splash,
+            "splash",
+            on_off(prefs.splash).to_string(),
+        ),
+        (
+            "interface",
+            Setting::Motion,
+            "motion",
+            on_off(prefs.animations).to_string(),
+        ),
+        (
+            "interface",
+            Setting::Receipts,
+            "receipts",
+            prefs.receipts.name().to_string(),
+        ),
+        (
+            "interface",
+            Setting::Hotkeys,
             "hotkeys",
             format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
         ),
-    ];
-    let available = card_height.saturating_sub(2);
-    let compact = !expanded;
-    let start = if compact {
-        app.settings_sel
-            .peek()
-            .saturating_sub(available / 2)
-            .min(rows.len().saturating_sub(available))
-    } else {
-        0
-    };
-    let end = if compact {
-        (start + available).min(rows.len())
-    } else {
-        rows.len()
-    };
-    if expanded {
-        for (offset, label) in [
-            (1, "session · not saved"),
-            (6, "provider · not saved"),
-            (11, "interface · auto-save"),
-        ] {
-            let label = ellipsize(label, card_width.saturating_sub(4));
-            write_at(
-                &mut cells,
-                width,
-                left + 2,
-                top + offset,
-                &label,
-                palette().dim,
-            );
-        }
+    ]);
+    rows.into_iter()
+        .map(|(group, setting, label, value)| Row {
+            group,
+            setting,
+            label: label.to_string(),
+            value,
+        })
+        .collect()
+}
+
+fn settings_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
+    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
+    if width < 8 || height < 3 {
+        return cells;
     }
-    let positions = [2, 3, 4, 7, 8, 9, 12, 13, 14, 15, 16, 17, 18];
+    let rows = setting_rows(app);
+    let selected = app.settings_sel.peek().min(rows.len().saturating_sub(1));
+    if width < 20 {
+        write_at(&mut cells, width, 1, 0, "options", palette().gray);
+        write_at(
+            &mut cells,
+            width,
+            1,
+            height / 2,
+            &format!("› {}", rows[selected].label),
+            palette().text,
+        );
+        write_at(&mut cells, width, 1, height - 1, "↑↓ ←→ esc", palette().dim);
+        return cells;
+    }
+    let mut lines: Vec<Option<usize>> = Vec::new();
+    for (index, row) in rows.iter().enumerate() {
+        if index == 0 || rows[index - 1].group != row.group {
+            if index > 0 {
+                lines.push(None);
+            }
+            lines.push(None);
+        }
+        lines.push(Some(index));
+    }
+    let model = app.model.borrow();
+    let (left, top, card_width, card_height) = card(width, height, lines.len() + 2);
+    let accent = accent(&model.prefs.theme);
+    frame(
+        &mut cells,
+        width,
+        (left, top, card_width, card_height),
+        accent,
+    );
+    write_at(&mut cells, width, left + 1, top, " ⚙ options ", accent);
+    let hints: &[&str] = &[
+        " ↑↓ select · ←→ change · enter open · esc close ",
+        " ↑↓ · ←→ · enter · esc ",
+        " ↑↓ ←→ esc ",
+    ];
+    footer(
+        &mut cells,
+        width,
+        (left, top, card_width, card_height),
+        hints,
+    );
+    let available = card_height.saturating_sub(2).max(1);
+    let line = lines
+        .iter()
+        .position(|entry| *entry == Some(selected))
+        .unwrap_or(0);
+    let start = hit::window(app, line, lines.len(), available);
     app.hits.clear();
-    for (offset, (index, (label, value))) in
-        rows.iter().enumerate().take(end).skip(start).enumerate()
-    {
-        let y = if expanded {
-            top + positions[index]
-        } else {
-            top + 1 + offset
+    for (offset, entry) in lines.iter().enumerate().skip(start).take(available) {
+        let y = top + 1 + (offset - start);
+        let Some(index) = *entry else {
+            if let Some(Some(next)) = lines.get(offset + 1) {
+                write_at(
+                    &mut cells,
+                    width,
+                    left + 2,
+                    y,
+                    rows[*next].group,
+                    palette().gray,
+                );
+            }
+            continue;
         };
+        let row = &rows[index];
+        let active = index == selected;
         app.hits
             .add(y, left + 1, left + card_width - 1, Target::Setting(index));
-        let selected = index == app.settings_sel.peek();
-        let marker = if selected { accent } else { palette().dim };
         write_at(
             &mut cells,
             width,
             left + 2,
             y,
-            &format!("{} {label:<11}", if selected { '›' } else { ' ' }),
-            marker,
+            &format!("{} {:<11}", if active { '›' } else { ' ' }, row.label),
+            if active { accent } else { palette().dim },
         );
-        let value_width = card_width.saturating_sub(19);
-        let value = ellipsize(value, value_width);
         write_at(
             &mut cells,
             width,
             left + 17,
             y,
-            &value,
-            if selected {
+            &ellipsize(&row.value, card_width.saturating_sub(19)),
+            if active {
                 palette().text
             } else {
                 palette().dim
@@ -830,9 +833,6 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     use crate::prefs::Hotkey;
 
     let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    for cell in &mut cells {
-        cell.bg = palette().black;
-    }
     if width < 8 || height < 3 {
         return cells;
     }
@@ -863,50 +863,27 @@ fn hotkeys_grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
         return cells;
     }
     let accent = accent(&model.prefs.theme);
-    let card_width = 64.min(width.saturating_sub(4));
-    let card_height = Hotkey::ALL.len() + 4;
-    let left = width.saturating_sub(card_width) / 2;
-    let top = height.saturating_sub(card_height) / 2;
-    for y in top..top + card_height {
-        for x in left..left + card_width {
-            if let Some(cell) = cells.get_mut(y * width + x) {
-                *cell = Cell::blank();
-            }
-        }
-    }
-    write_at(
+    let (left, top, card_width, card_height) = card(width, height, Hotkey::ALL.len() + 4);
+    frame(
         &mut cells,
         width,
-        left,
-        top,
-        &format!("╭{}╮", "─".repeat(card_width - 2)),
+        (left, top, card_width, card_height),
         accent,
     );
     write_at(&mut cells, width, left + 1, top, " hotkeys ", accent);
-    for y in top + 1..top + card_height - 1 {
-        write_at(&mut cells, width, left, y, "│", accent);
-        write_at(&mut cells, width, left + card_width - 1, y, "│", accent);
-    }
-    write_at(
-        &mut cells,
-        width,
-        left,
-        top + card_height - 1,
-        &format!("╰{}╯", "─".repeat(card_width - 2)),
-        accent,
-    );
-    let hint = if app.hotkey_recording.peek() {
-        " press ctrl+letter · esc cancel "
+    let hints: &[&str] = if app.hotkey_recording.peek() {
+        &[" press ctrl+letter · esc cancel ", " ctrl+letter · esc "]
     } else {
-        " ↑↓ select · enter change · r reset · esc back "
+        &[
+            " ↑↓ select · enter change · r reset · esc back ",
+            " ↑↓ · enter · r · esc ",
+        ]
     };
-    write_at(
+    footer(
         &mut cells,
         width,
-        left + card_width.saturating_sub(hint.chars().count() + 1),
-        top + card_height - 1,
-        hint,
-        palette().dim,
+        (left, top, card_width, card_height),
+        hints,
     );
     app.hits.clear();
     for (index, action) in Hotkey::ALL.iter().copied().enumerate() {
@@ -982,6 +959,10 @@ const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
 
 const fn on_off(value: bool) -> &'static str {
     if value { "on" } else { "off" }
+}
+
+const fn banned(value: bool) -> &'static str {
+    if value { "banned" } else { "allowed" }
 }
 
 pub(super) fn layer(

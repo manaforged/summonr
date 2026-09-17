@@ -1,15 +1,17 @@
 # Copy to ~/.mage/theme.toml, or to <workspace>/.mage/theme.toml for one project.
 # Every key is optional. Values are #rgb, #rrggbb, or #rrggbbaa. Unset tokens
-# keep the selected preset (`theme` in config.toml: "space" or "fantasy").
+# keep the selected preset (`theme` in config.toml: space, fantasy, nord,
+# gruvbox, solarized, light). The approved values are frozen in
+# scripts/palette-baseline.txt; `python3 scripts/palette-check.py` reports drift.
 #
 # `summon` reads the file next to config.toml first, then the workspace copy,
 # so a project can override the user theme. `/theme` re-applies both layers.
 
 background = "#0c0c14"    # canvas and widget background (alias: base)
-foreground = "#c8c8cd"    # default text (alias: text)
-dim        = "#5a5a5a"    # secondary text, hints, paths
-gray       = "#a0a0a0"    # muted chrome, inactive borders
-thought    = "#a8a8ae"    # chain of thought text (slightly greyer than the answer)
+foreground = "#ffffff"    # default text (alias: text)
+dim        = "#949cb0"    # secondary text, hints, paths (cool, AA on canvas)
+gray       = "#bcc2d2"    # chrome labels, inactive borders
+thought    = "#a8b0c4"    # chain of thought: cooler than the answer, still readable
 accent     = "#698cd2"    # selection, prompts, focused panes, spinner
 green      = "#50c878"    # success, added lines, ready
 red        = "#e15f5f"    # diff removals and errors in panes

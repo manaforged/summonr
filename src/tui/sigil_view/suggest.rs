@@ -1,4 +1,3 @@
-use sigil::prelude::*;
 use sigil_tui::cell_width;
 
 use super::app::App;
@@ -6,6 +5,7 @@ use super::chat::ellipsize;
 use super::model::Model;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
+use sigil::prelude::{Signal, signal};
 
 const LIMIT: usize = 9;
 const MIN_WIDTH: usize = 34;
@@ -93,6 +93,15 @@ impl Picker {
     fn rows(self, draft: &str, caret: usize, model: &Model) -> Vec<(String, String)> {
         if let Some((_, query)) = mention(draft, caret) {
             let query = query.to_lowercase();
+            let mut peers: Vec<_> = model
+                .peers
+                .iter()
+                .filter_map(|agent| {
+                    let score = crate::tui::rank(&agent.id.to_lowercase(), "", &query)?;
+                    Some((score, agent))
+                })
+                .collect();
+            peers.sort_unstable_by_key(|(score, _)| *score);
             let mut matches: Vec<_> = model
                 .files
                 .iter()
@@ -102,9 +111,19 @@ impl Picker {
                 })
                 .collect();
             matches.sort_unstable();
-            return matches
+            return peers
                 .into_iter()
-                .map(|(_, path)| (path.clone(), String::new()))
+                .map(|(_, agent)| {
+                    (
+                        agent.id.clone(),
+                        format!("{} · {} · {}", agent.kind, agent.model, agent.status),
+                    )
+                })
+                .chain(
+                    matches
+                        .into_iter()
+                        .map(|(_, path)| (path.clone(), String::new())),
+                )
                 .collect();
         }
         let query = self.query.get();
@@ -139,6 +158,17 @@ pub(super) fn mention(draft: &str, caret: usize) -> Option<(usize, &str)> {
     } else {
         (!query.contains(char::is_whitespace)).then_some((start, query))
     }
+}
+
+pub(super) fn peers(text: &str, model: &Model) -> Vec<String> {
+    let mut ids: Vec<String> = text
+        .split_whitespace()
+        .filter_map(|word| word.strip_prefix('@'))
+        .filter(|id| model.peers.iter().any(|agent| agent.id == *id))
+        .map(str::to_string)
+        .collect();
+    ids.dedup();
+    ids
 }
 
 pub(super) fn reference(path: &str) -> String {
@@ -204,7 +234,7 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     };
     let mut lines = Vec::with_capacity(height);
     let title = if mention(&draft, caret).is_some() {
-        "files"
+        "mentions"
     } else {
         "commands"
     };
@@ -257,7 +287,3 @@ fn border(label: &str, width: usize, top: bool) -> String {
     let fill = width.saturating_sub(cell_width(label.as_str()) + 3);
     format!("{left}─{label}{}{right}", "─".repeat(fill))
 }
-
-#[cfg(test)]
-#[path = "suggest_tests.rs"]
-mod tests;

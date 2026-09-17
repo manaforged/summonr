@@ -22,11 +22,22 @@ fn main() {
             }
         }
     }
+    if std::env::args_os().nth(1).is_some_and(|arg| arg == "askpass") {
+        let args: Vec<_> = std::env::args_os().skip(2).collect();
+        std::process::exit(summonr::askpass::client(&args));
+    }
     run();
 }
 
 #[tokio::main]
 async fn run() {
+    if std::env::args().nth(1).as_deref() == Some("--profile-tui") {
+        if let Err(error) = summonr::tui::profile(std::env::args().skip(2)) {
+            eprintln!("summonr: {error}");
+            std::process::exit(1);
+        }
+        return;
+    }
     match startup::run().await {
         Ok(code) => std::process::exit(code),
         Err(error) => {

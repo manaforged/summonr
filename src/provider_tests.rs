@@ -49,7 +49,9 @@ fn empty_tool_arguments_leave_as_a_json_object() {
         },
         continuation: None,
     }];
-    let body = client.request_body(&request(vec![assistant]), false).unwrap();
+    let body = client
+        .request_body(&request(vec![assistant]), false)
+        .unwrap();
     assert_eq!(
         body["messages"][0]["tool_calls"][0]["function"]["arguments"],
         "{}"
@@ -71,8 +73,7 @@ fn sglang_invalid_tool_json_is_malformed() {
 
 #[test]
 fn sglang_input_length_400_is_overflow() {
-    let text =
-        "Input length (114895 tokens) exceeds the maximum allowed length (106234 tokens).";
+    let text = "Input length (114895 tokens) exceeds the maximum allowed length (106234 tokens).";
     let error = response_failure(400, text, None);
     assert_eq!(
         error.provider_failure().unwrap().kind,

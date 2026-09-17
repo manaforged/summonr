@@ -84,11 +84,12 @@ impl<P: Provider> Loop<P> {
                 return Ok((text, usage));
             }
             for call in calls {
-                let output = match self.tools.execute_outcome(&call).await {
-                    Ok(output) => output.text,
-                    Err(error) => error.to_string(),
+                let (success, output) = match self.tools.execute_outcome(&call).await {
+                    Ok(output) => (output.success, output.text),
+                    Err(error) => (false, error.to_string()),
                 };
-                messages.push(Message::tool(call.id, output));
+                let text = self.tool_text(&call, success, output).await;
+                messages.push(Message::tool(call.id, text));
             }
         }
     }

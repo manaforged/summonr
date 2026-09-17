@@ -22,7 +22,10 @@ fn main() {
             }
         }
     }
-    if std::env::args_os().nth(1).is_some_and(|arg| arg == "askpass") {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == "askpass")
+    {
         let args: Vec<_> = std::env::args_os().skip(2).collect();
         std::process::exit(summonr::askpass::client(&args));
     }

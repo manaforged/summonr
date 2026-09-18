@@ -2,6 +2,10 @@ use std::net::{IpAddr, ToSocketAddrs};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use leyline::Response;
+use leyline::http::StatusCode;
+use url::Url;
+
 use super::{Format, Search};
 use crate::error::{Error, Result};
 
@@ -17,7 +21,7 @@ impl Search {
                 "web_fetch: that host is not allowed".to_string(),
             ));
         }
-        let response = self.request(url.clone()).await?;
+        let response = self.request(&url).await?;
         let ctype = content_type(&response);
         validate(&response, &ctype)?;
         let bytes = read_capped(response).await?;
@@ -30,7 +34,7 @@ impl Search {
         Ok(self.output(&url, &body))
     }
 
-    pub(super) fn output(&self, url: &reqwest::Url, body: &str) -> String {
+    pub(super) fn output(&self, url: &Url, body: &str) -> String {
         let mut out = format!("web_fetch {url}\n");
         if body.chars().count() <= OUT_MAX {
             out.push_str(body);
@@ -57,32 +61,24 @@ impl Search {
         Some(shown)
     }
 
-    async fn request(&self, url: reqwest::Url) -> Result<reqwest::Response> {
+    async fn request(&self, url: &Url) -> Result<Response> {
         self.http
-            .get(url)
+            .get(url.as_str())
             .timeout(TIMEOUT)
-            .header(
-                reqwest::header::ACCEPT,
-                "text/markdown, text/plain, text/html;q=0.9, */*;q=0.1",
-            )
+            .accept("text/markdown, text/plain, text/html;q=0.9, */*;q=0.1")
             .send()
             .await
             .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))
     }
 }
 
-fn content_type(response: &reqwest::Response) -> String {
-    response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("")
-        .to_ascii_lowercase()
+fn content_type(response: &Response) -> String {
+    response.content_type().unwrap_or("").to_ascii_lowercase()
 }
 
-fn validate(response: &reqwest::Response, ctype: &str) -> Result<()> {
+fn validate(response: &Response, ctype: &str) -> Result<()> {
     let status = response.status();
-    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+    if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
         return Err(Error::Tool(format!(
             "web_fetch {status}: private or authenticated pages are out of scope"
         )));
@@ -117,14 +113,14 @@ pub(super) fn page_body(text: &str, ctype: &str, format: Format) -> String {
     }
 }
 
-pub(super) fn check_url(raw: &str) -> Result<reqwest::Url> {
+pub(super) fn check_url(raw: &str) -> Result<Url> {
     let trimmed = raw.trim();
     let candidate = if let Some(rest) = trimmed.strip_prefix("http://") {
         format!("https://{rest}")
     } else {
         trimmed.to_string()
     };
-    let url = reqwest::Url::parse(&candidate)
+    let url = Url::parse(&candidate)
         .map_err(|error| Error::Tool(format!("web_fetch: URL is invalid: {error}")))?;
     if url.scheme() != "https" {
         return Err(Error::Tool("web_fetch: only https URLs".to_string()));
@@ -195,10 +191,12 @@ pub(super) fn resolves_blocked(host: &str) -> bool {
         .unwrap_or(false)
 }
 
-async fn read_capped(response: reqwest::Response) -> Result<Vec<u8>> {
+async fn read_capped(response: Response) -> Result<Vec<u8>> {
     use futures::StreamExt;
     let mut out = Vec::new();
-    let mut stream = response.bytes_stream();
+    let mut stream = response
+        .into_stream()
+        .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
         if out.len().saturating_add(chunk.len()) > MAX_BYTES {

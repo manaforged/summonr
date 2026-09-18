@@ -1,0 +1,304 @@
+use super::*;
+
+const LIVE: &str = r#"{
+  "model": "typesafe/jev-1.13-20260917",
+  "answers": {
+    "kind": {
+      "type": "choice",
+      "choice": "antibot",
+      "probabilities": {"logic": 0.0, "antibot": 1.0, "network": 0.0, "site_change": 0.0},
+      "confidence": 1.0
+    },
+    "severity": {
+      "type": "score",
+      "score": 1.96,
+      "legend": {"0": "Cosmetic, retry will fix", "1": "Degraded, some attempts fail", "2": "Hard stop, checkout cannot proceed"},
+      "probabilities": {"0": 0.0, "1": 0.04, "2": 0.96},
+      "confidence": 0.94
+    },
+    "should_rotate": {"type": "noul", "noul": 0.66}
+  },
+  "usage": {"input_tokens": 479, "output_tokens": 81, "cost": 2.0118e-05}
+}"#;
+
+fn endpoint(name: &str, wire: Wire) -> Endpoint {
+    Endpoint {
+        name: name.to_string(),
+        model: "~typesafe/jev-latest".to_string(),
+        base_url: Some("https://openrouter.ai/api/alpha/decisions".to_string()),
+        api_key: Some("k".to_string()),
+        source: None,
+        oauth: None,
+        body: None,
+        context_window: None,
+        idle_timeout_secs: None,
+        effort: None,
+        price: None,
+        env: BTreeMap::new(),
+        headers: BTreeMap::new(),
+        wire,
+        fallback: Vec::new(),
+        compact_tokens: None,
+    }
+}
+
+#[test]
+fn a_real_response_still_parses_into_typed_answers() {
+    let decision: Decision = serde_json::from_str(LIVE).unwrap();
+    assert_eq!(decision.model, "typesafe/jev-1.13-20260917");
+    assert_eq!(decision.usage.input_tokens, 479);
+    let Some(Answer::Choice {
+        choice,
+        probabilities,
+        confidence,
+    }) = decision.answers.get("kind")
+    else {
+        panic!("kind did not parse as a choice: {:?}", decision.answers);
+    };
+    assert_eq!(choice, "antibot");
+    assert_eq!(probabilities["antibot"], 1.0);
+    assert_eq!(*confidence, 1.0);
+    let Some(Answer::Score { score, legend, .. }) = decision.answers.get("severity") else {
+        panic!("severity did not parse as a score");
+    };
+    assert_eq!(*score, 1.96);
+    assert_eq!(legend["2"], "Hard stop, checkout cannot proceed");
+    let Some(Answer::Noul { noul }) = decision.answers.get("should_rotate") else {
+        panic!("should_rotate did not parse as a noul");
+    };
+    assert_eq!(*noul, 0.66);
+}
+
+#[test]
+fn a_noul_never_clears_a_confidence_gate() {
+    let noul = Answer::Noul { noul: 0.99 };
+    assert_eq!(noul.confidence(), None);
+    assert!(
+        !noul.acts_above(0.0),
+        "a noul carries no confidence, so gating one on confidence must not act"
+    );
+}
+
+#[test]
+fn a_flat_distribution_fails_the_gate_a_sharp_one_passes() {
+    let decision: Decision = serde_json::from_str(LIVE).unwrap();
+    let sharp = &decision.answers["severity"];
+    assert!(sharp.acts_above(0.9), "0.94 should clear a 0.9 floor");
+    let flat = Answer::Score {
+        score: 1.52,
+        legend: BTreeMap::new(),
+        probabilities: BTreeMap::from([("1".to_string(), 0.43), ("2".to_string(), 0.55)]),
+        confidence: 0.28,
+    };
+    assert!(
+        !flat.acts_above(0.9),
+        "0.28 is the model saying it does not know, so the gate must hold"
+    );
+}
+
+#[test]
+fn options_render_in_probability_order_not_alphabetical() {
+    let decision = Decision {
+        model: "m".to_string(),
+        answers: BTreeMap::from([(
+            "kind".to_string(),
+            Answer::Choice {
+                choice: "zeta".to_string(),
+                probabilities: BTreeMap::from([
+                    ("alpha".to_string(), 0.1),
+                    ("zeta".to_string(), 0.9),
+                ]),
+                confidence: 0.8,
+            },
+        )]),
+        usage: Usage::default(),
+    };
+    let lines: Vec<_> = render(&decision).lines().map(str::to_string).collect();
+    assert!(
+        lines[1].contains("zeta"),
+        "the winning option must lead, got {lines:?}"
+    );
+    assert!(lines[2].contains("alpha"), "got {lines:?}");
+}
+
+#[test]
+fn a_long_level_name_keeps_every_bar_in_one_column() {
+    let decision: Decision = serde_json::from_str(LIVE).unwrap();
+    let rendered = render(&decision);
+    let bars: Vec<_> = rendered
+        .lines()
+        .filter(|line| line.starts_with("  "))
+        .map(|line| {
+            line.chars()
+                .position(|glyph| glyph == '█' || glyph == '░')
+                .expect("a bar on every option row")
+        })
+        .collect();
+    assert!(bars.len() >= 7, "expected every option row, got {bars:?}");
+    assert!(
+        bars.windows(2).all(|pair| pair[0] == pair[1]),
+        "bars start in different columns: {bars:?}"
+    );
+}
+
+#[test]
+fn a_full_bar_is_full_and_an_empty_one_is_empty() {
+    let decision: Decision = serde_json::from_str(LIVE).unwrap();
+    let rendered = render(&decision);
+    let antibot = rendered
+        .lines()
+        .find(|line| line.contains("antibot") && line.starts_with("  "))
+        .unwrap();
+    assert_eq!(antibot.matches('█').count(), WIDTH);
+    assert_eq!(antibot.matches('░').count(), 0);
+    let network = rendered
+        .lines()
+        .find(|line| line.contains("network"))
+        .unwrap();
+    assert_eq!(network.matches('█').count(), 0);
+    assert_eq!(network.matches('░').count(), WIDTH);
+}
+
+#[test]
+fn a_chat_endpoint_is_refused_before_any_request_goes_out() {
+    let questions = BTreeMap::from([(
+        "q".to_string(),
+        Question::Noul {
+            instructions: "is it broken".to_string(),
+        },
+    )]);
+    let error = target(&endpoint("openrouter", Wire::Completions), &questions)
+        .expect_err("a chat endpoint must not reach the decisions API");
+    assert!(
+        error.to_string().contains("not a decisions endpoint"),
+        "got {error}"
+    );
+}
+
+#[test]
+fn asking_nothing_is_refused() {
+    let error = target(&endpoint("jev", Wire::Decisions), &BTreeMap::new())
+        .expect_err("an empty question set must not be sent");
+    assert!(error.to_string().contains("at least one question"));
+}
+
+#[test]
+fn each_decisions_provider_keeps_its_own_url() {
+    let questions = BTreeMap::from([(
+        "q".to_string(),
+        Question::Noul {
+            instructions: "is it broken".to_string(),
+        },
+    )]);
+    let router = endpoint("jev", Wire::Decisions);
+    let (url, key) = target(&router, &questions).unwrap();
+    assert_eq!(url, "https://openrouter.ai/api/alpha/decisions");
+    assert_eq!(key, "k");
+
+    let mut native = endpoint("typesafe", Wire::Decisions);
+    native.base_url = Some("https://api.typesafe.ai/v1/systemone".to_string());
+    let (url, _) = target(&native, &questions).unwrap();
+    assert_eq!(
+        url, "https://api.typesafe.ai/v1/systemone",
+        "the endpoint owns its whole URL, so a second decisions provider needs no code change"
+    );
+}
+
+#[test]
+fn the_request_keeps_the_shape_the_api_documents() {
+    let questions = BTreeMap::from([
+        (
+            "kind".to_string(),
+            Question::Choice {
+                instructions: "classify".to_string(),
+                criteria: BTreeMap::from([("antibot".to_string(), "blocked".to_string())]),
+            },
+        ),
+        (
+            "severity".to_string(),
+            Question::Score {
+                instructions: "how bad".to_string(),
+                criteria: vec!["mild".to_string(), "fatal".to_string()],
+            },
+        ),
+    ]);
+    let body = serde_json::to_value(Ask {
+        model: "~typesafe/jev-latest",
+        state: "a 403",
+        questions: &questions,
+    })
+    .unwrap();
+    assert_eq!(body["model"], "~typesafe/jev-latest");
+    assert_eq!(body["state"], "a 403");
+    assert_eq!(body["questions"]["kind"]["type"], "choice");
+    assert!(
+        body["questions"]["kind"]["criteria"].is_object(),
+        "choice criteria are option to description"
+    );
+    assert_eq!(body["questions"]["severity"]["type"], "score");
+    assert!(
+        body["questions"]["severity"]["criteria"].is_array(),
+        "score criteria are ordered levels"
+    );
+}
+
+#[test]
+fn an_api_error_body_surfaces_its_message_not_its_json() {
+    let failure = message(r#"{"error":{"message":"is a decisions model","code":400}}"#);
+    assert_eq!(failure, "is a decisions model");
+    assert_eq!(classify(401), ProviderFailureKind::Authentication);
+    assert_eq!(classify(429), ProviderFailureKind::RateLimited);
+    assert_eq!(classify(503), ProviderFailureKind::Server);
+}
+
+#[test]
+fn the_decisions_model_is_absent_from_the_chat_catalog() {
+    let chat = crate::endpoint::catalog(Wire::Completions);
+    assert!(
+        !chat.iter().any(|model| model.contains("jev")),
+        "jev must never be offered as a chat model: {chat:?}"
+    );
+    let decisions = crate::endpoint::catalog(Wire::Decisions);
+    assert!(
+        decisions
+            .iter()
+            .any(|model| model == "~typesafe/jev-latest"),
+        "got {decisions:?}"
+    );
+}
+
+#[test]
+fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
+    for spelling in ["decisions", "systemone", "system-one", "DECISIONS"] {
+        assert_eq!(
+            crate::endpoint::Wire::parse(spelling),
+            Wire::Decisions,
+            "config must be able to declare `{spelling}`"
+        );
+    }
+}
+
+#[test]
+fn a_provider_this_code_has_never_heard_of_still_works() {
+    let questions = BTreeMap::from([(
+        "q".to_string(),
+        Question::Noul {
+            instructions: "is it broken".to_string(),
+        },
+    )]);
+    let mut unknown = endpoint("some-future-vendor", Wire::Decisions);
+    unknown.base_url = Some("https://example.invalid/v9/judge".to_string());
+    unknown.model = "not-jev-at-all".to_string();
+    let (url, _) = target(&unknown, &questions).unwrap();
+    assert_eq!(
+        url, "https://example.invalid/v9/judge",
+        "no part of the URL is assumed"
+    );
+    let body = serde_json::to_value(Ask {
+        model: &unknown.model,
+        state: "s",
+        questions: &questions,
+    })
+    .unwrap();
+    assert_eq!(body["model"], "not-jev-at-all");
+}

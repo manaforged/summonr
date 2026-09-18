@@ -58,7 +58,8 @@ the two modes never fall back to each other.
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
 `qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
 `groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`; native
-wires `anthropic` (Messages) and `gemini`. `together`, `groq`, `cerebras`,
+wires `anthropic` (Messages) and `gemini`; decisions seats `jev` and
+`typesafe`. `together`, `groq`, `cerebras`,
 and `mistral` carry no default model: pass `--model`. `summonr login
 copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
@@ -347,7 +348,7 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write.
 or `include`, with `literal` and `caseSensitive`). Search hits are
 `path:N:hash|line`. `edit` covers substring replace (`old`/`new`), line
 replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a
-batch (`edits`), several files (`files`), and a rename or move (`path`
+batch (`edits`), and a rename or move (`path`
 with `to`). `write` creates or overwrites one file, or several (`files`).
 `run_command` takes `workdir`; when the output is longer than the digest
 the full log is kept and its path named.
@@ -355,7 +356,7 @@ the full log is kept and its path named.
 | Name | When | Notes |
 | --- | --- | --- |
 | `read` | always | File, directory, image, or search (`literal`, `caseSensitive`, `include`) |
-| `edit` | not plan | Change or move files; hashes from `read`; `files` for several |
+| `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | not plan | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
@@ -384,11 +385,10 @@ declarative files under `.mage` where they need user input.
 
 `read` with `pattern` or `glob` honors `.gitignore`, and lists matching files
 when the pattern is empty.
-`web` with `query` reads DuckDuckGo HTML without a key (a `BRAVE_API_KEY` in the
-environment selects Brave instead). `[search] backend = "bing"`
-keeps the Bing RSS compatibility path; `[search] backend = "brave"` with
-`api_key` (or `BRAVE_API_KEY`) uses the Brave Search API. Every result says
-which backend answered. Language modules cover Rust,
+`web` with `query` reads Bing without a key, and `url` fetches one page.
+Both go through Leyline with a browser identity, so no search API key or
+self-hosted search service is needed. `[search]` takes `count`,
+`allowed_domains`, and `excluded_domains`. Language modules cover Rust,
 TypeScript/JavaScript, Python, and Go. They select the server from the file and
 a project marker, then keep one connection per module in a polyglot checkout.
 Rust passes initialization options that disable check-on-save, build scripts,

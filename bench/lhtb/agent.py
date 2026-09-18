@@ -9,7 +9,7 @@ from harbor.agents.base import BaseAgent
 from harbor.environments.base import BaseEnvironment
 from harbor.models.agent.context import AgentContext
 
-VERSIONS = Path.home() / "bench" / "tools" / "versions.txt"
+VERSIONS = Path(os.environ.get("BENCH_VERSIONS", "tools/versions.txt"))
 ADAPTER = "/opt/lhtb/harness.sh"
 SCAN = r"""
 base=$(cat /var/lib/bench/baseline 2>/dev/null)

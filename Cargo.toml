@@ -2,12 +2,13 @@
 name = "summonr"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.98" # MSRV: matches rust-toolchain.toml
 license = "MIT"
 authors = ["Thomas Gardiner"]
-description = "A small, provider-neutral agent harness"
+description = "Terminal coding agent in Rust"
 readme = "README.md"
-repository = "https://github.com/thomgardiner/summonr"
-homepage = "https://github.com/thomgardiner/summonr"
+repository = "https://github.com/manaforged/summonr"
+homepage = "https://summonr.dev"
 publish = false
 
 [[bin]]
@@ -31,13 +32,15 @@ unicode-linebreak = "0.1.5"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls-vendored"] }
+leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "fee12b7a9cbb873faf939f471f3fd3fd87bb70f4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
+url = "2"
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483", default-features = false, features = ["tui", "clipboard-image"] }
-sigil-hal = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-tui = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-ide-core = { git = "https://github.com/ThomGardiner/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483", default-features = false, features = ["tui", "clipboard-image"] }
+sigil-hal = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil-tui = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil-ide-core = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
 chacha20poly1305 = "0.10"
 
 [patch.crates-io]

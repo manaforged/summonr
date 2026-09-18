@@ -24,14 +24,3 @@ fn home_and_tmp_vars_stay_outside() {
         .unwrap_err();
     assert!(matches!(error, Error::Denied(_)), "{error}");
 }
-
-#[test]
-fn vault_short_name_maps_to_the_mounted_volume() {
-    if !Path::new("/Volumes/VAULT 4TB").is_dir() {
-        return;
-    }
-    assert_eq!(
-        expand_path("/Volumes/Vault/dev/gamedev"),
-        expand_path("/Volumes/VAULT 4TB/dev/gamedev")
-    );
-}

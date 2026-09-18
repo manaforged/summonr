@@ -12,6 +12,8 @@ use sigil::prelude::{
     image,
 };
 
+pub(super) mod ledger;
+
 #[derive(Clone)]
 struct Line {
     text: String,
@@ -52,7 +54,7 @@ pub(super) fn body(app: &App, pane: Pane, cols: u16, rows: u16) -> NodeBuilder {
             let width = usize::from(cols);
             app.hits.clear();
             let mut lines: Vec<Vec<Line>> = match pane {
-                Pane::Ledger => single(ledger(&app)),
+                Pane::Ledger => single(ledger::lines(&app)),
                 Pane::Files => single(files(&app, usize::from(rows))),
                 Pane::Diff => diff(&app, width, usize::from(rows)),
                 Pane::Worktrees => single(trees(&app, usize::from(rows))),
@@ -141,51 +143,6 @@ fn close_header(lines: &mut [Vec<Line>], width: usize) {
         Line::new(" ".repeat(gap), palette().text),
         Line::new("×".to_string(), palette().dim),
     ];
-}
-
-fn ledger(app: &App) -> Vec<Line> {
-    let model = app.model.borrow();
-    let accent = super::chat::accent(&model.prefs.theme);
-    let done = model
-        .ledger
-        .iter()
-        .filter(|line| line.trim_start().starts_with("[x] ") || line.trim_start().starts_with("✓ "))
-        .count();
-    let total = model.ledger.len();
-    let title = if total == 0 {
-        "todos".to_string()
-    } else {
-        format!("todos · {done}/{total}")
-    };
-    let mut lines = vec![
-        Line::new(title, accent),
-        Line::new(String::new(), palette().text),
-    ];
-    if model.ledger.is_empty() {
-        lines.push(Line::new("no todos yet".to_string(), palette().dim));
-        return lines;
-    }
-    for line in &model.ledger {
-        lines.push(plan_line(line, accent));
-    }
-    lines
-}
-
-fn plan_line(line: &str, accent: Rgba8) -> Line {
-    let indent = line.len() - line.trim_start().len();
-    let body = line.trim_start();
-    let (mark, rest, fg) = if let Some(rest) = body.strip_prefix("[x] ") {
-        ("✓ ", rest, palette().dim)
-    } else if let Some(rest) = body.strip_prefix("[/] ") {
-        ("● ", rest, accent)
-    } else if let Some(rest) = body.strip_prefix("[ ] ") {
-        ("○ ", rest, palette().text)
-    } else if let Some(rest) = body.strip_prefix("[!] ") {
-        ("! ", rest, palette().error)
-    } else {
-        return Line::new(line.to_string(), palette().dim);
-    };
-    Line::new(format!("{}{mark}{rest}", " ".repeat(indent)), fg)
 }
 
 fn files(app: &App, rows: usize) -> Vec<Line> {

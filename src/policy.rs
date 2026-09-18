@@ -24,6 +24,7 @@ pub(crate) enum Grant {
     Guarded(PathBuf),
     Command(String),
     Danger(String),
+    Edit(&'static str),
     Network,
 }
 
@@ -35,6 +36,7 @@ impl Grant {
             Self::Guarded(path) => format!("protected path {}", path.display()),
             Self::Command(command) => format!("a shell command without the sandbox: {command}"),
             Self::Danger(command) => format!("a destructive command: {command}"),
+            Self::Edit(setting) => format!("allow {setting} for this task (saved setting is off)"),
             Self::Network => "network".to_string(),
         }
     }
@@ -250,6 +252,7 @@ pub(crate) fn outside_hint(path: &str) -> String {
 
 pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
     match error {
+        Error::EditApproval { setting, .. } => Some(Grant::Edit(setting)),
         Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
         _ => None,
     }
@@ -667,10 +670,7 @@ fn is_outside(word: &str, workspace: &Path, outside_cwd: bool, extra: &[PathBuf]
             .trim_start_matches('{')
             .trim_end_matches('}');
         let head = name.split(['/', '\\']).next().unwrap_or(name);
-        return matches!(
-            head,
-            "HOME" | "TMPDIR" | "TMP" | "TEMP" | "TEMPDIR" | "PWD"
-        );
+        return matches!(head, "HOME" | "TMPDIR" | "TMP" | "TEMP" | "TEMPDIR" | "PWD");
     }
     if Path::new(word).has_root() {
         return !is_inside(Path::new(word), workspace, extra);

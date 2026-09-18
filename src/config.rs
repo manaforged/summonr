@@ -25,6 +25,7 @@ pub(crate) struct File {
     pub fps: Option<u32>,
     pub reasoning: Option<ReasoningSetting>,
     pub tools: Option<String>,
+    pub diff_layout: Option<crate::prefs::DiffLayout>,
     pub receipts: Option<String>,
     pub bus: Option<bool>,
     pub layout: Option<String>,
@@ -135,9 +136,6 @@ pub(crate) struct Search {
     pub count: Option<usize>,
     pub allowed_domains: Option<Vec<String>>,
     pub excluded_domains: Option<Vec<String>>,
-    pub backend: Option<String>,
-    pub api_key: Option<String>,
-    pub url: Option<String>,
 }
 
 pub(crate) fn path() -> Result<PathBuf> {
@@ -233,6 +231,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     document["reasoning"] = value(prefs.reasoning.name());
     document["receipts"] = value(prefs.receipts.name());
     document["tools"] = value(prefs.tools.name());
+    document["diff_layout"] = value(prefs.diff_layout.name());
     document["bus"] = value(prefs.bus);
     document["ban_comments"] = value(prefs.ban_comments);
     document["ban_tests"] = value(prefs.ban_tests);
@@ -312,7 +311,7 @@ fn read_document(path: &Path) -> Result<DocumentMut> {
         .map_err(|error| Error::Config(format!("config.toml: {error}")))
 }
 
-pub(crate) fn sandbox_entry(path: &Path) -> String {
+pub fn tilde(path: &Path) -> String {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from);
@@ -321,11 +320,20 @@ pub(crate) fn sandbox_entry(path: &Path) -> String {
     {
         let rest = rest.to_string_lossy();
         if rest.is_empty() {
-            return "~/".to_string();
+            return "~".to_string();
         }
         return format!("~/{rest}");
     }
     path.display().to_string()
+}
+
+pub(crate) fn sandbox_entry(path: &Path) -> String {
+    let entry = tilde(path);
+    if entry == "~" {
+        "~/".to_string()
+    } else {
+        entry
+    }
 }
 
 pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {

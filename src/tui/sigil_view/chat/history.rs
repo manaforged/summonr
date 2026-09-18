@@ -4,10 +4,7 @@ use super::super::app::App;
 use super::super::input::Input;
 use super::super::model::{Entry, Model};
 use super::chrome::line_width;
-use super::{
-    Line, Span, accent, agent_strip_rows, body_rows, canvas, margin, overlay_rows, palette,
-    transcript,
-};
+use super::{Line, Span, accent, canvas, margin, palette, transcript};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::tui::sigil_view) struct Anchor {
@@ -44,6 +41,21 @@ pub(in crate::tui::sigil_view) struct History {
 }
 
 impl History {
+    pub(in crate::tui::sigil_view) fn diff_hit(
+        &self,
+        line: usize,
+        col: usize,
+    ) -> Option<crate::prefs::DiffLayout> {
+        let mut x = 0;
+        for span in &self.lines.get(line)?.spans {
+            let end = x + sigil_tui::cell_width(&span.text);
+            if (x..end).contains(&col) {
+                return span.diff_layout;
+            }
+            x = end;
+        }
+        None
+    }
     pub(in crate::tui::sigil_view) fn anchor(&self, position: f32) -> Option<Anchor> {
         self.lines
             .get((position / canvas::cell().h) as usize)
@@ -65,25 +77,14 @@ impl History {
         &mut self,
         model: &Model,
         cols: u16,
-        rows: u16,
-        draft: &str,
+        height: u16,
         stamp: u64,
     ) -> f32 {
         let width = usize::from(cols);
         let inset = margin(width);
-        let height = usize::from(body_rows(
-            cols,
-            overlay_rows(rows),
-            draft,
-            model.busy_since.is_some(),
-        ))
-        .saturating_sub(usize::from(agent_strip_rows(
-            &model.agents,
-            model.agents_hidden,
-        )));
         self.lines(model, width.saturating_sub(inset * 2), stamp)
             .len()
-            .saturating_sub(height) as f32
+            .saturating_sub(usize::from(height)) as f32
             * canvas::cell().h
     }
 
@@ -146,17 +147,13 @@ impl History {
             self.images.retain(|placed| placed.line < split);
         }
         let accent = accent(&model.prefs.theme);
-        let reasoning = model.prefs.reasoning;
-        let tools = model.prefs.tools;
-        let receipts = model.prefs.receipts;
         let mut previous_tool =
             start > 0 && matches!(&model.entries[start - 1], Entry::Tool { .. });
         for index in start..len {
             let entry = &model.entries[index];
             let separated = index > 0 && !(previous_tool && matches!(entry, Entry::Tool { .. }));
-            let (rendered, pictures) = transcript::entry_lines(
-                entry, width, accent, reasoning, tools, receipts, separated,
-            );
+            let (rendered, pictures) =
+                transcript::entry_lines(entry, width, accent, &model.prefs, separated);
             let before = self.lines.len();
             self.lines.extend(wrap(rendered, width, index, 0));
             for (row, cols, rows, source) in pictures {

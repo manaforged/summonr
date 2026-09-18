@@ -130,6 +130,7 @@ pub(crate) struct ToolRegistry {
     logs: std::sync::Mutex<Vec<tempfile::TempDir>>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::atomic::AtomicBool,
+    allowed_edits: Vec<&'static str>,
 }
 
 pub(crate) struct ToolOutput {
@@ -188,6 +189,7 @@ impl ToolRegistry {
             logs: std::sync::Mutex::new(Vec::new()),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::atomic::AtomicBool::new(false),
+            allowed_edits: Vec::new(),
         })
     }
 
@@ -218,6 +220,7 @@ impl ToolRegistry {
             .transpose()?;
         child.background = false;
         child.language = self.language;
+        child.allowed_edits.clone_from(&self.allowed_edits);
         child.skills = self.skills;
         child.set_session(session);
         Ok(child)

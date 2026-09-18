@@ -402,6 +402,20 @@ pub(super) fn shell(app: &App) -> NodeBuilder {
             event.stop_propagation();
             return;
         }
+        let cell = super::canvas::cell();
+        if !scroll.options_active()
+            && !scroll.splash.peek()
+            && scroll
+                .todo_hit(
+                    (event.position.x / cell.w).max(0.0) as usize,
+                    (event.position.y / cell.h).max(0.0) as usize,
+                )
+                .is_some()
+        {
+            scroll.scroll_todos(-lines.round() as isize);
+            event.stop_propagation();
+            return;
+        }
         if !scroll.options_active()
             && !scroll.splash.peek()
             && scroll.layout.peek().secondary.is_some()

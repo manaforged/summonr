@@ -15,6 +15,7 @@ mod composer;
 mod grid;
 mod history;
 mod surface;
+pub(super) mod todos;
 pub(crate) mod transcript;
 
 pub(super) use canvas::{Cell, rgb};
@@ -33,6 +34,7 @@ pub(super) struct Span {
     bold: bool,
     italic: bool,
     source: Option<Source>,
+    diff_layout: Option<crate::prefs::DiffLayout>,
 }
 
 #[derive(Clone)]
@@ -62,6 +64,7 @@ impl Span {
             bold: false,
             italic: false,
             source: None,
+            diff_layout: None,
         }
     }
 
@@ -73,6 +76,7 @@ impl Span {
             bold: false,
             italic: false,
             source: None,
+            diff_layout: None,
         }
     }
 
@@ -109,6 +113,7 @@ impl Span {
             bold: self.bold,
             italic: self.italic,
             source,
+            diff_layout: self.diff_layout,
         }
     }
 }

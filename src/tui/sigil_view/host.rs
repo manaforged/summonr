@@ -404,6 +404,12 @@ fn read_event(
                     if !app.options_active()
                         && !app.splash.peek()
                         && mouse.column < app.chat_cols()
+                        && app
+                            .todo_hit(usize::from(mouse.column), usize::from(mouse.row))
+                            .is_none()
+                        && app
+                            .diff_hit(usize::from(mouse.column), usize::from(mouse.row))
+                            .is_none()
                         && mouse.row
                             < super::chat::prompt_row(
                                 app.chat_cols(),

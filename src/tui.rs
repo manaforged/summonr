@@ -217,7 +217,7 @@ pub struct Info {
 }
 
 #[must_use]
-pub fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
+pub(crate) fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
     if !typed.starts_with('/') || typed.contains('\n') || typed.contains('\r') {
         return Vec::new();
     }
@@ -318,22 +318,6 @@ fn short_session(id: &str) -> String {
     id.get(start..).unwrap_or(id).to_string()
 }
 
-fn fmt_tokens(tokens: u64) -> String {
-    if tokens >= 1_000_000 {
-        format!(
-            "{:.1}m",
-            f64::from(u32::try_from(tokens).unwrap_or(u32::MAX)) / 1_000_000.0
-        )
-    } else if tokens >= 1000 {
-        format!(
-            "{:.1}k",
-            f64::from(u32::try_from(tokens).unwrap_or(u32::MAX)) / 1000.0
-        )
-    } else {
-        tokens.to_string()
-    }
-}
-
 #[cfg_attr(
     not(feature = "gui"),
     expect(
@@ -352,8 +336,8 @@ fn context(round: Option<&Round>, window: Option<u32>, compact: bool) -> String 
     }
     format!(
         "{} / {} · {}% used",
-        fmt_tokens(u64::from(used)),
-        fmt_tokens(u64::from(window)),
+        crate::provider::compact(u64::from(used)),
+        crate::provider::compact(u64::from(window)),
         percent,
     )
 }
@@ -373,7 +357,10 @@ fn tool_arg(arguments: &str) -> String {
         .iter()
         .find_map(|field| value.get(field).and_then(serde_json::Value::as_str))
         .unwrap_or("");
-    let picked = after_cd(picked);
+    let picked = after_cd(picked)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     let chars: Vec<char> = picked.chars().collect();
     if chars.len() > 46 {
         format!("{}…", chars[..45].iter().collect::<String>())

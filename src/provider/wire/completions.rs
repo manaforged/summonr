@@ -1,0 +1,210 @@
+use serde::Deserialize;
+use serde_json::{Value, json};
+use summonr_auth::Scheme;
+
+use super::{Accumulate, Chat, Delta};
+use crate::provider::{
+    AssistantMessage, CompletionRequest, StopReason, ToolCall, Usage, stream::merge_call, think,
+};
+
+pub(crate) struct Wire;
+
+impl Chat for Wire {
+    type Stream = Stream;
+
+    fn path(_model: &str, _stream: bool) -> String {
+        "/chat/completions".to_string()
+    }
+
+    fn scheme() -> Scheme {
+        Scheme::Bearer
+    }
+
+    fn sentinel() -> Option<&'static str> {
+        Some("[DONE]")
+    }
+
+    fn request(call: &CompletionRequest, stream: bool) -> Value {
+        let mut body = json!({
+            "model": call.model,
+            "stream": stream,
+        });
+        if let Some(max) = call.max_output_tokens {
+            body["max_tokens"] = json!(max);
+        }
+        if !call.tools.is_empty()
+            && let Ok(tools) = serde_json::to_value(&call.tools)
+        {
+            body["tools"] = tools;
+        }
+        if stream {
+            body["stream_options"] = json!({"include_usage": true});
+        }
+        if let Some(effort) = call.effort {
+            body["reasoning_effort"] = json!(effort.as_str());
+        }
+        body
+    }
+
+    fn parse(_model: &str, body: &Value) -> AssistantMessage {
+        let reply: Reply = serde_json::from_value(body.clone()).unwrap_or_default();
+        let mut message = reply
+            .choices
+            .into_iter()
+            .next()
+            .map(|choice| {
+                let mut message = choice.message;
+                if let Some(reason) = choice.finish_reason {
+                    message.stop_reason = reason;
+                }
+                message
+            })
+            .unwrap_or_default();
+        if let Some(counted) = reply.usage {
+            message.usage = counted;
+        }
+        message
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct Reply {
+    #[serde(default)]
+    choices: Vec<Choice>,
+    usage: Option<Usage>,
+}
+
+#[derive(Deserialize)]
+struct Choice {
+    #[serde(default)]
+    message: AssistantMessage,
+    finish_reason: Option<StopReason>,
+}
+
+#[derive(Default, Deserialize)]
+struct Frame {
+    #[serde(default)]
+    choices: Vec<FrameChoice>,
+    usage: Option<Usage>,
+    error: Option<Failure>,
+}
+
+#[derive(Deserialize)]
+struct Failure {
+    #[serde(default)]
+    message: String,
+}
+
+#[derive(Deserialize)]
+struct FrameChoice {
+    #[serde(default)]
+    delta: Piece,
+    finish_reason: Option<StopReason>,
+}
+
+#[derive(Default, Deserialize)]
+struct Piece {
+    content: Option<String>,
+    #[serde(
+        default,
+        alias = "reasoning",
+        deserialize_with = "think::reasoning_field"
+    )]
+    reasoning_content: Option<String>,
+    #[serde(default, deserialize_with = "think::vec_or_null")]
+    tool_calls: Vec<crate::provider::stream::CallDelta>,
+}
+
+#[derive(Default)]
+pub(crate) struct Stream {
+    text: String,
+    reasoning: String,
+    calls: Vec<ToolCall>,
+    named: usize,
+    think: think::Scan,
+    usage: Usage,
+    stop: StopReason,
+}
+
+impl Accumulate for Stream {
+    fn new(_model: &str) -> Self {
+        Self::default()
+    }
+
+    fn on(&mut self, frame: &Value) -> crate::error::Result<Vec<Delta>> {
+        let Ok(frame) = serde_json::from_value::<Frame>(frame.clone()) else {
+            return Ok(Vec::new());
+        };
+        if let Some(failure) = frame.error {
+            let message = if failure.message.is_empty() {
+                "the provider reported an error mid-stream".to_string()
+            } else {
+                failure.message
+            };
+            return Err(crate::error::Error::provider(
+                crate::error::ProviderFailureKind::Server,
+                message,
+            ));
+        }
+        if let Some(counted) = frame.usage {
+            self.usage = counted;
+        }
+        let mut deltas = Vec::new();
+        let Some(choice) = frame.choices.into_iter().next() else {
+            return Ok(deltas);
+        };
+        if let Some(reason) = choice.finish_reason {
+            self.stop = reason;
+        }
+        if let Some(part) = choice
+            .delta
+            .reasoning_content
+            .filter(|text| !text.is_empty())
+        {
+            self.reasoning.push_str(&part);
+            deltas.push(Delta::Thinking(part));
+        }
+        if let Some(part) = choice.delta.content.filter(|text| !text.is_empty()) {
+            let mut text = String::new();
+            let mut thought = String::new();
+            self.think.push(
+                &part,
+                |chunk| text.push_str(chunk),
+                |chunk| thought.push_str(chunk),
+            );
+            if !thought.is_empty() {
+                self.reasoning.push_str(&thought);
+                deltas.push(Delta::Thinking(thought));
+            }
+            if !text.is_empty() {
+                self.text.push_str(&text);
+                deltas.push(Delta::Text(text));
+            }
+        }
+        for part in choice.delta.tool_calls {
+            merge_call(&mut self.calls, part);
+        }
+        while let Some(call) = self.calls.get(self.named) {
+            if call.function.name.is_empty() {
+                break;
+            }
+            deltas.push(Delta::Call(call.function.name.clone()));
+            self.named += 1;
+        }
+        Ok(deltas)
+    }
+
+    fn finish(self) -> AssistantMessage {
+        AssistantMessage {
+            content: (!self.text.is_empty()).then_some(self.text),
+            tool_calls: self.calls,
+            reasoning_content: (!self.reasoning.is_empty()).then_some(self.reasoning),
+            usage: self.usage,
+            stop_reason: self.stop,
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "completions_tests.rs"]
+mod tests;

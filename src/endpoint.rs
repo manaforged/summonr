@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
+use crate::credentials::{is_device, logged_in};
 use crate::error::{Error, Result};
-use crate::provider::{Effort, Price, configured, device};
+use crate::provider::{Effort, Price};
 use crate::secret::{self, Source};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
@@ -112,7 +113,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let endpoint = resolve_inner(Some(name), None, false, false)?;
     let mut info = AuthInfo {
         name: name.to_string(),
-        device_login: endpoint.oauth.as_ref().is_some_and(device),
+        device_login: endpoint.oauth.as_ref().is_some_and(is_device),
         configured: endpoint.api_key.is_some(),
         source: endpoint.source,
         setup: preset(name)
@@ -120,9 +121,9 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             .filter(|text| !text.is_empty())
             .unwrap_or_else(|| format!("run `/login {name}` to configure an API key")),
     };
-    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| device(spec)) {
+    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| is_device(spec)) {
         info.setup = format!("run `/login {name}` for device authentication");
-        info.configured = match configured(spec, name) {
+        info.configured = match logged_in(spec, name) {
             Ok(ready) => ready,
             Err(error) => {
                 info.setup = format!("{error}; {}", info.setup);
@@ -149,7 +150,7 @@ pub fn save_key(name: &str, key: &str) -> Result<Source> {
 pub fn forget_key(name: &str) -> Result<bool> {
     let stored = secret::forget(name)?;
     let token = secret::forget(&format!("oauth:{name}"))?;
-    let legacy = crate::provider::forget_legacy(name)?;
+    let legacy = crate::secret::forget(name)?;
     let config = config::remove_key(&config::path()?, name)?;
     Ok(stored || token || legacy || config)
 }
@@ -199,7 +200,7 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
         let available = endpoint
             .oauth
             .as_ref()
-            .map_or(Ok(true), |spec| configured(spec, &endpoint.name));
+            .map_or(Ok(true), |spec| logged_in(spec, &endpoint.name));
         match available {
             Ok(true) => endpoints.push(endpoint),
             Ok(false) => {}
@@ -207,6 +208,16 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
         }
     }
     (endpoints, errors)
+}
+
+pub fn decisions_keys() -> Vec<String> {
+    let mut names: Vec<String> = PRESETS
+        .iter()
+        .filter(|row| row.wire == Wire::Decisions)
+        .flat_map(|row| row.env_keys.iter().map(|key| (*key).to_string()))
+        .collect();
+    names.dedup();
+    names
 }
 
 pub fn first_decisions() -> Option<String> {
@@ -452,6 +463,7 @@ struct Preset {
     oauth: Option<fn() -> crate::config::OAuth>,
     headers: &'static [(&'static str, &'static str)],
     wire: Wire,
+    context_window: Option<u32>,
 }
 
 const PRESETS: &[Preset] = &[
@@ -466,6 +478,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "zai-cn",
@@ -478,6 +491,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "glm",
@@ -495,6 +509,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "glm-intl",
@@ -512,6 +527,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "qwen",
@@ -524,6 +540,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "kimi",
@@ -542,6 +559,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "grok",
@@ -558,6 +576,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "copilot",
@@ -574,6 +593,7 @@ const PRESETS: &[Preset] = &[
             ("Copilot-Integration-Id", "vscode-chat"),
         ],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "openai",
@@ -586,6 +606,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "openrouter",
@@ -598,6 +619,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "jev",
@@ -613,6 +635,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Decisions,
+        context_window: Some(32_000),
     },
     Preset {
         name: "typesafe",
@@ -625,6 +648,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Decisions,
+        context_window: Some(32_000),
     },
     Preset {
         name: "together",
@@ -637,6 +661,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "groq",
@@ -649,6 +674,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "cerebras",
@@ -661,6 +687,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "mistral",
@@ -673,6 +700,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "anthropic",
@@ -688,6 +716,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[("anthropic-version", "2023-06-01")],
         wire: Wire::Anthropic,
+        context_window: None,
     },
     Preset {
         name: "gemini",
@@ -700,6 +729,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Gemini,
+        context_window: None,
     },
     Preset {
         name: "muse",
@@ -712,6 +742,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "zen",
@@ -724,6 +755,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "go",
@@ -736,6 +768,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
     Preset {
         name: "opencode",
@@ -748,6 +781,7 @@ const PRESETS: &[Preset] = &[
         oauth: None,
         headers: &[],
         wire: Wire::Completions,
+        context_window: None,
     },
 ];
 
@@ -819,7 +853,7 @@ fn builtin(name: &str) -> Option<Endpoint> {
         source: None,
         oauth: row.oauth.map(|make| make()),
         body: None,
-        context_window: None,
+        context_window: row.context_window,
         idle_timeout_secs: None,
         effort: None,
         price: None,

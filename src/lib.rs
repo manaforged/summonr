@@ -6,6 +6,7 @@ mod checkpoint;
 mod child;
 mod command;
 mod config;
+mod credentials;
 pub mod diff;
 pub(crate) mod durable;
 
@@ -59,7 +60,7 @@ pub use config::sandbox_on;
 pub use config::tilde;
 pub use durable::work::{WorkKind, WorkPhase, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, adopt_keys, auth_info, fallbacks as endpoint_fallbacks,
+    AuthInfo, Endpoint, adopt_keys, auth_info, decisions_keys, fallbacks as endpoint_fallbacks,
     first_decisions as decisions_endpoint, forget_key, is_named as is_endpoint,
     names as endpoint_names, resolve as resolve_endpoint,
     resolve_unauthed as resolve_endpoint_unauthed, save_key,

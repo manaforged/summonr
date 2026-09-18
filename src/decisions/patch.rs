@@ -40,18 +40,18 @@ pub async fn review(
     questions: &BTreeMap<String, Question>,
     budget: usize,
 ) -> Result<Vec<Decision>> {
-    let asked = futures::future::join_all(
-        changes
+    let states: Vec<serde_json::Value> = changes
+        .iter()
+        .map(|change| serde_json::Value::from(change.text.as_str()))
+        .collect();
+    let swept = super::in_flight(
+        states
             .iter()
-            .map(|change| super::sweep::sweep(endpoint, &change.text, questions, budget))
-            .collect::<Vec<_>>(),
+            .map(|state| super::sweep::sweep(endpoint, state, questions, budget))
+            .collect(),
     )
-    .await;
-    let mut decided = Vec::new();
-    for outcome in asked {
-        decided.push(outcome?.0);
-    }
-    Ok(decided)
+    .await?;
+    Ok(swept.into_iter().map(|(decision, _)| decision).collect())
 }
 
 fn severity(decision: &Decision) -> f64 {

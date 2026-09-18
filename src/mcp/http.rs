@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::rpc::{self, Frame};
 
 pub(super) struct Http {
-    client: reqwest::Client,
+    client: leyline::Session,
     url: String,
     headers: Vec<(String, String)>,
     session: Option<String>,
@@ -19,11 +19,8 @@ impl Http {
         headers: &[(String, String)],
         auth: Option<crate::provider::Auth>,
     ) -> Result<Self> {
-        let client = reqwest::Client::builder()
-            .build()
-            .map_err(|error| Error::Tool(format!("cannot build the MCP HTTP client: {error}")))?;
         Ok(Self {
-            client,
+            client: crate::credentials::http()?,
             url: url.to_string(),
             headers: headers.to_vec(),
             session: None,
@@ -51,19 +48,13 @@ impl Http {
         let id = json!(self.next);
         self.next += 1;
         let body = rpc::request(&id, method, params.clone());
-        let response = self.post(method, &params, &body).await?;
-        if let Some(session) = response
-            .headers()
-            .get("mcp-session-id")
-            .and_then(|value| value.to_str().ok())
-        {
+        let mut response = self.post(method, &params, &body).await?;
+        if let Some(session) = response.header("mcp-session-id") {
             self.session = Some(session.to_string());
         }
         let status = response.status();
         let stream = response
-            .headers()
-            .get("content-type")
-            .and_then(|value| value.to_str().ok())
+            .header("content-type")
             .is_some_and(|kind| kind.contains("text/event-stream"));
         let text = response
             .text()
@@ -97,13 +88,13 @@ impl Http {
             .unwrap_or_else(|| Err(Error::Tool(format!("`{method}` returned no response"))))
     }
 
-    async fn post(&self, method: &str, params: &Value, body: &Value) -> Result<reqwest::Response> {
+    async fn post(&self, method: &str, params: &Value, body: &Value) -> Result<leyline::Response> {
         let mut request = self
             .client
             .post(&self.url)
+            .user_agent(summonr_auth::AGENT)
             .header("Accept", "application/json, text/event-stream")
-            .header("Mcp-Method", method)
-            .json(body);
+            .header("Mcp-Method", method);
         if let Some(name) = params.get("name").and_then(Value::as_str) {
             request = request.header("Mcp-Name", name);
         }
@@ -117,8 +108,13 @@ impl Http {
             request = request.header(key, value);
         }
         if let Some(auth) = &self.auth {
-            request = request.bearer_auth(auth.token(&self.client).await?);
+            let token = auth
+                .token(&self.client)
+                .await
+                .map_err(|error| Error::Tool(error.to_string()))?;
+            request = request.bearer_auth(&token);
         }
+        let request = request.json(body);
         request
             .send()
             .await

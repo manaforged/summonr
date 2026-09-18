@@ -22,7 +22,7 @@ use crate::workflow::Role;
 
 use super::super::{Activity, Cmd, Info, Msg};
 use super::canvas::cell;
-use super::chat::{History, body_rows};
+use super::chat::History;
 use super::hit::{Hits, Target};
 use super::input::{self, Caret, Input};
 use super::model::{Entry, Model, preview};
@@ -324,25 +324,6 @@ impl App {
             }
             msg => msg,
         };
-        let reveal_plan = match &msg {
-            Msg::Event(crate::Event::Work { progress }) => {
-                self.model.borrow().ledger.is_empty()
-                    && progress
-                        .ledger
-                        .iter()
-                        .any(|line| super::model::itemized(line))
-            }
-            Msg::Event(crate::Event::ToolCall {
-                name, arguments, ..
-            }) if name == "todo" => {
-                crate::tools::todos_from_args(arguments).is_ok_and(|items| !items.is_empty())
-            }
-            Msg::Event(crate::Event::Child { event, .. }) => matches!(
-                event.as_ref(),
-                crate::Event::ToolCall { name, .. } if name == "todo"
-            ),
-            _ => false,
-        };
         if matches!(msg, Msg::Event(crate::Event::Work { .. })) {
             self.load();
         }
@@ -490,22 +471,6 @@ impl App {
                 }
             }
         }
-        if reveal_plan {
-            self.reveal_plan();
-        }
-    }
-
-    fn reveal_plan(&self) {
-        let layout = self.layout.peek();
-        if layout.secondary.is_some() {
-            return;
-        }
-        self.layout.set(Layout {
-            secondary: Some(Pane::Ledger),
-            share: 20,
-        });
-        self.constrain();
-        self.refresh();
     }
 
     pub(super) fn approval_answer(&self, token: &str) {
@@ -619,19 +584,7 @@ impl App {
     }
 
     pub(super) fn page_history(&self, direction: f32) {
-        let page = f32::from(
-            body_rows(
-                self.chat_cols(),
-                super::chat::overlay_rows(self.viewport.peek().1),
-                &self.draft.peek(),
-                self.model.borrow().busy_since.is_some(),
-            )
-            .saturating_sub(super::chat::agent_strip_rows(
-                &self.model.borrow().agents,
-                self.model.borrow().agents_hidden,
-            ))
-            .max(1),
-        ) * cell().h;
+        let page = f32::from(self.history_rows(&self.draft.peek()).max(1)) * cell().h;
         self.scroll_history(-direction * page);
     }
 
@@ -714,8 +667,7 @@ impl App {
         let extent = history.extent(
             &model,
             self.chat_cols(),
-            self.viewport.peek().1,
-            draft,
+            self.history_rows(draft),
             model.entries.stamp,
         );
         let position = if pinned {
@@ -1419,6 +1371,10 @@ impl App {
             Setting::Model => self.begin_model_edit(),
             Setting::Reasoning => self.reasoning_command(None),
             Setting::Tools => self.toggle_tools(),
+            Setting::DiffLayout => {
+                let layout = self.model.borrow().prefs.diff_layout.toggle();
+                self.set_diff_layout(layout);
+            }
             Setting::Bus => self.toggle_bus(),
             Setting::Module(index) => {
                 if let Some(module) = crate::modules::ALL.get(index) {
@@ -1537,7 +1493,7 @@ impl App {
             Hotkey::Newline => return false,
             Hotkey::Editor => self.editor_requested.set(true),
             Hotkey::Files => self.toggle_pane(Pane::Files),
-            Hotkey::Ledger => self.toggle_pane(Pane::Ledger),
+            Hotkey::Ledger => self.toggle_todos(),
             Hotkey::Diff => self.toggle_pane(Pane::Diff),
             Hotkey::Copy => self.copy_chat(None),
             Hotkey::Select => self.select.set(!self.select.peek()),
@@ -2963,7 +2919,9 @@ impl App {
     pub(super) fn reasoning_command(&self, argument: Option<&str>) {
         let mut model = self.model.borrow_mut();
         model.prefs.reasoning = match argument {
-            Some(value) => crate::prefs::Reasoning::parse(value),
+            Some(value) => {
+                crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Collapsed)
+            }
             None => model.prefs.reasoning.toggle(),
         };
         model.entries.invalidate();
@@ -2976,7 +2934,7 @@ impl App {
     pub(super) fn receipts_command(&self, argument: Option<&str>) {
         let mut model = self.model.borrow_mut();
         model.prefs.receipts = match argument {
-            Some(value) => crate::prefs::Receipts::parse(value),
+            Some(value) => crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Off),
             None => model.prefs.receipts.toggle(),
         };
         model.entries.invalidate();

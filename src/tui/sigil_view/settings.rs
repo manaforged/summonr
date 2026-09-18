@@ -585,6 +585,7 @@ pub(super) enum Setting {
     Model,
     Reasoning,
     Tools,
+    DiffLayout,
     Bus,
     Comments,
     Tests,
@@ -673,13 +674,13 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             "agent",
             Setting::Comments,
             "comments",
-            banned(prefs.ban_comments).to_string(),
+            on_off(!prefs.ban_comments).to_string(),
         ),
         (
             "agent",
             Setting::Tests,
             "tests",
-            banned(prefs.ban_tests).to_string(),
+            on_off(!prefs.ban_tests).to_string(),
         ),
     ];
     let modules = app.modules.peek();
@@ -693,6 +694,12 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     }
     rows.extend([
         ("interface", Setting::Theme, "theme", prefs.theme.clone()),
+        (
+            "interface",
+            Setting::DiffLayout,
+            "diff layout",
+            prefs.diff_layout.name().to_string(),
+        ),
         (
             "interface",
             Setting::Splash,
@@ -947,7 +954,7 @@ const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
         Hotkey::Newline => "insert newline",
         Hotkey::Editor => "open $EDITOR",
         Hotkey::Files => "toggle files",
-        Hotkey::Ledger => "toggle ledger",
+        Hotkey::Ledger => "expand or collapse tasks",
         Hotkey::Diff => "toggle diff",
         Hotkey::Copy => "copy last reply",
         Hotkey::Select => "select transcript text",
@@ -959,10 +966,6 @@ const fn hotkey_description(action: crate::prefs::Hotkey) -> &'static str {
 
 const fn on_off(value: bool) -> &'static str {
     if value { "on" } else { "off" }
-}
-
-const fn banned(value: bool) -> &'static str {
-    if value { "banned" } else { "allowed" }
 }
 
 pub(super) fn layer(

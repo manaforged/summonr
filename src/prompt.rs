@@ -29,7 +29,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
     if let Ok(prompt) = std::env::var("MAGE_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
     {
-        return prompt;
+        return format!("{prompt}\n\n{PERSISTENCE}");
     }
     let mut preamble = Vec::new();
     if let Some(home) = home {
@@ -41,6 +41,7 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
     } else {
         preamble
     };
+    parts.push(PERSISTENCE.to_string());
     if trust {
         let mut context = Vec::new();
         push_file(&mut context, &workspace.join("AGENTS.md"));
@@ -118,6 +119,14 @@ fn push_file(parts: &mut Vec<String>, path: &Path) {
     }
 }
 
+const PERSISTENCE: &str = "<persistence>
+- Continue the authorized task until it is complete. Uncertainty about finishing within this session is not a reason to stop.
+- Do not reduce scope or hand unfinished work back because the task seems too large for the remaining context.
+- Summonr automatically compacts context. Keep progress, decisions, and remaining work clear so you can continue the same task after compaction.
+- After compaction, resume from the preserved state. Compaction does not complete or cancel the task.
+- Respect user cancellation, explicit limits, and permission boundaries. If a concrete blocker requires user input, ask and continue independent work.
+</persistence>";
+
 const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You help the user by reading files, running commands, editing code, and writing new files.
 
 <tools>
@@ -130,6 +139,9 @@ Other tools may be available depending on configuration.
 
 <rules>
 - Use run_command for ls, rg, find, builds, and tests
+- When changing several places in one file, make one edit call with an edits array instead of several edit calls
+- Use write only for new files or complete rewrites
+- Put tool calls that do not need to see an earlier call's result in the same response; they run in order, so you can write a script and run it in one step
 - Make the smallest change that does the job: reuse existing code, and add no new layers, abstractions, config, or dependencies the task does not need
 - Be concise in your responses
 - Show file paths clearly when working with files

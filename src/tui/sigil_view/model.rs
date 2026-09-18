@@ -5,7 +5,7 @@ use std::time::Instant;
 use image::load_from_memory;
 use sigil::prelude::ImageSource;
 
-use crate::prefs::{Prefs, Reasoning, ToolOutput};
+use crate::prefs::{Prefs, ToolOutput, Visibility};
 use crate::tools::Event;
 
 use super::super::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
@@ -39,7 +39,7 @@ pub(super) enum Entry {
     Error(String),
     #[expect(
         dead_code,
-        reason = "nothing constructs this: the arms are unreachable, tracked in docs/api/AUDIT.md"
+        reason = "nothing constructs this: the arms are unreachable"
     )]
     Chart(Vec<Round>),
     Image {
@@ -123,6 +123,8 @@ pub(super) struct Model {
     pub(super) session: String,
     pub(super) entries: Entries,
     pub(super) ledger: Vec<String>,
+    pub(super) todos_expanded: bool,
+    pub(super) todos_offset: usize,
     pub(super) plan_current: Option<usize>,
     pub(super) plan_total: usize,
     pub(super) plan_objective: String,
@@ -168,6 +170,8 @@ impl Model {
             session: info.session.clone(),
             entries: Entries::default(),
             ledger: Vec::new(),
+            todos_expanded: false,
+            todos_offset: 0,
             plan_current: None,
             plan_total: 0,
             plan_objective: String::new(),
@@ -234,6 +238,8 @@ impl Model {
                 self.entries.clear();
                 self.tools.clear();
                 self.ledger.clear();
+                self.todos_expanded = false;
+                self.todos_offset = 0;
                 self.plan_current = None;
                 self.plan_total = 0;
                 self.plan_objective.clear();
@@ -256,7 +262,11 @@ impl Model {
             }
             Msg::OpenSettings | Msg::OpenHelp | Msg::Secret(_) => {}
             Msg::Settings(snapshot) => self.snapshot = snapshot,
-            Msg::Models { .. } | Msg::Sessions(_) | Msg::Usage(_) | Msg::Prompts { .. } | Msg::Workflow { .. } => {}
+            Msg::Models { .. }
+            | Msg::Sessions(_)
+            | Msg::Usage(_)
+            | Msg::Prompts { .. }
+            | Msg::Workflow { .. } => {}
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Peers(peers) => self.peers = peers,
             Msg::Files(files) => self.files = files,
@@ -290,6 +300,14 @@ impl Model {
             Msg::Saved { .. } => {}
             Msg::Patch { path, result, .. } => self.patch = Some((path, result)),
             Msg::Resume(_) => {}
+        }
+        if self
+            .ledger
+            .iter()
+            .all(|line| super::panes::ledger::item(line).0 == '✓')
+        {
+            self.todos_expanded = false;
+            self.todos_offset = 0;
         }
         true
     }
@@ -335,7 +353,7 @@ impl Model {
 
     fn apply_event(&mut self, event: Event) {
         match event {
-            Event::Reasoning { text } if self.prefs.reasoning == Reasoning::Off => {
+            Event::Reasoning { text } if self.prefs.reasoning == Visibility::Off => {
                 self.speed.delta(text.chars().count(), Instant::now());
                 self.live_tool = Some(("thinking".to_string(), String::new()));
             }
@@ -468,8 +486,7 @@ impl Model {
         } = &event
             && name == "todo"
         {
-            let tag: String = id.chars().take(8).collect();
-            self.apply_todos(arguments, Some(&tag));
+            self.apply_todos(arguments, Some(&crate::child::tag(id)));
         }
         let tag: String = id.chars().take(8).collect();
         let compact = ToolOutput::Compact;

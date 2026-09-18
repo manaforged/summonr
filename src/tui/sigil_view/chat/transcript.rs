@@ -9,8 +9,9 @@ use std::ops::Range;
 
 use super::super::canvas::palette;
 use super::{Line, Source, Span, blend, rgb};
-use crate::prefs::{Reasoning, Receipts, ToolOutput};
-use crate::tui::fmt_tokens;
+use crate::prefs::{DiffLayout, Prefs, ToolOutput, Visibility};
+
+mod edits;
 use crate::tui::{Round, ToolState};
 
 use super::super::model::Entry;
@@ -28,11 +29,12 @@ pub(super) fn entry_lines(
     entry: &Entry,
     width: usize,
     accent: Rgba8,
-    reasoning: Reasoning,
-    tools: ToolOutput,
-    receipts: Receipts,
+    prefs: &Prefs,
     separated: bool,
 ) -> Rendered {
+    let reasoning = prefs.reasoning;
+    let tools = prefs.tools;
+    let receipts = prefs.receipts;
     let mut lines = Vec::new();
     let mut pictures = Vec::new();
     if separated {
@@ -41,8 +43,8 @@ pub(super) fn entry_lines(
     match entry {
         Entry::User(text) => lines.extend(user(text, accent)),
         Entry::Thinking(text) => match reasoning {
-            Reasoning::Off => {}
-            Reasoning::Collapsed => {
+            Visibility::Off => {}
+            Visibility::Collapsed => {
                 lines.push(Vec::new().into());
                 let count = text.lines().count();
                 lines.push(
@@ -53,7 +55,7 @@ pub(super) fn entry_lines(
                     .into(),
                 );
             }
-            Reasoning::Expanded => {
+            Visibility::Expanded => {
                 lines.push(Vec::new().into());
                 for (index, line) in text.lines().enumerate() {
                     lines.push(
@@ -70,8 +72,8 @@ pub(super) fn entry_lines(
             }
         },
         Entry::Receipt(text) => match receipts {
-            Receipts::Off => {}
-            Receipts::Collapsed => {
+            Visibility::Off => {}
+            Visibility::Collapsed => {
                 let count = text.lines().count();
                 lines.push(
                     vec![Span::styled(
@@ -81,7 +83,7 @@ pub(super) fn entry_lines(
                     .into(),
                 );
             }
-            Receipts::Expanded => lines.extend(
+            Visibility::Expanded => lines.extend(
                 text.lines()
                     .map(|line| vec![Span::styled(line, palette().dim).italic()].into()),
             ),
@@ -103,7 +105,15 @@ pub(super) fn entry_lines(
             arg,
             state,
             output,
-        } => lines.extend(tool_lines(name, arg, state, output, tools, width)),
+        } => lines.extend(tool_lines(
+            name,
+            arg,
+            state,
+            output,
+            tools,
+            width,
+            prefs.diff_layout,
+        )),
         Entry::Verify { command, passed } => lines.push(
             vec![
                 Span::styled(
@@ -189,9 +199,10 @@ fn tool_lines(
     output: &str,
     tools: ToolOutput,
     width: usize,
+    layout: DiffLayout,
 ) -> Vec<Line> {
-    if matches!(name, "edit" | "edit_file") {
-        return edit_card(arg, state, output, tools, width);
+    if matches!(name, "edit" | "edit_file" | "write" | "write_file") {
+        return edits::card(name, arg, state, output, tools, width, layout);
     }
     let tail = tools.text(output);
     let mut lines = tool_header(name, arg, state, width);
@@ -244,94 +255,6 @@ fn tool_header(name: &str, arg: &str, state: &ToolState, width: usize) -> Vec<Li
         ],
         bg: background,
     }]
-}
-
-fn edit_card(
-    arg: &str,
-    state: &ToolState,
-    output: &str,
-    tools: ToolOutput,
-    width: usize,
-) -> Vec<Line> {
-    let mut lines = tool_header("edit", arg, state, width);
-    let limit = if tools == ToolOutput::Compact {
-        24
-    } else {
-        usize::MAX
-    };
-    let mut old = 0usize;
-    let mut new = 0usize;
-    let mut shown = 0usize;
-    let mut extra = false;
-    for line in output.lines().skip_while(|line| !line.starts_with("@@")) {
-        if shown >= limit {
-            extra = true;
-            break;
-        }
-        if let Some((from, to)) = hunk_starts(line) {
-            old = from;
-            new = to;
-            lines.push(band(
-                format!(" {line}"),
-                palette().cyan,
-                palette().tool_bg,
-                width,
-            ));
-            shown += 1;
-            continue;
-        }
-        let (row, fg, bg) = match line.as_bytes().first().copied() {
-            Some(b'+') => {
-                let row = format!(" {:>3} {:>3} + {}", "", new, &line[1..]);
-                new = new.saturating_add(1);
-                (row, palette().green, palette().diff_add_bg)
-            }
-            Some(b'-') => {
-                let row = format!(" {:>3} {:>3} - {}", old, "", &line[1..]);
-                old = old.saturating_add(1);
-                (row, palette().red, palette().diff_del_bg)
-            }
-            Some(b' ') => {
-                let row = format!(" {:>3} {:>3}   {}", old, new, &line[1..]);
-                old = old.saturating_add(1);
-                new = new.saturating_add(1);
-                (row, palette().text, palette().tool_bg)
-            }
-            _ => (format!(" {line}"), palette().gray, palette().tool_bg),
-        };
-        lines.push(band(row, fg, bg, width));
-        shown += 1;
-    }
-    if extra {
-        lines.push(band(
-            "  …".to_string(),
-            palette().gray,
-            palette().tool_bg,
-            width,
-        ));
-    }
-    if shown == 0 {
-        let tail = tools.text(output);
-        if !tail.is_empty() {
-            lines.push(band(
-                format!("  ⎿ {tail}"),
-                palette().gray,
-                palette().tool_bg,
-                width,
-            ));
-        }
-    }
-    lines
-}
-
-fn hunk_starts(line: &str) -> Option<(usize, usize)> {
-    let rest = line.strip_prefix("@@")?;
-    let minus = rest.find('-')?;
-    let after = &rest[minus + 1..];
-    let old = after.split([',', ' ']).next()?.parse().ok()?;
-    let plus = after.find('+')?;
-    let new = after[plus + 1..].split([',', ' ']).next()?.parse().ok()?;
-    Some((old, new))
 }
 
 fn band(text: String, fg: Rgba8, bg: Rgba8, width: usize) -> Line {
@@ -478,7 +401,9 @@ fn markdown_image(line: &str) -> Option<(&str, &str)> {
     let mid = rest.find("](")?;
     let alt = &rest[..mid];
     let url = rest[mid + 2..].strip_suffix(')')?;
-    let url = url.trim().trim_matches(|c| c == '<' || c == '>' || c == '"');
+    let url = url
+        .trim()
+        .trim_matches(|c| c == '<' || c == '>' || c == '"');
     Some((alt, url))
 }
 
@@ -645,10 +570,17 @@ fn paint_table(rows: &[Vec<String>], width: usize, accent: Rgba8) -> Vec<Line> {
             spans.push(Span::surface("│", palette().gray, palette().code_bg));
         }
         let pad = width.saturating_sub(cell_width(
-            &spans.iter().map(|span| span.text.as_str()).collect::<String>(),
+            &spans
+                .iter()
+                .map(|span| span.text.as_str())
+                .collect::<String>(),
         ));
         if pad > 0 {
-            spans.push(Span::surface(" ".repeat(pad), palette().gray, palette().code_bg));
+            spans.push(Span::surface(
+                " ".repeat(pad),
+                palette().gray,
+                palette().code_bg,
+            ));
         }
         out.push(Line {
             spans,
@@ -755,7 +687,8 @@ impl Stream {
         }
         self.cursor = commit;
         self.lines += committed.len();
-        self.usable = !matches!(self.fence, Some((true, _))) && self.table.as_ref().is_none_or(|t| t.sep);
+        self.usable =
+            !matches!(self.fence, Some((true, _))) && self.table.as_ref().is_none_or(|t| t.sep);
         let mut tail = Vec::new();
         if commit < text.len() {
             let mut fence = self.fence;
@@ -1262,7 +1195,7 @@ pub(in crate::tui::sigil_view) fn chart(rounds: &[Round], accent: Rgba8) -> Vec<
             Span::styled("█".repeat(hit), blend(fresh, rgb(10, 8, 20), 0.55)),
             Span::styled("█".repeat(bar.saturating_sub(hit).max(1)), fresh),
             Span::styled(
-                format!(" {}", fmt_tokens(u64::from(round.total()))),
+                format!(" {}", crate::provider::compact(u64::from(round.total()))),
                 palette().dim,
             ),
         ];
@@ -1279,7 +1212,7 @@ pub(in crate::tui::sigil_view) fn chart(rounds: &[Round], accent: Rgba8) -> Vec<
     let prompted: u64 = rounds.iter().map(|round| u64::from(round.prompt)).sum();
     let mut summary = format!(
         "Σ {} across {} round{}",
-        fmt_tokens(total),
+        crate::provider::compact(total),
         rounds.len(),
         if rounds.len() == 1 { "" } else { "s" }
     );

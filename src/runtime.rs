@@ -10,7 +10,7 @@ use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::Usage as Meter;
 use crate::error::{Error, ProviderFailureKind, Result};
 use crate::herdr::Reporter;
-use crate::policy::Policy;
+use crate::policy::{Grant, Policy};
 use crate::provider::{
     AssistantMessage, CompletionRequest, Effort, Message, Price, Provider, Role, ToolCall,
     ToolDefinition, ToolFunction, ToolKind, Usage, UserInput,
@@ -135,7 +135,7 @@ pub struct Loop<P> {
     depth: u8,
     tasks: bool,
     manual: bool,
-    asked: Vec<String>,
+    asked: Vec<Grant>,
     blocks: (usize, usize),
     spawned: BTreeMap<String, child::Spawned>,
     mailbox: (UnboundedSender<Event>, UnboundedReceiver<Event>),

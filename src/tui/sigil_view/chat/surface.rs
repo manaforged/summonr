@@ -5,13 +5,13 @@ use sigil::prelude::{
     NodeEventsExt, ObjectFit, Point, Position, container, image, node,
 };
 
-use super::super::{app::App, hit, model::Model, suggest, view};
+use super::super::{app::App, hit, suggest, view};
 use super::chrome::{cache_meter, context_meter, line_width, status};
 use super::composer::composer_offset;
 use super::grid::{grid, stamp_menu};
 use super::{
-    Cell, FOOTER_GAP, FOOTER_PAD, FOOTER_ROWS, Run, accent, agent_strip_rows, approval_row,
-    body_rows, canvas, margin, overlay_rows, prompt_row, render, runs, transcript, write_line_at,
+    Cell, FOOTER_GAP, FOOTER_PAD, FOOTER_ROWS, Run, accent, approval_row, canvas, margin,
+    overlay_rows, prompt_row, render, runs, transcript, write_line_at,
 };
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -55,6 +55,18 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             let cell = canvas::cell();
             let col = (event.position.x / cell.w).max(0.0) as usize;
             let row = (event.position.y / cell.h).max(0.0) as usize;
+            if let Some(header) = press.todo_hit(col, row) {
+                if header {
+                    press.toggle_todos();
+                }
+                event.stop_propagation();
+                return;
+            }
+            if let Some(layout) = press.diff_hit(col, row) {
+                press.set_diff_layout(layout);
+                event.stop_propagation();
+                return;
+            }
             match press.hits.at(col, row) {
                 Some(target @ (hit::Target::Context | hit::Target::Cache)) => {
                     press.toggle_meter(target);
@@ -105,7 +117,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .enumerate()
                 .map(|(index, cells)| keyed(index, cells))
                 .collect::<Vec<_>>();
-            nodes.extend(pictures(&app.model.borrow(), &app, cols, rows));
+            nodes.extend(pictures(&app, cols, rows));
             nodes
         })
 }
@@ -200,22 +212,13 @@ fn keyed(index: usize, cells: &[Cell]) -> (Key, Box<dyn IntoNode>) {
     )
 }
 
-fn pictures(model: &Model, app: &App, cols: u16, rows: u16) -> Vec<(Key, Box<dyn IntoNode>)> {
+fn pictures(app: &App, cols: u16, rows: u16) -> Vec<(Key, Box<dyn IntoNode>)> {
     let width = usize::from(cols);
     if width == 0 || usize::from(rows) < 5 {
         return Vec::new();
     }
     let content_left = margin(width);
-    let body_height = usize::from(body_rows(
-        cols,
-        rows,
-        &app.draft.peek(),
-        model.busy_since.is_some(),
-    ))
-    .saturating_sub(usize::from(agent_strip_rows(
-        &model.agents,
-        model.agents_hidden,
-    )));
+    let body_height = usize::from(app.history_rows(&app.draft.peek()));
     let history = app.history.borrow();
     let max_start = history.lines.len().saturating_sub(body_height);
     let start = ((app.scroll_y.peek() / canvas::cell().h) as usize).min(max_start);

@@ -7,8 +7,8 @@ use super::super::{
 use super::chrome::{cache_card, context_card, header};
 use super::composer::{self, Prompt, attachment_line, busy_line, empty_hint, prompt_rows};
 use super::{
-    Cell, Span, accent, agent_strip_rows, approval_row, body_rows, busy_status, canvas, cell_width,
-    ellipsize, margin, palette, prompt_row, secret_row, write_line_at,
+    Cell, Span, accent, agent_strip_rows, approval_row, busy_status, canvas, cell_width, ellipsize,
+    margin, palette, prompt_row, secret_row, todos, write_line_at,
 };
 
 pub(super) fn grid(
@@ -42,8 +42,7 @@ pub(super) fn grid(
     let prompt = usize::from(prompt_row(cols, rows, draft));
     let busy = busy_status(model);
     let strip = usize::from(agent_strip_rows(&model.agents, model.agents_hidden));
-    let body_height =
-        usize::from(body_rows(cols, rows, draft, busy.is_some())).saturating_sub(strip);
+    let body_height = usize::from(app.history_rows(draft));
     let mut history = app.history.borrow_mut();
     let visible = history.lines(model, content_width, model.entries.stamp);
     let max_start = visible.len().saturating_sub(body_height);
@@ -101,6 +100,7 @@ pub(super) fn grid(
             );
         }
     }
+    todos::draw(&mut cells, model, app, cols, rows, 2 + body_height + strip);
     let status_row = prompt.saturating_sub(1);
     if let Some(status) = &busy {
         write_line_at(

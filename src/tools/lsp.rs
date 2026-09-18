@@ -11,10 +11,9 @@ use tokio::process::{Child, Command};
 
 use crate::error::{Error, Result};
 use crate::language;
+use crate::rpc;
 
-use super::{
-    ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args, workspace,
-};
+use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args};
 
 const LSP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 
@@ -207,29 +206,12 @@ impl Conn {
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
-        write_msg(
-            &mut self.writer,
-            &json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "method": method,
-                "params": params
-            }),
-        )
-        .await?;
+        write_msg(&mut self.writer, &rpc::request(&json!(id), method, params)).await?;
         self.pump(id).await
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
-        write_msg(
-            &mut self.writer,
-            &json!({
-                "jsonrpc": "2.0",
-                "method": method,
-                "params": params
-            }),
-        )
-        .await
+        write_msg(&mut self.writer, &rpc::notification(method, params)).await
     }
 
     async fn pump(&mut self, want: i64) -> Result<Value> {
@@ -240,10 +222,7 @@ impl Conn {
                 continue;
             }
             if msg.get("id") == Some(&Value::from(want)) {
-                if let Some(error) = msg.get("error") {
-                    return Err(Error::Tool(format!("lsp: {error}")));
-                }
-                return Ok(msg.get("result").cloned().unwrap_or(Value::Null));
+                return rpc::outcome("lsp", msg.get("result").cloned(), msg.get("error").cloned());
             }
         }
     }
@@ -265,11 +244,7 @@ impl Conn {
             "window/workDoneProgress/create" | "client/registerCapability" => Value::Null,
             _ => Value::Null,
         };
-        write_msg(
-            &mut self.writer,
-            &json!({ "jsonrpc": "2.0", "id": id, "result": result }),
-        )
-        .await
+        write_msg(&mut self.writer, &rpc::response(&id, result)).await
     }
 
     fn kill(&mut self) {
@@ -828,7 +803,7 @@ impl ToolRegistry {
                         Error::Tool(format!("cannot read {}: {error}", dest.display()))
                     })?;
                     let edited = apply_text_edits(&original, &edits)?;
-                    workspace::atomic_write(&dest, &self.relative(&dest)?, &edited)?;
+                    drop(self.atomic_write(&dest, &self.relative(&dest)?, &edited)?);
                     names.push(self.relative(&dest)?);
                 }
                 Change::Create { uri } => {
@@ -840,7 +815,7 @@ impl ToolRegistry {
                         })?;
                     }
                     if !dest.exists() {
-                        workspace::atomic_write(&dest, &self.relative(&dest)?, "")?;
+                        drop(self.atomic_write(&dest, &self.relative(&dest)?, "")?);
                     }
                     names.push(self.relative(&dest)?);
                 }

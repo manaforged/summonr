@@ -4,6 +4,11 @@ use std::path::Path;
 use crate::config;
 use crate::error::{Error, Result};
 
+mod diff;
+mod edit;
+pub use diff::DiffLayout;
+pub(crate) use edit::banned_edit;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
 pub enum Hotkey {
@@ -141,7 +146,7 @@ impl Hotkeys {
             .find(|action| self.key(*action) == key)
     }
 
-    pub fn assign(&mut self, action: Hotkey, key: char) -> bool {
+    pub(crate) fn assign(&mut self, action: Hotkey, key: char) -> bool {
         if !available(key) {
             return false;
         }
@@ -215,15 +220,14 @@ impl ToolOutput {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Reasoning {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Visibility {
     Off,
-    #[default]
     Collapsed,
     Expanded,
 }
 
-impl Reasoning {
+impl Visibility {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
@@ -243,48 +247,12 @@ impl Reasoning {
     }
 
     #[must_use]
-    pub fn parse(value: &str) -> Self {
+    pub fn parse(value: &str, fallback: Self) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "off" | "false" | "hidden" => Self::Off,
-            "expanded" | "on" | "true" | "shown" => Self::Expanded,
-            _ => Self::Collapsed,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum Receipts {
-    #[default]
-    Off,
-    Collapsed,
-    Expanded,
-}
-
-impl Receipts {
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Off => "off",
-            Self::Collapsed => "collapsed",
-            Self::Expanded => "expanded",
-        }
-    }
-
-    #[must_use]
-    pub fn toggle(self) -> Self {
-        match self {
-            Self::Off => Self::Collapsed,
-            Self::Collapsed => Self::Expanded,
-            Self::Expanded => Self::Off,
-        }
-    }
-
-    #[must_use]
-    pub fn parse(value: &str) -> Self {
-        match value.trim().to_ascii_lowercase().as_str() {
             "collapsed" => Self::Collapsed,
-            "expanded" | "on" | "true" => Self::Expanded,
-            _ => Self::Off,
+            "expanded" | "on" | "true" | "shown" => Self::Expanded,
+            _ => fallback,
         }
     }
 }
@@ -301,9 +269,10 @@ pub struct Prefs {
     pub splash: bool,
     pub animations: bool,
     pub fps: u32,
-    pub reasoning: Reasoning,
-    pub receipts: Receipts,
+    pub reasoning: Visibility,
+    pub receipts: Visibility,
     pub tools: ToolOutput,
+    pub diff_layout: DiffLayout,
     pub bus: bool,
     pub ban_comments: bool,
     pub ban_tests: bool,
@@ -319,9 +288,10 @@ impl Default for Prefs {
             splash: true,
             animations: true,
             fps: FPS_DEFAULT,
-            reasoning: Reasoning::Collapsed,
-            receipts: Receipts::Off,
+            reasoning: Visibility::Collapsed,
+            receipts: Visibility::Off,
             tools: ToolOutput::Compact,
+            diff_layout: DiffLayout::Split,
             bus: true,
             ban_comments: false,
             ban_tests: false,
@@ -332,7 +302,7 @@ impl Default for Prefs {
     }
 }
 
-pub fn load_from(path: &Path) -> Result<Prefs> {
+pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
     let file = config::load_from(path)?;
     let mut prefs = Prefs {
         hotkeys: Hotkeys::configured(&file.hotkeys)?,
@@ -352,16 +322,16 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
     }
     match file.reasoning {
         Some(crate::config::ReasoningSetting::Flag(true)) => {
-            prefs.reasoning = Reasoning::Expanded;
+            prefs.reasoning = Visibility::Expanded;
         }
-        Some(crate::config::ReasoningSetting::Flag(false)) => prefs.reasoning = Reasoning::Off,
+        Some(crate::config::ReasoningSetting::Flag(false)) => prefs.reasoning = Visibility::Off,
         Some(crate::config::ReasoningSetting::Text(text)) => {
-            prefs.reasoning = Reasoning::parse(&text);
+            prefs.reasoning = Visibility::parse(&text, Visibility::Collapsed);
         }
         None => {}
     }
     if let Some(receipts) = file.receipts.as_deref() {
-        prefs.receipts = Receipts::parse(receipts);
+        prefs.receipts = Visibility::parse(receipts, Visibility::Off);
     }
     if let Some(tools) = file.tools {
         prefs.tools = if tools == "full" {
@@ -369,6 +339,9 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
         } else {
             ToolOutput::Compact
         };
+    }
+    if let Some(layout) = file.diff_layout {
+        prefs.diff_layout = layout;
     }
     if let Some(layout) = file.layout {
         prefs.layout = layout;
@@ -388,7 +361,7 @@ pub fn load_from(path: &Path) -> Result<Prefs> {
     Ok(prefs)
 }
 
-pub fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
+pub(crate) fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
     config::save_prefs(path, prefs)
 }
 
@@ -406,65 +379,4 @@ pub fn path() -> Option<std::path::PathBuf> {
 
 pub fn load() -> Result<Prefs> {
     load_from(&config::path()?)
-}
-
-pub(crate) fn banned_edit(
-    dest: &Path,
-    before: &str,
-    after: &str,
-) -> Option<(&'static str, String)> {
-    let prefs = load().unwrap_or_default();
-    if prefs.ban_tests && test_surface(dest, before, after) {
-        return Some(("tests", dest.display().to_string()));
-    }
-    if prefs.ban_comments
-        && let Some(line) = added_comment(dest, before, after)
-    {
-        return Some(("comments", line));
-    }
-    None
-}
-
-fn test_surface(dest: &Path, before: &str, after: &str) -> bool {
-    let name = dest
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    let path = dest.to_string_lossy();
-    if name.ends_with("_tests.rs") || name.starts_with("test_") || path.contains("/tests/") {
-        return true;
-    }
-    ["#[test]", "#[cfg(test)]"]
-        .iter()
-        .any(|marker| after.contains(marker) && !before.contains(marker))
-}
-
-fn added_comment(dest: &Path, before: &str, after: &str) -> Option<String> {
-    let extension = dest
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .unwrap_or_default();
-    let markers: &[&str] = if matches!(
-        extension,
-        "rs" | "ts" | "tsx" | "js" | "go" | "wgsl" | "glsl"
-    ) {
-        &["//", "/*"]
-    } else if matches!(extension, "py" | "sh" | "bash" | "zsh") {
-        &["#"]
-    } else {
-        return None;
-    };
-    let have: std::collections::HashSet<&str> = before.lines().collect();
-    for line in after.lines() {
-        let text = line.trim_start();
-        let directive =
-            text.starts_with("#!") || text.contains("coding:") || text.contains("coding=");
-        if !directive
-            && markers.iter().any(|marker| text.starts_with(marker))
-            && !have.contains(line)
-        {
-            return Some(text.chars().take(80).collect());
-        }
-    }
-    None
 }

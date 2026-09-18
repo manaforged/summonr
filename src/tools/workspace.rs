@@ -1,13 +1,11 @@
-use std::io::{BufReader, Read, Write};
+use std::io::{BufReader, Read};
 use std::path::{Path, PathBuf};
 
 use regex::Regex;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::hashline::{
-    dirty_span, line_hash, resolve_span, tagged_lines, tagged_span, tagged_text,
-};
+use crate::hashline::{line_hash, resolve_span, tagged_lines, tagged_span};
 use crate::provider::{Image, Source, UserInput};
 
 use super::{
@@ -15,12 +13,13 @@ use super::{
 };
 use crate::SKIP_DIRS;
 
+mod write;
+
 const READ_DEFAULT_LIMIT: usize = 2000;
 const READ_PAGE_BYTES: usize = 50 * 1024;
 const READ_MAX_LIMIT: usize = 1000;
 const READ_MAX_BYTES: usize = 2 * 1024 * 1024;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
-const SMALL_FILE_LINES: usize = 80;
 const LIST_MAX: usize = 200;
 const GREP_DEFAULT: usize = 50;
 const GREP_MAX: usize = 200;
@@ -162,89 +161,7 @@ impl ToolRegistry {
 
     pub(super) async fn edit_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("edit_file", arguments)?;
-        if let Some(files) = args.get("files").and_then(Value::as_array) {
-            return self.edit_files(files).await;
-        }
         self.apply_edit("edit_file", &args).await
-    }
-
-    /// Apply one edit per named file. Every file is read and its edit resolved
-    /// before any write, so a bad tag leaves the whole batch untouched.
-    async fn edit_files(&self, files: &[Value]) -> Result<ToolOutput> {
-        struct Prepared {
-            display: String,
-            dest: PathBuf,
-            original: String,
-            edited: String,
-            endings: Vec<&'static str>,
-        }
-        if files.is_empty() {
-            return Err(Error::Tool("files is empty".to_string()));
-        }
-        let mut prepared = Vec::with_capacity(files.len());
-        let mut moves: Vec<(String, String)> = Vec::new();
-        for file in files {
-            let path = nonempty_path(file, "edit")?.to_string();
-            if let Some(to) = move_target(file) {
-                moves.push((path, to.to_string()));
-                continue;
-            }
-            let dest = self.resolve_existing(&path)?;
-            self.check_write(&dest)?;
-            let raw = std::fs::read_to_string(&dest)
-                .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-            if raw.is_empty() {
-                return Err(Error::Tool(format!(
-                    "`{path}` is empty — there is no line to anchor an edit; use write"
-                )));
-            }
-            let endings = terminators(&raw);
-            let original = raw.replace("\r\n", "\n");
-            let edited = match file.get("edits").and_then(Value::as_array) {
-                Some(ops) if !ops.is_empty() => apply_many(&original, ops)?,
-                Some(_) => return Err(Error::Tool("edits is empty".to_string())),
-                None => apply_one(&original, file)
-                    .map_err(|error| edit_error_context(error, &original, file))?,
-            };
-            prepared.push(Prepared {
-                display: path,
-                dest,
-                original,
-                edited,
-                endings,
-            });
-        }
-        let mut out = String::new();
-        for item in &prepared {
-            let edited = restore(&item.endings, &item.original, &item.edited);
-            atomic_write(&item.dest, &item.display, &edited)?;
-            out.push_str(&format!(
-                "edited {}\n{}",
-                item.display,
-                edit_view(&item.original, &edited)
-            ));
-            if let Some(diff) = crate::hashline::diff_hunk(&item.original, &edited) {
-                out.push('\n');
-                out.push_str(&diff);
-            }
-            out.push('\n');
-        }
-        for item in &prepared {
-            if let Some(check) = self.check_after_edit(&item.dest).await {
-                out.push_str(&check.text);
-                out.push('\n');
-            }
-        }
-        for (path, to) in &moves {
-            out.push_str(&self.move_file(path, to).await?);
-            out.push('\n');
-        }
-        Ok(ToolOutput {
-            text: out,
-            success: true,
-            mutated: true,
-            grant: None,
-        })
     }
 
     /// Rename or move one file, creating the destination's parent directories.
@@ -306,12 +223,8 @@ impl ToolRegistry {
                 .map_err(|error| edit_error_context(error, &original, args))?,
         };
         let edited = restore(&endings, &original, &edited);
-        atomic_write(&dest, path, &edited)?;
-        let mut out = format!("edited {path}\n{}", edit_view(&original, &edited));
-        if let Some(diff) = crate::hashline::diff_hunk(&original, &edited) {
-            out.push('\n');
-            out.push_str(&diff);
-        }
+        let preview = self.atomic_write(&dest, path, &edited)?;
+        let mut out = format!("edited {path}\n{preview}");
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -340,19 +253,11 @@ impl ToolRegistry {
             std::fs::create_dir_all(parent)
                 .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
         }
-        atomic_write(&dest, path, content)?;
-        let lines = content.lines().count();
-        let view = if lines <= SMALL_FILE_LINES {
-            tagged_text(content)
-        } else {
-            let tail = lines.saturating_sub(11);
-            format!(
-                "{}\n…\n{}",
-                tagged_span(content, 0, 19),
-                tagged_span(content, tail, usize::MAX)
-            )
-        };
-        let mut out = format!("wrote {path} ({lines} lines)\n{view}");
+        let preview = self.atomic_write(&dest, path, content)?;
+        let mut out = format!(
+            "wrote {path} ({} lines)\n{preview}\n",
+            content.lines().count()
+        );
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -398,9 +303,9 @@ impl ToolRegistry {
                     Error::Tool(format!("cannot create `{}`: {error}", item.display))
                 })?;
             }
-            atomic_write(&item.dest, &item.display, &item.content)?;
+            let preview = self.atomic_write(&item.dest, &item.display, &item.content)?;
             out.push_str(&format!(
-                "wrote {} ({} lines)\n",
+                "wrote {} ({} lines)\n{preview}\n",
                 item.display,
                 item.content.lines().count()
             ));
@@ -612,43 +517,6 @@ fn format_directory(path: &str, dir: &Path) -> Result<String> {
     Ok(out)
 }
 
-pub(super) fn atomic_write(dest: &Path, display: &str, content: &str) -> Result<()> {
-    let before = std::fs::read_to_string(dest).unwrap_or_default();
-    if let Some((option, detail)) = crate::prefs::banned_edit(dest, &before, content) {
-        return Err(Error::Denied(format!(
-            "{detail} is banned by the `{option}` option in options; remove it or turn the option off"
-        )));
-    }
-    let parent = dest
-        .parent()
-        .ok_or_else(|| Error::Tool(format!("cannot write `{display}` without a parent")))?;
-    let existing_mode = match std::fs::metadata(dest) {
-        Ok(metadata) => Some(metadata.permissions()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => {
-            return Err(Error::Tool(format!(
-                "cannot inspect `{display}` permissions: {error}"
-            )));
-        }
-    };
-    let mut temp = tempfile::Builder::new()
-        .prefix(".mage-tmp-")
-        .tempfile_in(parent)
-        .map_err(|error| Error::Tool(format!("cannot prepare `{display}`: {error}")))?;
-    temp.write_all(content.as_bytes())
-        .map_err(|error| Error::Tool(format!("cannot write `{display}`: {error}")))?;
-    if let Some(permissions) = existing_mode {
-        temp.as_file()
-            .set_permissions(permissions)
-            .map_err(|error| {
-                Error::Tool(format!("cannot preserve `{display}` permissions: {error}"))
-            })?;
-    }
-    temp.persist(dest)
-        .map(|_| ())
-        .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))
-}
-
 fn decode(path: &str, index: usize, raw: &[u8], partial: bool) -> Result<(String, bool)> {
     let mut raw = raw;
     if raw.last() == Some(&b'\r') {
@@ -803,17 +671,6 @@ fn move_target(args: &Value) -> Option<&str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|to| !to.is_empty())
-}
-
-fn edit_view(before: &str, after: &str) -> String {
-    let lines = after.lines().count();
-    if lines <= SMALL_FILE_LINES {
-        return tagged_text(after);
-    }
-    let (first, last) = dirty_span(before, after);
-    let from = first.saturating_sub(2);
-    let to = last.saturating_add(2);
-    tagged_span(after, from, to)
 }
 
 fn grep_file(

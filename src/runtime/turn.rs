@@ -705,11 +705,13 @@ impl<P: Provider> Loop<P> {
             self.schema = None;
         }
         self.tools.set_read_only(read_only);
+        if self.depth == 0 {
+            self.tools.reset_edits();
+            self.asked.retain(|grant| !matches!(grant, Grant::Edit(_)));
+        }
         self.summary_failed = false;
         self.guard = super::guard::Guard::default();
-        self.turn_started = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
+        self.turn_started = crate::bus::now();
         let commands = self.verify.clone().unwrap_or_default();
         if self.is_plan() {
             self.session
@@ -1220,7 +1222,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Result<ToolOutput>> {
-        for _ in 0..2 {
+        for _ in 0..4 {
             let Some(grant) = needed_grant(&output) else {
                 break;
             };
@@ -1229,13 +1231,13 @@ impl<P: Provider> Loop<P> {
             }
             let persist = matches!(grant, Grant::Write(_));
             let question = grant.prompt();
-            if self.asked.contains(&question) {
+            if self.asked.contains(&grant) {
                 break;
             }
             if !self.manual
                 && !matches!(
                     grant,
-                    Grant::Guarded(_) | Grant::Command(_) | Grant::Danger(_)
+                    Grant::Guarded(_) | Grant::Command(_) | Grant::Danger(_) | Grant::Edit(_)
                 )
             {
                 self.apply_grant(&grant, false, events, emit)?;
@@ -1278,10 +1280,17 @@ impl<P: Provider> Loop<P> {
                     super::approval::Verdict::Ask(_) => {}
                 }
             }
+            if let Grant::Edit(setting) = &grant
+                && self.edit_requested(setting).await
+            {
+                self.apply_grant(&grant, false, events, emit)?;
+                output = self.tools.execute_outcome(call).await;
+                continue;
+            }
             if self.steer_shared.is_none() {
                 break;
             }
-            self.asked.push(question.clone());
+            self.asked.push(grant.clone());
             match self.approve(question, persist, events, emit).await? {
                 GrantAnswer::Deny => break,
                 GrantAnswer::Allow => self.apply_grant(&grant, false, events, emit)?,
@@ -1322,6 +1331,16 @@ impl<P: Provider> Loop<P> {
                 self.push_event(events, emit, Event::Note { text })?;
             }
             Grant::Danger(_) => self.tools.approve_once(),
+            Grant::Edit(setting) => {
+                self.tools.allow_edit(setting);
+                self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: format!("{setting} allowed for this task"),
+                    },
+                )?;
+            }
             Grant::Command(command) => {
                 self.tools.approve_once();
                 self.push_event(
@@ -1507,19 +1526,7 @@ impl<P: Provider> Loop<P> {
             Ok(output) => (output.success, output.mutated, output.text),
             Err(error) => (false, false, error.to_string()),
         };
-        let mut text =
-            self.guard
-                .observe(&call.function.name, &call.function.arguments, success, text);
-        let payload = serde_json::json!({
-            "event": "post_tool",
-            "tool": call.function.name,
-            "arguments": super::hooks::arguments(&call.function.arguments),
-            "success": success,
-            "output": text,
-        });
-        if let Some(note) = self.hook(self.hooks.post_tool.clone(), payload).await {
-            text = format!("{text}\n[post_tool hook: {note}]");
-        }
+        let text = self.tool_text(&call, success, text).await;
         self.session
             .finish_tools(&[(planned, text.as_str(), success, millis)])
             .map_err(super::session_err)?;

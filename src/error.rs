@@ -41,6 +41,11 @@ pub enum Error {
     Tool(String),
     #[error("policy denied: {0}")]
     Denied(String),
+    #[error("{setting} needs approval for this task: {detail}")]
+    EditApproval {
+        setting: &'static str,
+        detail: String,
+    },
     #[error("the turn exceeded the {0}-round limit")]
     MaxRounds(usize),
 }
@@ -56,7 +61,7 @@ impl Error {
         })
     }
 
-    pub fn provider_failure(&self) -> Option<&ProviderFailure> {
+    pub(crate) fn provider_failure(&self) -> Option<&ProviderFailure> {
         match self {
             Self::Provider(failure) => Some(failure),
             _ => None,

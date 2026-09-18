@@ -21,7 +21,7 @@ const LIVE: &str = r#"{
   "usage": {"input_tokens": 479, "output_tokens": 81, "cost": 2.0118e-05}
 }"#;
 
-fn endpoint(name: &str, wire: Wire) -> Endpoint {
+pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
     Endpoint {
         name: name.to_string(),
         model: "~typesafe/jev-latest".to_string(),
@@ -161,12 +161,7 @@ fn a_full_bar_is_full_and_an_empty_one_is_empty() {
 
 #[test]
 fn a_chat_endpoint_is_refused_before_any_request_goes_out() {
-    let questions = BTreeMap::from([(
-        "q".to_string(),
-        Question::Noul {
-            instructions: "is it broken".to_string(),
-        },
-    )]);
+    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
     let error = target(&endpoint("openrouter", Wire::Completions), &questions)
         .expect_err("a chat endpoint must not reach the decisions API");
     assert!(
@@ -184,12 +179,7 @@ fn asking_nothing_is_refused() {
 
 #[test]
 fn each_decisions_provider_keeps_its_own_url() {
-    let questions = BTreeMap::from([(
-        "q".to_string(),
-        Question::Noul {
-            instructions: "is it broken".to_string(),
-        },
-    )]);
+    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
     let router = endpoint("jev", Wire::Decisions);
     let (url, key) = target(&router, &questions).unwrap();
     assert_eq!(url, "https://openrouter.ai/api/alpha/decisions");
@@ -209,22 +199,16 @@ fn the_request_keeps_the_shape_the_api_documents() {
     let questions = BTreeMap::from([
         (
             "kind".to_string(),
-            Question::Choice {
-                instructions: "classify".to_string(),
-                criteria: BTreeMap::from([("antibot".to_string(), "blocked".to_string())]),
-            },
+            Question::choice("classify", [("antibot", "blocked")]),
         ),
         (
             "severity".to_string(),
-            Question::Score {
-                instructions: "how bad".to_string(),
-                criteria: vec!["mild".to_string(), "fatal".to_string()],
-            },
+            Question::score("how bad", ["mild", "fatal"]),
         ),
     ]);
     let body = serde_json::to_value(Ask {
         model: "~typesafe/jev-latest",
-        state: "a 403",
+        state: &serde_json::Value::from("a 403"),
         questions: &questions,
     })
     .unwrap();
@@ -243,12 +227,37 @@ fn the_request_keeps_the_shape_the_api_documents() {
 }
 
 #[test]
-fn an_api_error_body_surfaces_its_message_not_its_json() {
-    let failure = message(r#"{"error":{"message":"is a decisions model","code":400}}"#);
-    assert_eq!(failure, "is a decisions model");
-    assert_eq!(classify(401), ProviderFailureKind::Authentication);
-    assert_eq!(classify(429), ProviderFailureKind::RateLimited);
-    assert_eq!(classify(503), ProviderFailureKind::Server);
+fn an_api_error_carries_the_wait_the_server_asked_for() {
+    let failure =
+        crate::provider::response_failure(429, r#"{"error":{"message":"slow down"}}"#, Some(30));
+    let Error::Provider(failure) = failure else {
+        panic!("a rate limit must classify as a provider failure");
+    };
+    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert_eq!(
+        failure.retry_after,
+        Some(30),
+        "the Retry-After header is the wait, and the caller cannot honour it if we drop it"
+    );
+    assert!(
+        failure.message.contains("slow down"),
+        "got {}",
+        failure.message
+    );
+}
+
+#[test]
+fn a_decisions_failure_classifies_like_every_other_provider_failure() {
+    for (status, expected) in [
+        (401, ProviderFailureKind::Authentication),
+        (429, ProviderFailureKind::RateLimited),
+        (529, ProviderFailureKind::Server),
+    ] {
+        let Error::Provider(failure) = crate::provider::response_failure(status, "{}", None) else {
+            panic!("status {status} did not classify");
+        };
+        assert_eq!(failure.kind, expected, "status {status}");
+    }
 }
 
 #[test]
@@ -280,12 +289,7 @@ fn any_endpoint_can_declare_itself_a_decisions_endpoint() {
 
 #[test]
 fn a_provider_this_code_has_never_heard_of_still_works() {
-    let questions = BTreeMap::from([(
-        "q".to_string(),
-        Question::Noul {
-            instructions: "is it broken".to_string(),
-        },
-    )]);
+    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
     let mut unknown = endpoint("some-future-vendor", Wire::Decisions);
     unknown.base_url = Some("https://example.invalid/v9/judge".to_string());
     unknown.model = "not-jev-at-all".to_string();
@@ -296,9 +300,69 @@ fn a_provider_this_code_has_never_heard_of_still_works() {
     );
     let body = serde_json::to_value(Ask {
         model: &unknown.model,
-        state: "s",
+        state: &serde_json::Value::from("s"),
         questions: &questions,
     })
     .unwrap();
     assert_eq!(body["model"], "not-jev-at-all");
+}
+
+#[test]
+fn a_roomier_model_is_given_the_room_it_declares() {
+    let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
+    let mut small = endpoint("small", Wire::Decisions);
+    small.context_window = Some(32_000);
+    let mut large = endpoint("jev2", Wire::Decisions);
+    large.context_window = Some(200_000);
+    assert!(
+        budget(&large, &questions) > budget(&small, &questions) * 5,
+        "a model that declares a larger context must not be windowed to the small default"
+    );
+    let unknown = endpoint("unnamed", Wire::Decisions);
+    assert_eq!(
+        budget(&unknown, &questions),
+        CONTEXT_CHARS - serde_json::to_string(&questions).unwrap().len(),
+        "a provider that declares nothing falls back, it does not get zero"
+    );
+}
+
+#[test]
+fn the_questions_are_charged_against_the_context() {
+    let one = BTreeMap::from([("q".to_string(), Question::noul("short"))]);
+    let many: BTreeMap<String, Question> = (0..40)
+        .map(|index| {
+            (
+                format!("q{index}"),
+                Question::noul("a much longer question about the state".repeat(4)),
+            )
+        })
+        .collect();
+    let seat = endpoint("any", Wire::Decisions);
+    assert!(
+        budget(&seat, &many) < budget(&seat, &one),
+        "asking more must leave less room for the state"
+    );
+}
+
+#[test]
+fn every_shipped_decisions_endpoint_names_the_key_it_needs() {
+    let keys = crate::endpoint::decisions_keys();
+    assert!(!keys.is_empty(), "the error message would name nothing");
+    assert!(
+        keys.iter().any(|key| key.ends_with("_API_KEY")),
+        "got {keys:?}"
+    );
+}
+
+#[test]
+fn an_answer_from_a_provider_with_extra_fields_still_parses() {
+    let body = r#"{"model":"other/judge-2","answers":{"kind":{"type":"choice","choice":"a",
+      "probabilities":{"a":0.9,"b":0.1},"confidence":0.9,"rationale_id":"x","latency_ms":12}},
+      "usage":{"input_tokens":1,"output_tokens":0},"trace":"abc"}"#;
+    let decision: Decision = serde_json::from_str(body).unwrap();
+    assert_eq!(decision.model, "other/judge-2");
+    assert!(
+        decision.answers.contains_key("kind"),
+        "a provider adding fields must not break the read"
+    );
 }

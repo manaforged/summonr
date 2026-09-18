@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use super::clip;
+
 const TASK_CHARS: usize = 400;
 const CLOSING_CHARS: usize = 600;
 const COMMAND_CHARS: usize = 110;
@@ -76,10 +78,10 @@ fn close(section: &str, body: &str, seen: &mut Seen) {
         return;
     }
     if section == "You" && seen.task.is_empty() {
-        seen.task = clip(text, TASK_CHARS);
+        seen.task = clip(&text.replace('\n', " "), TASK_CHARS);
     }
     if section == "Assistant" {
-        seen.closing = clip(text, CLOSING_CHARS);
+        seen.closing = clip(&text.replace('\n', " "), CLOSING_CHARS);
     }
 }
 
@@ -150,7 +152,8 @@ fn capture_output(line: &str, seen: &mut Seen) {
         && seen.errors.len() < MOST_ERRORS
         && !seen.errors.iter().any(|kept| kept == trimmed)
     {
-        seen.errors.push(clip(trimmed, COMMAND_CHARS));
+        seen.errors
+            .push(clip(&trimmed.replace('\n', " "), COMMAND_CHARS));
     }
 }
 
@@ -204,17 +207,6 @@ fn render(seen: &Seen) -> String {
     }
     out.push_str(&format!("\nclosing statement\n{}\n", seen.closing));
     out
-}
-
-fn clip(text: &str, width: usize) -> String {
-    let flat = text.replace('\n', " ");
-    if flat.chars().count() <= width {
-        return flat;
-    }
-    flat.chars()
-        .take(width.saturating_sub(1))
-        .collect::<String>()
-        + "…"
 }
 
 #[cfg(test)]

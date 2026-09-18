@@ -8,9 +8,9 @@ Two jobs:
    then the line count of every file. Writes `off/functions.tsv` and
    `off/lines.tsv`. Totals only, no rows, on stdout.
 2. Ratchet. Counts the names on `docs/api/module-api.md` under "Names we
-   delete". The counts are shrink-only against `scripts/api-census-baseline.txt`:
-   a count may fall, it may never rise. `--update` rewrites the baseline after a
-   cut lands.
+   delete", plus the source files over `CAP` lines. The counts are shrink-only
+   against `scripts/api-census-baseline.txt`: a count may fall, it may never
+   rise. `--update` rewrites the baseline after a cut lands.
 
 Item scanning matches the local callable census so the two agree.
 
@@ -82,7 +82,7 @@ SOURCE_RULES: list[tuple[str, str, str]] = [
     ("direct file write", r"fs::write\(|File::create", "store::write"),
     # Rounds 2 and 3. Each count may only fall.
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
-    ("match wildcard arm", r"_\s*(?:=>|\|\s*\w)", "name the arm"),
+    ("match wildcard arm", r"(?m)^\s*_\s*(?:=>|\|)", "name the arm"),
     ("duration literal", r"Duration::from_(?:secs|millis|micros)", "one timeout policy"),
     ("timeout mention", r"\btimeout\b", "one timeout policy"),
 ]
@@ -93,6 +93,7 @@ MANIFEST_RULES: list[tuple[str, str, str]] = [
 ]
 
 BASELINE = ROOT / "scripts" / "api-census-baseline.txt"
+CAP = 400
 
 
 def rust_files() -> list[Path]:
@@ -199,7 +200,7 @@ def tree_lines() -> list[tuple[str, str, int]]:
     return rows
 
 
-def ratchet() -> list[tuple[str, str, int]]:
+def ratchet(tree: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
     blob = "\n".join(p.read_text(errors="replace") for p in source_files())
     manifest = (ROOT / "Cargo.toml").read_text(errors="replace")
     hits = [
@@ -210,6 +211,8 @@ def ratchet() -> list[tuple[str, str, int]]:
         (label, keep, len(re.findall(pattern, manifest, re.MULTILINE)))
         for label, pattern, keep in MANIFEST_RULES
     ]
+    over = sum(1 for _, kind, lines in tree if kind == "source" and lines > CAP)
+    hits.append((f"source file over {CAP} lines", "split it", over))
     return hits
 
 
@@ -262,6 +265,7 @@ def main() -> int:
         f"lines {source_lines + test_lines}: source {source_lines} in "
         f"{len(source)} files, test {test_lines} in {len(test)} files"
     )
+    print(f"files over {CAP} lines: {sum(1 for _, k, n in source if n > CAP)}")
 
     out = ROOT / "off" / "functions.tsv"
     out.parent.mkdir(exist_ok=True)
@@ -276,7 +280,7 @@ def main() -> int:
         + "\n"
     )
 
-    hits = ratchet()
+    hits = ratchet(tree)
     live = [(label, keep, count) for label, keep, count in hits if count]
     print(f"delete-list names still present: {len(live)} of {len(hits)}")
 

@@ -4,10 +4,10 @@ use std::pin::Pin;
 use std::process::Stdio;
 use std::sync::Arc;
 
-use reqwest::Url;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
+use url::Url;
 
 use crate::error::{Error, Result};
 use crate::language;

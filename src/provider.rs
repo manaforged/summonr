@@ -11,16 +11,16 @@ use serde_json::{Value, json};
 
 use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 
-mod auth;
-pub(crate) use auth::{configured, device, forget_legacy};
+mod capture;
 mod native;
-mod stream;
-mod think;
+pub(crate) mod stream;
+pub(crate) mod think;
+mod wire;
 
-use stream::{Completion, finish};
+use stream::finish;
 
 use crate::endpoint::Wire;
-pub(crate) use auth::Auth;
+pub(crate) use summonr_auth::Auth;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -552,7 +552,8 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
 
 #[derive(Clone)]
 pub struct Client {
-    http: reqwest::Client,
+    http: leyline::Session,
+    auth_http: leyline::Session,
     url: String,
     auth: Auth,
     body: Option<Value>,
@@ -573,7 +574,7 @@ impl Client {
         }
         Self::build(
             &base_url.into(),
-            Auth::bearer(key),
+            crate::credentials::bearer(key),
             None,
             Vec::new(),
             Wire::Completions,
@@ -614,7 +615,7 @@ impl Client {
             .map_err(native::map_genai)?;
         let mut client = Self::build(
             base,
-            Auth::from_endpoint(endpoint)?,
+            crate::credentials::auth(endpoint)?,
             endpoint.body.clone(),
             headers,
             endpoint.wire,
@@ -629,14 +630,11 @@ impl Client {
         endpoint: &crate::endpoint::Endpoint,
         notice: impl FnMut(&str),
     ) -> Result<()> {
-        let auth = Auth::from_endpoint(endpoint)?;
-        let http = reqwest::Client::builder()
-            .timeout(Duration::from_secs(30))
-            .connect_timeout(Duration::from_secs(20))
-            .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")))
-            .build()
-            .map_err(|error| Error::Config(error.to_string()))?;
-        auth.login(&http, notice).await
+        let auth = crate::credentials::auth(endpoint)?;
+        let http = crate::credentials::http()?;
+        auth.login(&http, notice)
+            .await
+            .map_err(|error| Error::Config(error.to_string()))
     }
 
     fn build(
@@ -660,12 +658,11 @@ impl Client {
                 }
             }
         }
-        let mut builder = reqwest::Client::builder()
-            .connect_timeout(Duration::from_secs(20))
-            .user_agent(format!("summonr/{}", env!("CARGO_PKG_VERSION")));
-        if let Some(timeout) = idle_timeout {
-            builder = builder.read_timeout(timeout);
-        }
+        let timeouts = leyline::TimeoutConfig::new()
+            .total(Duration::from_secs(900))
+            .connect(Duration::from_secs(20))
+            .read(idle_timeout);
+        let builder = leyline::Session::builder().timeouts(timeouts);
         let mut headers = headers;
         if base.contains("opencode.ai/zen")
             && !headers
@@ -682,12 +679,12 @@ impl Client {
             .map_err(|error| Error::Config(error.to_string()))?;
         Ok(Self {
             http,
+            auth_http: crate::credentials::http()?,
             url: format!("{}/chat/completions", base.trim_end_matches('/')),
             auth,
             body,
             headers,
-            opencode: reqwest::Url::parse(base)
-                .is_ok_and(|url| url.host_str() == Some("opencode.ai")),
+            opencode: url::Url::parse(base).is_ok_and(|url| url.host_str() == Some("opencode.ai")),
             wire,
             genai,
             on_delta: None,
@@ -746,7 +743,7 @@ impl Client {
             Wire::Completions | Wire::Responses | Wire::Decisions => None,
         };
         if let Some(field) = field {
-            let mut url = reqwest::Url::parse(&format!("{base}/models/")).ok()?;
+            let mut url = url::Url::parse(&format!("{base}/models/")).ok()?;
             url.path_segments_mut()
                 .ok()?
                 .pop_if_empty()
@@ -755,7 +752,7 @@ impl Client {
             return value.get(field).and_then(tokens);
         }
         let root = base.strip_suffix("/v1").unwrap_or(base);
-        if let Ok(mut url) = reqwest::Url::parse(&format!("{root}/props")) {
+        if let Ok(mut url) = url::Url::parse(&format!("{root}/props")) {
             url.query_pairs_mut().append_pair("model", model);
             if let Ok(value) = self.get(url.to_string()).await
                 && let Some(limit) = loaded(&value)
@@ -767,16 +764,31 @@ impl Client {
         listed(&value, model)
     }
 
+    async fn token(&self) -> Result<String> {
+        self.auth
+            .token(&self.auth_http)
+            .await
+            .map_err(|error| match error {
+                summonr_auth::Error::NeedsLogin { .. } | summonr_auth::Error::Denied(_) => {
+                    Error::provider(ProviderFailureKind::Authentication, error.to_string())
+                }
+                summonr_auth::Error::Transport(detail) => {
+                    Error::provider(ProviderFailureKind::Transport, detail)
+                }
+                summonr_auth::Error::Config(detail) => Error::Config(detail),
+            })
+    }
+
     async fn get(&self, url: String) -> Result<Value> {
-        let token = self.auth.token(&self.http).await?;
-        let response = self
-            .attach(self.http.get(url), &token, None)
+        let token = self.token().await?;
+        let mut response = self
+            .attach(self.http.get(&url), &token, None)
             .send()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let status = response.status();
         if !status.is_success() {
-            let after = retry_after(response.headers());
+            let after = retry_after(&response);
             let text = response.text().await.unwrap_or_default();
             return Err(response_failure(status.as_u16(), text.trim(), after));
         }
@@ -788,24 +800,8 @@ impl Client {
     }
 
     fn request_body(&self, request: &CompletionRequest, stream: bool) -> Result<Value> {
-        let messages = wire_messages(&request.messages)?;
-        let mut body = json!({
-            "model": request.model,
-            "messages": messages,
-            "stream": stream,
-        });
-        if let Some(max) = request.max_output_tokens {
-            body["max_tokens"] = json!(max);
-        }
-        if !request.tools.is_empty() {
-            body["tools"] = serde_json::to_value(&request.tools)?;
-        }
-        if stream {
-            body["stream_options"] = json!({ "include_usage": true });
-        }
-        if let Some(effort) = request.effort {
-            body["reasoning_effort"] = json!(effort.as_str());
-        }
+        let mut body = <wire::completions::Wire as wire::Chat>::request(request, stream);
+        body["messages"] = serde_json::to_value(wire_messages(&request.messages)?)?;
         if self.url.contains("api.openai.com") {
             body["prompt_cache_key"] = json!(request.prefix_hash());
         }
@@ -836,47 +832,45 @@ impl Client {
 
     fn attach(
         &self,
-        mut request: reqwest::RequestBuilder,
+        request: leyline::RequestBuilder,
         token: &str,
         session: Option<&str>,
-    ) -> reqwest::RequestBuilder {
-        request = match self.wire {
-            Wire::Completions | Wire::Responses | Wire::Decisions => request.bearer_auth(token),
-            Wire::Anthropic => request
-                .header("x-api-key", token)
-                .header("anthropic-version", "2023-06-01"),
-            Wire::Gemini => request.header("x-goog-api-key", token),
-        };
+    ) -> leyline::RequestBuilder {
+        let mut request = crate::credentials::scheme(self.wire)
+            .apply(request.user_agent(summonr_auth::AGENT), token);
+        if self.wire == Wire::Anthropic {
+            request = request.header("anthropic-version", "2023-06-01");
+        }
         for (key, value) in self.headers(session) {
             request = request.header(key.as_str(), value.as_str());
         }
         request
     }
 
-    async fn send(&self, body: &Value, session: &str) -> Result<reqwest::Response> {
-        let response = self.post_json(body, session).await?;
+    async fn send(&self, body: &Value, session: &str) -> Result<leyline::Response> {
+        let mut response = self.post_json(body, session).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
         }
         if status.as_u16() == 401 || status.as_u16() == 403 {
             self.auth.forget_live();
-            let retry = self.post_json(body, session).await?;
+            let mut retry = self.post_json(body, session).await?;
             let code = retry.status().as_u16();
             if retry.status().is_success() {
                 return Ok(retry);
             }
-            let after = retry_after(retry.headers());
+            let after = retry_after(&retry);
             let text = retry.text().await.unwrap_or_default();
             return Err(response_failure(code, text.trim(), after));
         }
-        let after = retry_after(response.headers());
+        let after = retry_after(&response);
         let text = response.text().await.unwrap_or_default();
         Err(response_failure(status.as_u16(), text.trim(), after))
     }
 
-    async fn post_json(&self, body: &Value, session: &str) -> Result<reqwest::Response> {
-        let token = self.auth.token(&self.http).await?;
+    async fn post_json(&self, body: &Value, session: &str) -> Result<leyline::Response> {
+        let token = self.token().await?;
         self.attach(self.http.post(&self.url), &token, Some(session))
             .json(body)
             .send()
@@ -886,28 +880,26 @@ impl Client {
 
     async fn complete_once(&self, request: &CompletionRequest) -> Result<AssistantMessage> {
         let body = self.request_body(request, false)?;
-        let reply: Completion = self
+        let reply: Value = self
             .send(&body, &request.session)
             .await?
             .json()
             .await
             .map_err(|error| Error::provider(ProviderFailureKind::Malformed, error.to_string()))?;
-        let mut message = reply
-            .choices
-            .into_iter()
-            .next()
-            .map(|choice| {
-                let mut message = choice.message;
-                if let Some(reason) = choice.finish_reason {
-                    message.stop_reason = reason;
-                }
-                message
-            })
-            .ok_or_else(|| {
-                Error::provider(ProviderFailureKind::Malformed, "response has no choices")
-            })?;
-        message.usage = reply.usage.unwrap_or_default();
-        finish(message)
+        if reply
+            .get("choices")
+            .and_then(Value::as_array)
+            .is_none_or(|choices| choices.is_empty())
+        {
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                "response has no choices",
+            ));
+        }
+        finish(<wire::completions::Wire as wire::Chat>::parse(
+            &request.model,
+            &reply,
+        ))
     }
 }
 
@@ -969,17 +961,11 @@ fn tokens(value: &Value) -> Option<u32> {
         .filter(|value| *value > 0)
 }
 
-fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<u64> {
-    headers
-        .get(reqwest::header::RETRY_AFTER)?
-        .to_str()
-        .ok()?
-        .trim()
-        .parse()
-        .ok()
+pub(crate) fn retry_after(response: &leyline::Response) -> Option<u64> {
+    response.header("retry-after")?.trim().parse().ok()
 }
 
-fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
+pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
     let lower = text.to_lowercase();
     let kind = match code {
         401 | 403 => ProviderFailureKind::Authentication,

@@ -43,7 +43,7 @@ impl Client {
             .genai
             .as_ref()
             .ok_or_else(|| Error::Config("native wire is missing a genai client".to_string()))?;
-        let token = self.auth.token(&self.http).await?;
+        let token = self.token().await?;
         let target = ServiceTarget {
             endpoint: GenaiEndpoint::from_owned(self.native_base()),
             auth: AuthData::from_single(token),
@@ -52,7 +52,10 @@ impl Client {
         let chat = to_chat(request, self.wire)?;
         let options = chat_options(request.max_output_tokens, request.effort)
             .with_extra_headers(self.headers(Some(&request.session)))
-            .with_capture_raw_body(matches!(self.wire, Wire::Anthropic | Wire::Responses));
+            .with_capture_raw_body(
+                matches!(self.wire, Wire::Anthropic | Wire::Responses)
+                    || super::capture::directory().is_some(),
+            );
         if request.emit_deltas && (self.on_delta.is_some() || self.on_reasoning.is_some()) {
             return self
                 .stream_native(genai, target, chat, &options, output)
@@ -62,6 +65,11 @@ impl Client {
             .exec_chat(target, chat, Some(&options))
             .await
             .map_err(map_genai)?;
+        if let Some(sink) = super::capture::Sink::open(self.wire, "reply")
+            && let Some(raw) = response.captured_raw_body.as_ref()
+        {
+            sink.write("body", &raw.to_string());
+        }
         let blocks = if self.wire == Wire::Anthropic {
             Some(anthropic::blocks(response.captured_raw_body.as_ref())?)
         } else {
@@ -83,14 +91,21 @@ impl Client {
         let model = target.model.model_name.to_string();
         let capture = (self.wire == Wire::Anthropic)
             .then(|| Arc::new(Mutex::new(Ok(anthropic::Capture::default()))));
-        let options = if let Some(capture) = &capture {
-            let capture = Arc::clone(capture);
+        let sink = super::capture::Sink::open(self.wire, "stream");
+        let options = if capture.is_some() || sink.is_some() {
+            let capture = capture.clone();
+            let sink = sink.clone();
             options.clone().with_raw_frame_fn(move |_, frame| {
-                if let Ok(mut state) = capture.lock()
+                if let Some(sink) = &sink {
+                    sink.write("frame", frame.data);
+                }
+                if let Some(capture) = &capture
+                    && let Ok(mut state) = capture.lock()
                     && let Ok(blocks) = &mut *state
                     && let Err(error) = blocks.push(frame)
                 {
-                    *state = Err(error);
+                    let failed = Err(error);
+                    *state = failed;
                 }
             })
         } else {
@@ -204,7 +219,7 @@ impl Client {
             .genai
             .as_ref()
             .ok_or_else(|| Error::Config("native wire is missing a genai client".to_string()))?;
-        let token = self.auth.token(&self.http).await?;
+        let token = self.token().await?;
         let listed = genai
             .all_model_names(
                 kind,

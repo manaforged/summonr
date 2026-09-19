@@ -16,8 +16,8 @@ space black #000000
 space user_bg #2a2c3a
 space tool_bg #181a24
 space code_bg #1e202a
-space diff_add_bg #183020
-space diff_del_bg #381c20
+space diff_add_bg #124c1c
+space diff_del_bg #541820
 space code_comment #609466
 space code_string #e2b26a
 space code_keyword #c692e6

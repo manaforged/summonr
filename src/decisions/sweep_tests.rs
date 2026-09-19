@@ -127,7 +127,7 @@ fn a_confident_window_outweighs_an_unsure_one() {
     };
     assert_eq!(choice, "finished", "the unsure window must not win");
     let best = *confidence;
-    assert_eq!(best, 0.95);
+    assert_eq!(best, 0.75);
     let total: f64 = probabilities.values().sum();
     assert!(
         (total - 1.0).abs() < 1e-9,

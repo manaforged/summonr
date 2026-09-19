@@ -1,11 +1,15 @@
 use sigil_tui::cell_width;
 
 use super::app::App;
-use super::chat::ellipsize;
+use super::canvas::{self, Span, ellipsize, palette};
+use super::chat::{render_background, run};
 use super::model::Model;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
-use sigil::prelude::{Signal, signal};
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal,
+    Style, container, signal,
+};
 
 const LIMIT: usize = 9;
 const MIN_WIDTH: usize = 34;
@@ -181,6 +185,102 @@ pub(super) struct Menu {
     pub lines: Vec<String>,
 }
 
+pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .padding_x(super::chat::margin(full_width) as f32 * canvas::cell().w)
+                .shrink(0.0),
+        )
+        .children_reactive(move || {
+            let _panes = app.panes.get();
+            let draft = app.draft.get();
+            let caret = app.caret.get();
+            let rows = app.viewport.get().1;
+            let model = app.model.borrow();
+            if app.view_edit.get()
+                || model.busy_since.is_some()
+                || !app.commands.open(&draft, caret, &model)
+                || width < 12
+            {
+                return Vec::new();
+            }
+            let matches = app.commands.rows(&draft, caret, &model);
+            let cursor = app.commands.cursor(matches.len());
+            let limit = matches
+                .len()
+                .min(LIMIT)
+                .min(usize::from(rows / 2).saturating_sub(2));
+            if limit == 0 {
+                return Vec::new();
+            }
+            let start = cursor.saturating_add(1).saturating_sub(limit);
+            let shown = &matches[start..matches.len().min(start + limit)];
+            let popup = popup_width(&matches, width);
+            let title = if mention(&draft, caret).is_some() {
+                "mentions"
+            } else {
+                "commands"
+            };
+            let mut panel = container()
+                .layout(LayoutStyle::flex_column().width(popup as f32 * canvas::cell().w))
+                .style(Style::new().bg(palette().code_bg))
+                .child(menu_row(
+                    border(
+                        &format!(
+                            "{title} {}–{}/{}",
+                            start + 1,
+                            start + shown.len(),
+                            matches.len()
+                        ),
+                        popup,
+                        true,
+                    ),
+                    false,
+                ));
+            for (offset, (name, description)) in shown.iter().enumerate() {
+                let index = start + offset;
+                let click = app.clone();
+                panel = panel.child(
+                    menu_row(
+                        row(name, description, popup, index == cursor),
+                        index == cursor,
+                    )
+                    .pointer_down(move |event| {
+                        if event.button == Some(MouseButton::Left) {
+                            click.commands.cursor.set(index);
+                            click.accept();
+                            event.stop_propagation();
+                        }
+                    }),
+                );
+            }
+            let hint = if draft == "/" {
+                "type to search · ↑↓ · tab · esc"
+            } else {
+                "↑↓ select · tab accept · esc"
+            };
+            vec![panel.child(menu_row(border(hint, popup, false), false))]
+        })
+}
+
+fn menu_row(text: String, selected: bool) -> NodeBuilder {
+    let bg = if selected {
+        palette().user_bg
+    } else {
+        palette().code_bg
+    };
+    let fg = if selected {
+        palette().text
+    } else {
+        palette().gray
+    };
+    let mut span = Span::surface(text, fg, bg);
+    span.bold = selected;
+    render_background([span].iter().map(run), bg)
+}
+
 pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     let draft = app.draft.get();
     let caret = app.caret.get();
@@ -198,18 +298,12 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     }
     let matches = app.commands.rows(&draft, caret, &model);
     let cursor = app.commands.cursor(matches.len());
-    let splash = app.splash.peek();
-    let [left, prompt, anchor_width] = if splash {
-        super::scene::prompt_area(app, cols, rows)
-    } else {
-        [
-            2,
-            super::chat::prompt_row(app.chat_cols(), rows, &draft),
-            cols.saturating_sub(4),
-        ]
-    };
+    if !app.splash.peek() {
+        return None;
+    }
+    let [left, prompt, anchor_width] = super::scene::prompt_area(app, cols, rows);
     let composer = 3_u16;
-    let below = splash && rows > prompt.saturating_add(composer).saturating_add(2);
+    let below = rows > prompt.saturating_add(composer).saturating_add(2);
     let room = if below {
         usize::from(rows.saturating_sub(prompt.saturating_add(composer)))
     } else {
@@ -222,11 +316,7 @@ pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
     let start = cursor.saturating_add(1).saturating_sub(limit);
     let shown = &matches[start..matches.len().min(start + limit)];
     let height = shown.len() + 2;
-    let width = if splash {
-        usize::from(anchor_width)
-    } else {
-        popup_width(&matches, usize::from(cols))
-    };
+    let width = usize::from(anchor_width);
     let top = if below {
         prompt.saturating_add(composer)
     } else {

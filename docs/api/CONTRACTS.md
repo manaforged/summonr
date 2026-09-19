@@ -65,7 +65,7 @@ Messages, Gemini, `decisions`. `together`, `groq`, `cerebras`, and
 `mistral` set no default model.
 
 A `decisions` endpoint answers typed questions instead of streaming text.
-Its `base_url` is the whole URL it posts to, and `summonr decide` picks
+Its `base_url` is the whole URL it posts to, and `summonr infer` picks
 the first one that has a key. Any endpoint declares itself one with
 `wire = "decisions"` in `~/.mage/config.toml`, so a new model of this
 type needs no code change:
@@ -79,6 +79,17 @@ wire = "decisions"
 
 Chat pickers skip these rows, so a decisions endpoint is never offered
 as a chat provider.
+
+A question is a Choice, a Score or a Noul. A Choice takes 1 to 255
+options as a map of name to description and answers with the option, a
+probability for each, and a confidence. A Score takes 2 to 10 ordered
+levels and answers with a probability weighted position between them,
+the legend, and a confidence. A Noul answers with the probability that
+one statement is true and carries no confidence, because the probability
+is the certainty. Instructions, option descriptions, score levels and a
+Noul boundary each take a string, an object or an array, so options that
+are easily confused can name what they are for and what they are not.
+State takes a string, an object or an array as well.
 
 Question sets ship by name: `errors` classifies one failure, `diff`
 asks about one file of a patch, `commit` asks about a whole patch, and

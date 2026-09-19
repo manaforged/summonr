@@ -69,7 +69,12 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
         network: true,
         ..Args::default()
     };
+    let mut command_position = true;
     while let Some(arg) = input.next() {
+        let command = command_position && !args.print;
+        if !arg.starts_with('-') {
+            command_position = false;
+        }
         match arg.as_str() {
             "-p" | "--print" => {
                 if let [name] = args.prompt.as_slice()
@@ -101,11 +106,16 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--worktree" => args.worktree = true,
             "-c" | "--continue" => args.resume = true,
             "--fork" => args.fork = true,
-            "endpoints" => args.list = true,
-            "sessions" => args.list_sessions = true,
-            "logs" => args.logs = true,
-            "doctor" => args.doctor = true,
-            "decide" => args.decide = true,
+            "endpoints" if command => args.list = true,
+            "sessions" if command => args.list_sessions = true,
+            "logs" if command => args.logs = true,
+            "doctor" if command => args.doctor = true,
+            "infer" if command => args.decide = true,
+            "decide" if command => {
+                return Err(Error::Config(
+                    "use `summonr infer`; `decide` was removed".to_string(),
+                ));
+            }
             "--questions" => {
                 args.questions = Some(value(&mut input, "--questions", "JSON or @file")?);
             }
@@ -119,24 +129,30 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--eval" => args.eval = Some(value(&mut input, "--eval", "a labelled .jsonl path")?),
             "--gate" => {
                 let raw = value(&mut input, "--gate", "a confidence from 0 to 1")?;
-                args.gate = Some(raw.parse().map_err(|error| {
+                let floor: f64 = raw.parse().map_err(|error| {
                     Error::Config(format!("--gate wants a number from 0 to 1: {error}"))
-                })?);
+                })?;
+                if !(0.0..=1.0).contains(&floor) {
+                    return Err(Error::Config(
+                        "--gate wants a number from 0 to 1".to_string(),
+                    ));
+                }
+                args.gate = Some(floor);
             }
-            "export" if args.prompt.is_empty() && !args.print => args.export = true,
-            "profile" if args.prompt.is_empty() && !args.print => args.profile = true,
+            "export" if command => args.export = true,
+            "profile" if command => args.profile = true,
             "--name" => args.name = Some(value(&mut input, "--name", "a session name")?),
-            "workflows" => args.list_workflows = true,
-            "modules" => args.list_modules = true,
-            "acp" if args.prompt.is_empty() && !args.print => args.acp = true,
-            "room" if args.prompt.is_empty() && !args.print => {
+            "workflows" if command => args.list_workflows = true,
+            "modules" if command => args.list_modules = true,
+            "acp" if command => args.acp = true,
+            "room" if command => {
                 args.room = Some(input.by_ref().collect());
             }
-            "login" => args.login = true,
-            "logout" => args.logout = true,
+            "login" if command => args.login = true,
+            "logout" if command => args.logout = true,
             "--key" => args.key = true,
-            "worktrees" => args.list_worktrees = true,
-            "diff" if args.prompt.is_empty() && !args.print => args.diff = true,
+            "worktrees" if command => args.list_worktrees = true,
+            "diff" if command => args.diff = true,
             "--stat" => args.stat = true,
             "--gui" => args.gui = true,
             "--turn" => args.turn = Some(value(&mut input, "--turn", "a turn number or `last`")?),
@@ -171,11 +187,19 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             }
             "-h" | "--help" => exit_help(),
             "-V" | "--version" => exit_version(),
+            "--" => {
+                args.prompt.extend(input.by_ref());
+                break;
+            }
             option if option.starts_with('-') => {
                 return Err(Error::Config(format!("unknown option `{option}`")));
             }
-            name if args.endpoint.is_none() && is_endpoint(name) => {
+            name if args.endpoint.is_none()
+                && (command || args.login || args.logout)
+                && is_endpoint(name) =>
+            {
                 args.endpoint = Some(name.to_string());
+                command_position = command;
             }
             prompt => args.prompt.push(prompt.to_string()),
         }
@@ -254,16 +278,21 @@ fn interactive() -> String {
 fn exit_help() -> ! {
     let bin = option_env!("CARGO_BIN_NAME").unwrap_or("summonr");
     let commands = interactive();
+    let sets = summonr::decisions::sets::NAMES.join(", ");
     let endpoints = summonr::endpoint_names().map_or_else(
         |_| "the built-in endpoint names".to_string(),
         |names| names.join(", "),
     );
     println!(
-        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} profile [ID|NAME]\n  {bin} workflows\n  {bin} modules\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} acp\n  {bin} endpoints\n  {bin} login NAME [--key]\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Optional continuation-turn limit for goal mode\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.mage/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox (default)\n      --no-net         Deny network access inside the sandbox (needs --sandbox)\n      --sandbox        Contain shell commands and keep writes under the roots
+        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} profile [ID|NAME]\n  {bin} workflows\n  {bin} modules\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} acp\n  {bin} endpoints\n  {bin} infer --set NAME [STATE]\n  {bin} infer --questions @FILE [STATE]\n  {bin} login NAME [--key]\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Optional continuation-turn limit for goal mode\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.mage/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox (default)\n      --no-net         Deny network access inside the sandbox (needs --sandbox)\n      --sandbox        Contain shell commands and keep writes under the roots
       --no-sandbox     Uncontained commands and file access (the default)
       --add-dir DIR    Extra writable root (repeatable; same as [sandbox] write)\n      --no-verify      Skip the .mage/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --gui            Open the desktop window instead of the terminal (a `--features gui` build)\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short (budget, stall, impossible, abort)\n\nInteractive:\n{commands}\n  @path attach a workspace file · ctrl+e files · ctrl+l ledger · ctrl+x diff\n  ctrl+y copy reply · ctrl+t select text · ctrl+o settings · ctrl+p hide/show pane\n  ctrl+→/← focus · ctrl+shift+←/→ resize\n\nEndpoints:\n  Available endpoints: {endpoints}\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints probes them\n  {bin} login NAME  securely ask for an API key, or use device login when supported\n  {bin} login NAME --key  force an API-key prompt instead of device login\n  {bin} logout NAME  forget the stored key or token\n\nKeys: the named endpoint environment, then ~/.mage/credentials.toml (0600; `secrets = \"keychain\"` in config.toml uses the OS store), then api_key in config.toml. MAGE_API_KEY applies only with MAGE_BASE_URL.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nMuse: META_API_KEY / MODEL_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
+TypeSafe: TYPESAFE_API_KEY, or `{bin} login typesafe`.
 OpenCode: OPENCODE_API_KEY / OPENCODE_GO_API_KEY.
 Qwen needs no key. Completions seats speak OpenAI chat/completions; anthropic and gemini use native APIs. Override URLs in ~/.mage/config.toml.\nPolicy: ~/.mage/policy.toml and .mage/policy.toml both restrict access; repository rules cannot widen user permissions (see policy.example.toml).\nLong commands: run_command background true, then poll job."
+    );
+    println!(
+        "\nInference:\n  {bin} infer -e typesafe --set errors [STATE]\n  {bin} infer --noul QUESTION [STATE]\n  {bin} infer --diff\n  {bin} infer --review --session ID\n  {bin} infer --set NAME --eval FILE\n\n  --set NAME        Built-in questions: {sets}\n  --questions JSON  Custom questions as JSON or @file\n  --noul QUESTION   A yes/no question; repeat to ask several\n  --json            Print typed answers, probabilities, and usage\n  --gate NUMBER     Confidence threshold for diff ranking and evaluation\n\nState comes from arguments or stdin. Use -e to select an inference endpoint."
     );
     println!(
         "\nDiagnostics: `summonr logs` lists recent per-run JSONL files; `summonr doctor` reports incomplete or crashed runs.\n\nSandbox: off by default. Pass --sandbox, or set `on = true` under [sandbox] in ~/.mage/config.toml, to contain commands and post-edit checks with network allowed.\n\

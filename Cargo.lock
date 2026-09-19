@@ -3483,16 +3483,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "phf_codegen"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "41b585a510fb76fdebead6897982ef2a03a21d8e6cbcca904999742a4afc6ffe"
-dependencies = [
- "phf_generator",
- "phf_shared",
-]
-
-[[package]]
 name = "phf_generator"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4372,326 +4362,60 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
-name = "sigil-a11y"
+name = "sigil-gui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "accesskit",
- "crossbeam-channel",
- "sigil-hal",
- "sigil-kernel",
-]
-
-[[package]]
-name = "sigil-actions"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "sigil-actions-macros",
- "smallvec",
-]
-
-[[package]]
-name = "sigil-actions-macros"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.3",
-]
-
-[[package]]
-name = "sigil-animation"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-
-[[package]]
-name = "sigil-animation-runtime"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "sigil-animation",
- "sigil-reactive",
- "sigil-style",
-]
-
-[[package]]
-name = "sigil-app"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "accesskit",
- "crossbeam-channel",
- "notify",
- "raw-window-handle",
- "sigil-a11y",
- "sigil-animation-runtime",
- "sigil-events",
- "sigil-hal",
- "sigil-kernel",
- "sigil-layout",
- "sigil-profile",
- "sigil-reactive",
- "sigil-renderer",
- "sigil-shell",
- "sigil-style",
- "sigil-tasks",
- "sigil-text",
- "toml 1.1.5+spec-1.1.0",
- "tracing",
- "unicode-width",
- "windows-core",
-]
-
-[[package]]
-name = "sigil-bidi"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "unicode-bidi",
-]
-
-[[package]]
-name = "sigil-events"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "accesskit",
- "sigil-hal",
- "sigil-kernel",
- "sigil-layout",
- "smallvec",
-]
-
-[[package]]
-name = "sigil-hal"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "keyboard-types",
- "smol_str 0.3.6",
-]
-
-[[package]]
-name = "sigil-icons"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "lyon_geom",
- "smallvec",
- "usvg",
-]
-
-[[package]]
-name = "sigil-ide-core"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "crossbeam-channel",
- "ignore",
- "notify",
- "smallvec",
- "toml 1.1.5+spec-1.1.0",
-]
-
-[[package]]
-name = "sigil-kernel"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "accesskit",
- "ahash",
- "sigil-hal",
- "sigil-reactive",
- "slotmap",
- "smallvec",
-]
-
-[[package]]
-name = "sigil-layout"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "ahash",
- "sigil-hal",
- "sigil-kernel",
- "sigil-profile",
- "sigil-reactive",
- "sigil-style",
- "slotmap",
- "smallvec",
-]
-
-[[package]]
-name = "sigil-profile"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-
-[[package]]
-name = "sigil-reactive"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "sigil-actions",
- "smallvec",
- "tokio",
-]
-
-[[package]]
-name = "sigil-renderer"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "ahash",
- "bytemuck",
- "half",
- "pollster",
- "raw-window-handle",
- "sigil-hal",
- "sigil-icons",
- "sigil-kernel",
- "sigil-layout",
- "sigil-style",
- "sigil-text",
- "skrifa",
- "smallvec",
- "softbuffer",
- "tiny-skia 0.12.0",
- "tracing",
- "wgpu",
- "windows-core",
- "zeno",
-]
-
-[[package]]
-name = "sigil-shell"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
+source = "git+https://github.com/manaforged/sigil.git?branch=main#8130e0e766327f5a49a16d304a0c33bf87ef3462"
 dependencies = [
  "accesskit",
  "accesskit_winit",
- "crossbeam-channel",
- "sigil-hal",
- "smol_str 0.3.6",
- "winit",
-]
-
-[[package]]
-name = "sigil-style"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "phf",
- "sigil-hal",
- "sigil-kernel",
- "sigil-reactive",
- "sigil-style-macros",
- "smallvec",
- "strsim",
- "tracing",
-]
-
-[[package]]
-name = "sigil-style-macros"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "phf",
- "phf_codegen",
- "proc-macro2",
- "quote",
- "syn 3.0.3",
- "toml 1.1.5+spec-1.1.0",
-]
-
-[[package]]
-name = "sigil-tasks"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "sigil-hal",
- "sigil-reactive",
- "tokio",
-]
-
-[[package]]
-name = "sigil-text"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
  "ahash",
+ "arboard",
+ "bytemuck",
  "core-text",
+ "crossbeam-channel",
+ "half",
  "harfrust",
  "image",
- "sigil-hal",
- "sigil-reactive",
- "sigil-style",
+ "keyboard-types",
+ "lyon_geom",
+ "notify",
+ "phf",
+ "pollster",
+ "raw-window-handle",
+ "serde_json",
  "skrifa",
+ "slotmap",
  "smallvec",
+ "smol_str 0.3.6",
+ "softbuffer",
+ "strsim",
+ "tiny-skia 0.12.0",
+ "tokio",
+ "toml 1.1.5+spec-1.1.0",
  "tracing",
  "unicode-bidi",
  "unicode-linebreak",
  "unicode-script",
  "unicode-segmentation",
+ "unicode-width",
+ "usvg",
+ "wgpu",
+ "windows-core",
+ "winit",
  "zed-font-kit",
+ "zeno",
 ]
 
 [[package]]
 name = "sigil-tui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
+source = "git+https://github.com/manaforged/sigil.git?branch=main#8130e0e766327f5a49a16d304a0c33bf87ef3462"
 dependencies = [
  "crossterm",
- "sigil-animation-runtime",
- "sigil-app",
- "sigil-events",
- "sigil-hal",
- "sigil-kernel",
- "sigil-reactive",
- "sigil-style",
- "sigil-tasks",
- "sigil-widgets",
+ "sigil-gui",
  "smol_str 0.3.6",
  "unicode-segmentation",
  "unicode-width",
-]
-
-[[package]]
-name = "sigil-ui"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "arboard",
- "sigil-actions",
- "sigil-app",
- "sigil-events",
- "sigil-kernel",
- "sigil-layout",
- "sigil-profile",
- "sigil-reactive",
- "sigil-style",
- "sigil-tasks",
- "sigil-tui",
- "sigil-widgets",
-]
-
-[[package]]
-name = "sigil-widgets"
-version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=b5a7ccb23131d8b98590a7200cf75dff1a396483#b5a7ccb23131d8b98590a7200cf75dff1a396483"
-dependencies = [
- "sigil-animation-runtime",
- "sigil-bidi",
- "sigil-events",
- "sigil-kernel",
- "sigil-layout",
- "sigil-profile",
- "sigil-reactive",
- "sigil-style",
- "tiny-skia 0.12.0",
- "tracing",
- "unicode-segmentation",
 ]
 
 [[package]]
@@ -4958,19 +4682,20 @@ dependencies = [
  "dunce",
  "futures",
  "genai",
+ "ignore",
  "image",
  "keyring",
  "leyline-http",
+ "notify",
  "process-wrap",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
- "sigil-hal",
- "sigil-ide-core",
+ "sigil-gui",
  "sigil-tui",
- "sigil-ui",
  "smol_str 0.3.6",
+ "summonr-auth",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
@@ -4982,6 +4707,17 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "summonr-auth"
+version = "0.1.0"
+dependencies = [
+ "leyline-http",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -5342,12 +5078,10 @@ version = "1.1.5+spec-1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "12c0ba9680044b4ce98d391a62094047eada0d64860b80166c39f4a6b5640785"
 dependencies = [
- "indexmap 2.14.0",
  "serde_core",
  "serde_spanned 1.1.1",
  "toml_datetime 1.1.1+spec-1.1.0",
  "toml_parser",
- "toml_writer",
  "winnow 1.0.4",
 ]
 
@@ -5409,12 +5143,6 @@ name = "toml_write"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5d99f8c9a7727884afe522e9bd5edbfc91a3312b36a77b5fb8926e4c31a41801"
-
-[[package]]
-name = "toml_writer"
-version = "1.1.2+spec-1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d56353a2a665ad0f41a421187180aab746c8c325620617ad883a99a1cbe66d2"
 
 [[package]]
 name = "tower"

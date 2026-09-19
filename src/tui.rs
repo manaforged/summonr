@@ -73,7 +73,7 @@ pub enum Msg {
     View {
         path: String,
         file: PathBuf,
-        rope: sigil_ide_core::buffer::Rope,
+        text: String,
         added: Vec<(usize, usize)>,
         image: Option<Vec<u8>>,
     },

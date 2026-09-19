@@ -5,17 +5,13 @@ use std::sync::Arc;
 use regex::{Regex, RegexBuilder, escape};
 
 use super::app::App;
-use super::canvas::{Cell, palette};
-use super::chat::{accent, draft_view, ellipsize, write_at};
-use super::hit::Target;
 use super::model::{Entry, Model, entry_markdown};
 use crate::session::Prompt;
-#[cfg(feature = "gui")]
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeStyleExt, WidgetLayoutExt, classes, container, label,
-    virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, Role, WidgetLayoutExt, classes,
+    container, label, modal, signal, text_edit, virtual_list,
 };
-use sigil::prelude::{NodeBuilder, Signal, signal, text_edit};
+use sigil::prelude::{NodeBuilder, Signal};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -225,214 +221,127 @@ fn snippet(pattern: &Regex, text: &str) -> Option<String> {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.search;
-    let input = text_edit(picker.query)
-        .caret_position(picker.caret)
-        .change(move |_| picker.selected.set(0))
-        .class("w-full h-full");
-    super::settings::layer(app, grid, input)
-}
-
-#[cfg(feature = "gui")]
-pub(super) fn desktop(app: App) -> NodeBuilder {
-    let _revision = app.panes.get();
-    let picker = app.search;
-    let close = app.clone();
-    let mut body = container()
-        .layout(LayoutStyle::flex_column().fill().padding(24.0).gap(16.0))
-        .class(classes!("bg-gray-1"))
-        .child(label(picker.title()).class(classes!("text-lg text-gray-12")))
-        .child(
-            text_edit(picker.query)
-                .caret_position(picker.caret)
-                .change(move |_| picker.selected.set(0))
-                .height(48.0),
-        );
-    let rows = picker.rows(&app.model.borrow());
-    let warning = picker.warning.get();
-    if !warning.is_empty() {
-        body = body.child(label(warning).class(classes!("text-xs text-error-11")));
-    }
-    match rows {
-        Ok(rows) => {
-            let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-            if rows.is_empty() {
-                body = body.child(label("No matches. Edit the search."));
-            }
-            body = body.child(label(format!(
-                "{} match{} · ↑↓ select · enter {} · esc",
-                rows.len(),
-                if rows.len() == 1 { "" } else { "es" },
-                picker.action()
-            )));
-            let height = if picker.is_history() { 48.0 } else { 28.0 };
-            let results = virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
-                let choose = app.clone();
-                let title = if picker.is_history() {
-                    preview.clone()
-                } else {
-                    format!("{}  {preview}", entry + 1)
-                };
-                let detail = picker.detail(*entry);
-                let mut item = super::desktop::hit(title.clone(), index == selected, move || {
-                    choose.search.selected.set(index);
-                    choose.jump();
-                })
+    container().layout(LayoutStyle::block()).child(
+        modal(picker.open).title(picker.title()).trap(true).child(
+            container()
                 .layout(
                     LayoutStyle::flex_column()
+                        .gap(8.0)
                         .fill_width()
-                        .height(height)
-                        .padding_x(8.0)
-                        .gap(4.0),
+                        .fill_height(),
                 )
                 .child(
-                    label(title)
-                        .ellipsize()
-                        .class(classes!("text-sm text-gray-12")),
-                );
-                if !detail.is_empty() {
-                    item = item.child(
-                        label(detail)
-                            .ellipsize()
-                            .class(classes!("text-xs text-gray-11")),
-                    );
-                }
-                item
-            })
-            .row_height(height)
-            .viewport_fill()
-            .scroll_into_view(selected);
-            body = body.child(
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .fill_width()
-                            .grow(1.0)
-                            .min_size(0.0, 0.0),
-                    )
-                    .child(results),
-            );
-        }
-        Err(error) => body = body.child(label(error)),
-    }
-    body.child(
-        super::desktop::hit("Close search".to_string(), false, move || {
-            close.search.open.set(false);
-        })
-        .child(label("Close search")),
+                    text_edit(picker.query)
+                        .caret_position(picker.caret)
+                        .height(32.0),
+                )
+                .child(results(app, picker)),
+        ),
     )
 }
 
-fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
-    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    app.hits.clear();
-    let left = usize::from(width > 2);
-    let columns = width.saturating_sub(left * 2);
-    let model = app.model.borrow();
-    let color = accent(&model.prefs.theme);
-    write_at(
-        &mut cells,
-        width,
-        left,
-        1,
-        &ellipsize(app.search.title(), columns),
-        color,
-    );
-    let query = draft_view(
-        &app.search.query.get(),
-        app.search.caret.get(),
-        columns.saturating_sub(7),
-        '▌',
-    );
-    write_at(
-        &mut cells,
-        width,
-        left,
-        3,
-        &ellipsize(&format!("find   {query}"), columns),
-        palette().text,
-    );
-    let (rows, note) = match app.search.rows(&model) {
-        Ok(rows) => (rows, "No matches. Edit the search.".to_string()),
-        Err(error) => (Vec::new(), error),
-    };
-    let warning = app.search.warning.get();
-    let top = if warning.is_empty() { 5 } else { 7 };
-    if !warning.is_empty() {
-        write_at(
-            &mut cells,
-            width,
-            left,
-            5,
-            &ellipsize(&warning, columns),
-            palette().dim,
-        );
-    }
-    if rows.is_empty() {
-        write_at(
-            &mut cells,
-            width,
-            left,
-            top,
-            &ellipsize(&note, columns),
-            palette().dim,
-        );
-    }
-    let selected = app.search.selected.get().min(rows.len().saturating_sub(1));
-    let stride = if app.search.is_history() { 2 } else { 1 };
-    let count = height.saturating_sub(top + 2) / stride;
-    let start = super::hit::window(app, selected, rows.len(), count);
-    for (offset, (entry, preview)) in rows.iter().enumerate().skip(start).take(count) {
-        let y = top + (offset - start) * stride;
-        let marker = if offset == selected { "›" } else { " " };
-        let label = if app.search.is_history() {
-            format!("{marker} {preview}")
-        } else {
-            format!("{marker} {}  {preview}", entry + 1)
-        };
-        write_at(
-            &mut cells,
-            width,
-            left,
-            y,
-            &ellipsize(&label, columns),
-            if offset == selected {
-                color
-            } else {
-                palette().text
-            },
-        );
-        app.hits
-            .add(y, left, left + columns, Target::Search(offset));
-        if stride == 2 {
-            write_at(
-                &mut cells,
-                width,
-                left + 2,
-                y + 1,
-                &ellipsize(&app.search.detail(*entry), columns.saturating_sub(2)),
-                palette().dim,
-            );
-            app.hits
-                .add(y + 1, left, left + columns, Target::Search(offset));
-        }
-    }
-    let help = if width < 60 {
-        format!("{} · ↑↓ · enter {} · esc", rows.len(), app.search.action())
-    } else {
-        format!(
-            "{} match{} · ↑↓ select · enter {} · esc",
-            rows.len(),
-            if rows.len() == 1 { "" } else { "es" },
-            app.search.action()
+fn results(app: App, picker: Picker) -> NodeBuilder {
+    let paint = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .grow(1.0)
+                .min_size(0.0, 0.0),
         )
+        .children_reactive(move || {
+            super::view::watch(&paint);
+            let warning = picker.warning.get();
+            let mut items: Vec<NodeBuilder> = Vec::new();
+            if !warning.is_empty() {
+                items.push(
+                    container().child(label(warning).class(classes!("text-xs text-error-11"))),
+                );
+            }
+            match picker.rows(&paint.model.borrow()) {
+                Ok(rows) => {
+                    let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+                    if rows.is_empty() {
+                        items.push(container().child(label("No matches. Edit the search.")));
+                    }
+                    items.push(container().child(label(format!(
+                        "{} match{} · ↑↓ select · enter {} · esc",
+                        rows.len(),
+                        if rows.len() == 1 { "" } else { "es" },
+                        picker.action()
+                    ))));
+                    let height = if picker.is_history() { 48.0 } else { 28.0 };
+                    let source = paint.clone();
+                    items.push(
+                        container().layout(LayoutStyle::block().fill_width()).child(
+                            virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
+                                row(
+                                    source.clone(),
+                                    picker,
+                                    index,
+                                    *entry,
+                                    preview,
+                                    selected,
+                                    height,
+                                )
+                            })
+                            .row_height(height)
+                            .viewport_fill()
+                            .scroll_into_view(selected),
+                        ),
+                    );
+                }
+                Err(error) => items.push(container().child(label(error))),
+            }
+            items
+        })
+}
+
+fn row(
+    app: App,
+    picker: Picker,
+    index: usize,
+    entry: usize,
+    preview: &str,
+    selected: usize,
+    height: f32,
+) -> NodeBuilder {
+    let choose = app.clone();
+    let title = if picker.is_history() {
+        preview.to_string()
+    } else {
+        format!("{}  {preview}", entry + 1)
     };
-    write_at(
-        &mut cells,
-        width,
-        left,
-        height.saturating_sub(1),
-        &ellipsize(&help, columns),
-        palette().dim,
-    );
-    cells
+    let detail = picker.detail(entry);
+    let mut item = container()
+        .role(Role::Button)
+        .label(title.clone())
+        .focusable(true)
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .height(height)
+                .padding_x(8.0)
+                .gap(4.0),
+        )
+        .class(classes!("rounded-md"))
+        .class_when(signal(index == selected), "bg-gray-5")
+        .pointer_down(move |event| {
+            choose.search.selected.set(index);
+            choose.jump();
+            event.stop_propagation();
+        })
+        .child(
+            label(title)
+                .ellipsize()
+                .class(classes!("text-sm text-gray-12")),
+        );
+    if !detail.is_empty() {
+        item = item.child(
+            label(detail)
+                .ellipsize()
+                .class(classes!("text-xs text-gray-11")),
+        );
+    }
+    item
 }

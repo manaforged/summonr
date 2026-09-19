@@ -5,7 +5,7 @@ use crossterm::queue;
 use crossterm::style::{Attribute, Print, SetAttribute};
 use sigil_tui::{CONTINUES, Grid, render};
 
-pub(super) struct Selection {
+pub(in crate::tui::sigil_view) struct Selection {
     grid: Grid,
     cols: usize,
     start: (usize, usize),
@@ -13,7 +13,7 @@ pub(super) struct Selection {
 }
 
 impl Selection {
-    pub(super) fn new(grid: Grid, cols: u16, col: u16, row: u16) -> Self {
+    pub(in crate::tui::sigil_view) fn new(grid: Grid, cols: u16, col: u16, row: u16) -> Self {
         let mut selection = Self {
             cols: usize::from(cols).min(grid.cols()),
             grid,
@@ -25,7 +25,7 @@ impl Selection {
         selection
     }
 
-    pub(super) fn move_to(&mut self, col: u16, row: u16) {
+    pub(in crate::tui::sigil_view) fn move_to(&mut self, col: u16, row: u16) {
         let row = usize::from(row).min(self.grid.rows().saturating_sub(1));
         let mut col = usize::from(col).min(self.cols.saturating_sub(1));
         while col > 0
@@ -39,11 +39,11 @@ impl Selection {
         self.end = (row, col);
     }
 
-    pub(super) fn active(&self) -> bool {
+    pub(in crate::tui::sigil_view) fn active(&self) -> bool {
         self.start != self.end && self.cols > 0 && self.grid.rows() > 0
     }
 
-    pub(super) fn text(&self) -> Option<String> {
+    pub(in crate::tui::sigil_view) fn text(&self) -> Option<String> {
         if !self.active() {
             return None;
         }
@@ -71,7 +71,7 @@ impl Selection {
         )
     }
 
-    pub(super) fn paint(&self, out: &mut impl Write) -> io::Result<()> {
+    pub(in crate::tui::sigil_view) fn paint(&self, out: &mut impl Write) -> io::Result<()> {
         render(out, &Grid::new(0, 0), &self.grid)?;
         let (start, end) = (self.start.min(self.end), self.start.max(self.end));
         queue!(out, SetAttribute(Attribute::Reverse))?;

@@ -4,8 +4,9 @@ use sigil::prelude::{
 };
 
 use super::super::app::App;
+use super::super::controls::{hit, spacer};
 use super::super::pane::Pane;
-use super::{hit, icons, open, spacer};
+use super::{icons, open};
 use crate::session;
 
 const RAIL: f32 = 252.0;

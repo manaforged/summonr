@@ -5,7 +5,7 @@ outside the tree and never committed. Point it at a repo, then score a
 question set against the result:
 
     python3 scripts/diff-corpus.py ~/src/myrepo /tmp/diff.jsonl
-    summonr decide --set diff --eval /tmp/diff.jsonl
+    summonr infer --set diff --eval /tmp/diff.jsonl
 
 Labels come from the patch text, not from judgement, so a question that
 disagrees with a label is a real disagreement worth reading.

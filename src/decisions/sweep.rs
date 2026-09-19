@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use serde_json::Value;
+
 use super::{Answer, Decision, Question, Usage, ask};
 use crate::endpoint::Endpoint;
 use crate::error::{Error, Result};
@@ -34,23 +36,22 @@ pub fn windows(state: &str, budget: usize) -> Vec<String> {
 
 pub async fn sweep(
     endpoint: &Endpoint,
-    state: &str,
+    state: &Value,
     questions: &BTreeMap<String, Question>,
     budget: usize,
 ) -> Result<(Decision, usize)> {
-    let parts = windows(state, budget);
+    let parts: Vec<Value> = match state.as_str() {
+        Some(text) => windows(text, budget).into_iter().map(Value::from).collect(),
+        None => vec![state.clone()],
+    };
     let count = parts.len();
-    let asked = futures::future::join_all(
+    let seen = super::in_flight(
         parts
             .iter()
             .map(|part| ask(endpoint, part, questions))
-            .collect::<Vec<_>>(),
+            .collect(),
     )
-    .await;
-    let mut seen = Vec::new();
-    for outcome in asked {
-        seen.push(outcome?);
-    }
+    .await?;
     Ok((merge(&seen)?, count))
 }
 
@@ -60,6 +61,19 @@ pub fn merge(seen: &[Decision]) -> Result<Decision> {
         .ok_or_else(|| Error::Config("no windows to merge".to_string()))?;
     if rest.is_empty() {
         return Ok(first.clone());
+    }
+    if rest.iter().any(|one| {
+        one.answers.len() != first.answers.len()
+            || first.answers.iter().any(|(name, answer)| {
+                one.answers.get(name).is_none_or(|other| {
+                    std::mem::discriminant(answer) != std::mem::discriminant(other)
+                })
+            })
+    }) {
+        return Err(Error::provider(
+            crate::error::ProviderFailureKind::Malformed,
+            "window answers have inconsistent questions or types",
+        ));
     }
     let mut answers: BTreeMap<String, Answer> = BTreeMap::new();
     for name in seen.iter().flat_map(|one| one.answers.keys()) {
@@ -140,14 +154,19 @@ fn blend(found: &[&Answer]) -> Option<Answer> {
         .into_iter()
         .map(|(option, probability)| (option, probability / weight))
         .collect();
-    let choice = weighted
+    let (choice, probability) = weighted
         .iter()
-        .max_by(|left, right| left.1.total_cmp(right.1))
-        .map(|(option, _)| option.clone())?;
+        .max_by(|left, right| left.1.total_cmp(right.1))?;
+    let runner_up = weighted
+        .iter()
+        .filter(|(option, _)| *option != choice)
+        .map(|(_, probability)| *probability)
+        .fold(0.0_f64, f64::max);
+    let confidence = best.min((probability - runner_up).clamp(0.0, 1.0));
     Some(Answer::Choice {
-        choice,
+        choice: choice.clone(),
         probabilities: weighted,
-        confidence: best,
+        confidence,
     })
 }
 

@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct Example {
-    pub state: String,
+    pub state: serde_json::Value,
     pub expect: BTreeMap<String, serde_json::Value>,
     #[serde(default)]
     pub name: Option<String>,
@@ -21,6 +21,12 @@ pub fn load(text: &str) -> Result<Vec<Example>> {
         }
         let example: Example = serde_json::from_str(line)
             .map_err(|error| Error::Config(format!("line {}: {error}", index + 1)))?;
+        if example.expect.is_empty() {
+            return Err(Error::Config(format!(
+                "line {}: `expect` needs at least one label",
+                index + 1
+            )));
+        }
         examples.push(example);
     }
     if examples.is_empty() {
@@ -71,7 +77,7 @@ pub struct Verdict {
 }
 
 pub fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdict> {
-    match answer {
+    let verdict = match answer {
         Answer::Choice {
             choice, confidence, ..
         } => {
@@ -100,6 +106,9 @@ pub fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdict> {
         } => {
             let wanted = wanted.as_f64()?;
             let got = score.to_owned();
+            if !got.is_finite() || !wanted.is_finite() {
+                return None;
+            }
             Some(Verdict {
                 right: (got - wanted).abs() <= 0.5,
                 wanted: format!("{wanted:.2}"),
@@ -107,14 +116,27 @@ pub fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdict> {
                 certainty: confidence.to_owned(),
             })
         }
-    }
+    }?;
+    (0.0..=1.0).contains(&verdict.certainty).then_some(verdict)
 }
 
 pub fn score(
     examples: &[Example],
     decided: &[Decision],
     floor: f64,
-) -> (BTreeMap<String, Tally>, Vec<Miss>) {
+) -> Result<(BTreeMap<String, Tally>, Vec<Miss>)> {
+    if !(0.0..=1.0).contains(&floor) {
+        return Err(Error::Config(
+            "evaluation confidence must be from 0 to 1".to_string(),
+        ));
+    }
+    if examples.is_empty() || examples.len() != decided.len() {
+        return Err(Error::Config(format!(
+            "evaluation needs one decision per example: {} examples, {} decisions",
+            examples.len(),
+            decided.len()
+        )));
+    }
     let mut tallies: BTreeMap<String, Tally> = BTreeMap::new();
     let mut misses = Vec::new();
     for (index, (example, decision)) in examples.iter().zip(decided).enumerate() {
@@ -122,13 +144,18 @@ pub fn score(
             .name
             .clone()
             .unwrap_or_else(|| format!("example {}", index + 1));
+        if example.expect.is_empty() {
+            return Err(Error::Config(format!(
+                "{label}: `expect` needs at least one label"
+            )));
+        }
         for (question, wanted) in &example.expect {
-            let Some(answer) = decision.answers.get(question) else {
-                continue;
-            };
-            let Some(verdict) = judge(answer, wanted) else {
-                continue;
-            };
+            let answer = decision.answers.get(question).ok_or_else(|| {
+                Error::Config(format!("{label}: missing answer for `{question}`"))
+            })?;
+            let verdict = judge(answer, wanted).ok_or_else(|| {
+                Error::Config(format!("{label}: invalid answer or label for `{question}`"))
+            })?;
             let tally = tallies.entry(question.clone()).or_default();
             tally.asked += 1;
             if verdict.right {
@@ -151,7 +178,7 @@ pub fn score(
             }
         }
     }
-    (tallies, misses)
+    Ok((tallies, misses))
 }
 
 pub async fn run(
@@ -160,18 +187,48 @@ pub async fn run(
     questions: &BTreeMap<String, Question>,
     budget: usize,
 ) -> Result<Vec<Decision>> {
-    let asked = futures::future::join_all(
+    if examples.is_empty() || questions.is_empty() {
+        return Err(Error::Config(
+            "evaluation needs examples and questions".to_string(),
+        ));
+    }
+    for (name, question) in questions {
+        question.check(name)?;
+    }
+    for (index, example) in examples.iter().enumerate() {
+        if example.expect.is_empty() {
+            return Err(Error::Config(format!(
+                "example {}: `expect` needs at least one label",
+                index + 1
+            )));
+        }
+        for (name, wanted) in &example.expect {
+            let valid = match questions.get(name) {
+                Some(Question::Choice { criteria, .. }) => wanted
+                    .as_str()
+                    .is_some_and(|label| criteria.contains_key(label)),
+                Some(Question::Score { criteria, .. }) => wanted
+                    .as_f64()
+                    .is_some_and(|score| (0.0..=(criteria.len() - 1) as f64).contains(&score)),
+                Some(Question::Noul { .. }) => wanted.is_boolean(),
+                None => false,
+            };
+            if !valid {
+                return Err(Error::Config(format!(
+                    "example {}: invalid label for question `{name}`",
+                    index + 1
+                )));
+            }
+        }
+    }
+    let swept = super::in_flight(
         examples
             .iter()
             .map(|example| super::sweep::sweep(endpoint, &example.state, questions, budget))
-            .collect::<Vec<_>>(),
+            .collect(),
     )
-    .await;
-    let mut decided = Vec::new();
-    for outcome in asked {
-        decided.push(outcome?.0);
-    }
-    Ok(decided)
+    .await?;
+    Ok(swept.into_iter().map(|(decision, _)| decision).collect())
 }
 
 pub fn report(tallies: &BTreeMap<String, Tally>, misses: &[Miss], floor: f64) -> String {

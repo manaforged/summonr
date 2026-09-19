@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 pub mod digest;
 pub mod eval;
@@ -7,24 +8,128 @@ pub mod sets;
 pub mod sweep;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
+use crate::credentials;
 use crate::endpoint::{Endpoint, Wire};
 use crate::error::{Error, ProviderFailureKind, Result};
+
+pub const AT_ONCE: usize = 8;
+
+pub async fn in_flight<T, F>(work: Vec<F>) -> Result<Vec<T>>
+where
+    F: std::future::Future<Output = Result<T>>,
+{
+    use futures::stream::StreamExt;
+    let mut done = Vec::with_capacity(work.len());
+    let mut stream = futures::stream::iter(work).buffered(AT_ONCE);
+    while let Some(outcome) = stream.next().await {
+        done.push(outcome?);
+    }
+    Ok(done)
+}
+
+pub const MOST_OPTIONS: usize = 255;
+pub const FEWEST_LEVELS: usize = 2;
+pub const MOST_LEVELS: usize = 10;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Boundary {
+    #[serde(rename = "true")]
+    pub yes: Value,
+    #[serde(rename = "false")]
+    pub no: Value,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum Question {
     Choice {
-        instructions: String,
-        criteria: BTreeMap<String, String>,
+        instructions: Value,
+        criteria: BTreeMap<String, Value>,
     },
     Score {
-        instructions: String,
-        criteria: Vec<String>,
+        instructions: Value,
+        criteria: Vec<Value>,
     },
     Noul {
-        instructions: String,
+        instructions: Value,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        criteria: Option<Boundary>,
     },
+}
+
+impl Question {
+    pub fn noul(instructions: impl Into<Value>) -> Self {
+        Self::Noul {
+            instructions: instructions.into(),
+            criteria: None,
+        }
+    }
+
+    pub fn bounded(
+        instructions: impl Into<Value>,
+        yes: impl Into<Value>,
+        no: impl Into<Value>,
+    ) -> Self {
+        Self::Noul {
+            instructions: instructions.into(),
+            criteria: Some(Boundary {
+                yes: yes.into(),
+                no: no.into(),
+            }),
+        }
+    }
+
+    pub fn choice<K, V>(
+        instructions: impl Into<Value>,
+        options: impl IntoIterator<Item = (K, V)>,
+    ) -> Self
+    where
+        K: Into<String>,
+        V: Into<Value>,
+    {
+        Self::Choice {
+            instructions: instructions.into(),
+            criteria: options
+                .into_iter()
+                .map(|(name, about)| (name.into(), about.into()))
+                .collect(),
+        }
+    }
+
+    pub fn score(
+        instructions: impl Into<Value>,
+        levels: impl IntoIterator<Item = impl Into<Value>>,
+    ) -> Self {
+        Self::Score {
+            instructions: instructions.into(),
+            criteria: levels.into_iter().map(Into::into).collect(),
+        }
+    }
+
+    pub fn check(&self, name: &str) -> Result<()> {
+        match self {
+            Self::Choice { criteria, .. } => {
+                if criteria.is_empty() || criteria.len() > MOST_OPTIONS {
+                    return Err(Error::Config(format!(
+                        "`{name}` offers {} options; a choice takes 1 to {MOST_OPTIONS}",
+                        criteria.len()
+                    )));
+                }
+            }
+            Self::Score { criteria, .. } => {
+                if criteria.len() < FEWEST_LEVELS || criteria.len() > MOST_LEVELS {
+                    return Err(Error::Config(format!(
+                        "`{name}` has {} levels; a score takes {FEWEST_LEVELS} to {MOST_LEVELS}",
+                        criteria.len()
+                    )));
+                }
+            }
+            Self::Noul { .. } => {}
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -80,22 +185,31 @@ pub struct Decision {
 #[derive(Serialize)]
 struct Ask<'a> {
     model: &'a str,
-    state: &'a str,
+    state: &'a Value,
     questions: &'a BTreeMap<String, Question>,
 }
 
 pub async fn ask(
     endpoint: &Endpoint,
-    state: &str,
+    state: &Value,
     questions: &BTreeMap<String, Question>,
 ) -> Result<Decision> {
     let (url, key) = target(endpoint, questions)?;
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
-    let response = client
-        .post(&url)
-        .bearer_auth(key)
+    let http = credentials::http()?;
+    let auth = credentials::bearer(key);
+    let mut request = http.post(&url).user_agent(summonr_auth::AGENT).retry(
+        leyline::RetryPolicy::transient()
+            .with_max_retries(3)
+            .with_backoff(Duration::from_secs(1), Duration::from_secs(8)),
+    );
+    request = auth
+        .apply(request, &http)
+        .await
+        .map_err(|error| Error::Config(error.to_string()))?;
+    for (name, value) in &endpoint.headers {
+        request = request.header(name.as_str(), value.as_str());
+    }
+    let mut response = request
         .json(&Ask {
             model: &endpoint.model,
             state,
@@ -105,25 +219,40 @@ pub async fn ask(
         .await
         .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
     let status = response.status();
+    let after = response
+        .header("retry-after")
+        .and_then(|value| value.trim().parse().ok());
     let body = response
         .text()
         .await
         .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
     if !status.is_success() {
-        return Err(Error::Provider(crate::error::ProviderFailure {
-            kind: classify(status.as_u16()),
-            status: Some(status.as_u16()),
-            message: message(&body),
-            partial_output: false,
-            retry_after: None,
-        }));
+        return Err(crate::provider::response_failure(
+            status.as_u16(),
+            &body,
+            after,
+        ));
     }
-    serde_json::from_str(&body).map_err(|error| {
+    let decision: Decision = serde_json::from_str(&body).map_err(|error| {
         Error::provider(
             ProviderFailureKind::Malformed,
             format!("{error}: {}", body.chars().take(200).collect::<String>()),
         )
-    })
+    })?;
+    for (name, question) in questions {
+        if !matches!(
+            (question, decision.answers.get(name)),
+            (Question::Choice { .. }, Some(Answer::Choice { .. }))
+                | (Question::Score { .. }, Some(Answer::Score { .. }))
+                | (Question::Noul { .. }, Some(Answer::Noul { .. }))
+        ) {
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                format!("missing or invalid answer for `{name}`"),
+            ));
+        }
+    }
+    Ok(decision)
 }
 
 fn target<'a>(
@@ -139,42 +268,32 @@ fn target<'a>(
     if questions.is_empty() {
         return Err(Error::Config("ask at least one question".to_string()));
     }
+    for (name, question) in questions {
+        question.check(name)?;
+    }
     let base = endpoint
         .base_url
         .as_deref()
         .ok_or_else(|| Error::Config(format!("`{}` has no base URL", endpoint.name)))?;
     let key = endpoint.api_key.as_deref().ok_or_else(|| {
         Error::Config(format!(
-            "no key for `{}` — set its environment variable, or `summon login {}`",
+            "no key for `{}` — set its environment variable, or `summonr login {}`",
             endpoint.name, endpoint.name
         ))
     })?;
     Ok((base.to_string(), key))
 }
 
-fn classify(status: u16) -> ProviderFailureKind {
-    match status {
-        401 | 403 => ProviderFailureKind::Authentication,
-        429 => ProviderFailureKind::RateLimited,
-        500..=599 => ProviderFailureKind::Server,
-        _ => ProviderFailureKind::Http,
-    }
-}
-
-fn message(body: &str) -> String {
-    serde_json::from_str::<serde_json::Value>(body)
-        .ok()
-        .and_then(|value| {
-            value
-                .get("error")
-                .and_then(|error| error.get("message"))
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string)
-        })
-        .unwrap_or_else(|| body.chars().take(200).collect())
-}
-
 pub const CONTEXT_CHARS: usize = 84_000;
+pub const CHARS_PER_TOKEN: usize = 3;
+
+pub fn budget(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> usize {
+    let room = endpoint
+        .context_window
+        .map_or(CONTEXT_CHARS, |tokens| tokens as usize * CHARS_PER_TOKEN);
+    let asked = serde_json::to_string(questions).map_or(0, |text| text.len());
+    room.saturating_sub(asked)
+}
 
 const WIDTH: usize = 20;
 
@@ -253,4 +372,8 @@ fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -
 
 #[cfg(test)]
 #[path = "decisions_tests.rs"]
-mod tests;
+pub(crate) mod tests;
+
+#[cfg(test)]
+#[path = "decisions/question_tests.rs"]
+mod question_tests;

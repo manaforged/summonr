@@ -22,6 +22,7 @@ Never answer "that's all the API" from this page alone. Nine menu jobs sit on
 2. One job, one name. A synonym is not a job.
 3. Names come from source. Do not mint one for a surface that has no identifier.
 4. A public item that is not a row here is a candidate for `pub(crate)`.
+5. `src/tui` has its own page, [`tui.md`](tui.md), under the same four rules.
 
 ## Model-facing jobs
 
@@ -60,6 +61,9 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
 | endpoint | `endpoint.rs`, `~/.mage/config.toml` | 20 built-in rows, four wires |
+| infer | `decisions::ask`, `summonr infer` | typed questions over supplied state; Choice, Score, Noul; credentials through `summonr login typesafe`, `/login typesafe`, or `TYPESAFE_API_KEY` |
+| sweep | `decisions::sweep::{sweep, merge}` | merge state windows; require matching answer keys and types; blended Choice confidence is capped by the top-two probability margin, a conservative aggregation rule rather than calibrated model confidence |
+| evaluate | `decisions::eval::{load, run, score, report}`, `infer --eval` | validate labels before inference; `score` returns an error for empty or incomplete results, invalid labels, or invalid confidence; the CLI requires perfect gated accuracy and at least one gated answer per labelled question |
 | policy | `policy.rs`, `~/.mage/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
 | skills | `skills.rs`, `.mage/skills` | the catalog `skill` loads from |
@@ -89,6 +93,7 @@ not against the name.
 
 | Delete | Keep | Evidence |
 | --- | --- | --- |
+| `summonr decide` | `summonr infer` | retired spelling exits with a migration error; inference uses the existing decisions API |
 | `Line`, `Event`, `Msg`/`Cmd`, `Entry` | one session event, plus projections | four types describe the same session facts: 13, 16, 38/37, and 12 variants |
 | 23 orphan functions | nothing | 13 live, 10 `cfg(test)`-only, zero callers |
 | `unicode-width`, `winapi-util` | nothing | declared in `Cargo.toml`, zero references in `src` |
@@ -137,5 +142,8 @@ Ranked from the census, by job.
 
 - Census: `python3 scripts/api-census.py --check` compares the callable
   counts against the baseline. Re-run it in the same change that adds a row.
+- File size: the same gate counts the source files over 400 lines (35 today)
+  and denies a rise. Splitting a file re-baselines with `--update`; the number
+  only falls, target 0.
 - The binding for agents working in this repo belongs in `AGENTS.md`, as a
   line pointing here. Not added yet — it is a change to a tracked file.

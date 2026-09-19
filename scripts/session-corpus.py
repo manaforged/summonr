@@ -4,7 +4,7 @@ Transcripts hold whatever the user and the agent said, so the corpus is
 written outside the tree and never committed.
 
     python3 scripts/session-corpus.py /tmp/sessions.jsonl
-    summonr decide --set review --eval /tmp/sessions.jsonl
+    summonr infer --set review --eval /tmp/sessions.jsonl
 
 Two labels come from the recorded tool calls rather than from judgement:
 `proved` is whether the session ran a command that checks its own work,

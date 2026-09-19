@@ -25,7 +25,7 @@ fn decided(answers: &[(&str, Answer)]) -> Decision {
 
 fn example(name: &str, expect: &[(&str, serde_json::Value)]) -> Example {
     Example {
-        state: "s".to_string(),
+        state: serde_json::Value::from("s"),
         name: Some(name.to_string()),
         expect: expect
             .iter()
@@ -82,7 +82,7 @@ fn the_gate_is_what_tells_you_the_set_is_usable() {
         decided(&[("kind", choice("network", 1.0))]),
         decided(&[("kind", choice("stock", 1.0))]),
     ];
-    let (tallies, misses) = score(&examples, &decided, 0.7);
+    let (tallies, misses) = score(&examples, &decided, 0.7).unwrap();
     let kind = &tallies["kind"];
     assert_eq!(kind.asked, 3);
     assert_eq!(kind.right, 2);
@@ -107,7 +107,7 @@ fn a_question_the_labels_do_not_cover_is_not_scored() {
         ("kind", choice("stock", 0.9)),
         ("rotate", noul(0.8)),
     ])];
-    let (tallies, _) = score(&examples, &decided, 0.7);
+    let (tallies, _) = score(&examples, &decided, 0.7).unwrap();
     assert!(
         !tallies.contains_key("rotate"),
         "an unlabelled question must not be counted as right"
@@ -130,7 +130,7 @@ fn examples_load_one_per_line_and_report_the_bad_one() {
 fn the_report_names_the_miss_so_you_can_fix_the_criteria() {
     let examples = vec![example("akamai", &[("kind", serde_json::json!("antibot"))])];
     let decided = vec![decided(&[("kind", choice("auth", 0.6))])];
-    let (tallies, misses) = score(&examples, &decided, 0.7);
+    let (tallies, misses) = score(&examples, &decided, 0.7).unwrap();
     let text = report(&tallies, &misses, 0.7);
     assert!(text.contains("kind"));
     assert!(text.contains("akamai"), "got {text}");

@@ -138,17 +138,4 @@ impl super::App {
         *self.history.borrow_mut() = super::History::default();
         self.flip(|prefs| prefs.diff_layout = layout);
     }
-
-    pub(in crate::tui::sigil_view) fn diff_hit(
-        &self,
-        col: usize,
-        row: usize,
-    ) -> Option<crate::prefs::DiffLayout> {
-        let left = super::super::chat::margin(usize::from(self.chat_cols()));
-        if row < 2 || row >= 2 + usize::from(self.history_rows(&self.draft.peek())) || col < left {
-            return None;
-        }
-        let first = (self.scroll_y.peek() / super::cell().h) as usize;
-        self.history.borrow().diff_hit(first + row - 2, col - left)
-    }
 }

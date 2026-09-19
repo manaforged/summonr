@@ -2,18 +2,14 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use crate::session::SessionInfo;
-#[cfg(feature = "gui")]
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeStyleExt, WidgetLayoutExt, classes, container, label,
-    virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, Role, WidgetLayoutExt, classes,
+    container, label, modal, signal, text_edit, virtual_list,
 };
-use sigil::prelude::{NodeBuilder, Signal, signal, text_edit};
+use sigil::prelude::{NodeBuilder, Signal};
 
 use super::super::short_session;
 use super::app::App;
-use super::canvas::{Cell, palette};
-use super::chat::{accent, draft_view, ellipsize, write_at};
-use super::hit::Target;
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -257,42 +253,62 @@ impl Picker {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
-    let input = text_edit(picker.query)
-        .caret_position(picker.caret)
-        .change(move |_| picker.selected.set(0))
-        .class("w-full h-full");
-    super::settings::layer(app, grid, input)
+    container().layout(LayoutStyle::block()).child(
+        modal(picker.open).title(picker.heading()).trap(true).child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .gap(8.0)
+                        .fill_width()
+                        .fill_height(),
+                )
+                .child(
+                    text_edit(picker.query)
+                        .caret_position(picker.caret)
+                        .height(32.0),
+                )
+                .child(list(app, picker)),
+        ),
+    )
 }
 
-#[cfg(feature = "gui")]
-pub(super) fn desktop(app: App) -> NodeBuilder {
-    let picker = app.sessions;
-    let rows = picker.rows();
-    let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-    let close = app.clone();
-    let mut body = container()
-        .layout(LayoutStyle::flex_column().fill().padding(24.0).gap(16.0))
-        .class(classes!("bg-gray-1"))
-        .child(label(picker.heading()).class(classes!("text-lg text-gray-12")))
-        .child(
-            text_edit(picker.query)
-                .caret_position(picker.caret)
-                .change(move |_| picker.selected.set(0))
-                .height(48.0),
+fn list(app: App, picker: Picker) -> NodeBuilder {
+    let paint = app.clone();
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .grow(1.0)
+                .min_size(0.0, 0.0),
         )
-        .child(label(
-            "↑↓ select · enter resume · tab project/all/tree · ctrl+d delete · esc",
-        ));
-    if rows.is_empty() {
-        body = body.child(label(picker.empty()));
-    }
-    let results = virtual_list(rows, move |index, info: &SessionInfo| {
-        let choose = app.clone();
-        let title = picker.title(info);
-        super::desktop::hit(title.clone(), index == selected, move || {
-            choose.sessions.selected.set(index);
-            choose.resume_session();
+        .children_reactive(move || {
+            super::view::watch(&paint);
+            let rows = picker.rows();
+            let selected = picker.selected.get().min(rows.len().saturating_sub(1));
+            if rows.is_empty() {
+                return vec![container().child(label(picker.empty()))];
+            }
+            let source = paint.clone();
+            vec![
+                container().layout(LayoutStyle::block().fill_width()).child(
+                    virtual_list(rows, move |index, info: &SessionInfo| {
+                        row(source.clone(), picker, index, info, selected)
+                    })
+                    .row_height(48.0)
+                    .viewport_fill()
+                    .scroll_into_view(selected),
+                ),
+            ]
         })
+}
+
+fn row(app: App, picker: Picker, index: usize, info: &SessionInfo, selected: usize) -> NodeBuilder {
+    let choose = app.clone();
+    let title = picker.title(info);
+    container()
+        .role(Role::Button)
+        .label(title.clone())
+        .focusable(true)
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
@@ -300,6 +316,13 @@ pub(super) fn desktop(app: App) -> NodeBuilder {
                 .padding_x(8.0)
                 .gap(4.0),
         )
+        .class(classes!("rounded-md"))
+        .class_when(signal(index == selected), "bg-gray-5")
+        .pointer_down(move |event| {
+            choose.sessions.selected.set(index);
+            choose.resume_session();
+            event.stop_propagation();
+        })
         .child(
             label(title)
                 .ellipsize()
@@ -310,116 +333,4 @@ pub(super) fn desktop(app: App) -> NodeBuilder {
                 .ellipsize()
                 .class(classes!("text-xs text-gray-11")),
         )
-    })
-    .row_height(48.0)
-    .viewport_fill()
-    .scroll_into_view(selected);
-    body.child(
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .grow(1.0)
-                    .min_size(0.0, 0.0),
-            )
-            .child(results),
-    )
-    .child(
-        super::desktop::hit("Close sessions".to_string(), false, move || {
-            close.sessions.open.set(false)
-        })
-        .child(label("Close sessions")),
-    )
-}
-
-fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
-    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    app.hits.clear();
-    if width == 0 || height == 0 {
-        return cells;
-    }
-    let picker = app.sessions;
-    let color = accent(&app.model.borrow().prefs.theme);
-    let columns = width.saturating_sub(4).min(96);
-    let left = width.saturating_sub(columns) / 2;
-    write_at(
-        &mut cells,
-        width,
-        left,
-        1,
-        &ellipsize(picker.heading(), columns),
-        color,
-    );
-    let query = draft_view(
-        &picker.query.get(),
-        picker.caret.get(),
-        columns.saturating_sub(7),
-        '▌',
-    );
-    write_at(
-        &mut cells,
-        width,
-        left,
-        3,
-        &ellipsize(&format!("find   {query}"), columns),
-        palette().text,
-    );
-    let rows = picker.rows();
-    let selected = picker.selected.get().min(rows.len().saturating_sub(1));
-    let count = height.saturating_sub(6) / 2;
-    let start = super::hit::window(app, selected, rows.len(), count);
-    for (offset, info) in rows.iter().enumerate().skip(start).take(count) {
-        let y = 5 + (offset - start) * 2;
-        let title = picker.title(info);
-        let marker = if offset == selected { "›" } else { " " };
-        write_at(
-            &mut cells,
-            width,
-            left,
-            y,
-            &ellipsize(&format!("{marker} {title}"), columns),
-            if offset == selected {
-                color
-            } else {
-                palette().text
-            },
-        );
-        let detail = format!("  {}", picker.detail(info));
-        write_at(
-            &mut cells,
-            width,
-            left,
-            y + 1,
-            &ellipsize(&detail, columns),
-            palette().dim,
-        );
-        app.hits
-            .add(y, left, left + columns, Target::Session(offset));
-        app.hits
-            .add(y + 1, left, left + columns, Target::Session(offset));
-    }
-    if rows.is_empty() {
-        write_at(
-            &mut cells,
-            width,
-            left,
-            5,
-            &ellipsize(&picker.empty(), columns),
-            palette().dim,
-        );
-    }
-    let help = if width < 60 {
-        "↑↓ move · enter · tab scope · esc"
-    } else {
-        "↑↓ select · enter resume · tab project/all/tree · ctrl+d delete · esc cancel"
-    };
-    write_at(
-        &mut cells,
-        width,
-        left,
-        height.saturating_sub(1),
-        &ellipsize(help, columns),
-        palette().dim,
-    );
-    cells
 }

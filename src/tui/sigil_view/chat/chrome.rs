@@ -5,9 +5,9 @@ use sigil::prelude::Rgba8;
 
 use super::super::app::App;
 use super::super::canvas::palette;
+use super::super::canvas::{Span, truncate};
 use super::super::model::Model;
 use super::super::speed::Speed;
-use super::{Span, ellipsize, truncate};
 
 pub(super) fn header(model: &Model, fps: u32, width: usize, accent: Rgba8) -> Vec<Span> {
     let mut left = vec![
@@ -56,7 +56,7 @@ pub(super) fn header(model: &Model, fps: u32, width: usize, accent: Rgba8) -> Ve
     join(left, right, width)
 }
 
-pub(super) fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> Vec<Span> {
+pub(super) fn status_left(model: &Model, app: &App, width: usize, accent: Rgba8) -> Vec<Span> {
     let mut left = vec![
         Span::styled("📂 ", palette().gray),
         Span::styled(&app.info.workspace, palette().text),
@@ -72,55 +72,29 @@ pub(super) fn status(model: &Model, app: &App, width: usize, accent: Rgba8) -> V
             accent,
         ));
     }
-    let mut right = meters(model, width);
-    if line_width(&left) + line_width(&right) >= width {
+    if line_width(&left) >= width {
         let name = Path::new(&app.info.workspace)
             .file_name()
             .unwrap_or_else(|| app.info.workspace.as_ref());
         left[1].text = name.to_string_lossy().into_owned();
     }
-    if line_width(&left) + line_width(&right) >= width {
+    if line_width(&left) >= width {
         left.truncate(2);
     }
-    if line_width(&left) + line_width(&right) >= width {
+    if line_width(&left) >= width {
         left.remove(0);
     }
-    if line_width(&left) + line_width(&right) >= width {
-        right = meters(
-            model,
-            width.saturating_sub(line_width(&left).saturating_add(1)),
-        );
-    }
-    if !right.is_empty()
-        && model.busy_since.is_none()
-        && let Some(rate) = model.speed.last()
-    {
-        let speed = Span::styled(format!(" · {}", Speed::label(rate)), palette().dim);
-        if line_width(&left) + line_width(&right) + speed.width() < width {
-            right.push(speed);
-        }
-    }
-    let room = width.saturating_sub(line_width(&right) + 1);
-    if line_width(&left) > room {
-        if room < 4 {
-            left.clear();
-        } else {
-            left[0].text = ellipsize(&left[0].text, room);
-        }
-    }
-    join(left, right, width)
+    clip_line(left, width)
 }
 
-fn meters(model: &Model, width: usize) -> Vec<Span> {
-    let mut parts = context_meter(model, width);
-    let cache = cache_meter(model, width.saturating_sub(line_width(&parts) + 2));
-    if !cache.is_empty() && line_width(&parts) + 2 + line_width(&cache) <= width {
-        parts.push(Span::text("  "));
-        parts.extend(cache);
-    } else if parts.is_empty() {
-        parts = cache;
+pub(super) fn idle_speed(model: &Model) -> Option<Span> {
+    if model.busy_since.is_some() {
+        return None;
     }
-    parts
+    model
+        .speed
+        .last()
+        .map(|rate| Span::styled(format!(" · {}", Speed::label(rate)), palette().dim))
 }
 
 pub(super) fn context_meter(model: &Model, width: usize) -> Vec<Span> {

@@ -11,11 +11,29 @@ repository = "https://github.com/manaforged/summonr"
 homepage = "https://summonr.dev"
 publish = false
 
+[workspace]
+members = ["crates/auth"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "MIT"
+authors = ["Thomas Gardiner"]
+
 [[bin]]
 name = "summonr"
 path = "src/main.rs"
 
+[workspace.dependencies]
+leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", rev = "fee12b7a9cbb873faf939f471f3fd3fd87bb70f4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time"] }
+
 [dependencies]
+summonr-auth = { path = "crates/auth" }
 base64 = "0.22"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
@@ -37,10 +55,10 @@ url = "2"
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483", default-features = false, features = ["tui", "clipboard-image"] }
-sigil-hal = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-tui = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
-sigil-ide-core = { git = "https://github.com/manaforged/sigil.git", rev = "b5a7ccb23131d8b98590a7200cf75dff1a396483" }
+sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["clipboard-image"] }
+sigil-tui = { git = "https://github.com/manaforged/sigil.git", branch = "main" }
+ignore = "0.4"
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 chacha20poly1305 = "0.10"
 
 [patch.crates-io]

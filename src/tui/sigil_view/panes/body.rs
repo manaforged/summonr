@@ -1,43 +1,19 @@
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
-    Tone, WidgetLayoutExt, badge, classes, container, label, text, text_edit,
+    AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt,
+    ObjectFit, Overflow, Tone, WidgetLayoutExt, badge, classes, container, image, label, node,
+    request_focus, text_edit,
 };
 
-use super::super::app::{App, FileRow, Overlay};
+use super::super::app::{App, FileRow};
+use super::super::controls::{hit, hit_menu, spacer};
 use super::super::pane::Pane;
-use super::{hit, options, spacer};
+use super::todos;
 
-const WIDTH: f32 = 360.0;
-
-pub(super) fn slot(app: App) -> NodeBuilder {
-    let mut slot = container().layout(LayoutStyle::flex_row().fill_height().shrink(0.0));
-    let panel = match app.overlay() {
-        Some(Overlay::Model) => Some(options::models(app)),
-        Some(Overlay::Workflow) => Some(options::workflow(app)),
-        Some(Overlay::Hotkeys) => Some(options::hotkeys(app)),
-        Some(Overlay::Settings) => Some(options::main(app)),
-        Some(
-            Overlay::Help
-            | Overlay::Search
-            | Overlay::Sessions
-            | Overlay::Usage
-            | Overlay::Auth
-            | Overlay::Context
-            | Overlay::Cache,
-        )
-        | None => app.layout.peek().secondary.map(|pane| pane_body(app, pane)),
-    };
-    if let Some(panel) = panel {
-        slot = slot.child(panel);
-    }
-    slot
-}
-
-fn pane_body(app: App, pane: Pane) -> NodeBuilder {
+pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
     let mut column = container()
         .layout(
             LayoutStyle::flex_column()
-                .width(WIDTH)
+                .width(width)
                 .fill_height()
                 .padding(16.0)
                 .gap(8.0)
@@ -51,13 +27,13 @@ fn pane_body(app: App, pane: Pane) -> NodeBuilder {
         Pane::Files => files(app, column),
         Pane::Worktrees => trees(app, column),
         Pane::View => view(app, column),
-        Pane::Ledger => ledger(&app, column),
+        Pane::Ledger => todos::ledger(&app, column),
         Pane::Chat => column,
     };
     column
 }
 
-fn header(app: &App, title: String, note: String) -> NodeBuilder {
+pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -149,13 +125,19 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
     if stats.is_empty() {
         return column.child(label("no changes").class(classes!("text-xs text-gray-11")));
     }
-    for stat in stats {
+    for (index, stat) in stats.into_iter().enumerate() {
         let open = app.clone();
         let path = stat.path.clone();
+        let menu = app.clone();
         column = column.child(
-            hit(stat.path.clone(), false, move || {
-                open.diff_open(path.clone())
-            })
+            hit_menu(
+                stat.path.clone(),
+                false,
+                move || open.diff_open(path.clone()),
+                move || {
+                    menu.context_row(index);
+                },
+            )
             .child(
                 label(stat.path.clone())
                     .ellipsize()
@@ -193,15 +175,23 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
         } else {
             " "
         };
+        let menu = app.clone();
         column = column.child(
-            hit(row.path.clone(), false, move || {
-                if dir {
-                    act.file_cursor.set(index);
-                    act.pane_enter();
-                } else {
-                    act.view_open(path.clone());
-                }
-            })
+            hit_menu(
+                row.path.clone(),
+                false,
+                move || {
+                    if dir {
+                        act.file_cursor.set(index);
+                        act.pane_enter();
+                    } else {
+                        act.view_open(path.clone());
+                    }
+                },
+                move || {
+                    menu.context_row(index);
+                },
+            )
             .layout(
                 LayoutStyle::flex_row()
                     .fill_width()
@@ -234,14 +224,22 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .class(classes!("text-xs text-gray-11")),
         );
     }
-    for row in trees {
+    for (index, row) in trees.into_iter().enumerate() {
         let show = app.clone();
         let path = row.tree.path.clone();
         let branch = row.tree.branch.clone();
+        let menu = app.clone();
         column = column.child(
-            hit(row.tree.branch.clone(), false, move || {
-                show.tree_show(path.clone(), branch.clone());
-            })
+            hit_menu(
+                row.tree.branch.clone(),
+                false,
+                move || {
+                    show.tree_show(path.clone(), branch.clone());
+                },
+                move || {
+                    menu.context_row(index);
+                },
+            )
             .child(
                 label(row.tree.branch.clone())
                     .ellipsize()
@@ -279,10 +277,16 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            label(view.path.clone())
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                .class(classes!("text-sm font-medium text-gray-12")),
+            container()
+                .layout(
+                    LayoutStyle::block()
+                        .grow(1.0)
+                        .min_size(0.0, 14.0)
+                        .overflow_x(Overflow::Hidden),
+                )
+                .child(
+                    label(view.path.clone()).class(classes!("text-sm font-medium text-gray-12")),
+                ),
         );
     if editing {
         bar = bar
@@ -305,19 +309,23 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     bar = bar.child(close(&app));
     column = column.child(bar);
     if editing {
-        return column.child(
-            text_edit(app.view_text)
-                .caret_position(app.view_caret)
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .grow(1.0)
-                        .min_size(0.0, 200.0),
-                )
-                .class(classes!("font-mono text-xs bg-gray-1")),
-        );
+        return column.child(node(move |cx: &mut Cx| {
+            let id = cx.add(
+                text_edit(app.view_text)
+                    .caret_position(app.view_caret)
+                    .layout(
+                        LayoutStyle::flex_column()
+                            .fill_width()
+                            .grow(1.0)
+                            .min_size(0.0, 0.0),
+                    )
+                    .class(classes!("font-mono text-xs bg-gray-1")),
+            );
+            request_focus(id);
+            id
+        }));
     }
-    let text = view.rope.to_string_lossy();
+    let text = &view.text;
     let added = |number: usize| {
         view.added
             .iter()
@@ -348,50 +356,14 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 ),
         );
     }
-    column.child(body)
-}
-
-fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
-    let model = app.model.borrow();
-    let count = match (model.plan_current, model.plan_total) {
-        (Some(current), total) if total > 0 => format!("{current}/{total}"),
-        _ => String::new(),
-    };
-    let lines = model.ledger.clone();
-    drop(model);
-    column = column.child(header(app, "Todos".to_string(), count));
-    if lines.is_empty() {
-        return column.child(label("no todos yet").class(classes!("text-xs text-gray-11")));
-    }
-    for line in lines {
-        let (shown, done) = plan_mark(&line);
-        column = column.child(text(shown).class(if done {
-            classes!("text-xs text-gray-11")
-        } else {
-            classes!("text-xs text-gray-12")
-        }));
+    column = column.child(body);
+    if let Some(source) = view.image.clone() {
+        let height = (source.height() as f32).min(320.0);
+        column = column.child(
+            image(source)
+                .fit(ObjectFit::Contain)
+                .layout(LayoutStyle::block().fill_width().min_size(0.0, height)),
+        );
     }
     column
-}
-
-fn plan_mark(line: &str) -> (String, bool) {
-    let pad = " ".repeat(line.len() - line.trim_start().len());
-    let body = line.trim_start();
-    if let Some(rest) = body.strip_prefix("[x] ") {
-        (format!("{pad}✓ {rest}"), true)
-    } else if let Some(rest) = body.strip_prefix("[/] ") {
-        (format!("{pad}● {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("[ ] ") {
-        (format!("{pad}○ {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("[!] ") {
-        (format!("{pad}! {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("✓ ") {
-        (format!("{pad}✓ {rest}"), true)
-    } else if let Some(rest) = body.strip_prefix("● ") {
-        (format!("{pad}● {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("○ ") {
-        (format!("{pad}○ {rest}"), false)
-    } else {
-        (line.to_string(), false)
-    }
 }

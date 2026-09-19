@@ -1,10 +1,11 @@
 use sigil::prelude::{ImageSource, Rgba8};
 
 use super::super::app::App;
+use super::super::canvas::{Line, Span};
 use super::super::input::Input;
 use super::super::model::{Entry, Model};
 use super::chrome::line_width;
-use super::{Line, Span, accent, canvas, margin, palette, transcript};
+use super::{accent, canvas, margin, palette, transcript};
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::tui::sigil_view) struct Anchor {
@@ -26,8 +27,6 @@ pub(in crate::tui::sigil_view) struct Placed {
     pub(super) source: ImageSource,
 }
 
-impl Placed {}
-
 #[derive(Default)]
 pub(in crate::tui::sigil_view) struct History {
     stamp: u64,
@@ -36,26 +35,9 @@ pub(in crate::tui::sigil_view) struct History {
     pub(super) lines: Vec<Row>,
     pub(super) images: Vec<Placed>,
     stream: Option<transcript::Stream>,
-    #[cfg(test)]
-    pub(super) rendered: usize,
 }
 
 impl History {
-    pub(in crate::tui::sigil_view) fn diff_hit(
-        &self,
-        line: usize,
-        col: usize,
-    ) -> Option<crate::prefs::DiffLayout> {
-        let mut x = 0;
-        for span in &self.lines.get(line)?.spans {
-            let end = x + sigil_tui::cell_width(&span.text);
-            if (x..end).contains(&col) {
-                return span.diff_layout;
-            }
-            x = end;
-        }
-        None
-    }
     pub(in crate::tui::sigil_view) fn anchor(&self, position: f32) -> Option<Anchor> {
         self.lines
             .get((position / canvas::cell().h) as usize)
@@ -73,18 +55,16 @@ impl History {
         Some(row as f32 * canvas::cell().h)
     }
 
-    pub(in crate::tui::sigil_view) fn extent(
+    pub(in crate::tui::sigil_view) fn total_extent(
         &mut self,
         model: &Model,
         cols: u16,
-        height: u16,
         stamp: u64,
     ) -> f32 {
         let width = usize::from(cols);
         let inset = margin(width);
         self.lines(model, width.saturating_sub(inset * 2), stamp)
-            .len()
-            .saturating_sub(usize::from(height)) as f32
+            .len() as f32
             * canvas::cell().h
     }
 
@@ -187,10 +167,6 @@ impl History {
             }
             _ => None,
         };
-        #[cfg(test)]
-        {
-            self.rendered += len - start;
-        }
         self.stamp = stamp;
         self.width = width;
         self.stable = len;

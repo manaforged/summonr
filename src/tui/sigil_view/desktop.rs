@@ -1,6 +1,5 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, Role,
-    Theme, classes, container, signal,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Role, Theme, classes, container,
 };
 
 use super::super::Cmd;
@@ -9,9 +8,7 @@ use super::pane::Pane;
 use super::view::shell;
 
 mod icons;
-mod options;
 mod rail;
-mod side;
 mod thread;
 
 pub(super) fn root(app: App) -> NodeBuilder {
@@ -23,19 +20,15 @@ pub(super) fn root(app: App) -> NodeBuilder {
         .children_reactive(move || {
             let overlay = match screen.overlay() {
                 Some(Overlay::Help) => Some(super::help::layer(screen.clone())),
-                Some(Overlay::Auth) => Some(options::auth(screen.clone())),
-                Some(Overlay::Search) => Some(super::search::desktop(screen.clone())),
-                Some(Overlay::Sessions) => Some(super::sessions::desktop(screen.clone())),
+                Some(Overlay::Search) => Some(super::search::layer(screen.clone())),
+                Some(Overlay::Sessions) => Some(super::sessions::layer(screen.clone())),
                 Some(Overlay::Usage) => Some(super::usage::layer(screen.clone())),
-                Some(
-                    Overlay::Model
-                    | Overlay::Workflow
-                    | Overlay::Hotkeys
-                    | Overlay::Settings
-                    | Overlay::Context
-                    | Overlay::Cache,
-                )
-                | None => None,
+                Some(Overlay::Auth) => Some(super::settings::auth_layer(screen.clone())),
+                Some(Overlay::Model) => Some(super::settings::model_picker_layer(screen.clone())),
+                Some(Overlay::Workflow) => Some(super::settings::workflow_layer(screen.clone())),
+                Some(Overlay::Settings) => Some(super::settings::settings_layer(screen.clone())),
+                Some(Overlay::Hotkeys) => Some(super::settings::hotkeys_layer(screen.clone())),
+                Some(Overlay::Context | Overlay::Cache) | None => None,
             };
             if let Some(overlay) = overlay {
                 return vec![shell(&screen).child(overlay)];
@@ -72,7 +65,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                         panel.diff_view.get(),
                         panel.view_edit.get(),
                     ));
-                    vec![side::slot(panel.clone())]
+                    vec![sidebar(panel.clone())]
                 });
             vec![
                 shell(&screen).child(
@@ -97,37 +90,28 @@ pub(super) fn root(app: App) -> NodeBuilder {
         })
 }
 
+fn sidebar(app: App) -> NodeBuilder {
+    let pane = match app.overlay() {
+        Some(Overlay::Model) | Some(Overlay::Workflow) => None,
+        Some(
+            Overlay::Help
+            | Overlay::Search
+            | Overlay::Sessions
+            | Overlay::Usage
+            | Overlay::Auth
+            | Overlay::Hotkeys
+            | Overlay::Settings
+            | Overlay::Context
+            | Overlay::Cache,
+        )
+        | None => app.layout.peek().secondary,
+    };
+    match pane {
+        Some(pane) => super::panes::body::pane_body(app, pane, 360.0),
+        None => container(),
+    }
+}
+
 fn open(app: &App, pane: Pane) -> bool {
     app.layout.peek().secondary == Some(pane)
-}
-
-fn spacer() -> NodeBuilder {
-    container().layout(LayoutStyle::block().grow(1.0))
-}
-
-fn hairline() -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::block().fixed_size(1.0, 18.0))
-        .class(classes!("bg-gray-6"))
-}
-
-pub(super) fn hit(name: String, on: bool, act: impl Fn() + 'static) -> NodeBuilder {
-    container()
-        .role(Role::Button)
-        .label(name)
-        .focusable(true)
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(28.0)
-                .padding_x(8.0)
-                .gap(8.0)
-                .align_items(AlignItems::Center),
-        )
-        .class(classes!("rounded-md"))
-        .class_when(signal(on), "bg-gray-5")
-        .pointer_down(move |event| {
-            act();
-            event.stop_propagation();
-        })
 }

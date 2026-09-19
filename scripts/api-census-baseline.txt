@@ -28,20 +28,21 @@ session dialect Msg	1	one session event
 session dialect Cmd	1	one session event
 session dialect Line	1	one session event
 session dialect Entry	1	one session event
-name collision: Backend	3	one word, one domain
+name collision: Backend	2	one word, one domain
 name collision: Source	2	one word, one domain
 name collision: Kind	1	one word, one domain
 name collision: Role	2	one word, one domain
 name collision: Event	2	one word, one domain
 clip-shaped helper	5	check the job, then name it
-short-shaped helper	7	check the job, then name it
+short-shaped helper	5	check the job, then name it
 wrap-shaped helper	7	check the job, then name it
-surface painter	7	rows::paint
+surface painter	4	rows::paint
 sigil prelude glob	0	named imports
 direct file write	3	store::write
-legacy tool alias literal	52	one alias table
-match wildcard arm	143	name the arm
-duration literal	44	one timeout policy
-timeout mention	28	one timeout policy
+legacy tool alias literal	41	one alias table
+match wildcard arm	122	name the arm
+duration literal	42	one timeout policy
+timeout mention	26	one timeout policy
 dead dependency unicode-width	0	delete
 dead dependency winapi-util	0	delete
+source file over 400 lines	20	split it

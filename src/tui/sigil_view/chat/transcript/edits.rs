@@ -4,7 +4,8 @@ use super::super::super::{
     input::Input,
     patch::{self, Kind, Pair},
 };
-use super::super::{cell_width, ellipsize};
+use super::super::canvas::ellipsize;
+use super::super::cell_width;
 use super::{
     DiffLayout, Line, Span, ToolOutput, ToolState, band, blend, code, palette, tool_header,
 };

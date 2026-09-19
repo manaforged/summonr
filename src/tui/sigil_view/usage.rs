@@ -1,18 +1,18 @@
 use std::collections::BTreeMap;
 
-use sigil::prelude::{NodeBuilder, Rgba8, Signal, signal, text_field};
+use sigil::prelude::{
+    ColorAtom, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Rgba8, Signal,
+    Style, Tone, chart, container, label as text, panel, request_focus, scroll_auto, signal,
+};
 
 use super::app::App;
-use super::canvas::{Cell, palette};
-use super::chat::{accent, ellipsize, write_at};
-use super::settings::{footer, frame};
+use super::canvas::palette;
 use crate::bus::now;
 use crate::provider::{compact, dollars};
 use crate::session::{DAY, HOUR, Spend, Total, buckets};
 
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "lifetime"];
-const BLOCKS: [char; 9] = [' ', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-const AXIS: usize = 8;
+const ROOM: usize = 78;
 
 #[derive(Clone, Copy)]
 pub(super) struct Panel {
@@ -66,8 +66,14 @@ impl Panel {
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {
-    let input = text_field(signal(String::new())).class("w-full h-full");
-    super::settings::layer(app, grid, input)
+    let paint = app.clone();
+    container()
+        .layout(LayoutStyle::block().fill())
+        .children_reactive(move || {
+            super::view::watch(&paint);
+            let _revision = paint.panes.get();
+            vec![body(&paint)]
+        })
 }
 
 fn label(value: f64, cost: bool) -> String {
@@ -90,33 +96,72 @@ fn colors() -> [Rgba8; 6] {
     ]
 }
 
-fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
-    let mut cells = vec![Cell::blank(); width.saturating_mul(height)];
-    app.hits.clear();
-    let panel = app.usage;
-    let color = accent(&app.model.borrow().prefs.theme);
-    if width < 40 || height < 12 {
-        write_at(
-            &mut cells,
-            width,
-            1,
-            0,
-            "usage · widen the window",
-            palette().gray,
-        );
-        return cells;
+fn tone(index: usize) -> Tone {
+    const TONES: [Tone; 6] = [
+        Tone::Primary,
+        Tone::Warn,
+        Tone::Success,
+        Tone::Error,
+        Tone::Info,
+        Tone::Neutral,
+    ];
+    TONES[index % TONES.len()]
+}
+
+fn tinted(value: String, index: usize) -> impl IntoNode + 'static {
+    let colors = colors();
+    let ink = colors[index % colors.len()];
+    text(value).style(Style::new().text_color(ColorAtom::Rgba8(ink)))
+}
+
+fn scroll_panel(title: String, content: NodeBuilder) -> NodeBuilder {
+    let content = container()
+        .focusable(true)
+        .on_added(|_, id| request_focus(id))
+        .child(panel().title(title).child(content));
+    container()
+        .layout(LayoutStyle::block().fill())
+        .child(scroll_auto(content).fill().auto_pin_to_bottom(false))
+}
+
+const SHOWN: usize = 5;
+const TICKS: usize = 6;
+const OTHER: &str = "other";
+
+fn axis(peak: f64, cost: bool) -> (f64, &'static str) {
+    if cost {
+        (1.0, "")
+    } else if peak >= 1e9 {
+        (1e9, " · billions")
+    } else if peak >= 1e6 {
+        (1e6, " · millions")
+    } else if peak >= 1e3 {
+        (1e3, " · thousands")
+    } else {
+        (1.0, "")
     }
-    let card = width.saturating_sub(2);
-    let range = panel.range.get();
-    let cost = panel.cost.get();
-    let local = panel.local.get();
-    let all = panel.rows.get();
-    let status = panel.status.get();
+}
+
+fn bucket(span: u64, back: usize) -> String {
+    let ago = span * back as u64;
+    if ago < DAY {
+        format!("{}h", ago / HOUR)
+    } else {
+        format!("{}d", ago / DAY)
+    }
+}
+
+fn body(app: &App) -> NodeBuilder {
+    let usage = app.usage;
+    let range = usage.range.get();
+    let cost = usage.cost.get();
+    let local = usage.local.get();
+    let all = usage.rows.get();
+    let status = usage.status.get();
     let rows: Vec<&Spend> = all.iter().filter(|row| !local || row.local).collect();
     let now = now();
-    let room = card.saturating_sub(AXIS + 4);
     let first = rows.iter().map(|row| row.hour).min();
-    let (span, count, first) = buckets(range, first, now, room);
+    let (span, count, first) = buckets(range, first, now, ROOM);
     let start = now.saturating_sub(span * count as u64);
 
     let mut total = Total::default();
@@ -133,219 +178,119 @@ fn grid(app: &App, width: usize, height: usize) -> Vec<Cell> {
     }
     let mut order: Vec<(&str, Total)> = models.into_iter().collect();
     order.sort_by(|a, b| b.1.value(cost).total_cmp(&a.1.value(cost)));
-    let palette_colors = colors();
-    let tint = |model: &str| {
-        order
-            .iter()
-            .position(|(name, _)| *name == model)
-            .map_or(palette().dim, |index| {
-                palette_colors[index % palette_colors.len()]
-            })
-    };
 
-    let card_height = height;
-    let table = order.len().max(1).min(card_height / 3);
-    let chart = card_height.saturating_sub(table + 9).max(3);
-    let left = 1;
-    let top = 0;
-    let bounds = (left, top, card, card_height);
-    frame(&mut cells, width, bounds, color);
     let scope = if local {
         "this workspace"
     } else {
         "all workspaces"
     };
-    write_at(
-        &mut cells,
-        width,
-        left + 1,
-        top,
-        &format!(" ◷ usage · {scope} "),
-        color,
-    );
-    let mut x = left + card.saturating_sub(3);
-    for (index, name) in RANGES.iter().enumerate().rev() {
-        let text = if index == range {
-            format!("[{name}]")
-        } else {
-            format!(" {name} ")
-        };
-        x = x.saturating_sub(text.chars().count());
-        write_at(
-            &mut cells,
-            width,
-            x,
-            top,
-            &text,
-            if index == range { color } else { palette().dim },
-        );
-    }
-    footer(
-        &mut cells,
-        width,
-        bounds,
-        &[
-            " ←→ range · tab tokens/cost · enter workspace · esc close ",
-            " ←→ · tab · enter · esc ",
-        ],
-    );
-
-    let inner = left + 2;
-    let cached = if total.input == 0 {
-        0.0
-    } else {
-        total.cached as f64 * 100.0 / total.input as f64
-    };
-    let summary = format!(
-        "input {}   cached {cached:.1}%   output {}   cost {}",
-        compact(total.input),
-        compact(total.output),
-        total.cost.map_or_else(|| "–".to_string(), dollars),
-    );
-    write_at(
-        &mut cells,
-        width,
-        inner,
-        top + 2,
-        &ellipsize(&summary, card - 4),
-        palette().text,
-    );
+    let title = format!(" ◷ usage · {scope} ");
+    let mut content = container().layout(LayoutStyle::flex_column().gap(6.0));
     if !status.is_empty() || order.is_empty() {
         let note = if status.is_empty() {
             "no usage in this range"
         } else {
-            &status
+            status.as_str()
         };
-        write_at(&mut cells, width, inner, top + 4, note, palette().dim);
-        return cells;
+        return scroll_panel(
+            title,
+            content.child(
+                text(note.to_string())
+                    .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
+            ),
+        );
     }
 
     let peak = columns
         .iter()
-        .map(|column| column.values().map(|t| t.value(cost)).sum::<f64>())
+        .map(|column| column.values().map(|total| total.value(cost)).sum::<f64>())
         .fold(0.0_f64, f64::max)
         .max(f64::MIN_POSITIVE);
-    let chart_top = top + 4;
-    write_at(
-        &mut cells,
-        width,
-        inner,
-        chart_top,
-        &format!("{:>7}", label(peak, cost)),
-        palette().dim,
-    );
-    write_at(
-        &mut cells,
-        width,
-        inner,
-        chart_top + chart - 1,
-        &format!("{:>7}", "0"),
-        palette().dim,
-    );
-    let step = (room / count).clamp(1, 8);
-    let bar = if step > 1 { step - 1 } else { 1 };
-    for (index, column) in columns.iter().enumerate() {
-        let mut stack: Vec<(f64, Rgba8)> = Vec::new();
-        let mut sum = 0.0;
-        for (name, _) in &order {
-            if let Some(part) = column.get(name) {
-                sum += part.value(cost) / peak * (chart * 8) as f64;
-                stack.push((sum, tint(name)));
-            }
-        }
-        let units = sum.round() as usize;
-        let column_left = inner + AXIS + index * step;
-        for level in 0..chart {
-            let filled = units.saturating_sub(level * 8).min(8);
-            let y = chart_top + chart - 1 - level;
-            let (glyph, ink) = if filled == 0 {
-                (if level == 0 { '·' } else { ' ' }, palette().dim)
-            } else {
-                let middle = (level * 8 + filled / 2) as f64;
-                let ink = stack
+    let (scale, suffix) = axis(peak, cost);
+    let named: Vec<&str> = order.iter().take(SHOWN).map(|(name, _)| *name).collect();
+    let bars = |want: Option<&str>| {
+        columns
+            .iter()
+            .map(|column| {
+                column
                     .iter()
-                    .find(|(edge, _)| middle < *edge)
-                    .map_or(palette().dim, |(_, ink)| *ink);
-                (BLOCKS[filled], ink)
-            };
-            let text: String = std::iter::repeat_n(glyph, bar).collect();
-            write_at(&mut cells, width, column_left, y, &text, ink);
-        }
+                    .filter(|(name, _)| match want {
+                        Some(want) => **name == want,
+                        None => !named.contains(name),
+                    })
+                    .map(|(_, total)| total.value(cost))
+                    .sum::<f64>()
+                    / scale
+            })
+            .map(|value| value as f32)
+            .collect::<Vec<_>>()
+    };
+    let every = count.div_ceil(TICKS).max(1);
+    let mut plot = chart(std::iter::empty())
+        .bar()
+        .labels((0..count).map(|index| {
+            if index % every == 0 {
+                bucket(span, count - index)
+            } else {
+                String::new()
+            }
+        }))
+        .height(240.0);
+    for (index, name) in named.iter().enumerate() {
+        plot = plot.series(*name, bars(Some(name)), tone(index));
     }
-    let axis = chart_top + chart;
-    write_at(&mut cells, width, inner + AXIS, axis, first, palette().dim);
+    if order.len() > SHOWN {
+        plot = plot.series(OTHER, bars(None), tone(SHOWN));
+    }
+    content = content.child(plot);
     let unit = if span < DAY {
         format!("{}h", span / HOUR)
     } else {
         format!("{}d", span / DAY)
     };
-    let right = format!(
-        "1 column = {unit} · {}   now",
-        if cost { "cost" } else { "tokens" }
+    content = content.child(
+        text(format!(
+            "one column = {unit} · {}{suffix} · oldest {first} · peak {}",
+            if cost { "cost" } else { "tokens" },
+            label(peak, cost),
+        ))
+        .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
     );
-    let right_left = (inner + AXIS + count * step).saturating_sub(right.chars().count());
-    write_at(
-        &mut cells,
-        width,
-        right_left.max(inner + AXIS + first.len() + 2),
-        axis,
-        &right,
-        palette().dim,
-    );
-
-    let head = axis + 2;
-    let name = card.saturating_sub(4 + 2 + 36 + 2 + 12).clamp(16, 40);
-    let bar_room = card.saturating_sub(49 + name);
-    let share_left = inner + 2 + name + 36 + 2 + 5;
-    write_at(
-        &mut cells,
-        width,
-        inner,
-        head,
-        &ellipsize(
-            &format!(
-                "  {:<name$}{:>9}{:>8}{:>9}{:>10}   share",
-                "model", "input", "cached", "output", "cost"
-            ),
-            card - 4,
-        ),
-        palette().gray,
+    let cached = if total.input == 0 {
+        0.0
+    } else {
+        total.cached as f64 * 100.0 / total.input as f64
+    };
+    content = content.child(
+        text(format!(
+            "total   input {}   cached {cached:.1}%   output {}   cost {}",
+            compact(total.input),
+            compact(total.output),
+            total.cost.map_or_else(|| "–".to_string(), dollars),
+        ))
+        .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
     );
     let whole = order
         .iter()
-        .map(|(_, t)| t.value(cost))
+        .map(|(_, total)| total.value(cost))
         .sum::<f64>()
         .max(f64::MIN_POSITIVE);
-    for (index, (model_name, model)) in order.iter().take(table).enumerate() {
-        let y = head + 1 + index;
-        let ink = tint(model_name);
-        write_at(&mut cells, width, inner, y, "█", ink);
+    for (index, (name, model)) in order.iter().enumerate() {
         let cached = if model.input == 0 {
             0.0
         } else {
             model.cached as f64 * 100.0 / model.input as f64
         };
-        let line = format!(
-            "{:<name$}{:>9}{:>7.0}%{:>9}{:>10}",
-            ellipsize(model_name, name - 1),
-            compact(model.input),
-            cached,
-            compact(model.output),
-            model.cost.map_or_else(|| "–".to_string(), dollars),
-        );
-        write_at(&mut cells, width, inner + 2, y, &line, palette().text);
-        let share = model.value(cost) / whole;
-        let length = ((share * bar_room as f64).round() as usize).max(1);
-        let meter: String = std::iter::repeat_n('▬', length).collect();
-        write_at(&mut cells, width, share_left, y, &meter, ink);
-        write_at(
-            &mut cells,
-            width,
-            share_left - 5,
-            y,
-            &format!("{:>3.0}%", share * 100.0),
-            palette().dim,
-        );
+        content = content.child(tinted(
+            format!(
+                "{name}   in {}   cached {cached:.1}%   out {}   {}   {:.1}%",
+                compact(model.input),
+                compact(model.output),
+                model.cost.map_or_else(|| "–".to_string(), dollars),
+                model.value(cost) / whole * 100.0,
+            ),
+            index,
+        ));
     }
-    cells
+    scroll_panel(title, content)
 }

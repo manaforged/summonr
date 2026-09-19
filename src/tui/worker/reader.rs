@@ -1,10 +1,12 @@
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
 use futures::future::join_all;
-use sigil_ide_core::buffer::Rope;
-use sigil_ide_core::workspace::{FsEvent, WorkspaceRoot};
+use ignore::WalkBuilder;
+use notify::event::{EventKind, ModifyKind};
+use notify::{Event as NotifyEvent, RecursiveMode, Watcher};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::{Cmd, Msg};
@@ -112,10 +114,10 @@ impl Reader {
             Cmd::View(root, path) => {
                 let root = root.as_deref().unwrap_or(&self.workspace);
                 match view(root, &path) {
-                    Ok((rope, added, image)) => self.send(Msg::View {
+                    Ok((text, added, image)) => self.send(Msg::View {
                         file: root.join(&path),
                         path,
-                        rope,
+                        text,
                         added,
                         image,
                     }),
@@ -224,17 +226,38 @@ impl Reader {
     }
 
     fn forward(&self) {
-        let Ok(root) = WorkspaceRoot::open(&self.workspace) else {
-            return;
+        let root = match std::fs::canonicalize(&self.workspace) {
+            Ok(root) => root,
+            Err(error) => {
+                self.send(Msg::System(format!("workspace watch unavailable: {error}")));
+                return;
+            }
         };
-        let Ok(watcher) = root.watch() else {
-            return;
+        let (sender, receiver) = mpsc::channel();
+        let ui = self.ui.clone();
+        let mut watcher = match notify::recommended_watcher(
+            move |result: std::result::Result<NotifyEvent, notify::Error>| match result {
+                Ok(event) => drop(sender.send(event)),
+                Err(error) => {
+                    drop(ui.send(Msg::System(format!("workspace watch failed: {error}"))))
+                }
+            },
+        ) {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                self.send(Msg::System(format!("workspace watch unavailable: {error}")));
+                return;
+            }
         };
-        while let Some(first) = watcher.wait() {
+        if let Err(error) = watcher.watch(&root, RecursiveMode::Recursive) {
+            self.send(Msg::System(format!("workspace watch unavailable: {error}")));
+            return;
+        }
+        while let Ok(first) = receiver.recv() {
             let mut events = vec![first];
             let deadline = Instant::now() + WINDOW;
-            while let Some(more) =
-                watcher.wait_timeout(deadline.saturating_duration_since(Instant::now()))
+            while let Ok(more) =
+                receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
             {
                 events.push(more);
                 if Instant::now() >= deadline {
@@ -242,9 +265,8 @@ impl Reader {
                 }
             }
             let paths: Vec<String> = events
-                .iter()
-                .map(|event| relative(root.path(), event))
-                .filter(|path| !path.is_empty())
+                .into_iter()
+                .flat_map(|event| relative(&root, &event))
                 .collect();
             let changed = unignored(&self.workspace, paths);
             if !changed.is_empty() && self.ui.send(Msg::Changed(changed)).is_err() {
@@ -255,38 +277,47 @@ impl Reader {
 }
 
 fn files(workspace: &Path) -> Vec<String> {
-    let Ok(root) = WorkspaceRoot::open(workspace) else {
+    let Ok(root) = std::fs::canonicalize(workspace) else {
         return Vec::new();
     };
-    let base = root.path().to_path_buf();
-    root.files()
-        .filter_map(|path| path.strip_prefix(&base).ok().map(text))
+    WalkBuilder::new(&root)
+        .require_git(false)
+        .build()
+        .filter_map(std::result::Result::ok)
+        .filter_map(|entry| {
+            let file_type = entry.file_type()?;
+            (file_type.is_file() || file_type.is_symlink())
+                .then(|| entry.path().strip_prefix(&root).ok().map(text))
+                .flatten()
+        })
         .collect()
 }
 
-type Viewed = (Rope, Vec<(usize, usize)>, Option<Vec<u8>>);
+type Viewed = (String, Vec<(usize, usize)>, Option<Vec<u8>>);
 
 fn view(root: &Path, path: &str) -> Result<Viewed> {
     let full = root.join(path);
     let bytes = std::fs::read(&full)?;
     if crate::tools::image_type(&bytes).is_some() {
-        return Ok((
-            Rope::from_reader(std::io::empty())?,
-            Vec::new(),
-            Some(bytes),
-        ));
+        return Ok((String::new(), Vec::new(), Some(bytes)));
     }
-    let rope = Rope::from_reader(bytes.as_slice())?;
+    let text = String::from_utf8(bytes)
+        .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
     let added = diff::hunks(root, path).unwrap_or_default();
-    Ok((rope, added, None))
+    Ok((text, added, None))
 }
 
-fn relative(root: &Path, event: &FsEvent) -> String {
-    let path = match event {
-        FsEvent::Created(path) | FsEvent::Modified(path) | FsEvent::Removed(path) => path,
-        FsEvent::Renamed(_, to) => to,
+fn relative(root: &Path, event: &NotifyEvent) -> Vec<String> {
+    let paths = if matches!(&event.kind, EventKind::Modify(ModifyKind::Name(_))) {
+        event.paths.iter().rev().take(1).collect::<Vec<_>>()
+    } else {
+        event.paths.iter().collect()
     };
-    path.strip_prefix(root).map(text).unwrap_or_default()
+    paths
+        .into_iter()
+        .filter_map(|path| path.strip_prefix(root).ok().map(text))
+        .filter(|path| !path.is_empty())
+        .collect()
 }
 
 fn text(path: &Path) -> String {

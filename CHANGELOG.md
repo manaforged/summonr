@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Overlay chrome (options, search, sessions, composer, meters) uses
+  Sigil `list_row`, `button`, `card`, `hint_bar`, and `notice_band`.
+- The advertised tool catalog freezes after the first `prefix_hash` in
+  the process. `/modules` writes apply on the next process.
+- The TUI skips a full paint when the session is idle.
 - `/plan accept` enters work and runs the plan in that turn. Work is not
   a sibling of plan: without a selected plan, a work request stays in
   plan mode. `shift+tab` switches auto and plan only.
@@ -13,13 +18,13 @@
 - A fenced `chart` block, or mermaid `xychart` / `xychart-beta`,
   renders as labeled bars.
 - Crate and command are `summonr`. `summon` and `summoner` remain PATH
-  aliases of the same binary. Config stays under `~/.mage`.
+  aliases of the same binary. Config stays under `~/.summonr`.
 - The model sees four core tools every round: `read` (file, directory,
   image, or search), `edit`, `write`, and `run_command`. Optional
   modules add `skill`, `lsp`, `web`, `task`, and `bus`. Old names still
   run and are not advertised.
 - Ordinary chat executes immediately. `shift+tab` and `/plan` enter
-  plan mode. The reply is saved to `.mage/plan.md`. Sandboxed network
+  plan mode. The reply is saved to `.summonr/plan.md`. Sandboxed network
   is on by default; `--no-net` denies it. Destructive writes still ask.
 - The four core tools got deeper without growing: `read` search takes
   `literal`, `caseSensitive`, and `include`; `edit` takes a `files`
@@ -63,7 +68,7 @@ First public release of the Mage harness under the Summoner name.
 - Command policy splits on `|` and `;` outside quotes, so a grep pattern
   such as `pwsh\|sh` is not a pipe into a shell. A `cd` to
   `$(git rev-parse --show-toplevel)` counts as the workspace.
-- `[sandbox] write` in `~/.mage/config.toml` lists directories outside the
+- `[sandbox] write` in `~/.summonr/config.toml` lists directories outside the
   workspace that contained commands may write, for build caches that
   otherwise fail with `Operation not permitted`.
 - A research child that finishes before its batch is cancelled keeps its
@@ -125,7 +130,7 @@ First public release of the Mage harness under the Summoner name.
   goal whose checks keep failing (exit 2). Every goal turn restates the
   objective. Goal-judge repairs and provider retries (exponential backoff)
   have fixed caps; provider rounds have none. Receipts carry
-  `verified`. Changing `.mage/check.toml` mid-turn re-selects the checks
+  `verified`. Changing `.summonr/check.toml` mid-turn re-selects the checks
   instead of blocking the session.
 - Context overflow recovery clears the oldest tool results first and keeps
   the newest two. A failed auto-compaction is not retried until the next
@@ -156,4 +161,5 @@ First public release of the Mage harness under the Summoner name.
   stop the Work instead of silently continuing it.
 
 Not in this release: crates.io (Sigil is a git dependency) and renaming
-`~/.mage`. Native Windows is experimental.
+`~/.summonr`. Windows AppContainer is unfinished: Git for Windows and
+user-installed toolchains stay blocked.

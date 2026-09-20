@@ -7,7 +7,7 @@ use toml_edit::{DocumentMut, value};
 use crate::durable::store;
 use crate::error::{Error, Result};
 use crate::prefs::Prefs;
-use crate::prompt::mage_home;
+use crate::prompt::summonr_home;
 use crate::workflow::Workflow;
 
 #[derive(Debug, Default, Deserialize)]
@@ -45,6 +45,8 @@ pub(crate) struct File {
     pub modules: BTreeMap<String, bool>,
     #[serde(default)]
     pub mcp: BTreeMap<String, crate::mcp::Entry>,
+    #[serde(default)]
+    pub import_mcp: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
 }
@@ -116,7 +118,7 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub struct OAuth {
     pub token_url: String,
     pub client_id: String,
@@ -129,6 +131,22 @@ pub struct OAuth {
     pub device_url: Option<String>,
     #[serde(default)]
     pub exchange_url: Option<String>,
+    #[serde(default)]
+    pub authorize_url: Option<String>,
+    #[serde(default)]
+    pub redirect_uri: Option<String>,
+    #[serde(default)]
+    pub authorize_params: BTreeMap<String, String>,
+    #[serde(default)]
+    pub token_params: BTreeMap<String, String>,
+    #[serde(default)]
+    pub token_style: Option<String>,
+    #[serde(default)]
+    pub scheme: Option<String>,
+    #[serde(default)]
+    pub pkce: bool,
+    #[serde(default)]
+    pub claim_headers: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -139,7 +157,7 @@ pub(crate) struct Search {
 }
 
 pub(crate) fn path() -> Result<PathBuf> {
-    Ok(mage_home()?.join("config.toml"))
+    Ok(summonr_home()?.join("config.toml"))
 }
 
 pub(crate) fn load() -> Result<File> {

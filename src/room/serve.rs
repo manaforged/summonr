@@ -110,8 +110,8 @@ impl Server {
             .unwrap_or("mcp")
             .to_ascii_lowercase();
         self.push = self.client.contains("claude")
-            && std::env::var_os("MAGE_ROOM_PUSH").is_none_or(|value| value != "off");
-        if let Some(path) = std::env::var_os("MAGE_ROOM_LOG") {
+            && std::env::var_os("SUMMONR_ROOM_PUSH").is_none_or(|value| value != "off");
+        if let Some(path) = std::env::var_os("SUMMONR_ROOM_LOG") {
             drop(store::write(Path::new(&path), params.to_string()));
         }
         json!({
@@ -126,7 +126,7 @@ impl Server {
         if let Some(kind) = given {
             return kind.to_string();
         }
-        if let Ok(kind) = std::env::var("MAGE_BUS_KIND") {
+        if let Ok(kind) = std::env::var("SUMMONR_BUS_KIND") {
             return kind;
         }
         for known in ["claude", "codex", "summoner", "summonr"] {
@@ -141,7 +141,7 @@ impl Server {
         let kind = self.kind(kind);
         let id = match id
             .map(str::to_string)
-            .or_else(|| std::env::var("MAGE_BUS_ID").ok())
+            .or_else(|| std::env::var("SUMMONR_BUS_ID").ok())
         {
             Some(id) => id,
             None => format!("{kind}-{}", short()),

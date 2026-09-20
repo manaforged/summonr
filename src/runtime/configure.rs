@@ -15,7 +15,7 @@ impl<P: Provider> Loop<P> {
         let model = model.into();
         let system_prompt = system_prompt.into();
         let session = open_driver(
-            crate::prompt::mage_home()?,
+            crate::prompt::summonr_home()?,
             workspace,
             &model,
             &system_prompt,
@@ -93,7 +93,7 @@ impl<P: Provider> Loop<P> {
         let workspace = workspace.as_ref();
         let model = model.into();
         if model.trim().is_empty() {
-            return Err(Error::Config("MAGE_MODEL is empty".to_string()));
+            return Err(Error::Config("SUMMONR_MODEL is empty".to_string()));
         }
         let system_prompt = system_prompt.into();
         let (max_tokens, max_live_millis) = session.budget_limits();
@@ -153,6 +153,7 @@ impl<P: Provider> Loop<P> {
             blocks: (0, 0),
             spawned: BTreeMap::new(),
             mailbox: tokio::sync::mpsc::unbounded_channel(),
+            catalog_frozen: false,
         })
     }
 
@@ -164,6 +165,9 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn set_modules(&mut self, switches: &crate::modules::Switches) {
+        if self.catalog_frozen {
+            return;
+        }
         self.tools.set_modules(
             switches.enabled("search"),
             switches.enabled("lsp"),
@@ -176,6 +180,15 @@ impl<P: Provider> Loop<P> {
         }
         self.switch_mcp(switches.enabled("mcp"));
         self.schema = None;
+    }
+
+    #[must_use]
+    pub(crate) fn catalog_frozen(&self) -> bool {
+        self.catalog_frozen
+    }
+
+    pub(crate) fn freeze_catalog(&mut self) {
+        self.catalog_frozen = true;
     }
 
     pub fn set_env(&mut self, env: impl IntoIterator<Item = (String, String)>) {

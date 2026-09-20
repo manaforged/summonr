@@ -34,6 +34,7 @@ impl Worker {
                 followups: &mut self.followups,
                 deferred: &mut self.deferred,
                 ui: &self.ui,
+                answers: None,
             },
             self.loop_
                 .compact_with(move |event| drop(ui.send(Msg::Event(event.clone())))),
@@ -235,7 +236,7 @@ impl Worker {
             self.system(&status);
         } else {
             self.system(
-                "/goal <objective> — work toward it across turns; gates come from .mage/check.toml; /goal clear ends it",
+                "/goal <objective> — work toward it across turns; gates come from .summonr/check.toml; /goal clear ends it",
             );
         }
         true

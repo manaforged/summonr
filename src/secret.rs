@@ -19,7 +19,8 @@ const SERVICE: &str = "summoner";
 #[cfg(any(target_os = "macos", all(test, unix)))]
 const ACCOUNT: &str = "credentials";
 const SEAL: &str = "seal";
-const MAGIC: &[u8] = b"MAGE1";
+const MAGIC: &[u8] = b"SMNR1";
+const MAGIC_LEGACY: &[u8] = b"MAGE1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
@@ -83,8 +84,8 @@ pub(crate) struct Store {
 impl Store {
     #[cfg(not(test))]
     pub(crate) fn discover() -> Result<Self> {
-        let file = crate::prompt::mage_home()?.join(FILE);
-        let choice = std::env::var("MAGE_SECRETS")
+        let file = crate::prompt::summonr_home()?.join(FILE);
+        let choice = std::env::var("SUMMONR_SECRETS")
             .ok()
             .or_else(|| crate::config::load().ok().and_then(|file| file.secrets))
             .unwrap_or_default();
@@ -239,7 +240,7 @@ impl Store {
         tighten(&self.file)?;
         match std::fs::read(&self.file) {
             Ok(bytes) => {
-                let sealed = bytes.starts_with(MAGIC);
+                let sealed = bytes.starts_with(MAGIC) || bytes.starts_with(MAGIC_LEGACY);
                 let key = sealed.then(|| self.wrap(false)).transpose()?;
                 let document = open_file(key.as_ref(), &bytes).map_err(|error| {
                     Error::Config(format!(
@@ -272,8 +273,65 @@ impl Store {
         if let Some(key) = self.seal {
             return Ok(key);
         }
-        os_wrap_key(create, self.wrap_tool.as_deref())
+        match self.backend {
+            Backend::File => file_wrap(&self.file, create),
+            #[cfg(any(target_os = "macos", all(test, unix)))]
+            Backend::Security(_) => os_wrap_key(create, self.wrap_tool.as_deref()),
+            #[cfg(not(target_os = "macos"))]
+            Backend::Native => os_wrap_key(create, self.wrap_tool.as_deref()),
+        }
     }
+}
+
+fn wrap_path(credentials: &Path) -> PathBuf {
+    credentials.with_file_name("credentials.wrap")
+}
+
+fn file_wrap(credentials: &Path, create: bool) -> Result<[u8; KEY_LEN]> {
+    let path = wrap_path(credentials);
+    match std::fs::read(&path) {
+        Ok(bytes) => decode_wrap_bytes(&bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            #[cfg(target_os = "macos")]
+            if credentials.exists()
+                && let Ok(key) = wrap_via_security(Path::new("/usr/bin/security"), false)
+            {
+                write_wrap(&path, &key)?;
+                return Ok(key);
+            }
+            if !create {
+                return Err(Error::Config(
+                    "credential store: missing wrap key — set SUMMONR_SECRETS=file and retry"
+                        .to_string(),
+                ));
+            }
+            let mut key = [0_u8; KEY_LEN];
+            OsRng.fill_bytes(&mut key);
+            write_wrap(&path, &key)?;
+            Ok(key)
+        }
+        Err(error) => Err(error.into()),
+    }
+}
+
+fn write_wrap(path: &Path, key: &[u8; KEY_LEN]) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+        tighten_dir(parent)?;
+    }
+    write_private(path, key)
+}
+
+fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {
+    if bytes.len() == KEY_LEN {
+        let mut key = [0_u8; KEY_LEN];
+        key.copy_from_slice(bytes);
+        return Ok(key);
+    }
+    let text = std::str::from_utf8(bytes).map_err(|error| {
+        Error::Config(format!("credential store: wrap key is not utf-8: {error}"))
+    })?;
+    decode_wrap(text)
 }
 
 fn find(tool: &Path, account: &str) -> Result<Option<String>> {
@@ -432,11 +490,14 @@ fn tighten_dir(_: &Path) -> Result<()> {
 }
 
 fn open_file(key: Option<&[u8; KEY_LEN]>, bytes: &[u8]) -> Result<DocumentMut> {
-    if bytes.starts_with(MAGIC) {
+    let magic = [MAGIC, MAGIC_LEGACY]
+        .into_iter()
+        .find(|magic| bytes.starts_with(magic));
+    if let Some(magic) = magic {
         let key = key.ok_or_else(|| {
             Error::Config("credential store: sealed file has no wrapping key".to_string())
         })?;
-        let rest = &bytes[MAGIC.len()..];
+        let rest = &bytes[magic.len()..];
         if rest.len() < NONCE_LEN {
             return Err(Error::Config(
                 "credential store: sealed file is truncated".to_string(),

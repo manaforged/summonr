@@ -2,9 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -21,7 +19,7 @@ env:
   CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
 
 jobs:
-  lint:
+  ci:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -50,23 +48,5 @@ jobs:
           save-if: ${{ github.event_name == 'push' }}
       - name: clippy
         run: cargo clippy --all-targets --locked -- -D warnings
-
-  test:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          persist-credentials: false
-      - name: Rust toolchain
-        run: rustup show active-toolchain
-      - name: private git deps
-        run: |
-          if [ -n "${{ secrets.CI_CROSS_REPO_TOKEN }}" ]; then
-            git config --global url."https://x-access-token:${{ secrets.CI_CROSS_REPO_TOKEN }}@github.com/".insteadOf "https://github.com/"
-          fi
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        with:
-          save-if: ${{ github.event_name == 'push' }}
       - name: tests
         run: cargo test --workspace --locked --no-fail-fast

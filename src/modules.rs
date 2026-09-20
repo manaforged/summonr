@@ -39,8 +39,8 @@ pub const ALL: [Module; 8] = [
     },
     Module {
         name: "mcp",
-        summary: "tools from MCP servers configured for summonr, Claude, or Codex",
-        default: true,
+        summary: "tools from MCP servers you named; off until /modules mcp on",
+        default: false,
     },
     Module {
         name: "bus",
@@ -63,7 +63,7 @@ pub struct Switches {
 impl Switches {
     pub fn load(workspace: &Path) -> Result<Self> {
         let user = config::load()?.modules;
-        let path = workspace.join(".mage/config.toml");
+        let path = workspace.join(".summonr/config.toml");
         let project = if path.is_file() {
             config::load_from(&path)?.modules
         } else {

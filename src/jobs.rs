@@ -32,7 +32,7 @@ pub(crate) struct Status {
 }
 
 pub(crate) fn dir(workspace: &Path) -> PathBuf {
-    workspace.join(".mage").join("jobs")
+    workspace.join(".summonr").join("jobs")
 }
 
 pub(crate) fn prepare(workspace: &Path) -> Result<(String, PathBuf, PathBuf, PathBuf)> {
@@ -74,7 +74,7 @@ pub fn live(workspace: &Path) -> Vec<String> {
         })
         .map(|record| {
             format!(
-                "{} `{}` (pid {}; stop it with run_command job kill, or delete .mage/jobs/{}.json)",
+                "{} `{}` (pid {}; stop it with run_command job kill, or delete .summonr/jobs/{}.json)",
                 record.id, record.command, record.pid, record.id
             )
         })

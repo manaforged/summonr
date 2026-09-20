@@ -20,14 +20,14 @@ pub(super) fn decode_markdown_image(url: &str) -> Option<ImageSource> {
         let bytes = base64::engine::general_purpose::STANDARD
             .decode(payload)
             .ok()?;
-        return super::super::super::model::preview(&bytes).ok();
+        return super::model::preview(&bytes).ok();
     }
     if url.contains("://") {
         return None;
     }
     let path = std::path::Path::new(url);
     let bytes = std::fs::read(path).ok()?;
-    super::super::super::model::preview(&bytes).ok()
+    super::model::preview(&bytes).ok()
 }
 
 pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) {
@@ -36,7 +36,7 @@ pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) 
     if width == 0 || pixel_width == 0 || pixel_height == 0 {
         return (0, 0);
     }
-    let aspect = super::super::super::canvas::cell_aspect();
+    let aspect = super::canvas::cell_aspect();
     let cols = if aspect <= 1.0 {
         width.max(1)
     } else {
@@ -44,7 +44,7 @@ pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) 
     };
     let rows = ((pixel_height as f32 * cols as f32) / (pixel_width as f32 * aspect))
         .ceil()
-        .clamp(1.0, IMAGE_ROWS as f32) as usize;
+        .clamp(1.0, ISUMMONR_ROWS as f32) as usize;
     let cols = ((rows as f32 * aspect * pixel_width as f32) / pixel_height as f32)
         .round()
         .clamp(1.0, width as f32) as usize;
@@ -52,7 +52,7 @@ pub(crate) fn image_cells(source: &ImageSource, width: usize) -> (usize, usize) 
 }
 
 pub(crate) fn fit_source(source: &ImageSource, cols: usize, rows: usize) -> ImageSource {
-    if super::super::super::canvas::cell_aspect() <= 1.0
+    if super::canvas::cell_aspect() <= 1.0
         || cols == 0
         || rows == 0
         || sigil_tui::protocol().is_some()
@@ -90,4 +90,4 @@ pub(super) fn resized(source: &ImageSource, width: u32, height: u32) -> ImageSou
         .unwrap_or_else(|| source.clone())
 }
 
-pub(super) const IMAGE_ROWS: usize = 48;
+pub(super) const ISUMMONR_ROWS: usize = 48;

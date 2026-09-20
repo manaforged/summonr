@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
 use crate::error::Result;
-use crate::prompt::mage_home;
+use crate::prompt::summonr_home;
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
 
@@ -95,7 +95,7 @@ fn slug(cwd: &str) -> String {
 }
 
 pub(crate) fn peek() -> Result<Vec<Agent>> {
-    let dir = mage_home()?.join("bus");
+    let dir = summonr_home()?.join("bus");
     if !dir.join("agents").is_dir() {
         return Ok(Vec::new());
     }
@@ -117,7 +117,7 @@ pub(crate) fn deliver(from: &str, to: &[String], text: &str) -> Result<usize> {
         kind: default_kind(),
         text: text.to_string(),
     };
-    append(&mage_home()?.join("bus"), to, &mail)
+    append(&summonr_home()?.join("bus"), to, &mail)
 }
 
 fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
@@ -135,14 +135,14 @@ fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
 
 impl Bus {
     pub(crate) fn join(id: &str, model: &str, cwd: &Path) -> Option<Self> {
-        if !bus_enabled(std::env::var_os("MAGE_BUS").as_deref()) {
+        if !bus_enabled(std::env::var_os("SUMMONR_BUS").as_deref()) {
             return None;
         }
         Self::open(id, "summonr", model, cwd).ok()
     }
 
     pub(crate) fn open(id: &str, kind: &str, model: &str, cwd: &Path) -> Result<Self> {
-        let dir = mage_home()?.join("bus");
+        let dir = summonr_home()?.join("bus");
         std::fs::create_dir_all(dir.join("agents"))?;
         std::fs::create_dir_all(dir.join("inbox"))?;
         std::fs::create_dir_all(dir.join("board"))?;

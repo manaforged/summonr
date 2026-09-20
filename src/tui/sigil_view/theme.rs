@@ -233,7 +233,7 @@ pub(super) fn install(name: &str, workspace: &Path, config: Option<&Path>) {
     if let Some(dir) = config.and_then(Path::parent) {
         overlay(&mut palette, &dir.join("theme.toml"));
     }
-    overlay(&mut palette, &workspace.join(".mage/theme.toml"));
+    overlay(&mut palette, &workspace.join(".summonr/theme.toml"));
     set(palette);
 }
 

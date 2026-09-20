@@ -76,7 +76,7 @@ struct CheckFile {
 }
 
 pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
-    let path = workspace.join(".mage/check.toml");
+    let path = workspace.join(".summonr/check.toml");
     if !path.is_file() {
         return Ok(None);
     }

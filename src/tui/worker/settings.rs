@@ -15,7 +15,9 @@ impl Worker {
         if on {
             match crate::verify::check_commands(self.loop_.workspace()) {
                 Ok(Some(commands)) => self.loop_.set_verify(Some(commands)),
-                Ok(None) => self.fail("Add a check to .mage/check.toml, then enable Verify again."),
+                Ok(None) => {
+                    self.fail("Add a check to .summonr/check.toml, then enable Verify again.")
+                }
                 Err(error) => self.fail(&error.to_string()),
             }
         } else {
@@ -195,7 +197,7 @@ impl Worker {
         let active = self.loop_.workflow();
         match workflow::names() {
             Ok(names) if names.is_empty() => {
-                self.system("no workflows — add [workflows.NAME] to ~/.mage/config.toml");
+                self.system("no workflows — add [workflows.NAME] to ~/.summonr/config.toml");
             }
             Ok(names) => {
                 let rows = names
@@ -300,7 +302,7 @@ pub(super) fn set_run_mode(
         "Work needs a plan. Plan mode — write one, then /plan accept."
     } else {
         match mode {
-            crate::RunMode::Plan => "plan mode — read-only; the reply is saved to .mage/plan.md",
+            crate::RunMode::Plan => "plan mode — read-only; the reply is saved to .summonr/plan.md",
             crate::RunMode::Work => {
                 "work mode — execute the accepted plan; verify at the end of the turn"
             }

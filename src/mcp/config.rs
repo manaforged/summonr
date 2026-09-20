@@ -31,7 +31,7 @@ pub(crate) enum Launch {
     Http {
         url: String,
         headers: Vec<(String, String)>,
-        auth: Option<crate::config::OAuth>,
+        auth: Option<Box<crate::config::OAuth>>,
     },
 }
 
@@ -67,10 +67,12 @@ impl Entry {
             return Some(Launch::Http {
                 url: expand(&url),
                 headers,
-                auth: self.auth.map(|auth| crate::config::OAuth {
-                    client_secret: auth.client_secret.as_deref().map(expand),
-                    refresh_token: auth.refresh_token.as_deref().map(expand),
-                    ..auth
+                auth: self.auth.map(|auth| {
+                    Box::new(crate::config::OAuth {
+                        client_secret: auth.client_secret.as_deref().map(expand),
+                        refresh_token: auth.refresh_token.as_deref().map(expand),
+                        ..auth
+                    })
                 }),
             });
         }
@@ -116,13 +118,18 @@ fn layers(workspace: &Path) -> Vec<BTreeMap<String, Entry>> {
     let mut layers = Vec::new();
     let mut approved = BTreeSet::new();
     let mut all = false;
-    let user = config::load().map(|file| file.mcp).unwrap_or_default();
+    let file = config::load().ok();
+    let user = file
+        .as_ref()
+        .map(|file| file.mcp.clone())
+        .unwrap_or_default();
+    let import_peers = file.as_ref().and_then(|file| file.import_mcp) == Some(true);
     approved.extend(
         user.iter()
             .filter(|(_, entry)| entry.enabled == Some(true))
             .map(|(name, _)| name.clone()),
     );
-    if let Some(home) = &home {
+    if import_peers && let Some(home) = &home {
         let codex = read_toml(&home.join(".codex/config.toml"));
         layers.push(toml_map(
             codex.as_ref().and_then(|file| file.get("mcp_servers")),
@@ -151,7 +158,7 @@ fn layers(workspace: &Path) -> Vec<BTreeMap<String, Entry>> {
     }
     let local = read_json(&workspace.join(".mcp.json"));
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
-    let path = workspace.join(".mage/config.toml");
+    let path = workspace.join(".summonr/config.toml");
     if path.is_file()
         && let Ok(file) = config::load_from(&path)
     {

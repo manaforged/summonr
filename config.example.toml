@@ -1,5 +1,5 @@
-# Copy to ~/.mage/config.toml and edit.
-# A workspace `.mage/config.toml` may select an [lsp] module only.
+# Copy to ~/.summonr/config.toml and edit.
+# A workspace `.summonr/config.toml` may select an [lsp] module only.
 # Do not put secrets in the git repo. Keys belong in the sealed store:
 # `summonr login NAME`; `summonr endpoints` shows where each key lives.
 #
@@ -7,6 +7,7 @@
 # Native seats set wire = "anthropic" or wire = "gemini".
 
 default = "zai"
+# import_mcp = true   # also load MCP servers from ~/.claude.json and ~/.codex/config.toml
 
 # Interface preferences. The settings modal (ctrl+o or /settings) writes
 # these; edit them here if you prefer.
@@ -15,7 +16,7 @@ default = "zai"
 # fps = 25               # interface redraw ceiling, 1-240; header shows the live rate
 # reasoning = true       # show streamed reasoning in the transcript
 # tools = "compact"      # show the last line or the full tool result
-# bus = true             # let incoming mail start a turn after MAGE_BUS joins
+# bus = true             # let incoming mail start a turn after SUMMONR_BUS joins
 #
 # The lsp tool routes diagnostics, definition, and rename for Rust,
 # TypeScript/JavaScript, Python, and Go. Selection uses the file extension
@@ -23,7 +24,7 @@ default = "zai"
 # [lsp]
 # module = "rust"
 #
-# A trusted ~/.mage/config.toml may instead set a custom command. Repository
+# A trusted ~/.summonr/config.toml may instead set a custom command. Repository
 # config cannot supply executable argv.
 # [lsp]
 # command = ["vscode-eslint-language-server", "--stdio"]
@@ -77,8 +78,9 @@ model = "grok-4.6"
 # api_key = "…"   # or XAI_API_KEY
 
 # OAuth2 token, then the same chat/completions POST.
-# grant: client_credentials | refresh_token | device_code
-# `summonr login NAME` runs RFC 8628 device flow when device_url is set.
+# grant: refresh_token | device_code | authorization_code
+# `summonr login NAME` runs the device flow for device_code and a PKCE
+# browser sign-in for authorization_code.
 # [endpoint.azure]
 # base_url = "https://YOUR.openai.azure.com/openai/v1"
 # model = "gpt-4o"
@@ -100,6 +102,56 @@ model = "grok-4.6"
 # grant = "device_code"
 # scope = "read:user"
 # exchange_url = "https://api.github.com/copilot_internal/v2/token"
+
+# Browser sign-in (PKCE). Summonr catches the redirect on a loopback
+# port. Set redirect_uri only when the provider registered a fixed one.
+# A redirect_uri that is not loopback switches to paste-back: Summonr
+# asks for the code the browser shows.
+# [endpoint.example.auth]
+# grant = "authorization_code"
+# authorize_url = "https://provider.example/oauth/authorize"
+# token_url = "https://provider.example/oauth/token"
+# client_id = "…"
+# scope = "offline_access"
+# redirect_uri = "http://127.0.0.1:54545/callback"
+# token_style = "form"      # or "json" when the token endpoint takes JSON
+# scheme = "bearer"         # or "api_key" / "google_key" for the carrier
+# [endpoint.example.auth.authorize_params]
+# audience = "https://api.provider.example/v1"
+# [endpoint.example.auth.claim_headers]
+# X-Account-Id = "account_id"   # header <- claim read from the id_token
+#
+# Builtin `claude-pro`: `summonr login claude-pro` for a Claude Pro or
+# Max plan. Paste-back flow; no local port is opened.
+#
+# ChatGPT Plus/Pro (Codex). The sign-in below is taken from the Codex
+# CLI source. Confirm base_url against your account before you rely on
+# it: subscription traffic does not go to api.openai.com.
+# [endpoint.codex]
+# base_url = "https://chatgpt.com/backend-api/codex"
+# model = "gpt-5-codex"
+# wire = "responses"
+# [endpoint.codex.auth]
+# grant = "authorization_code"
+# authorize_url = "https://auth.openai.com/oauth/authorize"
+# token_url = "https://auth.openai.com/oauth/token"
+# client_id = "app_EMoamEEZ73f0CkXaXp7hrann"
+# redirect_uri = "http://localhost:1455/auth/callback"
+# scope = "openid profile email offline_access api.connectors.read api.connectors.invoke"
+# [endpoint.codex.authorize_params]
+# id_token_add_organizations = "true"
+# codex_cli_simplified_flow = "true"
+# [endpoint.codex.auth.claim_headers]
+# ChatGPT-Account-Id = "chatgpt_account_id"
+#
+# Qwen free tier. Device flow with PKCE. Confirm base_url first.
+# [endpoint.qwen-plan.auth]
+# grant = "device_code"
+# device_url = "https://chat.qwen.ai/api/v1/oauth2/device/code"
+# token_url = "https://chat.qwen.ai/api/v1/oauth2/token"
+# client_id = "f0304373b74a44d2b584a3fb70ca9e56"
+# scope = "openid profile email model.completion"
+# pkce = true
 
 # Native Anthropic / Gemini (not chat/completions).
 # [endpoint.anthropic]

@@ -9,7 +9,7 @@ use crate::workflow::Role;
 
 #[must_use]
 pub(crate) fn file(workspace: &Path) -> PathBuf {
-    workspace.join(".mage").join("plan.md")
+    workspace.join(".summonr").join("plan.md")
 }
 
 pub(crate) fn write(workspace: &Path, markdown: &str) -> io::Result<PathBuf> {

@@ -44,7 +44,7 @@ struct RunInfo {
 impl Log {
     pub(super) fn start() -> Option<Self> {
         let run = format!("{}-{}", millis(), std::process::id());
-        let home = match summonr::mage_home() {
+        let home = match summonr::summonr_home() {
             Ok(home) => home,
             Err(error) => {
                 eprintln!("summonr: cannot create the diagnostic log: {error}");
@@ -134,7 +134,7 @@ impl Log {
 }
 
 pub(super) fn print_logs(exclude: Option<&Path>) -> summonr::Result<i32> {
-    let dir = summonr::mage_home()?.join("logs");
+    let dir = summonr::summonr_home()?.join("logs");
     println!("{}", dir.display());
     let runs = runs(&dir, exclude)?;
     if runs.is_empty() {
@@ -147,7 +147,7 @@ pub(super) fn print_logs(exclude: Option<&Path>) -> summonr::Result<i32> {
 }
 
 pub(super) fn doctor(exclude: Option<&Path>) -> summonr::Result<i32> {
-    let home = summonr::mage_home()?;
+    let home = summonr::summonr_home()?;
     let dir = home.join("logs");
     let runs = runs(&dir, exclude)?;
     let incomplete = runs

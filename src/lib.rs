@@ -2,6 +2,8 @@
 
 pub mod acp;
 pub mod askpass;
+mod bundle;
+pub mod catalog;
 mod checkpoint;
 mod child;
 mod command;
@@ -12,7 +14,7 @@ pub(crate) mod durable;
 
 pub(crate) const SKIP_DIRS: &[&str] = &[
     ".git",
-    ".mage",
+    ".summonr",
     "target",
     "node_modules",
     "dist",
@@ -55,21 +57,22 @@ pub mod steps;
 pub mod tui;
 pub mod workflow;
 
+pub use bundle::{add as add_bundle, list as list_extras};
 pub use command::{CommandSpec, SlashCommand, command_specs, parse_command};
 pub use config::sandbox_on;
 pub use config::tilde;
 pub use durable::work::{WorkKind, WorkPhase, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, adopt_keys, auth_info, decisions_keys, fallbacks as endpoint_fallbacks,
-    first_decisions as decisions_endpoint, forget_key, is_named as is_endpoint,
-    names as endpoint_names, resolve as resolve_endpoint,
+    AuthInfo, Endpoint, LoginFlow, adopt_keys, auth_info, decisions_keys,
+    fallbacks as endpoint_fallbacks, first_decisions as decisions_endpoint, forget_key,
+    is_named as is_endpoint, names as endpoint_names, resolve as resolve_endpoint,
     resolve_unauthed as resolve_endpoint_unauthed, save_key,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
 pub use hashline::{line_hash, tagged_text};
 pub use jobs::live as live_jobs;
-pub use prompt::{harness_section, mage_home, system_prompt, system_prompt_with};
+pub use prompt::{harness_section, summonr_home, system_prompt, system_prompt_with};
 pub use provider::{
     Client, Effort, Image, Message, Partial, Price, Provider, Usage, UserInput, dollars,
 };

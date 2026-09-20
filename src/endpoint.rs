@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
-use crate::credentials::{is_device, logged_in};
+use crate::credentials::{flow, logged_in};
 use crate::error::{Error, Result};
 use crate::provider::{Effort, Price};
 use crate::secret::{self, Source};
@@ -19,6 +19,9 @@ const COPILOT: &str = "https://api.githubcopilot.com";
 const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
 const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
+const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const CLAUDE_SCOPES: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code \
+     user:mcp_servers user:file_upload";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Endpoint {
@@ -50,13 +53,48 @@ pub enum Wire {
     Decisions,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LoginFlow {
+    #[default]
+    Key,
+    Device,
+    Browser,
+}
+
+impl LoginFlow {
+    #[must_use]
+    pub fn signs_in(self) -> bool {
+        !matches!(self, Self::Key)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AuthInfo {
     pub name: String,
-    pub device_login: bool,
+    pub flow: LoginFlow,
     pub configured: bool,
     pub source: Option<Source>,
     pub setup: String,
+    group: LoginGroup,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum LoginGroup {
+    Key,
+    Plan,
+    Decide,
+    Local,
+}
+
+impl LoginGroup {
+    const fn heading(self) -> &'static str {
+        match self {
+            Self::Key => "API keys",
+            Self::Plan => "Coding plans",
+            Self::Decide => "Decisions",
+            Self::Local => "Local",
+        }
+    }
 }
 
 impl AuthInfo {
@@ -65,8 +103,23 @@ impl AuthInfo {
         format!("{}: {} — {}", self.name, self.state(), self.setup)
     }
 
+    #[must_use]
+    pub fn catalog_heading(&self) -> &'static str {
+        self.group.heading()
+    }
+
+    #[must_use]
+    pub fn catalog_rank(&self) -> u8 {
+        self.group as u8
+    }
+
+    #[must_use]
+    pub fn catalog_line(&self) -> String {
+        format!("{:<14} {} — {}", self.name, self.state(), self.setup)
+    }
+
     pub(crate) fn state(&self) -> String {
-        match (self.device_login, self.configured, self.source) {
+        match (self.flow.signs_in(), self.configured, self.source) {
             (true, true, _) => "login configured".to_string(),
             (true, false, _) => "login required".to_string(),
             (false, true, Some(source)) => format!("key · {}", source.label()),
@@ -109,20 +162,56 @@ pub fn names() -> Result<Vec<String>> {
     Ok(names)
 }
 
+fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
+    if endpoint.wire == Wire::Decisions {
+        return LoginGroup::Decide;
+    }
+    if let Some(preset) = preset(name) {
+        if preset.default_key.is_some() && preset.env_keys.is_empty() && preset.oauth.is_none() {
+            return LoginGroup::Local;
+        }
+        if preset.oauth.is_some()
+            || preset
+                .env_keys
+                .iter()
+                .any(|key| key.contains("CODING") || key.starts_with("OPENCODE_"))
+            || preset.base_url.contains("/coding/")
+            || preset.base_url.contains("opencode.ai")
+        {
+            return LoginGroup::Plan;
+        }
+        return LoginGroup::Key;
+    }
+    let url = endpoint.base_url.as_deref().unwrap_or("");
+    if url.contains("/coding/") || url.contains("opencode.ai") || url.contains("githubcopilot") {
+        LoginGroup::Plan
+    } else if url.contains("127.0.0.1") || url.contains("localhost") {
+        LoginGroup::Local
+    } else {
+        LoginGroup::Key
+    }
+}
+
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let endpoint = resolve_inner(Some(name), None, false, false)?;
     let mut info = AuthInfo {
         name: name.to_string(),
-        device_login: endpoint.oauth.as_ref().is_some_and(is_device),
+        flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
         configured: endpoint.api_key.is_some(),
         source: endpoint.source,
         setup: preset(name)
             .map(|preset| preset.missing.replace("NAME", name))
             .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| format!("run `/login {name}` to configure an API key")),
+            .unwrap_or_else(|| format!("run `summonr login {name}` to store a key")),
+        group: login_group(name, &endpoint),
     };
-    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| is_device(spec)) {
-        info.setup = format!("run `/login {name}` for device authentication");
+    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
+        info.setup = match flow(spec) {
+            LoginFlow::Browser => {
+                format!("run `summonr login {name}` to sign in through the browser")
+            }
+            _ => format!("run `summonr login {name}` for device authentication"),
+        };
         info.configured = match logged_in(spec, name) {
             Ok(ready) => ready,
             Err(error) => {
@@ -298,7 +387,7 @@ fn resolve_inner(
     require_key: bool,
     require_model: bool,
 ) -> Result<Endpoint> {
-    if let Ok(base) = std::env::var("MAGE_BASE_URL")
+    if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
         && !base.trim().is_empty()
         && matches!(name, None | Some("env"))
     {
@@ -307,10 +396,10 @@ fn resolve_inner(
             base_url: Some(trim_slash(&base)),
             model: model
                 .map(str::to_string)
-                .or_else(|| std::env::var("MAGE_MODEL").ok())
+                .or_else(|| std::env::var("SUMMONR_MODEL").ok())
                 .filter(|value| !value.trim().is_empty())
                 .unwrap_or_else(|| "glm-5.3".to_string()),
-            api_key: env_key(&["MAGE_API_KEY"]).or_else(|| named_env_key("glm-intl")),
+            api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| named_env_key("glm-intl")),
             source: None,
             oauth: None,
             body: None,
@@ -331,13 +420,13 @@ fn resolve_inner(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
-        .or_else(|| std::env::var("MAGE_ENDPOINT").ok())
+        .or_else(|| std::env::var("SUMMONR_ENDPOINT").ok())
         .or_else(|| file.last_endpoint.clone())
         .or_else(|| file.default.clone());
 
     let model_flag = model
         .map(str::to_string)
-        .or_else(|| std::env::var("MAGE_MODEL").ok())
+        .or_else(|| std::env::var("SUMMONR_MODEL").ok())
         .filter(|value| !value.trim().is_empty());
 
     let fallback = chosen.is_none();
@@ -352,7 +441,7 @@ fn resolve_inner(
 
     let mut endpoint = endpoint.ok_or_else(|| {
         Error::Config(format!(
-            "unknown endpoint `{chosen}` — try `summonr endpoints`, or a name from ~/.mage/config.toml"
+            "unknown endpoint `{chosen}` — try `summonr endpoints`, or a name from ~/.summonr/config.toml"
         ))
     })?;
 
@@ -377,7 +466,7 @@ fn resolve_inner(
             .collect::<Vec<_>>()
             .join(", ");
         Error::Config(format!(
-            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.mage/config.toml, run `summon login NAME`, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (zai: {error})"
+            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.summonr/config.toml, run `summon login NAME`, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (zai: {error})"
         ))
     })
 }
@@ -543,6 +632,32 @@ const PRESETS: &[Preset] = &[
         context_window: None,
     },
     Preset {
+        name: "ollama",
+        base_url: "http://127.0.0.1:11434/v1",
+        model: "",
+        env_keys: &[],
+        default_key: Some("ollama"),
+        missing: "",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
+    Preset {
+        name: "deepseek",
+        base_url: "https://api.deepseek.com/v1",
+        model: "deepseek-v4-flash",
+        env_keys: &["DEEPSEEK_API_KEY"],
+        default_key: None,
+        missing: "set DEEPSEEK_API_KEY, or `summon login deepseek`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
+    Preset {
         name: "kimi",
         base_url: KIMI,
         model: "k3",
@@ -614,7 +729,7 @@ const PRESETS: &[Preset] = &[
         model: "openai/gpt-4o",
         env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
         default_key: None,
-        missing: "set OPENROUTER_API_KEY, or `summon login NAME`",
+        missing: "set OPENROUTER_API_KEY, or `summon login openrouter`",
         aliases: &[],
         oauth: None,
         headers: &[],
@@ -623,14 +738,14 @@ const PRESETS: &[Preset] = &[
     },
     Preset {
         name: "jev",
-        base_url: "https://openrouter.ai/api/alpha/decisions",
-        model: "~typesafe/jev-latest",
-        env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
+        base_url: "https://api.typesafe.ai/v1/systemone",
+        model: "jev-latest",
+        env_keys: &["TYPESAFE_API_KEY"],
         default_key: None,
-        missing: "set OPENROUTER_API_KEY, or `summon login jev`",
+        missing: "set TYPESAFE_API_KEY, or `summon login jev`",
         aliases: &[
-            ("jev-latest", "~typesafe/jev-latest"),
-            ("jev", "~typesafe/jev-latest"),
+            ("~typesafe/jev-latest", "jev-latest"),
+            ("jev", "jev-latest"),
         ],
         oauth: None,
         headers: &[],
@@ -719,6 +834,22 @@ const PRESETS: &[Preset] = &[
         context_window: None,
     },
     Preset {
+        name: "claude-pro",
+        base_url: "https://api.anthropic.com/v1/",
+        model: "claude-sonnet-4-5",
+        env_keys: &[],
+        default_key: None,
+        missing: "run `summonr login claude-pro` to sign in with a Claude Pro or Max plan",
+        aliases: &[("sonnet", "claude-sonnet-4-5"), ("opus", "claude-opus-4-1")],
+        oauth: Some(claude_oauth),
+        headers: &[(
+            "anthropic-beta",
+            "oauth-2025-04-20,interleaved-thinking-2025-05-14",
+        )],
+        wire: Wire::Anthropic,
+        context_window: None,
+    },
+    Preset {
         name: "gemini",
         base_url: "https://generativelanguage.googleapis.com/v1beta/",
         model: "gemini-2.5-flash",
@@ -783,7 +914,73 @@ const PRESETS: &[Preset] = &[
         wire: Wire::Completions,
         context_window: None,
     },
+    Preset {
+        name: "fireworks",
+        base_url: "https://api.fireworks.ai/inference/v1",
+        model: "",
+        env_keys: &["FIREWORKS_API_KEY"],
+        default_key: None,
+        missing: "set FIREWORKS_API_KEY, or `summon login fireworks`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
+    Preset {
+        name: "deepinfra",
+        base_url: "https://api.deepinfra.com/v1/openai",
+        model: "",
+        env_keys: &["DEEPINFRA_API_KEY", "DEEPINFRA_TOKEN"],
+        default_key: None,
+        missing: "set DEEPINFRA_API_KEY, or `summon login deepinfra`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
+    Preset {
+        name: "minimax",
+        base_url: "https://api.minimax.io/v1",
+        model: "MiniMax-M3",
+        env_keys: &["MINIMAX_API_KEY", "MINIMAX_CODE_API_KEY"],
+        default_key: None,
+        missing: "set MINIMAX_API_KEY, or `summon login minimax`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
+    Preset {
+        name: "minimax-cn",
+        base_url: "https://api.minimax.cn/v1",
+        model: "MiniMax-M3",
+        env_keys: &["MINIMAX_CN_API_KEY", "MINIMAX_CODE_CN_API_KEY"],
+        default_key: None,
+        missing: "set MINIMAX_CN_API_KEY, or `summon login minimax-cn`",
+        aliases: &[],
+        oauth: None,
+        headers: &[],
+        wire: Wire::Completions,
+        context_window: None,
+    },
 ];
+
+fn claude_oauth() -> crate::config::OAuth {
+    crate::config::OAuth {
+        token_url: "https://platform.claude.com/v1/oauth/token".into(),
+        client_id: CLAUDE_CLIENT.into(),
+        authorize_url: Some("https://claude.ai/oauth/authorize".into()),
+        redirect_uri: Some("https://platform.claude.com/oauth/code/callback".into()),
+        scope: Some(CLAUDE_SCOPES.into()),
+        grant: Some("authorization_code".into()),
+        token_style: Some("json".into()),
+        authorize_params: BTreeMap::from([("code".to_string(), "true".to_string())]),
+        ..crate::config::OAuth::default()
+    }
+}
 
 fn copilot_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
@@ -795,6 +992,7 @@ fn copilot_oauth() -> crate::config::OAuth {
         grant: Some("device_code".into()),
         device_url: Some(GITHUB_DEVICE.into()),
         exchange_url: Some("https://api.github.com/copilot_internal/v2/token".into()),
+        ..crate::config::OAuth::default()
     }
 }
 

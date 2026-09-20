@@ -62,10 +62,10 @@ impl Policy {
 
     pub(crate) fn discover(workspace: &Path) -> Result<Self> {
         let mut policy = Self::builtin();
-        if let Ok(home) = crate::prompt::mage_home() {
+        if let Ok(home) = crate::prompt::summonr_home() {
             policy.overlay_file(&home.join("policy.toml"))?;
         }
-        policy.overlay_file(&workspace.join(".mage/policy.toml"))?;
+        policy.overlay_file(&workspace.join(".summonr/policy.toml"))?;
         if let Ok(config) = crate::config::load() {
             policy.roots = config.sandbox.paths();
         }
@@ -239,7 +239,7 @@ pub(crate) fn write_directory(path: &str) -> PathBuf {
 pub(crate) fn write_denied(path: &str) -> String {
     let dir = write_directory(path);
     format!(
-        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.mage/config.toml, or /write {}",
+        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.summonr/config.toml, or /write {}",
         dir.display(),
         dir.display()
     )
@@ -343,7 +343,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
     else {
         return false;
     };
-    [".ssh", ".gnupg", ".mage"]
+    [".ssh", ".gnupg", ".summonr"]
         .into_iter()
         .any(|dir| path.starts_with(home.join(dir)))
 }

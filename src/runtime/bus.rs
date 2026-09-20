@@ -30,7 +30,7 @@ impl<P: Provider> Loop<P> {
         let name = call.function.name.as_str();
         if self.bus.is_none() {
             return Err(Error::Tool(format!(
-                "`{name}` needs the bus (set MAGE_BUS to enable it)"
+                "`{name}` needs the bus (set SUMMONR_BUS to enable it)"
             )));
         }
         let args = bus_args(call, name)?;

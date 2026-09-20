@@ -3,6 +3,8 @@ use super::intake::{ANIMATION, Fps, finish_intake, frame, read_event};
 use super::terminal::{Paste, Terminal};
 use super::*;
 
+const BEAT: Duration = Duration::from_secs(2);
+
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -14,7 +16,7 @@ pub(crate) fn run(
     start_tick(cmd_tx.clone());
     let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
     let version = info.version.clone();
-    let (exit, session) = sigil::reactive::Runtime::scope("mage-tui", || {
+    let (exit, session) = sigil::reactive::Runtime::scope("summonr-tui", || {
         let app = App::new(info, workspace, cmd_tx.clone());
         let exit = live(app.clone(), ui_rx);
         let session = app.model.borrow().session.clone();
@@ -28,7 +30,7 @@ pub(crate) fn run(
                     let mut worker = worker;
                     tokio::select! {
                         _ = &mut worker => {}
-                        () = tokio::time::sleep(Duration::from_secs(2)) => {
+                        () = tokio::time::sleep(BEAT) => {
                             worker.abort();
                             drop(worker.await);
                         }
@@ -48,7 +50,7 @@ pub(crate) fn run(
 
 pub(in crate::tui::sigil_view) fn start_tick(tx: UnboundedSender<Cmd>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_secs(2));
+        let mut interval = tokio::time::interval(BEAT);
         loop {
             interval.tick().await;
             if tx.send(Cmd::Tick).is_err() {
@@ -92,8 +94,15 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
     let mut framed = Instant::now();
     loop {
         let mut incoming = Vec::new();
+        let busy = app.model.borrow().busy_since.is_some();
+        let splash_on = app.splash.peek()
+            && (app.model.borrow().prefs.animations || !app.splash_revealed.peek());
         let budget = frame_budget(app.model.borrow().prefs.fps);
-        let mut wait = budget;
+        let mut wait = if busy || splash_on {
+            budget
+        } else {
+            Duration::from_millis(250)
+        };
         while event::poll(wait)? {
             let mut staged = false;
             let mut motion = true;
@@ -121,10 +130,10 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
                 break;
             }
         }
-        let mut changed = false;
+        let mut dirty = !incoming.is_empty();
         while let Ok(msg) = ui.try_recv() {
             app.update(msg);
-            changed = true;
+            dirty = true;
         }
         if let Some(id) = app.resume.borrow().clone() {
             return Ok(Exit::Resume(id));
@@ -140,69 +149,77 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
             }
             was_busy = Some(busy);
         }
-        if changed {
+        if dirty {
             app.refresh();
         } else if app.model.borrow().busy_since.is_some()
             && status_at.elapsed() >= Duration::from_secs(1)
         {
             app.refresh_status();
+            dirty = true;
             status_at = Instant::now();
         }
         if animation_at.elapsed() >= ANIMATION {
             animation_at = Instant::now();
             app.tick();
+            dirty |= busy || splash_on;
         }
-        app.note_fps(meter.tick(Instant::now()));
-        let grid = frame(&mut screen, &mut host, &mut router, incoming, (cols, rows))?;
-        framed = Instant::now();
-        if let Some((col, row)) = app.selection_anchor.peek() {
-            app.selection_anchor.set(None);
-            term.anchor = Some((col, row));
-        }
-        if let Some((col, row)) = term.anchor.take() {
-            term.selection = Some(Selection::new(grid.clone(), app.chat_cols(), col, row));
-        }
-        let next = app.select.peek();
-        if next != selecting {
-            term.select(next)?;
-            selecting = next;
-        }
-        if let Some(path) = app.open_file.peek() {
-            app.open_file.set(None);
-            term.suspend()?;
-            let opened = edit(&path, &editor());
-            term.resume(selecting)?;
-            screen.invalidate();
-            if let Err(error) = opened {
-                app.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::Error(error.to_string()));
+        dirty |= app.open_file.peek().is_some()
+            || app.copy.peek().is_some()
+            || app.editor_requested.peek()
+            || app.selection_anchor.peek().is_some();
+        if dirty {
+            app.note_fps(meter.tick(Instant::now()));
+            let grid = frame(&mut screen, &mut host, &mut router, incoming, (cols, rows))?;
+            framed = Instant::now();
+            if let Some((col, row)) = app.selection_anchor.peek() {
+                app.selection_anchor.set(None);
+                term.anchor = Some((col, row));
             }
-            app.refresh();
-        }
-        if let Some(text) = app.copy.peek() {
-            app.copy.set(None);
-            app.copied(&text, term.copy(&text)?);
-        }
-        if app.editor_requested.peek() {
-            app.editor_requested.set(false);
-            term.suspend()?;
-            let edited = edit_external(&app.draft.peek(), &editor());
-            term.resume(selecting)?;
-            screen.invalidate();
-            match edited {
-                Ok(draft) => app.edit(&draft),
-                Err(error) => {
+            if let Some((col, row)) = term.anchor.take() {
+                term.selection = Some(Selection::new(grid.clone(), app.chat_cols(), col, row));
+            }
+            let next = app.select.peek();
+            if next != selecting {
+                term.select(next)?;
+                selecting = next;
+            }
+            if let Some(path) = app.open_file.peek() {
+                app.open_file.set(None);
+                term.suspend()?;
+                let opened = edit(&path, &editor());
+                term.resume(selecting)?;
+                screen.invalidate();
+                if let Err(error) = opened {
                     app.model
                         .borrow_mut()
                         .entries
                         .push(Entry::Error(error.to_string()));
-                    app.refresh();
+                }
+                app.refresh();
+            }
+            if let Some(text) = app.copy.peek() {
+                app.copy.set(None);
+                app.copied(&text, term.copy(&text)?);
+            }
+            if app.editor_requested.peek() {
+                app.editor_requested.set(false);
+                term.suspend()?;
+                let edited = edit_external(&app.draft.peek(), &editor());
+                term.resume(selecting)?;
+                screen.invalidate();
+                match edited {
+                    Ok(draft) => app.edit(&draft),
+                    Err(error) => {
+                        app.model
+                            .borrow_mut()
+                            .entries
+                            .push(Entry::Error(error.to_string()));
+                        app.refresh();
+                    }
                 }
             }
+            term.paint(&mut screen)?;
         }
-        term.paint(&mut screen)?;
     }
 }
 

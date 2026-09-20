@@ -1,4 +1,4 @@
-# Copy to ~/.mage/theme.toml, or to <workspace>/.mage/theme.toml for one project.
+# Copy to ~/.summonr/theme.toml, or to <workspace>/.summonr/theme.toml for one project.
 # Every key is optional. Values are #rgb, #rrggbb, or #rrggbbaa. Unset tokens
 # keep the selected preset (`theme` in config.toml: space, fantasy, nord,
 # gruvbox, solarized, light). The approved values are frozen in

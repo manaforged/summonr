@@ -9,7 +9,7 @@ pub(in crate::tui) fn export_session(
     let out = match target {
         Some(path) => Ok(std::path::PathBuf::from(path)),
         None => {
-            crate::prompt::mage_home().map(|home| home.join("exports").join(format!("{id}.md")))
+            crate::prompt::summonr_home().map(|home| home.join("exports").join(format!("{id}.md")))
         }
     };
     let written = out.and_then(|out| {

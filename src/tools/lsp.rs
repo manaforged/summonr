@@ -296,14 +296,14 @@ fn from_tree(workspace: &Path, path: &Path) -> Result<Launch> {
 }
 
 fn workspace_module(workspace: &Path) -> Result<Option<String>> {
-    let path = workspace.join(".mage/config.toml");
+    let path = workspace.join(".summonr/config.toml");
     if !path.is_file() {
         return Ok(None);
     }
     let config = crate::config::load_from(&path)?;
     if config.lsp.command.is_some() {
         return Err(Error::Config(
-            "workspace .mage/config.toml cannot set [lsp] command; use a curated module or put the command in ~/.mage/config.toml"
+            "workspace .summonr/config.toml cannot set [lsp] command; use a curated module or put the command in ~/.summonr/config.toml"
                 .to_string(),
         ));
     }
@@ -325,7 +325,7 @@ fn built(module: &language::Module) -> Result<Launch> {
         }
     }
     Err(Error::Tool(format!(
-        "{} not on PATH for the {} module; install one or set [lsp] command in ~/.mage/config.toml",
+        "{} not on PATH for the {} module; install one or set [lsp] command in ~/.summonr/config.toml",
         names.join(" or "),
         module.id
     )))
@@ -347,7 +347,7 @@ fn argv(command: &[String]) -> Result<Vec<String>> {
         .ok_or_else(|| Error::Tool("[lsp] command is empty".to_string()))?;
     if !on_path(name) {
         return Err(Error::Tool(format!(
-            "{name} is not on PATH; fix [lsp] command in ~/.mage/config.toml"
+            "{name} is not on PATH; fix [lsp] command in ~/.summonr/config.toml"
         )));
     }
     Ok(command.to_vec())

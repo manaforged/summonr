@@ -5,7 +5,7 @@ usage: tui_smoke.py WORKDIR BASE_URL 'line one' 'line two' ... -- needle ...
 
 Each line is typed key by key and sent with Enter; needles are searched in the
 captured screen text with escape sequences stripped. Exit 1 if any needle is
-missing. Set MAGE_HOME to an empty directory first.
+missing. Set SUMMONR_HOME to an empty directory first.
 """
 import fcntl, os, pty, re, select, struct, sys, termios, time
 
@@ -18,9 +18,9 @@ def main() -> int:
     workdir, base_url, lines, needles = args[0], args[1], args[2:split], args[split + 1 :]
     env = dict(
         os.environ,
-        MAGE_BASE_URL=base_url,
-        MAGE_MODEL=os.environ.get("MAGE_MODEL", "fake"),
-        MAGE_API_KEY=os.environ.get("MAGE_API_KEY", "x"),
+        SUMMONR_BASE_URL=base_url,
+        SUMMONR_MODEL=os.environ.get("SUMMONR_MODEL", "fake"),
+        SUMMONR_API_KEY=os.environ.get("SUMMONR_API_KEY", "x"),
         TERM="xterm-256color",
     )
     binary = os.path.abspath(BIN)

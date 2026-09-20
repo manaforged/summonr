@@ -34,7 +34,7 @@ impl ToolRegistry {
             }
         };
         let mut temp = tempfile::Builder::new()
-            .prefix(".mage-tmp-")
+            .prefix(".summonr-tmp-")
             .tempfile_in(parent)
             .map_err(|error| Error::Tool(format!("cannot prepare `{display}`: {error}")))?;
         temp.write_all(content.as_bytes())

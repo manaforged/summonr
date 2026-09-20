@@ -49,7 +49,7 @@ impl Options {
 }
 
 pub(super) async fn codex(options: Options) -> Result<()> {
-    let program = std::env::var("MAGE_CODEX").unwrap_or_else(|_| "codex".to_string());
+    let program = std::env::var("SUMMONR_CODEX").unwrap_or_else(|_| "codex".to_string());
     let mut client = Client::spawn(&program, &["mcp-server"], &[], &options.cwd)?;
     client.initialize("summon-room").await?;
     let id = options

@@ -1,4 +1,4 @@
-# Copy to ~/.mage/policy.toml and/or <workspace>/.mage/policy.toml.
+# Copy to ~/.summonr/policy.toml and/or <workspace>/.summonr/policy.toml.
 # Each nonempty allow/write list must permit the action; deny lists accumulate.
 # Project policy can narrow user permissions, never widen them.
 

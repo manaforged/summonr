@@ -2,31 +2,36 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-pub fn mage_home() -> Result<PathBuf> {
-    if let Some(path) = std::env::var_os("MAGE_HOME") {
+pub fn summonr_home() -> Result<PathBuf> {
+    if let Some(path) = std::env::var_os("SUMMONR_HOME") {
         if path.is_empty() {
-            return Err(Error::Config("MAGE_HOME is empty".to_string()));
+            return Err(Error::Config("SUMMONR_HOME is empty".to_string()));
         }
         return Ok(PathBuf::from(path));
     }
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .ok_or_else(|| {
-            Error::Config("set MAGE_HOME because the home directory is unknown".to_string())
+            Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
         })?;
-    Ok(PathBuf::from(home).join(".mage"))
+    let dir = PathBuf::from(home).join(".summonr");
+    let legacy = dir.with_file_name(".mage");
+    if !dir.exists() && legacy.is_dir() {
+        drop(std::fs::rename(&legacy, &dir));
+    }
+    Ok(dir)
 }
 
 pub fn system_prompt(workspace: &Path) -> String {
-    compose(workspace, mage_home().ok().as_deref(), false, true)
+    compose(workspace, summonr_home().ok().as_deref(), false, true)
 }
 
 pub fn system_prompt_with(workspace: &Path, trust: bool, skills: bool) -> String {
-    compose(workspace, mage_home().ok().as_deref(), trust, skills)
+    compose(workspace, summonr_home().ok().as_deref(), trust, skills)
 }
 
 pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills: bool) -> String {
-    if let Ok(prompt) = std::env::var("MAGE_SYSTEM_PROMPT")
+    if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
     {
         return format!("{prompt}\n\n{PERSISTENCE}");

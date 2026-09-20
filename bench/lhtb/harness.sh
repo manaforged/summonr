@@ -20,9 +20,9 @@ mkdir -p "$logs" "$home"
 
 case "$name" in
 summonr)
-  mkdir -p "$logs/mage"
-  printf '[modules]\nmcp = false\n' > "$logs/mage/config.toml"
-  HOME=$home MAGE_HOME=$logs/mage MAGE_BASE_URL=$BENCH_BASE MAGE_MODEL=$BENCH_MODEL MAGE_API_KEY=$DEEPSEEK_API_KEY \
+  mkdir -p "$logs/summonr"
+  printf '[modules]\nmcp = false\n' > "$logs/summonr/config.toml"
+  HOME=$home SUMMONR_HOME=$logs/summonr SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$DEEPSEEK_API_KEY \
     "$tools/summonr/bin/summonr" ${resume:+--continue} -p "$prompt" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"}
   ;;
 pi)
@@ -40,13 +40,13 @@ omp)
   HOME=$home "$tools/bun/bun" "$tools/omp/lib/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js" \
     -p --mode json ${resume:+--continue} --yolo --model "deepseek/$BENCH_MODEL" ${BENCH_EFFORT:+--thinking "$BENCH_EFFORT"} "$prompt" </dev/null
   ;;
-opencode)
+opencode2)
   mkdir -p "$home/.config/opencode"
   cat > "$home/.config/opencode/opencode.json" <<EOF
 {"\$schema": "https://opencode.ai/config.json", "provider": {"deepseek": {"options": {"baseURL": "$host"}}}}
 EOF
   HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share OPENCODE_DISABLE_MODELS_FETCH=1 \
-    "$tools/opencode/bin/opencode" run ${resume:+--continue} --format json --model "deepseek/$BENCH_MODEL" ${BENCH_EFFORT:+--variant "$BENCH_EFFORT"} \
+    "$tools/opencode/bin/opencode2" run ${resume:+--continue} --format json --model "deepseek/$BENCH_MODEL" ${BENCH_EFFORT:+--variant "$BENCH_EFFORT"} \
     --dangerously-skip-permissions -- "$prompt" </dev/null
   ;;
 hermes)
@@ -54,6 +54,18 @@ hermes)
   printf 'model:\n  provider: deepseek\n  default: %s\n' "$BENCH_MODEL" > "$home/hermes/config.yaml"
   HOME=$home HERMES_HOME=$home/hermes DEEPSEEK_BASE_URL=$BENCH_BASE \
     "$tools/hermes/.venv/bin/hermes" --yolo chat ${resume:+--continue} -q "$prompt" -Q ${BENCH_EFFORT:+--reasoning "$BENCH_EFFORT"} </dev/null
+  ;;
+mcode)
+  mkdir -p "$home/.minimax"
+  printf 'permissionMode: bypassPermissions\n' > "$home/.minimax/config.yaml"
+  HOME=$home MINIMAX_DATA_DIR=$home/.minimax PATH="$tools/node/bin:$PATH" \
+    MCODE_PROVIDER_API_KEY=$DEEPSEEK_API_KEY \
+    "$tools/mcode/bin/mcode" provider add --name bench --base-url "$BENCH_BASE" \
+    --api-format openai-completions --model "$BENCH_MODEL" --api-key-env MCODE_PROVIDER_API_KEY
+  HOME=$home MINIMAX_DATA_DIR=$home/.minimax PATH="$tools/node/bin:$PATH" \
+    MCODE_PROVIDER_API_KEY=$DEEPSEEK_API_KEY \
+    "$tools/mcode/bin/mcode" exec ${resume:+--continue} --output-format json --permission full \
+    --model "bench/$BENCH_MODEL" ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} "$prompt" </dev/null
   ;;
 goose)
   mkdir -p "$home/.config/goose/custom_providers"

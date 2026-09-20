@@ -1,16 +1,19 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
-use crate::prompt::mage_home;
+use crate::prompt::summonr_home;
 
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     let mut rows = Vec::new();
     collect(
-        mage_home().ok().as_deref().map(|home| home.join("skills")),
+        summonr_home()
+            .ok()
+            .as_deref()
+            .map(|home| home.join("skills")),
         &mut rows,
     );
-    collect(Some(workspace.join(".mage/skills")), &mut rows);
+    collect(Some(workspace.join(".summonr/skills")), &mut rows);
     if rows.is_empty() {
         return None;
     }
@@ -38,12 +41,17 @@ pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
         ));
     }
     let mut candidates = Vec::new();
-    if let Ok(home) = mage_home() {
+    if let Ok(home) = summonr_home() {
         candidates.push(home.join("skills").join(name).join("SKILL.md"));
         candidates.push(home.join("skills").join(format!("{name}.md")));
     }
-    candidates.push(workspace.join(".mage/skills").join(name).join("SKILL.md"));
-    candidates.push(workspace.join(".mage/skills").join(format!("{name}.md")));
+    candidates.push(
+        workspace
+            .join(".summonr/skills")
+            .join(name)
+            .join("SKILL.md"),
+    );
+    candidates.push(workspace.join(".summonr/skills").join(format!("{name}.md")));
     for path in candidates {
         if let Ok(text) = std::fs::read_to_string(&path)
             && !text.trim().is_empty()
@@ -54,7 +62,7 @@ pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
     Err(Error::Tool(format!("skill `{name}` is not installed")))
 }
 
-fn valid(name: &str) -> bool {
+pub(crate) fn valid(name: &str) -> bool {
     !name.is_empty()
         && name
             .bytes()

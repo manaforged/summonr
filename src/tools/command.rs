@@ -526,7 +526,7 @@ fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: &str) -> St
                 "\nnote: the OS sandbox denied this command (network is off, or the write is outside the writable roots).\n"
                     .to_string()
             } else {
-                "\nnote: the OS sandbox denied a write outside the writable roots — add the directory to [sandbox] write in ~/.mage/config.toml.\n"
+                "\nnote: the OS sandbox denied a write outside the writable roots — add the directory to [sandbox] write in ~/.summonr/config.toml.\n"
                     .to_string()
             }
         }
@@ -747,13 +747,28 @@ fn command_env() -> Vec<(String, String)> {
         "ProgramFiles",
         "ProgramFiles(x86)",
     ];
-    KEEP.iter()
+    let mut env: Vec<_> = KEEP
+        .iter()
         .filter_map(|key| {
             std::env::var(key)
                 .ok()
                 .map(|value| ((*key).to_string(), value))
         })
-        .collect()
+        .collect();
+    if let Some(extra) = crate::bundle::bin_path_prefix() {
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        match env.iter_mut().find(|(key, _)| key == "PATH") {
+            Some((_, path)) => {
+                if !path.is_empty() {
+                    *path = format!("{extra}{sep}{path}");
+                } else {
+                    *path = extra;
+                }
+            }
+            None => env.push(("PATH".to_string(), extra)),
+        }
+    }
+    env
 }
 
 fn readonly_verb(command: &str) -> bool {

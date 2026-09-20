@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render a mage splash JSON dump (cell grid of ch/fg/bg) to a PNG.
+"""Render a summonr splash JSON dump (cell grid of ch/fg/bg) to a PNG.
 
 The dump comes from the env-gated unit test:
 
-    MAGE_DUMP=space cargo test --lib dump_splash_json
-    python3 scripts/render-splash.py /tmp/mage-space.json /tmp/space.png
+    SUMMONR_DUMP=space cargo test --lib dump_splash_json
+    python3 scripts/render-splash.py /tmp/summonr-space.json /tmp/space.png
 
 Requires Pillow. Cell glyphs are drawn with Menlo, so block and
 box-drawing characters render close to a real terminal.

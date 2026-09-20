@@ -6,14 +6,14 @@ use crate::durable::id::SessionId;
 use crate::durable::log::{self, Line};
 use crate::durable::store;
 use crate::error::{Error, Result};
-use crate::prompt::mage_home;
+use crate::prompt::summonr_home;
 
 pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
-    last_in(&crate::prompt::mage_home()?, workspace)
+    last_in(&crate::prompt::summonr_home()?, workspace)
 }
 
 pub(crate) fn previous_for(workspace: &Path, current: &str) -> Result<Option<SessionInfo>> {
-    previous_in(&crate::prompt::mage_home()?, workspace, current)
+    previous_in(&crate::prompt::summonr_home()?, workspace, current)
 }
 
 pub(crate) fn previous_in(
@@ -182,7 +182,7 @@ pub fn export(path: &Path) -> Result<String> {
 }
 
 pub fn resolve_id(id: &str) -> Result<PathBuf> {
-    resolve_in(&mage_home()?, id)
+    resolve_in(&summonr_home()?, id)
 }
 
 pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
@@ -218,7 +218,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn remove(id: &str) -> Result<String> {
-    remove_in(&crate::prompt::mage_home()?, id)
+    remove_in(&crate::prompt::summonr_home()?, id)
 }
 
 pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
@@ -254,13 +254,13 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
 }
 
 pub fn list() -> Result<Vec<SessionInfo>> {
-    list_in(&crate::prompt::mage_home()?)
+    list_in(&crate::prompt::summonr_home()?)
 }
 
 const PROMPT_SESSIONS: usize = 64;
 
 pub(crate) fn prompts(scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {
-    prompts_in(&mage_home()?, scope)
+    prompts_in(&summonr_home()?, scope)
 }
 
 pub(crate) fn prompts_in(home: &Path, scope: Option<&str>) -> Result<(Vec<Prompt>, Vec<String>)> {

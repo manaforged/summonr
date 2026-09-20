@@ -10,6 +10,7 @@ fn row() -> crate::config::OAuth {
         grant: Some("device_code".to_string()),
         device_url: Some("https://example.invalid/device".to_string()),
         exchange_url: None,
+        ..crate::config::OAuth::default()
     }
 }
 
@@ -52,6 +53,6 @@ fn a_row_with_no_grant_named_is_a_refresh_login() {
     plain.device_url = None;
     plain.refresh_token = Some("r".to_string());
     assert_eq!(spec(&plain).unwrap().grant, Grant::RefreshToken);
-    assert!(!is_device(&plain));
-    assert!(is_device(&row()));
+    assert_eq!(flow(&plain), LoginFlow::Key);
+    assert_eq!(flow(&row()), LoginFlow::Device);
 }

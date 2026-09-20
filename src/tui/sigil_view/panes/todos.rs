@@ -1,6 +1,6 @@
 use sigil::prelude::{NodeBuilder, NodeStyleExt, classes, label};
 
-use super::super::app::App;
+use super::App;
 use super::body::header;
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {

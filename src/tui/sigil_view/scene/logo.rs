@@ -97,26 +97,6 @@ pub(in crate::tui::sigil_view) fn compose(
         ticks,
     );
     drop(model);
-    if let Some(menu) = super::super::suggest::menu(app, cols, rows) {
-        let left = menu.left as u16;
-        let top = menu.top as u16;
-        let width = menu
-            .lines
-            .first()
-            .map(|line| cell_width(line.as_str()) as u16)
-            .unwrap_or(0);
-        clear(cells, cols, left, top, width, menu.lines.len() as u16);
-        for (offset, line) in menu.lines.iter().enumerate() {
-            write(
-                cells,
-                cols,
-                left,
-                top.saturating_add(offset as u16),
-                line,
-                palette().text,
-            );
-        }
-    }
 }
 
 pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'static str, String)> {

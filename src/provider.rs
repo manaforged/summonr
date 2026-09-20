@@ -613,7 +613,7 @@ impl Client {
             })
             .transpose()
             .map_err(native::map_genai)?;
-        let mut client = Self::build(
+        let client = Self::build(
             base,
             crate::credentials::auth(endpoint)?,
             endpoint.body.clone(),
@@ -622,17 +622,16 @@ impl Client {
             genai,
             idle_timeout,
         )?;
-        client.opencode |= matches!(endpoint.name.as_str(), "opencode-go" | "opencode-zen");
         Ok(client)
     }
 
     pub async fn login(
         endpoint: &crate::endpoint::Endpoint,
-        notice: impl FnMut(&str),
+        prompt: &mut summonr_auth::Prompt,
     ) -> Result<()> {
         let auth = crate::credentials::auth(endpoint)?;
         let http = crate::credentials::http()?;
-        auth.login(&http, notice)
+        auth.login(&http, prompt)
             .await
             .map_err(|error| Error::Config(error.to_string()))
     }
@@ -712,6 +711,18 @@ impl Client {
     }
 
     pub async fn models(&self) -> Result<Vec<String>> {
+        Ok(self
+            .catalog(crate::catalog::Cost::Unknown)
+            .await?
+            .into_iter()
+            .map(|model| model.id)
+            .collect())
+    }
+
+    pub async fn catalog(
+        &self,
+        fallback: crate::catalog::Cost,
+    ) -> Result<Vec<crate::catalog::Model>> {
         let base = self
             .url
             .strip_suffix("/chat/completions")
@@ -719,10 +730,25 @@ impl Client {
         if let Some(kind) = Self::native_kind(self.wire)
             && self.wire != Wire::Responses
         {
-            return self.list_native(kind).await;
+            return Ok(self
+                .list_native(kind)
+                .await?
+                .into_iter()
+                .map(|id| crate::catalog::Model {
+                    cost: fallback,
+                    ..crate::catalog::Model::named(id)
+                })
+                .collect());
         }
         let value = self.get(format!("{base}/models")).await?;
-        model_ids(&value)
+        let models = crate::catalog::parse(&value, fallback);
+        if models.is_empty() {
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                "GET /models returned no model ids",
+            ));
+        }
+        Ok(models)
     }
 
     pub async fn context(&self, model: &str) -> Option<u32> {
@@ -822,10 +848,14 @@ impl Client {
         headers
             .entry("user-agent".to_string())
             .or_insert_with(|| concat!("summonr/", env!("CARGO_PKG_VERSION")).to_string());
-        if self.opencode
-            && let Some(session) = session
-        {
-            headers.insert("x-opencode-session".to_string(), session.to_string());
+        if self.opencode {
+            if let Some(session) = session {
+                headers.insert("x-opencode-session".to_string(), session.to_string());
+            }
+            headers.insert(
+                "x-opencode-request".to_string(),
+                uuid::Uuid::now_v7().to_string(),
+            );
         }
         headers
     }
@@ -836,10 +866,15 @@ impl Client {
         token: &str,
         session: Option<&str>,
     ) -> leyline::RequestBuilder {
-        let mut request = crate::credentials::scheme(self.wire)
+        let mut request = self
+            .auth
+            .scheme()
             .apply(request.user_agent(summonr_auth::AGENT), token);
         if self.wire == Wire::Anthropic {
             request = request.header("anthropic-version", "2023-06-01");
+        }
+        for (key, value) in self.auth.stamped() {
+            request = request.header(key.as_str(), value.as_str());
         }
         for (key, value) in self.headers(session) {
             request = request.header(key.as_str(), value.as_str());
@@ -901,26 +936,6 @@ impl Client {
             &reply,
         ))
     }
-}
-
-fn model_ids(value: &Value) -> Result<Vec<String>> {
-    let mut models = value
-        .get("data")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|item| item.get("id").and_then(Value::as_str))
-        .map(str::to_string)
-        .collect::<Vec<_>>();
-    models.sort_unstable();
-    models.dedup();
-    if models.is_empty() {
-        return Err(Error::provider(
-            ProviderFailureKind::Malformed,
-            "GET /models returned no model ids",
-        ));
-    }
-    Ok(models)
 }
 
 fn loaded(value: &Value) -> Option<u32> {

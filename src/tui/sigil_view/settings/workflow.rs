@@ -1,34 +1,31 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    classes, container, label, modal, signal, text_edit, virtual_list,
+    button, classes, container, label, text_edit, virtual_list,
 };
 
-use super::super::super::Cmd;
-use super::super::app::App;
+use super::prelude::*;
+use super::{App, canvas, watch};
+use crate::tui::Cmd;
 use crate::workflow::Role;
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    container().layout(LayoutStyle::block()).child(
-        modal(app.workflow_open)
-            .title(title(&app))
-            .trap(true)
-            .child(
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .gap(6.0)
-                            .fill_width()
-                            .fill_height(),
-                    )
-                    .children_reactive(move || {
-                        super::super::view::watch(&paint);
-                        if paint.workflow_naming.get() {
-                            return naming(&paint);
-                        }
-                        seats(&paint)
-                    }),
-            ),
+    shell(
+        app.workflow_open,
+        title(&app),
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .children_reactive(move || {
+                watch(&paint);
+                if paint.workflow_naming.get() {
+                    return naming(&paint);
+                }
+                seats(&paint)
+            }),
     )
 }
 
@@ -49,7 +46,7 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
                 .caret_position(app.workflow_caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())
-                .height(32.0),
+                .height(canvas::overlay_field()),
         ),
         container()
             .child(label("enter saves · esc goes back").class(classes!("text-xs text-gray-11"))),
@@ -96,8 +93,9 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
                     over == Some(index),
                 )
             })
-            .row_height(24.0)
-            .viewport_fill()
+            .row_height(canvas::overlay_list_row())
+            .height(canvas::overlay_list_row() * 8.0)
+            .viewport_height(canvas::overlay_list_row() * 8.0)
             .scroll_into_view(selected),
         ),
     ];
@@ -110,7 +108,12 @@ fn saved(app: &App) -> NodeBuilder {
     let names = app.workflow_names.get();
     let current = app.workflow_name.get();
     let mut row = container()
-        .layout(LayoutStyle::flex_row().fill_width().gap(6.0).padding_x(8.0))
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(canvas::overlay_gap())
+                .padding_x(8.0),
+        )
         .child(label("saved:").class(classes!("text-xs text-gray-11")));
     if names.is_empty() {
         row = row.child(label("none").class(classes!("text-xs text-gray-11")));
@@ -120,23 +123,14 @@ fn saved(app: &App) -> NodeBuilder {
         let pick = close.clone();
         let chosen = name.clone();
         let active = name == current;
-        row = row.child(
-            container()
-                .role(sigil::prelude::Role::Button)
-                .label(name.clone())
-                .focusable(true)
-                .class(classes!("rounded-md"))
-                .class_when(signal(active), "bg-gray-5")
-                .pointer_down(move |event| {
-                    drop(pick.cmd.send(Cmd::Command(format!("/workflow {chosen}"))));
-                    event.stop_propagation();
-                })
-                .child(
-                    label(name)
-                        .class(classes!("text-xs text-gray-12"))
-                        .class_when(signal(active), "font-bold"),
-                ),
-        );
+        let chip = if active {
+            button(name).primary()
+        } else {
+            button(name).ghost()
+        };
+        row = row.child(chip.activate(move || {
+            drop(pick.cmd.send(Cmd::Command(format!("/workflow {chosen}"))));
+        }));
     }
     row
 }
@@ -163,19 +157,7 @@ fn entry(
         ' '
     };
     let lit = active || over;
-    container()
-        .role(sigil::prelude::Role::Button)
-        .label(format!("{role}"))
-        .focusable(true)
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(24.0)
-                .padding_x(8.0)
-                .gap(8.0),
-        )
-        .class(classes!("rounded-md"))
-        .class_when(signal(lit), "bg-gray-5")
+    pick(lit, false, format!("{marker} {role}"), seat.to_string())
         .pointer_down(move |event| {
             press.workflow_sel.set(index);
             press.drag_from.set(Some(index));
@@ -203,6 +185,4 @@ fn entry(
             }
             event.stop_propagation();
         })
-        .child(label(format!("{marker} {role}")).class(classes!("text-sm text-gray-12")))
-        .child(label(seat.to_string()).class(classes!("text-xs text-gray-11")))
 }

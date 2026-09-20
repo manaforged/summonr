@@ -104,6 +104,19 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
         );
         return Ok(0);
     }
+    if args.add {
+        if args.add_list {
+            println!("{}", summonr::list_extras()?);
+            return Ok(0);
+        }
+        let Some(path) = args.prompt.first() else {
+            return Err(summonr::Error::Config(
+                "summonr add PATH  (or add --list)".to_string(),
+            ));
+        };
+        println!("{}", summonr::add_bundle(std::path::Path::new(path))?);
+        return Ok(0);
+    }
     if args.list_worktrees {
         return manage_worktrees(&args).map(|()| 0);
     }

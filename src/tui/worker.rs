@@ -20,6 +20,7 @@ mod export;
 pub(super) use export::{announce, export_session};
 mod history;
 mod reader;
+pub(crate) use reader::NEEDS_LOGIN;
 mod settings;
 mod state;
 mod turn;

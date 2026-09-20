@@ -1,12 +1,9 @@
-use sigil::prelude::{IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Position, container};
-use sigil_tui::cell_width;
+use sigil::prelude::{
+    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Position, Tone,
+    classes, container, divider_horizontal, label, notice_band,
+};
 
-use super::super::super::app::App;
-use super::super::super::canvas::{self, Span, palette};
-use super::super::super::model::Model;
-use super::super::super::suggest;
-use super::super::{accent, composer_hint, render_background, run};
-use super::margin;
+use super::{App, Model, composer_hint, suggest};
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,
@@ -14,8 +11,6 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     width: usize,
     editor: E,
 ) -> NodeBuilder {
-    let header_app = app.clone();
-    let hint_app = app.clone();
     let editing = app.view_edit.peek();
     let mut editor_area = container().layout(
         LayoutStyle::flex_column()
@@ -26,18 +21,10 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     if editing {
         let model = app.model.borrow();
         let path = model.view.as_ref().map_or("", |view| view.path.as_str());
-        let text = canvas::ellipsize(
-            &format!("editing {path} · ctrl+s save · esc leave"),
-            width.saturating_sub(4),
-        );
-        let text = format!(
-            "│ {text}{} │",
-            " ".repeat(width.saturating_sub(cell_width(&text) + 4))
-        );
         editor_area = editor_area
-            .child(render_background(
-                [Span::styled(text, palette().gray)].iter().map(run),
-                palette().base,
+            .child(notice_band(
+                format!("editing {path} · ctrl+s save · esc leave"),
+                Tone::Info,
             ))
             .child(editor);
     } else {
@@ -48,114 +35,127 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .padding_x(16.0)
+                .gap(0.0),
         )
         .child(suggest::widget(app.clone(), width, full_width))
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .height(canvas::cell().h),
-                )
-                .children_reactive(move || {
-                    let _panes = header_app.panes.get();
-                    let model = header_app.model.borrow();
-                    vec![row(header_line(&model, width), palette().base, full_width)]
-                }),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .shrink(0.0)
-                        .min_size(0.0, 0.0)
-                        .padding_x(margin(full_width) as f32 * canvas::cell().w),
-                )
-                .child(editor_area),
-        )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .height(canvas::cell().h),
-                )
-                .children_reactive(move || {
-                    let _panes = hint_app.panes.get();
-                    let _select = hint_app.select.get();
-                    let model = hint_app.model.borrow();
-                    let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
-                    let select = hint_app
-                        .select
-                        .peek()
-                        .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-                    let hint = if hint_app.view_edit.get() {
-                        " ctrl+s save · esc leave "
-                    } else {
-                        &composer_hint(
-                            model.busy_since.map(|(activity, _)| activity),
-                            width,
-                            &options,
-                            select.as_deref(),
-                        )
-                    };
-                    vec![row(hint_line(hint, width), palette().base, full_width)]
-                }),
-        )
+        .child(header_row(app.clone()))
+        .child(editor_area)
+        .child(hint_row(app.clone()))
 }
 
-fn header_line(model: &Model, width: usize) -> Vec<Span> {
-    let (glyph, mode, mode_color) = if model.snapshot.plan {
-        ('◇', "plan", palette().cyan)
-    } else {
-        ('●', "auto", palette().green)
-    };
-    let left = format!(" {glyph} {mode} ");
-    let suffix = model
-        .snapshot
-        .effort
-        .filter(|effort| *effort != crate::provider::Effort::None)
-        .map_or(String::new(), |effort| format!("({})", effort.as_str()));
-    let model_width = width.saturating_sub(cell_width(&left) + cell_width(&suffix) + 3);
-    let shown_model = canvas::ellipsize(&model.snapshot.model, model_width);
-    let fill = width
-        .saturating_sub(cell_width(&left) + cell_width(&shown_model) + cell_width(&suffix) + 3);
-    let border = if model.busy_since.is_some() {
-        accent(&model.prefs.theme)
-    } else {
-        palette().gray
-    };
-    vec![
-        Span::styled("╭", border),
-        Span::styled(left, mode_color),
-        Span::styled("─".repeat(fill), border),
-        Span::styled(shown_model, palette().dim),
-        Span::styled(suffix, palette().yellow).bold(),
-        Span::text(" "),
-        Span::styled("╮", border),
-    ]
+fn rule() -> NodeBuilder {
+    container()
+        .layout(LayoutStyle::flex_row().grow(1.0).min_size(0.0, 0.0))
+        .child(divider_horizontal())
 }
 
-fn hint_line(hint: &str, width: usize) -> Vec<Span> {
-    let hint = canvas::ellipsize(hint, width.saturating_sub(2));
-    let dash = width.saturating_sub(cell_width(&hint) + 2);
-    vec![
-        Span::styled("╰", palette().gray),
-        Span::styled("─".repeat(dash), palette().gray),
-        Span::styled(hint, palette().gray),
-        Span::styled("╯", palette().gray),
-    ]
-}
-
-fn row(spans: Vec<Span>, background: sigil::prelude::Rgba8, width: usize) -> NodeBuilder {
+fn header_row(app: App) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .height(canvas::cell().h)
-                .padding_x(margin(width) as f32 * canvas::cell().w),
+                .shrink(0.0)
+                .align_items(AlignItems::Center)
+                .gap(8.0),
         )
-        .child(render_background(spans.iter().map(run), background))
+        .children_reactive(move || {
+            let _panes = app.panes.get();
+            let model = app.model.borrow();
+            vec![
+                container()
+                    .layout(
+                        LayoutStyle::flex_row()
+                            .fill_width()
+                            .align_items(AlignItems::Center)
+                            .gap(8.0),
+                    )
+                    .child(mode_label(&model))
+                    .child(rule())
+                    .child(model_label(&model)),
+            ]
+        })
+}
+
+fn hint_row(app: App) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .shrink(0.0)
+                .align_items(AlignItems::Center)
+                .gap(8.0),
+        )
+        .children_reactive(move || {
+            let _panes = app.panes.get();
+            let _select = app.select.get();
+            let model = app.model.borrow();
+            let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
+            let select = app
+                .select
+                .peek()
+                .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+            let hint = if app.view_edit.get() {
+                "ctrl+s save · esc leave".to_string()
+            } else {
+                composer_hint(
+                    model.busy_since.map(|(activity, _)| activity),
+                    width_of(&app),
+                    &options,
+                    select.as_deref(),
+                )
+                .trim()
+                .to_string()
+            };
+            vec![
+                container()
+                    .layout(
+                        LayoutStyle::flex_row()
+                            .fill_width()
+                            .align_items(AlignItems::Center)
+                            .gap(8.0),
+                    )
+                    .child(rule())
+                    .child(label(hint).class(classes!("text-xs text-gray-11"))),
+            ]
+        })
+}
+
+fn width_of(app: &App) -> usize {
+    usize::from(app.viewport.peek().0).saturating_sub(18)
+}
+
+fn mode_label(model: &Model) -> NodeBuilder {
+    let (glyph, mode) = if model.snapshot.plan {
+        ("◇", "plan")
+    } else if model.snapshot.work {
+        ("▣", "work")
+    } else if model.snapshot.goal {
+        ("◎", "goal")
+    } else {
+        ("●", "auto")
+    };
+    let title = label(format!("{glyph} {mode}"));
+    let title = if model.snapshot.plan {
+        title.class(classes!("text-xs text-accent"))
+    } else if model.snapshot.work {
+        title.class(classes!("text-xs text-warn-11"))
+    } else if model.snapshot.goal {
+        title.class(classes!("text-xs text-error-11"))
+    } else {
+        title.class(classes!("text-xs text-success-11"))
+    };
+    container().child(title)
+}
+
+fn model_label(model: &Model) -> NodeBuilder {
+    let suffix = model
+        .snapshot
+        .effort
+        .filter(|effort| *effort != crate::provider::Effort::None)
+        .map_or(String::new(), |effort| format!(" ({})", effort.as_str()));
+    container().child(
+        label(format!("{}{suffix}", model.snapshot.model)).class(classes!("text-xs text-gray-11")),
+    )
 }

@@ -29,13 +29,13 @@ use sigil::prelude::{
 use sigil_tui::{EventRouter, Grid, Host, Screen, calibrate};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{Cmd, Exit, Info, Msg, worker};
 use super::app::{App, CopyStatus};
 use super::model::Entry;
 use super::view::root;
 use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tui::{Cmd, Exit, Info, Msg, worker};
 
 /// The animation clock. Scenes are authored in 40 ms frames, so they advance
 /// on their own cadence whatever frame rate is configured.

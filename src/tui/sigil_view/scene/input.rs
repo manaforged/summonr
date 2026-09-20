@@ -114,7 +114,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     let accent = palette().accent;
     let border = if busy { accent } else { palette().gray };
     let right_width = usize::from(width).saturating_sub(6 + mode.len());
-    let right = super::super::canvas::ellipsize(&model.snapshot.model, right_width);
+    let right = super::canvas::ellipsize(&model.snapshot.model, right_width);
     let fill = usize::from(width).saturating_sub(6 + mode.len() + cell_width(right.as_str()));
     write(
         cells,
@@ -165,7 +165,7 @@ pub(in crate::tui::sigil_view) fn prompt(
         } else {
             ' '
         };
-        let input = super::super::chat::draft_view(
+        let input = super::chat::draft_view(
             &app.draft.peek(),
             app.caret.peek(),
             usize::from(width.saturating_sub(8)),
@@ -179,14 +179,14 @@ pub(in crate::tui::sigil_view) fn prompt(
         .select
         .peek()
         .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-    if let Some(status) = super::super::chat::busy_status(model).filter(|_| y > 1) {
-        let shown = super::super::canvas::ellipsize(&status, usize::from(width));
+    if let Some(status) = super::chat::busy_status(model).filter(|_| y > 1) {
+        let shown = super::canvas::ellipsize(&status, usize::from(width));
         let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
         write(cells, cols, x, y.saturating_sub(1), spinner, accent);
         let after = x.saturating_add(cell_width(spinner) as u16);
         write(cells, cols, after, y.saturating_sub(1), rest, palette().dim);
     }
-    let hint = super::super::chat::composer_hint(
+    let hint = super::chat::composer_hint(
         model.busy_since.map(|(activity, _)| activity),
         usize::from(width),
         &options,

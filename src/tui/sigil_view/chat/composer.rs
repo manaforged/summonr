@@ -2,12 +2,11 @@ use std::time::Instant;
 
 use sigil_tui::cell_width;
 
-use super::super::canvas::{Span, ellipsize, palette};
-use super::super::model::Model;
-use super::super::speed::Speed;
-use crate::tui::Activity;
+use super::Speed;
+use super::canvas::ellipsize;
 
-pub(in crate::tui::sigil_view) use lines::{attachment_line, busy_line, empty_hint};
+pub(super) use super::{App, Model, suggest};
+use crate::tui::Activity;
 
 use draft::Draft;
 
@@ -39,7 +38,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model) -> Option<String> {
             .unwrap_or_default();
         format!(
             "{} {doing} · {}s{speed}{waiting}",
-            SPINNER[model.spinner],
+            SPINNER[model.spinner % SPINNER.len()],
             since.elapsed().as_secs()
         )
     })

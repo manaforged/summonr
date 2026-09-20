@@ -1,7 +1,7 @@
 use crate::prefs::Prefs;
 use crate::tui::{Activity, Info, Round, Snapshot, short_session};
 
-use super::super::model::Model;
+use super::model::Model;
 
 pub(super) fn header(model: &Model) -> String {
     let relay = model
@@ -135,7 +135,6 @@ impl super::App {
         if self.model.borrow().prefs.diff_layout == layout {
             return;
         }
-        *self.history.borrow_mut() = super::History::default();
         self.flip(|prefs| prefs.diff_layout = layout);
     }
 }

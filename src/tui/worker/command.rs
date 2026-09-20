@@ -22,6 +22,7 @@ struct Inbox<'a> {
     followups: &'a mut VecDeque<UserInput>,
     deferred: &'a mut VecDeque<Cmd>,
     ui: &'a tokio::sync::mpsc::UnboundedSender<Msg>,
+    answers: Option<tokio::sync::mpsc::UnboundedSender<String>>,
 }
 
 enum Attended<T> {
@@ -41,6 +42,10 @@ async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<
                 Some(Cmd::Tick) => {}
                 Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_))) => inbox.reader.run(command).await,
                 Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => {
+                    if let Some(answers) = &inbox.answers {
+                        drop(answers.send(input.text));
+                        continue;
+                    }
                     inbox.followups.push_back(input);
                     drop(inbox.ui.send(Msg::Queued {
                         steering: 0,

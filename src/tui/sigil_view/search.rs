@@ -5,11 +5,13 @@ use std::sync::Arc;
 use regex::{Regex, RegexBuilder, escape};
 
 use super::app::App;
+use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
+use super::prelude::*;
 use crate::session::Prompt;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, Role, WidgetLayoutExt, classes,
-    container, label, modal, signal, text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, WidgetLayoutExt, classes,
+    container, label, signal, text_edit, virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
@@ -97,14 +99,6 @@ impl Picker {
             Mode::Conversation => "Search conversation",
             Mode::Prompts => "Search saved prompts",
             Mode::Branch => "Branch after a turn",
-        }
-    }
-
-    fn action(self) -> &'static str {
-        match self.mode.get() {
-            Mode::Conversation => "jump",
-            Mode::Prompts => "insert text",
-            Mode::Branch => "branch",
         }
     }
 
@@ -221,22 +215,21 @@ fn snippet(pattern: &Regex, text: &str) -> Option<String> {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.search;
-    container().layout(LayoutStyle::block()).child(
-        modal(picker.open).title(picker.title()).trap(true).child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .gap(8.0)
-                        .fill_width()
-                        .fill_height(),
-                )
-                .child(
-                    text_edit(picker.query)
-                        .caret_position(picker.caret)
-                        .height(32.0),
-                )
-                .child(results(app, picker)),
-        ),
+    shell(
+        picker.open,
+        picker.title(),
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .child(
+                text_edit(picker.query)
+                    .caret_position(picker.caret)
+                    .height(canvas::overlay_field()),
+            )
+            .child(results(app, picker)),
     )
 }
 
@@ -264,32 +257,25 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     if rows.is_empty() {
                         items.push(container().child(label("No matches. Edit the search.")));
                     }
-                    items.push(container().child(label(format!(
-                        "{} match{} · ↑↓ select · enter {} · esc",
-                        rows.len(),
-                        if rows.len() == 1 { "" } else { "es" },
-                        picker.action()
-                    ))));
-                    let height = if picker.is_history() { 48.0 } else { 28.0 };
+                    let count = format!("{} / {}", selected + 1, rows.len());
+                    let height = if picker.is_history() {
+                        canvas::overlay_list_row() * 2.0
+                    } else {
+                        canvas::overlay_list_row()
+                    };
                     let source = paint.clone();
                     items.push(
                         container().layout(LayoutStyle::block().fill_width()).child(
                             virtual_list(rows, move |index, (entry, preview): &(usize, String)| {
-                                row(
-                                    source.clone(),
-                                    picker,
-                                    index,
-                                    *entry,
-                                    preview,
-                                    selected,
-                                    height,
-                                )
+                                row(source.clone(), picker, index, *entry, preview, selected)
                             })
                             .row_height(height)
-                            .viewport_fill()
-                            .scroll_into_view(selected),
+                            .height(height * 10.0)
+                            .viewport_height(height * 10.0)
+                            .follow(picker.selected),
                         ),
                     );
+                    items.push(hint("↑↓ select · ↵ jump · esc close", count));
                 }
                 Err(error) => items.push(container().child(label(error))),
             }
@@ -304,7 +290,6 @@ fn row(
     entry: usize,
     preview: &str,
     selected: usize,
-    height: f32,
 ) -> NodeBuilder {
     let choose = app.clone();
     let title = if picker.is_history() {
@@ -313,35 +298,9 @@ fn row(
         format!("{}  {preview}", entry + 1)
     };
     let detail = picker.detail(entry);
-    let mut item = container()
-        .role(Role::Button)
-        .label(title.clone())
-        .focusable(true)
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .height(height)
-                .padding_x(8.0)
-                .gap(4.0),
-        )
-        .class(classes!("rounded-md"))
-        .class_when(signal(index == selected), "bg-gray-5")
-        .pointer_down(move |event| {
-            choose.search.selected.set(index);
-            choose.jump();
-            event.stop_propagation();
-        })
-        .child(
-            label(title)
-                .ellipsize()
-                .class(classes!("text-sm text-gray-12")),
-        );
-    if !detail.is_empty() {
-        item = item.child(
-            label(detail)
-                .ellipsize()
-                .class(classes!("text-xs text-gray-11")),
-        );
-    }
-    item
+    pick(index == selected, false, title, detail).pointer_down(move |event| {
+        choose.search.selected.set(index);
+        choose.jump();
+        event.stop_propagation();
+    })
 }

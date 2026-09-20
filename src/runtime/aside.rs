@@ -41,6 +41,8 @@ impl<P: Provider> Loop<P> {
                 emit_deltas: false,
                 effort: self.effort_for(role),
             };
+            drop(request.prefix_hash());
+            self.freeze_catalog();
             let durable = request.durable_bytes().map_err(|error| {
                 Error::Config(format!("cannot encode provider request: {error}"))
             })?;

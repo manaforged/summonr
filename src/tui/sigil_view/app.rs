@@ -18,15 +18,22 @@ use crate::provider::{Image, UserInput};
 use crate::tools::IMAGES_MAX_BYTES;
 use crate::workflow::Role;
 
-use super::super::{Activity, Cmd, Info, Msg};
+pub(super) use super::chat;
+
 use super::canvas::cell;
-use super::chat::History;
+pub(super) use super::input;
+pub(super) use super::model;
 use super::model::{Entry, Model, preview};
 use super::pane::{Layout, Pane};
 use super::patch::{self, SPLIT};
+pub(super) use super::scene;
+pub(super) use super::settings;
+pub(super) use super::suggest;
 use super::suggest::Picker;
 use super::theme;
+pub(super) use crate::tui::{Activity, Cmd, Info, Msg};
 
+mod adjust;
 mod attachments;
 mod auth;
 mod commands;
@@ -40,7 +47,6 @@ mod overlays;
 mod panes;
 pub(super) mod presentation;
 mod sessions;
-mod settings;
 mod turn;
 mod update;
 mod viewer;
@@ -76,7 +82,6 @@ pub(super) enum Overlay {
 #[derive(Clone)]
 pub(super) struct App {
     pub(super) model: Rc<RefCell<Model>>,
-    pub(super) history: Rc<RefCell<super::chat::History>>,
     pub(super) search: super::search::Picker,
     pub(super) help: super::help::View,
     pub(super) cmd: UnboundedSender<Cmd>,
@@ -101,7 +106,7 @@ pub(super) struct App {
     pub(super) settings_open: Signal<bool>,
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
-    pub(super) meter_hover: Signal<Option<super::hit::Target>>,
+    pub(super) meter_hover: Signal<Option<super::chat::Target>>,
     pub(super) scroll: Signal<usize>,
     pub(super) settings_sel: Signal<usize>,
     pub(super) modules: Signal<std::collections::BTreeMap<&'static str, bool>>,
@@ -113,6 +118,8 @@ pub(super) struct App {
     pub(super) model_draft: Signal<String>,
     pub(super) model_caret: Signal<usize>,
     pub(super) model_choices: Signal<Vec<String>>,
+    pub(super) model_facts: Signal<std::collections::BTreeMap<String, crate::catalog::Model>>,
+    pub(super) model_groups: Signal<std::collections::BTreeMap<String, String>>,
     pub(super) model_recent: Signal<usize>,
     pub(super) model_sel: Signal<usize>,
     pub(super) model_loading: Signal<bool>,
@@ -134,7 +141,9 @@ pub(super) struct App {
     pub(super) auth_choices: Signal<Vec<crate::endpoint::AuthInfo>>,
     pub(super) auth_sel: Signal<usize>,
     pub(super) auth_entering: Signal<bool>,
+    pub(super) auth_focus: Signal<u64>,
     pub(super) auth_key: Signal<String>,
+    pub(super) models_focus: Signal<u64>,
     pub(super) auth_caret: Signal<usize>,
     pub(super) ticks: Signal<u64>,
     pub(super) fps: Signal<u32>,
@@ -217,7 +226,6 @@ impl App {
         let caret = signal(0);
         Self {
             model: Rc::new(RefCell::new(model)),
-            history: Rc::new(RefCell::new(History::default())),
             search: super::search::Picker::new(),
             help: super::help::View::new(),
             cmd,
@@ -261,6 +269,8 @@ impl App {
             model_draft: signal(String::new()),
             model_caret: signal(0),
             model_choices: signal(Vec::new()),
+            model_facts: signal(std::collections::BTreeMap::new()),
+            model_groups: signal(std::collections::BTreeMap::new()),
             model_recent: signal(0),
             model_sel: signal(0),
             model_loading: signal(false),
@@ -282,7 +292,9 @@ impl App {
             auth_choices: signal(Vec::new()),
             auth_sel: signal(0),
             auth_entering: signal(false),
+            auth_focus: signal(0),
             auth_key: signal(String::new()),
+            models_focus: signal(0),
             auth_caret: signal(0),
             ticks: signal(0),
             fps: signal(0),

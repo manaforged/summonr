@@ -185,7 +185,9 @@ impl Conn {
                 url,
                 headers,
                 auth.clone()
-                    .map(|spec| crate::credentials::mcp_auth(spec, &format!("mcp-{}", server.name)))
+                    .map(|spec| {
+                        crate::credentials::mcp_auth(*spec, &format!("mcp-{}", server.name))
+                    })
                     .transpose()?,
             )?),
         };

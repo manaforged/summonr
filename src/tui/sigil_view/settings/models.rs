@@ -1,154 +1,167 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, Role, WidgetLayoutExt,
-    classes, container, label, modal, signal, text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    text_field, virtual_list,
 };
 
-use super::super::app::App;
+use super::prelude::*;
+use super::{App, canvas, watch};
 
 enum ModelRow {
-    Header(&'static str),
+    Header(String),
     Seat(usize),
 }
 
-fn list_rows(count: usize, recent: usize, sections: bool) -> Vec<ModelRow> {
+fn provider(choice: &str) -> &str {
+    choice.split_once('\t').map_or("", |(name, _)| name)
+}
+
+fn list_rows(
+    choices: &[String],
+    recent: usize,
+    sections: bool,
+    groups: &std::collections::BTreeMap<String, String>,
+) -> Vec<ModelRow> {
     if !sections {
-        return (0..count).map(ModelRow::Seat).collect();
+        return (0..choices.len()).map(ModelRow::Seat).collect();
     }
-    let mut rows = Vec::with_capacity(count + 2);
-    rows.push(ModelRow::Header("recent"));
+    let mut rows = Vec::with_capacity(choices.len() + 4);
+    rows.push(ModelRow::Header("current".to_string()));
     rows.extend((0..recent).map(ModelRow::Seat));
-    if recent < count {
-        rows.push(ModelRow::Header("providers"));
-        rows.extend((recent..count).map(ModelRow::Seat));
+    let mut heading = String::new();
+    for (index, choice) in choices.iter().enumerate().skip(recent) {
+        let name = provider(choice);
+        if name != heading {
+            heading = name.to_string();
+            rows.push(ModelRow::Header(match groups.get(name) {
+                Some(state) => format!("{name} · {state}"),
+                None => name.to_string(),
+            }));
+        }
+        rows.push(ModelRow::Seat(index));
     }
     rows
 }
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    container().layout(LayoutStyle::block()).child(
-        modal(app.editing_model).title("models").trap(true).child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .gap(6.0)
-                        .fill_width()
-                        .fill_height(),
-                )
-                .children_reactive(move || {
-                    super::super::view::watch(&paint);
-                    let typing = paint.clone();
-                    let error = paint.model_error.get();
-                    let loading = paint.model_loading.get();
-                    let choices = paint.filtered_models();
-                    let sections =
-                        paint.model_draft.get().is_empty() && paint.model_recent.get() > 0;
-                    let recent = paint.model_recent.get().min(choices.len());
-                    let rows = list_rows(choices.len(), recent, sections);
-                    let selected = paint.model_sel.get().min(choices.len().saturating_sub(1));
-                    let selected_row = rows
+    shell(
+        app.editing_model,
+        "Models",
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .children_reactive(move || {
+                watch(&paint);
+                let typing = paint.clone();
+                let error = paint.model_error.get();
+                let loading = paint.model_loading.get();
+                let choices = paint.filtered_models();
+                let sections = paint.model_draft.get().is_empty() && paint.model_recent.get() > 0;
+                let recent = paint.model_recent.get().min(choices.len());
+                let groups = paint.model_groups.get();
+                let rows = list_rows(&choices, recent, sections, &groups);
+                let visible = canvas::overlay_shown(rows.len());
+                let (cols, _) = paint.viewport.get();
+                let span = (canvas::dialog_width(cols, 64.0) / canvas::cell().w) as usize;
+                let error = canvas::ellipsize(&error.replace('\n', " "), span.saturating_sub(6));
+                let selected = paint.model_sel.get().min(choices.len().saturating_sub(1));
+                let current: Vec<bool> = {
+                    let model = paint.model.borrow();
+                    choices
                         .iter()
-                        .position(|row| matches!(row, ModelRow::Seat(index) if *index == selected))
-                        .unwrap_or(0);
-                    let current: Vec<bool> = {
-                        let model = paint.model.borrow();
-                        choices
-                            .iter()
-                            .map(|choice| model.is_model(choice))
-                            .collect()
-                    };
-                    let mut items: Vec<NodeBuilder> = vec![
-                        container().child(
-                            text_edit(paint.model_draft)
-                                .caret_position(paint.model_caret)
-                                .placeholder("Filter models")
-                                .change(move |draft| typing.replace_model_draft(draft.to_string()))
-                                .height(32.0),
+                        .map(|choice| model.is_model(choice))
+                        .collect()
+                };
+                let mut items: Vec<NodeBuilder> = vec![
+                    container().child(
+                        text_field(paint.model_draft)
+                            .placeholder("Filter models")
+                            .focus_when(paint.models_focus)
+                            .change(move |draft| typing.replace_model_draft(draft.to_string()))
+                            .submit(|_| {})
+                            .height(canvas::overlay_field()),
+                    ),
+                ];
+                if loading {
+                    items.push(group("loading models…"));
+                }
+                if !error.is_empty() {
+                    items.push(band(error, true));
+                }
+                if choices.is_empty() && !loading {
+                    items.push(band("No matches. Change the filter.", true));
+                }
+                if !choices.is_empty() {
+                    let source = paint.clone();
+                    let lookup = choices.clone();
+                    items.push(
+                        container().layout(LayoutStyle::block().fill_width()).child(
+                            virtual_list(rows, move |_, row: &ModelRow| match row {
+                                ModelRow::Header(name) => group(name.clone()),
+                                ModelRow::Seat(index) => entry(
+                                    source.clone(),
+                                    &lookup[*index],
+                                    current[*index],
+                                    *index,
+                                    *index == selected,
+                                    sections && *index >= recent,
+                                ),
+                            })
+                            .row_height(canvas::overlay_list_row())
+                            .height(canvas::overlay_list_row() * visible as f32)
+                            .viewport_height(canvas::overlay_list_row() * visible as f32)
+                            .follow(paint.model_sel),
                         ),
-                    ];
-                    if loading {
-                        items.push(container().child(
-                            label("loading models…").class(classes!("text-xs text-gray-11")),
-                        ));
-                    }
-                    if !error.is_empty() {
-                        items.push(
-                            container().child(
-                                label(error.replace('\n', " "))
-                                    .class(classes!("text-xs text-error-11")),
-                            ),
-                        );
-                    }
-                    if choices.is_empty() && !loading {
-                        items.push(
-                            container().child(
-                                label("No matches. Change the filter.")
-                                    .class(classes!("text-xs text-warn-11")),
-                            ),
-                        );
-                    }
-                    if !choices.is_empty() {
-                        let source = paint.clone();
-                        let lookup = choices.clone();
-                        items.push(
-                            container().layout(LayoutStyle::block().fill_width()).child(
-                                virtual_list(rows, move |_, row: &ModelRow| match row {
-                                    ModelRow::Header(name) => container().child(
-                                        label(name.to_string())
-                                            .class(classes!("text-xs text-gray-11")),
-                                    ),
-                                    ModelRow::Seat(index) => entry(
-                                        source.clone(),
-                                        &lookup[*index],
-                                        current[*index],
-                                        *index,
-                                        *index == selected,
-                                    ),
-                                })
-                                .row_height(22.0)
-                                .viewport_fill()
-                                .scroll_into_view(selected_row),
-                            ),
-                        );
-                    }
-                    items
-                }),
-        ),
+                    );
+                }
+                if let Some(about) = choices
+                    .get(selected)
+                    .and_then(|choice| paint.model_facts.get().get(choice).cloned())
+                    .and_then(|fact| fact.about)
+                {
+                    items.push(group(canvas::ellipsize(&about, span.saturating_sub(6))));
+                }
+                items.push(hint(
+                    "↑↓ move · ↵ use · ⌃S default · ⌃R refresh · esc",
+                    format!("{} / {}", selected + 1, choices.len()),
+                ));
+                items
+            }),
     )
 }
 
-fn entry(app: App, choice: &str, current: bool, index: usize, active: bool) -> NodeBuilder {
+fn entry(
+    app: App,
+    choice: &str,
+    current: bool,
+    index: usize,
+    active: bool,
+    grouped: bool,
+) -> NodeBuilder {
     let choose = app.clone();
-    let (marker, title) = if active {
-        ('›', choice)
-    } else {
-        (' ', choice)
+    let (endpoint, model) = match choice.split_once('\t') {
+        Some((endpoint, model)) => (endpoint.to_string(), model.to_string()),
+        None => (String::new(), choice.to_string()),
     };
-    let title = match title.split_once('\t') {
-        Some((name, model)) => format!("{marker} {name}  {model}"),
-        None => format!("{marker} {title}"),
-    };
-    container()
-        .role(Role::Button)
-        .label(title.clone())
-        .focusable(true)
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(22.0)
-                .padding_x(8.0)
-                .gap(6.0),
-        )
-        .class(classes!("rounded-md"))
-        .class_when(signal(active), "bg-gray-5")
-        .pointer_down(move |event| {
-            choose.model_sel.set(index);
-            choose.commit_model_edit();
-            event.stop_propagation();
-        })
-        .child(
-            label(if current { "●" } else { " " }.to_string())
-                .class(classes!("text-xs text-success-11")),
-        )
-        .child(label(title).class(classes!("text-sm text-gray-12")))
+    let facts = app.model_facts.get();
+    let found = facts.get(choice);
+    let model = found.map_or(model, |fact| fact.label().to_string());
+    let detail = [
+        (!grouped).then_some(endpoint),
+        found.map(crate::catalog::Model::window),
+        found.map(|fact| fact.cost.label().to_string()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" · ");
+    pick(active, current, model, detail).pointer_down(move |event| {
+        choose.model_sel.set(index);
+        choose.commit_model_edit();
+        event.stop_propagation();
+    })
 }

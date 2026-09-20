@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 use sigil::prelude::{Cx, signal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::super::{Cmd, Exit, Info, Msg, worker};
 use super::app::{App, CopyStatus};
 use super::desktop::root;
 use super::host::start_tick;
@@ -14,6 +13,7 @@ use super::model::Entry;
 use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
+use crate::tui::{Cmd, Exit, Info, Msg, worker};
 
 const TITLE: &str = "Summonr";
 const SIZE: (u32, u32) = (1280, 800);
@@ -87,12 +87,6 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
         status_at.set(Instant::now());
     }
     app.tick();
-    if app.help.open.peek() {
-        app.help.open.set(false);
-        let text = super::super::help_text(&app.model.borrow().prefs.hotkeys);
-        app.update(Msg::System(text));
-        app.refresh();
-    }
     if let Some(path) = app.open_file.peek() {
         app.open_file.set(None);
         if let Err(error) = reveal(&path) {
@@ -129,20 +123,5 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
 }
 
 fn reveal(path: &Path) -> Result<()> {
-    let (program, args): (&str, Vec<&str>) = if cfg!(target_os = "macos") {
-        ("open", vec![])
-    } else if cfg!(windows) {
-        ("cmd", vec!["/C", "start", ""])
-    } else {
-        ("xdg-open", vec![])
-    };
-    let status = std::process::Command::new(program)
-        .args(args)
-        .arg(path)
-        .status()
-        .map_err(|error| Error::Tool(format!("cannot start {program}: {error}")))?;
-    if !status.success() {
-        return Err(Error::Tool(format!("{program} exited with {status}")));
-    }
-    Ok(())
+    summonr_auth::open::external(path).map_err(|error| Error::Tool(error.to_string()))
 }

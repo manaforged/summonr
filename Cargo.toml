@@ -26,15 +26,19 @@ name = "summonr"
 path = "src/main.rs"
 
 [workspace.dependencies]
+base64 = "0.22"
 leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", rev = "fee12b7a9cbb873faf939f471f3fd3fd87bb70f4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
+rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
+url = "2"
 
 [dependencies]
 summonr-auth = { path = "crates/auth" }
-base64 = "0.22"
+base64 = { workspace = true }
 futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
@@ -51,12 +55,12 @@ uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls-vendored"] }
 leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "fee12b7a9cbb873faf939f471f3fd3fd87bb70f4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
-url = "2"
+url = { workspace = true }
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["clipboard-image"] }
-sigil-tui = { git = "https://github.com/manaforged/sigil.git", branch = "main" }
+sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", rev = "ad4c6341f0297ac2a8e6396811b4b495dfa87bbd", default-features = false, features = ["clipboard-image"] }
+sigil-tui = { git = "https://github.com/manaforged/sigil.git", rev = "ad4c6341f0297ac2a8e6396811b4b495dfa87bbd" }
 ignore = "0.4"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 chacha20poly1305 = "0.10"

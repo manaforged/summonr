@@ -24,8 +24,8 @@ const LIVE: &str = r#"{
 pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
     Endpoint {
         name: name.to_string(),
-        model: "~typesafe/jev-latest".to_string(),
-        base_url: Some("https://openrouter.ai/api/alpha/decisions".to_string()),
+        model: "jev-latest".to_string(),
+        base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
         api_key: Some("k".to_string()),
         source: None,
         oauth: None,
@@ -180,18 +180,26 @@ fn asking_nothing_is_refused() {
 #[test]
 fn each_decisions_provider_keeps_its_own_url() {
     let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let router = endpoint("jev", Wire::Decisions);
-    let (url, key) = target(&router, &questions).unwrap();
-    assert_eq!(url, "https://openrouter.ai/api/alpha/decisions");
-    assert_eq!(key, "k");
-
-    let mut native = endpoint("typesafe", Wire::Decisions);
-    native.base_url = Some("https://api.typesafe.ai/v1/systemone".to_string());
-    let (url, _) = target(&native, &questions).unwrap();
+    let jev = crate::endpoint::resolve_unauthed(Some("jev"), None).unwrap();
     assert_eq!(
-        url, "https://api.typesafe.ai/v1/systemone",
-        "the endpoint owns its whole URL, so a second decisions provider needs no code change"
+        jev.base_url.as_deref(),
+        Some("https://api.typesafe.ai/v1/systemone")
     );
+    assert_eq!(jev.model, "jev-latest");
+    assert_eq!(jev.wire, Wire::Decisions);
+
+    let openrouter = crate::endpoint::resolve_unauthed(Some("openrouter"), None).unwrap();
+    assert_eq!(
+        openrouter.base_url.as_deref(),
+        Some("https://openrouter.ai/api/v1")
+    );
+    assert_eq!(openrouter.wire, Wire::Completions);
+
+    let mut other = endpoint("other", Wire::Decisions);
+    other.base_url = Some("https://example.test/decisions".to_string());
+    let (url, key) = target(&other, &questions).unwrap();
+    assert_eq!(url, "https://example.test/decisions");
+    assert_eq!(key, "k");
 }
 
 #[test]
@@ -207,12 +215,12 @@ fn the_request_keeps_the_shape_the_api_documents() {
         ),
     ]);
     let body = serde_json::to_value(Ask {
-        model: "~typesafe/jev-latest",
+        model: "jev-latest",
         state: &serde_json::Value::from("a 403"),
         questions: &questions,
     })
     .unwrap();
-    assert_eq!(body["model"], "~typesafe/jev-latest");
+    assert_eq!(body["model"], "jev-latest");
     assert_eq!(body["state"], "a 403");
     assert_eq!(body["questions"]["kind"]["type"], "choice");
     assert!(
@@ -269,9 +277,7 @@ fn the_decisions_model_is_absent_from_the_chat_catalog() {
     );
     let decisions = crate::endpoint::catalog(Wire::Decisions);
     assert!(
-        decisions
-            .iter()
-            .any(|model| model == "~typesafe/jev-latest"),
+        decisions.iter().any(|model| model == "jev-latest"),
         "got {decisions:?}"
     );
 }

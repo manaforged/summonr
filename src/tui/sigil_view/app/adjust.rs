@@ -5,9 +5,7 @@ impl App {
         if self.editing_model.peek() {
             return;
         }
-        let last = super::super::settings::setting_rows(self)
-            .len()
-            .saturating_sub(1);
+        let last = super::settings::setting_rows(self).len().saturating_sub(1);
         self.settings_sel.set(
             self.settings_sel
                 .peek()
@@ -16,16 +14,14 @@ impl App {
         );
     }
 
-    pub(in crate::tui::sigil_view) fn selected_setting(
-        &self,
-    ) -> Option<super::super::settings::Setting> {
-        super::super::settings::setting_rows(self)
+    pub(in crate::tui::sigil_view) fn selected_setting(&self) -> Option<super::settings::Setting> {
+        super::settings::setting_rows(self)
             .get(self.settings_sel.peek())
             .map(|row| row.setting)
     }
 
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
-        use super::super::settings::Setting;
+        use super::settings::Setting;
 
         if self.editing_model.peek() {
             return;
@@ -54,8 +50,6 @@ impl App {
             Setting::Theme => self.toggle_theme(),
             Setting::Receipts => self.receipts_command(None),
             Setting::Hotkeys => self.open_hotkeys(),
-            Setting::Comments => self.flip(|prefs| prefs.ban_comments = !prefs.ban_comments),
-            Setting::Tests => self.flip(|prefs| prefs.ban_tests = !prefs.ban_tests),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => {
                 self.flip(|prefs| prefs.animations = !prefs.animations);

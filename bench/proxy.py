@@ -84,6 +84,7 @@ def cached(usage):
 
 class Proxy(BaseHTTPRequestHandler):
     upstream = ""
+    anthropic = ""
     strip = []
     log = None
     lock = threading.Lock()
@@ -109,15 +110,19 @@ class Proxy(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else None
         record = None
-        if raw and path.endswith("/chat/completions"):
+        if raw and (path.endswith("/chat/completions") or path.endswith("/messages")):
             body = json.loads(raw)
             record = {"label": label, "request": shape(body), "usage_requested": False}
-            if body.get("stream") and not (body.get("stream_options") or {}).get("include_usage"):
+            if path.endswith("/chat/completions") and body.get("stream") and not (body.get("stream_options") or {}).get("include_usage"):
                 body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
                 record["usage_requested"] = True
                 raw = json.dumps(body).encode()
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
-        request = urllib.request.Request(self.upstream + path, data=raw, method=method, headers=headers)
+        if path.startswith("/anthropic") and self.anthropic:
+            target = self.anthropic + path[len("/anthropic") :]
+        else:
+            target = self.upstream + path
+        request = urllib.request.Request(target, data=raw, method=method, headers=headers)
         started = time.time()
         first = None
         chunks = []
@@ -185,10 +190,12 @@ def main():
     parser.add_argument("--port", type=int, default=8094)
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--upstream", default="https://api.deepseek.com")
+    parser.add_argument("--anthropic", default="https://api.deepseek.com/anthropic")
     parser.add_argument("--log", required=True)
     parser.add_argument("--strip", action="append", default=[])
     args = parser.parse_args()
     Proxy.upstream = args.upstream.rstrip("/")
+    Proxy.anthropic = args.anthropic.rstrip("/")
     Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]
     Proxy.log = open(args.log, "a")
     ThreadingHTTPServer((args.bind, args.port), Proxy).serve_forever()

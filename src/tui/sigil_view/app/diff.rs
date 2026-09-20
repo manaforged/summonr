@@ -1,4 +1,4 @@
-use super::super::input::Input;
+use super::input::Input;
 use super::*;
 
 impl App {

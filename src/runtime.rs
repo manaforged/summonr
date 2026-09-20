@@ -139,6 +139,7 @@ pub struct Loop<P> {
     blocks: (usize, usize),
     spawned: BTreeMap<String, child::Spawned>,
     mailbox: (UnboundedSender<Event>, UnboundedReceiver<Event>),
+    catalog_frozen: bool,
 }
 
 mod approval;

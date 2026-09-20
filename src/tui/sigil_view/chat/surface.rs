@@ -1,19 +1,16 @@
 use sigil::prelude::{
-    Cx, IntoNode, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, ObjectFit, Position, Style, container, effect, image, node,
-    scroll, signal,
+    AlignItems, ColorAtom, Cx, IntoNode, JustifyContent, LayoutBuilderExt, LayoutReactiveExt,
+    LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Style, classes, container,
+    effect, empty_state, label, node, scroll, signal, spacer,
 };
-use sigil_tui::cell_width;
 
-use super::super::app::App;
-use super::super::canvas::{self, Span, palette};
-use super::chrome;
 use super::composer;
+use super::entry;
 use super::footer;
-use super::history::Placed;
 use super::panels;
 use super::todos;
-use super::{accent, margin, render_background, run, run_node};
+use super::{App, Entry, canvas};
+use crate::tui::short_session;
 
 pub(in crate::tui::sigil_view) fn layer(
     app: App,
@@ -31,9 +28,9 @@ pub(in crate::tui::sigil_view) fn layer(
                 .min_size(0.0, 0.0)
                 .gap(0.0),
         )
-        .child(header(app.clone(), full_width, width))
+        .child(header(app.clone()))
         .child(node(move |cx: &mut Cx| {
-            cx.add(transcript(transcript_app, full_width, width))
+            cx.add(transcript(transcript_app.clone()))
         }))
         .child(panels::agents(app.clone(), full_width, width))
         .child(todos::widget(app.clone(), cols))
@@ -44,199 +41,210 @@ pub(in crate::tui::sigil_view) fn layer(
 
 fn content_width(cols: u16) -> usize {
     let width = usize::from(cols);
-    width.saturating_sub(margin(width) * 2)
+    width.saturating_sub(super::margin(width) * 2)
 }
 
-fn inset(width: usize, child: NodeBuilder) -> NodeBuilder {
-    let left = margin(width);
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::cell().h)
-                .padding_x(left as f32 * canvas::cell().w),
-        )
-        .child(child)
-}
-
-pub(super) fn line(
-    app: App,
-    spans: Vec<Span>,
-    background: sigil::prelude::Rgba8,
-    width: usize,
-) -> NodeBuilder {
-    if spans.iter().all(|span| span.diff_layout.is_none()) {
-        return inset(width, render_background(spans.iter().map(run), background));
-    }
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::cell().h)
-                .gap(0.0),
-        )
-        .style(Style::new().bg(background));
-    for span in &spans {
-        let mut node = run_node(run(span));
-        if let Some(layout) = span.diff_layout {
-            let press = app.clone();
-            node = node.pointer_down(move |event| {
-                if event.button == Some(MouseButton::Left) {
-                    press.set_diff_layout(layout);
-                    event.stop_propagation();
-                }
-            });
-        }
-        row = row.child(node);
-    }
-    inset(width, row)
-}
-
-fn header(app: App, full_width: usize, width: usize) -> NodeBuilder {
+fn header(app: App) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .height(canvas::cell().h)
-                .shrink(0.0),
+                .padding_x(16.0)
+                .align_items(AlignItems::Center)
+                .shrink(0.0)
+                .gap(8.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
+            let fps = update.fps.get();
             let model = update.model.borrow();
-            vec![line(
-                update.clone(),
-                chrome::header(&model, update.fps.get(), width, accent(&model.prefs.theme)),
-                palette().base,
-                full_width,
-            )]
+            let mode = if model.snapshot.plan {
+                "plan"
+            } else if model.snapshot.work {
+                "work"
+            } else if model.snapshot.goal {
+                "goal"
+            } else {
+                "auto"
+            };
+            let mode_label = label(mode.to_string());
+            let mode_label = if model.snapshot.plan {
+                mode_label.class(classes!("text-xs text-accent"))
+            } else if model.snapshot.work {
+                mode_label.class(classes!("text-xs text-warn-11"))
+            } else if model.snapshot.goal {
+                mode_label.class(classes!("text-xs text-error-11"))
+            } else {
+                mode_label.class(classes!("text-xs text-success-11"))
+            };
+            let mut row: Vec<NodeBuilder> =
+                vec![
+                    container().child(label("summonr").class(classes!("text-sm font-bold")).style(
+                        Style::new().text_color(ColorAtom::Rgba8(canvas::palette().accent)),
+                    )),
+                    container().child(
+                        label(model.snapshot.model.clone()).class(classes!("text-sm text-gray-12")),
+                    ),
+                ];
+            if let Some(relay) = model
+                .snapshot
+                .relay
+                .as_deref()
+                .filter(|relay| !relay.is_empty())
+            {
+                row.push(
+                    container()
+                        .child(label(format!("· {relay}")).class(classes!("text-xs text-gray-11"))),
+                );
+            }
+            row.push(spacer());
+            row.push(
+                container().child(
+                    label(format!("ses {}", short_session(&model.session)))
+                        .class(classes!("text-xs text-gray-11")),
+                ),
+            );
+            row.push(container().child(mode_label));
+            if fps > 0 {
+                row.push(
+                    container()
+                        .child(label(format!("{fps} fps")).class(classes!("text-xs text-gray-11"))),
+                );
+            }
+            row
         })
 }
 
-fn transcript(app: App, full_width: usize, width: usize) -> NodeBuilder {
+fn transcript(app: App) -> NodeBuilder {
+    let live = app.clone();
     let bounds = signal((0.0, 0.0, 0.0, 0.0));
-    let total = signal(0.0_f32);
-    let measure = app.clone();
-    let select = app.clone();
-    let body_app = app.clone();
+    let viewport = signal((0.0, 0.0));
+    let transcript_height = app.transcript_height;
+    let extent = app.extent;
     let body = container()
+        .bounds_reactive(bounds)
+        .on_added(move |_, _| {
+            live.tui_chat_active.set(true);
+            effect(move || {
+                let height = bounds.get().3;
+                if height > 0.0 {
+                    extent.set(height);
+                }
+            });
+        })
         .layout(
             LayoutStyle::flex_column()
-                .fill()
+                .fill_width()
+                .fill_height()
+                .grow(1.0)
                 .min_size(0.0, 0.0)
-                .position(Position::Relative),
+                .justify_content(JustifyContent::End)
+                .padding_x(16.0)
+                .padding_y(8.0)
+                .gap(0.0),
         )
-        .children_reactive(move || transcript_rows(&body_app, full_width, width, total));
-    let scroll_body = scroll(body, total)
-        .fill()
-        .scroll_bind(app.scroll_y)
-        .auto_pin_to_bottom(false);
+        .children_reactive({
+            let live = app.clone();
+            move || {
+                let _revision = live.panes.get();
+                let _ticks = live.ticks.get();
+                let entries: Vec<Entry> = live.model.borrow().entries.to_vec();
+                let tools = live.model.borrow().prefs.tools;
+                let layout = live.model.borrow().prefs.diff_layout;
+                if entries.is_empty() {
+                    return vec![empty_state(
+                        "Summonr",
+                        "ask anything · /login setup · @file attaches · !cmd runs · /help",
+                    )];
+                }
+                let mut column = container().layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::cell().h),
+                );
+                for (index, item) in entries.into_iter().enumerate() {
+                    let node = entry::row(item, tools, layout, &live);
+                    if live.search.target.peek() != Some(index) {
+                        column = column.child(node);
+                        continue;
+                    }
+                    let measured = signal((0.0, 0.0, 0.0, 0.0));
+                    let target = live.search.target;
+                    let scroll = live.scroll_y;
+                    column = column.child(node.bounds_reactive(measured).on_added(move |_, _| {
+                        effect(move || {
+                            let (_, y, _, height) = measured.get();
+                            let (_, top, _, body_height) = bounds.get();
+                            if target.peek() == Some(index) && height > 0.0 && body_height > 0.0 {
+                                scroll.set((y - top).max(0.0));
+                                target.set(None);
+                            }
+                        });
+                    }));
+                }
+                vec![column]
+            }
+        });
+    let select = app.clone();
     container()
+        .size_reactive(viewport)
+        .on_added(move |_, _| {
+            effect(move || {
+                let height = viewport.get().1;
+                if height > 0.0 {
+                    transcript_height.set(height);
+                }
+            });
+        })
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .grow(1.0)
                 .min_size(0.0, 0.0),
         )
-        .bounds_reactive(bounds)
-        .on_added(move |_, _| {
-            measure.tui_chat_active.set(true);
-            effect(move || {
-                let height = bounds.get().3;
-                if measure.transcript_height.peek() != height {
-                    measure.transcript_height.set(height);
-                    measure.reflow();
-                }
-            });
-        })
         .pointer_down(move |event| {
-            if event.button != Some(MouseButton::Left) {
-                return;
+            if event.button == Some(MouseButton::Left) {
+                select.selection_anchor.set(None);
+                event.stop_propagation();
             }
-            let cell = canvas::cell();
-            let col = (event.window_position.x / cell.w).max(0.0) as u16;
-            let row = (event.window_position.y / cell.h).max(0.0) as u16;
-            select.selection_anchor.set(Some((col, row)));
-            event.stop_propagation();
         })
-        .child(scroll_body)
+        .child(
+            scroll(body, app.extent)
+                .fill()
+                .scroll_bind(app.scroll_y)
+                .auto_pin_to_bottom(app.search.target.peek().is_none()),
+        )
 }
 
-fn transcript_rows(
-    app: &App,
-    full_width: usize,
-    width: usize,
-    total: sigil::prelude::Signal<f32>,
-) -> Vec<NodeBuilder> {
-    let _panes = app.panes.get();
-    let _scroll_y = app.scroll_y.get();
-    let _transcript_height = app.transcript_height.get();
-    let model = app.model.borrow();
-    let stamp = model.entries.stamp;
-    let mut history = app.history.borrow_mut();
-    let rows = history.lines(&model, width, stamp);
-    let height = canvas::cell().h;
-    total.set(rows.len() as f32 * height);
-    let viewport = app.transcript_height.peek().max(height);
-    let start = (app.scroll_y.peek() / height).floor() as usize;
-    let end = (start + (viewport / height).ceil() as usize + 2).min(rows.len());
-    let mut nodes = rows
-        .iter()
-        .enumerate()
-        .skip(start)
-        .take(end.saturating_sub(start))
-        .map(|(index, row)| {
-            let child = line(app.clone(), row.spans.clone(), row.bg, full_width);
-            container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_top(index as f32 * height)
-                        .inset_left(0.0)
-                        .inset_right(0.0)
-                        .height(height),
-                )
-                .child(child)
-        })
-        .collect::<Vec<_>>();
-    if rows.is_empty() {
-        let hint = composer::empty_hint(width);
-        let pad = width.saturating_sub(cell_width(hint)) / 2;
-        let text = format!("{}{}", " ".repeat(pad), hint);
-        nodes.push(line(
-            app.clone(),
-            vec![Span::styled(text, palette().dim)],
-            palette().base,
-            full_width,
-        ));
-        total.set(canvas::cell().h);
+#[cfg(test)]
+pub(crate) fn visible_range(
+    scroll_y: f32,
+    cell_h: f32,
+    rows: usize,
+    viewport: f32,
+) -> (usize, usize) {
+    if rows == 0 || cell_h <= 0.0 {
+        return (0, 0);
     }
-    nodes.extend(images(&history.images, full_width, start, end));
-    nodes
+    let viewport = viewport.max(cell_h);
+    let visible = (viewport / cell_h).ceil() as usize + 2;
+    let raw = scroll_y / cell_h;
+    let start = if raw.is_finite() {
+        raw.max(0.0).floor() as usize
+    } else {
+        rows.saturating_sub(visible.max(1))
+    };
+    let start = start.min(rows.saturating_sub(visible.max(1)));
+    let end = start.saturating_add(visible).min(rows);
+    (start, end)
 }
 
-fn images(placed: &[Placed], width: usize, start: usize, end: usize) -> Vec<NodeBuilder> {
-    let cell = canvas::cell();
-    placed
-        .iter()
-        .filter(|picture| picture.line < end && picture.line.saturating_add(picture.rows) > start)
-        .map(|picture| {
-            let source = super::transcript::fit_source(&picture.source, picture.cols, picture.rows);
-            container()
-                .layout(
-                    LayoutStyle::block()
-                        .position(Position::Absolute)
-                        .inset_left(margin(width) as f32 * cell.w)
-                        .inset_top(picture.line as f32 * cell.h)
-                        .width(picture.cols as f32 * cell.w)
-                        .height(picture.rows as f32 * cell.h),
-                )
-                .hittable(false)
-                .child(
-                    image(source)
-                        .fit(ObjectFit::Contain)
-                        .layout(LayoutStyle::block().fill_width().fill_height()),
-                )
-        })
-        .collect()
+#[cfg(test)]
+pub(crate) fn pin_extent(content: f32, viewport: f32, cell_h: f32) -> f32 {
+    (content - viewport.max(cell_h)).max(0.0)
 }
+
+#[cfg(test)]
+#[path = "surface_tests.rs"]
+mod tests;

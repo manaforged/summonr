@@ -3,13 +3,15 @@ use std::path::Path;
 
 use crate::session::SessionInfo;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, Role, WidgetLayoutExt, classes,
-    container, label, modal, signal, text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, label, signal,
+    text_edit, virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
-use super::super::short_session;
 use super::app::App;
+use super::canvas;
+use super::prelude::*;
+use crate::tui::short_session;
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -253,22 +255,21 @@ impl Picker {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
-    container().layout(LayoutStyle::block()).child(
-        modal(picker.open).title(picker.heading()).trap(true).child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .gap(8.0)
-                        .fill_width()
-                        .fill_height(),
-                )
-                .child(
-                    text_edit(picker.query)
-                        .caret_position(picker.caret)
-                        .height(32.0),
-                )
-                .child(list(app, picker)),
-        ),
+    shell(
+        picker.open,
+        picker.heading(),
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .child(
+                text_edit(picker.query)
+                    .caret_position(picker.caret)
+                    .height(canvas::overlay_field()),
+            )
+            .child(list(app, picker)),
     )
 }
 
@@ -289,48 +290,35 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                 return vec![container().child(label(picker.empty()))];
             }
             let source = paint.clone();
-            vec![
+            let band = canvas::overlay_list_row();
+            let shown = canvas::overlay_shown(rows.len());
+            let total = rows.len();
+            let mut items = vec![
                 container().layout(LayoutStyle::block().fill_width()).child(
                     virtual_list(rows, move |index, info: &SessionInfo| {
                         row(source.clone(), picker, index, info, selected)
                     })
-                    .row_height(48.0)
-                    .viewport_fill()
-                    .scroll_into_view(selected),
+                    .row_height(band)
+                    .height(band * shown as f32)
+                    .viewport_height(band * shown as f32)
+                    .follow(paint.sessions.selected),
                 ),
-            ]
+            ];
+            items.push(hint(
+                "↑↓ move · ↵ resume · tab scope · esc close",
+                format!("{} / {}", selected + 1, total),
+            ));
+            items
         })
 }
 
 fn row(app: App, picker: Picker, index: usize, info: &SessionInfo, selected: usize) -> NodeBuilder {
     let choose = app.clone();
     let title = picker.title(info);
-    container()
-        .role(Role::Button)
-        .label(title.clone())
-        .focusable(true)
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .height(48.0)
-                .padding_x(8.0)
-                .gap(4.0),
-        )
-        .class(classes!("rounded-md"))
-        .class_when(signal(index == selected), "bg-gray-5")
-        .pointer_down(move |event| {
-            choose.sessions.selected.set(index);
-            choose.resume_session();
-            event.stop_propagation();
-        })
-        .child(
-            label(title)
-                .ellipsize()
-                .class(classes!("text-sm text-gray-12")),
-        )
-        .child(
-            label(picker.detail(info))
-                .ellipsize()
-                .class(classes!("text-xs text-gray-11")),
-        )
+    let detail = picker.detail(info);
+    pick(index == selected, false, title, detail).pointer_down(move |event| {
+        choose.sessions.selected.set(index);
+        choose.resume_session();
+        event.stop_propagation();
+    })
 }

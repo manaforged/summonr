@@ -1,4 +1,5 @@
 use super::*;
+use sigil::prelude::{button, card, spacer};
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let submit = app.clone();
@@ -31,24 +32,25 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .fill_width()
                 .padding_x(24.0)
                 .padding_y(12.0)
-                .shrink(0.0),
+                .shrink(0.0)
+                .align_items(AlignItems::Stretch),
         )
-        .child(
+        .child(card(
             container()
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .padding(16.0)
-                        .gap(12.0),
+                        .gap(12.0)
+                        .min_size(0.0, 120.0),
                 )
-                .class(classes!("rounded-lg border border-gray-6 bg-gray-1"))
+                .class(classes!("bg-gray-3"))
                 .child(
                     text_edit(value)
                         .caret_position(caret)
                         .placeholder(if editing {
                             "editing the file — ctrl+s saves, esc leaves"
                         } else {
-                            "ask for changes — @file attaches, /help lists"
+                            "Message — @file attaches, /help lists"
                         })
                         .change(move |draft| {
                             if !editing {
@@ -56,8 +58,8 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                             }
                         })
                         .submit(move |_| submit.submit())
-                        .height(72.0)
-                        .class(classes!("border-0 bg-gray-1")),
+                        .layout(LayoutStyle::flex_column().fill_width().height(96.0))
+                        .class(classes!("text-sm text-gray-12")),
                 )
                 .child(
                     container()
@@ -75,18 +77,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                             .class(classes!("text-sm text-gray-12")),
                         )
                         .child(spacer())
-                        .child(
-                            hit("Send".to_string(), false, move || send.submit())
-                                .layout(
-                                    LayoutStyle::flex_row()
-                                        .fixed_size(28.0, 28.0)
-                                        .shrink(0.0)
-                                        .align_items(AlignItems::Center)
-                                        .justify_content(JustifyContent::Center),
-                                )
-                                .class(classes!("rounded-full bg-gray-12"))
-                                .child(icons::send()),
-                        ),
+                        .child(button("Send").activate(move || send.submit())),
                 ),
-        )
+        ))
 }

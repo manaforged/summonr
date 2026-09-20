@@ -1,6 +1,7 @@
 use super::*;
+use sigil::prelude::{IntoNode, button, hairline, kv_row, spacer, status_bar};
 
-pub(super) fn status_strip(app: App) -> NodeBuilder {
+pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
     let (plan, context, tokens, cached) = {
         let model = app.model.borrow();
         let cached = (model.cached_tokens > 0 && model.prompt_tokens > 0)
@@ -15,79 +16,62 @@ pub(super) fn status_strip(app: App) -> NodeBuilder {
     let branch = app.git_branch.clone().unwrap_or_default();
     let auto = app.clone();
     let planned = app.clone();
-    let mut strip = container()
+    let modes = container()
         .layout(
             LayoutStyle::flex_row()
-                .fill_width()
-                .height(32.0)
-                .padding_x(24.0)
-                .align_items(AlignItems::Center)
+                .height(26.0)
+                .padding(2.0)
+                .gap(2.0)
+                .align_items(AlignItems::Center),
+        )
+        .class(classes!("rounded-md bg-gray-3"))
+        .child(seg("Auto", !plan, move || {
+            if auto.model.borrow().snapshot.plan {
+                auto.toggle_mode();
+            }
+        }))
+        .child(seg("Plan", plan, move || {
+            if !planned.model.borrow().snapshot.plan {
+                planned.toggle_mode();
+            }
+        }));
+    let mut facts = container()
+        .layout(
+            LayoutStyle::flex_row()
                 .gap(8.0)
-                .shrink(0.0),
+                .align_items(AlignItems::Center),
         )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .height(26.0)
-                        .padding(2.0)
-                        .gap(2.0)
-                        .align_items(AlignItems::Center),
-                )
-                .class(classes!("rounded-md bg-gray-3"))
-                .child(seg("Auto", !plan, move || {
-                    if auto.model.borrow().snapshot.plan {
-                        auto.toggle_mode();
-                    }
-                }))
-                .child(seg("Plan", plan, move || {
-                    if !planned.model.borrow().snapshot.plan {
-                        planned.toggle_mode();
-                    }
-                })),
-        )
+        .child(modes)
         .child(hairline())
-        .child(metric("context", context))
+        .child(kv_row(
+            "context",
+            label(context).class(classes!("text-xs font-mono text-gray-12")),
+        ))
         .child(hairline())
-        .child(metric(
+        .child(kv_row(
             "session",
-            format!("{} tokens", crate::provider::compact(tokens)),
+            label(format!("{} tokens", crate::provider::compact(tokens)))
+                .class(classes!("text-xs font-mono text-gray-12")),
         ));
     if let Some(cached) = cached {
-        strip =
-            strip.child(label(format!("{cached}% cached")).class(classes!("text-xs text-gray-11")));
+        facts =
+            facts.child(label(format!("{cached}% cached")).class(classes!("text-xs text-gray-11")));
     }
-    strip
-        .child(spacer())
+    let git = container()
+        .layout(
+            LayoutStyle::flex_row()
+                .gap(6.0)
+                .align_items(AlignItems::Center),
+        )
         .child(icons::branch())
-        .child(label(branch).class(classes!("text-xs text-gray-11")))
+        .child(label(branch).class(classes!("text-xs text-gray-11")));
+    status_bar([facts, spacer(), git])
 }
 
-pub(super) fn metric(name: &'static str, value: String) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .align_items(AlignItems::Center)
-                .gap(4.0),
-        )
-        .child(label(name).class(classes!("text-xs text-gray-11")))
-        .child(label(value).class(classes!("text-xs font-mono text-gray-12")))
-}
-
-pub(super) fn seg(title: &'static str, on: bool, act: impl Fn() + 'static) -> NodeBuilder {
-    hit(title.to_string(), false, act)
-        .layout(
-            LayoutStyle::flex_row()
-                .height(22.0)
-                .padding_x(10.0)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center),
-        )
-        .class(classes!("rounded-sm"))
-        .class_when(signal(on), "bg-gray-1")
-        .child(
-            label(title)
-                .class(classes!("text-xs text-gray-11"))
-                .class_when(signal(on), "text-gray-12"),
-        )
+pub(super) fn seg(title: &'static str, on: bool, act: impl Fn() + 'static) -> impl IntoNode {
+    let mut control = button(title).ghost().activate(act);
+    if on {
+        control = control.class("bg-gray-1");
+    }
+    control
 }

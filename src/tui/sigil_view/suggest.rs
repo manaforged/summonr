@@ -1,15 +1,16 @@
 use sigil_tui::cell_width;
 
 use super::app::App;
-use super::canvas::{self, Span, ellipsize, palette};
-use super::chat::{render_background, run};
+use super::canvas;
 use super::model::Model;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal,
-    Style, container, signal,
+    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Signal, card,
+    container, signal,
 };
+
+use super::prelude::*;
 
 const LIMIT: usize = 9;
 const MIN_WIDTH: usize = 34;
@@ -179,12 +180,6 @@ pub(super) fn reference(path: &str) -> String {
     format!("@{}", serde_json::Value::String(path.to_string()))
 }
 
-pub(super) struct Menu {
-    pub left: usize,
-    pub top: usize,
-    pub lines: Vec<String>,
-}
-
 pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
     container()
         .layout(
@@ -223,132 +218,40 @@ pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
             } else {
                 "commands"
             };
-            let mut panel = container()
-                .layout(LayoutStyle::flex_column().width(popup as f32 * canvas::cell().w))
-                .style(Style::new().bg(palette().code_bg))
-                .child(menu_row(
-                    border(
-                        &format!(
-                            "{title} {}–{}/{}",
-                            start + 1,
-                            start + shown.len(),
-                            matches.len()
-                        ),
-                        popup,
-                        true,
-                    ),
-                    false,
-                ));
+            let mut body = container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .width(popup as f32 * canvas::cell().w)
+                        .gap(2.0),
+                )
+                .child(group(format!(
+                    "{title} {}–{}/{}",
+                    start + 1,
+                    start + shown.len(),
+                    matches.len()
+                )));
             for (offset, (name, description)) in shown.iter().enumerate() {
                 let index = start + offset;
                 let click = app.clone();
-                panel = panel.child(
-                    menu_row(
-                        row(name, description, popup, index == cursor),
-                        index == cursor,
-                    )
-                    .pointer_down(move |event| {
-                        if event.button == Some(MouseButton::Left) {
-                            click.commands.cursor.set(index);
-                            click.accept();
-                            event.stop_propagation();
-                        }
-                    }),
+                body = body.child(
+                    pick(index == cursor, false, name.clone(), description.clone()).pointer_down(
+                        move |event| {
+                            if event.button == Some(MouseButton::Left) {
+                                click.commands.cursor.set(index);
+                                click.accept();
+                                event.stop_propagation();
+                            }
+                        },
+                    ),
                 );
             }
-            let hint = if draft == "/" {
+            let keys = if draft == "/" {
                 "type to search · ↑↓ · tab · esc"
             } else {
                 "↑↓ select · tab accept · esc"
             };
-            vec![panel.child(menu_row(border(hint, popup, false), false))]
+            vec![card(body.child(hint(keys, String::new())))]
         })
-}
-
-fn menu_row(text: String, selected: bool) -> NodeBuilder {
-    let bg = if selected {
-        palette().user_bg
-    } else {
-        palette().code_bg
-    };
-    let fg = if selected {
-        palette().text
-    } else {
-        palette().gray
-    };
-    let mut span = Span::surface(text, fg, bg);
-    span.bold = selected;
-    render_background([span].iter().map(run), bg)
-}
-
-pub(super) fn menu(app: &App, cols: u16, rows: u16) -> Option<Menu> {
-    let draft = app.draft.get();
-    let caret = app.caret.get();
-    let model = app.model.borrow();
-    if app.settings_open.peek()
-        || app.auth_open.peek()
-        || app.editing_model.peek()
-        || model.busy_since.is_some()
-        || !app.commands.open(&draft, caret, &model)
-    {
-        return None;
-    }
-    if cols < 12 || rows < 6 {
-        return None;
-    }
-    let matches = app.commands.rows(&draft, caret, &model);
-    let cursor = app.commands.cursor(matches.len());
-    if !app.splash.peek() {
-        return None;
-    }
-    let [left, prompt, anchor_width] = super::scene::prompt_area(app, cols, rows);
-    let composer = 3_u16;
-    let below = rows > prompt.saturating_add(composer).saturating_add(2);
-    let room = if below {
-        usize::from(rows.saturating_sub(prompt.saturating_add(composer)))
-    } else {
-        usize::from(prompt.saturating_sub(1))
-    };
-    let limit = room.saturating_sub(2).min(LIMIT);
-    if limit == 0 {
-        return None;
-    }
-    let start = cursor.saturating_add(1).saturating_sub(limit);
-    let shown = &matches[start..matches.len().min(start + limit)];
-    let height = shown.len() + 2;
-    let width = usize::from(anchor_width);
-    let top = if below {
-        prompt.saturating_add(composer)
-    } else {
-        prompt.saturating_sub(u16::try_from(height + 1).unwrap_or(u16::MAX))
-    };
-    let mut lines = Vec::with_capacity(height);
-    let title = if mention(&draft, caret).is_some() {
-        "mentions"
-    } else {
-        "commands"
-    };
-    let title = format!(
-        "{title} {}–{}/{}",
-        start + 1,
-        start + shown.len(),
-        matches.len()
-    );
-    lines.push(border(&title, width, true));
-    for (offset, (name, description)) in shown.iter().enumerate() {
-        lines.push(row(name, description, width, start + offset == cursor));
-    }
-    let hint = if draft == "/" {
-        "type to search · ↑↓ · tab · esc"
-    } else {
-        "↑↓ select · tab accept · esc"
-    };
-    lines.push(border(hint, width, false));
-    Some(Menu {
-        left: usize::from(left),
-        top: usize::from(top),
-        lines,
-    })
 }
 
 fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
@@ -358,22 +261,4 @@ fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
         .max()
         .unwrap_or(MIN_WIDTH);
     widest.max(MIN_WIDTH).min(viewport.saturating_sub(4).max(1))
-}
-
-fn row(name: &str, description: &str, width: usize, selected: bool) -> String {
-    let marker = if selected { '›' } else { ' ' };
-    let inner = width.saturating_sub(4);
-    let name = ellipsize(name, inner);
-    let name_width = cell_width(name.as_str());
-    let available = inner.saturating_sub(name_width + 2);
-    let help = ellipsize(description, available);
-    let gap = inner.saturating_sub(name_width + cell_width(help.as_str()));
-    format!("│{marker} {name}{}{help}│", " ".repeat(gap))
-}
-
-fn border(label: &str, width: usize, top: bool) -> String {
-    let (left, right) = if top { ('╭', '╮') } else { ('╰', '╯') };
-    let label = ellipsize(label, width.saturating_sub(4));
-    let fill = width.saturating_sub(cell_width(label.as_str()) + 3);
-    format!("{left}─{label}{}{right}", "─".repeat(fill))
 }

@@ -10,18 +10,26 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-RATES = {"hit": 0.03, "miss": 0.15, "output": 0.50}
-RATE_CARD = "GLM-5.3-Flash pay-as-you-go list price (input $0.15, cached input $0.03, output $0.50 per 1M tokens), docs.z.ai/guides/overview/pricing, 2026-09-17; runs used the flat-rate GLM Coding Plan, so this is a list-price equivalent, not money spent"
-HARNESSES = ["summonr", "pi", "omp", "opencode", "hermes"]
-SUSPECT = re.compile(rb"terminal-bench|harbor-framework|laude-institute|tbench\.ai|marginlab\.ai|/logs/verifier|reward\.txt|/solution/|/tests/test", re.I)
+RATES = {"deepseek": {"hit": 0.006, "miss": 0.30, "output": 1.20}}
+RATE_CARD = {"deepseek": "DeepSeek Flash peak list price (cache hit $0.006, miss $0.30, output $1.20 per 1M tokens), api-docs.deepseek.com/quick_start/pricing, 2026-09-19; off-peak is half; list price, not plan spend"}
+def order(rows, subject=None):
+    names = sorted({row["harness"] for row in rows})
+    if subject in names:
+        names.remove(subject)
+        names.insert(0, subject)
+    return names
+VOID = re.compile(rb"terminal-bench|harbor-framework|laude-institute|tbench\.ai|marginlab\.ai", re.I)
+WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test", re.I)
 
 
 def suspect(agent):
-    hits = set()
+    void, warn = set(), set()
     for path in agent.rglob("*"):
         if path.is_file() and path.name != "instruction.txt":
-            hits.update(match.group().decode().lower() for match in SUSPECT.finditer(path.read_bytes()))
-    return sorted(hits)
+            raw = path.read_bytes()
+            void.update(match.group().decode().lower() for match in VOID.finditer(raw))
+            warn.update(match.group().decode().lower() for match in WARN.finditer(raw))
+    return sorted(void), sorted(warn)
 
 
 def seconds(span):
@@ -81,11 +89,23 @@ def requests(paths):
     for path in paths:
         for line in open(path):
             row = json.loads(line)
-            by_label[row["label"]].append(row)
+            if "label" in row:
+                by_label[row["label"]].append(row)
     return by_label
 
 
-def trials(jobs, run, by_label):
+def meta(jobs, run):
+    kv = {}
+    path = Path(jobs, run, "run.txt")
+    if not path.is_file() or not path.read_text().strip():
+        raise SystemExit(f"{path} missing or empty: run it with run.sh before tabulating")
+    for line in path.read_text().splitlines():
+        key, _, value = line.partition(" ")
+        kv[key.strip()] = value.strip()
+    return kv
+
+
+def trials(jobs, run, by_label, rates):
     rows = []
     for result in sorted(Path(jobs, run).glob("*/*/result.json")):
         data = json.loads(result.read_text())
@@ -102,6 +122,7 @@ def trials(jobs, run, by_label):
         agent = seconds(data.get("agent_execution"))
         model = covered([(row["started"], row["ended"]) for row in calls])
         first = calls[0] if calls else None
+        rest = [row.get("usage") or {} for row in calls[1:]]
         exit_file = result.parent / "agent" / "exit"
         rows.append(
             {
@@ -121,15 +142,19 @@ def trials(jobs, run, by_label):
                 "prompt": prompt,
                 "hit": hit,
                 "miss": miss,
+                "session_prompt": sum(u.get("prompt_tokens", 0) for u in rest),
+                "session_hit": sum(hit_tokens(u) for u in rest),
                 "output": output,
                 "reasoning": reasoning,
-                "cost": (hit * RATES["hit"] + miss * RATES["miss"] + output * RATES["output"]) / 1_000_000,
+                "cost": (hit * rates["hit"] + miss * rates["miss"] + output * rates["output"]) / 1_000_000 if rates else None,
                 "first_hit": hit_tokens((first or {}).get("usage") or {}),
                 "first_prompt": ((first or {}).get("usage") or {}).get("prompt_tokens"),
                 "effort": sorted({f'{row["request"].get("reasoning_effort")}/{(row["request"].get("thinking") or {}).get("type")}' for row in calls}),
+                "controls": sorted({f'temp={row["request"].get("temperature")}/maxtok={row["request"].get("max_tokens")}' for row in calls}),
                 "models": sorted({str(row.get("response_model")) for row in calls}),
                 "max_prompt": max((u.get("prompt_tokens", 0) for u in usage), default=0),
-                "suspect": suspect(result.parent / "agent"),
+                "void": suspect(result.parent / "agent")[0],
+                "warn": suspect(result.parent / "agent")[1],
             }
         )
     return rows
@@ -148,46 +173,105 @@ def cell(values, digits=0):
     return f"{fmt(median, digits)} ({fmt(low, digits)}–{fmt(high, digits)})"
 
 
-def summary(rows, solved_only=False):
+def summary(rows, scope="all"):
     lines = [
-        "| Harness | Solved | Input tokens / task | Uncached input / task | Output tokens / task | Cache hit | Cost / task | Time / task (s) | Requests / task |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Harness | Solved | Tasks covered | Input tokens / task | Uncached input / task | Output tokens / task | Cache hit | Session cache | Cost / task | Time / task (s) | Requests / task |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for harness in HARNESSES:
+    for harness in order(rows):
         mine = [row for row in rows if row["harness"] == harness]
         if not mine:
             continue
-        passed = sum(1 for row in mine if row["reward"] == 1.0)
+        if scope == "solved":
+            mine = [row for row in mine if row["reward"] == 1.0]
+        elif scope == "failed":
+            mine = [row for row in mine if row["reward"] != 1.0]
+        if not mine:
+            continue
+        passed = sum(1 for row in mine if row["reward"] == 1.0 and not row["void"])
         low, high = wilson(passed, len(mine))
-        scope = [row for row in mine if row["reward"] == 1.0] if solved_only else mine
-        prompt = sum(row["prompt"] for row in scope)
-        hit = sum(row["hit"] for row in scope)
+        prompt = sum(row["prompt"] for row in mine)
+        hit = sum(row["hit"] for row in mine)
+        sess_p = sum(row["session_prompt"] for row in mine)
+        sess_h = sum(row["session_hit"] for row in mine)
         lines.append(
-            "| {} | {}/{} ({:.0%}, {:.0%}–{:.0%}) | {} | {} | {} | {} | {} | {} | {} |".format(
+            "| {} | {}/{} ({:.0%}, {:.0%}–{:.0%}) | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                 harness,
                 passed,
                 len(mine),
                 passed / len(mine),
                 low,
                 high,
-                cell([row["prompt"] for row in scope]),
-                cell([row["miss"] for row in scope]),
-                cell([row["output"] for row in scope]),
+                len({row["task"] for row in mine}),
+                cell([row["prompt"] for row in mine]),
+                cell([row["miss"] for row in mine]),
+                cell([row["output"] for row in mine]),
                 f"{hit / prompt:.1%}" if prompt else "–",
-                cell([row["cost"] for row in scope], 4),
-                cell([row["agent_seconds"] for row in scope if row["agent_seconds"] is not None], 1),
-                cell([row["requests"] for row in scope]),
+                f"{sess_h / sess_p:.1%}" if sess_p else "–",
+                cell([row["cost"] for row in mine if row["cost"] is not None], 4),
+                cell([row["agent_seconds"] for row in mine if row["agent_seconds"] is not None], 1),
+                cell([row["requests"] for row in mine]),
             )
         )
     return "\n".join(lines)
 
 
-def breakdown(rows):
+def reliability(rows):
     lines = [
-        "| Harness | Model time share | Tool and harness time share | Reasoning share of output | Cold first-request cache hit | Max prompt tokens | Errors | 429s | Effort sent | Failures | Suspect trials |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Harness | Tasks | Pass@1 | Pass@k | Pass^k | Cost / solved | First-request tokens |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for harness in HARNESSES:
+    for harness in order(rows):
+        by = per_task(rows, harness)
+        if not by:
+            continue
+        n = len(by)
+
+        def first_ok(group):
+            ordered = sorted(group, key=lambda row: row["trial"])
+            return bool(ordered) and ordered[0]["reward"] == 1.0 and not ordered[0]["void"]
+
+        p1 = sum(1 for group in by.values() if first_ok(group))
+        pk = sum(1 for group in by.values() if any(row["reward"] == 1.0 and not row["void"] for row in group))
+        hat = sum(1 for group in by.values() if group and all(row["reward"] == 1.0 and not row["void"] for row in group))
+        spend = sum(row["cost"] or 0 for group in by.values() for row in group)
+        wins = sum(1 for group in by.values() for row in group if row["reward"] == 1.0 and not row["void"])
+        l1, h1 = wilson(p1, n)
+        lk, hk = wilson(pk, n)
+        lh, hh = wilson(hat, n)
+        firsts = [row["first_prompt"] for group in by.values() for row in group if row.get("first_prompt")]
+        lines.append(
+            "| {} | {} | {}/{} ({:.0%}, {:.0%}–{:.0%}) | {}/{} ({:.0%}, {:.0%}–{:.0%}) | {}/{} ({:.0%}, {:.0%}–{:.0%}) | {} | {} |".format(
+                harness,
+                n,
+                p1,
+                n,
+                p1 / n,
+                l1,
+                h1,
+                pk,
+                n,
+                pk / n,
+                lk,
+                hk,
+                hat,
+                n,
+                hat / n,
+                lh,
+                hh,
+                f"{spend / wins:.4f}" if wins and any(row["cost"] for group in by.values() for row in group) else "–",
+                cell(firsts),
+            )
+        )
+    return "\n".join(lines)
+
+
+def breakdown(rows, want_effort=None):
+    lines = [
+        "| Harness | Model time share | Tool and harness time share | Reasoning share of output | Cold first-request cache hit | Max prompt tokens | Errors | 429s | Effort sent | Effort honored | Sampling controls seen | Failures | Voided | Warn |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for harness in order(rows):
         mine = [row for row in rows if row["harness"] == harness]
         if not mine:
             continue
@@ -204,8 +288,12 @@ def breakdown(rows):
             reason = row["exception"] or ("no requests" if row["requests"] == 0 else f"exit {row['exit']}" if row["exit"] not in (None, "0") else "wrong answer")
             failures[reason] += 1
         efforts = sorted({effort for row in mine for effort in row["effort"]})
+        honored = "n/a" if want_effort in ("", "default", None) else (
+            "yes" if all(want_effort in {e.split("/", 1)[0] for e in row["effort"]} for row in mine)
+            else "no" if not any(want_effort in {e.split("/", 1)[0] for e in row["effort"]} for row in mine)
+            else "mixed")
         lines.append(
-            "| {} | {} | {} | {} | {:.1%} | {} | {} | {} | {} | {} | {} |".format(
+            "| {} | {} | {} | {} | {:.1%} | {} | {} | {} | {} | {} | {} | {} | {} | {} |".format(
                 harness,
                 f"{model / agent:.0%}" if agent else "–",
                 f"{(agent - model) / agent:.0%}" if agent else "–",
@@ -215,14 +303,24 @@ def breakdown(rows):
                 sum(row["errors"] for row in mine),
                 sum(row["rate_limited"] for row in mine),
                 ", ".join(efforts),
+                honored,
+                "; ".join(sorted({c for row in mine for c in row["controls"]})),
                 "; ".join(f"{reason} {count}" for reason, count in sorted(failures.items())) or "none",
-                sum(1 for row in mine if row["suspect"]),
+                sum(1 for row in mine if row["void"]),
+                sum(1 for row in mine if row["warn"]),
             )
         )
     return "\n".join(lines)
 
 
-PAIRED = [("input tokens", "prompt"), ("uncached input", "miss"), ("output tokens", "output"), ("cost", "cost"), ("time", "agent_seconds")]
+PAIRED = [
+    ("input tokens", "prompt"),
+    ("uncached input", "miss"),
+    ("output tokens", "output"),
+    ("cost", "cost"),
+    ("time", "agent_seconds"),
+    ("first-request tokens", "first_prompt"),
+]
 
 
 def per_task(rows, harness):
@@ -233,7 +331,7 @@ def per_task(rows, harness):
     return tasks
 
 
-def paired(rows, subject="summonr", seed=20260916, samples=10000):
+def paired(rows, subject, seed=20260916, samples=10000):
     mine = per_task(rows, subject)
     lines = [
         f"Ratios are {subject} / other, geometric mean over tasks both ran, 95% bootstrap over tasks. Below 1 means {subject} used less.",
@@ -242,14 +340,14 @@ def paired(rows, subject="summonr", seed=20260916, samples=10000):
         "| --- | --- | --- | " + " | ".join("---" for _ in PAIRED) + " |",
     ]
     rng = random.Random(seed)
-    for other in HARNESSES:
+    for other in order(rows, subject):
         if other == subject:
             continue
         theirs = per_task(rows, other)
         tasks = sorted(set(mine) & set(theirs))
         if not tasks:
             continue
-        solved = {task: statistics.mean(r["reward"] == 1.0 for r in mine[task]) - statistics.mean(r["reward"] == 1.0 for r in theirs[task]) for task in tasks}
+        solved = {task: statistics.mean(r["reward"] == 1.0 and not r["void"] for r in mine[task]) - statistics.mean(r["reward"] == 1.0 and not r["void"] for r in theirs[task]) for task in tasks}
         logs = {}
         for name, key in PAIRED:
             logs[name] = {}
@@ -275,33 +373,52 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("run")
     parser.add_argument("--jobs", default=str(Path(__file__).parent / "jobs"))
-    parser.add_argument("--proxy", nargs="+", default=[str(Path(__file__).parent / "logs" / "glm.jsonl")])
+    parser.add_argument("--proxy", nargs="+", default=[str(Path(__file__).parent / "logs" / "deepseek.jsonl")])
     parser.add_argument("--csv")
+    parser.add_argument("--subject", required=True)
     parser.add_argument("--tasks")
     args = parser.parse_args()
-    rows = trials(args.jobs, args.run, requests(args.proxy))
+    info = meta(args.jobs, args.run)
+    vendor = info.get("vendor", "deepseek")
+    rates = RATES.get(vendor)
+    by_label = requests(args.proxy)
+    seen = sorted({str(row["response_model"]) for calls in by_label.values() for row in calls if row.get("response_model")})
+    pin = info.get("model")
+    rates = RATES.get(vendor)
+    if not pin:
+        print("warn: run.txt records no pinned model; cost suppressed")
+        rates = None
+    elif any(m != pin for m in seen):
+        print(f"warn: proxy response models {seen} do not match pinned {pin}; cost suppressed")
+        rates = None
+    rows = trials(args.jobs, args.run, by_label, rates)
     if args.tasks:
         keep = {line.strip() for line in open(args.tasks) if line.strip()}
         rows = [row for row in rows if row["task"] in keep]
     models = sorted({model for row in rows for model in row["models"]})
     checksums = len({row["checksum"] for row in rows})
-    print(f"Run `{args.run}`: {len(rows)} trials, response models {models}, {checksums} task checksums.")
-    print(f"Cost: {RATE_CARD}. Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere.\n")
-    print("All tasks\n")
+    print(f"Run `{args.run}`: vendor {vendor}, effort {info.get('effort', 'default')}, {len(rows)} trials, response models {models}, {checksums} task checksums.")
+    print((RATE_CARD.get(vendor, f"Cost: no rate card for vendor {vendor}; tokens only.") if rates else "Cost: suppressed for this run; tokens only.") + " Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere. A dataset-identity leak hit voids the solve; a verifier-path hit is a warn.")
+    print("Reliability (task-level; pass@k = any of k, pass^k = all k)\n")
+    print(reliability(rows))
+    print("\nAll trials\n")
     print(summary(rows))
-    print("\nSolved tasks only\n")
-    print(summary(rows, solved_only=True))
+    print("\nSolved trials only\n")
+    print(summary(rows, scope="solved"))
+    print("\nFailed trials only\n")
+    print(summary(rows, scope="failed"))
     print("\nWhere the time and tokens go\n")
-    print(breakdown(rows))
-    print("\nPaired against summonr\n")
-    print(paired(rows))
-    flagged = [row for row in rows if row["suspect"]]
+    print(breakdown(rows, info.get("effort")))
+    print(f"\nPaired against {args.subject}\n")
+    print(paired(rows, args.subject))
+    flagged = [row for row in rows if row["void"] or row["warn"]]
     if flagged:
-        print("\nSuspect trials (judge before scoring)\n")
+        print("\nFlagged trials (void = solve removed; warn = path mention only)\n")
         for row in flagged:
-            print(f"- {row['harness']} {row['task']} reward={row['reward']}: {', '.join(row['suspect'])}")
+            kind = "void" if row["void"] else "warn"
+            print(f"- {kind} {row['harness']} {row['task']} reward={row['reward']}: {', '.join(row['void'] + row['warn'])}")
     if args.csv:
-        keys = [key for key in rows[0] if key not in ("effort", "models")] if rows else []
+        keys = [key for key in rows[0] if key not in ("effort", "models", "void", "warn", "controls")] if rows else []
         with open(args.csv, "w") as out:
             out.write(",".join(keys) + "\n")
             for row in rows:

@@ -1,7 +1,7 @@
 use crate::command::Category;
 use crate::prefs::{Hotkey, Hotkeys};
 
-pub(super) fn help_text(keys: &Hotkeys) -> String {
+pub(crate) fn help_text(keys: &Hotkeys) -> String {
     let specs = crate::command_specs();
     let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
     let mut lines = Vec::new();

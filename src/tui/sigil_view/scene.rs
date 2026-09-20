@@ -1,7 +1,10 @@
 use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
-use super::app::App;
+pub(super) use super::app::App;
+pub(super) use super::canvas;
+pub(super) use super::chat;
+
 use super::canvas::write_at;
 use super::canvas::{Cell, Ink, blend, cell as metrics, ink, palette, rgb, shown};
 use super::model::Model;
@@ -20,7 +23,7 @@ pub(in crate::tui::sigil_view) use space::space;
 mod input;
 mod space;
 
-pub(super) fn layer(app: App) -> NodeBuilder {
+pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_column()

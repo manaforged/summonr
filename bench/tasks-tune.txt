@@ -1,0 +1,10 @@
+terminal-bench/cancel-async-tasks
+terminal-bench/chess-best-move
+terminal-bench/filter-js-from-html
+terminal-bench/fix-git
+terminal-bench/git-multibranch
+terminal-bench/nginx-request-logging
+terminal-bench/polyglot-rust-c
+terminal-bench/regex-log
+terminal-bench/sqlite-db-truncate
+terminal-bench/vulnerable-secret

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use summonr_auth::{Auth, Grant, Method, Scheme, Spec, Store};
+use summonr_auth::{Auth, Grant, Method, Scheme, Spec, Store, TokenStyle};
 
-use crate::endpoint::{Endpoint, Wire};
+use crate::endpoint::{Endpoint, LoginFlow, Wire};
 use crate::error::{Error, Result};
 use crate::secret;
 
@@ -49,6 +49,7 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
     }
     let grant = match row.grant.as_deref().map(str::trim) {
         Some("device_code") => Grant::DeviceCode,
+        Some("authorization_code") => Grant::AuthorizationCode,
         _ => Grant::RefreshToken,
     };
     let spec = Spec {
@@ -60,6 +61,16 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
         grant,
         device_url: row.device_url.clone(),
         exchange_url: row.exchange_url.clone(),
+        authorize_url: row.authorize_url.clone(),
+        redirect_uri: row.redirect_uri.clone(),
+        authorize_params: row.authorize_params.clone(),
+        token_params: row.token_params.clone(),
+        token_style: match row.token_style.as_deref().map(str::trim) {
+            Some("json") => TokenStyle::Json,
+            _ => TokenStyle::Form,
+        },
+        pkce: row.pkce,
+        claim_headers: row.claim_headers.clone(),
     };
     spec.check()
         .map_err(|error| Error::Config(error.to_string()))?;
@@ -68,7 +79,7 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
 
 pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
     let method = match endpoint.oauth.as_ref() {
-        Some(row) => Method::Login(spec(row)?),
+        Some(row) => Method::Login(Box::new(spec(row)?)),
         None => Method::Key(
             endpoint
                 .api_key
@@ -77,17 +88,17 @@ pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
                 .unwrap_or_else(|| "local".to_string()),
         ),
     };
-    Ok(Auth::new(
-        method,
-        scheme(endpoint.wire),
-        &endpoint.name,
-        keeper(),
-    ))
+    let carrier = match (&method, endpoint.oauth.as_ref().and_then(named_scheme)) {
+        (Method::Login(_), Some(named)) => named,
+        (Method::Login(_), None) => Scheme::Bearer,
+        (Method::Key(_), _) => scheme(endpoint.wire),
+    };
+    Ok(Auth::new(method, carrier, &endpoint.name, keeper()))
 }
 
 pub(crate) fn mcp_auth(row: crate::config::OAuth, name: &str) -> Result<Auth> {
     Ok(Auth::new(
-        Method::Login(spec(&row)?),
+        Method::Login(Box::new(spec(&row)?)),
         Scheme::Bearer,
         name,
         keeper(),
@@ -103,13 +114,31 @@ pub(crate) fn http() -> Result<leyline::Session> {
 }
 
 pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> {
-    Auth::new(Method::Login(spec(row)?), Scheme::Bearer, name, keeper())
-        .ready()
-        .map_err(|error| Error::Config(error.to_string()))
+    Auth::new(
+        Method::Login(Box::new(spec(row)?)),
+        Scheme::Bearer,
+        name,
+        keeper(),
+    )
+    .ready()
+    .map_err(|error| Error::Config(error.to_string()))
 }
 
-pub(crate) fn is_device(row: &crate::config::OAuth) -> bool {
-    row.grant.as_deref().map(str::trim) == Some("device_code")
+fn named_scheme(row: &crate::config::OAuth) -> Option<Scheme> {
+    match row.scheme.as_deref().map(str::trim) {
+        Some("api_key") => Some(Scheme::ApiKey),
+        Some("google_key") => Some(Scheme::GoogleKey),
+        Some("bearer") => Some(Scheme::Bearer),
+        _ => None,
+    }
+}
+
+pub(crate) fn flow(row: &crate::config::OAuth) -> LoginFlow {
+    match row.grant.as_deref().map(str::trim) {
+        Some("device_code") => LoginFlow::Device,
+        Some("authorization_code") => LoginFlow::Browser,
+        _ => LoginFlow::Key,
+    }
 }
 
 #[cfg(test)]

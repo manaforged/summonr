@@ -13,7 +13,7 @@ use crate::tools::Event;
 
 mod help;
 mod sigil_view;
-use help::help_text;
+pub(crate) use help::help_text;
 pub use sigil_view::profile::run as profile;
 mod worker;
 
@@ -44,6 +44,8 @@ pub enum Msg {
     Models {
         request: u64,
         rows: Vec<String>,
+        facts: std::collections::BTreeMap<String, crate::catalog::Model>,
+        groups: std::collections::BTreeMap<String, String>,
         recent: usize,
         loading: bool,
         error: String,
@@ -313,7 +315,7 @@ pub fn run(
     sigil_view::run(loop_, workspace, info, ui_tx, ui_rx)
 }
 
-fn short_session(id: &str) -> String {
+pub(crate) fn short_session(id: &str) -> String {
     let start = id.len().saturating_sub(5);
     id.get(start..).unwrap_or(id).to_string()
 }
@@ -327,7 +329,7 @@ fn short_session(id: &str) -> String {
 )]
 fn context(round: Option<&Round>, window: Option<u32>, compact: bool) -> String {
     let Some(window) = window.filter(|window| *window > 0) else {
-        return "not set".to_string();
+        return "—".to_string();
     };
     let used = round.map_or(0, Round::total).min(window);
     let percent = u64::from(used) * 100 / u64::from(window);

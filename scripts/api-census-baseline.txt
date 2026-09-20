@@ -33,10 +33,10 @@ name collision: Source	2	one word, one domain
 name collision: Kind	1	one word, one domain
 name collision: Role	2	one word, one domain
 name collision: Event	2	one word, one domain
-clip-shaped helper	5	check the job, then name it
+clip-shaped helper	4	check the job, then name it
 short-shaped helper	5	check the job, then name it
-wrap-shaped helper	7	check the job, then name it
-surface painter	4	rows::paint
+wrap-shaped helper	6	check the job, then name it
+surface painter	2	rows::paint
 sigil prelude glob	0	named imports
 direct file write	3	store::write
 legacy tool alias literal	41	one alias table

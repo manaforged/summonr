@@ -5,9 +5,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     let mut shell = container()
         .role(Role::Main)
         .label("Summonr agent harness")
-        .theme(Theme::dark())
-        .layout(LayoutStyle::flex_column().fill_width().fill_height())
-        .class("w-full h-full bg-surface");
+        .layout(LayoutStyle::flex_column().fill_width().fill_height());
     let bindings: &[(Shortcut, Handler)] = &[
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
@@ -31,11 +29,25 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (Key::F5.into(), |app, event| {
+            if app.editing_model.peek() {
+                event.stop_propagation();
+                app.refresh_models();
+                return;
+            }
             if !app.options_active() && !app.view_edit.peek() {
                 event.stop_propagation();
                 app.retry();
             }
         }),
+        (
+            Shortcut::new(LogicalKey::character("r"), ModifiersState::CONTROL),
+            |app, event| {
+                if app.editing_model.peek() {
+                    event.stop_propagation();
+                    app.refresh_models();
+                }
+            },
+        ),
         (Key::Escape.into(), |app, event| {
             event.stop_propagation();
             if app.options_active() {
@@ -51,7 +63,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (LogicalKey::character("e").into(), |app, event| {
-            if app.pane_active() == Some(super::super::pane::Pane::View) {
+            if app.pane_active() == Some(super::Pane::View) {
                 event.stop_propagation();
                 app.edit_start();
             }
@@ -63,19 +75,19 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (LogicalKey::character("t").into(), |app, event| {
-            if app.pane_active() == Some(super::super::pane::Pane::Diff) {
+            if app.pane_active() == Some(super::Pane::Diff) {
                 event.stop_propagation();
                 app.toggle_recent();
             }
         }),
         (LogicalKey::character("c").into(), |app, event| {
-            if app.pane_active() == Some(super::super::pane::Pane::Diff) {
+            if app.pane_active() == Some(super::Pane::Diff) {
                 event.stop_propagation();
                 app.copy_patch();
             }
         }),
         (LogicalKey::character("o").into(), |app, event| {
-            if app.pane_active() == Some(super::super::pane::Pane::View) {
+            if app.pane_active() == Some(super::Pane::View) {
                 event.stop_propagation();
                 app.view_external();
             }
@@ -307,7 +319,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
         .child(super::input::tab_shortcuts(app))
         .on_scroll(move |event| {
             let lines = match event.delta {
-                ScrollDelta::Pixels(point) => point.y / super::super::canvas::cell().h,
+                ScrollDelta::Pixels(point) => point.y / super::canvas::cell().h,
                 ScrollDelta::Lines(point) => point.y,
             };
             if scroll.overlay_move(-lines.round() as isize) {
@@ -317,8 +329,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             if !scroll.options_active()
                 && !scroll.splash.peek()
                 && scroll.layout.peek().secondary.is_some()
-                && event.position.x
-                    >= f32::from(scroll.chat_cols()) * super::super::canvas::cell().w
+                && event.position.x >= f32::from(scroll.chat_cols()) * super::canvas::cell().w
             {
                 scroll.pane_move(-lines.round() as isize);
                 event.stop_propagation();
@@ -326,7 +337,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
             let delta = match event.delta {
                 ScrollDelta::Pixels(point) => point.y,
-                ScrollDelta::Lines(point) => point.y * super::super::canvas::cell().h,
+                ScrollDelta::Lines(point) => point.y * super::canvas::cell().h,
             };
             let before = scroll.scroll_y.peek();
             scroll.scroll_history(delta);

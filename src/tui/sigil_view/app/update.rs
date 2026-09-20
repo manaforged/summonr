@@ -126,6 +126,8 @@ impl App {
             Msg::Models {
                 request,
                 mut rows,
+                facts,
+                groups,
                 recent,
                 loading,
                 error,
@@ -145,6 +147,8 @@ impl App {
                     recent = recent.saturating_add(1);
                 }
                 let selected = self.filtered_models().get(self.model_sel.peek()).cloned();
+                self.model_facts.set(facts);
+                self.model_groups.set(groups);
                 self.model_choices.set(rows);
                 let sel = selected
                     .and_then(|row| {

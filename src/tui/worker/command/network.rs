@@ -45,7 +45,7 @@ impl Worker {
                 return true;
             }
         };
-        if !info.device_login {
+        if !info.flow.signs_in() {
             self.auth(name);
             return true;
         }
@@ -57,9 +57,21 @@ impl Worker {
             }
         };
         let notice = self.ui.clone();
-        let login = crate::provider::Client::login(&endpoint, move |line| {
-            drop(notice.send(Msg::System(line.to_string())));
-        });
+        let asking = self.ui.clone();
+        let (answers, typed) = tokio::sync::mpsc::unbounded_channel::<String>();
+        let typed = std::sync::Arc::new(tokio::sync::Mutex::new(typed));
+        let mut prompt = summonr_auth::Prompt::new(
+            move |line| drop(notice.send(Msg::System(line.to_string()))),
+            move |line| {
+                let asking = asking.clone();
+                let typed = typed.clone();
+                Box::pin(async move {
+                    drop(asking.send(Msg::System(line)));
+                    typed.lock().await.recv().await
+                })
+            },
+        );
+        let login = crate::provider::Client::login(&endpoint, &mut prompt);
         self.system(&format!("{name}: signing in. Press Escape to cancel."));
         drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
         let outcome = attend(
@@ -69,6 +81,7 @@ impl Worker {
                 followups: &mut self.followups,
                 deferred: &mut self.deferred,
                 ui: &self.ui,
+                answers: Some(answers),
             },
             login,
         )

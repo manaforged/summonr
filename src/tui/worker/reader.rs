@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
@@ -13,7 +14,7 @@ use super::{Cmd, Msg};
 use crate::diff;
 use crate::endpoint;
 use crate::error::Result;
-use crate::prompt::mage_home;
+use crate::prompt::summonr_home;
 use crate::provider::Client;
 use crate::recent;
 use crate::session::prompts;
@@ -21,6 +22,24 @@ use crate::worktree;
 
 const WINDOW: Duration = Duration::from_millis(400);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(8);
+pub(crate) const NEEDS_LOGIN: &str = "needs login";
+
+fn waiting(ready: &[endpoint::Endpoint]) -> Vec<(String, String)> {
+    let Ok(names) = endpoint::names() else {
+        return Vec::new();
+    };
+    names
+        .into_iter()
+        .filter(|name| !ready.iter().any(|endpoint| &endpoint.name == name))
+        .filter(|name| {
+            endpoint::auth_info(name).is_ok_and(|info| info.flow.signs_in() && !info.configured)
+        })
+        .filter_map(|name| {
+            let endpoint = endpoint::resolve_unauthed(Some(&name), None).ok()?;
+            (!endpoint.model.is_empty()).then_some((name, endpoint.model))
+        })
+        .collect()
+}
 
 #[derive(Clone)]
 pub(super) struct Reader {
@@ -84,7 +103,7 @@ impl Reader {
                     .filter_map(|seat| Some((seat.model, seat.price?)))
                     .collect();
                 let roots = crate::session::roots(&self.workspace);
-                let rows = mage_home()
+                let rows = summonr_home()
                     .and_then(|home| crate::session::spend(&home, &roots, &prices))
                     .map_err(|error| error.to_string());
                 self.send(Msg::Usage(rows));
@@ -137,7 +156,7 @@ impl Reader {
 
     async fn models(&self, request: u64) {
         let (endpoints, mut errors) = endpoint::ready(false);
-        let mut rows = mage_home()
+        let mut rows = summonr_home()
             .map(|home| recent::load(&home))
             .unwrap_or_default();
         rows.retain(|row| {
@@ -154,10 +173,43 @@ impl Reader {
                 rows.push(row);
             }
         }
+        let mut facts = BTreeMap::new();
+        let mut groups = BTreeMap::new();
+        let kept = crate::catalog::cached();
+        for endpoint in &endpoints {
+            let listing = kept.get(&endpoint.name);
+            groups.insert(
+                endpoint.name.clone(),
+                match listing {
+                    Some(listing) if listing.stale() => "cached".to_string(),
+                    Some(_) => "ready".to_string(),
+                    None => "loading".to_string(),
+                },
+            );
+            let Some(listing) = listing else {
+                continue;
+            };
+            for model in &listing.models {
+                let row = format!("{}\t{}", endpoint.name, model.id);
+                facts.insert(row.clone(), model.clone());
+                if !rows.contains(&row) {
+                    rows.push(row);
+                }
+            }
+        }
+        for (name, model) in waiting(&endpoints) {
+            groups.insert(name.clone(), NEEDS_LOGIN.to_string());
+            let row = format!("{name}\t{model}");
+            if !rows.contains(&row) {
+                rows.push(row);
+            }
+        }
         self.send(Msg::Models {
             request,
             recent,
             rows: rows.clone(),
+            facts: facts.clone(),
+            groups: groups.clone(),
             loading: !endpoints.is_empty(),
             error: if endpoints.is_empty() && errors.is_empty() {
                 "No configured providers. Use /login to connect one.".to_string()
@@ -168,10 +220,20 @@ impl Reader {
         if endpoints.is_empty() {
             return;
         }
+        drop(crate::catalog::refresh_registry().await);
         let catalogs = join_all(endpoints.into_iter().map(|endpoint| async move {
+            let covered = crate::catalog::plan_cost(&endpoint.name);
             let fetch = async {
                 let client = Client::connect(&endpoint)?;
-                client.models().await
+                let mut models = client.catalog(covered).await?;
+                crate::catalog::enrich(&endpoint.name, endpoint.base_url.as_deref(), &mut models);
+                join_all(models.iter_mut().map(|model| async {
+                    if model.context.is_none() {
+                        model.context = client.context(&model.id).await;
+                    }
+                }))
+                .await;
+                Ok::<_, crate::error::Error>(models)
             };
             let result = match tokio::time::timeout(PROBE_TIMEOUT, fetch).await {
                 Ok(result) => result.map_err(|error| error.to_string()),
@@ -186,20 +248,49 @@ impl Reader {
                     errors.push(format!("{name}: no models returned"))
                 }
                 Ok(models) => {
-                    for model in models {
-                        let row = format!("{name}\t{model}");
+                    for model in &models {
+                        let row = format!("{name}\t{}", model.id);
+                        facts.insert(row.clone(), model.clone());
                         if !rows.contains(&row) {
-                            rows.push(row);
+                            rows.push(row.clone());
                         }
                     }
+                    if let Err(error) = crate::catalog::remember(&name, models) {
+                        errors.push(format!("{name}: cannot cache models ({error})"));
+                    }
+                    groups.insert(name, "ready".to_string());
                 }
-                Err(error) => errors.push(format!("{name}: {error}")),
+                Err(error) => {
+                    groups.insert(name.clone(), "unreachable".to_string());
+                    errors.push(format!("{name}: {error}"));
+                }
             }
         }
+        let tail = recent.min(rows.len());
+        let mut best: BTreeMap<&str, u8> = BTreeMap::new();
+        for row in &rows[tail..] {
+            let name = row.split_once('\t').map_or("", |(name, _)| name);
+            let rank = facts.get(row).map_or(2, |model| model.cost.rank());
+            best.entry(name)
+                .and_modify(|held| *held = (*held).min(rank))
+                .or_insert(rank);
+        }
+        let order: BTreeMap<String, (u8, String)> = best
+            .into_iter()
+            .map(|(name, rank)| (name.to_string(), (rank, name.to_string())))
+            .collect();
+        rows[tail..].sort_by_cached_key(|row| {
+            let name = row.split_once('\t').map_or("", |(name, _)| name);
+            let group = order.get(name).cloned().unwrap_or((2, name.to_string()));
+            let rank = facts.get(row).map_or(2, |model| model.cost.rank());
+            (group, rank, row.clone())
+        });
         self.send(Msg::Models {
             request,
             recent,
             rows,
+            groups,
+            facts,
             loading: false,
             error: errors.join("; "),
         });

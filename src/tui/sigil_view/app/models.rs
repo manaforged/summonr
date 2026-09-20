@@ -3,12 +3,27 @@ use super::*;
 impl App {
     pub(in crate::tui::sigil_view) fn begin_model_edit(&self) {
         self.replace_model_draft(String::new());
+        self.models_focus.set(self.models_focus.peek() + 1);
         self.model_choices.set(Vec::new());
         self.model_sel.set(0);
         self.model_recent.set(0);
         self.model_error.set(String::new());
         self.model_loading.set(true);
         self.editing_model.set(true);
+        let request = self.model_request.get().wrapping_add(1);
+        self.model_request.set(request);
+        let (sender, cancel) = oneshot::channel();
+        *self.model_cancel.borrow_mut() = Some(sender);
+        if self.cmd.send(Cmd::ListModels { request, cancel }).is_err() {
+            self.model_loading.set(false);
+            self.model_error
+                .set("Model discovery is unavailable.".to_string());
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn refresh_models(&self) {
+        self.model_error.set(String::new());
+        self.model_loading.set(true);
         let request = self.model_request.get().wrapping_add(1);
         self.model_request.set(request);
         let (sender, cancel) = oneshot::channel();
@@ -34,6 +49,15 @@ impl App {
         let Some(picked) = choices.get(selected).cloned() else {
             return;
         };
+        if let Some(name) = picked.split_once('\t').map(|(name, _)| name)
+            && self.model_groups.peek().get(name).map(String::as_str)
+                == Some(crate::tui::worker::NEEDS_LOGIN)
+        {
+            let name = name.to_string();
+            self.cancel_model_edit();
+            drop(self.cmd.send(Cmd::Login(name)));
+            return;
+        }
         let target = self.model_for.peek();
         self.cancel_model_edit();
         if let Some(role) = target.and_then(|index| Role::ALL.get(index)) {

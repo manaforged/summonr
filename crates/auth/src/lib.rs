@@ -4,8 +4,9 @@ use std::time::{Duration, Instant};
 use leyline::{RequestBuilder, Session};
 
 mod oauth;
+pub mod open;
 
-pub use oauth::{Grant, Spec};
+pub use oauth::{Grant, Spec, TokenStyle};
 
 pub const AGENT: &str = concat!("summonr/", env!("CARGO_PKG_VERSION"));
 
@@ -24,6 +25,43 @@ pub enum Error {
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
+
+pub type Answer = std::pin::Pin<Box<dyn std::future::Future<Output = Option<String>> + Send>>;
+
+pub struct Prompt {
+    say: Box<dyn FnMut(&str) + Send>,
+    ask: Box<dyn FnMut(String) -> Answer + Send>,
+}
+
+impl Prompt {
+    pub fn new(
+        say: impl FnMut(&str) + Send + 'static,
+        ask: impl FnMut(String) -> Answer + Send + 'static,
+    ) -> Self {
+        Self {
+            say: Box::new(say),
+            ask: Box::new(ask),
+        }
+    }
+
+    pub fn telling(say: impl FnMut(&str) + Send + 'static) -> Self {
+        Self::new(say, |_| Box::pin(std::future::ready(None)))
+    }
+
+    pub fn notice(&mut self, line: &str) {
+        (self.say)(line);
+    }
+
+    pub(crate) async fn request(&mut self, line: &str) -> Result<String> {
+        (self.ask)(line.to_string())
+            .await
+            .map(|text| text.trim().to_string())
+            .filter(|text| !text.is_empty())
+            .ok_or_else(|| {
+                Error::Denied("this sign-in needs the code pasted back, and none came".to_string())
+            })
+    }
+}
 
 pub trait Store: Send + Sync {
     fn get(&self, name: &str) -> Result<Option<String>>;
@@ -52,7 +90,7 @@ impl Scheme {
 #[derive(Clone, Debug)]
 pub enum Method {
     Key(String),
-    Login(Spec),
+    Login(Box<Spec>),
 }
 
 struct Seat {
@@ -66,6 +104,7 @@ pub(crate) struct Issued {
     pub(crate) access: String,
     pub(crate) refresh: Option<String>,
     pub(crate) expires: Option<Instant>,
+    pub(crate) identity: Option<String>,
 }
 
 impl Issued {
@@ -92,7 +131,7 @@ impl Auth {
         let held = match method {
             Method::Key(key) => Held::Key(key),
             Method::Login(spec) => Held::Login(Box::new(Seat {
-                spec,
+                spec: *spec,
                 name: name.to_string(),
                 held: Mutex::new(None),
             })),
@@ -124,13 +163,29 @@ impl Auth {
         Ok(self.scheme.apply(request, &token))
     }
 
-    pub async fn login(&self, http: &Session, notice: impl FnMut(&str)) -> Result<()> {
+    pub async fn login(&self, http: &Session, prompt: &mut Prompt) -> Result<()> {
         let Held::Login(seat) = self.held.as_ref() else {
             return Err(Error::Config(
                 "this endpoint takes a key, not a login".to_string(),
             ));
         };
-        oauth::login(parts(seat), http, self.store.as_ref(), notice).await
+        oauth::login(parts(seat), http, self.store.as_ref(), prompt).await
+    }
+
+    pub fn stamped(&self) -> Vec<(String, String)> {
+        let Held::Login(seat) = self.held.as_ref() else {
+            return Vec::new();
+        };
+        if seat.spec.claim_headers.is_empty() {
+            return Vec::new();
+        }
+        let Ok(slot) = seat.held.lock() else {
+            return Vec::new();
+        };
+        let Some(issued) = slot.as_ref() else {
+            return Vec::new();
+        };
+        oauth::stamped(&seat.spec, issued)
     }
 
     pub fn forget_live(&self) {

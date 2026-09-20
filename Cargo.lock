@@ -4364,7 +4364,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-gui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?branch=main#8130e0e766327f5a49a16d304a0c33bf87ef3462"
+source = "git+https://github.com/manaforged/sigil.git?rev=ad4c6341f0297ac2a8e6396811b4b495dfa87bbd#ad4c6341f0297ac2a8e6396811b4b495dfa87bbd"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4409,7 +4409,7 @@ dependencies = [
 [[package]]
 name = "sigil-tui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?branch=main#8130e0e766327f5a49a16d304a0c33bf87ef3462"
+source = "git+https://github.com/manaforged/sigil.git?rev=ad4c6341f0297ac2a8e6396811b4b495dfa87bbd#ad4c6341f0297ac2a8e6396811b4b495dfa87bbd"
 dependencies = [
  "crossterm",
  "sigil-gui",
@@ -4713,11 +4713,15 @@ dependencies = [
 name = "summonr-auth"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "leyline-http",
+ "rand 0.9.5",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
+ "url",
 ]
 
 [[package]]

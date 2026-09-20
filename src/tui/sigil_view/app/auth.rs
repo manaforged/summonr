@@ -2,11 +2,12 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
-        let choices: Vec<_> = crate::endpoint::names()
+        let mut choices: Vec<_> = crate::endpoint::names()
             .unwrap_or_default()
             .into_iter()
             .filter_map(|name| crate::endpoint::auth_info(&name).ok())
             .collect();
+        choices.sort_by_key(|choice| (choice.catalog_rank(), choice.name.clone()));
         let current = self.model.borrow().snapshot.endpoint.clone();
         if let Some(name) = focus
             && !choices.iter().any(|choice| choice.name == name)
@@ -46,13 +47,14 @@ impl App {
         else {
             return;
         };
-        if choice.device_login {
+        if choice.flow.signs_in() {
             self.auth_open.set(false);
             drop(self.cmd.send(Cmd::Login(choice.name.clone())));
             return;
         }
         if !self.auth_entering.peek() {
             self.auth_entering.set(true);
+            self.auth_focus.set(self.auth_focus.peek() + 1);
             self.replace_auth_key(String::new());
             return;
         }

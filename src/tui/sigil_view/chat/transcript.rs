@@ -1,17 +1,24 @@
+#![expect(dead_code, reason = "cell transcript kept for existing tests")]
+
 use base64::Engine;
 use sigil::prelude::ImageSource;
 
 use sigil::prelude::Rgba8;
-use sigil_tui::cell_width;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ops::Range;
 
-use super::super::canvas::{Line, Source, Span, blend, palette, rgb};
+use super::canvas::{Line, Source, Span, blend, palette, rgb};
+
+pub(super) use super::Input;
+pub(super) use super::canvas;
+pub(super) use super::cell_width;
+pub(super) use super::model;
+pub(super) use super::patch;
 use crate::prefs::{DiffLayout, Prefs, ToolOutput, Visibility};
 
-pub(in crate::tui::sigil_view) use images::{fit_source, image_cells};
-pub(in crate::tui::sigil_view) use stream::{Stream, markdown};
+pub(in crate::tui::sigil_view) use images::image_cells;
+pub(in crate::tui::sigil_view) use stream::markdown;
 pub(in crate::tui::sigil_view) use syntax::code;
 mod chart;
 mod edits;
@@ -21,7 +28,7 @@ mod syntax;
 mod table;
 use crate::tui::{Round, ToolState};
 
-use super::super::model::Entry;
+use super::Entry;
 
 const CACHE_MAX: usize = 32;
 
@@ -52,8 +59,7 @@ pub(in crate::tui::sigil_view) fn entry_lines(
         Entry::Thinking(text) => match reasoning {
             Visibility::Off => {}
             Visibility::Collapsed => {
-                lines.push(Vec::new().into());
-                let count = text.lines().count();
+                let count = text.lines().filter(|line| !line.trim().is_empty()).count();
                 lines.push(
                     vec![
                         Span::styled(format!("⌄ thinking · {count} lines"), palette().thought)
@@ -63,18 +69,14 @@ pub(in crate::tui::sigil_view) fn entry_lines(
                 );
             }
             Visibility::Expanded => {
-                lines.push(Vec::new().into());
-                for (index, line) in text.lines().enumerate() {
+                let mut body = text.lines().map(str::trim).filter(|line| !line.is_empty());
+                if let Some(first) = body.next() {
                     lines.push(
-                        vec![
-                            Span::styled(
-                                format!("{}{line}", if index == 0 { "✻ " } else { "  " }),
-                                palette().thought,
-                            )
-                            .italic(),
-                        ]
-                        .into(),
+                        vec![Span::styled(format!("✻ {first}"), palette().thought).italic()].into(),
                     );
+                    lines.extend(body.map(|line| {
+                        vec![Span::styled(format!("  {line}"), palette().thought).italic()].into()
+                    }));
                 }
             }
         },
@@ -96,16 +98,21 @@ pub(in crate::tui::sigil_view) fn entry_lines(
             ),
         },
         Entry::Assistant { text, done } => {
-            let skip = lines.len();
-            let (mut rendered, pics) = markdown(text, width, accent);
-            if !done && let Some(line) = rendered.last_mut() {
-                line.spans.push(Span::surface("▌", palette().dim, line.bg));
+            if !text.trim().is_empty() {
+                let skip = lines.len();
+                let (mut rendered, pics) = markdown(text, width, accent);
+                if !done
+                    && let Some(line) = rendered.last_mut()
+                    && line.spans.iter().any(|span| !span.text.trim().is_empty())
+                {
+                    line.spans.push(Span::surface("▌", palette().dim, line.bg));
+                }
+                lines.extend(rendered);
+                pictures.extend(
+                    pics.into_iter()
+                        .map(|(line, cols, rows, source)| (line + skip, cols, rows, source)),
+                );
             }
-            lines.extend(rendered);
-            pictures.extend(
-                pics.into_iter()
-                    .map(|(line, cols, rows, source)| (line + skip, cols, rows, source)),
-            );
         }
         Entry::Tool {
             name,

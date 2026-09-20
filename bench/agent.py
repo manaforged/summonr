@@ -37,10 +37,13 @@ class Bench(BaseAgent):
         label = hashlib.sha256(f"{harness}.{env['BENCH_RUN']}.{self.logs_dir.parent.name}".encode()).hexdigest()[:16]
         prompt = "/logs/agent/instruction.txt"
         await environment.exec(f"cat > {prompt} <<'BENCH_EOF'\n{instruction}\nBENCH_EOF")
+        key = os.environ.get("BENCH_API_KEY") or os.environ["DEEPSEEK_API_KEY"]
         variables = {
             "BENCH_BASE": f"{env['BENCH_PROXY']}/{label}/v1",
-            "BENCH_MODEL": env.get("BENCH_MODEL", "glm-5.3-flash"),
-            "ZAI_API_KEY": os.environ["ZAI_API_KEY"],
+            "BENCH_MODEL": env.get("BENCH_MODEL", "deepseek-flash"),
+            "BENCH_PROVIDER": env.get("BENCH_PROVIDER", "deepseek"),
+            "BENCH_API_KEY": key,
+            "DEEPSEEK_API_KEY": key,
             "BENCH_LOGS": "/logs/agent",
         }
         if env.get("BENCH_EFFORT"):

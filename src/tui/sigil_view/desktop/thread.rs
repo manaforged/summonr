@@ -1,44 +1,43 @@
 use crate::tui::context;
 use sigil::prelude::{
-    AlignItems, Cx, IntoNode, JustifyContent, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle,
-    LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, ObjectFit, Shortcut,
-    Tone, WidgetLayoutExt, badge, chart, classes, container, effect, image, label, node, scroll,
-    signal, text, text_edit, text_live,
+    AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle, LogicalKey,
+    ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt,
+    button, classes, container, effect, empty_state, hairline, icon_button, label, node,
+    notice_band, scroll, signal, spacer, text_edit, text_live,
 };
 
-use super::super::app::App;
-use super::super::controls::{hairline, hit, spacer};
-use super::super::model::Entry;
-use super::super::pane::Pane;
-use super::{icons, open};
-use crate::prefs::ToolOutput;
+use super::icons;
+use super::{App, Entry, Pane, chat};
 use crate::session;
 
 mod composer;
-mod entry;
-mod status;
+pub(in crate::tui::sigil_view) mod status;
 
 pub(super) fn main_col(app: App) -> NodeBuilder {
-    let title = app.clone();
     let input = app.clone();
     let transcript_app = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
                 .grow(1.0)
+                .fill_width()
                 .fill_height()
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .align_items(AlignItems::Stretch),
         )
         .class(classes!("bg-gray-1"))
+        .child(node(move |cx: &mut Cx| cx.add(transcript(transcript_app))))
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
-                .children_reactive(move || {
-                    let _updates = (title.panes.get(), title.layout.get());
-                    vec![title_bar(title.clone())]
+                .children_reactive({
+                    let notice = input.clone();
+                    move || {
+                        let _ticks = notice.ticks.get();
+                        vec![notice_bar(notice.clone())]
+                    }
                 }),
         )
-        .child(node(move |cx: &mut Cx| cx.add(transcript(transcript_app))))
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
@@ -49,14 +48,17 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
-                .children_reactive(move || {
-                    drop(app.status.get());
-                    vec![status::status_strip(app.clone())]
+                .children_reactive({
+                    let bar = app.clone();
+                    move || {
+                        drop(bar.status.get());
+                        vec![status::status_strip(bar.clone())]
+                    }
                 }),
         )
 }
 
-fn title_bar(app: App) -> NodeBuilder {
+pub(super) fn title_bar(app: App) -> NodeBuilder {
     let workspace = app
         .workspace
         .file_name()
@@ -79,53 +81,77 @@ fn title_bar(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            label(format!(
-                "session {}",
-                session::short(&app.model.borrow().session)
-            ))
+            label(if workspace.is_empty() {
+                "Summonr".to_string()
+            } else {
+                workspace
+            })
             .class(classes!("text-sm font-medium text-gray-12")),
         )
-        .child(label(workspace).class(classes!("text-sm text-gray-11")))
+        .child(
+            label(session::short(&app.model.borrow().session).to_string())
+                .class(classes!("text-xs text-gray-11")),
+        )
         .child(spacer())
-        .child(
-            hit("Options".to_string(), false, move || {
-                options.toggle_options()
-            })
-            .layout(
-                LayoutStyle::flex_row()
-                    .fixed_size(28.0, 28.0)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center),
-            )
-            .child(icons::options()),
-        )
-        .child(
-            hit("Run".to_string(), false, move || run.submit())
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fixed_size(28.0, 28.0)
-                        .align_items(AlignItems::Center)
-                        .justify_content(JustifyContent::Center),
-                )
-                .child(icons::play()),
-        )
+        .child(icon_button("···", move || options.toggle_options()).accessible("Options"))
+        .child(button("Run").primary().activate(move || run.submit()))
         .child(hairline())
         .child(
-            hit("Changes".to_string(), open(&app, Pane::Diff), move || {
-                badge_app.toggle_pane(Pane::Diff);
-            })
-            .layout(
-                LayoutStyle::flex_row()
-                    .height(28.0)
-                    .padding_x(8.0)
-                    .gap(6.0)
-                    .align_items(AlignItems::Center),
-            )
-            .class(classes!("rounded-md border border-gray-6"))
-            .child(icons::diffs())
-            .child(label(format!("+{added}")).class(classes!("text-xs text-success-11")))
-            .child(label(format!("-{removed}")).class(classes!("text-xs text-error-11"))),
+            button(format!("+{added} −{removed}"))
+                .ghost()
+                .activate(move || badge_app.toggle_pane(Pane::Diff)),
         )
+}
+
+fn empty_home() -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .fill_height()
+                .grow(1.0)
+                .min_size(0.0, 120.0)
+                .align_items(AlignItems::Center)
+                .justify_content(JustifyContent::Center),
+        )
+        .child(empty_state(
+            "Summonr",
+            "Message the agent. @file attaches · /help lists commands.",
+        ))
+}
+
+fn notice_bar(app: App) -> NodeBuilder {
+    if let Some((detail, persist)) = app.approval.get() {
+        let go = app.clone();
+        let always = app.clone();
+        let stop = app.clone();
+        let mut actions = container().layout(
+            LayoutStyle::flex_row()
+                .gap(8.0)
+                .align_items(AlignItems::Center),
+        );
+        actions = actions.child(
+            button("Allow")
+                .primary()
+                .activate(move || go.approval_answer("y")),
+        );
+        if persist {
+            actions =
+                actions.child(button("Always").activate(move || always.approval_answer("always")));
+        }
+        actions = actions.child(
+            button("Deny")
+                .destructive()
+                .activate(move || stop.approval_answer("n")),
+        );
+        return notice_band(format!("Needs approval: {detail}"), Tone::Warn)
+            .child(label("The agent is waiting. Allow, Always, or Deny."))
+            .child(actions);
+    }
+    if let Some(status) = chat::busy_status(&app.model.borrow()) {
+        return notice_band(status, Tone::Neutral);
+    }
+    container()
 }
 
 fn transcript(app: App) -> NodeBuilder {
@@ -147,46 +173,45 @@ fn transcript(app: App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
+                .fill_height()
+                .grow(1.0)
+                .min_size(0.0, 0.0)
                 .padding_x(36.0)
                 .padding_y(20.0)
                 .gap(16.0),
         )
         .children_reactive(move || {
             let _revision = live.panes.get();
+            let _ticks = live.ticks.get();
             let entries: Vec<Entry> = live.model.borrow().entries.to_vec();
             let tools = live.model.borrow().prefs.tools;
-            let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
             if entries.is_empty() {
-                column = column.child(
-                    label("ask anything — @file attaches · !cmd runs · /help lists")
-                        .class(classes!("text-sm text-gray-11")),
-                );
-            } else {
-                for (index, entry) in entries.into_iter().enumerate() {
-                    if live.search.target.peek() != Some(index) {
-                        column = column.child(entry::row(entry, tools));
-                        continue;
-                    }
-                    let measured = signal((0.0, 0.0, 0.0, 0.0));
-                    let target = live.search.target;
-                    let scroll = live.scroll_y;
-                    column =
-                        column.child(entry::row(entry, tools).bounds_reactive(measured).on_added(
-                            move |_, _| {
-                                effect(move || {
-                                    let (_, y, _, height) = measured.get();
-                                    let (_, top, _, body_height) = bounds.get();
-                                    if target.peek() == Some(index)
-                                        && height > 0.0
-                                        && body_height > 0.0
-                                    {
-                                        scroll.set((y - top).max(0.0));
-                                        target.set(None);
-                                    }
-                                });
-                            },
-                        ));
+                return vec![empty_home()];
+            }
+            let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(16.0));
+            for (index, entry) in entries.into_iter().enumerate() {
+                if live.search.target.peek() != Some(index) {
+                    column = column.child(chat::entry::row(entry, tools));
+                    continue;
                 }
+                let measured = signal((0.0, 0.0, 0.0, 0.0));
+                let target = live.search.target;
+                let scroll = live.scroll_y;
+                column = column.child(
+                    chat::entry::row(entry, tools)
+                        .bounds_reactive(measured)
+                        .on_added(move |_, _| {
+                            effect(move || {
+                                let (_, y, _, height) = measured.get();
+                                let (_, top, _, body_height) = bounds.get();
+                                if target.peek() == Some(index) && height > 0.0 && body_height > 0.0
+                                {
+                                    scroll.set((y - top).max(0.0));
+                                    target.set(None);
+                                }
+                            });
+                        }),
+                );
             }
             vec![column]
         });

@@ -1,15 +1,11 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Style,
-    container, label,
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, card, container,
+    icon_button, label, list_row, notice_band, section_label, spacer,
 };
-use sigil_tui::cell_width;
 
-use super::super::app::App;
-use super::super::canvas::{self, Span, palette};
-use super::super::model::Model;
 use super::composer;
-use super::surface::line;
-use super::{accent, busy_status, margin, render_background, run, secret_row};
+use super::{App, Model, canvas};
+use super::{busy_status, secret_row};
 
 pub(super) fn agents(app: App, full_width: usize, width: usize) -> NodeBuilder {
     let update = app.clone();
@@ -18,7 +14,8 @@ pub(super) fn agents(app: App, full_width: usize, width: usize) -> NodeBuilder {
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .padding_x(16.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
@@ -32,102 +29,51 @@ pub(super) fn agents(app: App, full_width: usize, width: usize) -> NodeBuilder {
         })
 }
 
-fn agent_panel(app: App, model: &Model, full_width: usize, width: usize) -> NodeBuilder {
+fn agent_panel(app: App, model: &Model, _full_width: usize, width: usize) -> NodeBuilder {
     let count = model.agents.iter().filter(|agent| !agent.done).count();
     let title = if count == 1 {
-        " 1 agent ".to_string()
+        "1 agent".to_string()
     } else {
-        format!(" {count} agents ")
+        format!("{count} agents")
     };
     let close = app.clone();
-    let bg = palette().tool_bg;
-    let title_row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::cell().h),
-        )
-        .style(Style::new().bg(bg))
+    let mut body = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(
-            render_background(
-                [Span::surface(
-                    format!(
-                        "╭{title}{}",
-                        "─".repeat(width.saturating_sub(cell_width(&title) + 5))
-                    ),
-                    palette().gray,
-                    bg,
-                )]
-                .iter()
-                .map(run),
-                bg,
-            )
-            .layout(LayoutStyle::flex_row().grow(1.0).height(canvas::cell().h)),
-        )
-        .child(
-            render_background(
-                [Span::surface(" x ╮", palette().dim, bg)].iter().map(run),
-                bg,
-            )
-            .layout(
-                LayoutStyle::flex_row()
-                    .width(4.0 * canvas::cell().w)
-                    .height(canvas::cell().h),
-            )
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Left) {
-                    close.hide_agents();
-                    event.stop_propagation();
-                }
-            }),
+            container()
+                .layout(
+                    LayoutStyle::flex_row()
+                        .fill_width()
+                        .align_items(AlignItems::Center),
+                )
+                .child(section_label(title))
+                .child(spacer())
+                .child(icon_button("×", move || close.hide_agents()).accessible("Hide agents")),
         );
-    let mut panel = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .padding_x(margin(full_width) as f32 * canvas::cell().w),
-        )
-        .child(title_row);
     for agent in model.agents.iter().filter(|agent| !agent.done).take(6) {
         let state = if agent.failed {
             "!"
         } else {
             composer::SPINNER[model.spinner % composer::SPINNER.len()]
         };
-        let text = canvas::ellipsize(
-            &format!(" {state} {} · {}", agent.id, agent.last),
-            width.saturating_sub(2),
-        );
-        let text = format!(
-            "│{text}{}│",
-            " ".repeat(width.saturating_sub(cell_width(&text) + 2))
-        );
-        panel = panel.child(render_background(
-            [Span::surface(text, palette().text, bg)].iter().map(run),
-            bg,
+        body = body.child(list_row(
+            false,
+            format!("{state} {}", agent.id),
+            canvas::ellipsize(&agent.last, width.saturating_sub(8)),
         ));
     }
-    panel.child(render_background(
-        [Span::surface(
-            format!("╰{}╯", "─".repeat(width.saturating_sub(2))),
-            palette().gray,
-            bg,
-        )]
-        .iter()
-        .map(run),
-        bg,
-    ))
+    card(body)
 }
 
-pub(super) fn bands(app: App, full_width: usize, width: usize) -> NodeBuilder {
+pub(super) fn bands(app: App, _full_width: usize, width: usize) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .padding_x(16.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
@@ -137,86 +83,61 @@ pub(super) fn bands(app: App, full_width: usize, width: usize) -> NodeBuilder {
             let model = update.model.borrow();
             let mut nodes = Vec::new();
             if let Some((detail, persist)) = approval {
-                nodes.push(approval_band(
-                    update.clone(),
-                    full_width,
-                    width,
-                    detail,
-                    persist,
-                ));
+                nodes.push(above(approval_band(update.clone(), width, detail, persist)));
             } else if let Some((prompt, typed)) = secret {
-                nodes.push(line(
-                    update.clone(),
-                    vec![Span::styled(
-                        secret_row(&prompt, typed, width),
-                        palette().yellow,
-                    )],
-                    palette().base,
-                    full_width,
-                ));
+                nodes.push(above(notice_band(
+                    secret_row(&prompt, typed, width),
+                    Tone::Warn,
+                )));
             } else if let Some(status) = busy_status(&model) {
-                nodes.push(line(
-                    update.clone(),
-                    composer::busy_line(&status, width, accent(&model.prefs.theme)),
-                    palette().base,
-                    full_width,
-                ));
+                nodes.push(above(notice_band(status, Tone::Neutral)));
             } else if update.attached.get() > 0 {
-                nodes.push(line(
-                    update.clone(),
-                    composer::attachment_line(update.attached.peek()),
-                    palette().base,
-                    full_width,
-                ));
+                let attached = update.attached.peek();
+                let noun = if attached == 1 { "image" } else { "images" };
+                nodes.push(above(notice_band(
+                    format!("{attached} {noun} attached · enter sends with your prompt"),
+                    Tone::Info,
+                )));
             }
             nodes
         })
 }
 
-fn approval_band(
-    app: App,
-    full_width: usize,
-    width: usize,
-    detail: String,
-    persist: bool,
-) -> NodeBuilder {
-    let allow = "[ allow ]";
-    let always = "[ always ]";
-    let deny = "[ deny ]";
-    let buttons =
-        cell_width(allow) + cell_width(deny) + if persist { cell_width(always) + 1 } else { 0 };
-    let text = canvas::ellipsize(
-        &format!("approve {}", detail),
-        width.saturating_sub(buttons + 3),
-    );
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::cell().h)
-                .padding_x(margin(full_width) as f32 * canvas::cell().w),
-        )
-        .style(Style::new().bg(palette().base))
-        .child(label(text).class("font-mono text-sm"));
-    row = row.child(approval_button(app.clone(), allow, "y"));
-    if persist {
-        row = row.child(approval_button(app.clone(), always, "always"));
-    }
-    row.child(approval_button(app, deny, "n"))
+fn above(child: NodeBuilder) -> NodeBuilder {
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().padding_top(8.0))
+        .child(child)
 }
 
-fn approval_button(app: App, text: &'static str, token: &'static str) -> NodeBuilder {
-    container()
+fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeBuilder {
+    let text = canvas::ellipsize(&detail, width.saturating_sub(4));
+    let mut actions = container().layout(
+        LayoutStyle::flex_row()
+            .gap(12.0)
+            .align_items(AlignItems::Center),
+    );
+    actions = actions.child(button("Allow").primary().activate({
+        let app = app.clone();
+        move || app.approval_answer("y")
+    }));
+    if persist {
+        actions = actions.child(button("Always").activate({
+            let app = app.clone();
+            move || app.approval_answer("always")
+        }));
+    }
+    actions = actions.child(
+        button("Deny")
+            .destructive()
+            .activate(move || app.approval_answer("n")),
+    );
+    notice_band(format!("Needs approval: {text}"), Tone::Warn)
         .layout(
-            LayoutStyle::flex_row()
-                .width(cell_width(text) as f32 * canvas::cell().w)
-                .height(canvas::cell().h),
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(8.0)
+                .padding_y(8.0),
         )
-        .child(label(text).class("font-mono text-sm"))
-        .pointer_down(move |event| {
-            if event.button == Some(MouseButton::Left) {
-                app.approval_answer(token);
-                event.stop_propagation();
-            }
-        })
+        .child(label("The agent is waiting. Choose Allow or Deny."))
+        .child(actions)
 }

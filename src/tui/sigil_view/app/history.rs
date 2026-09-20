@@ -77,27 +77,9 @@ impl App {
         if !self.tui_chat_active.peek() {
             return;
         }
-        let pinned = self.scroll_y.peek() >= self.extent.peek();
-        let mut history = self.history.borrow_mut();
-        let anchor = if pinned {
-            None
-        } else {
-            history.anchor(self.scroll_y.peek())
-        };
-        let model = self.model.borrow();
-        let total = history.total_extent(&model, self.chat_cols(), model.entries.stamp);
-        let extent = (total - self.transcript_height.peek()).max(0.0);
-        let position = if pinned {
-            extent
-        } else {
-            anchor
-                .and_then(|anchor| history.locate(anchor))
-                .unwrap_or_else(|| self.scroll_y.peek())
-                .min(extent)
-        };
-        drop(history);
-        self.extent.set(extent);
-        self.scroll_y.set(position);
+        if self.scroll_y.peek() >= self.extent.peek() {
+            self.scroll_y.set(self.extent.peek());
+        }
     }
 
     pub(in crate::tui::sigil_view) fn prompt_history(&self, query: &str) {

@@ -47,10 +47,6 @@ impl App {
             busy
         };
         let ticks = self.ticks.peek().saturating_add(1);
-        // The splash scene keeps moving while the cover is up: the stars
-        // drift and twinkle behind the wordmark until the first prompt.
-        // Revealing the wordmark is not the end of the animation, so an
-        // idle session with the cover still shown must keep ticking.
         let splash = self.splash.peek() && self.model.borrow().prefs.animations;
         if busy || splash || !self.splash_revealed.peek() {
             self.ticks.set(ticks);

@@ -8,7 +8,9 @@ use sigil::prelude::ImageSource;
 use crate::prefs::{Prefs, ToolOutput, Visibility};
 use crate::tools::Event;
 
-use super::super::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
+use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
+
+pub(super) use super::app;
 use super::speed::Speed;
 
 mod entry;

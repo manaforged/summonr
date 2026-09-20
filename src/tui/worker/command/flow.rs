@@ -254,7 +254,11 @@ impl Worker {
         match crate::modules::Switches::load(&workspace) {
             Ok(switches) => {
                 if argument.is_some() {
-                    self.loop_.set_modules(&switches);
+                    if self.loop_.catalog_frozen() {
+                        self.system("saved for the next process; this session's tools stay frozen");
+                    } else {
+                        self.loop_.set_modules(&switches);
+                    }
                 }
                 self.system(&switches.table());
             }

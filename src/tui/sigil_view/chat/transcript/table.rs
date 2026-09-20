@@ -134,7 +134,7 @@ pub(super) fn paint_table(rows: &[Vec<String>], width: usize, accent: Rgba8) -> 
             let cell = row.get(index).map(String::as_str).unwrap_or("");
             let mut shown = cell.to_string();
             if cell_width(&shown) > *w {
-                shown = super::super::super::canvas::ellipsize(cell, *w);
+                shown = super::canvas::ellipsize(cell, *w);
             }
             let pad = w.saturating_sub(cell_width(&shown));
             let mut body = Span::surface(

@@ -11,7 +11,7 @@ run=${BENCH_RUN:-smoke}
 set -a; . "$root/glm.env"; set +a
 
 printf '%s\n' "$prompt" > "$root/logs/prompt.txt"
-for name in "${@:-summonr pi omp opencode hermes}"; do
+for name in "${@:-summonr pi omp opencode2 hermes}"; do
   for harness in $name; do
     label=$harness.$run
     before=$(grep -c "\"label\": \"$label\"" "$log" 2>/dev/null || true)

@@ -6,7 +6,6 @@ use sigil::prelude::{Rgba8, Tone};
 use sigil_tui::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
-/// Mix two colors. One copy: the surfaces differ, the arithmetic does not.
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
     let channel = |a: u8, b: u8| {
         (i16::from(a) + ((i16::from(b) - i16::from(a)) as f32 * amount).round() as i16)
@@ -38,11 +37,48 @@ pub(super) fn cell() -> Metrics {
     })
 }
 
+pub(super) fn dialog_width(cols: u16, max_cells: f32) -> f32 {
+    if WINDOW.load(Ordering::Relaxed) {
+        520.0
+    } else {
+        (f32::from(cols.saturating_sub(4)) * cell().w).min(max_cells * cell().w)
+    }
+}
+
+pub(super) fn overlay_gap() -> f32 {
+    if WINDOW.load(Ordering::Relaxed) {
+        2.0
+    } else {
+        0.0
+    }
+}
+
+pub(super) fn overlay_field() -> f32 {
+    if WINDOW.load(Ordering::Relaxed) {
+        22.0
+    } else {
+        24.0
+    }
+}
+
+pub(super) fn overlay_list_row() -> f32 {
+    if WINDOW.load(Ordering::Relaxed) {
+        22.0
+    } else {
+        cell().h
+    }
+}
+
+pub(super) fn overlay_shown(count: usize) -> usize {
+    count.clamp(1, 8)
+}
+
 #[cfg(feature = "gui")]
 pub(super) fn window_cells() {
     WINDOW.store(true, Ordering::Relaxed);
 }
 
+#[cfg(test)]
 pub(super) fn cell_aspect() -> f32 {
     if WINDOW.load(Ordering::Relaxed) {
         1.0
@@ -78,6 +114,7 @@ pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {
 }
 
 #[derive(Clone)]
+#[expect(dead_code, reason = "splash write_at and transcript tests")]
 pub(super) struct Span {
     pub(super) text: String,
     pub(super) fg: Rgba8,
@@ -89,11 +126,13 @@ pub(super) struct Span {
 }
 
 #[derive(Clone)]
+#[expect(dead_code, reason = "transcript tests")]
 pub(super) enum Source {
     Text(Range<usize>),
     Block(Range<usize>),
 }
 
+#[expect(dead_code, reason = "transcript tests")]
 impl Source {
     pub(super) fn range(&self) -> &Range<usize> {
         match self {
@@ -102,6 +141,7 @@ impl Source {
     }
 }
 
+#[expect(dead_code, reason = "splash write_at and transcript tests")]
 impl Span {
     pub(super) fn text(text: impl Into<String>) -> Self {
         Self::styled(text, palette().text)
@@ -169,6 +209,7 @@ impl Span {
     }
 }
 
+#[expect(dead_code, reason = "transcript tests")]
 pub(super) struct Line {
     pub(super) spans: Vec<Span>,
     pub(super) bg: Rgba8,

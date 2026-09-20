@@ -31,7 +31,7 @@ impl App {
             drop(self.cmd.send(Cmd::Command(text)));
             return;
         }
-        let peers = super::super::suggest::peers(&text, &self.model.borrow());
+        let peers = super::suggest::peers(&text, &self.model.borrow());
         if !peers.is_empty() {
             self.replace(String::new());
             self.splash.set(false);

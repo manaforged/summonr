@@ -1,5 +1,5 @@
-use super::app::App;
-use super::pane::Pane;
+pub(super) use super::app::{App, FileRow};
+pub(super) use super::pane::Pane;
 use sigil::prelude::NodeBuilder;
 
 pub(in crate::tui::sigil_view) mod body;

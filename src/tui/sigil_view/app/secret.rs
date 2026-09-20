@@ -3,7 +3,7 @@ use crate::askpass::{Request, Secret};
 use super::App;
 
 impl App {
-    pub(in super::super) fn secret_open(&self, request: Request) {
+    pub(in crate::tui::sigil_view) fn secret_open(&self, request: Request) {
         if let Some((stale, _)) = self.pending.borrow_mut().take() {
             stale.answer(None);
         }
@@ -11,11 +11,11 @@ impl App {
         *self.pending.borrow_mut() = Some((request, Secret::new(String::new())));
     }
 
-    pub(in super::super) fn secret_active(&self) -> bool {
+    pub(in crate::tui::sigil_view) fn secret_active(&self) -> bool {
         self.pending.borrow().is_some()
     }
 
-    pub(in super::super) fn secret_push(&self, text: &str) {
+    pub(in crate::tui::sigil_view) fn secret_push(&self, text: &str) {
         let mut pending = self.pending.borrow_mut();
         let Some((request, typed)) = pending.as_mut() else {
             return;
@@ -25,7 +25,7 @@ impl App {
             .set(Some((request.prompt.clone(), typed.chars().count())));
     }
 
-    pub(in super::super) fn secret_pop(&self) {
+    pub(in crate::tui::sigil_view) fn secret_pop(&self) {
         let mut pending = self.pending.borrow_mut();
         let Some((request, typed)) = pending.as_mut() else {
             return;
@@ -35,7 +35,7 @@ impl App {
             .set(Some((request.prompt.clone(), typed.chars().count())));
     }
 
-    pub(in super::super) fn secret_finish(&self, send: bool) {
+    pub(in crate::tui::sigil_view) fn secret_finish(&self, send: bool) {
         let taken = self.pending.borrow_mut().take();
         if let Some((request, typed)) = taken {
             request.answer((send && !typed.is_empty()).then_some(typed));

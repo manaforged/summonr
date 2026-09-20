@@ -58,7 +58,7 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
         Entry::Aborted(reason) => format!("⚠ **aborted:** {reason}"),
         Entry::System(text) => format!("> {text}"),
         Entry::Error(text) => format!("**Error:** {text}"),
-        Entry::Chart(rounds) => super::super::app::presentation::stats(rounds),
+        Entry::Chart(rounds) => super::app::presentation::stats(rounds),
         Entry::Image { label, .. } => format!("   {label}"),
     }
 }

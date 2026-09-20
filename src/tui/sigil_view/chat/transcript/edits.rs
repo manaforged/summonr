@@ -1,11 +1,9 @@
 use std::ops::Range;
 
-use super::super::super::{
-    input::Input,
-    patch::{self, Kind, Pair},
-};
-use super::super::canvas::ellipsize;
-use super::super::cell_width;
+use super::Input;
+use super::canvas::ellipsize;
+use super::cell_width;
+use super::patch::{self, Kind, Pair};
 use super::{
     DiffLayout, Line, Span, ToolOutput, ToolState, band, blend, code, palette, tool_header,
 };

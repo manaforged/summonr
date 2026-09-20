@@ -130,6 +130,7 @@ impl<P: Provider> Loop<P> {
         loop {
             let request = self.completion_request(role, messages, tools);
             let prefix_hash = request.prefix_hash();
+            self.freeze_catalog();
             let request_chars = request_chars(messages, tools);
             let durable = request.durable_bytes().map_err(|error| {
                 Error::Config(format!("cannot encode provider request: {error}"))

@@ -1,13 +1,12 @@
 use sigil::prelude::{
-    AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt,
-    ObjectFit, Overflow, Tone, WidgetLayoutExt, badge, classes, container, image, label, node,
-    request_focus, text_edit,
+    AlignItems, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
+    NodeEventsExt, NodeStyleExt, ObjectFit, Overflow, Tone, WidgetLayoutExt, badge, button,
+    classes, container, icon_button, image, label, list_row, node, request_focus, spacer,
+    text_edit,
 };
 
-use super::super::app::{App, FileRow};
-use super::super::controls::{hit, hit_menu, spacer};
-use super::super::pane::Pane;
 use super::todos;
+use super::{App, FileRow, Pane};
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
     let mut column = container()
@@ -44,19 +43,11 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
         .child(label(title).class(classes!("text-sm font-medium text-gray-12")))
         .child(spacer())
         .child(label(note).class(classes!("text-xs text-gray-11")))
-        .child(close(app))
+        .child(close(app.clone()))
 }
 
-fn close(app: &App) -> NodeBuilder {
-    let close = app.clone();
-    hit("Close pane".to_string(), false, move || close.toggle_side())
-        .layout(
-            LayoutStyle::flex_row()
-                .fixed_size(28.0, 28.0)
-                .align_items(AlignItems::Center)
-                .justify_content(JustifyContent::Center),
-        )
-        .child(label("×").class(classes!("text-xs text-gray-11")))
+fn close(app: App) -> impl IntoNode {
+    icon_button("×", move || app.toggle_side()).accessible("Close pane")
 }
 
 fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
@@ -69,12 +60,9 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 path.clone(),
                 format!("vs {}", model.diff.base),
             ))
-            .child(
-                hit("Back to changes".to_string(), false, move || {
-                    back.pane_back();
-                })
-                .child(label("← all changes").class(classes!("text-xs text-gray-11"))),
-            );
+            .child(button("← all changes").ghost().activate(move || {
+                back.pane_back();
+            }));
         let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
             return column.child(label("loading…").class(classes!("text-xs text-gray-11")));
         };
@@ -130,22 +118,19 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let path = stat.path.clone();
         let menu = app.clone();
         column = column.child(
-            hit_menu(
-                stat.path.clone(),
+            list_row(
                 false,
-                move || open.diff_open(path.clone()),
-                move || {
+                stat.path.clone(),
+                format!("+{} −{}", stat.added, stat.removed),
+            )
+            .pointer_down(move |event| {
+                if event.button == Some(MouseButton::Right) {
                     menu.context_row(index);
-                },
-            )
-            .child(
-                label(stat.path.clone())
-                    .ellipsize()
-                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                    .class(classes!("text-xs text-gray-12")),
-            )
-            .child(label(format!("+{}", stat.added)).class(classes!("text-xs text-success-11")))
-            .child(label(format!("-{}", stat.removed)).class(classes!("text-xs text-error-11"))),
+                } else {
+                    open.diff_open(path.clone());
+                }
+                event.stop_propagation();
+            }),
         );
     }
     column
@@ -164,7 +149,10 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     let rows: Vec<FileRow> = app.file_rows();
     if rows.is_empty() {
-        return column.child(label("no files listed yet").class(classes!("text-xs text-gray-11")));
+        return column.child(
+            label("No files in this folder yet.".to_string())
+                .class(classes!("text-sm text-gray-11")),
+        );
     }
     for (index, row) in rows.into_iter().enumerate() {
         let act = app.clone();
@@ -176,36 +164,28 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
             " "
         };
         let menu = app.clone();
+        let title = format!("{glyph} {}", row.name);
         column = column.child(
-            hit_menu(
-                row.path.clone(),
-                false,
-                move || {
-                    if dir {
+            list_row(false, title, String::new())
+                .layout(
+                    LayoutStyle::flex_row()
+                        .fill_width()
+                        .height(24.0)
+                        .padding_x(8.0 + 12.0 * row.depth as f32)
+                        .gap(6.0)
+                        .align_items(AlignItems::Center),
+                )
+                .pointer_down(move |event| {
+                    if event.button == Some(MouseButton::Right) {
+                        menu.context_row(index);
+                    } else if dir {
                         act.file_cursor.set(index);
                         act.pane_enter();
                     } else {
                         act.view_open(path.clone());
                     }
-                },
-                move || {
-                    menu.context_row(index);
-                },
-            )
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .height(24.0)
-                    .padding_x(8.0 + 12.0 * row.depth as f32)
-                    .gap(6.0)
-                    .align_items(AlignItems::Center),
-            )
-            .child(label(glyph).class(classes!("text-xs text-gray-11")))
-            .child(label(row.name).class(if row.dir {
-                classes!("text-xs text-gray-12")
-            } else {
-                classes!("text-xs text-gray-11")
-            })),
+                    event.stop_propagation();
+                }),
         );
     }
     column
@@ -230,31 +210,23 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let branch = row.tree.branch.clone();
         let menu = app.clone();
         column = column.child(
-            hit_menu(
-                row.tree.branch.clone(),
-                false,
-                move || {
-                    show.tree_show(path.clone(), branch.clone());
-                },
-                move || {
-                    menu.context_row(index);
-                },
-            )
-            .child(
-                label(row.tree.branch.clone())
-                    .ellipsize()
-                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                    .class(classes!("text-xs text-gray-12")),
-            )
-            .child(label(format!("+{}", row.ahead)).class(classes!("text-xs text-gray-11")))
-            .child(badge(
-                if row.dirty { "dirty" } else { "clean" },
-                if row.dirty {
-                    Tone::Error
-                } else {
-                    Tone::Neutral
-                },
-            )),
+            list_row(false, row.tree.branch.clone(), format!("+{}", row.ahead))
+                .child(badge(
+                    if row.dirty { "dirty" } else { "clean" },
+                    if row.dirty {
+                        Tone::Error
+                    } else {
+                        Tone::Neutral
+                    },
+                ))
+                .pointer_down(move |event| {
+                    if event.button == Some(MouseButton::Right) {
+                        menu.context_row(index);
+                    } else {
+                        show.tree_show(path.clone(), branch.clone());
+                    }
+                    event.stop_propagation();
+                }),
         );
     }
     column
@@ -290,23 +262,14 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         );
     if editing {
         bar = bar
-            .child(
-                hit("Save".to_string(), false, move || save.edit_save())
-                    .child(label("Save").class(classes!("text-xs text-gray-12"))),
-            )
-            .child(
-                hit("Leave".to_string(), false, move || {
-                    leave.edit_stop();
-                })
-                .child(label("Leave").class(classes!("text-xs text-gray-11"))),
-            );
+            .child(button("Save").primary().activate(move || save.edit_save()))
+            .child(button("Leave").ghost().activate(move || {
+                leave.edit_stop();
+            }));
     } else {
-        bar = bar.child(
-            hit("Edit".to_string(), false, move || edit.edit_start())
-                .child(label("Edit").class(classes!("text-xs text-gray-12"))),
-        );
+        bar = bar.child(button("Edit").ghost().activate(move || edit.edit_start()));
     }
-    bar = bar.child(close(&app));
+    bar = bar.child(close(app.clone()));
     column = column.child(bar);
     if editing {
         return column.child(node(move |cx: &mut Cx| {

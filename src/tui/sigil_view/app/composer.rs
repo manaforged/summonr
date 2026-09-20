@@ -84,7 +84,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn reveal(&self, draft: &str) {
         if self.splash.peek() {
             let (cols, rows) = self.viewport.peek();
-            let width = super::super::scene::prompt_area(self, cols, rows)[2].saturating_sub(9);
+            let width = super::scene::prompt_area(self, cols, rows)[2].saturating_sub(9);
             if draft.contains('\n') || cell_width(draft) > usize::from(width) {
                 self.splash.set(false);
             }

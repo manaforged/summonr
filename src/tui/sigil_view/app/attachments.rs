@@ -159,7 +159,7 @@ impl App {
         if !draft.is_empty() && !draft.ends_with(' ') {
             draft.push(' ');
         }
-        draft.push_str(&super::super::suggest::reference(path));
+        draft.push_str(&super::suggest::reference(path));
         draft.push(' ');
         self.replace(draft);
         self.pane_focus.set(false);

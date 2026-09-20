@@ -6,7 +6,7 @@ root=$(dirname "$lhtb")
 run=${1:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 tasks=${2:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 shift 2
-harnesses=("${@:-summonr pi omp opencode hermes goose}")
+harnesses=("${@:-summonr pi omp opencode2 hermes goose}")
 read -ra harnesses <<< "${harnesses[*]}"
 seed=${BENCH_SEED:-20260916}
 effort=${BENCH_EFFORT:-}

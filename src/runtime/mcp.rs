@@ -2,6 +2,9 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn switch_mcp(&mut self, on: bool) {
+        if self.catalog_frozen {
+            return;
+        }
         if !on {
             self.mcp = None;
             self.mcp_start = None;
@@ -23,9 +26,13 @@ impl<P: Provider> Loop<P> {
         let Some(start) = self.mcp_start.take() else {
             return Ok(());
         };
-        let Ok(hub) = start.await else {
-            return Ok(());
+        let hub = match start.await {
+            Ok(hub) => hub,
+            Err(_) => return Ok(()),
         };
+        if self.catalog_frozen {
+            return Ok(());
+        }
         for text in hub.notes.clone() {
             self.push_event(events, emit, Event::Note { text })?;
         }

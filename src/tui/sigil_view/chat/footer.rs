@@ -1,17 +1,19 @@
 use sigil::prelude::{
-    JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, Style, container,
+    AlignItems, Dimension, JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
+    NodeEventsExt, NodeStyleExt, Position, card, classes, container, kv_row, label, section_label,
+    spacer,
 };
-use sigil_tui::cell_width;
 
-use super::super::app::App;
-use super::super::canvas::{self, Span, palette};
-use super::super::hit::Target;
-use super::super::model::Model;
 use super::chrome;
-use super::{accent, render_background, run};
+use super::{App, Model, Speed};
 
-pub(super) fn footer_bar(app: App, full_width: usize, width: usize) -> NodeBuilder {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum Target {
+    Context,
+    Cache,
+}
+
+pub(super) fn footer_bar(app: App, _full_width: usize, width: usize) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
@@ -31,87 +33,85 @@ pub(super) fn footer_bar(app: App, full_width: usize, width: usize) -> NodeBuild
                 update.context_open.peek() || update.meter_hover.peek() == Some(Target::Context);
             let show_cache =
                 update.cache_open.peek() || update.meter_hover.peek() == Some(Target::Cache);
-            let mut column =
-                container().layout(LayoutStyle::flex_column().fill_width().shrink(0.0));
+            let mut column = container().layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .shrink(0.0)
+                    .position(Position::Relative),
+            );
             if show_ctx && !show_cache {
-                column = column.child(card(&model, full_width, width, Target::Context));
+                column = column.child(meter_overlay(&model, width, Target::Context));
             } else if show_cache && !show_ctx {
-                column = column.child(card(&model, full_width, width, Target::Cache));
+                column = column.child(meter_overlay(&model, width, Target::Cache));
             }
-            column = column.child(footer_row(update.clone(), &model, full_width, width));
+            column = column.child(footer_row(update.clone(), &model));
             vec![column]
         })
 }
 
-fn footer_row(app: App, model: &Model, full_width: usize, width: usize) -> NodeBuilder {
-    let context = chrome::context_meter(model, width);
-    let cache = chrome::cache_meter(
-        model,
-        width.saturating_sub(chrome::line_width(&context) + 2),
-    );
-    let context_width = chrome::line_width(&context);
-    let cache_width = chrome::line_width(&cache);
-    let meters_width =
-        context_width + cache_width + usize::from(context_width > 0 && cache_width > 0) * 2;
-    let speed = chrome::idle_speed(model).filter(|speed| meters_width + speed.width() < width);
-    let speed_width = speed.as_ref().map_or(0, Span::width);
-    let right = meters_width + speed_width;
-    let left_width = width.saturating_sub(right + 1);
+fn footer_row(app: App, model: &Model) -> NodeBuilder {
     let mut row = container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .height(canvas::cell().h)
-                .padding_x(super::margin(full_width) as f32 * canvas::cell().w),
+                .padding_x(16.0)
+                .align_items(AlignItems::Center)
+                .gap(12.0),
         )
-        .child(
-            render_background(
-                chrome::status_left(model, &app, left_width, accent(&model.prefs.theme))
-                    .iter()
-                    .map(run),
-                palette().base,
-            )
-            .layout(
-                LayoutStyle::flex_row()
-                    .width(left_width as f32 * canvas::cell().w)
-                    .height(canvas::cell().h),
-            ),
-        )
-        .child(container().layout(LayoutStyle::flex_row().grow(1.0).height(canvas::cell().h)));
-    if context_width > 0 {
-        row = row.child(meter_button(app.clone(), Target::Context, context));
+        .child(label(app.info.workspace.clone()).class(classes!("text-xs text-gray-12")));
+    if let Some(branch) = &app.git_branch {
+        row = row.child(label(format!("· {branch}")).class(classes!("text-xs text-warn-11")));
     }
-    if cache_width > 0 {
-        if context_width > 0 {
-            row = row.child(container().layout(LayoutStyle::block().width(2.0 * canvas::cell().w)));
-        }
-        row = row.child(meter_button(app, Target::Cache, cache));
+    row = row.child(spacer());
+    if let Some(rate) = model.speed.last() {
+        row = row.child(label(Speed::label(rate)).class(classes!("text-xs text-gray-11")));
     }
-    if let Some(speed) = speed {
-        row = row.child(
-            render_background([speed].iter().map(run), palette().base).layout(
-                LayoutStyle::flex_row()
-                    .width(speed_width as f32 * canvas::cell().w)
-                    .height(canvas::cell().h),
-            ),
-        );
-    }
-    row
+    row = row.child(meter_button(
+        app.clone(),
+        Target::Context,
+        meter("ctx", chrome::context_percent(model), "bg-accent"),
+    ));
+    row.child(meter_button(
+        app,
+        Target::Cache,
+        meter("cache", chrome::cache_percent(model), "bg-info-11"),
+    ))
 }
 
-fn meter_button(app: App, target: Target, spans: Vec<Span>) -> NodeBuilder {
+fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
+    let bar = 64.0_f32;
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .align_items(AlignItems::Center)
+                .gap(8.0),
+        )
+        .child(label(caption).class(classes!("text-xs text-gray-11")))
+        .child(
+            container()
+                .layout(LayoutStyle::flex_row().width(bar).height(8.0))
+                .class(classes!("bg-gray-1"))
+                .child(
+                    container()
+                        .layout(
+                            LayoutStyle::block()
+                                .width(bar * percent.min(100) as f32 / 100.0)
+                                .height(8.0),
+                        )
+                        .class(fill),
+                ),
+        )
+        .child(label(format!("{percent}%")).class(classes!("text-xs text-gray-12")))
+}
+
+fn meter_button(app: App, target: Target, child: NodeBuilder) -> NodeBuilder {
     let press = app.clone();
     let enter = app.clone();
     let leave = app.clone();
     let down_target = target.clone();
     let enter_target = target.clone();
-    let width = chrome::line_width(&spans);
-    render_background(spans.iter().map(run), palette().base)
-        .layout(
-            LayoutStyle::flex_row()
-                .width(width as f32 * canvas::cell().w)
-                .height(canvas::cell().h),
-        )
+    container()
+        .child(child)
         .pointer_down(move |event| {
             if event.button == Some(MouseButton::Left) {
                 press.toggle_meter(down_target.clone());
@@ -126,58 +126,46 @@ fn meter_button(app: App, target: Target, spans: Vec<Span>) -> NodeBuilder {
         })
 }
 
-fn card(model: &Model, full_width: usize, width: usize, target: Target) -> NodeBuilder {
+fn meter_overlay(model: &Model, width: usize, target: Target) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(super::margin(full_width) as f32 * canvas::cell().w)
+                .position(Position::Absolute)
+                .inset_left(0.0)
+                .inset_right(0.0)
+                .inset_bottom(24.0)
+                .padding_x(16.0)
                 .justify_content(JustifyContent::End),
         )
         .child(meter_card(model, width, target))
 }
 
-fn meter_card(model: &Model, width: usize, target: Target) -> NodeBuilder {
-    let (title, lines) = match target {
-        Target::Context => (" ctx ", chrome::context_card(model)),
-        Target::Cache => (" cache ", chrome::cache_card(model)),
+fn meter_card(model: &Model, _width: usize, target: Target) -> NodeBuilder {
+    let (title, rows) = match target {
+        Target::Context => ("ctx", chrome::context_facts(model)),
+        Target::Cache => ("cache", chrome::cache_facts(model)),
     };
-    let card_width = width.min(30);
-    let mut card = container()
-        .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
-        .style(Style::new().bg(palette().tool_bg));
-    card = card.child(render_background(
-        [Span::surface(
-            format!(
-                "╭{}{}╮",
-                title,
-                "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
-            ),
-            palette().gray,
-            palette().tool_bg,
-        )]
-        .iter()
-        .map(run),
-        palette().tool_bg,
-    ));
-    for mut row in lines {
-        let used = chrome::line_width(&row);
-        row.insert(0, Span::surface("│ ", palette().gray, palette().tool_bg));
-        row.push(Span::surface(
-            format!("{}│", " ".repeat(card_width.saturating_sub(used + 3))),
-            palette().gray,
-            palette().tool_bg,
-        ));
-        card = card.child(render_background(row.iter().map(run), palette().tool_bg));
+    let mut body = container()
+        .layout(LayoutStyle::flex_column().width(220.0).gap(4.0))
+        .child(section_label(title));
+    for (key, value) in rows {
+        body = body.child(kv_row(key, label(value)));
     }
-    card.child(render_background(
-        [Span::surface(
-            format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))),
-            palette().gray,
-            palette().tool_bg,
-        )]
-        .iter()
-        .map(run),
-        palette().tool_bg,
-    ))
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .width(220.0)
+                .shrink(0.0)
+                .max_size(220.0, Dimension::Auto),
+        )
+        .child(
+            card(body).layout(
+                LayoutStyle::flex_column()
+                    .width(220.0)
+                    .padding(8.0)
+                    .gap(4.0)
+                    .shrink(0.0),
+            ),
+        )
 }

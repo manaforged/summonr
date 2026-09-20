@@ -7,6 +7,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas::palette;
+use super::prelude::*;
 use crate::bus::now;
 use crate::provider::{compact, dollars};
 use crate::session::{DAY, HOUR, Spend, Total, buckets};
@@ -67,13 +68,17 @@ impl Panel {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    container()
-        .layout(LayoutStyle::block().fill())
-        .children_reactive(move || {
-            super::view::watch(&paint);
-            let _revision = paint.panes.get();
-            vec![body(&paint)]
-        })
+    shell(
+        app.usage.open,
+        "Usage",
+        container()
+            .layout(LayoutStyle::flex_column().fill_width())
+            .children_reactive(move || {
+                super::view::watch(&paint);
+                let _revision = paint.panes.get();
+                vec![body(&paint)]
+            }),
+    )
 }
 
 fn label(value: f64, cost: bool) -> String {

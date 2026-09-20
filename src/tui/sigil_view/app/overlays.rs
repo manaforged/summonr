@@ -106,16 +106,16 @@ impl App {
         true
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_meter(&self, target: super::super::hit::Target) {
+    pub(in crate::tui::sigil_view) fn toggle_meter(&self, target: super::chat::Target) {
         match target {
-            super::super::hit::Target::Context => {
+            super::chat::Target::Context => {
                 let open = !self.context_open.peek();
                 self.context_open.set(open);
                 if open {
                     self.cache_open.set(false);
                 }
             }
-            super::super::hit::Target::Cache => {
+            super::chat::Target::Cache => {
                 let open = !self.cache_open.peek();
                 self.cache_open.set(open);
                 if open {
@@ -130,7 +130,7 @@ impl App {
         match self.overlay() {
             Some(Overlay::Workflow) if !self.workflow_naming.peek() => self.cycle_workflow(delta),
             Some(Overlay::Settings)
-                if self.selected_setting() == Some(super::super::settings::Setting::Endpoint) =>
+                if self.selected_setting() == Some(super::settings::Setting::Endpoint) =>
             {
                 self.cycle_seat(delta >= 0);
             }

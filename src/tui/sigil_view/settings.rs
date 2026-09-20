@@ -1,4 +1,7 @@
-use super::app::App;
+pub(super) use super::app::App;
+pub(super) use super::canvas;
+pub(super) use super::prelude;
+pub(super) use super::view::watch;
 
 mod auth;
 mod hotkeys;
@@ -23,8 +26,6 @@ pub(super) enum Setting {
     Tools,
     DiffLayout,
     Bus,
-    Comments,
-    Tests,
     Module(usize),
     Theme,
     Splash,
@@ -106,18 +107,6 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
                 "mail waits"
             }
             .to_string(),
-        ),
-        (
-            "agent",
-            Setting::Comments,
-            "comments",
-            on_off(!prefs.ban_comments).to_string(),
-        ),
-        (
-            "agent",
-            Setting::Tests,
-            "tests",
-            on_off(!prefs.ban_tests).to_string(),
         ),
     ];
     let modules = app.modules.peek();

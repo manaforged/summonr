@@ -29,5 +29,5 @@ tail = text.split("--- phase2 stdout tail", 1)[-1]
 print(f"{harness} label={label} requests={len(reqs)} max_user_msgs={max(users or [0])} user_counts={users} {text.splitlines()[0]} phase2_says_word={'PERIWINKLE' in tail.upper()}")
 PY
 }
-for h in "${@:-summonr pi omp opencode hermes goose}"; do for x in $h; do one "$x" & done; done
+for h in "${@:-summonr pi omp opencode2 hermes goose}"; do for x in $h; do one "$x" & done; done
 wait

@@ -14,7 +14,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn completion(&self, value: &str) {
         let mut draft = self.draft.peek();
         let caret = self.caret.peek();
-        let Some((start, _)) = super::super::suggest::mention(&draft, caret) else {
+        let Some((start, _)) = super::suggest::mention(&draft, caret) else {
             self.editor.replace(value);
             self.select(value);
             return;
@@ -43,7 +43,7 @@ impl App {
         let mut reference = if peer {
             format!("@{value}")
         } else {
-            super::super::suggest::reference(value)
+            super::suggest::reference(value)
         };
         if following.is_none() {
             reference.push(' ');
@@ -112,9 +112,7 @@ impl App {
                 self.open_workflow();
             }
             Some(crate::SlashCommand::Effort) => self.effort_command(argument),
-            Some(crate::SlashCommand::Stats) => {
-                self.toggle_meter(super::super::hit::Target::Context)
-            }
+            Some(crate::SlashCommand::Stats) => self.toggle_meter(super::chat::Target::Context),
             Some(crate::SlashCommand::Theme) => self.toggle_theme(),
             Some(crate::SlashCommand::Tools) => self.toggle_tools(),
             Some(crate::SlashCommand::Reasoning) => self.reasoning_command(argument),

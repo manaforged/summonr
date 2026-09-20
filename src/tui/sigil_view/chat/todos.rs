@@ -1,13 +1,11 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, ScrollDelta, container,
+    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
+    ScrollDelta, classes, container,
 };
-use sigil_tui::cell_width;
 
-use super::super::app::App;
-use super::super::canvas::{Span, palette};
-use super::super::model::Model;
-use super::super::panes::ledger::item;
-use super::{render_background, run};
+use super::panes::ledger::item;
+use super::prelude::*;
+use super::{App, Model, Pane, canvas};
 
 pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
     let update = app.clone();
@@ -17,9 +15,7 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
                 .fill_width()
                 .shrink(0.0)
                 .min_size(0.0, 0.0)
-                .padding_x(
-                    super::margin(usize::from(cols)) as f32 * super::super::canvas::cell().w,
-                ),
+                .padding_x(super::margin(usize::from(cols)) as f32 * canvas::cell().w),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
@@ -39,19 +35,13 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
 }
 
 fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
+    let _ = width;
     let expanded = model.todos_expanded;
     let done = model
         .ledger
         .iter()
         .filter(|line| item(line).0 == '✓')
         .count();
-    let title = format!(" Tasks {done}/{}  ", model.ledger.len());
-    let action = if expanded {
-        " Hide list ⌃ "
-    } else {
-        " Show list ⌄ "
-    };
-    let room = width.saturating_sub(cell_width(&title) + cell_width(action));
     let current = model
         .ledger
         .iter()
@@ -64,31 +54,29 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
                 .map(|line| item(line))
                 .find(|(mark, _)| *mark != '✓')
         });
-    let text = current.map_or(String::new(), |(mark, text)| {
-        super::super::canvas::ellipsize(&format!("{mark} {text}"), room)
-    });
-    let bg = palette().tool_bg;
-    let mut title_line = vec![
-        Span::surface(title, palette().dim, bg),
-        Span::surface(&text, palette().text, bg),
-        Span::surface(
-            " ".repeat(room.saturating_sub(cell_width(&text))),
-            palette().dim,
-            bg,
-        ),
-        Span::surface(action, palette().accent, bg),
-    ];
-    trim_line(&mut title_line, width);
+    let detail = current.map_or(String::new(), |(mark, text)| format!("{mark} {text}"));
     let toggle = app.clone();
-    let title_node = render_background(title_line.iter().map(run), bg).pointer_down(move |event| {
-        if event.button == Some(sigil::prelude::MouseButton::Left) {
-            toggle.toggle_todos();
-            event.stop_propagation();
-        }
-    });
     let mut body = container()
-        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
-        .child(title_node);
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .gap(canvas::overlay_gap()),
+        )
+        .class(classes!("rounded"))
+        .child(
+            pick(
+                false,
+                false,
+                format!("Tasks {done}/{}", model.ledger.len()),
+                if expanded { "hide".to_string() } else { detail },
+            )
+            .pointer_down(move |event| {
+                if event.button == Some(MouseButton::Left) {
+                    toggle.toggle_todos();
+                    event.stop_propagation();
+                }
+            }),
+        );
     if expanded {
         let count = visible_rows(model, app.viewport.peek().1);
         let start = model
@@ -96,59 +84,23 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
             .min(model.ledger.len().saturating_sub(count));
         for task in model.ledger.iter().skip(start).take(count) {
             let (mark, text) = item(task);
-            let fg = match mark {
-                '✓' => palette().dim,
-                '●' => palette().accent,
-                '!' => palette().error,
-                _ => palette().text,
-            };
-            let text = super::super::canvas::ellipsize(&format!(" {mark} {text}"), width);
-            let line = format!(
-                "{text}{}",
-                " ".repeat(width.saturating_sub(cell_width(&text)))
-            );
-            body = body.child(render_background(
-                [Span::surface(line, fg, bg)].iter().map(run),
-                bg,
-            ));
-        }
-        if model.ledger.len() > count {
-            let note = super::super::canvas::ellipsize(
-                &format!(
-                    " {}–{} of {} · scroll for more",
-                    start + 1,
-                    start + count,
-                    model.ledger.len()
-                ),
-                width,
-            );
-            let line = format!(
-                "{note}{}",
-                " ".repeat(width.saturating_sub(cell_width(&note)))
-            );
-            body = body.child(render_background(
-                [Span::surface(line, palette().dim, bg)].iter().map(run),
-                palette().base,
+            body = body.child(pick(
+                mark == '●',
+                mark == '●',
+                format!("{mark} {text}"),
+                String::new(),
             ));
         }
     }
     let scroll = app.clone();
     body.on_scroll(move |event| {
         let delta = match event.delta {
-            ScrollDelta::Pixels(point) => point.y / super::super::canvas::cell().h,
+            ScrollDelta::Pixels(point) => point.y / canvas::cell().h,
             ScrollDelta::Lines(point) => point.y,
         };
         scroll.scroll_todos(-delta.round() as isize);
         event.stop_propagation();
     })
-}
-
-fn trim_line(line: &mut Vec<Span>, width: usize) {
-    let mut used = 0;
-    for span in line {
-        super::super::canvas::truncate(&mut span.text, width.saturating_sub(used));
-        used += span.width();
-    }
 }
 
 fn content_width(cols: u16) -> usize {
@@ -168,7 +120,7 @@ impl App {
         let mut model = self.model.borrow_mut();
         if model.ledger.iter().all(|line| item(line).0 == '✓') {
             drop(model);
-            self.toggle_pane(super::super::pane::Pane::Ledger);
+            self.toggle_pane(Pane::Ledger);
             return;
         }
         model.todos_expanded = !model.todos_expanded;

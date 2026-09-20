@@ -4,8 +4,6 @@ break-filter-js-from-html
 build-cython-ext
 build-pmars
 caffe-cifar-10
-cancel-async-tasks
-chess-best-move
 circuit-fibsqrt
 cobol-modernization
 code-from-image
@@ -20,11 +18,8 @@ dna-insert
 extract-moves-from-video
 feal-differential-cryptanalysis
 feal-linear-cryptanalysis
-filter-js-from-html
 fix-code-vulnerability
-fix-git
 git-leak-recovery
-git-multibranch
 gpt2-codegolf
 headless-terminal
 hf-model-inference
@@ -40,10 +35,8 @@ modernize-scientific-stack
 mteb-leaderboard
 mteb-retrieve
 multi-source-data-merger
-nginx-request-logging
 path-tracing
 path-tracing-reverse
-polyglot-rust-c
 portfolio-optimization
 protein-assembly
 prove-plus-comm
@@ -52,13 +45,10 @@ pytorch-model-recovery
 qemu-alpine-ssh
 query-optimize
 raman-fitting
-regex-log
 rstan-to-pystan
 sanitize-git-repo
-sqlite-db-truncate
 sqlite-with-gcov
 torch-pipeline-parallelism
 train-fasttext
 video-processing
-vulnerable-secret
 write-compressor

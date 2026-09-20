@@ -1,9 +1,11 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, container, derived, label, modal, signal,
-    text_field, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, WidgetLayoutExt, container, derived,
+    signal, text_field, virtual_list,
 };
 
 use super::app::App;
+use super::canvas;
+use super::prelude::*;
 
 #[derive(Clone, Copy)]
 pub(super) struct View {
@@ -30,30 +32,31 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let keys = app.clone();
     let rows = derived(move || {
         matching(
-            &super::super::help_text(&keys.model.borrow().prefs.hotkeys),
+            &crate::tui::help_text(&keys.model.borrow().prefs.hotkeys),
             &query.get(),
         )
     });
-    container().layout(LayoutStyle::block()).child(
-        modal(app.help.open)
-            .title("Help · keys and commands")
-            .trap(true)
+    shell(
+        app.help.open,
+        "Help",
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
             .child(
-                container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .gap(6.0)
-                            .fill_width()
-                            .fill_height(),
-                    )
-                    .child(text_field(query).placeholder("find"))
-                    .child(
-                        virtual_list(rows, |_, row: &String| {
-                            container().child(label(row.clone()))
-                        })
-                        .row_height(18.0)
-                        .viewport_fill(),
-                    ),
+                text_field(query)
+                    .placeholder("find")
+                    .height(canvas::overlay_field()),
+            )
+            .child(
+                virtual_list(rows, |_, line: &String| {
+                    pick(false, false, line.clone(), String::new())
+                })
+                .row_height(canvas::overlay_list_row())
+                .height(canvas::overlay_list_row() * 8.0)
+                .viewport_height(canvas::overlay_list_row() * 8.0),
             ),
     )
 }

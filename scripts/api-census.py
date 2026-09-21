@@ -7,7 +7,7 @@ Two jobs:
    function with its body length and how many times its name is mentioned,
    then the line count of every file. Writes `off/functions.tsv` and
    `off/lines.tsv`. Totals only, no rows, on stdout.
-2. Ratchet. Counts the names on `docs/api/module-api.md` under "Names we
+2. Ratchet. Counts the names on `docs/guide/internals/module-api.md` under "Names we
    delete", plus the source files over `CAP` lines. The counts are shrink-only
    against `scripts/api-census-baseline.txt`: a count may fall, it may never
    rise. `--update` rewrites the baseline after a cut lands.

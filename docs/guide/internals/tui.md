@@ -26,11 +26,28 @@ Owner: `src/tui/sigil_view/canvas.rs`. These were spread over `chat.rs` and
 | `frame`, `footer`, `card` | a bordered panel, its hint row, its bounds | `settings.rs`, `usage.rs` |
 | `palette` | the palette for one theme | 20 files |
 | `rgb`, `blend`, `cell`, `cell_aspect`, `window_cells` | color and cell metrics | 8 files |
+| `dialog_width` | modal card width from terminal cols | `settings/models.rs`, `settings/auth.rs` |
 
 `Line` is defined twice: `canvas.rs` holds `Vec<Span>`, and `panes.rs:18`
 holds `{ text, fg, bg }`. The second one is on the delete list in §3.
 
 `ImageSource` and `ImageSource::id` are Sigil's.
+
+## 1b. Overlay kit (2026-09-19)
+
+Owner: `src/tui/sigil_view/kit.rs`. The one visual language for every
+overlay list: accent selection band, `❯` cursor gutter, right-aligned
+status, hint bar, themed field. Chat roles (`user_bg`, `tool_bg`) never
+appear outside the transcript.
+
+| Row | Job | Callers |
+| --- | --- | --- |
+| `kit::row` | one list row: cursor gutter, name, context, right status | `settings/auth.rs`, `settings/models.rs`, `sessions.rs` |
+| `kit::group` | a dim lowercase section header row | `settings/models.rs`, `settings/auth.rs` |
+| `kit::hint_bar` | the overlay footer: dim keys left, accent counter right | `settings/auth.rs`, `settings/models.rs`, `sessions.rs`, `search.rs` |
+| `kit::field` | the one text field: placeholder, focus trigger, optional mask | `settings/auth.rs`, `settings/models.rs` |
+| `kit::band` | a tone-tinted status band (errors, empty states) | `settings/models.rs` |
+| `kit::Tone` | status vocabulary: `Ok` green, `Dim` gray, `Warn` yellow, `Err` red | all of the above |
 
 ## 2. Target set (redesign)
 

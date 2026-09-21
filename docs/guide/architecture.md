@@ -28,7 +28,7 @@ Work is one coding job the harness holds so the model does not have to
 - steps, their checks, and (when verifying) a candidate capture of the
   workspace
 
-Plan and Work are one pipeline. Plan writes `.mage/plan.md`. `/plan
+Plan and Work are one pipeline. Plan writes `.summonr/plan.md`. `/plan
 accept` selects that file, sets `RunMode::Work`, and starts Execute in
 the same turn (`src/tui/worker/command.rs`). A work request with no
 selected plan stays in Plan (`Loop::set_mode`). When Work is terminal,
@@ -65,7 +65,7 @@ Summonr keeps the plan between turns. Each turn is "do this item"
 plus whatever check you put in the plan as ``Run `command` ``.
 
 Summonr does not ask the model whether the job is done. The gate is
-`.mage/check.toml`: each command exits 0 or the turn fails.
+`.summonr/check.toml`: each command exits 0 or the turn fails.
 In goal mode a judge completion only answers continue or stop, and
 only after the gates are already green (`src/goal.rs`).
 
@@ -86,21 +86,21 @@ before verification.
 | Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
 | Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
-| Plan file `.mage/plan.md` | `src/plan.rs` |
+| Plan file `.summonr/plan.md` | `src/plan.rs` |
 | RunMode Plan → Work | `src/runtime.rs` `next`, `Loop::set_mode` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |
 | Advertised tools | `src/tools/catalog.rs` |
 | argv (`summonr grok`, `--steps`, `--goal`) | `src/main/cli.rs` |
 
-A session is `~/.mage/sessions/<id>/session.jsonl` (append-only
+A session is `~/.summonr/sessions/<id>/session.jsonl` (append-only
 messages) plus `work.json` (the job, rewritten atomically after every
 transition). The changed-file manifest reads Git without writing it. Outside
 Git, it walks the directory. Both paths fingerprint file content, permissions,
 and symlink targets in addition to recording size and modification time.
 
-On disk you still see Mage names: `~/.mage/sessions/`, `.mage/jobs/`,
-`MAGE_*`. Same harness.
+On disk the names are Summonr: `~/.summonr/sessions/`, `.summonr/jobs/`,
+`SUMMONR_*`.
 
 ## Worktrees
 
@@ -141,9 +141,9 @@ The Rust module disables rust-analyzer check-on-save, build scripts, proc
 macros, and `cargo --all-targets`. The model must use `run_command` for an
 explicit Cargo check or test. A workspace may choose a compiled-in module, but
 it cannot provide an executable command. Only the user config at
-`~/.mage/config.toml` may set `[lsp] command`.
+`~/.summonr/config.toml` may set `[lsp] command`.
 
 ## What this is not
 
-- Not a new harness. Disk and env still say Mage (`~/.mage`, `MAGE_*`).
+- Not a new harness. Disk and env say Summonr (`~/.summonr`, `SUMMONR_*`).
 - Not crates.io. Sigil is a git dependency.

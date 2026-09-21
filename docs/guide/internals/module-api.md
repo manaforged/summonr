@@ -24,6 +24,10 @@ Never answer "that's all the API" from this page alone. Nine menu jobs sit on
 4. A public item that is not a row here is a candidate for `pub(crate)`.
 5. `src/tui` has its own page, [`tui.md`](tui.md), under the same four rules.
 
+Compiled modules are the garden: keep the binary small. Skills, MCP, hooks,
+and `run_command` CLIs are user extras outside the process. Do not add a
+plugin host or a second name for `skill`, `mcp`, or `run_command`.
+
 ## Model-facing jobs
 
 The tool schemas. Four core, five behind modules.
@@ -35,7 +39,7 @@ The tool schemas. Four core, five behind modules.
 | `write` | `tools/catalog.rs:195` | always |
 | `run_command` | `tools/catalog.rs:287` | always; the schema text follows the network switch |
 | `todo` | `tools/catalog.rs:227` | always; owns the itemized Work step list |
-| `skill` | `tools/catalog.rs:255` | `.mage/skills` present |
+| `skill` | `tools/catalog.rs:255` | `.summonr/skills` present |
 | `lsp` | `tools/catalog.rs:268` | `lsp` module on |
 | `web` | `tools/catalog.rs:313` | `web` module on |
 | `task` | `runtime/child.rs:95` | `task` module off until `/modules task on` |
@@ -53,22 +57,23 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 
 | Job | Where | What it owns |
 | --- | --- | --- |
-| verify | `verify.rs`, `.mage/check.toml` | the commands that decide pass or fail |
+| verify | `verify.rs`, `.summonr/check.toml` | the commands that decide pass or fail |
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
-| plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.mage/plan.md` |
+| plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.summonr/plan.md` |
 | session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume |
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
-| endpoint | `endpoint.rs`, `~/.mage/config.toml` | 20 built-in rows, four wires |
+| endpoint | `endpoint.rs`, `~/.summonr/config.toml` | 28 built-in rows, four wires |
+| model catalog | `catalog.rs::{parse,remember,cached,refresh_registry,enrich}`, `~/.summonr/models{,-dev}.json` | provider listings plus reduced models.dev metadata; ETag refresh after 24h, `SUMMONR_MODELS_URL` overrides the source |
 | infer | `decisions::ask`, `summonr infer` | typed questions over supplied state; Choice, Score, Noul; credentials through `summonr login typesafe`, `/login typesafe`, or `TYPESAFE_API_KEY` |
 | sweep | `decisions::sweep::{sweep, merge}` | merge state windows; require matching answer keys and types; blended Choice confidence is capped by the top-two probability margin, a conservative aggregation rule rather than calibrated model confidence |
 | evaluate | `decisions::eval::{load, run, score, report}`, `infer --eval` | validate labels before inference; `score` returns an error for empty or incomplete results, invalid labels, or invalid confidence; the CLI requires perfect gated accuracy and at least one gated answer per labelled question |
-| policy | `policy.rs`, `~/.mage/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
+| policy | `policy.rs`, `~/.summonr/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
-| skills | `skills.rs`, `.mage/skills` | the catalog `skill` loads from |
+| skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
 | persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
-| mcp | `mcp.rs`, `[mcp.NAME]`, Claude and Codex configs | server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth` |
+| mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
 | checkpoint | `checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; restore and turn undo |
 | loop guard | `runtime/guard.rs` | repeated identical results: warn at 3, ask or stop at 6, raise `low` effort to `medium` |
@@ -83,8 +88,8 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, slowest tools and rounds, largest results, repeated calls, all from `session.jsonl` |
 
 Process surface: 34 flags in `main/cli.rs`, 46 commands in `command.rs`, exit
-codes 0/1/2/3. Keys, env, config, and disk are in
-[`CONTRACTS.md`](CONTRACTS.md).
+codes 0/1/2/3. Keys, env, config, and disk are in the
+[reference](../reference.md) and the [API map](../../api.md).
 
 ## Names we delete
 

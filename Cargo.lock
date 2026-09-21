@@ -2009,7 +2009,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.5",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -2481,7 +2481,7 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 [[package]]
 name = "leyline-bssl"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/leyline-http?rev=fee12b7a9cbb873faf939f471f3fd3fd87bb70f4#fee12b7a9cbb873faf939f471f3fd3fd87bb70f4"
+source = "git+https://github.com/manaforged/leyline-http?branch=main#a4e4a756c8d8822e348571baca012049acd76d1b"
 dependencies = [
  "bitflags 2.13.1",
  "foreign-types 0.5.0",
@@ -2493,12 +2493,12 @@ dependencies = [
 [[package]]
 name = "leyline-bssl-sys"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/leyline-http?rev=fee12b7a9cbb873faf939f471f3fd3fd87bb70f4#fee12b7a9cbb873faf939f471f3fd3fd87bb70f4"
+source = "git+https://github.com/manaforged/leyline-http?branch=main#a4e4a756c8d8822e348571baca012049acd76d1b"
 
 [[package]]
 name = "leyline-bssl-tokio"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/leyline-http?rev=fee12b7a9cbb873faf939f471f3fd3fd87bb70f4#fee12b7a9cbb873faf939f471f3fd3fd87bb70f4"
+source = "git+https://github.com/manaforged/leyline-http?branch=main#a4e4a756c8d8822e348571baca012049acd76d1b"
 dependencies = [
  "leyline-bssl",
  "tokio",
@@ -2507,7 +2507,7 @@ dependencies = [
 [[package]]
 name = "leyline-http"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/leyline-http?rev=fee12b7a9cbb873faf939f471f3fd3fd87bb70f4#fee12b7a9cbb873faf939f471f3fd3fd87bb70f4"
+source = "git+https://github.com/manaforged/leyline-http?branch=main#a4e4a756c8d8822e348571baca012049acd76d1b"
 dependencies = [
  "base64 0.22.1",
  "brotli",
@@ -4364,7 +4364,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-gui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=ad4c6341f0297ac2a8e6396811b4b495dfa87bbd#ad4c6341f0297ac2a8e6396811b4b495dfa87bbd"
+source = "git+https://github.com/manaforged/sigil.git?branch=main#fc8cc0707cf5109b515827913bb1330b9e7785d5"
 dependencies = [
  "accesskit",
  "accesskit_winit",
@@ -4409,7 +4409,7 @@ dependencies = [
 [[package]]
 name = "sigil-tui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=ad4c6341f0297ac2a8e6396811b4b495dfa87bbd#ad4c6341f0297ac2a8e6396811b4b495dfa87bbd"
+source = "git+https://github.com/manaforged/sigil.git?branch=main#fc8cc0707cf5109b515827913bb1330b9e7785d5"
 dependencies = [
  "crossterm",
  "sigil-gui",

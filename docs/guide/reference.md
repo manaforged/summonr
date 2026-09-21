@@ -2,7 +2,7 @@
 
 This page documents every flag, key, slash command, pane, policy rule,
 workflow seat, child session, and the agent room. The
-[README](../README.md) is the short form.
+[README](../../README.md) is the short form.
 
 
 ## Usage
@@ -13,7 +13,7 @@ summon anthropic
 summon kimi -p "What is in Cargo.toml?"
 ```
 
-Add any other host in `~/.mage/config.toml`:
+Add any other host in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]
@@ -30,10 +30,37 @@ prices every round in `/stats` and the footer. A workflow seat keeps
 its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say.
 `summonr endpoints` probes `GET /models` for each name so a dead host fails before the first tool round. `summonr login NAME`
-prompts for an API key, or runs RFC 8628 device-code login when that row
-has `device_url`.
+prompts for an API key. `grant = "device_code"` runs a device login, and
+`grant = "authorization_code"` runs a browser sign-in with PKCE (S256).
 
-Keys live in `~/.mage/credentials.toml`, a sealed ChaCha20-Poly1305
+The browser flow picks its return path from `redirect_uri`:
+
+- A loopback `redirect_uri`, or none at all, opens a local port, catches
+  the provider's redirect, and closes. Omit it and Summonr picks a free
+  port; set it when the provider registered a fixed one.
+- Any other `redirect_uri` switches to paste-back: Summonr asks for the
+  code the browser shows and accepts the `code#state` form. No port opens.
+
+Rows carry the rest of what a plan needs, so a new provider is config,
+not code:
+
+- `token_style = "json"` when the token endpoint takes a JSON body
+  instead of a form.
+- `scheme` sets the carrier for the token — `bearer` (the default for
+  every login), `api_key`, or `google_key`.
+- `pkce = true` adds a PKCE challenge to a device login.
+- `[…auth.authorize_params]` and `[…auth.token_params]` add provider
+  parameters to the two requests.
+- `[…auth.claim_headers]` maps a header name to a claim read from the
+  token, so an account id travels on every request.
+
+Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
+
+`claude-pro` is built in: `summonr login claude-pro` signs in with a
+Claude Pro or Max plan and stores a rotating token. `config.example.toml`
+carries ready rows for other plans.
+
+Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
 32-byte item in the OS store (`summoner` / `seal`). `cat` of the file
 shows ciphertext. File mode also needs that keychain item: if the
@@ -47,7 +74,7 @@ the host's environment variable, the store, then `api_key` in
 `config.toml`.
 
 If you want the OS store instead, set `secrets = "keychain"` in
-`config.toml` (or `MAGE_SECRETS=keychain`). On macOS that is one
+`config.toml` (or `SUMMONR_SECRETS=keychain`). On macOS that is one
 Keychain entry holding every secret, read and written through
 `/usr/bin/security`, so the one-time "Always Allow" is granted to
 Apple's signed tool and survives every rebuild of Summonr; Windows uses
@@ -56,11 +83,14 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`qwen`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
-`groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`; native
+`qwen`, `ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
+`groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`,
+`fireworks`, `deepinfra`, `minimax`, `minimax-cn`; native
 wires `anthropic` (Messages) and `gemini`; decisions seats `jev` and
-`typesafe`. `together`, `groq`, `cerebras`,
-and `mistral` carry no default model: pass `--model`. `summonr login
+`typesafe` (TypeSafe System One, `TYPESAFE_API_KEY`). OpenRouter is a
+chat seat (`OPENROUTER_API_KEY`); `/model` lists its catalog the same
+way it lists OpenCode. `together`, `groq`, `cerebras`,
+`mistral`, `fireworks`, `deepinfra`, and `ollama` carry no default model: pass `--model`. `deepseek` defaults to `deepseek-v4-flash`. `summonr login
 copilot` is GitHub device login;
 chat then exchanges that token for a Copilot session token. Kimi is a
 key (`KIMI_CODING_API_KEY`, `KIMI_API_KEY`, or `MOONSHOT_API_KEY`) or a
@@ -68,8 +98,9 @@ token in `~/.kimi-code/credentials/kimi-code.json`. Environment keys are the hos
 (`XAI_API_KEY`, `ZAI_*`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
 `TOGETHER_API_KEY`, `GROQ_API_KEY`, `CEREBRAS_API_KEY`,
 `MISTRAL_API_KEY`, `META_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`,
-`OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`). Overlay `wire = "anthropic"`
-on any `[endpoint.NAME]` row. See [`config.example.toml`](../config.example.toml).
+`OPENCODE_API_KEY`, `OPENCODE_GO_API_KEY`, `DEEPSEEK_API_KEY`, `FIREWORKS_API_KEY`,
+`DEEPINFRA_API_KEY`, `MINIMAX_API_KEY`, `MINIMAX_CN_API_KEY`). Overlay `wire = "anthropic"`
+on any `[endpoint.NAME]` row. See [`config.example.toml`](../../config.example.toml).
 
 ```sh
 summonr --goal "make cargo test pass"
@@ -83,7 +114,7 @@ takes a name or an id prefix, `summonr sessions` lists both, and
 prints the running binary path and reports crashed or incomplete runs.
 Logs older than 14 days are removed unless their process is still active.
 
-`--goal` keeps one objective until `.mage/check.toml` is green and a
+`--goal` keeps one objective until `.summonr/check.toml` is green and a
 judge says stop. The judge answers `done`, `continue`, `stalled`, or
 `impossible`; the last two end the goal with the reason. A goal has no
 built-in turn cap. `--max-turns N` bounds it: a goal that is still red
@@ -112,8 +143,8 @@ uncommitted files is kept and named, and the exit code is 1.
 | Mode | Enter | Leave | Job |
 | --- | --- | --- | --- |
 | Auto | default, `/auto`, shift+tab from plan | `/plan`, `/goal` | Follow the request this turn. |
-| Plan | `/plan`, `--plan`, shift+tab from auto | `/plan accept`, `/plan reject`, `/auto` | Read-only. Reply is saved as `.mage/plan.md`. |
-| Work | `/plan accept` only | job ends (auto), `/auto` | Execute the accepted plan, then `.mage/check.toml`. |
+| Plan | `/plan`, `--plan`, shift+tab from auto | `/plan accept`, `/plan reject`, `/auto` | Read-only. Reply is saved as `.summonr/plan.md`. |
+| Work | `/plan accept` only | job ends (auto), `/auto` | Execute the accepted plan, then `.summonr/check.toml`. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto` | Loop on an objective with no written plan until checks pass and the judge says `done`. |
 
 Work is plan after accept. Without a selected plan, a request for work
@@ -125,7 +156,7 @@ the workspace without changing it. Change requests can edit and run checks.
 
 Plan mode adds a read-only workspace boundary. The model inspects and
 returns a plan; it cannot edit source or run mutating commands. The
-harness writes that reply to `.mage/plan.md`. Edit the file, then
+harness writes that reply to `.summonr/plan.md`. Edit the file, then
 `/plan accept` to bind it and enter work: that turn executes the plan
 and runs the completion check. Destructive writes and network still pause
 for `[ allow ]`, `[ always ]`, or `[ deny ]`. `lsp` routes each file to
@@ -138,7 +169,7 @@ A workflow seats each step on its own model. Roles are `scout`, `plan`,
 not name runs on the seat you started with.
 
 ```toml
-# ~/.mage/config.toml
+# ~/.summonr/config.toml
 workflow = "cheap-scout"      # optional default
 
 [workflows.cheap-scout]
@@ -164,7 +195,7 @@ interface every card action has a verb too:
 ## Interface
 
 `summonr --gui` opens the session in a desktop window (a build with
-`--features gui`). The window is the Codex shape on Sigil: a left rail
+`--features gui`). The window is built on Sigil: a left rail
 that switches the Files, Changes, Worktrees, and Plan panes and lists this
 workspace's sessions; a main column with the transcript, a composer card,
 and an Auto/Plan switch; a right rail that shows the open pane with real
@@ -181,7 +212,7 @@ a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`,
 insert path. `ctrl+←` or `esc` returns to the composer. `/pane off`
 closes the pane. `/layout focus`, `run`, `files`, and `review` are
 presets, `/layout "chat | files 30%"` sets the split, and
-ctrl+shift+←/→ resizes it. The layout persists in `~/.mage/config.toml`
+ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml`
 as `layout`. `ctrl+o` opens the settings modal, where every hotkey is
 editable; the choice is stored under `[hotkeys]` in the same file.
 
@@ -284,7 +315,7 @@ a line count), `expanded`, or `off`; `/receipts` sets turn receipts
 to `off` (the default), `collapsed`, or `expanded`; `/model next`
 and `/model prev` step through the ready seats without the picker.
 
-`/export` writes the session as markdown to `~/.mage/exports/<id>.md`;
+`/export` writes the session as markdown to `~/.summonr/exports/<id>.md`;
 `/export PATH` writes it where you say. It works while a turn runs.
 `ctrl+y` copies the latest assistant reply. `/copy all` copies the full
 transcript. Both use OSC 52 in the terminal and the system clipboard in the
@@ -375,13 +406,19 @@ The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 
 ## Modules
 
-Every optional capability is a module compiled into the binary: `search`,
-`lsp`, `jobs`, `task`, `skills`, `bus`, and `gui`. `task` is off by default.
-`summonr modules` lists them with their state; `/modules NAME on|off` in the
-interface switches one and writes `[modules]` in `~/.mage/config.toml`. A workspace
-`.mage/config.toml` may turn a module off for that project but cannot turn
-one on. Summonr runs no third-party code inside the harness; modules read
-declarative files under `.mage` where they need user input.
+Every optional capability is a **module** compiled into the binary: `search`,
+`lsp`, `jobs`, `task`, `skills`, `mcp`, `bus`, and `gui`. That list is
+fixed at build time, switchable, and counted in the 18 MB RSS budget. `task` is off by
+default. `mcp` is off by default so unused server schemas stay out of the
+first `prefix_hash`. `summonr modules` lists them with their state; `/modules NAME on|off`
+in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
+After the first `prefix_hash` in this process, that write is for the next
+process only. A workspace `.summonr/config.toml` may turn a module off for that
+project but cannot turn one on. A new compiled tool is a row on
+[`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can
+do the job, it is not a module. Summonr runs no third-party code inside the
+harness; modules read declarative files under `.summonr` where they need user
+input.
 
 `read` with `pattern` or `glob` honors `.gitignore`, and lists matching files
 when the pattern is empty.
@@ -395,7 +432,7 @@ Rust passes initialization options that disable check-on-save, build scripts,
 proc macros, and `cargo --all-targets`. Explicit Cargo commands still run
 through `run_command`.
 
-A workspace `.mage/config.toml` may force a built-in module:
+A workspace `.summonr/config.toml` may force a built-in module:
 
 ```toml
 [lsp]
@@ -403,7 +440,7 @@ module = "rust"
 ```
 
 Repository config cannot supply executable argv. A trusted
-`~/.mage/config.toml` may use `[lsp] command = ["server", "--stdio"]` when a
+`~/.summonr/config.toml` may use `[lsp] command = ["server", "--stdio"]` when a
 built-in module does not fit.
 Language servers run as trusted host processes with the inherited environment,
 outside the command sandbox. They can access files and network resources with
@@ -423,7 +460,7 @@ configured check completes with `verified: false`.
 ## Room
 
 `summonr room` puts several coding agents on this machine in one
-conversation. The room is the `bus` module's files under `~/.mage/bus`: a
+conversation. The room is the `bus` module's files under `~/.summonr/bus`: a
 roster, one inbox per agent, and one blackboard per workspace. Summonr
 sessions join it natively. Claude Code and Codex join through
 `summonr room serve`, a stdio MCP server over the same files with the
@@ -453,7 +490,7 @@ Delivery: `wait` blocks until mail arrives or the deadline passes;
 `inbox` returns at once. When the client is Claude Code, the server also
 pushes each mail as a `notifications/claude/channel` event. The push is a
 copy, so a mail that the client did not surface is still in the inbox.
-`MAGE_ROOM_PUSH=off` in the server's env block turns the push off.
+`SUMMONR_ROOM_PUSH=off` in the server's env block turns the push off.
 `summonr room` alone prints the roster.
 
 ## Limits
@@ -473,11 +510,12 @@ Each flag alone gives these modes:
 With containment on, `read` accepts an absolute path outside the workspace,
 which is what the shell can already read. `edit` and `write` stay inside the
 writable roots:
-the launch directory, `[sandbox] write` in `~/.mage/config.toml`, and
+the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and
 `--add-dir`. For work that spans sibling repositories, put the parent on
 that list, launch Summonr in the parent directory, or pass `--add-dir`.
 
-Commands use Seatbelt, bubblewrap, or experimental Windows AppContainer.
+Commands use Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer
+is unfinished: Git for Windows and user-installed toolchains stay blocked.
 A missing backend is a hard stop. Sandboxed sockets are allowed by default.
 `--no-net` or `/net off` denies them. `--net` turns them back on. That flag
 does not change file permissions. Model requests and language servers use
@@ -497,7 +535,7 @@ command runs uncontained with your account's access, so review it first.
 the user denies is reported to the model as a failed tool.
 
 Auto mode grants a write outside the writable roots for this session and
-retries the tool. It does not write `~/.mage/config.toml`. Plan mode still
+retries the tool. It does not write `~/.summonr/config.toml`. Plan mode still
 refuses writes. `/approve on` prompts with the same bar
 (`approve ~/.cargo/bin` plus `[ allow ]` / `[ always ]` / `[ deny ]`).
 `[ allow ]` or `y` grants the directory for this session and retries the tool.
@@ -510,7 +548,7 @@ target those paths, and the OS sandbox allows the write. `write` and `edit`
 accept files under them too. `~` and `$HOME` expand before the check.
 Hard denials never prompt: force-push, `sudo`, `rm -rf /`, and deny-list matches.
 A protected path outside the workspace (`.git/hooks`, `.git/config`, `~/.ssh`,
-`~/.gnupg`, `~/.mage`, shell startup files) prompts as `protected path <dir>`,
+`~/.gnupg`, `~/.summonr`, shell startup files) prompts as `protected path <dir>`,
 never with `[ always ]`. A protected file inside the workspace (`.env`) is
 denied with no prompt. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
 
@@ -519,7 +557,7 @@ command that fails with `Operation not permitted` offers the matching home
 directory (`~/.cargo`, `~/.npm`, or `GOPATH` / `~/go`) as the grant.
 
 Containment is opt-in: `--sandbox`, or `on = true` under `[sandbox]` in
-`~/.mage/config.toml`. An uncontained session writes anywhere your account can and
+`~/.summonr/config.toml`. An uncontained session writes anywhere your account can and
 bypasses command and file policy. `--no-sandbox` is accepted and changes nothing.
 `--plan` contains commands, still denies `edit` and `write`, and refuses shell writes
 because read-only inspection requires a sandbox.
@@ -527,7 +565,7 @@ because read-only inspection requires a sandbox.
 
 A build tool that writes outside the writable roots fails inside the sandbox
 with `Operation not permitted`. Name those directories in
-`~/.mage/config.toml` (or pass `--add-dir`) and every contained command,
+`~/.summonr/config.toml` (or pass `--add-dir`) and every contained command,
 including a research child's, can write there:
 
 ```toml
@@ -543,7 +581,7 @@ to six times with a wait that doubles from 2 s to 60 s. A `Retry-After`
 header in seconds replaces that wait, up to 600 s. A reply that already
 streamed output is not retried.
 
-User policy is `~/.mage/policy.toml`; repository policy is `.mage/policy.toml`.
+User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`.
 A nonempty command allow list must match on every overlay (intersection).
 Deny lists accumulate. `write` globs in policy.toml are a narrowing filter
 on paths relative to a writable root; extra roots themselves come only from
@@ -556,13 +594,39 @@ source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables
 background commands; file tools still use the list.
 
-- Home is still `~/.mage`. Env is still `MAGE_*`.
+- Home is still `~/.summonr`. Env is still `SUMMONR_*`.
 - An older `mage` binary may still be on `PATH`. Use `summonr`.
-- No MCP client for third-party servers, hook API, or runtime plugin
-  loader. Language modules are compiled into the binary. A CLI with a README is a tool the
-  model already knows how to run through `run_command`; a skill under
-  `~/.mage/skills` or `.mage/skills` carries instructions; the bus carries
-  mail between sessions.
+
+## Extend
+
+Optional capabilities are compiled modules (see Modules above). What you add lives in files and other
+processes, so the harness RSS and the frozen prefix stay small. Summonr does not load guest code.
+[Extending summonr](extending.md) is the task page.
+
+| Layer | Where | What the model sees |
+| --- | --- | --- |
+| Skill | `~/.summonr/skills/<name>/SKILL.md` or `.summonr/skills/<name>/SKILL.md` | One `skill` tool. The body is a later tool result. |
+| MCP | `/modules mcp on`, then `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash` |
+| Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` | Not a tool. `pre_tool` may block a call (stdin is JSON). |
+| CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy, danger prompt, and `--sandbox` apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
+
+`summonr add PATH` copies `skills/`, `bin/` (to `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` / `hooks.toml` into `~/.summonr/config.toml`. Conflicts refuse. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr add --list` prints extras. There is no marketplace and no in-process loader.
+
+After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. `/modules` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
+
+`AGENTS.md` at the workspace root is injected when the workspace is trusted. There is no `CLAUDE.md`.
+
+Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
+
+Intent permissions: a `pre_tool` hook that exits nonzero blocks the call. Keep argv policy in `policy.toml`; do not add a second classifier unless it is a compiled module row.
+
+Remote TUI: `summonr acp`, or `ssh` and the terminal. There is no HTTP control plane.
+
+Browser: the `web` module fetches. A Playwright MCP is a child process, not Chromium inside summonr.
+
+`summonr export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
+
+Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP after `/modules mcp on`, not a second grep tool.
 
 ## Theme
 
@@ -575,8 +639,8 @@ background = "#0c0c14"
 code_bg = "#1e202a"
 ```
 
-Copy [`theme.example.toml`](../theme.example.toml) to `~/.mage/theme.toml`, or to
-`<workspace>/.mage/theme.toml` for one project. Unset tokens keep the preset.
+Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to
+`<workspace>/.summonr/theme.toml` for one project. Unset tokens keep the preset.
 Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
 `/theme` re-applies both theme files. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
@@ -596,5 +660,5 @@ Herdr has no built-in `summonr` kind. This reporter is the integration.
 ## Docs
 
 - [Work](architecture.md)
-- [`config.example.toml`](../config.example.toml)
-- [`policy.example.toml`](../policy.example.toml)
+- [`config.example.toml`](../../config.example.toml)
+- [`policy.example.toml`](../../policy.example.toml)

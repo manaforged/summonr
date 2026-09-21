@@ -4,11 +4,11 @@
 Reads `off/functions.tsv` and `off/lines.tsv`, which `scripts/api-census.py`
 writes, and assigns each function one bucket:
 
-- a job from the menu in `docs/api/module-api.md`
+- a job from the menu in `docs/guide/internals/module-api.md`
 - named plumbing (tui, transport, runtime, tools-core, process)
 - `REVIEW` — nothing claimed it
 
-Writes `docs/api/function-map.md`. `REVIEW` is a list, not an answer: a row in
+Writes `docs/guide/internals/function-map.md`. `REVIEW` is a list, not an answer: a row in
 it is either a job that needs naming or code that needs to go.
 
     python3 scripts/api-census.py && python3 scripts/api-function-map.py
@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TSV = ROOT / "off" / "functions.tsv"
 LINES = ROOT / "off" / "lines.tsv"
-OUT = ROOT / "docs" / "api" / "function-map.md"
+OUT = ROOT / "docs" / "guide" / "internals" / "function-map.md"
 
 # First match wins. Patterns are matched against the path with a leading slash.
 RULES: list[tuple[str, list[str]]] = [

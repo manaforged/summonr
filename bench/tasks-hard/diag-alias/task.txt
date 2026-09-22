@@ -1,0 +1,3 @@
+The test suite in app/ fails at test_average_after_dedupe — it reports the
+average is wrong. Find the actual bug and fix it. The tests are correct; the
+implementation is not.

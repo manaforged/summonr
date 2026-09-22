@@ -28,7 +28,15 @@ impl<P: Provider> Loop<P> {
         };
         let hub = match start.await {
             Ok(hub) => hub,
-            Err(_) => return Ok(()),
+            Err(error) => {
+                return self.push_event(
+                    events,
+                    emit,
+                    Event::Note {
+                        text: format!("MCP servers did not start: {error}"),
+                    },
+                );
+            }
         };
         if self.catalog_frozen {
             return Ok(());

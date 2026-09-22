@@ -1,0 +1,4 @@
+db/ holds schema.sql and migrations/. A spec for migration 003 is in
+db/SPEC_003.txt. Write migrations/003_*.sql implementing it, then verify
+yourself by applying schema.sql + all migrations in order to a fresh sqlite
+database.

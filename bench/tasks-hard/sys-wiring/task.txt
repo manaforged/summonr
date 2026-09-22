@@ -1,0 +1,4 @@
+app/ is a tiny CLI: cli.py parses --verbose but it never reaches the
+engine (engine.py), so verbose output is silently dropped. Wire the flag
+through cli -> run -> engine so `python3 app/cli.py --verbose job` prints
+the engine's verbose line. Keep --verbose optional and default-off.

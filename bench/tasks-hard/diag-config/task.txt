@@ -1,0 +1,4 @@
+The test suite in app/ fails at test_env_beats_file — an environment variable
+should override the config file but doesn't. The failing assertion is in the
+loader test, but the precedence logic lives elsewhere. Fix the bug; tests are
+correct.

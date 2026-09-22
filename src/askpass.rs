@@ -150,37 +150,81 @@ pub fn scrub_file(path: &Path) {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
         return;
     };
-    if secrets.is_empty() {
+    let needles: Vec<&[u8]> = secrets
+        .iter()
+        .map(|secret| secret.as_bytes())
+        .filter(|needle| !needle.is_empty())
+        .collect();
+    if needles.is_empty() {
         return;
     }
-    let Ok(bytes) = std::fs::read(path) else {
-        return;
-    };
-    let clean = secrets.iter().fold(bytes.clone(), |bytes, secret| {
-        replace(&bytes, secret.as_bytes(), b"[secret]")
-    });
-    if clean != bytes {
-        drop(crate::durable::store::write(path, clean));
-    }
+    drop(rewrite(path, &needles));
 }
 
 #[cfg(not(unix))]
 pub fn scrub_file(_path: &Path) {}
 
 #[cfg(unix)]
-fn replace(haystack: &[u8], needle: &[u8], with: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(haystack.len());
-    let mut rest = haystack;
-    while let Some(at) = rest
-        .windows(needle.len())
-        .position(|window| window == needle)
-    {
-        out.extend_from_slice(&rest[..at]);
-        out.extend_from_slice(with);
-        rest = &rest[at + needle.len()..];
+fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+
+    const CHUNK: usize = 64 * 1024;
+    let keep = needles.iter().map(|needle| needle.len()).max().unwrap_or(1) - 1;
+    let mut file = std::fs::File::open(path)?;
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    let mut buf = Vec::with_capacity(CHUNK + keep);
+    let mut chunk = vec![0_u8; CHUNK];
+    let mut changed = false;
+    loop {
+        let read = file.read(&mut chunk)?;
+        buf.extend_from_slice(&chunk[..read]);
+        let limit = if read == 0 {
+            buf.len()
+        } else {
+            buf.len().saturating_sub(keep)
+        };
+        let mut pos = 0;
+        while pos < limit {
+            match earliest(&buf[pos..], needles) {
+                Some((at, len)) if pos + at < limit => {
+                    temp.write_all(&buf[pos..pos + at])?;
+                    temp.write_all(b"[secret]")?;
+                    pos += at + len;
+                    changed = true;
+                }
+                Some(_) | None => {
+                    temp.write_all(&buf[pos..limit])?;
+                    pos = limit;
+                }
+            }
+        }
+        buf.drain(..pos);
+        if read == 0 {
+            break;
+        }
     }
-    out.extend_from_slice(rest);
-    out
+    if changed {
+        temp.as_file().sync_all()?;
+        temp.persist(path).map_err(|error| error.error)?;
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn earliest(haystack: &[u8], needles: &[&[u8]]) -> Option<(usize, usize)> {
+    needles
+        .iter()
+        .filter_map(|needle| {
+            haystack
+                .windows(needle.len())
+                .position(|window| window == *needle)
+                .map(|at| (at, needle.len()))
+        })
+        .min()
 }
 
 pub fn client(args: &[OsString]) -> i32 {

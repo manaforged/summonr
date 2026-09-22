@@ -1,0 +1,4 @@
+app/tok.py splits text into tokens but mishandles multiple spaces (tests
+fail). Fix the internals. The verifier compares public function signatures
+via the AST — every function's name and parameters must stay identical to
+what's there now.

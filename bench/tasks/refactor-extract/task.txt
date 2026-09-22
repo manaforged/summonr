@@ -1,0 +1,1 @@
+./app/main.py contains the helpers `slug` and `title_of`. Move them into a new module ./app/text.py and update imports so `python3 -m unittest discover -s app` passes and main.py no longer defines them.

@@ -1,0 +1,4 @@
+app/ stores records by writing files (files.py). Introduce a Store
+interface with two implementations: FileStore (existing behavior, keep it)
+and MemoryStore (in-memory dict). Both must satisfy test_store.py's checks.
+Files to change/add are all inside app/.

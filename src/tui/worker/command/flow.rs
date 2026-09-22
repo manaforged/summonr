@@ -214,7 +214,7 @@ impl Worker {
             }
         };
         let interrupted = lines.iter().rev().find_map(|line| match line {
-            Line::Close { reason } => Some(reason.is_some()),
+            Line::Close { reason, .. } => Some(reason.is_some()),
             Line::Clear | Line::User { start: true, .. } => Some(false),
             _ => None,
         });

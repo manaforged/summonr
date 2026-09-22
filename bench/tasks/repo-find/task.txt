@@ -1,0 +1,1 @@
+In this repository, find the struct named `ToolOutput` declared in src/tools.rs. Write its field names, one per line, to .bench-answer — just the names, in declaration order.

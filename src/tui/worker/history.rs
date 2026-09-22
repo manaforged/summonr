@@ -113,6 +113,7 @@ impl Worker {
             Line::Clear => drop(self.ui.send(Msg::Cleared)),
             Line::Close {
                 reason: Some(reason),
+                ..
             } => {
                 drop(self.ui.send(Msg::Event(Event::Aborted { reason })));
             }

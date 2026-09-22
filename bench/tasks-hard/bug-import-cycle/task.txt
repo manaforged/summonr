@@ -1,0 +1,4 @@
+app/ fails to import: models.py imports a helper from util.py, and util.py
+imports a type from models.py. Restructure so both modules import cleanly
+and all tests pass. Keep every public name available from the module it's
+currently imported from.

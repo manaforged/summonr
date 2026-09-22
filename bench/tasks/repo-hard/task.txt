@@ -1,0 +1,1 @@
+./app has a flaky failure: `python3 -m unittest discover -s app` fails because the loader reads a TOML-like config but silently drops keys whose values contain '='. Find and fix the parser so all tests pass.

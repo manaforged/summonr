@@ -1,0 +1,1 @@
+./app/stats.py prints min/mean/max of numbers given on argv as text lines. Add `--json` printing a single JSON object {"min":..,"mean":..,"max":..} (compact separators, mean rounded to 2 decimals).

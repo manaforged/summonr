@@ -1,0 +1,1 @@
+./app/csvtool.py lists columns of a CSV. Add a `sum <col>` subcommand printing the total of that numeric column (floats allowed). `python3 csvtool.py sum price data.csv` must work on the shipped data.csv.

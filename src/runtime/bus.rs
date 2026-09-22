@@ -21,7 +21,10 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn advertised_tools(&mut self) -> &[crate::provider::ToolDefinition] {
         if self.schema.is_none() {
-            self.schema = Some(self.tool_definitions());
+            let definitions = self.tool_definitions();
+            let bytes = serde_json::to_vec(&definitions).map_or(0, |encoded| encoded.len() as u64);
+            drop(self.session.note_schema(bytes));
+            self.schema = Some(definitions);
         }
         self.schema.as_ref().map_or(&[], Vec::as_slice)
     }
@@ -47,7 +50,7 @@ impl<P: Provider> Loop<P> {
             return Ok(inbox(self.take_all_bus_mail()?));
         }
         let Some(bus) = self.bus.as_mut() else {
-            unreachable!();
+            return Err(Error::Tool("the agent bus is not connected".to_string()));
         };
         match op {
             "agents" => agents(bus),

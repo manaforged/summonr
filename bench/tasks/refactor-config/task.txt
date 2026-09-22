@@ -1,0 +1,1 @@
+./app reads a config dict whose key `usr` should be renamed to `user` — update the loader, its default, and all readers so `python3 -m unittest discover -s app` passes and no file references `usr` anymore.

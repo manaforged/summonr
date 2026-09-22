@@ -1,0 +1,1 @@
+Write to .bench-answer the basenames of all files inside the directory src/tools/workspace/ (not files at other paths with a workspace prefix) that contain the string "apply_patch" — one filename per line, sorted.

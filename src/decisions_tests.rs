@@ -39,6 +39,8 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         wire,
         fallback: Vec::new(),
         compact_tokens: None,
+        images: false,
+        keep_reasoning: false,
     }
 }
 

@@ -126,6 +126,14 @@ impl App {
             }
             Some(crate::SlashCommand::View) => self.view_command(argument),
             Some(crate::SlashCommand::Bus) => self.toggle_bus(),
+            Some(crate::SlashCommand::Demo) => {
+                self.model
+                    .borrow_mut()
+                    .entries
+                    .extend(super::super::demo::entries());
+                self.scroll_y.set(self.extent.peek());
+                self.refresh();
+            }
             _ => return false,
         }
         true

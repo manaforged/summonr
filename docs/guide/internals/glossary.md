@@ -1,6 +1,6 @@
 # Domain glossary
 
-- **Garden**: Compiled modules and harness jobs inside the `summonr` binary.
+- **Built-in modules**: Compiled modules and harness jobs inside the `summonr` binary.
   Curated. A project may disable a module, never enable a new one. RSS and
   prefix budget live here.
 - **Module**: A named, switchable capability compiled into the binary

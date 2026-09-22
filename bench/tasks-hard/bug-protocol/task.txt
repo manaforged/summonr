@@ -1,0 +1,5 @@
+app/ has a packet encoder in encode.py and a decoder in decode.py.
+test_roundtrip fails: a packet that goes through encode->decode does not come
+back intact. The format spec is documented in both files' docstrings and they
+agree — the implementations diverged. Fix it so the roundtrip works. Do not
+change the tests or the documented wire format.

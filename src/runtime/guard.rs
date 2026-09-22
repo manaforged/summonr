@@ -43,12 +43,13 @@ impl Guard {
             return output;
         }
         self.strained = true;
-        format!(
+        let note = format!(
             "[loop: this exact call returned this same result {count} times in the last {} calls; \
              it will not change. Stop repeating it: re-read the error, try a different fix, or ask. \
-             The turn stops at {STOP}.]\n{output}",
+             The turn stops at {STOP}.]",
             self.seen.len()
-        )
+        );
+        format!("{note}\n{output}")
     }
 
     pub(super) fn forgive(&mut self) {

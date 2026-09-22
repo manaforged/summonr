@@ -37,8 +37,6 @@ FN = re.compile(
     r"fn\s+([A-Za-z_][A-Za-z0-9_]*)"
 )
 
-# One row per name on the delete list. The replacement is what the row keeps.
-# A count that rises is a regression; a count that falls is a cut landing.
 SOURCE_RULES: list[tuple[str, str, str]] = [
     ("shadow editor apply_replace", r"\bapply_replace\b", "delete"),
     ("shadow editor apply_insert", r"\bapply_insert\b", "delete"),
@@ -73,14 +71,12 @@ SOURCE_RULES: list[tuple[str, str, str]] = [
     ("name collision: Kind", r"enum Kind\b", "one word, one domain"),
     ("name collision: Role", r"enum Role\b", "one word, one domain"),
     ("name collision: Event", r"enum Event\b", "one word, one domain"),
-    # Base API. Each count may only fall.
     ("clip-shaped helper", r"fn\s+(clip|clip_line|truncate|truncate_line|abbreviate)\b", "check the job, then name it"),
     ("short-shaped helper", r"fn\s+short(_model|_path|_session)?\b", "check the job, then name it"),
     ("wrap-shaped helper", r"fn\s+(wrap|words)\b", "check the job, then name it"),
     ("surface painter", r"fn\s+(grid|paint_bars|paint_source|paint_table)\b", "rows::paint"),
     ("sigil prelude glob", r"use sigil::prelude::\*", "named imports"),
     ("direct file write", r"fs::write\(|File::create", "store::write"),
-    # Rounds 2 and 3. Each count may only fall.
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
     ("match wildcard arm", r"(?m)^\s*_\s*(?:=>|\|)", "name the arm"),
     ("duration literal", r"Duration::from_(?:secs|millis|micros)", "one timeout policy"),

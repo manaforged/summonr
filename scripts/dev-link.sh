@@ -1,8 +1,4 @@
 #!/bin/sh
-# Point `summonr` (and the `summon` / `summoner` aliases) on PATH at this
-# checkout, so the binaries you run are always the ones `cargo build` just
-# wrote. Backs up the first copy it replaces. Run once per checkout; re-run
-# after switching worktrees.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)

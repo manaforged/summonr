@@ -257,8 +257,6 @@ impl Visibility {
     }
 }
 
-/// Frames per second for the interface. The render loop blocks on input for
-/// one frame budget, so this is the ceiling on redraws per second.
 pub const FPS_DEFAULT: u32 = 25;
 pub const FPS_MIN: u32 = 1;
 pub const FPS_MAX: u32 = 240;

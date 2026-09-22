@@ -14,3 +14,11 @@ __pycache__/
 .summonr/
 /mines/
 .ruff_cache/
+.env
+*.env
+!.env.example
+!*.example.env
+*.log
+.idea/
+.vscode/
+coverage/

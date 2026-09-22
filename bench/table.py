@@ -151,7 +151,7 @@ def trials(jobs, run, by_label, rates):
                 "first_prompt": ((first or {}).get("usage") or {}).get("prompt_tokens"),
                 "effort": sorted({f'{row["request"].get("reasoning_effort")}/{(row["request"].get("thinking") or {}).get("type")}' for row in calls}),
                 "controls": sorted({f'temp={row["request"].get("temperature")}/maxtok={row["request"].get("max_tokens")}' for row in calls}),
-                "models": sorted({str(row.get("response_model")) for row in calls}),
+                "models": sorted({row["response_model"] for row in calls if row.get("response_model")}),
                 "max_prompt": max((u.get("prompt_tokens", 0) for u in usage), default=0),
                 "void": suspect(result.parent / "agent")[0],
                 "warn": suspect(result.parent / "agent")[1],
@@ -183,9 +183,9 @@ def summary(rows, scope="all"):
         if not mine:
             continue
         if scope == "solved":
-            mine = [row for row in mine if row["reward"] == 1.0]
+            mine = [row for row in mine if row["reward"] == 1.0 and not row["void"]]
         elif scope == "failed":
-            mine = [row for row in mine if row["reward"] != 1.0]
+            mine = [row for row in mine if row["reward"] != 1.0 or row["void"]]
         if not mine:
             continue
         passed = sum(1 for row in mine if row["reward"] == 1.0 and not row["void"])
@@ -382,19 +382,22 @@ def main():
     vendor = info.get("vendor", "deepseek")
     rates = RATES.get(vendor)
     by_label = requests(args.proxy)
-    seen = sorted({str(row["response_model"]) for calls in by_label.values() for row in calls if row.get("response_model")})
     pin = info.get("model")
-    rates = RATES.get(vendor)
     if not pin:
-        print("warn: run.txt records no pinned model; cost suppressed")
-        rates = None
-    elif any(m != pin for m in seen):
-        print(f"warn: proxy response models {seen} do not match pinned {pin}; cost suppressed")
-        rates = None
+        raise SystemExit("run.txt records no pinned model")
     rows = trials(args.jobs, args.run, by_label, rates)
     if args.tasks:
         keep = {line.strip() for line in open(args.tasks) if line.strip()}
         rows = [row for row in rows if row["task"] in keep]
+    wrong = sorted({f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin})
+    if wrong:
+        raise SystemExit(f"response model is not the pinned {pin}: {', '.join(wrong)}")
+    unseen = sorted({row["harness"] for row in rows if row["requests"] == 0 and row["reward"] == 1.0})
+    if unseen:
+        raise SystemExit(f"solved with no request in the proxy log (proxy bypassed or wrong --proxy file): {', '.join(unseen)}")
+    blind = sorted({row["harness"] for row in rows if row["requests"] > row["errors"] and row["prompt"] == 0})
+    if blind:
+        raise SystemExit(f"requests succeeded but the proxy log holds no token usage for: {', '.join(blind)}")
     models = sorted({model for row in rows for model in row["models"]})
     checksums = len({row["checksum"] for row in rows})
     print(f"Run `{args.run}`: vendor {vendor}, effort {info.get('effort', 'default')}, {len(rows)} trials, response models {models}, {checksums} task checksums.")

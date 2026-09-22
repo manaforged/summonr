@@ -5,7 +5,7 @@ root=$(cd "$(dirname "$0")" && pwd)
 run=${1:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 tasks=${2:?usage: run.sh RUN_ID TASKS_FILE [HARNESS...]}
 shift 2
-harnesses=("${@:-summonr pi omp opencode2 hermes mcode claude codex grok}")
+harnesses=("${@:-summonr}")
 read -ra harnesses <<< "${harnesses[*]}"
 seed=${BENCH_SEED:-20260916}
 effort=${BENCH_EFFORT:-}
@@ -33,8 +33,13 @@ fi
 export DEEPSEEK_API_KEY=$BENCH_API_KEY
 export BENCH_MODEL=$model
 
+case $vendor in
+  zai) port=8095 ;;
+  *) port=8096 ;;
+esac
+export BENCH_PROXY=${BENCH_PROXY:-http://host.docker.internal:$port}
+
 mkdir -p "$root/jobs/$run"
-cp "$root/tools/versions.txt" "$root/tools/manifest.sha256" "$root/harness.sh" "$tasks" "$root/jobs/$run/"
 if [ -d "$dataset" ]; then
   got=$(cd "$dataset" && find . -type f -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
 else
@@ -42,7 +47,11 @@ else
 fi
 if [ -f "$root/dataset.lock" ]; then
   want=$(awk -v name="$(basename "$dataset")" '$1==name{print $2}' "$root/dataset.lock")
-  if [ -n "$want" ] && [ "$want" != "$got" ]; then
+  if [ -z "$want" ]; then
+    echo "dataset lock: no entry for $(basename "$dataset") in dataset.lock" >&2
+    exit 1
+  fi
+  if [ "$want" != "$got" ]; then
     echo "dataset lock: $(basename "$dataset") wants $want, got $got" >&2
     exit 1
   fi
@@ -63,11 +72,12 @@ fi
   echo "harness.sh $(sha256sum "$root/harness.sh" | cut -d' ' -f1)"
   echo "summonr $(awk '$1=="summonr"{print $2}' "$root/tools/versions.txt")"
   echo "summonr_commit $(awk '$1=="summonr_commit"{print $2}' "$root/tools/versions.txt")"
+  echo "manifest $(sha256sum "$root/tools/manifest.sha256" | cut -d' ' -f1)"
 } > "$root/jobs/$run/run.txt.new"
 if [ -f "$root/jobs/$run/run.txt" ]; then
   while read -r key value; do
     case $key in
-      seed|vendor|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks)
+      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|manifest)
         old=$(awk -v k="$key" '$1==k{print $2}' "$root/jobs/$run/run.txt")
         if [ -n "$old" ] && [ "$old" != "$value" ]; then
           rm -f "$root/jobs/$run/run.txt.new"
@@ -80,6 +90,7 @@ if [ -f "$root/jobs/$run/run.txt" ]; then
 else
   mv "$root/jobs/$run/run.txt.new" "$root/jobs/$run/run.txt"
 fi
+cp "$root/tools/versions.txt" "$root/tools/manifest.sha256" "$root/harness.sh" "$tasks" "$root/jobs/$run/"
 python3 - "$tasks" "$seed" "$repeats" "${harnesses[@]}" > "$root/jobs/$run/order.txt" <<'EOF'
 import random, sys
 tasks = [line.strip() for line in open(sys.argv[1]) if line.strip()]
@@ -104,7 +115,7 @@ trial() {
     --mounts-json "$mounts" --ek extra_hosts=host.docker.internal:host-gateway \
     --agent-timeout-multiplier "$tmult" \
     --ae BENCH_HARNESS="$harness" --ae BENCH_RUN="$run" \
-    --ae BENCH_PROXY="${BENCH_PROXY:-http://host.docker.internal:8096}" --ae BENCH_MODEL="$model" --ae BENCH_PROVIDER="$BENCH_PROVIDER" ${effort:+--ae BENCH_EFFORT="$effort"} -n 1 \
+    --ae BENCH_PROXY="$BENCH_PROXY" --ae BENCH_MODEL="$model" --ae BENCH_PROVIDER="$BENCH_PROVIDER" ${effort:+--ae BENCH_EFFORT="$effort"} -n 1 \
     > "$root/jobs/$run/$name.log" 2>&1 || echo "harbor failed: $name" >> "$root/jobs/$run/failures.txt"
   echo "$(date -u +%FT%TZ) done $name"
 }

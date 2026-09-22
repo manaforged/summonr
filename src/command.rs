@@ -64,6 +64,7 @@ pub enum SlashCommand {
     Rollback,
     Profile,
     Usage,
+    Demo,
     Undo,
     Clear,
     Plan,
@@ -367,6 +368,13 @@ const SPECS: &[CommandSpec] = &[
         Text,
     )
     .category(Advanced),
+    spec(
+        "/demo",
+        "showcase chat rendering: markdown, mermaid, charts, images, diffs",
+        SlashCommand::Demo,
+        Bare,
+    )
+    .category(Advanced),
     spec("/exit", "quit summon", SlashCommand::Exit, Bare),
     spec("/quit", "alias for /exit", SlashCommand::Exit, Bare).category(Shortcuts),
 ];
@@ -419,10 +427,9 @@ pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
         }
         return Ok(None);
     };
-    let spec = SPECS
-        .iter()
-        .find(|spec| spec.command == command)
-        .expect("registered command");
+    let Some(spec) = SPECS.iter().find(|spec| spec.command == command) else {
+        return Ok(None);
+    };
     let mut tail = line.trim();
     for _ in spec.name.split_whitespace() {
         tail = tail

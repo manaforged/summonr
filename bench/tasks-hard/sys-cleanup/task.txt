@@ -1,0 +1,4 @@
+The legacy_export feature is being removed from app/. Delete the
+export_legacy function, the --legacy CLI flag in cli.py, and every
+reference to it. The rest of the CLI and all tests must keep working —
+verifier greps for zero remaining mentions of 'legacy' and runs the suite.

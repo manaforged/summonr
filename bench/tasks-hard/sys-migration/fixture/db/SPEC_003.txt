@@ -1,0 +1,3 @@
+Migration 003: add a nullable TEXT column "display_name" to users.
+Existing rows keep NULL. The file must be named 003_<something>.sql and be
+idempotent-safe to read (plain ALTER TABLE is fine; we apply it once).

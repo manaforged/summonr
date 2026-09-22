@@ -1,13 +1,11 @@
-use sigil::prelude::{
-    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Position, Tone,
-    classes, container, divider_horizontal, label, notice_band,
-};
-
 use super::{App, Model, composer_hint, suggest};
+use sigil::prelude::{
+    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
+    Position, Tone, classes, container, divider_horizontal, label, node, notice_band,
+};
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,
-    full_width: usize,
     width: usize,
     editor: E,
 ) -> NodeBuilder {
@@ -28,21 +26,54 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
             ))
             .child(editor);
     } else {
-        editor_area = editor_area.child(editor);
+        editor_area = editor_area.child(
+            container()
+                .layout(
+                    LayoutStyle::flex_row()
+                        .fill_width()
+                        .min_size(0.0, 0.0)
+                        .align_items(AlignItems::Start)
+                        .gap(8.0),
+                )
+                .child(label("❯").class(classes!("text-xs text-gray-12")))
+                .child(
+                    container()
+                        .layout(
+                            LayoutStyle::flex_column()
+                                .grow(1.0)
+                                .min_size(0.0, 0.0)
+                                .overflow_y(Overflow::Hidden),
+                        )
+                        .child(editor),
+                ),
+        );
     }
+    let inner_width = width.saturating_sub(8);
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
                 .min_size(0.0, 0.0)
-                .padding_x(16.0)
+                .padding_top(8.0)
                 .gap(0.0),
         )
-        .child(suggest::widget(app.clone(), width, full_width))
-        .child(header_row(app.clone()))
-        .child(editor_area)
-        .child(hint_row(app.clone()))
+        .child(suggest::widget(app.clone(), width))
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .min_size(0.0, 0.0)
+                        .padding_left(8.0)
+                        .padding_right(16.0)
+                        .gap(0.0),
+                )
+                .class(classes!("bg-surface"))
+                .child(header_row(app.clone()))
+                .child(editor_area)
+                .child(hint_row(app.clone(), inner_width)),
+        )
 }
 
 fn rule() -> NodeBuilder {
@@ -63,22 +94,11 @@ fn header_row(app: App) -> NodeBuilder {
         .children_reactive(move || {
             let _panes = app.panes.get();
             let model = app.model.borrow();
-            vec![
-                container()
-                    .layout(
-                        LayoutStyle::flex_row()
-                            .fill_width()
-                            .align_items(AlignItems::Center)
-                            .gap(8.0),
-                    )
-                    .child(mode_label(&model))
-                    .child(rule())
-                    .child(model_label(&model)),
-            ]
+            vec![mode_label(&model), rule(), model_label(&model)]
         })
 }
 
-fn hint_row(app: App) -> NodeBuilder {
+fn hint_row(app: App, width: usize) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -101,7 +121,7 @@ fn hint_row(app: App) -> NodeBuilder {
             } else {
                 composer_hint(
                     model.busy_since.map(|(activity, _)| activity),
-                    width_of(&app),
+                    width,
                     &options,
                     select.as_deref(),
                 )
@@ -109,21 +129,11 @@ fn hint_row(app: App) -> NodeBuilder {
                 .to_string()
             };
             vec![
-                container()
-                    .layout(
-                        LayoutStyle::flex_row()
-                            .fill_width()
-                            .align_items(AlignItems::Center)
-                            .gap(8.0),
-                    )
-                    .child(rule())
-                    .child(label(hint).class(classes!("text-xs text-gray-11"))),
+                node(rule()),
+                node(label(hint).class(classes!("text-xs text-gray-11"))),
+                node(rule()),
             ]
         })
-}
-
-fn width_of(app: &App) -> usize {
-    usize::from(app.viewport.peek().0).saturating_sub(18)
 }
 
 fn mode_label(model: &Model) -> NodeBuilder {

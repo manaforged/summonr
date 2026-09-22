@@ -1,0 +1,3 @@
+app/isbn.py validates ISBN-10 check digits and is buggy (test suite
+fails). Fix the implementation. You may NOT modify any file matching
+test_*.py — the verifier hashes them against the fixture.

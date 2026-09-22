@@ -172,11 +172,13 @@ impl Picker {
                 })
                 .collect());
         }
+        let hidden = model.prefs.reasoning == crate::prefs::Visibility::Off;
         Ok(model
             .entries
             .iter()
             .enumerate()
             .rev()
+            .filter(|(_, entry)| !(hidden && matches!(entry, Entry::Thinking(_))))
             .filter_map(|(index, entry)| {
                 let text = match entry {
                     Entry::User(text) | Entry::Thinking(text) | Entry::Assistant { text, .. } => {

@@ -25,7 +25,7 @@ pub fn tagged_text(content: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize) -> String {
+pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize, tags: bool) -> String {
     if total == 0 || lines.is_empty() {
         return format!("lines 0-0/{total}");
     }
@@ -35,8 +35,10 @@ pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize) -> Stri
         out.push('\n');
         out.push_str(&(first + offset + 1).to_string());
         out.push(':');
-        out.push_str(&line_hash(line));
-        out.push('|');
+        if tags {
+            out.push_str(&line_hash(line));
+            out.push('|');
+        }
         out.push_str(line);
     }
     out

@@ -1,0 +1,1 @@
+./app/dirs.py hard-codes a config directory of ~/.myapp. Change it so the MYAPP_DIR environment variable overrides it (expand ~, keep default otherwise), and keep `python3 dirs.py` printing the resolved path.

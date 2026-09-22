@@ -10,7 +10,7 @@ mod usage;
 pub(crate) use catalog::remove;
 pub use catalog::{export, last_for, list, resolve_id, set_name, short};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
-pub use profile::profile;
+pub use profile::{profile, profile_all};
 pub use usage::Spend;
 pub(crate) use usage::{DAY, HOUR, Total, buckets, spend};
 

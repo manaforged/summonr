@@ -1,0 +1,4 @@
+app/pipeline.py processes items one at a time with a hardcoded sink.
+Refactor so process(items, sink) takes any callable sink, and add
+process_all(items) returning the collected results (the old behavior).
+Update main.py if needed. All tests must pass.

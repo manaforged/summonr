@@ -1,10 +1,4 @@
 #!/bin/sh
-# Run this checkout's newest build. Point your PATH at it once:
-#   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summonr
-#   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summon
-#   ln -sfn "$PWD/scripts/summon-dev" ~/.cargo/bin/summoner
-# Rebuilds release when src/ or Cargo files are newer than the binary, then
-# execs it, so the process identity stays target/release/summonr.
 set -u
 
 self=$0

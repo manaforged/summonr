@@ -1,57 +1,18 @@
-# Copy to ~/.summonr/config.toml and edit.
-# A workspace `.summonr/config.toml` may select an [lsp] module only.
-# Do not put secrets in the git repo. Keys belong in the sealed store:
-# `summonr login NAME`; `summonr endpoints` shows where each key lives.
-#
-# Completions seats: base_url + model, optional [endpoint.NAME.body].
-# Native seats set wire = "anthropic" or wire = "gemini".
-
 default = "zai"
-# import_mcp = true   # also load MCP servers from ~/.claude.json and ~/.codex/config.toml
-
-# Interface preferences. The settings modal (ctrl+o or /settings) writes
-# these; edit them here if you prefer.
-# theme = "space"        # space | fantasy | nord | gruvbox | solarized | light
-# splash = true          # boot into the splash cover, or straight to chat
-# fps = 25               # interface redraw ceiling, 1-240; header shows the live rate
-# reasoning = true       # show streamed reasoning in the transcript
-# tools = "compact"      # show the last line or the full tool result
-# bus = true             # let incoming mail start a turn after SUMMONR_BUS joins
-#
-# The lsp tool routes diagnostics, definition, and rename for Rust,
-# TypeScript/JavaScript, Python, and Go. Selection uses the file extension
-# and the nearest project marker. To force one curated module, use:
-# [lsp]
-# module = "rust"
-#
-# A trusted ~/.summonr/config.toml may instead set a custom command. Repository
-# config cannot supply executable argv.
-# [lsp]
-# command = ["vscode-eslint-language-server", "--stdio"]
 
 [endpoint.zai]
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
-# api_key = "…"   # plaintext; prefer `summonr login zai` or ZAI_API_KEY
-# context_window = 200000   # tokens; drives auto-compaction and the ctx % indicator
-# effort = "low"            # reasoning effort: none, low, medium, high
-#                           # (chat/completions `reasoning_effort`; Anthropic and
-#                           # Gemini thinking budgets). `--effort` and `/effort` override.
-# price = { input = 0.6, output = 2.2, cached = 0.11 }   # USD per million tokens;
-#                           # turns /stats and the footer into dollars
 
 [endpoint.zai-cn]
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
 
 [endpoint.qwen]
-# llama-server on this machine. Override base_url for a remote server.
 base_url = "http://127.0.0.1:8081/v1"
 model = "qwen3.8-27b-ud"
 api_key = "local"
 
-# Same server, tuned for the implementer seat. `body` is merged into every
-# request as sent, so any server-specific field works (vLLM, llama.cpp).
 [endpoint.qwen-impl]
 base_url = "http://127.0.0.1:8081/v1"
 model = "qwen3.8-27b-ud"
@@ -61,143 +22,11 @@ temperature = 0.6
 top_p = 0.95
 top_k = 20
 chat_template_kwargs = { reasoning_effort = "low" }
-# Environment for every run_command on this seat: a plain toolchain, no
-# shims or caches the model would have to reverse-engineer.
-# [endpoint.qwen-impl.env]
-# PATH = "/Users/you/.cargo/bin:/usr/local/bin:/usr/bin:/bin"
-# CARGO_TARGET_DIR = "target"
 
 [endpoint.kimi]
 base_url = "https://api.kimi.com/coding/v1"
 model = "k3"
-# api_key = "…"   # or KIMI_CODING_API_KEY / ~/.kimi-code/credentials/kimi-code.json
 
 [endpoint.grok]
 base_url = "https://api.x.ai/v1"
 model = "grok-4.6"
-# api_key = "…"   # or XAI_API_KEY
-
-# OAuth2 token, then the same chat/completions POST.
-# grant: refresh_token | device_code | authorization_code
-# `summonr login NAME` runs the device flow for device_code and a PKCE
-# browser sign-in for authorization_code.
-# [endpoint.azure]
-# base_url = "https://YOUR.openai.azure.com/openai/v1"
-# model = "gpt-4o"
-# [endpoint.azure.auth]
-# token_url = "https://login.microsoftonline.com/TENANT/oauth2/v2.0/token"
-# client_id = "…"
-# client_secret = "…"
-# scope = "https://cognitiveservices.azure.com/.default"
-#
-# Builtin `copilot`: `summonr login copilot` then `summonr copilot`.
-# Device token is exchanged at copilot_internal; overlay if GitHub moves URLs.
-# [endpoint.copilot]
-# base_url = "https://api.githubcopilot.com"
-# model = "gpt-4o"
-# [endpoint.copilot.auth]
-# token_url = "https://github.com/login/oauth/access_token"
-# device_url = "https://github.com/login/device/code"
-# client_id = "Iv1.b507a08c87ecfe98"
-# grant = "device_code"
-# scope = "read:user"
-# exchange_url = "https://api.github.com/copilot_internal/v2/token"
-
-# Browser sign-in (PKCE). Summonr catches the redirect on a loopback
-# port. Set redirect_uri only when the provider registered a fixed one.
-# A redirect_uri that is not loopback switches to paste-back: Summonr
-# asks for the code the browser shows.
-# [endpoint.example.auth]
-# grant = "authorization_code"
-# authorize_url = "https://provider.example/oauth/authorize"
-# token_url = "https://provider.example/oauth/token"
-# client_id = "…"
-# scope = "offline_access"
-# redirect_uri = "http://127.0.0.1:54545/callback"
-# token_style = "form"      # or "json" when the token endpoint takes JSON
-# scheme = "bearer"         # or "api_key" / "google_key" for the carrier
-# [endpoint.example.auth.authorize_params]
-# audience = "https://api.provider.example/v1"
-# [endpoint.example.auth.claim_headers]
-# X-Account-Id = "account_id"   # header <- claim read from the id_token
-#
-# Builtin `claude-pro`: `summonr login claude-pro` for a Claude Pro or
-# Max plan. Paste-back flow; no local port is opened.
-#
-# ChatGPT Plus/Pro (Codex). The sign-in below is taken from the Codex
-# CLI source. Confirm base_url against your account before you rely on
-# it: subscription traffic does not go to api.openai.com.
-# [endpoint.codex]
-# base_url = "https://chatgpt.com/backend-api/codex"
-# model = "gpt-5-codex"
-# wire = "responses"
-# [endpoint.codex.auth]
-# grant = "authorization_code"
-# authorize_url = "https://auth.openai.com/oauth/authorize"
-# token_url = "https://auth.openai.com/oauth/token"
-# client_id = "app_EMoamEEZ73f0CkXaXp7hrann"
-# redirect_uri = "http://localhost:1455/auth/callback"
-# scope = "openid profile email offline_access api.connectors.read api.connectors.invoke"
-# [endpoint.codex.authorize_params]
-# id_token_add_organizations = "true"
-# codex_cli_simplified_flow = "true"
-# [endpoint.codex.auth.claim_headers]
-# ChatGPT-Account-Id = "chatgpt_account_id"
-#
-# Qwen free tier. Device flow with PKCE. Confirm base_url first.
-# [endpoint.qwen-plan.auth]
-# grant = "device_code"
-# device_url = "https://chat.qwen.ai/api/v1/oauth2/device/code"
-# token_url = "https://chat.qwen.ai/api/v1/oauth2/token"
-# client_id = "f0304373b74a44d2b584a3fb70ca9e56"
-# scope = "openid profile email model.completion"
-# pkce = true
-
-# Native Anthropic / Gemini (not chat/completions).
-# [endpoint.anthropic]
-# wire = "anthropic"
-# [endpoint.gemini]
-# wire = "gemini"
-#
-# OpenCode Completions seats. `summonr login zen` / `summonr login go`.
-# [endpoint.zen]
-# base_url = "https://opencode.ai/zen/v1"
-# model = "glm-5.3-flash"
-# [endpoint.go]
-# base_url = "https://opencode.ai/zen/go/v1"
-# model = "glm-5.3-flash"
-
-# Child sessions. Off by default. Turn on for disjoint paths only.
-# [modules]
-# task = true
-
-# Extra writable roots (union with the launch directory and temp).
-# The sandbox is off unless `on = true` here or --sandbox is passed. When it
-# is on, file tools, shell commands, and the OS sandbox use this write list.
-# "~/" expands to your home directory. `/write PATH` appends here.
-# --add-dir DIR does the same for one launch.
-# [sandbox]
-# on = false
-# write = ["~/.cargo", "~/code"]
-
-# web: DuckDuckGo HTML needs no key. backend = "brave" with a key
-# (or BRAVE_API_KEY) gives stable results; backend = "bing" keeps the RSS
-# path; backend = "searxng" uses the instance in url (JSON must be on).
-# [search]
-# backend = "brave"
-# api_key = "…"
-# count = 5
-# # allowed_domains = ["docs.rs", "doc.rust-lang.org"]
-# # excluded_domains = []
-
-# Workflows: one seat per step. A role the workflow does not name runs on
-# the session's driving seat (the endpoint you started with). Pick one with
-# `summonr -w NAME`, `/workflow NAME`, or `workflow = "NAME"` here.
-# workflow = "cheap-scout"
-# [workflows.cheap-scout]
-# scout = "kimi"                                   # read-only reconnaissance
-# plan = "grok"                                    # plan-mode rounds
-# # implement unset → the driving seat
-# review = "zai"                                    # read-only review after the gates
-# judge = "grok"                                   # goal continue/stop
-# summary = "qwen"                                 # compaction

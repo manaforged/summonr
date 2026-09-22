@@ -1,0 +1,4 @@
+app/csvfix.py parses CSV lines and breaks on quoted fields containing
+commas (test fails). Fix it without adding any new import statements —
+the verifier rejects new 'import' lines in the diff. What's already
+imported is all you get.

@@ -41,6 +41,8 @@ pub struct Endpoint {
     pub wire: Wire,
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
+    pub images: bool,
+    pub keep_reasoning: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -381,6 +383,20 @@ pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpo
     resolve_inner(name, model, false, true)
 }
 
+pub fn vision() -> Option<Endpoint> {
+    let file = config::load().ok()?;
+    let mut names: Vec<&str> = file
+        .endpoint
+        .iter()
+        .filter(|(_, row)| row.images == Some(true))
+        .map(|(name, _)| name.as_str())
+        .collect();
+    names.sort_unstable();
+    names
+        .into_iter()
+        .find_map(|name| resolve_inner(Some(name), None, true, true).ok())
+}
+
 fn resolve_inner(
     name: Option<&str>,
     model: Option<&str>,
@@ -402,7 +418,10 @@ fn resolve_inner(
             api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| named_env_key("glm-intl")),
             source: None,
             oauth: None,
-            body: None,
+            body: std::env::var("SUMMONR_MAX_TOKENS")
+                .ok()
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .map(|tokens| serde_json::json!({ "max_tokens": tokens })),
             context_window: None,
             idle_timeout_secs: None,
             effort: None,
@@ -412,6 +431,8 @@ fn resolve_inner(
             wire: Wire::Completions,
             fallback: Vec::new(),
             compact_tokens: None,
+            images: false,
+            keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
         });
     }
 
@@ -489,6 +510,8 @@ fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         headers: row.headers.clone(),
         fallback: row.fallback.clone(),
         compact_tokens: row.compact_tokens,
+        images: row.images.unwrap_or(false),
+        keep_reasoning: row.keep_reasoning.unwrap_or(false),
         wire: row
             .wire
             .as_deref()
@@ -538,6 +561,12 @@ fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     }
     if let Some(tokens) = row.compact_tokens {
         endpoint.compact_tokens = Some(tokens);
+    }
+    if let Some(images) = row.images {
+        endpoint.images = images;
+    }
+    if let Some(keep) = row.keep_reasoning {
+        endpoint.keep_reasoning = keep;
     }
 }
 
@@ -1064,6 +1093,8 @@ fn builtin(name: &str) -> Option<Endpoint> {
         wire: row.wire,
         fallback: Vec::new(),
         compact_tokens: None,
+        images: false,
+        keep_reasoning: false,
     })
 }
 

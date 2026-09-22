@@ -7,15 +7,14 @@ use super::composer;
 use super::{App, Model, canvas};
 use super::{busy_status, secret_row};
 
-pub(super) fn agents(app: App, full_width: usize, width: usize) -> NodeBuilder {
+pub(super) fn agents(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_x(16.0),
+                .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
@@ -25,11 +24,11 @@ pub(super) fn agents(app: App, full_width: usize, width: usize) -> NodeBuilder {
             if model.agents_hidden || live == 0 || width < 12 {
                 return Vec::new();
             }
-            vec![agent_panel(update.clone(), &model, full_width, width)]
+            vec![agent_panel(update.clone(), &model, width)]
         })
 }
 
-fn agent_panel(app: App, model: &Model, _full_width: usize, width: usize) -> NodeBuilder {
+fn agent_panel(app: App, model: &Model, width: usize) -> NodeBuilder {
     let count = model.agents.iter().filter(|agent| !agent.done).count();
     let title = if count == 1 {
         "1 agent".to_string()
@@ -65,15 +64,14 @@ fn agent_panel(app: App, model: &Model, _full_width: usize, width: usize) -> Nod
     card(body)
 }
 
-pub(super) fn bands(app: App, _full_width: usize, width: usize) -> NodeBuilder {
+pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_x(16.0),
+                .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();

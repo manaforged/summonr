@@ -1,0 +1,1 @@
+./app/tool.py prints its input lines. Add a `--reverse` flag that prints them in reverse order, without breaking default behavior.

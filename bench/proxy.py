@@ -13,6 +13,8 @@ DROP = {"host", "content-length", "accept-encoding", "connection", "transfer-enc
 def shape(body):
     messages = body.get("messages") or []
     roles = {}
+    if body.get("system"):
+        roles["system"] = {"count": 1, "bytes": len(json.dumps(body["system"], ensure_ascii=False))}
     for message in messages:
         role = message.get("role", "unknown")
         size = len(json.dumps(message.get("content"), ensure_ascii=False))
@@ -46,6 +48,19 @@ def shape(body):
     }
 
 
+def normalize(usage):
+    if not usage or "input_tokens" not in usage and "output_tokens" not in usage:
+        return usage
+    read = usage.get("cache_read_input_tokens") or 0
+    prompt = (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0)
+    return {
+        **usage,
+        "prompt_tokens": prompt,
+        "completion_tokens": usage.get("output_tokens") or 0,
+        "prompt_tokens_details": {"cached_tokens": read},
+    }
+
+
 def usage_from_stream(raw):
     usage, model, finish = None, None, None
     for line in raw.decode("utf-8", "replace").splitlines():
@@ -58,11 +73,16 @@ def usage_from_stream(raw):
             chunk = json.loads(data)
         except json.JSONDecodeError:
             continue
-        model = chunk.get("model") or model
-        usage = chunk.get("usage") or usage
+        message = chunk.get("message") or {}
+        model = chunk.get("model") or message.get("model") or model
+        if message.get("usage"):
+            usage = {**(usage or {}), **message["usage"]}
+        if chunk.get("usage"):
+            usage = {**usage, **chunk["usage"]} if usage and chunk.get("type") == "message_delta" else chunk["usage"]
+        finish = (chunk.get("delta") or {}).get("stop_reason") or finish
         for choice in chunk.get("choices") or []:
             finish = choice.get("finish_reason") or finish
-    return usage, model, finish
+    return normalize(usage), model, finish
 
 
 def usage_from_body(raw):
@@ -71,7 +91,8 @@ def usage_from_body(raw):
     except json.JSONDecodeError:
         return None, None, None
     choices = body.get("choices") or [{}]
-    return body.get("usage"), body.get("model"), choices[0].get("finish_reason")
+    finish = choices[0].get("finish_reason") or body.get("stop_reason")
+    return normalize(body.get("usage")), body.get("model"), finish
 
 
 def cached(usage):
@@ -111,13 +132,19 @@ class Proxy(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else None
         record = None
         if raw and (path.endswith("/chat/completions") or path.endswith("/messages")):
-            body = json.loads(raw)
+            try:
+                body = json.loads(raw)
+            except json.JSONDecodeError as error:
+                self.send_error(400, f"request body is not JSON: {error}")
+                return
             record = {"label": label, "request": shape(body), "usage_requested": False}
             if path.endswith("/chat/completions") and body.get("stream") and not (body.get("stream_options") or {}).get("include_usage"):
                 body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
                 record["usage_requested"] = True
                 raw = json.dumps(body).encode()
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
+        if "opencode.ai" in self.upstream:
+            headers["x-opencode-session"] = label
         if path.startswith("/anthropic") and self.anthropic:
             target = self.anthropic + path[len("/anthropic") :]
         else:

@@ -10,6 +10,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             text_edit(app.draft)
                 .state(app.editor.clone())
                 .caret_position(app.caret)
+                .content_padding(12.0, 0.0)
                 .placeholder("")
                 .change(move |draft| {
                     changed.pane_focus.set(false);

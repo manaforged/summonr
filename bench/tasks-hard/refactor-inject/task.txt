@@ -1,0 +1,5 @@
+app/service.py reads a module-global CONFIG dict, which makes it
+untestable. Refactor: Service becomes a class taking config in its
+constructor, keep the public method names the same, update app/main.py and
+the test helper in app/test_service.py's fixture usage is already
+class-based (read it before you start). All tests must pass.

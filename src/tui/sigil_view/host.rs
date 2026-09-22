@@ -37,8 +37,6 @@ use crate::provider::Client;
 use crate::runtime::Loop;
 use crate::tui::{Cmd, Exit, Info, Msg, worker};
 
-/// The animation clock. Scenes are authored in 40 ms frames, so they advance
-/// on their own cadence whatever frame rate is configured.
 mod selection;
 use selection::Selection;
 

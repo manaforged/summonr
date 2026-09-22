@@ -1,0 +1,1 @@
+Count the .rs files directly inside src/tools/ (not subdirectories). Write just the number to .bench-answer.

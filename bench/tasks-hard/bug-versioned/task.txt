@@ -1,0 +1,4 @@
+app/ serves two payload versions: handlers_v1.py (legacy) and
+handlers_v2.py (current). v2 was rewritten and dropped a default that v1
+fills in — old clients sending v1-shaped payloads to the v2 endpoint crash.
+Fix v2 so both payload shapes work. Tests are correct.

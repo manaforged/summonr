@@ -6,8 +6,8 @@ use super::model::Model;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Signal, card,
-    container, signal,
+    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal,
+    Style, classes, container, signal,
 };
 
 use super::prelude::*;
@@ -180,14 +180,9 @@ pub(super) fn reference(path: &str) -> String {
     format!("@{}", serde_json::Value::String(path.to_string()))
 }
 
-pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
+pub(super) fn widget(app: App, width: usize) -> NodeBuilder {
     container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .padding_x(super::chat::margin(full_width) as f32 * canvas::cell().w)
-                .shrink(0.0),
-        )
+        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
         .children_reactive(move || {
             let _panes = app.panes.get();
             let draft = app.draft.get();
@@ -222,7 +217,7 @@ pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
                 .layout(
                     LayoutStyle::flex_column()
                         .width(popup as f32 * canvas::cell().w)
-                        .gap(2.0),
+                        .gap(0.0),
                 )
                 .child(group(format!(
                     "{title} {}–{}/{}",
@@ -250,7 +245,22 @@ pub(super) fn widget(app: App, width: usize, full_width: usize) -> NodeBuilder {
             } else {
                 "↑↓ select · tab accept · esc"
             };
-            vec![card(body.child(hint(keys, String::new())))]
+            vec![
+                container()
+                    .layout(
+                        LayoutStyle::flex_column()
+                            .padding_x(8.0)
+                            .padding_y(8.0)
+                            .gap(0.0),
+                    )
+                    .class(classes!("border border-gray-6"))
+                    .style(
+                        Style::new()
+                            .bg(canvas::palette().tool_bg)
+                            .border_width(canvas::cell().h as i16),
+                    )
+                    .child(body.child(hint(keys, String::new()))),
+            ]
         })
 }
 

@@ -1,0 +1,3 @@
+The test suite in app/ fails at test_config_roundtrip — after writing a new
+config value, reading it back returns the old one. Find and fix the bug.
+The tests are correct.

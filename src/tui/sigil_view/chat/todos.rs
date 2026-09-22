@@ -14,8 +14,7 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
             LayoutStyle::flex_column()
                 .fill_width()
                 .shrink(0.0)
-                .min_size(0.0, 0.0)
-                .padding_x(super::margin(usize::from(cols)) as f32 * canvas::cell().w),
+                .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
             let _panes = update.panes.get();
@@ -23,7 +22,7 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
             let draft = update.draft.get();
             let caret = update.caret.get();
             let model = update.model.borrow();
-            let width = content_width(cols);
+            let width = usize::from(cols);
             if width == 0
                 || model.ledger.iter().all(|line| item(line).0 == '✓')
                 || update.commands.open(&draft, caret, &model)
@@ -101,11 +100,6 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
         scroll.scroll_todos(-delta.round() as isize);
         event.stop_propagation();
     })
-}
-
-fn content_width(cols: u16) -> usize {
-    let width = usize::from(cols);
-    width.saturating_sub(super::margin(width) * 2)
 }
 
 fn visible_rows(model: &Model, rows: u16) -> usize {

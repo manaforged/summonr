@@ -1,0 +1,3 @@
+app/rate.py has a bug in the sliding-window rate limiter (test fails).
+Fix it changing as few lines as possible — the verifier fails if the diff
+exceeds 6 added lines (git diff counts insertions).

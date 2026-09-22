@@ -1,30 +1,21 @@
-# Copy to ~/.summonr/theme.toml, or to <workspace>/.summonr/theme.toml for one project.
-# Every key is optional. Values are #rgb, #rrggbb, or #rrggbbaa. Unset tokens
-# keep the selected preset (`theme` in config.toml: space, fantasy, nord,
-# gruvbox, solarized, light). The approved values are frozen in
-# scripts/palette-baseline.txt; `python3 scripts/palette-check.py` reports drift.
-#
-# `summon` reads the file next to config.toml first, then the workspace copy,
-# so a project can override the user theme. `/theme` re-applies both layers.
+background = "#0c0c14"
+foreground = "#ffffff"
+dim        = "#949cb0"
+gray       = "#bcc2d2"
+thought    = "#a8b0c4"
+accent     = "#698cd2"
+green      = "#50c878"
+red        = "#e15f5f"
+error      = "#dc5a5a"
+yellow     = "#dcc85a"
+cyan       = "#5ac8dc"
+black      = "#000000"
 
-background = "#0c0c14"    # canvas and widget background (alias: base)
-foreground = "#ffffff"    # default text (alias: text)
-dim        = "#949cb0"    # secondary text, hints, paths (cool, AA on canvas)
-gray       = "#bcc2d2"    # chrome labels, inactive borders
-thought    = "#a8b0c4"    # chain of thought: cooler than the answer, still readable
-accent     = "#698cd2"    # selection, prompts, focused panes, spinner
-green      = "#50c878"    # success, added lines, ready
-red        = "#e15f5f"    # diff removals and errors in panes
-error      = "#dc5a5a"    # transcript errors and tool failures
-yellow     = "#dcc85a"    # warnings, running tools, strict mode
-cyan       = "#5ac8dc"    # hunk headers and plan mode
-black      = "#000000"    # overlay shadows
-
-user_bg      = "#2a2c3a"  # background behind your prompts
-tool_bg      = "#181a24"  # tool-call cards in the transcript
-code_bg      = "#1e202a"  # fenced code and diagram background
-diff_add_bg  = "#183020"  # added lines in diffs and patches
-diff_del_bg  = "#381c20"  # removed lines in diffs and patches
-code_comment = "#609466"  # // and /* comments
-code_string  = "#e2b26a"  # quoted strings
-code_keyword = "#c692e6"  # keywords such as fn, pub, return
+user_bg      = "#2a2c3a"
+tool_bg      = "#181a24"
+code_bg      = "#1e202a"
+diff_add_bg  = "#183020"
+diff_del_bg  = "#381c20"
+code_comment = "#609466"
+code_string  = "#e2b26a"
+code_keyword = "#c692e6"

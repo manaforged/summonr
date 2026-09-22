@@ -25,9 +25,7 @@ TSV = ROOT / "off" / "functions.tsv"
 LINES = ROOT / "off" / "lines.tsv"
 OUT = ROOT / "docs" / "guide" / "internals" / "function-map.md"
 
-# First match wins. Patterns are matched against the path with a leading slash.
 RULES: list[tuple[str, list[str]]] = [
-    # Menu jobs
     ("read / edit / write", ["src/hashline.rs", "src/diff.rs", "src/tools/workspace.rs", "src/tools/search.rs"]),
     ("run_command", ["src/tools/command.rs", "src/shell.rs"]),
     ("lsp", ["src/tools/lsp.rs", "src/language.rs"]),
@@ -43,7 +41,6 @@ RULES: list[tuple[str, list[str]]] = [
     ("policy", ["src/policy.rs"]),
     ("endpoint / config", ["src/endpoint.rs", "src/config.rs", "src/secret.rs", "src/modules.rs", "src/prefs.rs", "src/provider/auth.rs"]),
     ("room", ["src/room.rs", "src/room/*", "src/bus.rs", "src/rpc.rs", "src/runtime/bus.rs"]),
-    # Named plumbing
     ("plumbing: tui", ["src/tui.rs", "src/tui/*"]),
     ("plumbing: transport", ["src/provider.rs", "src/provider/*"]),
     ("plumbing: runtime", ["src/runtime.rs", "src/runtime/*"]),

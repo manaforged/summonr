@@ -1,0 +1,5 @@
+app/report.py has grown to hold both parsing and rendering. Split it into
+app/parse.py (everything that reads input) and app/render.py (everything
+that formats output), update the imports in app/main.py, and delete
+report.py. Keep app/test_report.py untouched — it imports the functions
+through main. All tests must pass.

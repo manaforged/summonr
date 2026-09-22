@@ -1,0 +1,4 @@
+Bump pkg/ to version 1.4.0 consistently: pkg/__init__.py __version__,
+pkg/pyproject.toml version field, and add a '## 1.4.0' entry at the top of
+pkg/CHANGELOG.md describing one change (any reasonable line). Every version
+string in the package must agree afterwards.

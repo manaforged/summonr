@@ -1,0 +1,3 @@
+The test suite in app/ fails at test_multibyte_report — the error position
+reported for an over-long line is wrong when the line contains multi-byte
+characters. The tests are correct; find the real bug.

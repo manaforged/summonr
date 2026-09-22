@@ -115,12 +115,6 @@ pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(found)
 }
 
-pub(crate) fn walked(root: &Path) -> io::Result<Vec<PathBuf>> {
-    let mut found = Vec::new();
-    walk(root, root, &mut found)?;
-    Ok(found)
-}
-
 fn skippable(error: &io::Error) -> bool {
     matches!(
         error.kind(),

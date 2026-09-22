@@ -1,6 +1,7 @@
 mod app;
 mod canvas;
 pub(in crate::tui) mod chat;
+mod demo;
 #[cfg(feature = "gui")]
 mod desktop;
 #[cfg(feature = "gui")]

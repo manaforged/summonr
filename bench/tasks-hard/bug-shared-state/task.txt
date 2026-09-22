@@ -1,0 +1,5 @@
+app/ has a plugin registry (registry.py) used by two plugin loaders
+(loader_a.py, loader_b.py). Run the tests: plugin registrations leak between
+loaders and tests interfere with each other. Fix the shared-state bug so
+plugins registered through one loader are isolated per registry instance.
+Tests are correct.

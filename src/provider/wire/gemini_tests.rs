@@ -13,21 +13,21 @@ fn message(role: Role, content: &str) -> Message {
     }
 }
 
-fn ask(messages: Vec<Message>) -> CompletionRequest {
-    CompletionRequest {
-        session: "s".to_string(),
-        model: "gemini-2.5-flash".to_string(),
+fn ask<'a>(messages: &'a [Message]) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        "gemini-2.5-flash".to_string(),
         messages,
-        tools: Vec::new(),
-        max_output_tokens: Some(2048),
-        emit_deltas: false,
-        effort: None,
-    }
+        &[],
+        Some(2048),
+        false,
+        None,
+    )
 }
 
 #[test]
 fn the_system_turn_becomes_a_system_instruction() {
-    let body = request(&ask(vec![
+    let body = request(&ask(&[
         message(Role::System, "be terse"),
         message(Role::User, "hello"),
     ]));
@@ -39,7 +39,7 @@ fn the_system_turn_becomes_a_system_instruction() {
 
 #[test]
 fn two_system_turns_join_rather_than_the_second_winning() {
-    let body = request(&ask(vec![
+    let body = request(&ask(&[
         message(Role::System, "first"),
         message(Role::System, "second"),
         message(Role::User, "hi"),
@@ -52,7 +52,7 @@ fn two_system_turns_join_rather_than_the_second_winning() {
 
 #[test]
 fn the_assistant_is_called_model_on_this_wire() {
-    let body = request(&ask(vec![
+    let body = request(&ask(&[
         message(Role::User, "hi"),
         message(Role::Assistant, "hello"),
     ]));
@@ -86,12 +86,7 @@ fn two_results_for_one_model_turn_merge_into_a_single_user_turn() {
     first.tool_call_id = Some("one".to_string());
     let mut second = message(Role::Tool, "b");
     second.tool_call_id = Some("two".to_string());
-    let body = request(&ask(vec![
-        message(Role::User, "go"),
-        assistant,
-        first,
-        second,
-    ]));
+    let body = request(&ask(&[message(Role::User, "go"), assistant, first, second]));
     let turns = body["contents"].as_array().unwrap();
     assert_eq!(
         turns.len(),
@@ -108,7 +103,7 @@ fn two_results_for_one_model_turn_merge_into_a_single_user_turn() {
 fn a_user_turn_and_a_following_result_do_not_open_two_turns() {
     let mut result = message(Role::Tool, "a");
     result.tool_call_id = Some("one".to_string());
-    let body = request(&ask(vec![message(Role::User, "go"), result]));
+    let body = request(&ask(&[message(Role::User, "go"), result]));
     assert_eq!(
         body["contents"].as_array().unwrap().len(),
         1,
@@ -120,7 +115,7 @@ fn a_user_turn_and_a_following_result_do_not_open_two_turns() {
 fn an_image_is_inline_data_with_its_mime_type() {
     let mut user = message(Role::User, "what is this");
     user.images = vec![Image::encode("image/png", &[1, 2, 3])];
-    let body = request(&ask(vec![user]));
+    let body = request(&ask(&[user]));
     let parts = body["contents"][0]["parts"].as_array().unwrap();
     assert_eq!(parts[0]["inlineData"]["mimeType"], "image/png");
     assert!(parts[0]["inlineData"]["data"].is_string());
@@ -129,8 +124,8 @@ fn an_image_is_inline_data_with_its_mime_type() {
 
 #[test]
 fn a_tool_is_declared_with_parameters_not_input_schema() {
-    let mut call = ask(vec![message(Role::User, "hi")]);
-    call.tools = vec![ToolDefinition {
+    let messages = vec![message(Role::User, "hi")];
+    let tools = vec![ToolDefinition {
         kind: ToolKind::Function,
         function: FunctionDefinition {
             name: "read".to_string(),
@@ -138,6 +133,8 @@ fn a_tool_is_declared_with_parameters_not_input_schema() {
             parameters: json!({"type": "object"}),
         },
     }];
+    let mut call = ask(&messages);
+    call.tools = &tools;
     let body = request(&call);
     let declared = &body["tools"][0]["functionDeclarations"][0];
     assert_eq!(declared["name"], "read");
@@ -162,7 +159,7 @@ fn a_replayed_call_carries_its_thought_signature_back() {
             signatures: vec!["sig-1".to_string()],
         }),
     }];
-    let body = request(&ask(vec![message(Role::User, "go"), assistant]));
+    let body = request(&ask(&[message(Role::User, "go"), assistant]));
     let parts = body["contents"][1]["parts"].as_array().unwrap();
     assert_eq!(parts[0]["functionCall"]["name"], "read");
     assert_eq!(parts[0]["functionCall"]["args"]["path"], "a.rs");
@@ -174,7 +171,8 @@ fn a_replayed_call_carries_its_thought_signature_back() {
 
 #[test]
 fn effort_sets_a_thinking_level_and_asks_for_the_thoughts() {
-    let mut call = ask(vec![message(Role::User, "hi")]);
+    let messages = vec![message(Role::User, "hi")];
+    let mut call = ask(&messages);
     call.effort = Some(Effort::High);
     let body = request(&call);
     assert_eq!(
@@ -299,7 +297,7 @@ fn a_response_names_the_function_not_the_call_id_we_invented() {
     let id = reply.finish().tool_calls[0].id.clone();
     let mut result = message(Role::Tool, "contents");
     result.tool_call_id = Some(id.clone());
-    let body = request(&ask(vec![message(Role::User, "go"), result]));
+    let body = request(&ask(&[message(Role::User, "go"), result]));
     let part = &body["contents"][0]["parts"][1];
     assert_eq!(
         part["functionResponse"]["name"], "read",

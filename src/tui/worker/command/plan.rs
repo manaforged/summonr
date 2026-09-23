@@ -98,22 +98,13 @@ impl Worker {
             return true;
         }
         let code = loop {
-            let progress = match self.loop_.work_progress() {
-                Ok(progress) => progress,
+            let prompt = match self.loop_.next_step(&steps, plan_path) {
+                Ok(crate::StepRun::Done(code)) => break code,
+                Ok(crate::StepRun::Run { prompt, .. }) => prompt,
                 Err(error) => {
                     self.fail(&error.to_string());
                     return true;
                 }
-            };
-            if let Some(code) = progress.exit_code() {
-                break code;
-            }
-            let Some(step) = progress
-                .current
-                .and_then(|current| steps.get(current.saturating_sub(1)))
-            else {
-                self.fail("Steps Work is outside the selected plan");
-                return true;
             };
             if self.take_clear("/steps") {
                 if let Err(error) = self.loop_.abandon_work("steps cleared by user") {
@@ -122,7 +113,6 @@ impl Worker {
                 self.system("steps cleared");
                 return true;
             }
-            let prompt = crate::steps::prompt(step, total, plan_path);
             if !self.turn(prompt.into()).await {
                 return false;
             }
@@ -135,7 +125,7 @@ impl Worker {
                     if let Err(error) = self.loop_.abandon_work("step execution aborted") {
                         self.fail(&error.to_string());
                     }
-                    self.system("steps stopped — a turn hit the round limit");
+                    self.system(&format!("steps stopped — the turn aborted: {}", turn.text));
                     return true;
                 }
                 Some(_) => {}
@@ -174,7 +164,7 @@ impl Worker {
             }
             return true;
         }
-        if let Err(error) = self.loop_.select_goal(objective, &gates, 0) {
+        if let Err(error) = self.loop_.select_goal(objective, &gates) {
             self.fail(&error.to_string());
             return true;
         }
@@ -210,7 +200,7 @@ impl Worker {
                     if let Err(error) = self.loop_.abandon_work("goal execution aborted") {
                         self.fail(&error.to_string());
                     }
-                    self.system("goal stopped — a turn hit the round limit");
+                    self.system(&format!("goal stopped — the turn aborted: {}", turn.text));
                     return true;
                 }
                 Some(_) => {}

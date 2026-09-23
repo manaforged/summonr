@@ -11,10 +11,10 @@ pub struct Module {
     pub default: bool,
 }
 
-pub const ALL: [Module; 8] = [
+pub const ALL: [Module; 7] = [
     Module {
         name: "search",
-        summary: "web_search and web_fetch through Leyline with a browser identity",
+        summary: "the web tool (search, fetch) through Leyline with a browser identity",
         default: true,
     },
     Module {
@@ -46,11 +46,6 @@ pub const ALL: [Module; 8] = [
         name: "bus",
         summary: "mail and a blackboard between summonr sessions on this machine",
         default: false,
-    },
-    Module {
-        name: "gui",
-        summary: "the desktop window (`summonr --gui`, a `--features gui` build)",
-        default: true,
     },
 ];
 
@@ -105,8 +100,6 @@ impl Switches {
                     "off (project)"
                 } else if self.off.contains(module.name) {
                     "off"
-                } else if module.name == "gui" && !cfg!(feature = "gui") {
-                    "unavailable (build with --features gui)"
                 } else {
                     "on"
                 };

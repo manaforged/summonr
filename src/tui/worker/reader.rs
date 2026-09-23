@@ -127,7 +127,9 @@ impl Reader {
             }
             Cmd::Trees => self.trees(),
             Cmd::Save(file, text) => {
-                let result = std::fs::write(&file, &text).map_err(|error| error.to_string());
+                let result = crate::durable::store::stage(&file, text.as_bytes(), true)
+                    .and_then(crate::durable::store::Staged::commit)
+                    .map_err(|error| error.to_string());
                 self.send(Msg::Saved { file, text, result });
             }
             Cmd::View(root, path) => {
@@ -168,10 +170,7 @@ impl Reader {
             .iter()
             .filter(|endpoint| !endpoint.model.is_empty())
         {
-            let row = format!("{}\t{}", endpoint.name, endpoint.model);
-            if !rows.contains(&row) {
-                rows.push(row);
-            }
+            add(&mut rows, format!("{}\t{}", endpoint.name, endpoint.model));
         }
         let mut facts = BTreeMap::new();
         let mut groups = BTreeMap::new();
@@ -192,17 +191,12 @@ impl Reader {
             for model in &listing.models {
                 let row = format!("{}\t{}", endpoint.name, model.id);
                 facts.insert(row.clone(), model.clone());
-                if !rows.contains(&row) {
-                    rows.push(row);
-                }
+                add(&mut rows, row);
             }
         }
         for (name, model) in waiting(&endpoints) {
             groups.insert(name.clone(), NEEDS_LOGIN.to_string());
-            let row = format!("{name}\t{model}");
-            if !rows.contains(&row) {
-                rows.push(row);
-            }
+            add(&mut rows, format!("{name}\t{model}"));
         }
         self.send(Msg::Models {
             request,
@@ -251,9 +245,7 @@ impl Reader {
                     for model in &models {
                         let row = format!("{name}\t{}", model.id);
                         facts.insert(row.clone(), model.clone());
-                        if !rows.contains(&row) {
-                            rows.push(row.clone());
-                        }
+                        add(&mut rows, row);
                     }
                     if let Err(error) = crate::catalog::remember(&name, models) {
                         errors.push(format!("{name}: cannot cache models ({error})"));
@@ -317,33 +309,21 @@ impl Reader {
     }
 
     fn forward(&self) {
-        let root = match std::fs::canonicalize(&self.workspace) {
-            Ok(root) => root,
+        let (sender, receiver) = mpsc::channel::<notify::Result<NotifyEvent>>();
+        let started = std::fs::canonicalize(&self.workspace)
+            .map_err(notify::Error::io)
+            .and_then(|root| {
+                let mut watcher = notify::recommended_watcher(sender)?;
+                watch(&mut watcher, vec![root.clone()])?;
+                Ok((root, watcher))
+            });
+        let (root, mut watcher) = match started {
+            Ok(started) => started,
             Err(error) => {
                 self.send(Msg::System(format!("workspace watch unavailable: {error}")));
                 return;
             }
         };
-        let (sender, receiver) = mpsc::channel();
-        let ui = self.ui.clone();
-        let mut watcher = match notify::recommended_watcher(
-            move |result: std::result::Result<NotifyEvent, notify::Error>| match result {
-                Ok(event) => drop(sender.send(event)),
-                Err(error) => {
-                    drop(ui.send(Msg::System(format!("workspace watch failed: {error}"))))
-                }
-            },
-        ) {
-            Ok(watcher) => watcher,
-            Err(error) => {
-                self.send(Msg::System(format!("workspace watch unavailable: {error}")));
-                return;
-            }
-        };
-        if let Err(error) = watcher.watch(&root, RecursiveMode::Recursive) {
-            self.send(Msg::System(format!("workspace watch unavailable: {error}")));
-            return;
-        }
         while let Ok(first) = receiver.recv() {
             let mut events = vec![first];
             let deadline = Instant::now() + WINDOW;
@@ -355,11 +335,20 @@ impl Reader {
                     break;
                 }
             }
-            let paths: Vec<String> = events
-                .into_iter()
-                .flat_map(|event| relative(&root, &event))
-                .collect();
-            let changed = unignored(&self.workspace, paths);
+            let mut paths = Vec::new();
+            for event in events {
+                match event {
+                    Ok(event) => paths.extend(relative(&root, &event)),
+                    Err(error) => {
+                        self.send(Msg::System(format!("workspace watch failed: {error}")))
+                    }
+                }
+            }
+            let changed = unignored(&root, paths);
+            let dirs = changed.iter().map(|path| root.join(path));
+            if let Err(error) = watch(&mut watcher, dirs.filter(|dir| dir.is_dir()).collect()) {
+                self.send(Msg::System(format!("workspace watch failed: {error}")));
+            }
             if !changed.is_empty() && self.ui.send(Msg::Changed(changed)).is_err() {
                 return;
             }
@@ -367,14 +356,32 @@ impl Reader {
     }
 }
 
+fn walk(root: &Path, depth: Option<usize>) -> impl Iterator<Item = ignore::DirEntry> {
+    WalkBuilder::new(root)
+        .require_git(false)
+        .max_depth(depth)
+        .build()
+        .filter_map(std::result::Result::ok)
+}
+
+fn watch(watcher: &mut impl Watcher, dirs: Vec<PathBuf>) -> notify::Result<()> {
+    if dirs.is_empty() {
+        return Ok(());
+    }
+    let mut paths = watcher.paths_mut();
+    for entry in dirs.iter().flat_map(|dir| walk(dir, None)) {
+        if entry.file_type().is_some_and(|kind| kind.is_dir()) {
+            paths.add(entry.path(), RecursiveMode::NonRecursive)?;
+        }
+    }
+    paths.commit()
+}
+
 fn files(workspace: &Path) -> Vec<String> {
     let Ok(root) = std::fs::canonicalize(workspace) else {
         return Vec::new();
     };
-    WalkBuilder::new(&root)
-        .require_git(false)
-        .build()
-        .filter_map(std::result::Result::ok)
+    walk(&root, None)
         .filter_map(|entry| {
             let file_type = entry.file_type()?;
             (file_type.is_file() || file_type.is_symlink())
@@ -399,46 +406,38 @@ fn view(root: &Path, path: &str) -> Result<Viewed> {
 }
 
 fn relative(root: &Path, event: &NotifyEvent) -> Vec<String> {
-    let paths = if matches!(&event.kind, EventKind::Modify(ModifyKind::Name(_))) {
-        event.paths.iter().rev().take(1).collect::<Vec<_>>()
-    } else {
-        event.paths.iter().collect()
-    };
-    paths
-        .into_iter()
+    let renamed = matches!(&event.kind, EventKind::Modify(ModifyKind::Name(_)));
+    event.paths[event.paths.len().saturating_sub(1) * usize::from(renamed)..]
+        .iter()
         .filter_map(|path| path.strip_prefix(root).ok().map(text))
         .filter(|path| !path.is_empty())
         .collect()
+}
+
+fn add(rows: &mut Vec<String>, row: String) {
+    if !rows.contains(&row) {
+        rows.push(row);
+    }
 }
 
 fn text(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn unignored(workspace: &Path, mut paths: Vec<String>) -> Vec<String> {
+fn unignored(root: &Path, mut paths: Vec<String>) -> Vec<String> {
     paths.sort();
     paths.dedup();
-    paths.retain(|path| !path.split('/').any(|part| part.starts_with('.')));
-    if paths.is_empty() {
-        return paths;
-    }
-    let joined: Vec<u8> = paths
-        .iter()
-        .flat_map(|path| path.bytes().chain(std::iter::once(0)))
-        .collect();
-    let Ok(output) = crate::diff::git_output(
-        workspace,
-        &[],
-        &["check-ignore", "--stdin", "-z"],
-        Some(&joined),
-    ) else {
-        return paths;
-    };
-    let ignored: Vec<String> = String::from_utf8_lossy(&output)
-        .split('\0')
-        .filter(|path| !path.is_empty())
-        .map(str::to_string)
-        .collect();
-    paths.retain(|path| !ignored.contains(path));
+    let mut listed = std::collections::HashMap::new();
+    paths.retain(|path| {
+        let full = root.join(path);
+        let dir = full.parent().unwrap_or(root).to_path_buf();
+        let shown = listed.entry(dir).or_insert_with_key(|dir| {
+            walk(dir, Some(1))
+                .map(ignore::DirEntry::into_path)
+                .collect::<Vec<_>>()
+        });
+        !path.split('/').any(|part| part.starts_with('.'))
+            && (!full.exists() || shown.contains(&full))
+    });
     paths
 }

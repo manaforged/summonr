@@ -66,7 +66,7 @@ pub use endpoint::{
     AuthInfo, Endpoint, LoginFlow, adopt_keys, auth_info, decisions_keys,
     fallbacks as endpoint_fallbacks, first_decisions as decisions_endpoint, forget_key,
     is_named as is_endpoint, names as endpoint_names, resolve as resolve_endpoint,
-    resolve_unauthed as resolve_endpoint_unauthed, save_key,
+    resolve_unauthed as resolve_endpoint_unauthed, save_key, vision as vision_endpoint,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
@@ -76,15 +76,15 @@ pub use prompt::{harness_section, summonr_home, system_prompt, system_prompt_wit
 pub use provider::{
     Client, Effort, Image, Message, Partial, Price, Provider, Usage, UserInput, dollars,
 };
-pub use runtime::{Budget, Loop, RunMode, Turn};
+pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
     Replay, SessionInfo, Spend, export as export_session, last_for, list as list_sessions,
-    profile as profile_session, resolve_id as resolve_session, set_name as name_session,
-    short as short_session,
+    profile as profile_session, profile_all as profile_sessions, resolve_id as resolve_session,
+    set_name as name_session, short as short_session,
 };
-#[cfg(windows)]
+#[cfg(all(windows, feature = "windows-sandbox"))]
 pub use tools::sandbox::windows::entry as sandbox_entry;
-pub use tools::{Event, attach};
+pub use tools::{Event, ToolResult, attach, run_tool};
 pub use verify::{Outcome, Receipt, check_commands};
 pub use worktree::{
     Status as WorktreeStatus, Tree, add as add_worktree, finish as finish_worktree, in_git,

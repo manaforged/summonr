@@ -38,8 +38,9 @@ impl Accumulate for Stream {
         }
     }
 
-    fn on(&mut self, event: &Value) -> crate::error::Result<Vec<Delta>> {
-        Ok(self.event(event).into_iter().collect())
+    fn on(&mut self, event: &str) -> crate::error::Result<Vec<Delta>> {
+        let event = crate::provider::wire::parse::<Value>(event)?;
+        Ok(self.event(&event).into_iter().collect())
     }
 
     fn finish(mut self) -> AssistantMessage {

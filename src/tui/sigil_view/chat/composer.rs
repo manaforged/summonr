@@ -11,7 +11,6 @@ use crate::tui::Activity;
 use draft::Draft;
 
 mod draft;
-mod lines;
 mod widget;
 
 pub(super) use widget::widget;
@@ -107,16 +106,4 @@ pub(in crate::tui::sigil_view) fn draft_view(
         width - cell_width(prefix),
     );
     format!("{prefix}{}", window.text(caret))
-}
-
-pub(in crate::tui::sigil_view) fn margin(width: usize) -> usize {
-    if width > 100 {
-        4
-    } else if width > 56 {
-        3
-    } else if width > 28 {
-        2
-    } else {
-        usize::from(width > 2)
-    }
 }

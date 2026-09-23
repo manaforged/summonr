@@ -28,7 +28,7 @@ impl From<crate::Error> for WorkError {
 pub(crate) enum Policy {
     Single,
     Steps,
-    Goal { max_turns: u32 },
+    Goal {},
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -197,7 +197,6 @@ impl Work {
         Ok(())
     }
 
-    /// Store the completion checks without selecting a plan yet.
     pub(crate) fn set_checks(&mut self, commands: &[String]) -> Result<(), WorkError> {
         self.checks = checks(&self.objective, self.policy, commands)?;
         Ok(())
@@ -315,20 +314,13 @@ impl Work {
                 self.active = None;
                 self.status = Status::Abandoned(reason);
             }
-            (Policy::Goal { max_turns }, Decision::GoalContinue(reason)) => {
-                if max_turns == 0 || step.rounds < max_turns {
-                    step.state = StepState::Active;
-                    self.status = Status::Active(Stage::Execute);
-                    self.rebase();
-                    self.pending.push(format!(
-                        "[summon goal: the objective is not complete — {reason}. Continue with the next concrete action.]"
-                    ));
-                } else {
-                    step.state = StepState::Blocked;
-                    self.active = None;
-                    self.status =
-                        Status::Abandoned(format!("goal reached its {max_turns} turn limit"));
-                }
+            (Policy::Goal { .. }, Decision::GoalContinue(reason)) => {
+                step.state = StepState::Active;
+                self.status = Status::Active(Stage::Execute);
+                self.rebase();
+                self.pending.push(format!(
+                    "[summon goal: the objective is not complete — {reason}. Continue with the next concrete action.]"
+                ));
             }
             (Policy::Goal { .. }, Decision::Automatic) => {
                 return Err(WorkError(DECISION.to_string()));
@@ -373,17 +365,6 @@ impl Work {
             .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
-        if let Policy::Goal { max_turns } = self.policy
-            && max_turns > 0
-            && step.rounds >= max_turns
-        {
-            step.state = StepState::Blocked;
-            self.active = None;
-            self.status = Status::Failed(format!(
-                "completion checks still failing at the {max_turns} turn limit"
-            ));
-            return Ok(());
-        }
         step.state = StepState::Active;
         self.status = Status::Active(Stage::Execute);
         self.rebase();
@@ -463,10 +444,10 @@ impl Work {
     }
 
     pub(crate) fn progress(&self) -> WorkProgress {
-        let (kind, max_turns) = match self.policy {
-            Policy::Single => (WorkKind::Single, 0),
-            Policy::Steps => (WorkKind::Steps, 0),
-            Policy::Goal { max_turns } => (WorkKind::Goal, max_turns),
+        let kind = match self.policy {
+            Policy::Single => WorkKind::Single,
+            Policy::Steps => WorkKind::Steps,
+            Policy::Goal { .. } => WorkKind::Goal,
         };
         let (phase, reason) = match &self.status {
             Status::Active(Stage::Plan) => (WorkPhase::Plan, None),
@@ -495,14 +476,12 @@ impl Work {
             total: self.steps.len(),
             attempts: step.map_or(0, |step| step.attempts),
             rounds: step.map_or(0, |step| step.rounds),
-            max_turns,
             reason,
             ledger: self.ledger(),
             touched: self.touched.iter().cloned().collect(),
         }
     }
 
-    /// The model-written plan lines shown while a single-policy turn runs.
     fn planned_ledger(&self) -> Vec<String> {
         let Some(plan) = self.plan.as_deref() else {
             return Vec::new();
@@ -719,7 +698,6 @@ pub struct WorkProgress {
     pub total: usize,
     pub attempts: u16,
     pub rounds: u32,
-    pub max_turns: u32,
     pub reason: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ledger: Vec<String>,
@@ -755,15 +733,7 @@ impl Display for WorkProgress {
                 )?;
             }
             (WorkKind::Goal, _) => {
-                if self.max_turns > 0 {
-                    write!(
-                        formatter,
-                        "Work goal turn {}/{} · {}",
-                        self.rounds, self.max_turns, self.phase
-                    )?;
-                } else {
-                    write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
-                }
+                write!(formatter, "Work goal turn {} · {}", self.rounds, self.phase)?;
             }
             _ => write!(formatter, "Work · {}", self.phase)?,
         }

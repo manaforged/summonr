@@ -7,22 +7,29 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use url::Url;
 
 use crate::error::{Error, Result};
 use crate::language;
 use crate::rpc;
 
+use super::command::proc::kill_group;
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args};
 
 const LSP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+const CONTENT_MODIFIED: i64 = -32801;
+const INBOX: usize = 64;
 
 pub(super) struct Conn {
     child: Option<Child>,
-    reader: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
+    inbox: mpsc::Receiver<Result<Value>>,
+    reader: JoinHandle<()>,
     writer: Box<dyn AsyncWrite + Send + Unpin>,
     next_id: i64,
     root: String,
+    clean: bool,
 }
 
 #[derive(Debug)]
@@ -34,13 +41,17 @@ pub(super) struct Launch {
 
 impl Conn {
     pub(super) async fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
-        let mut child = Command::new(&launch.argv[0])
+        let mut command = Command::new(&launch.argv[0]);
+        command
             .args(&launch.argv[1..])
             .current_dir(workspace)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .kill_on_drop(true)
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command
             .spawn()
             .map_err(|error| Error::Tool(format!("cannot start {}: {error}", launch.argv[0])))?;
         let stdout = child
@@ -51,12 +62,25 @@ impl Conn {
             .stdin
             .take()
             .ok_or_else(|| Error::Tool("language server has no stdin".to_string()))?;
+        let (sender, inbox) = mpsc::channel(INBOX);
+        let mut stdout = BufReader::new(stdout);
+        let reader = tokio::spawn(async move {
+            loop {
+                let msg = read_msg(&mut stdout).await;
+                let failed = msg.is_err();
+                if sender.send(msg).await.is_err() || failed {
+                    break;
+                }
+            }
+        });
         let mut conn = Self {
             child: Some(child),
-            reader: BufReader::new(Box::new(stdout)),
+            inbox,
+            reader,
             writer: Box::new(stdin),
             next_id: 1,
             root: file_uri(workspace)?,
+            clean: true,
         };
         conn.handshake(&launch.options).await?;
         Ok(conn)
@@ -204,25 +228,54 @@ impl Conn {
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        let mut reply = self.call(method, params.clone()).await?;
+        if reply.pointer("/error/code").and_then(Value::as_i64) == Some(CONTENT_MODIFIED) {
+            reply = self.call(method, params).await?;
+        }
+        rpc::outcome(
+            "lsp",
+            reply.get("result").cloned(),
+            reply.get("error").cloned(),
+        )
+    }
+
+    async fn call(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id;
         self.next_id += 1;
-        write_msg(&mut self.writer, &rpc::request(&json!(id), method, params)).await?;
+        self.send(&rpc::request(&json!(id), method, params)).await?;
         self.pump(id).await
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
-        write_msg(&mut self.writer, &rpc::notification(method, params)).await
+        self.send(&rpc::notification(method, params)).await
+    }
+
+    async fn send(&mut self, value: &Value) -> Result<()> {
+        self.clean = false;
+        write_msg(&mut self.writer, value).await?;
+        self.clean = true;
+        Ok(())
     }
 
     async fn pump(&mut self, want: i64) -> Result<Value> {
         loop {
-            let msg = read_msg(&mut self.reader).await?;
+            let msg = match self.inbox.recv().await {
+                Some(Ok(msg)) => msg,
+                Some(Err(error)) => {
+                    self.clean = false;
+                    return Err(error);
+                }
+                None => {
+                    self.clean = false;
+                    return Err(Error::Tool("language server closed".to_string()));
+                }
+            };
             if msg.get("method").is_some() && msg.get("id").is_some() {
                 self.reply_server(&msg).await?;
                 continue;
             }
             if msg.get("id") == Some(&Value::from(want)) {
-                return rpc::outcome("lsp", msg.get("result").cloned(), msg.get("error").cloned());
+                return Ok(msg);
             }
         }
     }
@@ -244,11 +297,15 @@ impl Conn {
             "window/workDoneProgress/create" | "client/registerCapability" => Value::Null,
             _ => Value::Null,
         };
-        write_msg(&mut self.writer, &rpc::response(&id, result)).await
+        self.send(&rpc::response(&id, result)).await
     }
 
     fn kill(&mut self) {
+        self.reader.abort();
         if let Some(child) = self.child.as_mut() {
+            if let Some(pid) = child.id() {
+                kill_group(pid, false);
+            }
             drop(child.start_kill());
         }
     }
@@ -798,7 +855,7 @@ impl ToolRegistry {
             match op {
                 Change::Text { uri, edits } => {
                     let dest = self.uri_path(&uri)?;
-                    self.policy.write_path(&self.relative(&dest)?)?;
+                    self.check_write(&dest)?;
                     let original = std::fs::read_to_string(&dest).map_err(|error| {
                         Error::Tool(format!("cannot read {}: {error}", dest.display()))
                     })?;
@@ -808,12 +865,7 @@ impl ToolRegistry {
                 }
                 Change::Create { uri } => {
                     let dest = self.uri_path(&uri)?;
-                    self.policy.write_path(&self.relative(&dest)?)?;
-                    if let Some(parent) = dest.parent() {
-                        std::fs::create_dir_all(parent).map_err(|error| {
-                            Error::Tool(format!("cannot create {}: {error}", dest.display()))
-                        })?;
-                    }
+                    self.check_write(&dest)?;
                     if !dest.exists() {
                         drop(self.atomic_write(&dest, &self.relative(&dest)?, "")?);
                     }
@@ -822,9 +874,9 @@ impl ToolRegistry {
                 Change::Rename { from, to } => {
                     let src = self.uri_path(&from)?;
                     let dest = self.uri_path(&to)?;
-                    self.policy.write_path(&self.relative(&src)?)?;
-                    self.policy.write_path(&self.relative(&dest)?)?;
-                    std::fs::rename(&src, &dest).map_err(|error| {
+                    self.check_write(&src)?;
+                    self.check_write(&dest)?;
+                    crate::durable::store::rename(&src, &dest).map_err(|error| {
                         Error::Tool(format!(
                             "cannot rename {} → {}: {error}",
                             src.display(),
@@ -839,7 +891,7 @@ impl ToolRegistry {
                 }
                 Change::Delete { uri } => {
                     let dest = self.uri_path(&uri)?;
-                    self.policy.write_path(&self.relative(&dest)?)?;
+                    self.check_write(&dest)?;
                     std::fs::remove_file(&dest).map_err(|error| {
                         Error::Tool(format!("cannot delete {}: {error}", dest.display()))
                     })?;
@@ -905,12 +957,12 @@ impl ToolRegistry {
                     Error::Tool("language server initialization timed out".to_string())
                 })??,
         };
-        match tokio::time::timeout(LSP_TIMEOUT, f(&mut conn)).await {
-            Ok(Ok(value)) => {
-                *state = Some(conn);
-                Ok(value)
-            }
-            Ok(Err(error)) => Err(error),
+        let outcome = tokio::time::timeout(LSP_TIMEOUT, f(&mut conn)).await;
+        if conn.clean {
+            *state = Some(conn);
+        }
+        match outcome {
+            Ok(result) => result,
             Err(_elapsed) => Err(Error::Tool("language server request timed out".to_string())),
         }
     }

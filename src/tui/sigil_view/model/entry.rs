@@ -26,13 +26,10 @@ pub(in crate::tui::sigil_view) enum Entry {
     Aborted(String),
     System(String),
     Error(String),
-    #[expect(
-        dead_code,
-        reason = "nothing constructs this: the arms are unreachable"
-    )]
     Chart(Vec<Round>),
     Image {
         source: ImageSource,
+        bytes: std::rc::Rc<[u8]>,
         label: String,
     },
 }
@@ -101,17 +98,18 @@ pub(in crate::tui::sigil_view) fn itemized(line: &str) -> bool {
         || text.chars().next().is_some_and(|c| c.is_ascii_digit()) && text.contains(". ")
 }
 
-pub(in crate::tui::sigil_view) const PREVIEW_WIDTH: u32 = 1920;
-
-pub(in crate::tui::sigil_view) const PREVIEW_HEIGHT: u32 = 1200;
-
 pub(in crate::tui::sigil_view) fn preview(bytes: &[u8]) -> Result<ImageSource, String> {
+    decode(bytes, 480, 320)
+}
+
+pub(in crate::tui::sigil_view) fn decode(
+    bytes: &[u8],
+    width: u32,
+    height: u32,
+) -> Result<ImageSource, String> {
     let image = load_from_memory(bytes).map_err(|error| format!("invalid image: {error}"))?;
     let rgba = image
-        .thumbnail(
-            image.width().min(PREVIEW_WIDTH),
-            image.height().min(PREVIEW_HEIGHT),
-        )
+        .thumbnail(image.width().min(width), image.height().min(height))
         .into_rgba8();
     ImageSource::from_rgba8(rgba.width(), rgba.height(), rgba.into_raw())
         .ok_or_else(|| "image has no pixels".to_string())

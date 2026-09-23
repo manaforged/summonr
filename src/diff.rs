@@ -100,30 +100,17 @@ pub(crate) fn snapshot(root: &Path) -> String {
     if !root.ancestors().any(|path| path.join(".git").exists()) {
         return "non-Git workspace".to_string();
     }
-    let Ok(base) = base(root) else {
+    let Ok(diff) = stats(root) else {
         return "Git state unavailable".to_string();
     };
-    let head = match git(root, &["rev-parse", "--short=12", "HEAD"]) {
-        Ok(head) => head.trim().to_string(),
-        Err(_) if base.is_none() || initial(root).unwrap_or(false) => "no commits".to_string(),
-        Err(_) => return "Git state unavailable".to_string(),
-    };
-    let base = base.as_deref().unwrap_or("empty tree");
-    match stats(root) {
-        Ok(diff) if diff.files.is_empty() => {
-            format!("{head} ({}), worktree clean", short(base))
-        }
-        Ok(diff) => format!(
-            "{} ({}), {} file{} dirty",
-            head,
-            short(base),
-            diff.files.len(),
-            if diff.files.len() == 1 { "" } else { "s" }
-        ),
-        Err(error) => format!(
-            "{} ({}), worktree state unavailable: {error}",
-            head,
-            short(base)
+    let head = git(root, &["rev-parse", "--short=12", "HEAD"])
+        .unwrap_or_else(|_| "no commits".to_string());
+    match diff.files.len() {
+        0 => format!("{head} ({}), worktree clean", short(&diff.base)),
+        count => format!(
+            "{head} ({}), {count} file{} dirty",
+            short(&diff.base),
+            if count == 1 { "" } else { "s" }
         ),
     }
 }
@@ -142,26 +129,43 @@ pub fn stats(root: &Path) -> Result<Diff> {
     let mut files: Vec<Stat> = numstat.lines().filter_map(numstat_row).collect();
     let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
     for path in untracked.split('\0').filter(|path| !path.is_empty()) {
-        let mut stat = if path.ends_with('/') {
-            Stat::default()
-        } else {
-            let text = git(
-                root,
-                &["diff", "--no-index", "--numstat", "--", "/dev/null", path],
-            )?;
-            text.lines()
-                .find_map(numstat_row)
-                .ok_or_else(|| Error::Config(format!("git returned no line counts for {path}")))?
-        };
-        stat.path = path.to_string();
-        stat.new = true;
-        files.push(stat);
+        files.push(Stat {
+            path: path.to_string(),
+            added: added(root, path)?,
+            removed: 0,
+            new: true,
+        });
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(Diff {
         base: base.unwrap_or_else(|| "empty tree".to_string()),
         files,
     })
+}
+
+fn added(root: &Path, path: &str) -> Result<u32> {
+    use std::io::BufRead;
+    if path.ends_with('/') {
+        return Ok(0);
+    }
+    let mut reader = std::io::BufReader::new(std::fs::File::open(root.join(path))?);
+    let mut lines = 0_u64;
+    let mut head = true;
+    let mut last = b'\n';
+    loop {
+        let chunk = reader.fill_buf()?;
+        if chunk.is_empty() {
+            let lines = lines.saturating_add(u64::from(last != b'\n'));
+            return Ok(u32::try_from(lines).unwrap_or(u32::MAX));
+        }
+        if std::mem::take(&mut head) && chunk[..chunk.len().min(8000)].contains(&0) {
+            return Ok(0);
+        }
+        lines += chunk.iter().filter(|byte| **byte == b'\n').count() as u64;
+        last = *chunk.last().unwrap_or(&b'\n');
+        let size = chunk.len();
+        reader.consume(size);
+    }
 }
 
 pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {

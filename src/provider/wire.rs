@@ -29,11 +29,12 @@ pub(crate) enum Delta {
     Call(String),
 }
 
-pub(crate) const MOST_PENDING: usize = 8 * 1024 * 1024;
+pub(crate) const MOST_PENDING: usize = 64 * 1024 * 1024;
 
 #[derive(Default)]
 pub(crate) struct Frames {
     buffer: Vec<u8>,
+    scanned: usize,
     ended: bool,
 }
 
@@ -42,7 +43,7 @@ impl Frames {
         &mut self,
         bytes: &[u8],
         sentinel: Option<&str>,
-    ) -> crate::error::Result<Vec<Value>> {
+    ) -> crate::error::Result<Vec<String>> {
         self.buffer.extend_from_slice(bytes);
         if self.buffer.len() > MOST_PENDING {
             return Err(crate::error::Error::provider(
@@ -51,9 +52,10 @@ impl Frames {
             ));
         }
         let mut frames = Vec::new();
-        while let Some((end, width)) = boundary(&self.buffer) {
+        while let Some((end, width)) = boundary(&self.buffer, self.scanned) {
             let event: Vec<u8> = self.buffer.drain(..end).collect();
             self.buffer.drain(..width);
+            self.scanned = 0;
             let text = std::str::from_utf8(&event).map_err(|error| {
                 crate::error::Error::provider(
                     crate::error::ProviderFailureKind::Malformed,
@@ -71,11 +73,10 @@ impl Frames {
                     self.ended = true;
                     return Ok(frames);
                 }
-                if let Ok(frame) = serde_json::from_str(data) {
-                    frames.push(frame);
-                }
+                frames.push(data.to_string());
             }
         }
+        self.scanned = self.buffer.len().saturating_sub(3);
         Ok(frames)
     }
 
@@ -84,21 +85,34 @@ impl Frames {
     }
 }
 
-pub(super) fn boundary(bytes: &[u8]) -> Option<(usize, usize)> {
+pub(crate) fn parse<'a, T: serde::Deserialize<'a>>(data: &'a str) -> crate::error::Result<T> {
+    serde_json::from_str(data).map_err(|error| {
+        crate::error::Error::provider(
+            crate::error::ProviderFailureKind::Malformed,
+            format!("invalid stream frame: {error}"),
+        )
+    })
+}
+
+pub(super) fn boundary(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
+    let bytes = &bytes[from.min(bytes.len())..];
     let lf = bytes.windows(2).position(|window| window == b"\n\n");
     let crlf = bytes.windows(4).position(|window| window == b"\r\n\r\n");
     match (lf, crlf) {
-        (Some(left), Some(right)) if left <= right => Some((left, 2)),
-        (Some(_), Some(right)) | (None, Some(right)) => Some((right, 4)),
-        (Some(left), None) => Some((left, 2)),
+        (Some(left), Some(right)) if left <= right => Some((from + left, 2)),
+        (Some(_), Some(right)) | (None, Some(right)) => Some((from + right, 4)),
+        (Some(left), None) => Some((from + left, 2)),
         (None, None) => None,
     }
 }
 
 pub(crate) trait Accumulate {
     fn new(model: &str) -> Self;
-    fn on(&mut self, frame: &Value) -> crate::error::Result<Vec<Delta>>;
+    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>>;
     fn finish(self) -> AssistantMessage;
+    fn finished(&self) -> bool {
+        false
+    }
 }
 
 pub(crate) trait Chat {
@@ -116,7 +130,7 @@ pub(crate) trait Chat {
         None
     }
 
-    fn request(call: &CompletionRequest, stream: bool) -> Value;
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> Value;
 
     fn parse(model: &str, body: &Value) -> AssistantMessage;
 }

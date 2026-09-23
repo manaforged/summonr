@@ -307,7 +307,7 @@ impl<P: Provider> Loop<P> {
                 )
                 .map_err(super::session_err)?;
         }
-        self.spent_tokens = self.session.replay().spent_tokens;
+        self.spent_tokens = self.session.spent_tokens();
         done.settled = true;
         Ok(())
     }
@@ -763,15 +763,14 @@ impl<P: Provider> Loop<P> {
             Access::Research => Vec::new(),
         };
         let total = paths.len();
-        let replay = self.session.replay();
         ChildResult {
             text: text.to_string(),
             changed_paths: paths,
             changed_paths_total: total,
             rounds,
             usage,
-            billed_tokens: replay.spent_tokens,
-            elapsed_millis: replay.elapsed_millis,
+            billed_tokens: self.session.spent_tokens(),
+            elapsed_millis: self.session.elapsed_millis(),
             diagnostic: diagnostic.map(str::to_string),
         }
     }
@@ -876,7 +875,7 @@ impl<P: Provider> Run<P> {
             tree: self.guard.disarm(),
             paths,
             usage,
-            billed: self.child.session.replay().spent_tokens,
+            billed: self.child.session.spent_tokens(),
             settled: false,
             millis: super::elapsed_millis(self.started),
         }

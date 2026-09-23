@@ -16,7 +16,11 @@ const OUT_MAX: usize = 32 * 1024;
 impl Search {
     pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
         let url = check_url(raw)?;
-        if resolves_blocked(url.host_str().unwrap_or("")) {
+        let host = url.host_str().unwrap_or("").to_string();
+        if tokio::task::spawn_blocking(move || resolves_blocked(&host))
+            .await
+            .unwrap_or(true)
+        {
             return Err(Error::Tool(
                 "web_fetch: that host is not allowed".to_string(),
             ));
@@ -42,23 +46,22 @@ impl Search {
         }
         out.extend(body.chars().take(OUT_MAX));
         out.push_str("\n… truncated");
-        if let Some(path) = self.keep(body) {
-            out.push_str(&format!(
-                "\n[full text: {} — {} bytes]",
-                path.display(),
-                body.len()
-            ));
-        }
+        out.push_str(&match self.keep(body) {
+            Ok(path) => format!("\n[full text: {} — {} bytes]", path.display(), body.len()),
+            Err(error) => format!("\n[full text not kept: {error}]"),
+        });
         out
     }
 
-    fn keep(&self, body: &str) -> Option<PathBuf> {
-        let dir = tempfile::tempdir().ok()?;
+    fn keep(&self, body: &str) -> Result<PathBuf> {
+        let dir = tempfile::tempdir()?;
         let path = dir.path().join("page.md");
-        std::fs::write(&path, body).ok()?;
-        let shown = path.clone();
-        self.logs.lock().ok()?.push(dir);
-        Some(shown)
+        crate::durable::store::write(&path, body)?;
+        self.logs
+            .lock()
+            .map_err(|e| Error::Tool(e.to_string()))?
+            .push(dir);
+        Ok(path)
     }
 
     async fn request(&self, url: &Url) -> Result<Response> {
@@ -185,10 +188,10 @@ pub(super) fn resolves_blocked(host: &str) -> bool {
     if host.parse::<IpAddr>().is_ok() {
         return false;
     }
-    (host, 443)
-        .to_socket_addrs()
-        .map(|addrs| addrs.into_iter().any(|addr| ip_blocked(addr.ip())))
-        .unwrap_or(false)
+    (host, 443).to_socket_addrs().map_or(true, |addrs| {
+        let addrs: Vec<_> = addrs.collect();
+        addrs.is_empty() || addrs.iter().any(|addr| ip_blocked(addr.ip()))
+    })
 }
 
 async fn read_capped(response: Response) -> Result<Vec<u8>> {

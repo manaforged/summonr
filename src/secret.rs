@@ -1,5 +1,3 @@
-#[cfg(unix)]
-use std::fs::File;
 use std::io::Read as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -263,10 +261,10 @@ impl Store {
             std::fs::create_dir_all(parent)?;
             tighten_dir(parent)?;
         }
-        write_private(
+        Ok(store::write(
             &self.file,
-            &seal_file(&self.wrap(true)?, document.to_string().as_bytes())?,
-        )
+            seal_file(&self.wrap(true)?, document.to_string().as_bytes())?,
+        )?)
     }
 
     fn wrap(&self, create: bool) -> Result<[u8; KEY_LEN]> {
@@ -281,6 +279,16 @@ impl Store {
             Backend::Native => os_wrap_key(create, self.wrap_tool.as_deref()),
         }
     }
+}
+
+pub(crate) fn is_store(path: &Path) -> bool {
+    let Ok(home) = crate::prompt::summonr_home() else {
+        return false;
+    };
+    let file = home.join(FILE);
+    [wrap_path(&file), file]
+        .iter()
+        .any(|store| path == store || store.canonicalize().is_ok_and(|real| real == path))
 }
 
 fn wrap_path(credentials: &Path) -> PathBuf {
@@ -319,7 +327,7 @@ fn write_wrap(path: &Path, key: &[u8; KEY_LEN]) -> Result<()> {
         std::fs::create_dir_all(parent)?;
         tighten_dir(parent)?;
     }
-    write_private(path, key)
+    Ok(store::write(path, key)?)
 }
 
 fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {
@@ -618,16 +626,6 @@ fn test_seal(file: &Path) -> [u8; KEY_LEN] {
         OsRng.fill_bytes(&mut key);
         key
     })
-}
-
-pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> Result<()> {
-    let dir = path
-        .parent()
-        .ok_or_else(|| Error::Config(format!("{} has no directory", path.display())))?;
-    store::write(path, bytes)?;
-    #[cfg(unix)]
-    File::open(dir)?.sync_all()?;
-    Ok(())
 }
 
 pub fn get(name: &str) -> Result<Option<(String, Source)>> {

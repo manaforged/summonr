@@ -11,7 +11,7 @@ use crate::provider::{Role, StopReason};
 fn feed(stream: &mut Stream, events: &[Value]) -> Vec<String> {
     let mut seen = Vec::new();
     for event in events {
-        match stream.on(event).unwrap().into_iter().next() {
+        match stream.on(&event.to_string()).unwrap().into_iter().next() {
             Some(Delta::Text(chunk)) => seen.push(format!("text:{chunk}")),
             Some(Delta::Thinking(chunk)) => seen.push(format!("think:{chunk}")),
             Some(Delta::Call(name)) => seen.push(format!("call:{name}")),
@@ -206,7 +206,7 @@ fn a_kept_thinking_block_is_replayed_whole_on_the_next_turn() {
             ],
         }),
     }];
-    let body = request(&ask(vec![message(Role::User, "go"), assistant]), false);
+    let body = request(&ask(&[message(Role::User, "go"), assistant]), false);
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(
         parts[0]["type"], "thinking",
@@ -223,7 +223,7 @@ fn a_kept_thinking_block_is_replayed_whole_on_the_next_turn() {
 fn a_turn_with_nothing_kept_is_still_rebuilt_from_what_we_have() {
     let mut assistant = message(Role::Assistant, "hello");
     assistant.tool_calls = vec![call("toolu_9", "read", "{}")];
-    let body = request(&ask(vec![message(Role::User, "go"), assistant]), false);
+    let body = request(&ask(&[message(Role::User, "go"), assistant]), false);
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(parts[0]["text"], "hello");
     assert_eq!(parts[1]["id"], "toolu_9");

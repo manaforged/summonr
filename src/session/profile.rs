@@ -22,6 +22,7 @@ struct Round {
     cached: u64,
     output: u64,
     calls: usize,
+    request_bytes: u64,
 }
 
 pub fn profile(path: &Path) -> Result<String> {
@@ -32,13 +33,52 @@ pub fn profile(path: &Path) -> Result<String> {
     let mut harness = 0_u64;
     let mut extra = (0_u64, 0_u64, 0_u64, 0_u64);
     let mut turns = 0_usize;
+    let mut prefix = 0_u64;
+    let mut history = (0_u64, 0_u64, 0_u64, 0_u64);
+    let mut first_user = 0_u64;
+    let mut rss_kb = None;
     for line in log::read(path)? {
         match line {
-            Line::Session { model: name, .. } => model = name,
-            Line::User { start: true, .. } => turns += 1,
-            Line::Assistant {
-                tool_calls, usage, ..
+            Line::Session {
+                model: name,
+                system,
+                ..
             } => {
+                model = name;
+                prefix = system.len() as u64;
+            }
+            Line::Tools { bytes } => prefix = prefix.saturating_add(bytes),
+            Line::User {
+                start: true, text, ..
+            } => {
+                turns += 1;
+                history.0 = history.0.saturating_add(text.len() as u64);
+                if first_user == 0 {
+                    first_user = text.len() as u64;
+                }
+            }
+            Line::User { text, .. } => {
+                history.0 = history.0.saturating_add(text.len() as u64);
+            }
+            Line::Assistant {
+                tool_calls,
+                usage,
+                text,
+                reasoning,
+                ..
+            } => {
+                let request_bytes = prefix
+                    .saturating_add(history.0)
+                    .saturating_add(history.1)
+                    .saturating_add(history.2)
+                    .saturating_add(history.3);
+                history.1 = history.1.saturating_add(
+                    (text.len() + reasoning.len()) as u64
+                        + tool_calls
+                            .iter()
+                            .map(|call| call.function.arguments.len() as u64 + 40)
+                            .sum::<u64>(),
+                );
                 for call in &tool_calls {
                     pending.insert(
                         call.id.clone(),
@@ -52,6 +92,7 @@ pub fn profile(path: &Path) -> Result<String> {
                     cached: usage.cached,
                     output: usage.output,
                     calls: tool_calls.len(),
+                    request_bytes,
                 });
             }
             Line::Tool {
@@ -60,6 +101,7 @@ pub fn profile(path: &Path) -> Result<String> {
                 success,
                 millis,
             } => {
+                history.2 = history.2.saturating_add(text.len() as u64 + 40);
                 let (name, arguments) = pending.remove(&call).unwrap_or_default();
                 calls.push(Call {
                     name,
@@ -78,28 +120,66 @@ pub fn profile(path: &Path) -> Result<String> {
                 extra.2 = extra.2.saturating_add(usage.cached);
                 extra.3 = extra.3.saturating_add(usage.output);
             }
+            Line::Receipt { text } => {
+                history.3 = history.3.saturating_add(text.len() as u64);
+            }
+            Line::Summary { text, tail } => {
+                history.0 = first_user;
+                history.1 = 0;
+                history.2 = 0;
+                history.3 = (text.len()
+                    + tail
+                        .iter()
+                        .map(|message| message.content.len() + 40)
+                        .sum::<usize>()) as u64;
+            }
+            Line::Clear => history = (0, 0, 0, 0),
             Line::Budget { .. }
             | Line::Workflow { .. }
             | Line::Child { .. }
-            | Line::User { .. }
-            | Line::Interrupted { .. }
-            | Line::Receipt { .. }
-            | Line::Summary { .. }
-            | Line::Clear
-            | Line::Close { .. } => {}
+            | Line::Rewrite { .. }
+            | Line::Interrupted { .. } => {}
+            Line::Close { rss_kb: kb, .. } => rss_kb = kb,
         }
     }
-    Ok(render(&model, turns, &rounds, &calls, harness, extra))
+    let view = View {
+        model: &model,
+        turns,
+        rounds: &rounds,
+        calls: &calls,
+        harness,
+        extra,
+        prefix,
+        history,
+        rss_kb,
+    };
+    Ok(render(&view))
 }
 
-fn render(
-    model: &str,
+struct View<'a> {
+    model: &'a str,
     turns: usize,
-    rounds: &[Round],
-    calls: &[Call],
+    rounds: &'a [Round],
+    calls: &'a [Call],
     harness: u64,
     extra: (u64, u64, u64, u64),
-) -> String {
+    prefix: u64,
+    history: (u64, u64, u64, u64),
+    rss_kb: Option<u64>,
+}
+
+fn render(view: &View) -> String {
+    let View {
+        model,
+        turns,
+        rounds,
+        calls,
+        harness,
+        extra,
+        prefix,
+        history,
+        rss_kb,
+    } = *view;
     let model_ms = rounds.iter().map(|round| round.millis).sum::<u64>() + extra.0;
     let tool_ms = calls.iter().map(|call| call.millis).sum::<u64>();
     let total = model_ms + tool_ms + harness;
@@ -110,10 +190,13 @@ fn render(
     line(
         &mut out,
         format!(
-            "{model} · {turns} turn(s) · {} model round(s) · {} tool call(s) · {}",
+            "{model} · {turns} turn(s) · {} model round(s) · {} tool call(s) · {}{}",
             rounds.len(),
             calls.len(),
-            secs(total)
+            secs(total),
+            rss_kb
+                .map(|kb| format!(" · rss {:.0} MB", kb as f64 / 1024.0))
+                .unwrap_or_default()
         ),
     );
     line(
@@ -139,6 +222,34 @@ fn render(
             count(rounds.last().map_or(0, |round| round.input))
         ),
     );
+    if !rounds.is_empty() {
+        let warm_input: u64 = rounds.iter().skip(1).map(|round| round.input).sum();
+        let warm_cached: u64 = rounds.iter().skip(1).map(|round| round.cached).sum();
+        let uncached = input.saturating_sub(cached);
+        let avg_request: u64 =
+            rounds.iter().map(|round| round.request_bytes).sum::<u64>() / rounds.len() as u64;
+        let final_history = history.0 + history.1 + history.2 + history.3;
+        line(
+            &mut out,
+            format!(
+                "economy  prefix {} B · avg request {} B · context now {} B (results {})",
+                count(prefix),
+                count(avg_request),
+                count(final_history),
+                share(history.2, final_history.max(1))
+            ),
+        );
+        line(
+            &mut out,
+            format!(
+                "cache    cold {} hit · warm {} hit · uncached {} in ({} per round)",
+                share(rounds[0].cached, rounds[0].input),
+                share(warm_cached, warm_input),
+                count(uncached),
+                count(uncached / rounds.len() as u64)
+            ),
+        );
+    }
     if extra.0 > 0 {
         line(
             &mut out,
@@ -153,6 +264,83 @@ fn render(
     let failed = calls.iter().filter(|call| !call.success).count();
     if failed > 0 {
         line(&mut out, format!("failed  {failed} tool call(s)"));
+    }
+
+    let mut per_tool: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    let mut native = 0_usize;
+    let mut shell = 0_usize;
+    let mut commands = 0_usize;
+    let mut pipes = 0_usize;
+    let mut first_edit = None;
+    for (index, call) in calls.iter().enumerate() {
+        let entry = per_tool.entry(call.name.as_str()).or_default();
+        entry.0 += 1;
+        if !call.success {
+            entry.1 += 1;
+        }
+        let args: serde_json::Value = serde_json::from_str(&call.arguments).unwrap_or_default();
+        if call.name == "run_command" {
+            commands += 1;
+            let command = args
+                .get("command")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if crate::tools::command::searchish(command) {
+                if crate::tools::command::native_read_args(command).is_some() {
+                    native += 1;
+                } else {
+                    shell += 1;
+                }
+            }
+            if head_tail(command) {
+                pipes += 1;
+            }
+        } else if call.name == "read" {
+            let op = args
+                .get("op")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            let pattern = args
+                .get("pattern")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            if op == "search" || (op.is_empty() && !pattern.is_empty()) {
+                native += 1;
+            }
+        } else if call.name == "grep" {
+            native += 1;
+        }
+        if first_edit.is_none() && call.success && matches!(call.name.as_str(), "edit" | "write") {
+            first_edit = Some(index + 1);
+        }
+    }
+    if !calls.is_empty() {
+        let mut tools: Vec<String> = per_tool
+            .iter()
+            .map(|(name, (calls, failed))| {
+                if *failed > 0 {
+                    format!("{name} {calls} ({failed} failed)")
+                } else {
+                    format!("{name} {calls}")
+                }
+            })
+            .collect();
+        tools.sort();
+        let mut health = vec![format!("calls    {}", tools.join(" · "))];
+        if native + shell > 0 {
+            health.push(format!("search   native {native} · shell {shell}"));
+        }
+        if commands > 0 {
+            health.push(format!(
+                "pipes    {pipes} of {commands} run_command calls pipe to head/tail ({})",
+                share(pipes as u64, commands as u64)
+            ));
+        }
+        health.push(match first_edit {
+            Some(index) => format!("first successful edit/write at call {index}"),
+            None => "no successful edit/write".to_string(),
+        });
+        section(&mut out, "tool health", health.into_iter());
     }
 
     let mut slow: Vec<&Call> = calls.iter().collect();
@@ -233,6 +421,21 @@ fn section(out: &mut String, title: &str, lines: impl Iterator<Item = String>) {
     for text in lines {
         line(out, text);
     }
+}
+
+mod aggregate;
+
+pub fn profile_all(last: Option<usize>) -> Result<String> {
+    aggregate::profile_all(last)
+}
+
+fn head_tail(command: &str) -> bool {
+    command
+        .split(['|', ';', '&'])
+        .skip(1)
+        .filter_map(|part| part.split_whitespace().next())
+        .map(|verb| verb.rsplit('/').next().unwrap_or(verb))
+        .any(|verb| matches!(verb, "head" | "tail" | "less" | "more"))
 }
 
 fn brief(arguments: &str) -> String {

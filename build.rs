@@ -4,6 +4,12 @@ fn main() {
     println!("cargo:rerun-if-changed=.git/HEAD");
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo::rustc-check-cfg=cfg(sandboxed)");
+    let os = std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    let windows = std::env::var_os("CARGO_FEATURE_WINDOWS_SANDBOX").is_some();
+    if os == "macos" || os == "linux" || (os == "windows" && windows) {
+        println!("cargo:rustc-cfg=sandboxed");
+    }
     if let Ok(head) = std::fs::read_to_string(".git/HEAD")
         && let Some(reference) = head.strip_prefix("ref: ").map(str::trim)
     {

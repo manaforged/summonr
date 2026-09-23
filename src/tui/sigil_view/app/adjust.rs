@@ -62,6 +62,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn flip(&self, change: impl FnOnce(&mut crate::prefs::Prefs)) {
         let mut model = self.model.borrow_mut();
         change(&mut model.prefs);
+        model.entries.invalidate();
         let prefs = model.prefs.clone();
         drop(model);
         self.persist(&prefs);

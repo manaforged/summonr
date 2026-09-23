@@ -83,6 +83,7 @@ impl Model {
             Ok(bytes) => match preview(&bytes) {
                 Ok(source) => Entry::Image {
                     source,
+                    bytes: bytes.into(),
                     label: path.to_string(),
                 },
                 Err(error) => Entry::Error(format!("{path}: {error}")),
@@ -119,8 +120,10 @@ impl Model {
     }
 
     pub(in crate::tui::sigil_view) fn transcript(&self) -> String {
+        let hidden = self.prefs.reasoning == crate::prefs::Visibility::Off;
         self.entries
             .iter()
+            .filter(|entry| !(hidden && matches!(entry, Entry::Thinking(_))))
             .map(entry_markdown)
             .collect::<Vec<_>>()
             .join("\n\n")

@@ -40,6 +40,9 @@ pub(crate) enum Line {
         #[serde(default, skip_serializing_if = "is_zero")]
         depth: u8,
     },
+    Tools {
+        bytes: u64,
+    },
     Budget {
         tokens: Option<u64>,
         millis: Option<u64>,
@@ -96,10 +99,15 @@ pub(crate) enum Line {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         tail: Vec<Message>,
     },
+    Rewrite {
+        edits: Vec<(usize, Message)>,
+    },
     Clear,
     Close {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        rss_kb: Option<u64>,
     },
 }
 
@@ -145,6 +153,7 @@ impl State {
                 self.parent = parent;
                 self.depth = depth;
             }
+            Line::Tools { .. } | Line::Receipt { .. } => {}
             Line::Budget { tokens, millis } => {
                 self.tokens = tokens;
                 self.millis = millis;
@@ -178,24 +187,16 @@ impl State {
                 self.unanswered = tool_calls.iter().map(|call| call.id.clone()).collect();
                 self.history.push(Message {
                     role: Role::Assistant,
-                    content: text,
-                    images: Vec::new(),
                     tool_calls,
-                    tool_call_id: None,
                     reasoning: (!reasoning.is_empty()).then_some(reasoning),
+                    ..Message::system(text)
                 });
             }
             Line::Interrupted { text, .. } => {
-                if !text.is_empty() {
-                    self.history.push(Message {
-                        role: Role::Assistant,
-                        content: text,
-                        images: Vec::new(),
-                        tool_calls: Vec::new(),
-                        tool_call_id: None,
-                        reasoning: None,
-                    });
-                }
+                self.history.extend((!text.is_empty()).then(|| Message {
+                    role: Role::Assistant,
+                    ..Message::system(text)
+                }));
             }
             Line::Tool {
                 call, text, millis, ..
@@ -212,25 +213,31 @@ impl State {
                 }
                 self.charge(usage);
             }
-            Line::Receipt { text } => {
-                self.history.push(Message::system(text));
-            }
             Line::Summary { text, tail } => {
                 let opener = self
                     .opener
                     .and_then(|index| self.history.get(index).cloned());
                 self.history.clear();
                 self.opener = opener.as_ref().map(|_| 0);
-                self.history.extend(opener);
+                self.history.extend(opener.clone());
                 self.history.push(Message::system(text));
-                self.history.extend(tail);
+                let tail = if tail.first().is_some_and(|m| Some(m) == opener.as_ref()) {
+                    &tail[1..]
+                } else {
+                    &tail[..]
+                };
+                self.history.extend(tail.iter().cloned());
             }
-            Line::Clear => {
-                self.history.clear();
-                self.opener = None;
-                self.unanswered.clear();
+            Line::Rewrite { mut edits } => {
+                edits.retain(|(index, _)| *index < self.history.len());
+                for (index, message) in edits {
+                    self.history[index] = message;
+                }
             }
-            Line::Close { .. } => {
+            end @ (Line::Clear | Line::Close { .. }) => {
+                if end == Line::Clear {
+                    self.history.clear();
+                }
                 self.opener = None;
                 self.unanswered.clear();
             }
@@ -284,11 +291,16 @@ impl Log {
     }
 
     pub(crate) fn append(&mut self, line: &Line) -> io::Result<()> {
-        let mut value = serde_json::to_value(line)?;
-        if let Some(object) = value.as_object_mut() {
-            object.insert("at".to_string(), serde_json::Value::from(now_millis()));
+        #[derive(Serialize)]
+        struct At<'a> {
+            at: u64,
+            #[serde(flatten)]
+            line: &'a Line,
         }
-        let mut bytes = serde_json::to_vec(&value)?;
+        let mut bytes = serde_json::to_vec(&At {
+            at: now_millis(),
+            line,
+        })?;
         bytes.push(b'\n');
         self.file.write_all(&bytes)?;
         self.file.flush()

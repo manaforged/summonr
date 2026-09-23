@@ -4,14 +4,14 @@ A terminal coding agent written in Rust that works until your test command passe
 
 ![summonr in a terminal](docs/guide/assets/summonr-splash.png)
 
-Using a coding agent with summonr? Give it [docs/api.md](docs/api.md).
+Using a coding agent with summonr? Give it [docs/api.md](docs/api.md). `summonr --gui` is the same session in a Sigil desktop window (`cargo install --path . --locked --features gui`).
 
 ## Requirements
 
 - macOS, Linux, or Windows.
 - Git.
 - Rust 1.98.
-- For `--sandbox`: Seatbelt on macOS, or bubblewrap on Linux. Windows AppContainer is unfinished. Git for Windows and user-installed toolchains stay blocked, so don't treat `--sandbox` as containment on Windows.
+- For `--sandbox`: Seatbelt on macOS, or bubblewrap on Linux. Windows AppContainer is unfinished and needs a `--features windows-sandbox` build. Git for Windows and user-installed toolchains stay blocked, so don't treat `--sandbox` as containment on Windows.
 
 ## Install
 
@@ -85,18 +85,29 @@ Optional capabilities are compiled modules; `summonr modules` lists them. You ex
 
 Same model, same three tasks, five samples each, every harness on its defaults, tokens counted at a logging proxy. GLM-5.3-Flash, 2026-09-05. Medians over solved runs.
 
-| Harness | Solved | Harness RSS | System prompt | Prompt tokens / task |
-| --- | ---: | ---: | ---: | ---: |
-| summonr | 13/13 | 18 MB | 513 chars | 75,149 |
-| pi | 12/12 | 138 MB | 16,657 | 77,921 |
-| goose | 15/15 | 110 MB | 1,444 | 101,643 |
-| hermes | 14/14 | 160 MB | 942 | 136,433 |
-| opencode | 13/13 | 738 MB | 2,096 | 237,564 |
-| omp | 13/14 | 714 MB | 18,365 | 364,298 |
+| Harness | Solved | Agent RSS* | Prompt tokens / task |
+| --- | ---: | ---: | ---: |
+| summonr | 13/13 | 18 MB | 75,149 |
+| pi | 12/12 | 138 MB | 77,921 |
+| goose | 15/15 | 110 MB | 101,643 |
+| hermes | 14/14 | 160 MB | 136,433 |
+| opencode | 13/13 | 738 MB | 237,564 |
+| omp | 13/14 | 714 MB | 364,298 |
 
-Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows.
+\* RSS of the agent's main process in `-p` print mode. Language servers, MCP
+servers, and subagents run as separate processes and are not counted. Median
+session length here is about 10 s, so read these as startup and short-task
+numbers.
 
-Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), plus the modules you turned on. `mcp` and `task` are off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is the terminal UI.
+Summonr's fixed prefix is larger than pi's. In the graded 20-task suite
+(`BENCHMARKS.md`), the first request carried a 7,081 to 7,089 B system message
+plus 5,267 B of tool schemas for summonr (7 tools), and 4,511 to 4,527 B plus
+3,024 B for pi (4 tools). Part of summonr's system message in that run was the
+operator's global rules files, which `grade.sh` now keeps out.
+
+Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows. The graded 16-task suite with deterministic verifiers — its full scorecard and limits — lives in [`BENCHMARKS.md`](BENCHMARKS.md).
+
+Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `edit`, `write`, `run_command`, `todo`), plus the modules you turned on. `mcp` and `task` are off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
 
 ## Limits
 

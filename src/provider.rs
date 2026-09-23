@@ -34,46 +34,26 @@ pub enum Role {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 pub struct Image {
     pub media_type: String,
-    #[serde(rename = "data", with = "image_bytes")]
-    pub bytes: Vec<u8>,
+    pub data: String,
 }
 
 impl Image {
     pub(crate) fn encode(media_type: impl Into<String>, bytes: &[u8]) -> Self {
+        use base64::Engine as _;
         Self {
             media_type: media_type.into(),
-            bytes: bytes.to_vec(),
+            data: base64::engine::general_purpose::STANDARD.encode(bytes),
         }
     }
 
-    fn url(&self) -> String {
-        format!(
-            "data:{};base64,{}",
-            self.media_type,
-            base64::engine::general_purpose::STANDARD.encode(&self.bytes)
-        )
-    }
-}
-
-mod image_bytes {
-    use base64::Engine;
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub(super) fn serialize<S>(bytes: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&base64::engine::general_purpose::STANDARD.encode(bytes))
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let encoded = String::deserialize(deserializer)?;
+    pub fn bytes(&self) -> Result<Vec<u8>> {
         base64::engine::general_purpose::STANDARD
-            .decode(encoded)
-            .map_err(serde::de::Error::custom)
+            .decode(&self.data)
+            .map_err(|error| Error::Config(format!("cannot decode stored image: {error}")))
+    }
+
+    fn url(&self) -> String {
+        format!("data:{};base64,{}", self.media_type, self.data)
     }
 }
 
@@ -327,11 +307,11 @@ impl AssistantMessage {
 }
 
 #[derive(Clone, Debug)]
-pub struct CompletionRequest {
+pub struct CompletionRequest<'a> {
     pub session: String,
     pub model: String,
-    pub messages: Vec<Message>,
-    pub tools: Vec<ToolDefinition>,
+    pub messages: &'a [Message],
+    pub tools: &'a [ToolDefinition],
     pub max_output_tokens: Option<u32>,
     pub emit_deltas: bool,
     pub effort: Option<Effort>,
@@ -433,44 +413,26 @@ pub fn dollars(amount: f64) -> String {
     }
 }
 
-impl CompletionRequest {
-    pub(crate) fn durable_bytes(&self) -> serde_json::Result<Vec<u8>> {
-        #[derive(Serialize)]
-        struct DurableMessage<'a> {
-            role: Role,
-            content: &'a str,
-            images: &'a [Image],
-            tool_calls: &'a [ToolCall],
-            tool_call_id: Option<&'a str>,
-            reasoning: Option<&'a str>,
-        }
-
-        #[derive(Serialize)]
-        struct DurableRequest<'a> {
-            model: &'a str,
-            messages: Vec<DurableMessage<'a>>,
-            tools: &'a [ToolDefinition],
-            max_output_tokens: Option<u32>,
-        }
-
-        let messages = self
-            .messages
-            .iter()
-            .map(|message| DurableMessage {
-                role: message.role,
-                content: &message.content,
-                images: &message.images,
-                tool_calls: &message.tool_calls,
-                tool_call_id: message.tool_call_id.as_deref(),
-                reasoning: message.reasoning.as_deref(),
-            })
-            .collect();
-        serde_json::to_vec(&DurableRequest {
-            model: &self.model,
+impl<'a> CompletionRequest<'a> {
+    #[must_use]
+    pub fn new(
+        session: String,
+        model: String,
+        messages: &'a [Message],
+        tools: &'a [ToolDefinition],
+        max_output_tokens: Option<u32>,
+        emit_deltas: bool,
+        effort: Option<Effort>,
+    ) -> Self {
+        Self {
+            session,
+            model,
             messages,
-            tools: &self.tools,
-            max_output_tokens: self.max_output_tokens,
-        })
+            tools,
+            max_output_tokens,
+            emit_deltas,
+            effort,
+        }
     }
 
     pub(crate) fn prefix_hash(&self) -> String {
@@ -506,12 +468,12 @@ pub struct FunctionDefinition {
 pub trait Provider: Send + Sync + 'static {
     fn complete<'a>(
         &'a self,
-        request: &'a CompletionRequest,
+        request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>>;
 
     fn stream<'a>(
         &'a self,
-        request: &'a CompletionRequest,
+        request: &'a CompletionRequest<'a>,
         _partial: &'a mut Partial,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         self.complete(request)
@@ -522,6 +484,10 @@ pub trait Provider: Send + Sync + 'static {
         Self: Sized,
     {
         None
+    }
+
+    fn keeps_reasoning(&self) -> bool {
+        false
     }
 
     fn supports_children(&self) -> bool {
@@ -539,6 +505,7 @@ pub struct Partial {
 
 const PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const STREAM_IDLE: Duration = crate::runtime::JOB_WAIT.saturating_mul(2);
+const STREAM_TOTAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     match seconds {
@@ -559,6 +526,7 @@ pub struct Client {
     body: Option<Value>,
     headers: Vec<(String, String)>,
     opencode: bool,
+    keep_reasoning: bool,
     wire: Wire,
     genai: Option<genai::Client>,
     on_delta: Option<DeltaFn>,
@@ -613,7 +581,7 @@ impl Client {
             })
             .transpose()
             .map_err(native::map_genai)?;
-        let client = Self::build(
+        let mut client = Self::build(
             base,
             crate::credentials::auth(endpoint)?,
             endpoint.body.clone(),
@@ -622,6 +590,7 @@ impl Client {
             genai,
             idle_timeout,
         )?;
+        client.keep_reasoning = endpoint.keep_reasoning;
         Ok(client)
     }
 
@@ -658,7 +627,7 @@ impl Client {
             }
         }
         let timeouts = leyline::TimeoutConfig::new()
-            .total(Duration::from_secs(900))
+            .total(STREAM_TOTAL)
             .connect(Duration::from_secs(20))
             .read(idle_timeout);
         let builder = leyline::Session::builder().timeouts(timeouts);
@@ -684,6 +653,7 @@ impl Client {
             body,
             headers,
             opencode: url::Url::parse(base).is_ok_and(|url| url.host_str() == Some("opencode.ai")),
+            keep_reasoning: false,
             wire,
             genai,
             on_delta: None,
@@ -825,9 +795,10 @@ impl Client {
         Ok(value)
     }
 
-    fn request_body(&self, request: &CompletionRequest, stream: bool) -> Result<Value> {
+    fn request_body(&self, request: &CompletionRequest<'_>, stream: bool) -> Result<Value> {
         let mut body = <wire::completions::Wire as wire::Chat>::request(request, stream);
-        body["messages"] = serde_json::to_value(wire_messages(&request.messages)?)?;
+        body["messages"] =
+            serde_json::to_value(wire_messages(request.messages, self.keeps_reasoning())?)?;
         if self.url.contains("api.openai.com") {
             body["prompt_cache_key"] = json!(request.prefix_hash());
         }
@@ -913,7 +884,7 @@ impl Client {
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))
     }
 
-    async fn complete_once(&self, request: &CompletionRequest) -> Result<AssistantMessage> {
+    async fn complete_once(&self, request: &CompletionRequest<'_>) -> Result<AssistantMessage> {
         let body = self.request_body(request, false)?;
         let reply: Value = self
             .send(&body, &request.session)
@@ -1026,7 +997,7 @@ fn reason(text: &str) -> String {
         .map_or_else(|| text.to_string(), str::to_string)
 }
 
-fn wire_messages(messages: &[Message]) -> Result<Vec<Value>> {
+fn wire_messages(messages: &[Message], keep_reasoning: bool) -> Result<Vec<Value>> {
     let mut prefix = String::new();
     let mut rest = Vec::new();
     for message in messages {
@@ -1038,21 +1009,35 @@ fn wire_messages(messages: &[Message]) -> Result<Vec<Value>> {
             continue;
         }
         if message.role == Role::System {
-            rest.push(message_value(&Message::user(message.content.clone()))?);
+            rest.push(message_value(
+                &Message::user(message.content.clone()),
+                keep_reasoning,
+            )?);
         } else {
-            rest.push(message_value(message)?);
+            rest.push(message_value(message, keep_reasoning)?);
         }
     }
     let mut out = Vec::new();
     if !prefix.is_empty() {
-        out.push(message_value(&Message::system(prefix))?);
+        out.push(message_value(&Message::system(prefix), keep_reasoning)?);
     }
     out.extend(rest);
     Ok(out)
 }
 
-fn message_value(message: &Message) -> Result<Value> {
+fn message_value(message: &Message, keep_reasoning: bool) -> Result<Value> {
     let mut value = serde_json::to_value(message)?;
+    if message.role == Role::Assistant
+        && let Some(object) = value.as_object_mut()
+    {
+        if keep_reasoning {
+            object
+                .entry("reasoning_content")
+                .or_insert_with(|| json!(""));
+        } else {
+            object.remove("reasoning_content");
+        }
+    }
     if let Some(calls) = value.get_mut("tool_calls").and_then(Value::as_array_mut) {
         for call in calls {
             if let Some(call) = call.as_object_mut() {
@@ -1084,16 +1069,20 @@ fn message_value(message: &Message) -> Result<Value> {
 }
 
 impl Provider for Client {
+    fn keeps_reasoning(&self) -> bool {
+        self.opencode || self.keep_reasoning
+    }
+
     fn complete<'a>(
         &'a self,
-        request: &'a CompletionRequest,
+        request: &'a CompletionRequest<'a>,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         Box::pin(async move { self.stream(request, &mut Partial::default()).await })
     }
 
     fn stream<'a>(
         &'a self,
-        request: &'a CompletionRequest,
+        request: &'a CompletionRequest<'a>,
         partial: &'a mut Partial,
     ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
         Box::pin(async move {

@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, ColorAtom, Cx, IntoNode, JustifyContent, LayoutBuilderExt, LayoutReactiveExt,
-    LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Style, classes, container,
+    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle,
+    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal, Style, classes, container,
     effect, empty_state, label, node, scroll, signal, spacer,
 };
 
@@ -10,15 +10,14 @@ use super::footer;
 use super::panels;
 use super::todos;
 use super::{App, Entry, canvas};
-use crate::tui::short_session;
+use crate::tui::{ToolState, short_session};
 
 pub(in crate::tui::sigil_view) fn layer(
     app: App,
     cols: u16,
     editor: impl IntoNode + 'static,
 ) -> NodeBuilder {
-    let full_width = usize::from(cols);
-    let width = content_width(cols);
+    let width = usize::from(cols);
     let transcript_app = app.clone();
     container()
         .layout(
@@ -30,18 +29,33 @@ pub(in crate::tui::sigil_view) fn layer(
         )
         .child(header(app.clone()))
         .child(node(move |cx: &mut Cx| {
-            cx.add(transcript(transcript_app.clone()))
+            transcript_app.tui_chat_active.set(true);
+            let select = transcript_app.clone();
+            let layout = LayoutStyle::flex_column()
+                .fill_width()
+                .min_size(0.0, 0.0)
+                .padding_x(16.0)
+                .gap(canvas::cell().h);
+            let empty = || {
+                empty_state(
+                    "Summonr",
+                    "ask anything · /login setup · @file attaches · !cmd runs · /help",
+                )
+            };
+            cx.add(
+                transcript(transcript_app.clone(), layout, empty).pointer_down(move |event| {
+                    if event.button == Some(MouseButton::Left) {
+                        select.selection_anchor.set(None);
+                        event.stop_propagation();
+                    }
+                }),
+            )
         }))
-        .child(panels::agents(app.clone(), full_width, width))
+        .child(panels::agents(app.clone(), width))
         .child(todos::widget(app.clone(), cols))
-        .child(panels::bands(app.clone(), full_width, width))
-        .child(composer::widget(app.clone(), full_width, width, editor))
-        .child(footer::footer_bar(app, full_width, width))
-}
-
-fn content_width(cols: u16) -> usize {
-    let width = usize::from(cols);
-    width.saturating_sub(super::margin(width) * 2)
+        .child(panels::bands(app.clone(), width))
+        .child(composer::widget(app.clone(), width, editor))
+        .child(footer::footer_bar(app, width))
 }
 
 fn header(app: App) -> NodeBuilder {
@@ -50,7 +64,6 @@ fn header(app: App) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
-                .padding_x(16.0)
                 .align_items(AlignItems::Center)
                 .shrink(0.0)
                 .gap(8.0),
@@ -116,16 +129,77 @@ fn header(app: App) -> NodeBuilder {
         })
 }
 
-fn transcript(app: App) -> NodeBuilder {
-    let live = app.clone();
+type Key = (u64, usize, usize, u8, bool);
+
+fn key(entry: &Entry, index: usize, stamp: u64, flags: (bool, bool)) -> Key {
+    let (size, state) = match entry {
+        Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
+        Entry::Thinking(text) => (text.len(), u8::from(flags.0)),
+        Entry::Tool { state, output, .. } => (
+            output.len(),
+            u8::from(!matches!(state, ToolState::Running))
+                + u8::from(matches!(state, ToolState::Failed)),
+        ),
+        Entry::User(_)
+        | Entry::Receipt(_)
+        | Entry::Verify { .. }
+        | Entry::Mail { .. }
+        | Entry::Aborted(_)
+        | Entry::System(_)
+        | Entry::Error(_)
+        | Entry::Chart(_)
+        | Entry::Image { .. } => (0, 0),
+    };
+    (stamp, index, size, state, flags.1)
+}
+
+fn build(
+    app: App,
+    index: usize,
+    bounds: Signal<(f32, f32, f32, f32)>,
+    target: bool,
+) -> Box<dyn IntoNode> {
+    node(move |cx: &mut Cx| {
+        let (entry, prefs) = {
+            let model = app.model.borrow();
+            (model.entries.get(index).cloned(), model.prefs.clone())
+        };
+        let Some(entry) = entry else {
+            return cx.add(container());
+        };
+        let row = entry::row(entry, &prefs, &app);
+        if !target {
+            return cx.add(row);
+        }
+        let measured = signal((0.0, 0.0, 0.0, 0.0));
+        let target = app.search.target;
+        let scroll = app.scroll_y;
+        cx.add(row.bounds_reactive(measured).on_added(move |_, _| {
+            effect(move || {
+                let (_, y, _, height) = measured.get();
+                let (_, top, _, body_height) = bounds.get();
+                if target.peek() == Some(index) && height > 0.0 && body_height > 0.0 {
+                    scroll.set((y - top).max(0.0));
+                    target.set(None);
+                }
+            });
+        }))
+    })
+}
+
+pub(in crate::tui::sigil_view) fn transcript(
+    app: App,
+    layout: LayoutStyle,
+    empty: fn() -> NodeBuilder,
+) -> NodeBuilder {
     let bounds = signal((0.0, 0.0, 0.0, 0.0));
     let viewport = signal((0.0, 0.0));
     let transcript_height = app.transcript_height;
     let extent = app.extent;
+    let live = app.clone();
     let body = container()
         .bounds_reactive(bounds)
         .on_added(move |_, _| {
-            live.tui_chat_active.set(true);
             effect(move || {
                 let height = bounds.get().3;
                 if height > 0.0 {
@@ -133,60 +207,28 @@ fn transcript(app: App) -> NodeBuilder {
                 }
             });
         })
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .fill_height()
-                .grow(1.0)
-                .min_size(0.0, 0.0)
-                .justify_content(JustifyContent::End)
-                .padding_x(16.0)
-                .padding_y(8.0)
-                .gap(0.0),
-        )
-        .children_reactive({
-            let live = app.clone();
-            move || {
-                let _revision = live.panes.get();
-                let _ticks = live.ticks.get();
-                let entries: Vec<Entry> = live.model.borrow().entries.to_vec();
-                let tools = live.model.borrow().prefs.tools;
-                let layout = live.model.borrow().prefs.diff_layout;
-                if entries.is_empty() {
-                    return vec![empty_state(
-                        "Summonr",
-                        "ask anything · /login setup · @file attaches · !cmd runs · /help",
-                    )];
-                }
-                let mut column = container().layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::cell().h),
-                );
-                for (index, item) in entries.into_iter().enumerate() {
-                    let node = entry::row(item, tools, layout, &live);
-                    if live.search.target.peek() != Some(index) {
-                        column = column.child(node);
-                        continue;
-                    }
-                    let measured = signal((0.0, 0.0, 0.0, 0.0));
-                    let target = live.search.target;
-                    let scroll = live.scroll_y;
-                    column = column.child(node.bounds_reactive(measured).on_added(move |_, _| {
-                        effect(move || {
-                            let (_, y, _, height) = measured.get();
-                            let (_, top, _, body_height) = bounds.get();
-                            if target.peek() == Some(index) && height > 0.0 && body_height > 0.0 {
-                                scroll.set((y - top).max(0.0));
-                                target.set(None);
-                            }
-                        });
-                    }));
-                }
-                vec![column]
+        .layout(layout)
+        .children_keyed(move || {
+            let _revision = live.panes.get();
+            let target = live.search.target.peek();
+            let model = live.model.borrow();
+            let entries = &model.entries;
+            if entries.is_empty() {
+                return vec![((entries.stamp, usize::MAX, 0, 0, false), node(empty()))];
             }
+            let busy = model.busy_since.is_some();
+            let last = entries.len() - 1;
+            entries
+                .iter()
+                .enumerate()
+                .map(|(index, item)| {
+                    let aimed = target == Some(index);
+                    let flags = (busy && index == last, aimed);
+                    let row = build(live.clone(), index, bounds, aimed);
+                    (key(item, index, entries.stamp, flags), row)
+                })
+                .collect()
         });
-    let select = app.clone();
     container()
         .size_reactive(viewport)
         .on_added(move |_, _| {
@@ -203,12 +245,6 @@ fn transcript(app: App) -> NodeBuilder {
                 .grow(1.0)
                 .min_size(0.0, 0.0),
         )
-        .pointer_down(move |event| {
-            if event.button == Some(MouseButton::Left) {
-                select.selection_anchor.set(None);
-                event.stop_propagation();
-            }
-        })
         .child(
             scroll(body, app.extent)
                 .fill()

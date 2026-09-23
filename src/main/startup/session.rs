@@ -99,7 +99,12 @@ pub(super) fn build(
     action: SessionAction,
 ) -> Result<Loop<Client>> {
     let switches = summonr::modules::Switches::load(workspace)?;
-    let prompt = system_prompt_with(workspace, args.trust, switches.enabled("skills"));
+    let prompt = system_prompt_with(
+        workspace,
+        args.trust,
+        switches.enabled("skills"),
+        endpoint.images,
+    );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
     let mut loop_ = match action {
         SessionAction::Create => Loop::new(provider, endpoint.model.clone(), workspace, prompt)?,
@@ -125,6 +130,14 @@ pub(super) fn build(
     loop_.set_effort(args.effort.or(endpoint.effort));
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
+    loop_.set_images(
+        endpoint.images,
+        if endpoint.images {
+            None
+        } else {
+            summonr::vision_endpoint()
+        },
+    );
     loop_.set_modules(&switches);
     configure(loop_, args, check)
 }
@@ -153,11 +166,6 @@ fn configure(
     }
     if let Some(check) = check {
         loop_ = loop_.with_verify(check);
-    }
-    if args.max_turns.is_some() && args.goal.is_none() {
-        return Err(summonr::Error::Config(
-            "--max-turns only applies to --goal".to_string(),
-        ));
     }
     let budget = if args.max_tokens.is_some() || args.max_secs.is_some() {
         Some(Budget {
@@ -205,17 +213,13 @@ fn load_session(args: &Args, workspace: &Path) -> Result<SessionAction> {
         }
     }
     if let Some(objective) = args.goal.as_deref() {
-        let max_turns = args.max_turns.map_or(0, |turns| turns as usize);
         let roots = candidates(workspace);
         if let Some(info) = list_sessions()?.into_iter().rev().find(|info| {
             roots
                 .iter()
-                .any(|root| Loop::<Client>::goal_at(&info.path, root, objective, max_turns))
+                .any(|root| Loop::<Client>::goal_at(&info.path, root, objective))
         }) {
-            eprintln!(
-                "resuming goal in session {} (its turn limit stays as recorded)",
-                info.id
-            );
+            eprintln!("resuming goal in session {}", info.id);
             return Ok(SessionAction::Resume(info.path));
         }
     }

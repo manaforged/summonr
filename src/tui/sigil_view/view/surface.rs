@@ -22,6 +22,8 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
     let editor = text_edit(app.draft)
         .caret_position(app.caret)
         .state(app.editor.clone())
+        .content_padding(0.0, 0.0)
+        .chrome(false)
         .layout(editor_layout(app.viewport.peek().1))
         .placeholder("")
         .change(move |draft| {
@@ -48,7 +50,7 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
 
 fn editor_layout(rows: u16) -> LayoutStyle {
     let cell = canvas::cell().h;
-    let visible = (rows / 2).saturating_sub(2).clamp(1, 4);
+    let visible = (rows / 2).saturating_sub(2).max(1);
     LayoutStyle::flex_column()
         .fill_width()
         .min_size(0.0, cell)
@@ -65,9 +67,10 @@ pub(super) fn theme(_name: &str) -> Theme {
     theme
 }
 
-fn tokens(palette: Palette) -> [(&'static str, Rgba8); 27] {
+fn tokens(palette: Palette) -> [(&'static str, Rgba8); 30] {
     [
         ("accent", palette.accent),
+        ("accent-11", palette.accent),
         ("surface", palette.base),
         ("surface-hover", palette.tool_bg),
         ("surface-pressed", palette.user_bg),
@@ -85,13 +88,27 @@ fn tokens(palette: Palette) -> [(&'static str, Rgba8); 27] {
         ("gray-8", palette.gray),
         ("gray-11", palette.dim),
         ("gray-12", palette.text),
-        ("success-3", canvas::blend(palette.base, palette.green, 0.2)),
+        (
+            "success-3",
+            canvas::blend(palette.tool_bg, palette.green, 0.2),
+        ),
+        (
+            "success-5",
+            canvas::blend(palette.tool_bg, palette.green, 0.45),
+        ),
         ("success-9", palette.green),
         ("success-11", palette.green),
         ("warn-11", palette.yellow),
-        ("error-3", canvas::blend(palette.base, palette.error, 0.25)),
+        (
+            "error-3",
+            canvas::blend(palette.tool_bg, palette.error, 0.25),
+        ),
+        (
+            "error-5",
+            canvas::blend(palette.tool_bg, palette.error, 0.45),
+        ),
         ("error-11", palette.error),
-        ("info-3", canvas::blend(palette.base, palette.cyan, 0.2)),
+        ("info-3", canvas::blend(palette.tool_bg, palette.cyan, 0.2)),
         ("info-11", palette.cyan),
         (
             "accent-hover",

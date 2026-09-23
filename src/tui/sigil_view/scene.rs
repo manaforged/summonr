@@ -37,8 +37,9 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             super::view::watch(&app);
             let (cols, rows) = app.viewport.get();
             drop(app.theme_name.get());
+            let ticks = app.ticks.get();
             let ticks = if app.model.borrow().prefs.animations {
-                app.ticks.get()
+                ticks
             } else {
                 0
             };

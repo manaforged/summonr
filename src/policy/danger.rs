@@ -15,13 +15,13 @@ pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
     let segments = split_segments(command);
     let moved = segments
         .iter()
-        .any(|segment| matches!(verb(&tokens(segment)).as_deref(), Some("cd" | "pushd")));
+        .any(|segment| matches!(verb(&argv(segment)).as_deref(), Some("cd" | "pushd")));
     segments
         .iter()
         .find_map(|segment| risky(segment, workspace, moved))
 }
 
-fn tokens(segment: &str) -> Vec<String> {
+pub(crate) fn argv(segment: &str) -> Vec<String> {
     unquoted(segment, &[" ", "\t"])
         .into_iter()
         .map(|word| word.trim_matches(|c| c == '"' || c == '\'').to_string())
@@ -30,12 +30,12 @@ fn tokens(segment: &str) -> Vec<String> {
         .collect()
 }
 
-fn verb(words: &[String]) -> Option<String> {
+pub(crate) fn verb(words: &[String]) -> Option<String> {
     Some(words.first()?.rsplit('/').next()?.to_ascii_lowercase())
 }
 
 fn risky(segment: &str, workspace: &Path, moved: bool) -> Option<&'static str> {
-    let words = tokens(segment);
+    let words = argv(segment);
     let verb = verb(&words)?;
     let args = &words[1..];
     let lower = segment.to_ascii_lowercase();
@@ -47,6 +47,14 @@ fn risky(segment: &str, workspace: &Path, moved: bool) -> Option<&'static str> {
             Some("it deletes recursively outside the workspace")
         }
         "find" if args.iter().any(|arg| arg == "-delete") => Some("it deletes files"),
+        "sed"
+            if args
+                .iter()
+                .any(|arg| arg.starts_with("-i") || arg.starts_with("--in-place"))
+                && !contained(args, workspace, moved) =>
+        {
+            Some("it edits files outside the workspace in place")
+        }
         "shred" => Some("it destroys file contents"),
         "git" => git(args),
         "terraform" | "tofu" if args.iter().any(|arg| arg == "destroy") => {

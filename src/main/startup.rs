@@ -6,10 +6,12 @@ mod inference;
 mod lifecycle;
 #[path = "startup/session.rs"]
 mod session;
+#[path = "startup/tool.rs"]
+mod tool;
 
 use summonr::Result;
 
-use super::cli::{self, Args};
+use super::cli::Args;
 use super::diagnostics;
 use commands::{
     adopt, export_session_cmd, manage_worktrees, print_diff, print_sessions, print_workflows,
@@ -19,8 +21,7 @@ use inference::run_decide;
 use lifecycle::launch;
 use session::{SessionAction, build};
 
-pub(super) async fn run() -> Result<i32> {
-    let args = cli::parse()?;
+pub(super) async fn run(args: Args) -> Result<i32> {
     let log = if args.room.is_some() {
         None
     } else {
@@ -46,6 +47,9 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     }
     if let Some(words) = &args.room {
         return summonr::room::run(words, &std::env::current_dir()?).await;
+    }
+    if let Some(tool) = &args.tool {
+        return tool::run(&args, tool).await;
     }
     if args.acp {
         return summonr::acp::serve(
@@ -91,7 +95,11 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
         return export_session_cmd(&args).map(|()| 0);
     }
     if args.profile {
-        print!("{}", summonr::profile_session(&session_path(&args)?)?);
+        if args.all {
+            print!("{}", summonr::profile_sessions(args.last)?);
+        } else {
+            print!("{}", summonr::profile_session(&session_path(&args)?)?);
+        }
         return Ok(0);
     }
     if args.list_workflows {

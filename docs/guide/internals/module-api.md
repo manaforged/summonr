@@ -24,7 +24,7 @@ Never answer "that's all the API" from this page alone. Nine menu jobs sit on
 4. A public item that is not a row here is a candidate for `pub(crate)`.
 5. `src/tui` has its own page, [`tui.md`](tui.md), under the same four rules.
 
-Compiled modules are the garden: keep the binary small. Skills, MCP, hooks,
+Compiled modules are the built-in modules: keep the binary small. Skills, MCP, hooks,
 and `run_command` CLIs are user extras outside the process. Do not add a
 plugin host or a second name for `skill`, `mcp`, or `run_command`.
 
@@ -37,7 +37,7 @@ The tool schemas. Four core, five behind modules.
 | `read` | `tools/catalog.rs:101` | always |
 | `edit` | `tools/catalog.rs:122` | always |
 | `write` | `tools/catalog.rs:195` | always |
-| `run_command` | `tools/catalog.rs:287` | always; the schema text follows the network switch |
+| `run_command` | `tools/catalog.rs:287` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
 | `todo` | `tools/catalog.rs:227` | always; owns the itemized Work step list |
 | `skill` | `tools/catalog.rs:255` | `.summonr/skills` present |
 | `lsp` | `tools/catalog.rs:268` | `lsp` module on |
@@ -61,7 +61,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
 | plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.summonr/plan.md` |
-| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume |
+| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw |
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
 | endpoint | `endpoint.rs`, `~/.summonr/config.toml` | 28 built-in rows, four wires |
@@ -75,19 +75,21 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
 | mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
-| checkpoint | `checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; restore and turn undo |
+| checkpoint | `checkpoint.rs`, `runtime/checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; `Loop::checkpoint` captures it in the background and `Loop::settle` joins it before any tool runs; restore and turn undo |
 | loop guard | `runtime/guard.rs` | repeated identical results: warn at 3, ask or stop at 6, raise `low` effort to `medium` |
 | fallback | `endpoint.rs::fallbacks`, `[endpoint.NAME] fallback` | switch to the next endpoint after retries run out |
 | approval | `policy/danger.rs`, `runtime/approval.rs`, `Grant::Danger` | a static check flags destructive commands; the judge seat reviews each one against the user's messages, earlier tool calls, and `git status`, then allows or blocks with a rule; 3 blocks in a row or 20 in a session ask the user, or keep denying headless |
 | edit approval | `prefs::banned_edit`, `Grant::Edit`, `ToolRegistry::{allow_edit,reset_edits}` | tests and comments use saved defaults; an explicit user request or interactive approval allows the current task, and the next user turn resets the exception |
 | task progress | `chat::todos`, `panes::ledger::item`, `App::history_rows` | a compact strip reserves space above the composer; click or the ledger hotkey expands the list, wheel scrolls it, and completion removes it |
-| diff layout | `Prefs::diff_layout`, `DiffLayout`, `transcript::edits` | split by default, unified selectable in edit headers or settings; the saved choice applies to inline edits, with unified rendering in narrow panes |
+| diff layout | `Prefs::diff_layout`, `DiffLayout`, `chat/entry.rs` diff row | split by default, unified selectable in edit headers or settings; the saved choice applies to inline edits, with unified rendering in narrow panes |
 | askpass | `askpass.rs`, `summonr askpass`, `SUDO_ASKPASS`, `SSH_ASKPASS` | a masked TUI prompt for a password a command asks for; the secret goes to the command over a 0600 socket, never into events or tool output, and later command output replaces it with `[secret]` |
 | acp | `acp.rs`, `summonr acp` | Agent Client Protocol v1 over stdio through `rpc.rs` |
 | mail | `bus.rs::deliver`, `@id` | a prompt that names a live session goes to its inbox |
-| profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, slowest tools and rounds, largest results, repeated calls, all from `session.jsonl` |
+| profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, tool health (per-tool calls and failures, native vs shell search, head-pipe rate, first edit), slowest tools and rounds, largest results, repeated calls, all from `session.jsonl`; `--all` aggregates every session journal (calls, failures, native vs shell search, head-pipe rate, size per call, first-edit index) |
+| read dedup | `tools/dedup.rs`, `ToolRegistry::forget_reads` | skips re-sending unchanged file ranges; every compaction and `/clear` resets it |
+| tool | `tools.rs::run_tool`, `main/startup/tool.rs`, `summonr tool NAME [JSON]` | invoke one model-facing tool from the CLI under the workspace policy; checks and benches without a paid model turn |
 
-Process surface: 34 flags in `main/cli.rs`, 46 commands in `command.rs`, exit
+Process surface: 34 flags in `main/cli.rs`, 47 commands in `command.rs`, exit
 codes 0/1/2/3. Keys, env, config, and disk are in the
 [reference](../reference.md) and the [API map](../../api.md).
 
@@ -101,14 +103,19 @@ not against the name.
 | `summonr decide` | `summonr infer` | retired spelling exits with a migration error; inference uses the existing decisions API |
 | `Line`, `Event`, `Msg`/`Cmd`, `Entry` | one session event, plus projections | four types describe the same session facts: 13, 16, 38/37, and 12 variants |
 | 23 orphan functions | nothing | 13 live, 10 `cfg(test)`-only, zero callers |
-| `unicode-width`, `winapi-util` | nothing | declared in `Cargo.toml`, zero references in `src` |
+| `unicode-width`, `winapi-util`, `smol_str`, direct `reqwest` | nothing | declared in `Cargo.toml`, zero references in `src` |
+| `Error::MaxRounds`, `--max-turns`, `Goal.max_turns` | `--max-tokens`, `--max-secs` | round caps are banned; only token and wall-clock budgets bound a run |
+| `gui` module row | `--gui` flag | the row was never read; the flag decides |
+| `chat::transcript` cell renderer, `canvas::{Span, Line, Source}` | Sigil `markdown` in `chat/entry.rs` | compiled only for one test |
+| `Loop::commit`, `ToolRegistry::skill_ready` | `Loop::hydrate`, the once-per-registry skills probe | commit ignored its argument; the skills rescan changed the prefix mid-session |
+| per-host transcript builders | `chat::surface::transcript` | the TUI and desktop hosts share one keyed builder |
 
 ### Checked and kept
 
 These look like duplicates by name. They are not. The difference is payload or
 layer, and each one was read before it was written down here:
 
-- `Policy {Single, Steps, Goal {max_turns}}` is not `WorkKind {Single, Steps,
+- `Policy {Single, Steps, Goal}` is not `WorkKind {Single, Steps,
   Goal}`. `Policy` is the configured budget, `WorkKind` is the reported kind,
   and `work.rs:467` converts one to the other on purpose.
 - `work::Observation {File, Stdout}` is not `steps::Item {File, Stdout {command,

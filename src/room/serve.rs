@@ -92,7 +92,15 @@ impl Server {
         match method {
             "initialize" => Ok(self.initialize(params)),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": tools()})),
+            "tools/list" => {
+                let tools: Vec<Value> = tools()
+                    .into_iter()
+                    .map(|(name, description, schema)| {
+                        json!({"name": name, "description": description, "inputSchema": schema})
+                    })
+                    .collect();
+                Ok(json!({ "tools": tools }))
+            }
             "tools/call" => {
                 let name = params.get("name").and_then(Value::as_str).unwrap_or("");
                 let args = params.get("arguments").cloned().unwrap_or(json!({}));
@@ -339,48 +347,44 @@ fn render(mail: impl Iterator<Item = Mail>) -> String {
     lines.join("\n\n")
 }
 
-fn tool(name: &str, description: &str, schema: Value) -> Value {
-    json!({"name": name, "description": description, "inputSchema": schema})
-}
-
-fn tools() -> Vec<Value> {
+pub(crate) fn tools() -> Vec<(&'static str, &'static str, Value)> {
     let none = json!({"type": "object", "properties": {}, "additionalProperties": false});
     vec![
-        tool(
+        (
             "join",
             "Join the room under a name. Idempotent; renames if already joined. kind is claude, codex, summonr, summoner, or mcp.",
             json!({"type": "object", "properties": {"id": {"type": "string"}, "kind": {"type": "string"}}, "additionalProperties": false}),
         ),
-        tool(
+        (
             "agents",
             "Who is in the room: id, kind, model, workspace, status.",
             none.clone(),
         ),
-        tool(
+        (
             "send",
             "Send text to one agent by id, or to \"all\". It lands in their inbox; they reply to your id.",
             json!({"type": "object", "properties": {"to": {"type": "string"}, "text": {"type": "string"}}, "required": ["to", "text"], "additionalProperties": false}),
         ),
-        tool(
+        (
             "inbox",
             "Read mail that arrived since the last read. Returns at once.",
             none.clone(),
         ),
-        tool(
+        (
             "wait",
             "Block until mail arrives or secs pass (default 60, max 300). Use when you are waiting on a peer.",
             json!({"type": "object", "properties": {"secs": {"type": "integer", "minimum": 1, "maximum": 300}}, "additionalProperties": false}),
         ),
-        tool(
+        (
             "board",
             "The workspace blackboard shared by everyone in the room: list, get key, set key=value. Claim files, post decisions, split work.",
             json!({"type": "object", "properties": {"action": {"type": "string", "enum": ["get", "set", "list"]}, "key": {"type": "string"}, "value": {"type": "string"}}, "required": ["action"], "additionalProperties": false}),
         ),
-        tool(
+        (
             "status",
             "Set the one-line status other agents see next to your name.",
             json!({"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"], "additionalProperties": false}),
         ),
-        tool("leave", "Leave the room.", none),
+        ("leave", "Leave the room.", none),
     ]
 }

@@ -2,6 +2,11 @@ use super::*;
 use crate::checkpoint::Checkpoints;
 use crate::durable::log::{self, Line};
 
+pub(super) type Pretask = (
+    Option<tokio::task::JoinHandle<(String, Option<String>)>>,
+    String,
+);
+
 impl<P: Provider> Loop<P> {
     fn checkpoints(&mut self) -> Option<&Checkpoints> {
         if self.checkpoints.is_none() {
@@ -10,24 +15,32 @@ impl<P: Provider> Loop<P> {
         self.checkpoints.as_ref()
     }
 
-    pub(super) fn checkpoint(
+    pub(super) fn checkpoint(&mut self) -> Pretask {
+        let workspace = self.workspace.clone();
+        let points = (self.depth == 0).then(|| self.checkpoints().cloned());
+        let task = tokio::task::spawn_blocking(move || {
+            let snapshot = crate::diff::snapshot(&workspace);
+            let skipped = points.flatten().and_then(|points| points.capture().err());
+            (snapshot, skipped.map(|error| error.to_string()))
+        });
+        (Some(task), String::new())
+    }
+
+    pub(super) async fn settle(
         &mut self,
+        pre: &mut Pretask,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        if self.depth > 0 {
-            return Ok(());
+    ) -> Result<String> {
+        if let Some(task) = pre.0.take() {
+            let (snapshot, skipped) = task.await.map_err(std::io::Error::from)?;
+            pre.1 = snapshot;
+            if let Some(error) = skipped {
+                let text = format!("checkpoint skipped: {error}");
+                self.push_event(events, emit, Event::Note { text })?;
+            }
         }
-        let Some(Err(error)) = self.checkpoints().map(Checkpoints::capture) else {
-            return Ok(());
-        };
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("checkpoint skipped: {error}"),
-            },
-        )
+        Ok(pre.1.clone())
     }
 
     pub(crate) fn rollback(&mut self, turn: Option<usize>) -> Result<(usize, Vec<String>)> {

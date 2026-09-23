@@ -1,21 +1,19 @@
 use sigil::prelude::{
-    AlignItems, DiffLayout as SigilDiffLayout, IntoNode, LayoutBuilderExt, LayoutStyle,
-    NodeBuilder, NodeStyleExt, ObjectFit, Overflow, chart, classes, container, diff, image, label,
-    text,
+    AlignItems, DiffLayout as SigilDiffLayout, Fill, Geometry, IntoNode, LayoutBuilderExt,
+    LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, ObjectFit, Overflow,
+    PointerEvent, chart, classes, container, diff, image, label, markdown, signal, text,
 };
 
 use super::{App, Entry};
-use crate::prefs::{DiffLayout, ToolOutput};
+use crate::prefs::{DiffLayout, Prefs, ToolOutput, Visibility};
+
 use crate::tui::ToolState;
 
 const COMPACT_ROWS: usize = 32;
 
-pub(in crate::tui::sigil_view) fn row(
-    entry: Entry,
-    tools: ToolOutput,
-    layout: DiffLayout,
-    app: &App,
-) -> NodeBuilder {
+pub(in crate::tui::sigil_view) fn row(entry: Entry, prefs: &Prefs, app: &App) -> NodeBuilder {
+    let tools = prefs.tools;
+    let layout = prefs.diff_layout;
     match entry {
         Entry::User(body) => container()
             .layout(
@@ -29,9 +27,16 @@ pub(in crate::tui::sigil_view) fn row(
         Entry::Assistant { text: body, .. } if body.trim().is_empty() => container(),
         Entry::Thinking(body) if body.trim().is_empty() => container(),
         Entry::Receipt(body) if body.trim().is_empty() => container(),
-        Entry::Assistant { text: body, .. } => prose(&body, "text-sm text-gray-12"),
-        Entry::Thinking(body) => prose(&body, "text-xs italic text-gray-11"),
-        Entry::Receipt(body) => prose(&body, "text-xs text-gray-11"),
+        Entry::Assistant { text: body, .. } => wrap(markdown(signal(body))),
+        Entry::Thinking(body) => {
+            let live = {
+                let model = app.model.borrow();
+                model.busy_since.is_some()
+                    && matches!(model.entries.last(), Some(Entry::Thinking(last)) if *last == body)
+            };
+            collapsible(&body, "thinking", prefs.reasoning, app, true, live)
+        }
+        Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
         Entry::Tool {
             name,
             arg,
@@ -59,25 +64,89 @@ pub(in crate::tui::sigil_view) fn row(
         ),
         Entry::Image {
             source,
+            bytes,
             label: name,
         } => {
-            let height = source.height() as f32;
-            let width = source.width() as f32;
+            let (width, height) = (source.width() as f32, source.height() as f32);
+            let id = source.id();
+            let kind =
+                crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
             container()
                 .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+                .pointer_up(move |event| {
+                    if event.button != Some(MouseButton::Left) {
+                        return;
+                    }
+                    let file = format!("summonr-image-{id}.{}", kind.unwrap_or("png"));
+                    let path = std::env::temp_dir().join(file);
+                    if crate::durable::store::write(&path, &bytes).is_ok() {
+                        drop(std::process::Command::new("open").arg(&path).spawn());
+                    }
+                })
                 .child(
                     image(source)
                         .alt(name.clone())
                         .fit(ObjectFit::Contain)
-                        .layout(
-                            LayoutStyle::block()
-                                .fill_width()
-                                .max_size(width, height)
-                                .height(height),
-                        ),
+                        .layout(LayoutStyle::block().width(width).height(height)),
                 )
                 .child(label(name).class(classes!("text-xs text-gray-11")))
         }
+    }
+}
+
+fn collapsible(
+    body: &str,
+    kind: &str,
+    visibility: Visibility,
+    app: &App,
+    reasoning: bool,
+    live: bool,
+) -> NodeBuilder {
+    let toggle = app.clone();
+    let next = if visibility == Visibility::Expanded {
+        "collapsed"
+    } else {
+        "expanded"
+    };
+    let press = move |event: &mut PointerEvent| {
+        if event.button == Some(MouseButton::Left) {
+            if reasoning {
+                toggle.reasoning_command(Some(next));
+            } else {
+                toggle.receipts_command(Some(next));
+            }
+            event.stop_propagation();
+        }
+    };
+    match visibility {
+        Visibility::Off | Visibility::Collapsed if live => {
+            wrap(label("✻ Thinking…").class(classes!("text-xs italic text-gray-11")))
+                .pointer_down(press)
+        }
+        Visibility::Off => {
+            wrap(label(format!("⌄ {kind} · hidden")).class(classes!("text-xs italic text-gray-11")))
+                .pointer_down(press)
+        }
+        Visibility::Collapsed => {
+            let count = body.lines().filter(|line| !line.trim().is_empty()).count();
+            wrap(
+                label(format!("⌄ {kind} · {count} lines"))
+                    .class(classes!("text-xs italic text-gray-11")),
+            )
+            .pointer_down(press)
+        }
+        Visibility::Expanded => container()
+            .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+            .child(
+                label(if live {
+                    "✻ Thinking…".to_string()
+                } else {
+                    format!("✻ {kind}")
+                })
+                .class(classes!("text-xs italic text-gray-11")),
+            )
+            .child(prose(body, "text-xs italic text-gray-11"))
+            .pointer_down(press),
     }
 }
 
@@ -91,9 +160,28 @@ fn patch_of(output: &str) -> Option<String> {
     let patch = output
         .lines()
         .skip_while(|line| !line.starts_with("@@ "))
+        .take_while(|line| line.is_empty() || line.starts_with([' ', '+', '-', '@', '\\']))
         .collect::<Vec<_>>()
         .join("\n");
+    let patch = patch.trim_end().to_string();
     (!patch.is_empty()).then_some(patch)
+}
+
+fn patch_path(output: &str) -> Option<String> {
+    for line in output.lines() {
+        if let Some(path) = line.strip_prefix("+++ ") {
+            let path = path.trim().trim_start_matches("b/");
+            if path != "/dev/null" {
+                return Some(path.to_string());
+            }
+        }
+        if let Some(rest) = line.strip_prefix("diff --git ")
+            && let Some(b_side) = rest.split_whitespace().nth(1)
+        {
+            return Some(b_side.trim_start_matches("b/").to_string());
+        }
+    }
+    None
 }
 
 fn glyph(state: &ToolState) -> (&'static str, &'static str) {
@@ -139,6 +227,7 @@ fn tool_card(
     let Some(patch) = patch_of(output) else {
         return card.child(output_block(tools.text(output)));
     };
+    let path = patch_path(output).unwrap_or_else(|| arg.to_string());
     let status = match state {
         ToolState::Running => "editing",
         ToolState::Ok => "✓ Applied",
@@ -156,7 +245,9 @@ fn tool_card(
     let pick = app.clone();
     card.child(
         diff(patch)
-            .path(arg.to_string())
+            .bg("field")
+            .border_w(0)
+            .path(path)
             .status(status)
             .layout(sigil_layout)
             .max_rows(rows)
@@ -178,7 +269,7 @@ fn output_block(output: impl AsRef<str>) -> NodeBuilder {
                 .gap(0.0)
                 .overflow_y(Overflow::Scroll),
         )
-        .class(classes!("rounded bg-gray-1"));
+        .class(classes!("bg-gray-4"));
     for line in output.lines() {
         let class = if line.starts_with('+') {
             classes!("text-xs font-mono text-success-11")

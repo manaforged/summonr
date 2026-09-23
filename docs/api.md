@@ -51,7 +51,7 @@ code:
 ```sh
 mkdir -p .summonr
 echo 'check = "cargo test"' > .summonr/check.toml
-summonr anthropic --goal "make cargo test pass" --max-turns 20 --max-secs 1800 --json
+summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 echo $?
 ```
 
@@ -60,7 +60,7 @@ echo $?
 | Job | Command or flag |
 | --- | --- |
 | Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|low\|medium\|high` |
-| Set a budget | `--max-turns N` (goal mode), `--max-tokens N`, `--max-secs N` |
+| Set a budget | `--max-tokens N`, `--max-secs N` |
 | Read-only run | `--plan` |
 | Contain shell commands | `--sandbox`; `--no-net` denies sockets and needs `--sandbox`; `--add-dir DIR` adds a writable root |
 | Allow only listed commands | `--strict` with `policy.toml` |

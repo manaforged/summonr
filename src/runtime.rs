@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use crate::bus::{Bus, Mail};
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::Usage as Meter;
-use crate::error::{Error, ProviderFailureKind, Result};
+use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::policy::{Grant, Policy};
 use crate::provider::{
@@ -96,6 +96,16 @@ pub struct Turn {
     pub aborted: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StepRun {
+    Done(i32),
+    Run {
+        index: usize,
+        total: usize,
+        prompt: String,
+    },
+}
+
 pub struct Loop<P> {
     provider: P,
     model: String,
@@ -107,7 +117,7 @@ pub struct Loop<P> {
     plan_first: bool,
     tools: ToolRegistry,
     schema: Option<Vec<ToolDefinition>>,
-    history: Vec<Message>,
+
     herdr: Reporter,
     session: SessionDriver,
     verify: Option<Vec<String>>,
@@ -179,7 +189,7 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
         let effort = self.configured_effort(role);
         if self.boosted(role) {
-            return Some(Effort::High);
+            return Some(Effort::Medium);
         }
         effort
     }
@@ -202,6 +212,24 @@ impl<P: Provider> Loop<P> {
             .get(&role)
             .and_then(|(_, price)| *price)
             .or(self.price)
+    }
+
+    pub(crate) fn request<'a>(
+        &self,
+        role: workflow::Role,
+        messages: &'a [Message],
+        tools: &'a [ToolDefinition],
+        emit_deltas: bool,
+    ) -> CompletionRequest<'a> {
+        CompletionRequest::new(
+            self.session_id(),
+            self.seat(role).1.to_string(),
+            messages,
+            tools,
+            None,
+            emit_deltas,
+            self.effort_for(role),
+        )
     }
 
     fn round_role(&self) -> workflow::Role {
@@ -227,14 +255,14 @@ pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
 }
 
 pub(crate) fn billable(error: &Error) -> bool {
-    error.provider_failure().is_none_or(|failure| {
-        failure.kind != ProviderFailureKind::Transport || failure.partial_output
-    })
+    error
+        .provider_failure()
+        .is_some_and(|failure| failure.partial_output)
 }
 
-pub(super) fn exposure(request: &CompletionRequest, bytes: &[u8]) -> Exposure {
+pub(super) fn exposure(request: &CompletionRequest<'_>, request_chars: usize) -> Exposure {
     Exposure {
-        max_input_tokens: u64::try_from(bytes.len() / 4).unwrap_or(u64::MAX),
+        max_input_tokens: u64::try_from(request_chars / 4).unwrap_or(u64::MAX),
         max_output_tokens: request.max_output_tokens.map_or(0, u64::from),
     }
 }

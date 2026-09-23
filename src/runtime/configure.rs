@@ -113,7 +113,7 @@ impl<P: Provider> Loop<P> {
             plan_first: false,
             tools,
             schema: None,
-            history: Vec::new(),
+
             herdr,
             session,
             verify: None,
@@ -195,6 +195,10 @@ impl<P: Provider> Loop<P> {
         self.tools.set_env(env);
     }
 
+    pub fn set_images(&mut self, model_images: bool, vision: Option<crate::endpoint::Endpoint>) {
+        self.tools.set_images(model_images, vision);
+    }
+
     pub fn with_sandbox(mut self, deny_network: bool) -> Result<Self> {
         self.tools.enable_sandbox(deny_network)?;
         Ok(self)
@@ -204,7 +208,6 @@ impl<P: Provider> Loop<P> {
         if self.tools.has_sandbox() {
             self.tools.enable_sandbox(!allow)?;
         }
-        self.schema = None;
         Ok(())
     }
 
@@ -288,23 +291,24 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn with_plan(mut self) -> Self {
-        self.set_mode(crate::RunMode::Plan);
+        drop(self.set_mode(crate::RunMode::Plan));
         self
     }
 
-    /// Write a model plan before an ordinary turn executes.
-    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) {
-        let mode = if mode == crate::RunMode::Work && !self.session.has_selected_plan() {
-            crate::RunMode::Plan
-        } else {
-            mode
-        };
-        if self.mode == mode {
-            return;
+    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) -> Result<()> {
+        let plan = mode == crate::RunMode::Plan
+            || mode == crate::RunMode::Work && !self.session.has_selected_plan();
+        let mode = if plan { crate::RunMode::Plan } else { mode };
+        if std::mem::replace(&mut self.mode, mode) == mode {
+            return Ok(());
         }
-        self.mode = mode;
-        self.tools.set_read_only(mode == crate::RunMode::Plan);
+        let sandbox = (plan && !self.tools.has_sandbox()).then(|| self.tools.enable_sandbox(false));
+        self.tools.set_read_only(plan);
         self.schema = None;
+        if let Some(result) = sandbox {
+            result?;
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -349,7 +353,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn elapsed_secs(&self) -> u64 {
-        self.session.replay().elapsed_millis / 1000
+        self.session.elapsed_millis() / 1000
     }
 
     #[must_use]
@@ -430,9 +434,6 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn set_verify(&mut self, commands: Option<Vec<String>>) {
-        if self.verify == commands {
-            return;
-        }
         self.verify = commands;
     }
 
@@ -455,7 +456,7 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub fn history_len(&self) -> usize {
-        self.history.len()
+        self.session.history().len()
     }
 
     #[must_use]
@@ -482,6 +483,28 @@ impl<P: Provider> Loop<P> {
         self.session.work_progress().map_err(super::session_err)
     }
 
+    pub fn next_step(
+        &self,
+        steps: &[crate::steps::Step],
+        plan_path: &str,
+    ) -> Result<crate::StepRun> {
+        let progress = self.work_progress()?;
+        if let Some(code) = progress.exit_code() {
+            return Ok(crate::StepRun::Done(code));
+        }
+        let current = progress
+            .current
+            .ok_or_else(|| Error::Config("Steps Work has no active item".to_string()))?;
+        let step = steps
+            .get(current.saturating_sub(1))
+            .ok_or_else(|| Error::Config("Steps Work is outside the selected plan".to_string()))?;
+        Ok(crate::StepRun::Run {
+            index: current,
+            total: steps.len(),
+            prompt: crate::steps::prompt(step, steps.len(), plan_path),
+        })
+    }
+
     pub(crate) fn active_goal(&self) -> Result<Option<(String, crate::WorkProgress)>> {
         let Some(objective) = self.session.goal_objective().map_err(super::session_err)? else {
             return Ok(None);
@@ -493,11 +516,7 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub(crate) fn goal_status(&self) -> Option<String> {
         let (objective, progress) = self.active_goal().ok().flatten()?;
-        let round = if progress.max_turns == 0 {
-            progress.rounds.to_string()
-        } else {
-            format!("{}/{}", progress.rounds, progress.max_turns)
-        };
+        let round = progress.rounds;
         let mut text = format!(
             "goal active — {}\nround {round} · {} tokens · {}",
             truncate_line(&objective, 80),
@@ -523,14 +542,7 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn restore(mut self, history: Vec<Message>) -> Self {
-        self.history = history;
-        self
-    }
-
-    #[must_use]
     pub(crate) fn restore_replay(mut self, replay: crate::session::Replay) -> Self {
-        self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
         self
     }
@@ -557,7 +569,6 @@ impl<P: Provider> Loop<P> {
         self.forget_children();
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
-        self.history = replay.history;
         self.spent_tokens = replay.spent_tokens;
         self.bus = None;
         self.join_bus();
@@ -571,61 +582,27 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) async fn judge(&mut self, system: &str, user: &str) -> Result<(String, Usage)> {
-        let request = CompletionRequest {
-            session: self.session_id(),
-            model: self.seat(workflow::Role::Judge).1.to_string(),
-            messages: vec![
-                Message::system(system.to_string()),
-                Message::user(user.to_string()),
-            ],
-            tools: Vec::new(),
-            max_output_tokens: None,
-            emit_deltas: false,
-            effort: self.effort_for(workflow::Role::Judge),
-        };
-        let durable = request
-            .durable_bytes()
-            .map_err(|error| Error::Config(format!("cannot encode provider request: {error}")))?;
-        if let Some(reason) = self.round_abort() {
-            return Err(Error::Config(reason));
-        }
-        let attempt = self
-            .session
-            .start_judge(&request.model, super::exposure(&request, &durable))
-            .map_err(super::session_err)?;
-        let started = Instant::now();
-        let completion = self.seat(workflow::Role::Judge).0.complete(&request);
-        match Self::wait(completion, self.remaining_time()).await {
+        let messages = [
+            Message::system(system.to_string()),
+            Message::user(user.to_string()),
+        ];
+        let request = self.request(workflow::Role::Judge, &messages, &[], false);
+        match self.complete_once(workflow::Role::Judge, &request).await? {
             Ok(message) => {
                 let usage = message.usage.clone();
                 let text = message.content.unwrap_or_default();
-                let meter = super::meter(&usage, super::elapsed_millis(started));
-                self.session
-                    .finish_provider(attempt, &text, "", meter)
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
-                    usage.prompt_tokens.saturating_add(usage.completion_tokens),
-                ));
                 if let Some(reason) = self.round_abort() {
                     return Err(Error::Config(reason));
                 }
                 Ok((text, usage))
             }
-            Err(wait_error) => {
-                let millis = wait_error.millis(started);
-                let error = wait_error.error();
-                self.session
-                    .fail_provider(attempt, &error.to_string(), millis, super::billable(&error))
-                    .map_err(super::session_err)?;
-                self.spent_tokens = self.session.replay().spent_tokens;
-                Err(error)
-            }
+            Err(wait_error) => Err(wait_error.error()),
         }
     }
 
     pub(crate) fn clear_history(&mut self) -> Result<()> {
         self.session.clear().map_err(super::session_err)?;
-        self.history.clear();
+        self.tools.forget_reads();
         Ok(())
     }
 
@@ -638,7 +615,6 @@ impl<P: Provider> Loop<P> {
         self.session
             .abort(reason, None)
             .map_err(super::session_err)?;
-        self.hydrate();
         self.sync_usage(&mut emit);
         Ok(())
     }
@@ -660,16 +636,9 @@ impl<P: Provider> Loop<P> {
             .map_err(super::session_err)
     }
 
-    pub fn select_goal(
-        &mut self,
-        objective: &str,
-        commands: &[String],
-        max_turns: usize,
-    ) -> Result<()> {
-        let max_turns = u32::try_from(max_turns)
-            .map_err(|_error| Error::Config("goal turn limit is too large".to_string()))?;
+    pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
         self.session
-            .prepare_external_work(objective, WorkPolicy::Goal { max_turns }, commands)
+            .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)
     }
 
@@ -707,11 +676,8 @@ impl<P: Provider> Loop<P> {
     }
 
     #[must_use]
-    pub fn goal_at(path: &Path, workspace: &Path, objective: &str, max_turns: usize) -> bool {
-        let Ok(max_turns) = u32::try_from(max_turns) else {
-            return false;
-        };
-        work_at(path, workspace, WorkPolicy::Goal { max_turns }, objective)
+    pub fn goal_at(path: &Path, workspace: &Path, objective: &str) -> bool {
+        work_at(path, workspace, WorkPolicy::Goal {}, objective)
     }
 }
 

@@ -295,7 +295,9 @@ pub(super) fn set_run_mode(
         return;
     }
     let requested = mode;
-    loop_.set_mode(mode);
+    if let Err(error) = loop_.set_mode(mode) {
+        drop(ui.send(Msg::System(format!("sandbox unavailable: {error}"))));
+    }
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
     let text = if requested == crate::RunMode::Work && mode == crate::RunMode::Plan {

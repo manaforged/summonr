@@ -2,41 +2,38 @@ use super::*;
 
 use serde_json::json;
 
-use crate::provider::{Effort, Message, Role};
+use crate::provider::{Effort, Message};
 
-fn ask(effort: Option<Effort>) -> CompletionRequest {
-    CompletionRequest {
-        session: "s".to_string(),
-        model: "glm-5.3".to_string(),
-        messages: vec![Message {
-            role: Role::User,
-            content: "hi".to_string(),
-            images: Vec::new(),
-            tool_calls: Vec::new(),
-            tool_call_id: None,
-            reasoning: None,
-        }],
-        tools: Vec::new(),
-        max_output_tokens: Some(256),
-        emit_deltas: false,
+fn ask<'a>(effort: Option<Effort>, messages: &'a [Message]) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        "glm-5.3".to_string(),
+        messages,
+        &[],
+        Some(256),
+        false,
         effort,
-    }
+    )
+}
+
+fn hi() -> [Message; 1] {
+    [Message::user("hi".to_string())]
 }
 
 #[test]
 fn a_streamed_request_asks_for_the_usage_it_would_otherwise_lose() {
-    let body = Wire::request(&ask(None), true);
+    let body = Wire::request(&ask(None, &hi()), true);
     assert_eq!(body["stream"], true);
     assert_eq!(
         body["stream_options"]["include_usage"], true,
         "without this the final usage never arrives on a streamed turn"
     );
-    assert!(Wire::request(&ask(None), false)["stream_options"].is_null());
+    assert!(Wire::request(&ask(None, &hi()), false)["stream_options"].is_null());
 }
 
 #[test]
 fn effort_reaches_this_wire_under_its_own_name() {
-    let body = Wire::request(&ask(Some(Effort::High)), false);
+    let body = Wire::request(&ask(Some(Effort::High), &hi()), false);
     assert_eq!(body["reasoning_effort"], "high");
     assert!(
         body.get("output_config").is_none(),
@@ -81,7 +78,7 @@ fn fragmented_arguments_join_across_frames() {
         json!({"choices": [{"delta": {}, "finish_reason": "tool_calls"}],
                "usage": {"prompt_tokens": 9, "completion_tokens": 4}}),
     ] {
-        drop(stream.on(&frame).unwrap());
+        drop(stream.on(&frame.to_string()).unwrap());
     }
     let message = stream.finish();
     assert_eq!(message.stop_reason, StopReason::ToolCalls);
@@ -95,10 +92,10 @@ fn fragmented_arguments_join_across_frames() {
 fn text_and_reasoning_both_reach_the_caller() {
     let mut stream = <Stream as Accumulate>::new("glm-5.3");
     let thinking = stream
-        .on(&json!({"choices": [{"delta": {"reasoning_content": "weighing"}}]}))
+        .on(&json!({"choices": [{"delta": {"reasoning_content": "weighing"}}]}).to_string())
         .unwrap();
     let text = stream
-        .on(&json!({"choices": [{"delta": {"content": "hello"}}]}))
+        .on(&json!({"choices": [{"delta": {"content": "hello"}}]}).to_string())
         .unwrap();
     assert!(matches!(thinking.first(), Some(Delta::Thinking(text)) if text == "weighing"));
     assert!(matches!(text.first(), Some(Delta::Text(text)) if text == "hello"));

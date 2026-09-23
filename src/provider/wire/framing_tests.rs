@@ -11,7 +11,10 @@ fn framing_reads_each_dialect_off_the_wire() {
         2,
         "the event: lines are not frames of their own"
     );
-    assert_eq!(frames[0]["type"], "message_start");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&frames[0]).unwrap()["type"],
+        "message_start"
+    );
 
     let gemini = b"data: {\"candidates\":[]}\r\n\r\n";
     let frames = Frames::default()
@@ -32,7 +35,10 @@ fn a_frame_split_across_chunks_is_not_lost() {
     );
     let rest = frames.push(b"sage_start\"}\n\n", None).unwrap();
     assert_eq!(rest.len(), 1, "the halves must join");
-    assert_eq!(rest[0]["type"], "message_start");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&rest[0]).unwrap()["type"],
+        "message_start"
+    );
 }
 
 #[test]
@@ -47,18 +53,26 @@ fn a_sentinel_ends_the_stream_only_where_a_wire_declares_one() {
     let frames = undeclared.push(done, None).unwrap();
     assert_eq!(
         frames.len(),
-        2,
-        "a wire with no sentinel must not treat another wire's marker as one"
+        3,
+        "a wire with no sentinel reads the marker as a payload its parse rejects"
     );
+    assert_eq!(frames[1], "[DONE]");
     assert!(!undeclared.ended());
 }
 
 #[test]
-fn a_malformed_frame_does_not_stop_the_ones_after_it() {
+fn a_malformed_frame_is_an_error_at_parse() {
     let mixed = b"data: not json\n\ndata: {\"good\":true}\n\n";
     let frames = Frames::default().push(mixed, None).unwrap();
-    assert_eq!(frames.len(), 1, "one bad frame must not end the turn");
-    assert_eq!(frames[0]["good"], true);
+    assert_eq!(frames.len(), 2, "framing yields each data payload");
+    assert!(
+        serde_json::from_str::<serde_json::Value>(&frames[0]).is_err(),
+        "the bad payload fails typed parse instead of being dropped"
+    );
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&frames[1]).unwrap()["good"],
+        true
+    );
 }
 
 #[test]
@@ -100,7 +114,7 @@ fn a_provider_that_never_frames_is_cut_off_rather_than_filling_memory() {
     let mut frames = Frames::default();
     let chunk = vec![b'x'; 1024 * 1024];
     let mut error = None;
-    for _ in 0..16 {
+    for _ in 0..(MOST_PENDING / chunk.len() + 1) {
         if let Err(cut) = frames.push(&chunk, None) {
             error = Some(cut);
             break;

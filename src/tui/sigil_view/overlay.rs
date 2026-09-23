@@ -1,6 +1,7 @@
 use sigil::prelude::{
-    AlignItems, ColorAtom, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt,
-    Signal, Style, WidgetLayoutExt, classes, container, label, modal,
+    AlignItems, ColorAtom, Geometry, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder,
+    NodeStyleExt, Signal, Style, Tone, WidgetLayoutExt, classes, container, hint_bar, label, modal,
+    notice_band, section_label,
 };
 
 use super::canvas;
@@ -15,6 +16,7 @@ pub(in crate::tui) fn shell(
             .title(title.into())
             .trap(true)
             .width(canvas::dialog_width(80, 72.0))
+            .border_w(canvas::cell().h as i16)
             .child(
                 container()
                     .layout(
@@ -45,15 +47,12 @@ pub(in crate::tui) fn pick(
     context: impl Into<String>,
 ) -> NodeBuilder {
     let cell = canvas::cell();
-    let height = canvas::overlay_list_row();
     let name = name.into();
     let context = context.into();
     let cursor = if selected { "❯" } else { " " };
     let mut row = container()
         .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(height)
+            row(0.0)
                 .padding_right(8.0)
                 .gap(cell.w)
                 .align_items(AlignItems::Center),
@@ -84,61 +83,28 @@ pub(in crate::tui) fn pick(
     row
 }
 
+fn row(padding: f32) -> LayoutStyle {
+    LayoutStyle::flex_row()
+        .fill_width()
+        .height(canvas::overlay_list_row())
+        .padding_x(padding)
+}
+
 pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::overlay_list_row())
-                .padding_x(8.0),
-        )
-        .child(
-            label(title.into())
-                .class(classes!("text-xs"))
-                .style(Style::new().text_color(ColorAtom::Rgba8(canvas::palette().dim))),
-        )
+    section_label(title.into()).layout(row(8.0))
 }
 
 pub(in crate::tui) fn hint(keys: impl Into<String>, right: impl Into<String>) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::overlay_list_row())
-                .padding_x(16.0)
-                .align_items(AlignItems::Center),
-        )
-        .child(
-            label(keys.into())
-                .class(classes!("text-xs"))
-                .style(Style::new().text_color(ColorAtom::Rgba8(canvas::palette().dim))),
-        )
-        .child(container().layout(LayoutStyle::block().grow(1.0)))
-        .child(
-            label(right.into())
-                .class(classes!("text-xs"))
-                .style(Style::new().text_color(ColorAtom::Rgba8(accent()))),
-        )
+    hint_bar(keys.into(), right.into()).layout(row(16.0).align_items(AlignItems::Center))
 }
 
 pub(in crate::tui) fn band(text: impl Into<String>, error: bool) -> NodeBuilder {
-    let tone = if error {
-        canvas::palette().error
+    let (tone, color) = if error {
+        (Tone::Error, canvas::palette().error)
     } else {
-        canvas::palette().dim
+        (Tone::Neutral, canvas::palette().dim)
     };
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .height(canvas::overlay_list_row())
-                .padding_x(8.0),
-        )
-        .style(Style::new().bg(canvas::blend(canvas::palette().base, tone, 0.14)))
-        .child(
-            label(text.into())
-                .ellipsize()
-                .class(classes!("text-xs"))
-                .style(Style::new().text_color(ColorAtom::Rgba8(tone))),
-        )
+    notice_band(text.into(), tone)
+        .layout(row(8.0))
+        .style(Style::new().bg(canvas::blend(canvas::palette().base, color, 0.14)))
 }

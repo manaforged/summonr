@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::RwLock;
 
 use serde::Deserialize;
 use toml_edit::{DocumentMut, value};
@@ -10,7 +11,7 @@ use crate::prefs::Prefs;
 use crate::prompt::summonr_home;
 use crate::workflow::Workflow;
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct File {
     pub default: Option<String>,
     #[serde(default)]
@@ -51,7 +52,7 @@ pub(crate) struct File {
     pub hooks: crate::hooks::Hooks,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum SeatRow {
     Name(String),
@@ -61,14 +62,14 @@ pub(crate) enum SeatRow {
     },
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum ReasoningSetting {
     Flag(bool),
     Text(String),
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Sandbox {
     #[serde(default)]
     pub on: bool,
@@ -91,13 +92,13 @@ impl Sandbox {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Lsp {
     pub module: Option<String>,
     pub command: Option<Vec<String>>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Endpoint {
     pub base_url: Option<String>,
     pub model: Option<String>,
@@ -116,6 +117,8 @@ pub(crate) struct Endpoint {
     #[serde(default)]
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
+    pub images: Option<bool>,
+    pub keep_reasoning: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -149,7 +152,7 @@ pub struct OAuth {
     pub claim_headers: BTreeMap<String, String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Search {
     pub count: Option<usize>,
     pub allowed_domains: Option<Vec<String>>,
@@ -160,8 +163,25 @@ pub(crate) fn path() -> Result<PathBuf> {
     Ok(summonr_home()?.join("config.toml"))
 }
 
+static PARSED: RwLock<Option<File>> = RwLock::new(None);
+
 pub(crate) fn load() -> Result<File> {
-    load_from(&path()?)
+    if let Some(file) = PARSED.read().ok().and_then(|cached| cached.clone()) {
+        return Ok(file);
+    }
+    let file = load_from(&path()?)?;
+    drop(
+        PARSED
+            .write()
+            .map(|mut cached| *cached = Some(file.clone())),
+    );
+    Ok(file)
+}
+
+fn persist(path: &Path, document: DocumentMut) -> Result<()> {
+    store::write(path, document.to_string())?;
+    drop(PARSED.write().map(|mut cached| *cached = None));
+    Ok(())
 }
 
 pub fn sandbox_on() -> Result<bool> {
@@ -174,61 +194,50 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(File::default()),
         Err(error) => return Err(error.into()),
     };
-    let file: File =
-        toml::from_str(&text).map_err(|error| Error::Config(format!("config.toml: {error}")))?;
+    let bad = |field: &str| Error::Config(format!("config.toml: {field}"));
+    let file: File = toml::from_str(&text).map_err(|error| bad(&error.to_string()))?;
     if file
         .tools
         .as_deref()
         .is_some_and(|tools| !matches!(tools, "compact" | "full"))
     {
-        return Err(Error::Config(
-            "config.toml: `tools` must be `compact` or `full`".to_string(),
-        ));
+        return Err(bad("`tools` must be `compact` or `full`"));
     }
-    if file.theme.as_deref().is_some_and(|theme| {
-        !matches!(
-            theme,
-            "space" | "fantasy" | "nord" | "gruvbox" | "solarized" | "light"
-        )
-    }) {
-        return Err(Error::Config(
-            "config.toml: `theme` must be space, fantasy, nord, gruvbox, solarized, or light"
-                .to_string(),
+    const THEMES: &[&str] = &["space", "fantasy", "nord", "gruvbox", "solarized", "light"];
+    if file
+        .theme
+        .as_deref()
+        .is_some_and(|theme| !THEMES.contains(&theme))
+    {
+        return Err(bad(
+            "`theme` must be space, fantasy, nord, gruvbox, solarized, or light",
         ));
     }
     if file
         .fps
         .is_some_and(|fps| !(crate::prefs::FPS_MIN..=crate::prefs::FPS_MAX).contains(&fps))
     {
-        return Err(Error::Config(format!(
-            "config.toml: `fps` must be a whole number from {} to {}",
+        return Err(bad(&format!(
+            "`fps` must be a whole number from {} to {}",
             crate::prefs::FPS_MIN,
             crate::prefs::FPS_MAX
         )));
     }
-    match file.secrets.as_deref().map(str::trim) {
-        None | Some("") | Some("file") | Some("keychain") => {}
-        Some(other) => {
-            return Err(Error::Config(format!(
-                "config.toml: secrets must be \"file\" or \"keychain\", not `{other}`"
-            )));
-        }
+    if let Some(other) = file.secrets.as_deref().map(str::trim)
+        && !matches!(other, "" | "file" | "keychain")
+    {
+        return Err(bad(&format!(
+            "secrets must be \"file\" or \"keychain\", not `{other}`"
+        )));
     }
     if file.lsp.module.is_some() && file.lsp.command.is_some() {
-        return Err(Error::Config(
-            "config.toml: [lsp] accepts `module` or `command`, not both".to_string(),
-        ));
+        return Err(bad("[lsp] accepts `module` or `command`, not both"));
     }
     if let Some(module) = file.lsp.module.as_deref() {
         crate::language::named(module)?;
     }
-    for name in file.modules.keys() {
-        crate::modules::named(name)?;
-    }
     if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
-        return Err(Error::Config(
-            "config.toml: [lsp] command must not be empty".to_string(),
-        ));
+        return Err(bad("[lsp] command must not be empty"));
     }
     Ok(file)
 }
@@ -265,7 +274,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
             document.as_table_mut().remove("last_endpoint");
         }
     }
-    store::write(path, document.to_string())?;
+    persist(path, document)?;
     Ok(())
 }
 
@@ -275,7 +284,7 @@ pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
         .as_table_like_mut()
         .is_some_and(|row| row.remove("api_key").is_some());
     if removed {
-        store::write(path, document.to_string())?;
+        persist(path, document)?;
     }
     Ok(removed)
 }
@@ -298,7 +307,7 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     if let Some(parent) = document["workflows"].as_table_mut() {
         parent.set_implicit(true);
     }
-    store::write(path, document.to_string())?;
+    persist(path, document)?;
     Ok(())
 }
 
@@ -308,14 +317,14 @@ pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
     if let Some(table) = document["modules"].as_table_mut() {
         table.set_implicit(true);
     }
-    store::write(path, document.to_string())?;
+    persist(path, document)?;
     Ok(())
 }
 
 pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
     let mut document = read_document(path)?;
     document["workflow"] = value(name);
-    store::write(path, document.to_string())?;
+    persist(path, document)?;
     Ok(())
 }
 
@@ -383,6 +392,6 @@ pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
     if let Some(table) = document["sandbox"].as_table_mut() {
         table.set_implicit(true);
     }
-    store::write(path, document.to_string())?;
+    persist(path, document)?;
     Ok(())
 }

@@ -1,15 +1,15 @@
 use super::*;
 
-fn request(messages: Vec<Message>) -> CompletionRequest {
-    CompletionRequest {
-        session: String::new(),
-        model: "m".to_string(),
+fn request<'a>(messages: &'a [Message]) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        String::new(),
+        "m".to_string(),
         messages,
-        tools: Vec::new(),
-        max_output_tokens: None,
-        emit_deltas: false,
-        effort: None,
-    }
+        &[],
+        None,
+        false,
+        None,
+    )
 }
 
 #[test]
@@ -17,7 +17,7 @@ fn completions_keep_system_only_at_the_front() {
     let client = Client::new("k", "http://127.0.0.1/v1").unwrap();
     let body = client
         .request_body(
-            &request(vec![
+            &request(&[
                 Message::system("sys"),
                 Message::user("hi"),
                 Message::system("receipt"),
@@ -49,9 +49,7 @@ fn empty_tool_arguments_leave_as_a_json_object() {
         },
         continuation: None,
     }];
-    let body = client
-        .request_body(&request(vec![assistant]), false)
-        .unwrap();
+    let body = client.request_body(&request(&[assistant]), false).unwrap();
     assert_eq!(
         body["messages"][0]["tool_calls"][0]["function"]["arguments"],
         "{}"

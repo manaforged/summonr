@@ -46,8 +46,6 @@ pub enum Error {
         setting: &'static str,
         detail: String,
     },
-    #[error("the turn exceeded the {0}-round limit")]
-    MaxRounds(usize),
 }
 
 impl Error {

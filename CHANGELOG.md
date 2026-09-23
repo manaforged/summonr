@@ -2,8 +2,23 @@
 
 ## Unreleased
 
-- Overlay chrome (options, search, sessions, composer, meters) uses
-  Sigil `list_row`, `button`, `card`, `hint_bar`, and `notice_band`.
+- Forced compaction and tool-argument repair are recorded in the session
+  journal, so the next turn keeps them. Compaction and `/clear` reset read
+  dedup, so a re-read after compaction returns the file.
+- Plan mode entered mid-session turns on the command sandbox; without a
+  sandbox, `run_command` is not offered in plan mode.
+- The per-turn git snapshot and checkpoint run in the background and join
+  before the first tool call.
+- Multi-path `read` shares one 50 KB cap, write echoes are line-capped,
+  receipts stay out of model history, and the tool schema is frozen for
+  the session.
+- `--max-turns` is removed. Only `--max-tokens` and `--max-secs` bound a
+  run.
+- Release builds use fat LTO, one codegen unit, and strip. The runtime
+  uses two worker threads.
+- The transcript rebuilds only entries that changed, not every entry on
+  each streamed delta and animation tick. Overlay chrome uses Sigil
+  `section_label`, `hint_bar`, and `notice_band`.
 - The advertised tool catalog freezes after the first `prefix_hash` in
   the process. `/modules` writes apply on the next process.
 - The TUI skips a full paint when the session is idle.
@@ -19,14 +34,15 @@
   renders as labeled bars.
 - Crate and command are `summonr`. `summon` and `summoner` remain PATH
   aliases of the same binary. Config stays under `~/.summonr`.
-- The model sees four core tools every round: `read` (file, directory,
-  image, or search), `edit`, `write`, and `run_command`. Optional
-  modules add `skill`, `lsp`, `web`, `task`, and `bus`. Old names still
+- The model sees five core tools every round: `read` (file, directory,
+  image, or search), `edit`, `write`, `run_command`, and `todo`. Plan
+  mode drops `edit` and `write`. Optional modules add `skill`, `lsp`,
+  `web`, `task`, and `bus`. Old names still
   run and are not advertised.
 - Ordinary chat executes immediately. `shift+tab` and `/plan` enter
   plan mode. The reply is saved to `.summonr/plan.md`. Sandboxed network
   is on by default; `--no-net` denies it. Destructive writes still ask.
-- The four core tools got deeper without growing: `read` search takes
+- The core tools got deeper without growing: `read` search takes
   `literal`, `caseSensitive`, and `include`; `edit` takes a `files`
   batch and a `to` rename; `write` takes a `files` batch;
   `run_command` takes `workdir` and names the full log for a long
@@ -53,7 +69,9 @@
   key once the repository is visible.
 - Streamed reasoning is italic `thought` text on the canvas. There is no
   separate reasoning band.
-- The interface ships the `space` preset only. `/theme` reloads theme files.
+- `theme` in `config.toml` accepts six presets: `space`, `fantasy`,
+  `nord`, `gruvbox`, `solarized`, and `light`. `/theme` reloads theme
+  files.
 
 ## 0.1.0 - 2026-09-10
 
@@ -100,7 +118,8 @@ First public release of the Mage harness under the Summoner name.
 - Workflow changes resolve every seat before activation. A failed seat
   leaves the previous workflow and session log unchanged.
 - Experimental Windows command execution uses PowerShell, AppContainer,
-  and Job Objects. Cancellation stops descendants and removes temporary
+  and Job Objects. It builds only with the `windows-sandbox` cargo
+  feature; without it, `--sandbox` on Windows fails with an error. Cancellation stops descendants and removes temporary
   workspace permissions. Git for Windows and user-installed toolchains
   remain blocked in the default sandbox.
 - Linux command cancellation now kills the process group, including
@@ -126,8 +145,7 @@ First public release of the Mage harness under the Summoner name.
   return its id, poll its state and last action, or stop it. A turn defers
   while a background child runs.
 - Work remembers deferred background jobs by id across turns; a later
-  turn cannot complete while one still runs. `--max-turns` also bounds a
-  goal whose checks keep failing (exit 2). Every goal turn restates the
+  turn cannot complete while one still runs. Every goal turn restates the
   objective. Goal-judge repairs and provider retries (exponential backoff)
   have fixed caps; provider rounds have none. Receipts carry
   `verified`. Changing `.summonr/check.toml` mid-turn re-selects the checks

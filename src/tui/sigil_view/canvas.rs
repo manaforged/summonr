@@ -1,4 +1,3 @@
-use std::ops::Range;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -78,15 +77,6 @@ pub(super) fn window_cells() {
     WINDOW.store(true, Ordering::Relaxed);
 }
 
-#[cfg(test)]
-pub(super) fn cell_aspect() -> f32 {
-    if WINDOW.load(Ordering::Relaxed) {
-        1.0
-    } else {
-        2.0
-    }
-}
-
 pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
     Rgba8 { r, g, b, a: 255 }
 }
@@ -113,117 +103,6 @@ pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {
     }
 }
 
-#[derive(Clone)]
-#[expect(dead_code, reason = "splash write_at and transcript tests")]
-pub(super) struct Span {
-    pub(super) text: String,
-    pub(super) fg: Rgba8,
-    pub(super) bg: Rgba8,
-    pub(super) bold: bool,
-    pub(super) italic: bool,
-    pub(super) source: Option<Source>,
-    pub(super) diff_layout: Option<crate::prefs::DiffLayout>,
-}
-
-#[derive(Clone)]
-#[expect(dead_code, reason = "transcript tests")]
-pub(super) enum Source {
-    Text(Range<usize>),
-    Block(Range<usize>),
-}
-
-#[expect(dead_code, reason = "transcript tests")]
-impl Source {
-    pub(super) fn range(&self) -> &Range<usize> {
-        match self {
-            Self::Text(range) | Self::Block(range) => range,
-        }
-    }
-}
-
-#[expect(dead_code, reason = "splash write_at and transcript tests")]
-impl Span {
-    pub(super) fn text(text: impl Into<String>) -> Self {
-        Self::styled(text, palette().text)
-    }
-
-    pub(super) fn styled(text: impl Into<String>, fg: Rgba8) -> Self {
-        Self {
-            text: text.into(),
-            fg,
-            bg: palette().base,
-            bold: false,
-            italic: false,
-            source: None,
-            diff_layout: None,
-        }
-    }
-
-    pub(super) fn surface(text: impl Into<String>, fg: Rgba8, bg: Rgba8) -> Self {
-        Self {
-            text: text.into(),
-            fg,
-            bg,
-            bold: false,
-            italic: false,
-            source: None,
-            diff_layout: None,
-        }
-    }
-
-    pub(super) fn bold(mut self) -> Self {
-        self.bold = true;
-        self
-    }
-
-    pub(super) fn italic(mut self) -> Self {
-        self.italic = true;
-        self
-    }
-
-    pub(super) fn width(&self) -> usize {
-        cell_width(self.text.as_str())
-    }
-
-    pub(super) fn source(mut self, start: usize) -> Self {
-        self.source = Some(Source::Text(start..start + self.text.len()));
-        self
-    }
-
-    pub(super) fn slice(&self, range: Range<usize>) -> Self {
-        let source = match &self.source {
-            Some(Source::Text(source)) => Some(Source::Text(
-                source.start + range.start..source.start + range.end,
-            )),
-            _ => self.source.clone(),
-        };
-        Self {
-            text: self.text[range].to_string(),
-            fg: self.fg,
-            bg: self.bg,
-            bold: self.bold,
-            italic: self.italic,
-            source,
-            diff_layout: self.diff_layout,
-        }
-    }
-}
-
-#[expect(dead_code, reason = "transcript tests")]
-pub(super) struct Line {
-    pub(super) spans: Vec<Span>,
-    pub(super) bg: Rgba8,
-}
-
-impl From<Vec<Span>> for Line {
-    fn from(spans: Vec<Span>) -> Self {
-        Self {
-            spans,
-            bg: palette().base,
-        }
-    }
-}
-
 pub(super) fn write_at(
     cells: &mut [Cell],
     width: usize,
@@ -232,14 +111,34 @@ pub(super) fn write_at(
     text: &str,
     fg: Rgba8,
 ) {
-    write_line_at(
-        cells,
-        width,
-        left,
-        width.saturating_sub(left),
-        row,
-        &[Span::styled(text, fg)],
-    );
+    let room = width.saturating_sub(left);
+    let start = row.saturating_mul(width).saturating_add(left);
+    let Some(row) = cells.get_mut(start..start.saturating_add(room)) else {
+        return;
+    };
+    let bg = palette().base;
+    let cell = |text: &str| Cell {
+        text: text.into(),
+        fg: ink(fg),
+        bg: ink(bg),
+        bold: false,
+        italic: false,
+    };
+    let mut x = 0;
+    for grapheme in text.graphemes(true) {
+        let step = cell_width(grapheme);
+        if x >= room || x.saturating_add(step) > room {
+            return;
+        }
+        if step == 0 {
+            continue;
+        }
+        row[x] = cell(grapheme);
+        for pad in 1..step {
+            row[x + pad] = cell("");
+        }
+        x += step;
+    }
 }
 
 pub(super) fn ellipsize(text: &str, width: usize) -> String {
@@ -253,51 +152,6 @@ pub(super) fn ellipsize(text: &str, width: usize) -> String {
     truncate(&mut shown, width.saturating_sub(1));
     shown.push('…');
     shown
-}
-
-pub(super) fn write_line_at(
-    cells: &mut [Cell],
-    stride: usize,
-    left: usize,
-    width: usize,
-    y: usize,
-    line: &[Span],
-) {
-    let start = y.saturating_mul(stride).saturating_add(left);
-    let Some(row) = cells.get_mut(start..start.saturating_add(width)) else {
-        return;
-    };
-    let mut x = 0;
-    for span in line {
-        for text in span.text.graphemes(true) {
-            let step = cell_width(text);
-            if x >= width || x.saturating_add(step) > width {
-                return;
-            }
-            if step == 0 {
-                continue;
-            }
-            row[x] = Cell {
-                text: text.into(),
-                fg: ink(span.fg),
-                bg: ink(span.bg),
-                bold: span.bold,
-                italic: span.italic,
-            };
-            for pad in 1..step {
-                if x + pad < width {
-                    row[x + pad] = Cell {
-                        text: "".into(),
-                        fg: ink(span.fg),
-                        bg: ink(span.bg),
-                        bold: span.bold,
-                        italic: span.italic,
-                    };
-                }
-            }
-            x += step;
-        }
-    }
 }
 
 pub(super) fn truncate(text: &mut String, width: usize) {

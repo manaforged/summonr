@@ -25,22 +25,22 @@ pub(super) fn call(id: &str, name: &str, arguments: &str) -> ToolCall {
     }
 }
 
-pub(super) fn ask(messages: Vec<Message>) -> CompletionRequest {
-    CompletionRequest {
-        session: "s".to_string(),
-        model: "claude-opus-5".to_string(),
+pub(super) fn ask<'a>(messages: &'a [Message]) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        "claude-opus-5".to_string(),
         messages,
-        tools: Vec::new(),
-        max_output_tokens: Some(1024),
-        emit_deltas: false,
-        effort: None,
-    }
+        &[],
+        Some(1024),
+        false,
+        None,
+    )
 }
 
 #[test]
 fn the_system_turn_leaves_the_message_list() {
     let body = request(
-        &ask(vec![
+        &ask(&[
             message(Role::System, "be terse"),
             message(Role::User, "hello"),
         ]),
@@ -60,7 +60,7 @@ fn the_system_turn_leaves_the_message_list() {
 fn a_tool_result_is_a_user_turn_carrying_the_call_id() {
     let mut result = message(Role::Tool, "72F and sunny");
     result.tool_call_id = Some("toolu_abc123".to_string());
-    let body = request(&ask(vec![message(Role::User, "weather?"), result]), false);
+    let body = request(&ask(&[message(Role::User, "weather?"), result]), false);
     let last = &body["messages"][1];
     assert_eq!(last["role"], "user", "a tool result is a user turn here");
     assert_eq!(last["content"][0]["type"], "tool_result");
@@ -73,7 +73,7 @@ fn two_results_for_one_turn_ride_in_a_single_user_message() {
     first.tool_call_id = Some("toolu_1".to_string());
     let mut second = message(Role::Tool, "b");
     second.tool_call_id = Some("toolu_2".to_string());
-    let body = request(&ask(vec![message(Role::User, "go"), first, second]), false);
+    let body = request(&ask(&[message(Role::User, "go"), first, second]), false);
     assert_eq!(
         body["messages"].as_array().unwrap().len(),
         2,
@@ -86,10 +86,7 @@ fn two_results_for_one_turn_ride_in_a_single_user_message() {
 fn an_assistant_turn_replays_its_tool_calls_as_blocks() {
     let mut assistant = message(Role::Assistant, "Let me check.");
     assistant.tool_calls = vec![call("toolu_abc", "get_weather", r#"{"location":"Paris"}"#)];
-    let body = request(
-        &ask(vec![message(Role::User, "weather?"), assistant]),
-        false,
-    );
+    let body = request(&ask(&[message(Role::User, "weather?"), assistant]), false);
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(parts[0]["type"], "text");
     assert_eq!(parts[1]["type"], "tool_use");
@@ -104,7 +101,7 @@ fn an_assistant_turn_replays_its_tool_calls_as_blocks() {
 fn an_image_is_a_base64_source_before_the_text() {
     let mut user = message(Role::User, "what is this");
     user.images = vec![Image::encode("image/png", &[1, 2, 3])];
-    let body = request(&ask(vec![user]), false);
+    let body = request(&ask(&[user]), false);
     let parts = body["messages"][0]["content"].as_array().unwrap();
     assert_eq!(parts[0]["type"], "image");
     assert_eq!(parts[0]["source"]["media_type"], "image/png");
@@ -114,8 +111,8 @@ fn an_image_is_a_base64_source_before_the_text() {
 
 #[test]
 fn a_tool_is_declared_with_its_schema_under_input_schema() {
-    let mut call = ask(vec![message(Role::User, "hi")]);
-    call.tools = vec![ToolDefinition {
+    let messages = vec![message(Role::User, "hi")];
+    let tools = vec![ToolDefinition {
         kind: ToolKind::Function,
         function: FunctionDefinition {
             name: "get_weather".to_string(),
@@ -123,6 +120,8 @@ fn a_tool_is_declared_with_its_schema_under_input_schema() {
             parameters: json!({"type": "object", "properties": {}}),
         },
     }];
+    let mut call = ask(&messages);
+    call.tools = &tools;
     let body = request(&call, false);
     assert_eq!(body["tools"][0]["name"], "get_weather");
     assert_eq!(
@@ -134,7 +133,8 @@ fn a_tool_is_declared_with_its_schema_under_input_schema() {
 
 #[test]
 fn asking_for_effort_turns_thinking_on_and_never_sends_a_budget() {
-    let mut call = ask(vec![message(Role::User, "hi")]);
+    let messages = vec![message(Role::User, "hi")];
+    let mut call = ask(&messages);
     call.effort = Some(Effort::High);
     let body = request(&call, true);
     assert_eq!(body["output_config"]["effort"], "high");
@@ -148,7 +148,8 @@ fn asking_for_effort_turns_thinking_on_and_never_sends_a_budget() {
 
 #[test]
 fn effort_none_asks_for_the_lowest_level_the_api_accepts() {
-    let mut call = ask(vec![message(Role::User, "hi")]);
+    let messages = vec![message(Role::User, "hi")];
+    let mut call = ask(&messages);
     call.effort = Some(Effort::None);
     let body = request(&call, false);
     assert_eq!(

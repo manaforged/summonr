@@ -15,23 +15,23 @@ fn user(text: &str) -> Message {
     }
 }
 
-fn ask(messages: Vec<Message>) -> CompletionRequest {
-    CompletionRequest {
-        session: "s".to_string(),
-        model: "a-model".to_string(),
+fn ask<'a>(messages: &'a [Message]) -> CompletionRequest<'a> {
+    CompletionRequest::new(
+        "s".to_string(),
+        "a-model".to_string(),
         messages,
-        tools: Vec::new(),
-        max_output_tokens: Some(64),
-        emit_deltas: false,
-        effort: None,
-    }
+        &[],
+        Some(64),
+        false,
+        None,
+    )
 }
 
 fn drive<W: Chat>(frames: &[Value]) -> (AssistantMessage, Vec<Delta>) {
     let mut stream = W::Stream::new("a-model");
     let mut deltas = Vec::new();
     for frame in frames {
-        deltas.extend(stream.on(frame).unwrap());
+        deltas.extend(stream.on(&frame.to_string()).unwrap());
     }
     (stream.finish(), deltas)
 }
@@ -117,7 +117,7 @@ fn a_replayed_turn_survives_the_round_trip_with_its_reasoning() {
     let mut assistant = user("");
     assistant.role = Role::Assistant;
     assistant.tool_calls = reply.tool_calls.clone();
-    let body = anthropic::Wire::request(&ask(vec![user("go"), assistant]), false);
+    let body = anthropic::Wire::request(&ask(&[user("go"), assistant]), false);
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(parts[0]["type"], "thinking", "got {parts:?}");
     assert_eq!(parts[0]["signature"], "sig");
@@ -144,9 +144,9 @@ fn a_result_can_be_matched_back_to_the_call_that_asked_for_it() {
         result.role = Role::Tool;
         result.tool_call_id = Some(id);
         let body = if wire == 0 {
-            anthropic::Wire::request(&ask(vec![user("go"), result]), false)
+            anthropic::Wire::request(&ask(&[user("go"), result]), false)
         } else {
-            gemini::Wire::request(&ask(vec![user("go"), result]), false)
+            gemini::Wire::request(&ask(&[user("go"), result]), false)
         };
         let text = body.to_string();
         assert!(
@@ -244,8 +244,8 @@ fn a_request_never_loses_a_turn() {
         },
         user("second"),
     ];
-    let anthropic = anthropic::Wire::request(&ask(turns.clone()), false).to_string();
-    let gemini = gemini::Wire::request(&ask(turns), false).to_string();
+    let anthropic = anthropic::Wire::request(&ask(&turns), false).to_string();
+    let gemini = gemini::Wire::request(&ask(&turns), false).to_string();
     for (name, body) in [("anthropic", anthropic), ("gemini", gemini)] {
         for needle in ["first", "answer", "contents", "second"] {
             assert!(
@@ -264,7 +264,7 @@ fn continued(message: &AssistantMessage) -> Option<&crate::provider::Continuatio
 fn a_continuation_names_the_model_that_produced_it() {
     let mut anthropic = anthropic::Stream::new("claude-opus-5");
     for frame in anthropic_turn() {
-        drop(anthropic.on(&frame).unwrap());
+        drop(anthropic.on(&frame.to_string()).unwrap());
     }
     match continued(&anthropic.finish()) {
         Some(crate::provider::Continuation::Anthropic { model, blocks }) => {
@@ -280,7 +280,7 @@ fn a_continuation_names_the_model_that_produced_it() {
 
     let mut gemini = <gemini::Reply as Accumulate>::new("gemini-2.5-flash");
     for frame in gemini_turn() {
-        drop(gemini.on(&frame).unwrap());
+        drop(gemini.on(&frame.to_string()).unwrap());
     }
     match continued(&gemini.finish()) {
         Some(crate::provider::Continuation::Gemini { model, signatures }) => {

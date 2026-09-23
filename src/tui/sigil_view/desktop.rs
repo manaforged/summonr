@@ -8,7 +8,6 @@ use crate::tui::Cmd;
 
 pub(super) use super::app::App;
 pub(super) use super::chat;
-pub(super) use super::model::Entry;
 pub(super) use super::pane::Pane;
 
 mod icons;

@@ -1,33 +1,33 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+#[cfg(sandboxed)]
 use std::process::Stdio;
 
 use tokio::process::Command;
 
 use crate::error::{Error, Result};
 
-#[cfg(windows)]
+#[cfg(all(windows, sandboxed))]
 pub(crate) mod windows;
 
 #[derive(Clone, Debug)]
 pub(crate) struct Sandbox {
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     backend: Backend,
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     workspace: PathBuf,
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     deny_network: bool,
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     write: Vec<PathBuf>,
     #[cfg(target_os = "linux")]
     temp: PathBuf,
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux", windows))]
+#[cfg(sandboxed)]
 #[derive(Clone, Debug)]
 enum Backend {
-    #[cfg(windows)]
+    #[cfg(all(windows, sandboxed))]
     Windows { executable: PathBuf },
     #[cfg(target_os = "macos")]
     Mac {
@@ -45,16 +45,16 @@ impl Sandbox {
         deny_network: bool,
         write: &[PathBuf],
     ) -> Result<Self> {
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        #[cfg(not(sandboxed))]
         {
             let _ = (workspace, deny_network, write);
             Err(Error::Config(
-                "--sandbox is unsupported on this platform; use macOS Seatbelt or Linux bubblewrap"
+                "--sandbox needs macOS Seatbelt, Linux bubblewrap, or a windows-sandbox build"
                     .to_string(),
             ))
         }
 
-        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        #[cfg(sandboxed)]
         {
             let workspace = workspace.canonicalize().map_err(|error| {
                 Error::Config(format!("cannot open sandbox workspace: {error}"))
@@ -70,7 +70,7 @@ impl Sandbox {
                 ))
             })?;
 
-            #[cfg(windows)]
+            #[cfg(all(windows, sandboxed))]
             {
                 let executable = std::env::current_exe()?;
                 #[cfg(test)]
@@ -139,11 +139,11 @@ impl Sandbox {
     }
 
     pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {
-        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        #[cfg(sandboxed)]
         {
             Self::discover(workspace, self.deny_network, &self.write)
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        #[cfg(not(sandboxed))]
         {
             let _ = self;
             Self::discover(workspace, false, &[])
@@ -151,11 +151,11 @@ impl Sandbox {
     }
 
     pub(crate) fn allow_network(&self) -> Result<Self> {
-        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        #[cfg(sandboxed)]
         {
             Self::discover(&self.workspace, false, &self.write)
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        #[cfg(not(sandboxed))]
         {
             let _ = self;
             unreachable!("sandbox backend is unavailable")
@@ -163,17 +163,17 @@ impl Sandbox {
     }
 
     pub(crate) fn denies_network(&self) -> bool {
-        #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+        #[cfg(sandboxed)]
         {
             self.deny_network
         }
-        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+        #[cfg(not(sandboxed))]
         {
             false
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     pub(crate) fn command_line(
         &self,
         program: &str,
@@ -183,7 +183,7 @@ impl Sandbox {
         self.command_line_with(program, args, cwd, false)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     pub(crate) fn read_command_line(
         &self,
         program: &str,
@@ -193,7 +193,7 @@ impl Sandbox {
         self.command_line_with(program, args, cwd, true)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     fn command_line_with(
         &self,
         program: &str,
@@ -204,7 +204,7 @@ impl Sandbox {
         #[cfg(target_os = "macos")]
         let _ = cwd;
         let (executable, args) = match &self.backend {
-            #[cfg(windows)]
+            #[cfg(all(windows, sandboxed))]
             Backend::Windows { executable } => {
                 let mut command = vec![
                     "--sandbox-exec".into(),
@@ -268,6 +268,16 @@ impl Sandbox {
                         path.as_os_str().to_os_string(),
                     ]);
                 }
+                for path in [".git/hooks", ".git/config"].map(|path| self.workspace.join(path)) {
+                    if !read_only && path.exists() {
+                        command.extend([
+                            "--ro-bind".into(),
+                            path.as_os_str().to_os_string(),
+                            path.as_os_str().to_os_string(),
+                        ]);
+                    }
+                }
+                command.extend(["--new-session".into(), "--die-with-parent".into()]);
                 if self.deny_network {
                     command.push("--unshare-net".into());
                 }
@@ -281,7 +291,7 @@ impl Sandbox {
         (executable, args)
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    #[cfg(not(sandboxed))]
     pub(crate) fn command_line(
         &self,
         program: &str,
@@ -292,7 +302,7 @@ impl Sandbox {
         unreachable!("sandbox backend is unavailable")
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
+    #[cfg(not(sandboxed))]
     pub(crate) fn read_command_line(
         &self,
         program: &str,
@@ -302,7 +312,7 @@ impl Sandbox {
         self.command_line(program, args, cwd)
     }
 
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
+    #[cfg(sandboxed)]
     fn probe(&self) -> Result<()> {
         let shell = crate::shell::program()?;
         let args = crate::shell::arguments("exit 0", &self.workspace);
@@ -393,7 +403,12 @@ fn mac_profile(
             format!("(deny file-write* (subpath \"{workspace}\"))\n"),
         )
     } else {
-        (format!("    (subpath \"{workspace}\")\n"), String::new())
+        (
+            format!("    (subpath \"{workspace}\")\n"),
+            format!(
+                "(deny file-write* (literal \"{workspace}/.git\") (subpath \"{workspace}/.git/hooks\") (literal \"{workspace}/.git/config\"))\n"
+            ),
+        )
     };
     Ok(format!(
         "(version 1)\n\

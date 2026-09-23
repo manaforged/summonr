@@ -1,117 +1,36 @@
 use std::borrow::Cow;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::error::{Error, Result};
 use crate::policy::{Grant, Policy};
-use crate::provider::{FunctionDefinition, ToolCall, ToolDefinition, ToolKind, UserInput};
+use crate::provider::{ToolCall, ToolFunction, ToolKind, UserInput};
 use crate::web::Search;
 
+mod args;
+mod event;
+mod help;
+pub use event::Event;
 mod catalog;
+mod dedup;
 pub(crate) use catalog::readonly;
-mod command;
+pub(crate) mod command;
 mod lsp;
+mod paths;
 pub(crate) mod sandbox;
 mod search;
+mod todo;
 mod workspace;
 
-fn volume_unmounted(path: &Path) -> bool {
-    let mut parts = path.components();
-    if parts.next() != Some(Component::RootDir) {
-        return false;
-    }
-    match parts.next() {
-        Some(Component::Normal(volumes)) if volumes == "Volumes" => {}
-        _ => return false,
-    }
-    let Some(Component::Normal(name)) = parts.next() else {
-        return false;
-    };
-    !Path::new("/Volumes").join(name).is_dir()
-}
+pub(crate) use args::tool;
+use args::{nonempty_path, object_bool, object_string, object_usize, parse_args};
+use paths::volume_unmounted;
+use todo::parse_todo;
+pub(crate) use todo::{TodoStatus, todos_from_args};
 
 pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
     command::exit_code(output)
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum Event {
-    ToolCall {
-        id: String,
-        name: String,
-        arguments: String,
-    },
-    ToolResult {
-        id: String,
-        success: bool,
-        #[serde(default)]
-        mutated: bool,
-        output: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        millis: Option<u64>,
-    },
-    Assistant {
-        text: String,
-    },
-    Usage {
-        prompt_tokens: u32,
-        completion_tokens: u32,
-        #[serde(default)]
-        reasoning_tokens: u32,
-        cached_tokens: u32,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        millis: Option<u64>,
-        #[serde(default, skip_serializing_if = "String::is_empty")]
-        prefix_hash: String,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        cost: Option<f64>,
-    },
-    Unreported {
-        tokens: u64,
-    },
-    Mail {
-        from: String,
-        text: String,
-    },
-    Aborted {
-        reason: String,
-    },
-    Merged {
-        branch: String,
-        base: String,
-        files: Vec<String>,
-    },
-    Delta {
-        text: String,
-    },
-    Reasoning {
-        text: String,
-    },
-    Note {
-        text: String,
-    },
-    Approval {
-        detail: Option<String>,
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        persist: bool,
-    },
-    Verify {
-        command: String,
-        passed: bool,
-    },
-    Receipt {
-        receipt: crate::Receipt,
-    },
-    Work {
-        progress: crate::WorkProgress,
-    },
-    Child {
-        id: String,
-        event: Box<Event>,
-    },
 }
 
 pub(crate) struct ToolRegistry {
@@ -123,14 +42,18 @@ pub(crate) struct ToolRegistry {
     background: bool,
     language: bool,
     skills: bool,
+    probed: std::sync::OnceLock<(bool, bool)>,
     lsp: std::sync::Mutex<
         std::collections::BTreeMap<String, std::sync::Arc<tokio::sync::Mutex<Option<lsp::Conn>>>>,
     >,
     session: std::sync::Mutex<Option<String>>,
+    read_ranges: std::sync::Mutex<dedup::Ranges>,
     logs: std::sync::Mutex<Vec<tempfile::TempDir>>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::atomic::AtomicBool,
     allowed_edits: Vec<&'static str>,
+    model_images: bool,
+    vision: Option<crate::endpoint::Endpoint>,
 }
 
 pub(crate) struct ToolOutput {
@@ -141,7 +64,7 @@ pub(crate) struct ToolOutput {
 }
 
 impl ToolOutput {
-    fn ok(text: String) -> Self {
+    pub(crate) fn ok(text: String) -> Self {
         Self {
             text,
             success: true,
@@ -184,13 +107,26 @@ impl ToolRegistry {
             background: true,
             language: true,
             skills: true,
+            probed: std::sync::OnceLock::new(),
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
+            read_ranges: std::sync::Mutex::new(std::collections::HashMap::new()),
             logs: std::sync::Mutex::new(Vec::new()),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::atomic::AtomicBool::new(false),
             allowed_edits: Vec::new(),
+            model_images: false,
+            vision: None,
         })
+    }
+
+    pub(crate) fn set_images(
+        &mut self,
+        model_images: bool,
+        vision: Option<crate::endpoint::Endpoint>,
+    ) {
+        self.model_images = model_images;
+        self.vision = vision;
     }
 
     pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool, skills: bool) {
@@ -200,6 +136,7 @@ impl ToolRegistry {
         self.language = lsp;
         self.background = jobs;
         self.skills = skills;
+        self.probed = std::sync::OnceLock::new();
     }
 
     pub(crate) fn set_strict(&mut self) {
@@ -348,7 +285,9 @@ impl ToolRegistry {
 
     async fn dispatch(&self, call: &ToolCall) -> Result<ToolOutput> {
         match call.function.name.as_str() {
-            "read" => self.read(&call.function.arguments).map(ToolOutput::ok),
+            "read" => tokio::task::block_in_place(|| self.read(&call.function.arguments))
+                .map(ToolOutput::ok)
+                .map(|out| self.dedup_read(&call.function.arguments, out)),
             "edit" => self.edit_file(&call.function.arguments).await,
             "write" => self.write_file(&call.function.arguments).await,
             "skill" => self.skill(&call.function.arguments).map(ToolOutput::ok),
@@ -359,156 +298,43 @@ impl ToolRegistry {
             name => Err(Error::Tool(format!("unknown tool `{name}`"))),
         }
     }
+}
 
-    fn resolve_read(&self, path: &str) -> Result<PathBuf> {
-        let candidate = Path::new(path);
-        let opened = if candidate.is_absolute() {
-            candidate
-                .canonicalize()
-                .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?
-        } else {
-            self.resolve_existing(path)?
-        };
-        if !self.policy.is_unrestricted() && crate::policy::protected_read(&opened) {
-            return Err(Error::Denied(format!("`{path}` is a protected path")));
-        }
-        Ok(opened)
-    }
+pub struct ToolResult {
+    pub text: String,
+    pub success: bool,
+}
 
-    fn resolve_existing(&self, path: &str) -> Result<PathBuf> {
-        let candidate = self.lexical(path)?;
-        let canonical = candidate
-            .canonicalize()
-            .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
-        self.ensure_inside(&canonical)?;
-        Ok(canonical)
+pub async fn run_tool(
+    workspace: impl AsRef<Path>,
+    name: &str,
+    arguments: &str,
+    sandbox: bool,
+    deny_network: bool,
+) -> Result<ToolResult> {
+    let workspace = workspace.as_ref();
+    let mut tools = ToolRegistry::with_policy_and_search(
+        workspace,
+        crate::policy::Policy::discover(workspace)?,
+        crate::web::Search::discover().ok(),
+    )?;
+    if sandbox {
+        tools.enable_sandbox(deny_network)?;
     }
-
-    fn resolve_write(&self, path: &str) -> Result<PathBuf> {
-        let dest = self.lexical(path)?;
-        if self.policy.is_unrestricted() {
-            return Ok(dest);
-        }
-        if dest.exists() {
-            return self.resolve_existing(path);
-        }
-        let mut ancestor = dest.parent().unwrap_or(&self.workspace).to_path_buf();
-        while !ancestor.exists() {
-            match ancestor.parent() {
-                Some(parent) => ancestor = parent.to_path_buf(),
-                None => break,
-            }
-        }
-        if ancestor.exists() {
-            let canonical = ancestor
-                .canonicalize()
-                .map_err(|error| Error::Tool(format!("cannot create `{path}`: {error}")))?;
-            self.ensure_inside(&canonical)?;
-        } else if !self.inside_fence(&ancestor) {
-            return Err(Error::Tool(crate::policy::write_denied(
-                &ancestor.display().to_string(),
-            )));
-        }
-        Ok(dest)
-    }
-
-    fn lexical(&self, path: &str) -> Result<PathBuf> {
-        let relative = Path::new(path);
-        if path.trim().is_empty() {
-            return Err(Error::Tool("path is empty".to_string()));
-        }
-        if self.policy.is_unrestricted() {
-            return Ok(if relative.is_absolute() {
-                relative.to_path_buf()
-            } else {
-                self.workspace.join(relative)
-            });
-        }
-        if relative.is_absolute() {
-            let path = crate::policy::expand_path(path);
-            self.ensure_inside(&path)?;
-            return Ok(path);
-        }
-        let mut out = self.workspace.clone();
-        for component in relative.components() {
-            match component {
-                Component::Normal(part) => out.push(part),
-                Component::CurDir => {}
-                Component::ParentDir => {
-                    if !out.pop() {
-                        return Err(Error::Tool(crate::policy::write_denied(
-                            &out.display().to_string(),
-                        )));
-                    }
-                }
-                Component::Prefix(_) | Component::RootDir => {
-                    return Err(Error::Tool(
-                        "tools accept workspace-relative paths".to_string(),
-                    ));
-                }
-            }
-        }
-        self.ensure_inside(&out)?;
-        Ok(out)
-    }
-
-    fn inside_fence(&self, path: &Path) -> bool {
-        self.policy.is_unrestricted() || path.starts_with(&self.workspace) || self.approved(path)
-    }
-
-    fn approved(&self, path: &Path) -> bool {
-        let roots = self.policy.write_roots();
-        if roots.is_empty() {
-            return false;
-        }
-        let resolved = path.canonicalize().unwrap_or_else(|_| {
-            path.parent()
-                .and_then(|parent| parent.canonicalize().ok())
-                .map_or_else(
-                    || path.to_path_buf(),
-                    |parent| parent.join(path.file_name().unwrap_or_default()),
-                )
-        });
-        roots.iter().any(|root| {
-            let root = root.canonicalize().unwrap_or_else(|_| root.clone());
-            resolved.starts_with(&root) || path.starts_with(&root)
-        })
-    }
-
-    fn check_write(&self, path: &Path) -> Result<()> {
-        if self.policy.is_unrestricted() {
-            return Ok(());
-        }
-        if crate::policy::protected_write(path) {
-            return Err(Error::Denied(format!(
-                "`{}` is a protected path",
-                path.display()
-            )));
-        }
-        if self.approved(path) {
-            return Ok(());
-        }
-        self.policy.write_path(&self.relative(path)?)
-    }
-
-    fn ensure_inside(&self, path: &Path) -> Result<()> {
-        if self.inside_fence(path) {
-            Ok(())
-        } else {
-            Err(Error::Tool(crate::policy::write_denied(
-                &path.display().to_string(),
-            )))
-        }
-    }
-
-    fn relative(&self, path: &Path) -> Result<String> {
-        if self.policy.is_unrestricted() {
-            return Ok(path.to_string_lossy().into_owned());
-        }
-        path.strip_prefix(&self.workspace)
-            .map(|relative| relative.to_string_lossy().into_owned())
-            .map_err(|_error| Error::Tool(crate::policy::write_denied(&path.display().to_string())))
-    }
+    let call = ToolCall {
+        id: "cli".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    };
+    let outcome = tools.execute_outcome(&call).await?;
+    Ok(ToolResult {
+        text: outcome.text,
+        success: outcome.success,
+    })
 }
 
 fn normalize(call: &ToolCall) -> Result<Cow<'_, ToolCall>> {
@@ -535,127 +361,6 @@ fn normalize(call: &ToolCall) -> Result<Cow<'_, ToolCall>> {
     Ok(Cow::Owned(call))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TodoStatus {
-    Pending,
-    Active,
-    Done,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Todo {
-    pub text: String,
-    pub status: TodoStatus,
-}
-
-impl Todo {
-    pub(crate) fn mark(&self) -> &'static str {
-        match self.status {
-            TodoStatus::Done => "✓",
-            TodoStatus::Active => "●",
-            TodoStatus::Pending => "○",
-        }
-    }
-
-    pub(crate) fn line(&self) -> String {
-        format!("{} {}", self.mark(), self.text)
-    }
-
-    pub(crate) fn ledger_line(&self) -> String {
-        let mark = match self.status {
-            TodoStatus::Done => "[x]",
-            TodoStatus::Active => "[/]",
-            TodoStatus::Pending => "[ ]",
-        };
-        format!("{mark} {}", self.text)
-    }
-}
-
-pub(crate) fn todos_from_args(arguments: &str) -> Result<Vec<Todo>> {
-    let value = parse_args("todo", arguments)?;
-    let items = value
-        .get("items")
-        .or_else(|| value.get("todos"))
-        .or_else(|| value.get("tasks"))
-        .and_then(Value::as_array)
-        .or_else(|| value.as_array())
-        .ok_or_else(|| Error::Tool("todo requires items".to_string()))?;
-    let mut todos = Vec::new();
-    for item in items {
-        let text = item
-            .get("text")
-            .or_else(|| item.get("title"))
-            .or_else(|| item.get("content"))
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|text| !text.is_empty())
-            .ok_or_else(|| Error::Tool("todo item needs text".to_string()))?;
-        let status = match item
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("pending")
-        {
-            "done" | "completed" => TodoStatus::Done,
-            "active" | "in_progress" => TodoStatus::Active,
-            _ => TodoStatus::Pending,
-        };
-        todos.push(Todo {
-            text: text.to_string(),
-            status,
-        });
-    }
-    Ok(todos)
-}
-
-fn parse_todo(arguments: &str) -> Result<String> {
-    let todos = todos_from_args(arguments)?;
-    if todos.is_empty() {
-        return Ok("no todos".to_string());
-    }
-    Ok(todos.iter().map(Todo::line).collect::<Vec<_>>().join("\n"))
-}
-
-pub(crate) fn tool(name: &str, description: &str, parameters: Value) -> ToolDefinition {
-    ToolDefinition {
-        kind: ToolKind::Function,
-        function: FunctionDefinition {
-            name: name.to_string(),
-            description: description.to_string(),
-            parameters,
-        },
-    }
-}
-
-fn parse_args(name: &str, arguments: &str) -> Result<Value> {
-    serde_json::from_str(arguments)
-        .map_err(|error| Error::Tool(format!("{name} arguments are invalid: {error}")))
-}
-
-fn object_string<'a>(value: &'a Value, field: &str) -> Result<&'a str> {
-    value
-        .get(field)
-        .and_then(Value::as_str)
-        .ok_or_else(|| Error::Tool(format!("{field} is required")))
-}
-
-fn nonempty_path<'a>(args: &'a Value, tool_name: &str) -> Result<&'a str> {
-    args.get("path")
-        .and_then(Value::as_str)
-        .filter(|path| !path.trim().is_empty())
-        .ok_or_else(|| Error::Tool(format!("{tool_name} requires a non-empty path")))
-}
-
-fn object_usize(value: &Value, field: &str) -> Option<usize> {
-    value
-        .get(field)
-        .and_then(Value::as_u64)
-        .and_then(|n| usize::try_from(n).ok())
-}
-
-fn object_bool(value: &Value, field: &str) -> bool {
-    value.get(field).and_then(Value::as_bool).unwrap_or(false)
-}
-
 pub fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
     workspace::attach(workspace, line)
 }
@@ -667,7 +372,7 @@ pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
 pub(crate) const IMAGES_MAX_BYTES: usize = workspace::IMAGES_MAX_BYTES;
 
 pub(crate) fn digest(command: &str, raw: &str) -> String {
-    command::digest(command, raw)
+    command::digest::digest(command, raw)
 }
 
 #[cfg(test)]

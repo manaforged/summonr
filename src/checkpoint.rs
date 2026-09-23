@@ -5,6 +5,7 @@ use crate::diff::git_env;
 use crate::durable::store;
 use crate::error::{Error, Result};
 
+#[derive(Clone)]
 pub(crate) struct Checkpoints {
     root: PathBuf,
     index: PathBuf,

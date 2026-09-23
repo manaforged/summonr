@@ -24,7 +24,7 @@ impl Chat for Wire {
         Some("[DONE]")
     }
 
-    fn request(call: &CompletionRequest, stream: bool) -> Value {
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> Value {
         let mut body = json!({
             "model": call.model,
             "stream": stream,
@@ -33,7 +33,7 @@ impl Chat for Wire {
             body["max_tokens"] = json!(max);
         }
         if !call.tools.is_empty()
-            && let Ok(tools) = serde_json::to_value(&call.tools)
+            && let Ok(tools) = serde_json::to_value(call.tools)
         {
             body["tools"] = tools;
         }
@@ -124,6 +124,7 @@ pub(crate) struct Stream {
     think: think::Scan,
     usage: Usage,
     stop: StopReason,
+    finished: bool,
 }
 
 impl Accumulate for Stream {
@@ -131,10 +132,8 @@ impl Accumulate for Stream {
         Self::default()
     }
 
-    fn on(&mut self, frame: &Value) -> crate::error::Result<Vec<Delta>> {
-        let Ok(frame) = serde_json::from_value::<Frame>(frame.clone()) else {
-            return Ok(Vec::new());
-        };
+    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+        let frame = crate::provider::wire::parse::<Frame>(frame)?;
         if let Some(failure) = frame.error {
             let message = if failure.message.is_empty() {
                 "the provider reported an error mid-stream".to_string()
@@ -155,6 +154,7 @@ impl Accumulate for Stream {
         };
         if let Some(reason) = choice.finish_reason {
             self.stop = reason;
+            self.finished = true;
         }
         if let Some(part) = choice
             .delta
@@ -182,7 +182,7 @@ impl Accumulate for Stream {
             }
         }
         for part in choice.delta.tool_calls {
-            merge_call(&mut self.calls, part);
+            merge_call(&mut self.calls, part)?;
         }
         while let Some(call) = self.calls.get(self.named) {
             if call.function.name.is_empty() {
@@ -194,7 +194,20 @@ impl Accumulate for Stream {
         Ok(deltas)
     }
 
-    fn finish(self) -> AssistantMessage {
+    fn finished(&self) -> bool {
+        self.finished
+    }
+
+    fn finish(mut self) -> AssistantMessage {
+        self.think.finish(
+            |chunk| self.text.push_str(chunk),
+            |chunk| self.reasoning.push_str(chunk),
+        );
+        for (index, call) in self.calls.iter_mut().enumerate() {
+            if call.id.is_empty() {
+                call.id = format!("call_{index}");
+            }
+        }
         AssistantMessage {
             content: (!self.text.is_empty()).then_some(self.text),
             tool_calls: self.calls,

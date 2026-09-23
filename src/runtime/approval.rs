@@ -26,7 +26,8 @@ pub(super) enum Verdict {
 impl<P: Provider> Loop<P> {
     pub(super) async fn edit_requested(&mut self, setting: &str) -> bool {
         let Some(input) = self
-            .history
+            .session
+            .history()
             .iter()
             .rev()
             .find(|message| message.role == Role::User)
@@ -82,13 +83,15 @@ impl<P: Provider> Loop<P> {
 
     fn evidence(&self, command: &str, reason: &str) -> String {
         let users: Vec<String> = self
-            .history
+            .session
+            .history()
             .iter()
             .filter(|message| message.role == Role::User)
             .map(|message| bounded(crate::session::user_text(&message.content), CLIP))
             .collect();
         let calls: Vec<String> = self
-            .history
+            .session
+            .history()
             .iter()
             .flat_map(|message| &message.tool_calls)
             .map(|call| {

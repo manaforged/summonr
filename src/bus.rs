@@ -360,27 +360,13 @@ impl Drop for Bus {
 }
 
 pub(crate) fn definitions() -> Vec<ToolDefinition> {
-    vec![tool(
-        "bus",
-        "Room mail and board. action agents lists sessions; inbox reads mail; send needs to and text; get/set/list is the board (key, value).",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["agents", "inbox", "send", "get", "set", "list"]
-                },
-                "to": {"type": "string"},
-                "text": {"type": "string"},
-                "key": {"type": "string"},
-                "value": {"type": "string"}
-            },
-            "required": ["action"],
-            "additionalProperties": false
-        }),
-    )]
+    crate::room::tools()
+        .into_iter()
+        .filter(|(name, _, _)| is_bus_tool(name))
+        .map(|(name, description, schema)| tool(name, description, schema))
+        .collect()
 }
 
 pub(crate) fn is_bus_tool(name: &str) -> bool {
-    matches!(name, "bus" | "agents" | "inbox" | "board" | "send")
+    matches!(name, "agents" | "inbox" | "board" | "send")
 }

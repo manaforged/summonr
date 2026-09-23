@@ -316,8 +316,7 @@ pub fn run(
 }
 
 pub(crate) fn short_session(id: &str) -> String {
-    let start = id.len().saturating_sub(5);
-    id.get(start..).unwrap_or(id).to_string()
+    crate::session::short(id).to_string()
 }
 
 #[cfg_attr(

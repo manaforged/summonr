@@ -57,13 +57,14 @@ impl App {
             let mut model = self.model.borrow_mut();
             model.entries.push(Entry::User(text.clone()));
             for attachment in pending {
-                input.images.push(attachment.image);
                 if let Some(source) = attachment.source {
                     model.entries.push(Entry::Image {
                         source,
+                        bytes: attachment.image.bytes().unwrap_or_default().into(),
                         label: attachment.label,
                     });
                 }
+                input.images.push(attachment.image);
             }
         }
         let activity = self.model.borrow().busy_since.map(|(activity, _)| activity);

@@ -1,7 +1,6 @@
 use std::mem::{replace, take};
 use std::sync::{Arc, Mutex};
 
-use base64::{Engine, engine::general_purpose::STANDARD};
 use futures::StreamExt;
 use genai::adapter::AdapterKind;
 use genai::chat::{
@@ -35,7 +34,7 @@ impl Client {
 
     pub(super) async fn complete_native(
         &self,
-        request: &CompletionRequest,
+        request: &CompletionRequest<'_>,
         kind: AdapterKind,
         output: &mut Partial,
     ) -> Result<AssistantMessage> {
@@ -272,10 +271,10 @@ fn chat_options(max_tokens: Option<u32>, effort: Option<crate::provider::Effort>
     options
 }
 
-fn to_chat(request: &CompletionRequest, wire: Wire) -> Result<ChatRequest> {
+fn to_chat(request: &CompletionRequest<'_>, wire: Wire) -> Result<ChatRequest> {
     let mut system = String::new();
     let mut messages = Vec::new();
-    for message in &request.messages {
+    for message in request.messages {
         match message.role {
             Role::System if messages.is_empty() => {
                 if !system.is_empty() {
@@ -289,11 +288,7 @@ fn to_chat(request: &CompletionRequest, wire: Wire) -> Result<ChatRequest> {
                     parts.push(ContentPart::Text(message.content.clone()));
                 }
                 parts.extend(message.images.iter().map(|image| {
-                    ContentPart::from_binary_base64(
-                        &image.media_type,
-                        STANDARD.encode(&image.bytes),
-                        None,
-                    )
+                    ContentPart::from_binary_base64(&image.media_type, image.data.clone(), None)
                 }));
                 messages.push(ChatMessage::user(MessageContent::from_parts(parts)));
             }

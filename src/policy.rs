@@ -5,7 +5,7 @@ use serde::Deserialize;
 use crate::error::{Error, Result};
 
 mod danger;
-pub(crate) use danger::danger;
+pub(crate) use danger::{argv, danger, verb};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Policy {
@@ -175,10 +175,17 @@ impl Policy {
             }
         }
         if (self.strict && self.allow.is_empty())
-            || self
-                .allow
-                .iter()
-                .any(|list| !list.iter().any(|pattern| matches_allow(command, pattern)))
+            || !split_segments(command).iter().all(|segment| {
+                !(self.strict && segment.contains(['`', '$', '<', '>'].as_ref()))
+                    && (self.allow.is_empty()
+                        || !["$(", "`", "<(", ">("]
+                            .iter()
+                            .any(|token| segment.contains(token)))
+                    && self
+                        .allow
+                        .iter()
+                        .all(|list| list.iter().any(|pattern| matches_allow(segment, pattern)))
+            })
         {
             return Err(Error::Denied(format!(
                 "command `{command}` is not on every configured allow list"
@@ -350,7 +357,9 @@ pub(crate) fn protected_write(path: &Path) -> bool {
 
 pub(crate) fn protected_read(path: &Path) -> bool {
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
-        && (name == ".env" || name.starts_with(".env."))
+        && (name == ".env"
+            || name.starts_with(".env.")
+            || (name.starts_with("credentials.") && crate::secret::is_store(path)))
     {
         return true;
     }
@@ -396,47 +405,73 @@ fn shell(program: &str) -> bool {
     )
 }
 
+const WRAPPERS: [&str; 15] = [
+    "env", "sudo", "doas", "nice", "nohup", "exec", "command", "builtin", "time", "xargs",
+    "timeout", "stdbuf", "setsid", "flock", "chronic",
+];
+
 fn pipes_to_shell(command: &str) -> bool {
     unquoted(command, &["|"])
         .into_iter()
         .skip(1)
         .any(|segment| {
-            segment
+            let words: Vec<&str> = segment
                 .trim_start_matches('&')
                 .split_whitespace()
                 .map(|word| word.rsplit('/').next().unwrap_or(word))
-                .find(|word| {
-                    !matches!(
-                        *word,
-                        "env"
-                            | "sudo"
-                            | "doas"
-                            | "nice"
-                            | "nohup"
-                            | "exec"
-                            | "command"
-                            | "time"
-                            | "xargs"
-                            | "timeout"
-                            | "stdbuf"
-                            | "setsid"
-                            | "flock"
-                            | "chronic"
-                    ) && !word.starts_with('-')
+                .collect();
+            words
+                .iter()
+                .position(|word| {
+                    !WRAPPERS.contains(word)
+                        && !word.starts_with('-')
                         && !word.contains('=')
                         && !word.chars().all(|c| c.is_ascii_digit())
                 })
-                .is_some_and(|word| {
-                    let bare: String = word.chars().filter(|c| !matches!(c, '"' | '\'')).collect();
+                .is_some_and(|at| {
+                    let word = words[at];
+                    let bare: String = word
+                        .chars()
+                        .filter(|c| !matches!(c, '"' | '\'' | '\\'))
+                        .collect();
                     if let Some(var) = bare.strip_prefix('$') {
                         return expands_to_shell(var);
                     }
                     let name = bare
                         .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
                         .to_ascii_lowercase();
-                    shell(&name) || word.starts_with('`')
+                    shell(&name)
+                        || word.starts_with('`')
+                        || (interpreter(&name) && reads_stdin(&words[at + 1..]))
                 })
         })
+}
+
+fn interpreter(name: &str) -> bool {
+    matches!(
+        name.trim_end_matches(|c: char| c.is_ascii_digit() || c == '.'),
+        "python" | "node" | "perl" | "ruby" | "php" | "deno" | "bun"
+    )
+}
+
+fn reads_stdin(args: &[&str]) -> bool {
+    args.contains(&"-")
+        || args.iter().all(|arg| match arg.strip_prefix("--") {
+            Some(long) => !["eval", "print", "command"]
+                .iter()
+                .any(|flag| long.starts_with(flag)),
+            None => arg.starts_with('-') && !arg.contains(['c', 'e', 'E', 'm']),
+        })
+}
+
+fn runs_substitution(command: &str) -> bool {
+    split_segments(command).iter().any(|segment| {
+        let mut words = segment.split_whitespace();
+        words.next().is_some_and(|verb| {
+            let name = verb.rsplit('/').next().unwrap_or(verb).to_ascii_lowercase();
+            shell(&name) || interpreter(&name) || matches!(name.as_str(), "source" | ".")
+        }) && words.any(|word| word.starts_with("<("))
+    })
 }
 
 fn builtin_deny(command: &str) -> bool {
@@ -446,6 +481,7 @@ fn builtin_deny(command: &str) -> bool {
         || folded.contains("git push -f")
         || folded.contains("git push --mirror")
         || pipes_to_shell(command)
+        || runs_substitution(command)
         || folded.contains("mkfs")
         || folded.contains(":(){ :|:& };:")
         || folded.starts_with("sudo ")
@@ -529,9 +565,15 @@ fn write_block(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Blo
                 .iter()
                 .any(|word| word == "-delete" || word == "-exec" || word == "-execdir");
         let creates = matches!(verb.as_str(), "mkdir" | "touch" | "md");
-        let destructive = DESTRUCTIVE.contains(&verb.as_str()) || deletes_via_find;
-        for word in args.clone() {
-            if let Some(target) = word.strip_prefix(">>").or_else(|| word.strip_prefix('>')) {
+        let edits_in_place = verb == "sed"
+            && words
+                .iter()
+                .any(|word| word.starts_with("-i") || word.starts_with("--in-place"));
+        let destructive =
+            DESTRUCTIVE.contains(&verb.as_str()) || deletes_via_find || edits_in_place;
+        for word in &words {
+            if let Some((_, target)) = word.split_once('>') {
+                let target = target.trim_start_matches(['>', '&', '|']);
                 let target = if target.is_empty() { continue } else { target };
                 if let Some(block) = block_target(target, workspace, outside_cwd, roots) {
                     return Some(block);
@@ -590,12 +632,67 @@ fn write_block(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Blo
 
 const DEST_ONLY: [&str; 5] = ["cp", "mv", "ln", "install", "rsync"];
 
-fn split_segments(command: &str) -> Vec<String> {
-    unquoted(command, &["&&", "||", "|", ";"])
-        .into_iter()
-        .map(|segment| segment.trim().to_string())
-        .filter(|segment| !segment.is_empty())
-        .collect()
+pub(crate) fn split_segments(command: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for segment in unquoted(command, &["&&", "||", "|", ";", "\n", "&"]) {
+        let segment = unwrap_segment(&segment);
+        if segment.is_empty() {
+            continue;
+        }
+        if let Some(script) = inline_script(&segment) {
+            out.extend(split_segments(&script));
+        }
+        out.push(segment);
+    }
+    out
+}
+
+fn unwrap_segment(segment: &str) -> String {
+    let mut text = segment.trim().trim_start_matches(['(', '{', ' ', '\t']);
+    if text.matches(')').count() > text.matches('(').count() {
+        text = text.trim_end_matches([')', ' ', '\t']);
+    }
+    loop {
+        let (word, tail) = text.split_once([' ', '\t']).unwrap_or((text, ""));
+        let name = word.trim_start_matches('\\');
+        let name = name.rsplit('/').next().unwrap_or(name);
+        if !WRAPPERS.contains(&name) {
+            return text.trim_start_matches('\\').to_string();
+        }
+        text = tail.trim_start();
+        loop {
+            let (word, rest) = text.split_once([' ', '\t']).unwrap_or((text, ""));
+            if word.is_empty()
+                || !(word.starts_with('-')
+                    || word.contains('=')
+                    || word.chars().all(|c| c.is_ascii_digit()))
+            {
+                break;
+            }
+            text = rest.trim_start();
+        }
+    }
+}
+
+fn inline_script(segment: &str) -> Option<String> {
+    let words = unquoted(segment, &[" ", "\t"]);
+    let mut words = words
+        .iter()
+        .map(|word| word.trim())
+        .filter(|word| !word.is_empty());
+    let verb = words.next()?;
+    if !shell(verb) {
+        return None;
+    }
+    words.find(|word| word.starts_with('-') && !word.starts_with("--") && word.contains('c'))?;
+    let script = words.next()?;
+    Some(
+        ['\'', '"']
+            .iter()
+            .find_map(|quote| script.strip_prefix(*quote)?.strip_suffix(*quote))
+            .unwrap_or(script)
+            .to_string(),
+    )
 }
 
 fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
@@ -631,7 +728,11 @@ fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
                     take = 2;
                 } else if ch == ')' && open.last() == Some(&'(') {
                     open.pop();
-                } else if let Some(delimiter) = delimiters.iter().find(|d| rest.starts_with(*d)) {
+                } else if let Some(delimiter) = delimiters.iter().find(|d| {
+                    rest.starts_with(*d)
+                        && !(**d == "&"
+                            && (current.ends_with(['>', '<']) || rest.starts_with("&>")))
+                }) {
                     segments.push(std::mem::take(&mut current));
                     rest = &rest[delimiter.len()..];
                     continue;
@@ -700,63 +801,59 @@ pub(crate) fn expand_path(word: &str) -> PathBuf {
 }
 
 fn remap_volume(path: PathBuf) -> PathBuf {
-    #[cfg(not(target_os = "macos"))]
-    {
+    if !cfg!(target_os = "macos") {
         return path;
     }
-    #[cfg(target_os = "macos")]
-    {
-        let mut components = path.components();
-        if components.next() != Some(Component::RootDir) {
-            return path;
-        }
-        match components.next() {
-            Some(Component::Normal(volumes)) if volumes == "Volumes" => {}
-            _ => return path,
-        }
-        let Some(Component::Normal(asked)) = components.next() else {
-            return path;
-        };
-        let asked = asked.to_string_lossy();
-        let Ok(entries) = std::fs::read_dir("/Volumes") else {
-            return path;
-        };
-        let names: Vec<std::ffi::OsString> = entries
-            .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
-            .collect();
-        let equal: Vec<_> = names
+    let mut components = path.components();
+    if components.next() != Some(Component::RootDir) {
+        return path;
+    }
+    match components.next() {
+        Some(Component::Normal(volumes)) if volumes == "Volumes" => {}
+        _ => return path,
+    }
+    let Some(Component::Normal(asked)) = components.next() else {
+        return path;
+    };
+    let asked = asked.to_string_lossy();
+    let Ok(entries) = std::fs::read_dir("/Volumes") else {
+        return path;
+    };
+    let names: Vec<std::ffi::OsString> = entries
+        .filter_map(|entry| entry.ok().map(|entry| entry.file_name()))
+        .collect();
+    let equal: Vec<_> = names
+        .iter()
+        .filter(|name| name.to_string_lossy().eq_ignore_ascii_case(&asked))
+        .cloned()
+        .collect();
+    let hits = if equal.len() == 1 {
+        equal
+    } else {
+        let prefix: Vec<_> = names
             .iter()
-            .filter(|name| name.to_string_lossy().eq_ignore_ascii_case(&asked))
+            .filter(|name| {
+                name.to_string_lossy()
+                    .to_ascii_lowercase()
+                    .starts_with(&asked.to_ascii_lowercase())
+            })
             .cloned()
             .collect();
-        let hits = if equal.len() == 1 {
-            equal
+        if prefix.len() == 1 {
+            prefix
         } else {
-            let prefix: Vec<_> = names
-                .iter()
-                .filter(|name| {
-                    name.to_string_lossy()
-                        .to_ascii_lowercase()
-                        .starts_with(&asked.to_ascii_lowercase())
-                })
-                .cloned()
-                .collect();
-            if prefix.len() == 1 {
-                prefix
-            } else {
-                return path;
-            }
-        };
-        if hits[0].to_string_lossy() == asked {
             return path;
         }
-        let mut out = PathBuf::from("/Volumes");
-        out.push(&hits[0]);
-        for rest in components {
-            out.push(rest);
-        }
-        out
+    };
+    if hits[0].to_string_lossy() == asked {
+        return path;
     }
+    let mut out = PathBuf::from("/Volumes");
+    out.push(&hits[0]);
+    for rest in components {
+        out.push(rest);
+    }
+    out
 }
 
 fn expand_home(word: &str) -> Option<PathBuf> {

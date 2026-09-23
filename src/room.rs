@@ -9,7 +9,8 @@ use crate::error::{Error, Result};
 mod host;
 mod serve;
 
-/// A short room id. One copy: two files minted the same four hex digits.
+pub(crate) use serve::tools;
+
 pub(super) fn short() -> String {
     let seed = std::process::id() as u64 ^ bus::now();
     format!("{:04x}", seed & 0xffff)

@@ -9,7 +9,6 @@ use super::work::{Check, Decision, Policy, Stage, Work, WorkError};
 use crate::WorkProgress;
 use crate::provider::{Message, Partial, ToolCall, UserInput};
 use crate::session::Replay;
-use crate::workflow::Role;
 
 #[derive(Debug, Error)]
 pub(crate) enum DriverError {
@@ -39,7 +38,7 @@ pub(crate) struct Exposure {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Purpose {
+pub(crate) enum Purpose {
     Agent,
     Summary,
     Judge,
@@ -48,7 +47,6 @@ enum Purpose {
     Plan,
 }
 
-/// What a turn must do before it can execute: write a plan, or run now.
 pub(crate) enum TurnWork {
     NeedsPlan,
     Ready { accepted: bool },
@@ -276,40 +274,7 @@ impl SessionDriver {
         self.start_round(Purpose::Agent, model, exposure)
     }
 
-    pub(crate) fn start_summary(
-        &mut self,
-        model: &str,
-        exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
-        self.start_round(Purpose::Summary, model, exposure)
-    }
-
-    pub(crate) fn start_judge(
-        &mut self,
-        model: &str,
-        exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
-        self.start_round(Purpose::Judge, model, exposure)
-    }
-
-    pub(crate) fn start_aside(
-        &mut self,
-        role: Role,
-        model: &str,
-        exposure: Exposure,
-    ) -> Result<Attempt, DriverError> {
-        let purpose = match role {
-            Role::Scout => Purpose::Scout,
-            Role::Review => Purpose::Review,
-            Role::Plan => Purpose::Plan,
-            Role::Implement | Role::Judge | Role::Summary => {
-                return Err(DriverError::State(format!("{role} is not an aside")));
-            }
-        };
-        self.start_round(purpose, model, exposure)
-    }
-
-    fn start_round(
+    pub(crate) fn start_round(
         &mut self,
         purpose: Purpose,
         model: &str,
@@ -556,9 +521,7 @@ impl SessionDriver {
             .reject(findings)?;
         self.checkpoint()?;
         if let Some(text) = receipt {
-            self.append(Line::Receipt {
-                text: text.to_string(),
-            })?;
+            self.append(Line::Receipt { text: text.into() })?;
         }
         self.close()
     }
@@ -578,9 +541,7 @@ impl SessionDriver {
             .verdict(verdict.passed, decision)?;
         self.checkpoint()?;
         if let Some(text) = receipt {
-            self.append(Line::Receipt {
-                text: text.to_string(),
-            })?;
+            self.append(Line::Receipt { text: text.into() })?;
         }
         self.close()
     }
@@ -589,7 +550,10 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        self.append(Line::Close { reason: None })?;
+        self.append(Line::Close {
+            reason: None,
+            rss_kb: peak_rss_kb(),
+        })?;
         self.turn = None;
         Ok(())
     }
@@ -623,12 +587,11 @@ impl SessionDriver {
             })?;
         }
         if let Some(text) = receipt {
-            self.append(Line::Receipt {
-                text: text.to_string(),
-            })?;
+            self.append(Line::Receipt { text: text.into() })?;
         }
         self.append(Line::Close {
             reason: Some(reason.to_string()),
+            rss_kb: peak_rss_kb(),
         })?;
         self.turn = None;
         if let Some(work) = &mut self.work
@@ -738,6 +701,10 @@ impl SessionDriver {
         })
     }
 
+    pub(crate) fn rewrite(&mut self, edits: Vec<(usize, Message)>) -> Result<(), DriverError> {
+        self.append(Line::Rewrite { edits })
+    }
+
     pub(crate) fn clear(&mut self) -> Result<(), DriverError> {
         if self.turn.is_some() {
             return Err(DriverError::Busy);
@@ -786,6 +753,10 @@ impl SessionDriver {
         Ok(path)
     }
 
+    pub(crate) fn note_schema(&mut self, bytes: u64) -> Result<(), DriverError> {
+        self.append(Line::Tools { bytes })
+    }
+
     pub(crate) fn set_budget(
         &mut self,
         tokens: Option<u64>,
@@ -822,6 +793,18 @@ impl SessionDriver {
         self.state.replay()
     }
 
+    pub(crate) fn history(&self) -> &[Message] {
+        &self.state.history
+    }
+
+    pub(crate) fn spent_tokens(&self) -> u64 {
+        self.state.spent
+    }
+
+    pub(crate) fn elapsed_millis(&self) -> u64 {
+        self.state.elapsed
+    }
+
     pub(crate) fn path(&self) -> &Path {
         self.log.path()
     }
@@ -855,7 +838,6 @@ impl SessionDriver {
         }) || crate::plan::read(&self.workspace).is_some()
     }
 
-    /// Select the model-written plan and start execution in the same turn.
     pub(crate) fn select_plan(
         &mut self,
         markdown: &str,
@@ -872,7 +854,6 @@ impl SessionDriver {
         self.execute()
     }
 
-    /// The planning round could not run; execute against the objective alone.
     pub(crate) fn begin_without_plan(&mut self, commands: &[String]) -> Result<(), DriverError> {
         let objective = self
             .work
@@ -978,7 +959,7 @@ impl SessionDriver {
         self.checkpoint()?;
         crate::plan::write(&self.workspace, markdown)?;
         self.append(Line::Receipt {
-            text: receipt.to_string(),
+            text: receipt.into(),
         })?;
         self.close()
     }
@@ -1235,4 +1216,21 @@ pub(crate) fn active_at(path: &Path, workspace: &Path) -> Option<(Policy, String
 
 pub(crate) fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "getrusage has no std wrapper")]
+fn peak_rss_kb() -> Option<u64> {
+    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
+    // SAFETY: getrusage writes one rusage into the zeroed buffer; zero means success.
+    let usage = unsafe {
+        (libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0).then(|| usage.assume_init())
+    }?;
+    let scale = if cfg!(target_os = "macos") { 1024 } else { 1 };
+    u64::try_from(usage.ru_maxrss).ok().map(|peak| peak / scale)
+}
+
+#[cfg(not(unix))]
+fn peak_rss_kb() -> Option<u64> {
+    None
 }

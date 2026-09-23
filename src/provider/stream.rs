@@ -10,7 +10,7 @@ use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
 impl Client {
     pub(super) async fn complete_stream(
         &self,
-        request: &CompletionRequest,
+        request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         self.stream_wire::<super::wire::completions::Wire>(request, partial)
@@ -19,7 +19,7 @@ impl Client {
 
     async fn stream_wire<W: super::wire::Chat>(
         &self,
-        request: &CompletionRequest,
+        request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         use super::wire::{Accumulate, Delta};
@@ -67,20 +67,40 @@ impl Client {
                             }
                         }
                     }
+                    if partial.text.len() > PARTIAL_CAP || partial.reasoning.len() > PARTIAL_CAP {
+                        return Err(Error::provider(
+                            ProviderFailureKind::Malformed,
+                            format!("streamed output exceeded {PARTIAL_CAP} bytes"),
+                        ));
+                    }
                 }
             }
             if frames.ended() {
                 break;
             }
         }
+        if W::sentinel().is_some() && !frames.ended() && !state.finished() {
+            return Err(Error::Provider(ProviderFailure {
+                kind: ProviderFailureKind::Transport,
+                status: None,
+                message: "stream ended without a completion sentinel".to_string(),
+                partial_output: started
+                    || !partial.text.is_empty()
+                    || !partial.reasoning.is_empty(),
+                retry_after: None,
+            }));
+        }
         finish(state.finish())
     }
 }
 
-pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
+pub(crate) const PARTIAL_CAP: usize = 8 * 1024 * 1024;
+pub(crate) const ARGUMENT_CAP: usize = 1024 * 1024;
+
+pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<()> {
     let index = part.index.unwrap_or(calls.len().saturating_sub(1));
     if index > calls.len() {
-        return;
+        return Ok(());
     }
     if calls.len() == index {
         calls.push(ToolCall {
@@ -103,8 +123,15 @@ pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) {
         }
         if let Some(arguments) = function.arguments {
             call.function.arguments.push_str(&arguments);
+            if call.function.arguments.len() > ARGUMENT_CAP {
+                return Err(Error::provider(
+                    ProviderFailureKind::Malformed,
+                    format!("streamed tool arguments exceeded {ARGUMENT_CAP} bytes"),
+                ));
+            }
         }
     }
+    Ok(())
 }
 
 pub(super) fn finish(mut message: AssistantMessage) -> Result<AssistantMessage> {

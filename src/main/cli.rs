@@ -11,10 +11,13 @@ pub(super) struct Args {
     pub(super) doctor: bool,
     pub(super) export: bool,
     pub(super) profile: bool,
+    pub(super) all: bool,
+    pub(super) last: Option<usize>,
     pub(super) name: Option<String>,
     pub(super) list_workflows: bool,
     pub(super) list_modules: bool,
     pub(super) room: Option<Vec<String>>,
+    pub(super) tool: Option<Vec<String>>,
     pub(super) acp: bool,
     pub(super) resume: bool,
     pub(super) fork: bool,
@@ -34,7 +37,6 @@ pub(super) struct Args {
     pub(super) workflow: Option<String>,
     pub(super) steps: Option<String>,
     pub(super) goal: Option<String>,
-    pub(super) max_turns: Option<u32>,
     pub(super) prompt: Vec<String>,
     pub(super) here: bool,
     pub(super) worktree: bool,
@@ -143,6 +145,14 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             }
             "export" if command => args.export = true,
             "profile" if command => args.profile = true,
+            "--all" if args.profile => args.all = true,
+            "--last" if args.profile => {
+                let raw = value(&mut input, "--last", "a session count")?;
+                args.last =
+                    Some(raw.parse().map_err(|error| {
+                        Error::Config(format!("--last wants a count: {error}"))
+                    })?);
+            }
             "--name" => args.name = Some(value(&mut input, "--name", "a session name")?),
             "workflows" if command => args.list_workflows = true,
             "modules" if command => args.list_modules = true,
@@ -151,6 +161,9 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "acp" if command => args.acp = true,
             "room" if command => {
                 args.room = Some(input.by_ref().collect());
+            }
+            "tool" if command => {
+                args.tool = Some(input.by_ref().collect());
             }
             "login" | "auth" if command => args.login = true,
             "logout" if command => args.logout = true,
@@ -163,10 +176,6 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--steps" => args.steps = Some(value(&mut input, "--steps", "a plan path")?),
             "prune" if args.list_worktrees => args.prune_worktrees = true,
             "--goal" => args.goal = Some(value(&mut input, "--goal", "an objective")?),
-            "--max-turns" => {
-                let turns: u32 = number(&mut input, "--max-turns")?;
-                args.max_turns = Some(turns);
-            }
             "--session" => args.session = Some(value(&mut input, "--session", "an id")?),
             "-e" | "--endpoint" => {
                 args.endpoint = Some(value(
@@ -288,7 +297,7 @@ fn exit_help() -> ! {
         |names| names.join(", "),
     );
     println!(
-        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} profile [ID|NAME]\n  {bin} workflows\n  {bin} modules\n  {bin} add PATH\n  {bin} add --list\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} acp\n  {bin} endpoints\n  {bin} infer --set NAME [STATE]\n  {bin} infer --questions @FILE [STATE]\n  {bin} login\n  {bin} login NAME [--key]\n  {bin} auth\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n      --max-turns N    Optional continuation-turn limit for goal mode\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.summonr/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox (default)\n      --no-net         Deny network access inside the sandbox (needs --sandbox)\n      --sandbox        Contain shell commands and keep writes under the roots
+        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} profile [ID|NAME|--all [--last N]]\n  {bin} workflows\n  {bin} modules\n  {bin} add PATH\n  {bin} add --list\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} acp\n  {bin} tool NAME [JSON]\n  {bin} endpoints\n  {bin} infer --set NAME [STATE]\n  {bin} infer --questions @FILE [STATE]\n  {bin} login\n  {bin} login NAME [--key]\n  {bin} auth\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.summonr/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox (default)\n      --no-net         Deny network access inside the sandbox (needs --sandbox)\n      --sandbox        Contain shell commands and keep writes under the roots
       --no-sandbox     Uncontained commands and file access (the default)
       --add-dir DIR    Extra writable root (repeatable; same as [sandbox] write)\n      --no-verify      Skip the .summonr/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --gui            Open the desktop window instead of the terminal (a `--features gui` build)\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short (budget, stall, impossible, abort)\n\nInteractive:\n{commands}\n  @path attach a workspace file · ctrl+e files · ctrl+l ledger · ctrl+x diff\n  ctrl+y copy reply · ctrl+t select text · ctrl+o settings · ctrl+p hide/show pane\n  ctrl+→/← focus · ctrl+shift+←/→ resize\n\nEndpoints:\n  Available endpoints: {endpoints}\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints probes them\n  {bin} login / {bin} auth  list API keys, coding plans, and decisions seats\n  {bin} login NAME  ask for an API key, or run the plan sign-in when supported\n  {bin} login NAME --key  force an API-key prompt instead of signing in\n  {bin} logout NAME  forget the stored key or token\n\nKeys: the named endpoint environment, then ~/.summonr/credentials.toml (0600; `secrets = \"keychain\"` in config.toml uses the OS store), then api_key in config.toml. SUMMONR_API_KEY applies only with SUMMONR_BASE_URL.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nMuse: META_API_KEY / MODEL_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
 TypeSafe / Jev: TYPESAFE_API_KEY, or `{bin} login jev`. OpenRouter is a chat seat: OPENROUTER_API_KEY, or `{bin} login openrouter`, then `/model`.

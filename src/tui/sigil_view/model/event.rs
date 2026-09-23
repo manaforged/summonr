@@ -42,12 +42,9 @@ impl Model {
 
     pub(in crate::tui::sigil_view) fn apply_event(&mut self, event: Event) {
         match event {
-            Event::Reasoning { text } if self.prefs.reasoning == Visibility::Off => {
-                self.speed.delta(text.chars().count(), Instant::now());
-                self.live_tool = Some(("thinking".to_string(), String::new()));
-            }
             Event::Reasoning { text } => {
                 self.speed.delta(text.chars().count(), Instant::now());
+                self.live_tool = Some(("thinking".to_string(), String::new()));
                 match self.entries.last_mut() {
                     Some(Entry::Thinking(body)) => body.push_str(&text),
                     _ => self.entries.push(Entry::Thinking(text)),
@@ -149,7 +146,6 @@ impl Model {
         };
         if items.is_empty() && child.is_none() {
             self.ledger.clear();
-            self.entries.invalidate();
             return;
         }
         let lines: Vec<String> = items
@@ -166,7 +162,6 @@ impl Model {
         } else {
             self.ledger = lines;
         }
-        self.entries.invalidate();
     }
 
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
@@ -217,7 +212,6 @@ impl Model {
             });
             self.agents_hidden = false;
         }
-        self.entries.invalidate();
         if done {
             let failed = self
                 .agents

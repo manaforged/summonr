@@ -5,8 +5,8 @@ with their state. A project may turn a module off. A project can't turn a
 module on.
 
 You extend summonr outside the process, with files and child processes.
-This keeps the 18 MB RSS and the short first-round prefix. There is no
-in-process package loader and no marketplace.
+This keeps the 18 MB RSS of a `-p` print run and the short first-round
+prefix. There is no in-process package loader and no marketplace.
 
 After the first model round, the advertised tool list and the skill
 catalog stay frozen until the process exits. `/modules` still writes the

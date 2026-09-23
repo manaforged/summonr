@@ -29,30 +29,24 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
     let markdown = std::fs::read_to_string(plan_path)
         .map_err(|error| summonr::Error::Config(format!("cannot read {plan_path}: {error}")))?;
     let steps = summonr::steps::parse(&markdown)?;
-    let total = steps.len();
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
     loop {
-        let progress = loop_.work_progress()?;
-        if let Some(code) = progress.exit_code() {
-            if !args.json {
-                println!();
+        let (index, total, prompt) = match loop_.next_step(&steps, plan_path)? {
+            summonr::StepRun::Done(code) => {
+                if !args.json {
+                    println!();
+                }
+                return Ok(code);
             }
-            return Ok(code);
-        }
-        let current = progress
-            .current
-            .ok_or_else(|| summonr::Error::Config("Steps Work has no active item".to_string()))?;
-        let step = steps.get(current.saturating_sub(1)).ok_or_else(|| {
-            summonr::Error::Config("Steps Work is outside the selected plan".to_string())
-        })?;
-        step_event(args.json, current, total, "start", None);
-        let turn = complete(
-            &mut loop_,
-            summonr::steps::prompt(step, total, plan_path).into(),
-            args.json,
-        )
-        .await?;
+            summonr::StepRun::Run {
+                index,
+                total,
+                prompt,
+            } => (index, total, prompt),
+        };
+        step_event(args.json, index, total, "start", None);
+        let turn = complete(&mut loop_, prompt.into(), args.json).await?;
         if turn.aborted {
             loop_.abandon_work("step execution aborted")?;
             return Ok(3);
@@ -66,7 +60,7 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
         {
             step_event(
                 args.json,
-                current,
+                index,
                 total,
                 if check.passed {
                     "check passed"
@@ -75,8 +69,8 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
                 },
                 Some(&check.command),
             );
-        } else if after.current != Some(current) || after.terminal() {
-            step_event(args.json, current, total, "done", None);
+        } else if after.current != Some(index) || after.terminal() {
+            step_event(args.json, index, total, "done", None);
         }
     }
 }
@@ -87,8 +81,7 @@ pub(super) async fn goal(
     objective: &str,
     gates: Vec<String>,
 ) -> Result<i32> {
-    let max_turns = args.max_turns.map_or(0, |value| value as usize);
-    loop_.select_goal(objective, &gates, max_turns)?;
+    loop_.select_goal(objective, &gates)?;
     let code = drive_goal(&mut loop_, objective, &gates, args.json).await?;
     if !args.json {
         println!();

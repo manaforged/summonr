@@ -2,7 +2,7 @@
 name = "summonr"
 version = "0.1.0"
 edition = "2024"
-rust-version = "1.98" # MSRV: matches rust-toolchain.toml
+rust-version = "1.98"
 license = "MIT"
 authors = ["Thomas Gardiner"]
 description = "Terminal coding agent in Rust"
@@ -43,7 +43,6 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-smol_str = { version = "0.3.6", default-features = false }
 thiserror = "2"
 tempfile = "3"
 zeroize = "1"
@@ -53,25 +52,36 @@ unicode-segmentation = "1.13.3"
 unicode-linebreak = "0.1.5"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-reqwest = { version = "0.13", default-features = false, features = ["form", "json", "stream", "native-tls-vendored"] }
 leyline-http = { git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
 url = { workspace = true }
 genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["clipboard-image"] }
-sigil-tui = { git = "https://github.com/manaforged/sigil.git", branch = "main" }
+sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", rev = "e09637ac", default-features = false, features = ["clipboard-image", "image-decode"] }
+sigil-tui = { git = "https://github.com/manaforged/sigil.git", rev = "e09637ac" }
 ignore = "0.4"
+grep-regex = "0.1"
+grep-searcher = "0.1"
+unicode-normalization = "0.1"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 chacha20poly1305 = "0.10"
+libc = "0.2"
 
 [patch.crates-io]
 crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e35d24a2f643c61760e1eb05b8ca9e63" }
 
 [features]
 default = []
-# `summonr --gui`: the same panes in a winit + wgpu window.
 gui = ["sigil/clipboard", "sigil/desktop"]
+windows-sandbox = []
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"] }

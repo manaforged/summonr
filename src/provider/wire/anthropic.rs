@@ -29,7 +29,7 @@ impl Chat for Wire {
         &[("anthropic-version", "2023-06-01")]
     }
 
-    fn request(call: &CompletionRequest, stream: bool) -> Value {
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> Value {
         request(call, stream)
     }
 
@@ -38,10 +38,10 @@ impl Chat for Wire {
     }
 }
 
-pub(crate) fn request(call: &CompletionRequest, stream: bool) -> Value {
+pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> Value {
     let mut system = Vec::new();
     let mut turns: Vec<Value> = Vec::new();
-    for message in &call.messages {
+    for message in call.messages {
         match message.role {
             Role::System => system.push(json!({"type": "text", "text": message.content})),
             Role::Tool => push_result(&mut turns, message),
@@ -77,7 +77,7 @@ pub(crate) fn request(call: &CompletionRequest, stream: bool) -> Value {
     Value::Object(body)
 }
 
-fn tools(call: &CompletionRequest) -> Vec<Value> {
+fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
     call.tools
         .iter()
         .map(|tool| {
@@ -100,7 +100,7 @@ fn user_parts(message: &Message) -> Vec<Value> {
                 "source": {
                     "type": "base64",
                     "media_type": image.media_type,
-                    "data": super::base64(&image.bytes),
+                    "data": image.data.clone(),
                 },
             })
         })

@@ -117,10 +117,8 @@ Logs older than 14 days are removed unless their process is still active.
 `--goal` keeps one objective until `.summonr/check.toml` is green and a
 judge says stop. The judge answers `done`, `continue`, `stalled`, or
 `impossible`; the last two end the goal with the reason. A goal has no
-built-in turn cap. `--max-turns N` bounds it: a goal that is still red
-or still `continue` at turn N stops, exit 2 when the checks were red
-and exit 3 when the judge said continue. `--max-tokens` and
-`--max-secs` bound every mode. Every goal turn restates the objective
+turn cap; it runs until the judge stops it, a budget ends it, or you
+cancel it. `--max-tokens` and `--max-secs` bound every mode. Every goal turn restates the objective
 to the model, so a compacted context cannot lose it. `--steps` hands
 the model one numbered item at a time. A turn that ends while a
 background command it started is still running is deferred, with no
@@ -341,8 +339,7 @@ With a `scout` seat, a `--steps`, `--goal`, or plan-mode job opens with
 a read-only brief of the files, conventions, and helpers the objective
 touches. With a `review` seat, a turn whose checks passed is read by
 the reviewer before it completes; a rejection sends the findings back
-as the next instruction and counts as a failed check against
-`--max-turns`.
+as the next instruction and counts as a failed check.
 ## Child sessions
 
 The `task` tool delegates work to fresh child sessions. A model can emit
@@ -390,6 +387,7 @@ the full log is kept and its path named.
 | `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | not plan | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
+| `todo` | always | Replaces the Work todo list; status `pending`, `active`, or `done` |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics, definition, rename |
 | `web` | `search` on | `query` searches; `url` fetches as markdown, text, or html |
@@ -401,14 +399,14 @@ The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`,
 `definition`, `web_search`, `web_fetch`, `agents`, `inbox`, `board`,
 `send`) still execute and are not advertised. Plan mode advertises
-`read` and `run_command`, plus `skill` and `web`. It does not advertise
+`read`, `run_command`, and `todo`, plus `skill` and `web`. It does not advertise
 `edit` or `write`.
 
 ## Modules
 
 Every optional capability is a **module** compiled into the binary: `search`,
-`lsp`, `jobs`, `task`, `skills`, `mcp`, `bus`, and `gui`. That list is
-fixed at build time, switchable, and counted in the 18 MB RSS budget. `task` is off by
+`lsp`, `jobs`, `task`, `skills`, `mcp`, `bus`, and `gui`. That list is the
+built-in module set: curated, switchable, and inside the harness process RSS. `task` is off by
 default. `mcp` is off by default so unused server schemas stay out of the
 first `prefix_hash`. `summonr modules` lists them with their state; `/modules NAME on|off`
 in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
@@ -515,7 +513,7 @@ the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and
 that list, launch Summonr in the parent directory, or pass `--add-dir`.
 
 Commands use Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer
-is unfinished: Git for Windows and user-installed toolchains stay blocked.
+is unfinished and needs a build with `--features windows-sandbox`; Git for Windows and user-installed toolchains stay blocked.
 A missing backend is a hard stop. Sandboxed sockets are allowed by default.
 `--no-net` or `/net off` denies them. `--net` turns them back on. That flag
 does not change file permissions. Model requests and language servers use
@@ -599,8 +597,9 @@ background commands; file tools still use the list.
 
 ## Extend
 
-Optional capabilities are compiled modules (see Modules above). What you add lives in files and other
-processes, so the harness RSS and the frozen prefix stay small. Summonr does not load guest code.
+The built-in modules are the binary (modules above). What you add lives in files and other
+processes so the harness RSS and the frozen prefix stay small. Other products
+name that package a plugin; Summonr does not load guest code.
 [Extending summonr](extending.md) is the task page.
 
 | Layer | Where | What the model sees |
@@ -614,7 +613,7 @@ processes, so the harness RSS and the frozen prefix stay small. Summonr does not
 
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. `/modules` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
 
-`AGENTS.md` at the workspace root is injected when the workspace is trusted. There is no `CLAUDE.md`.
+When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
 
 Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
 

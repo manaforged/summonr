@@ -171,10 +171,12 @@ pub fn export(path: &Path) -> Result<String> {
                 out.push_str(&format!("## Compacted\n\n{text}\n\n"));
             }
             Line::Clear => out.push_str("---\n\n"),
-            Line::Budget { .. }
+            Line::Tools { .. }
+            | Line::Budget { .. }
             | Line::Workflow { .. }
             | Line::Child { .. }
             | Line::Charge { .. }
+            | Line::Rewrite { .. }
             | Line::Close { .. } => {}
         }
     }

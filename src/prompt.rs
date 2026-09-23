@@ -23,14 +23,32 @@ pub fn summonr_home() -> Result<PathBuf> {
 }
 
 pub fn system_prompt(workspace: &Path) -> String {
-    compose(workspace, summonr_home().ok().as_deref(), false, true)
+    compose(
+        workspace,
+        summonr_home().ok().as_deref(),
+        false,
+        true,
+        false,
+    )
 }
 
-pub fn system_prompt_with(workspace: &Path, trust: bool, skills: bool) -> String {
-    compose(workspace, summonr_home().ok().as_deref(), trust, skills)
+pub fn system_prompt_with(workspace: &Path, trust: bool, skills: bool, images: bool) -> String {
+    compose(
+        workspace,
+        summonr_home().ok().as_deref(),
+        trust,
+        skills,
+        images,
+    )
 }
 
-pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills: bool) -> String {
+pub(crate) fn compose(
+    workspace: &Path,
+    home: Option<&Path>,
+    trust: bool,
+    skills: bool,
+    images: bool,
+) -> String {
     if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
     {
@@ -48,15 +66,56 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, trust: bool, skills
     };
     parts.push(PERSISTENCE.to_string());
     if trust {
-        let mut context = Vec::new();
-        push_file(&mut context, &workspace.join("AGENTS.md"));
-        if let Some(text) = context.pop() {
-            parts.push(format!(
-                "<project_context path=\"AGENTS.md\">\n{}\n</project_context>",
-                text.trim()
-            ));
+        let mut seen = std::collections::HashSet::new();
+        let mut sections = std::collections::HashSet::new();
+        if let Some(user_home) =
+            std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+        {
+            let user_home = PathBuf::from(user_home);
+            for rel in [
+                ".agents/AGENTS.md",
+                ".claude/CLAUDE.md",
+                ".config/devin/AGENTS.md",
+            ] {
+                let path = user_home.join(rel);
+                if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
+                    continue;
+                }
+                let mut context = Vec::new();
+                push_file(&mut context, &path);
+                if let Some(text) = context.pop()
+                    && let Some(text) = dedup_sections(&text, &mut sections)
+                {
+                    parts.push(format!(
+                        "<user_context path=\"{rel}\">\n{text}\n</user_context>"
+                    ));
+                }
+            }
+        }
+        for name in ["AGENTS.md", "CLAUDE.md"] {
+            let path = workspace.join(name);
+            if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
+                continue;
+            }
+            let mut context = Vec::new();
+            push_file(&mut context, &path);
+            if let Some(text) = context.pop()
+                && let Some(text) = dedup_sections(&text, &mut sections)
+            {
+                parts.push(format!(
+                    "<project_context path=\"{name}\">\n{text}\n</project_context>"
+                ));
+            }
         }
     }
+    parts.push(
+        if images {
+            "The model accepts image input: `read` op=image shows an image to the user, and @{path} attaches an image to your reply."
+        } else {
+            "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."
+        }
+        .to_string(),
+    );
     if skills && let Some(catalog) = crate::skills::catalog(workspace) {
         parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
@@ -124,30 +183,51 @@ fn push_file(parts: &mut Vec<String>, path: &Path) {
     }
 }
 
+fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Option<String> {
+    let mut kept: Vec<String> = Vec::new();
+    let mut section = String::new();
+    let mut flush = |section: &mut String| {
+        let trimmed = section.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+        let normalized: String = trimmed
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase();
+        let hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            normalized.hash(&mut hasher);
+            hasher.finish()
+        };
+        if normalized.len() < 40 || seen.insert(hash) {
+            kept.push(trimmed.to_string());
+        }
+        section.clear();
+    };
+    for line in text.lines() {
+        if line.starts_with('#') {
+            flush(&mut section);
+        }
+        section.push_str(line);
+        section.push('\n');
+    }
+    flush(&mut section);
+    (!kept.is_empty()).then(|| kept.join("\n\n"))
+}
+
 const PERSISTENCE: &str = "<persistence>
-- Continue the authorized task until it is complete. Uncertainty about finishing within this session is not a reason to stop.
-- Do not reduce scope or hand unfinished work back because the task seems too large for the remaining context.
-- Summonr automatically compacts context. Keep progress, decisions, and remaining work clear so you can continue the same task after compaction.
-- After compaction, resume from the preserved state. Compaction does not complete or cancel the task.
-- Respect user cancellation, explicit limits, and permission boundaries. If a concrete blocker requires user input, ask and continue independent work.
+Finish the authorized task; do not shrink scope or hand work back early. Summonr compacts context automatically — keep progress clear and resume after it. Respect cancellation and permission boundaries.
 </persistence>";
 
-const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You help the user by reading files, running commands, editing code, and writing new files.
-
-<tools>
-- read: read a file, list a directory, or search file contents
-- run_command: run a shell command in the workspace
-- edit: change lines in an existing file using the tags that read returns
-- write: create or replace a file
-Other tools may be available depending on configuration.
-</tools>
+const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
 
 <rules>
-- Use run_command for ls, rg, find, builds, and tests
-- When changing several places in one file, make one edit call with an edits array instead of several edit calls
-- Use write only for new files or complete rewrites
-- Put tool calls that do not need to see an earlier call's result in the same response; they run in order, so you can write a script and run it in one step
-- Make the smallest change that does the job: reuse existing code, and add no new layers, abstractions, config, or dependencies the task does not need
-- Be concise in your responses
-- Show file paths clearly when working with files
+- Use read for files, directories, and content search (honors ignore rules); run_command covers the rest — builds, tests, git — and pure read/search commands redirect to read anyway
+- Unsure of a tool's options? call it with op=help for the full reference
+- Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
+- write is for new files and complete rewrites
+- Smallest change that does the job; answer with the fewest words that complete the task; show file paths
 </rules>";

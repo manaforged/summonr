@@ -20,7 +20,6 @@ impl Entries {
     }
 
     pub(in crate::tui::sigil_view) fn push(&mut self, entry: Entry) {
-        self.invalidate();
         self.inner.push(entry);
     }
 

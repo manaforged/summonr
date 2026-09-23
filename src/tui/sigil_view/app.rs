@@ -207,7 +207,7 @@ impl Attachment {
     }
 
     fn restore(image: crate::provider::Image) -> Self {
-        let source = preview(&image.bytes).ok();
+        let source = image.bytes().ok().and_then(|b| preview(&b).ok());
         let label = format!("📷 {}", image.media_type);
         Self {
             image,

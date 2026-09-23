@@ -27,21 +27,21 @@ impl Chat for Wire {
         Scheme::GoogleKey
     }
 
-    fn request(call: &CompletionRequest, _stream: bool) -> Value {
+    fn request(call: &CompletionRequest<'_>, _stream: bool) -> Value {
         request(call)
     }
 
     fn parse(model: &str, body: &Value) -> AssistantMessage {
         let mut reply = <Reply as Accumulate>::new(model);
-        drop(reply.on(body));
+        drop(reply.value(body));
         reply.finish()
     }
 }
 
-pub(crate) fn request(call: &CompletionRequest) -> Value {
+pub(crate) fn request(call: &CompletionRequest<'_>) -> Value {
     let mut system = String::new();
     let mut contents: Vec<Value> = Vec::new();
-    for message in &call.messages {
+    for message in call.messages {
         match message.role {
             Role::System => {
                 if !system.is_empty() {
@@ -72,7 +72,7 @@ pub(crate) fn request(call: &CompletionRequest) -> Value {
     Value::Object(body)
 }
 
-fn generation(call: &CompletionRequest) -> Value {
+fn generation(call: &CompletionRequest<'_>) -> Value {
     let mut config = Map::new();
     if let Some(limit) = call.max_output_tokens {
         config.insert("maxOutputTokens".to_string(), json!(limit));
@@ -94,7 +94,7 @@ fn level(effort: Effort) -> &'static str {
     }
 }
 
-fn declarations(call: &CompletionRequest) -> Vec<Value> {
+fn declarations(call: &CompletionRequest<'_>) -> Vec<Value> {
     call.tools
         .iter()
         .map(|tool| {
@@ -126,7 +126,7 @@ fn user_parts(message: &Message) -> Vec<Value> {
         .images
         .iter()
         .map(|image| {
-            json!({"inlineData": {"mimeType": image.media_type, "data": super::base64(&image.bytes)}})
+            json!({"inlineData": {"mimeType": image.media_type, "data": image.data.clone()}})
         })
         .collect();
     if !message.content.is_empty() {
@@ -193,21 +193,9 @@ impl Accumulate for Reply {
         }
     }
 
-    fn on(&mut self, frame: &Value) -> crate::error::Result<Vec<Delta>> {
-        let thought = self.thinking.len();
-        let named = self.calls.len();
-        let text = self.take(frame);
-        let mut deltas = Vec::new();
-        if self.thinking.len() > thought {
-            deltas.push(Delta::Thinking(self.thinking[thought..].to_string()));
-        }
-        if let Some(chunk) = text {
-            deltas.push(Delta::Text(chunk));
-        }
-        for call in self.calls.iter().skip(named) {
-            deltas.push(Delta::Call(call.function.name.clone()));
-        }
-        Ok(deltas)
+    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
+        let frame = crate::provider::wire::parse::<Value>(frame)?;
+        Ok(self.value(&frame))
     }
 
     fn finish(mut self) -> AssistantMessage {
@@ -234,6 +222,23 @@ impl Accumulate for Reply {
 }
 
 impl Reply {
+    fn value(&mut self, frame: &Value) -> Vec<Delta> {
+        let thought = self.thinking.len();
+        let named = self.calls.len();
+        let text = self.take(frame);
+        let mut deltas = Vec::new();
+        if self.thinking.len() > thought {
+            deltas.push(Delta::Thinking(self.thinking[thought..].to_string()));
+        }
+        if let Some(chunk) = text {
+            deltas.push(Delta::Text(chunk));
+        }
+        for call in self.calls.iter().skip(named) {
+            deltas.push(Delta::Call(call.function.name.clone()));
+        }
+        deltas
+    }
+
     pub(crate) fn take(&mut self, body: &Value) -> Option<String> {
         if let Some(counted) = body.get("usageMetadata") {
             self.usage = usage(counted);

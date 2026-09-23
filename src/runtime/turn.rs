@@ -1,7 +1,8 @@
-use super::compaction::force_compact;
+use super::checkpoint::Pretask;
+use super::compaction::{force_compact, repair_arguments};
 use super::*;
 use crate::ProviderFailureKind;
-use crate::durable::driver::{TurnWork, Verdict};
+use crate::durable::driver::{Purpose, TurnWork, Verdict};
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::workflow;
@@ -70,11 +71,9 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        let mut injected = false;
         while let Some(input) = self.steer.pop_front() {
             self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));
-            injected = true;
         }
         if let Some(shared) = &self.steer_shared
             && let Ok(mut queue) = shared.lock()
@@ -82,7 +81,6 @@ impl<P: Provider> Loop<P> {
             while let Some(input) = queue.pop_front() {
                 self.session.steer(&input).map_err(super::session_err)?;
                 messages.push(Message::user(input));
-                injected = true;
             }
         }
         let (mail, overflow) = self.take_bus_mail(5)?;
@@ -90,7 +88,6 @@ impl<P: Provider> Loop<P> {
             let input = UserInput::from(envelope(&mail));
             self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));
-            injected = true;
             self.push_event(
                 events,
                 emit,
@@ -107,10 +104,6 @@ impl<P: Provider> Loop<P> {
             let input = UserInput::from(note);
             self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));
-            injected = true;
-        }
-        if injected {
-            self.commit(messages);
         }
         Ok(())
     }
@@ -131,13 +124,10 @@ impl<P: Provider> Loop<P> {
             let request = self.completion_request(role, messages, tools);
             let prefix_hash = request.prefix_hash();
             self.freeze_catalog();
-            let request_chars = request_chars(messages, tools);
-            let durable = request.durable_bytes().map_err(|error| {
-                Error::Config(format!("cannot encode provider request: {error}"))
-            })?;
+            let request_chars = request_chars(messages, tools, self.provider.keeps_reasoning());
             let durable_attempt = self
                 .session
-                .start_provider(&request.model, super::exposure(&request, &durable))
+                .start_provider(&request.model, super::exposure(&request, request_chars))
                 .map_err(super::session_err)?;
             let started = Instant::now();
             let remaining = self.remaining_time();
@@ -149,6 +139,7 @@ impl<P: Provider> Loop<P> {
             let reply = Self::wait(completion, remaining).await;
             match reply {
                 Ok(message) => {
+                    self.session.partial = crate::provider::Partial::default();
                     return Ok(Some((
                         message,
                         prefix_hash,
@@ -188,20 +179,8 @@ impl<P: Provider> Loop<P> {
                             return Err(error);
                         }
                         repairs += 1;
-                        for message in messages.iter_mut().rev() {
-                            if message.role == crate::provider::Role::Assistant {
-                                for call in &mut message.tool_calls {
-                                    if serde_json::from_str::<serde_json::Value>(
-                                        &call.function.arguments,
-                                    )
-                                    .is_err()
-                                    {
-                                        call.function.arguments = "{}".to_string();
-                                    }
-                                }
-                                break;
-                            }
-                        }
+                        let edits = repair_arguments(&messages[1..]);
+                        self.rewrite(messages, edits)?;
                         let input = UserInput::from(
                             "[summon control: the provider rejected the previous tool call because \
                              its arguments were invalid JSON. Retry that action with one valid tool \
@@ -231,7 +210,9 @@ impl<P: Provider> Loop<P> {
                         }
                         self.auto_compact(messages, tools, &mut usage, events, emit)
                             .await?;
-                        force_compact(messages);
+                        let edits = force_compact(&messages[1..]);
+                        self.rewrite(messages, edits)?;
+                        self.tools.forget_reads();
                         self.push_event(
                             events,
                             emit,
@@ -301,6 +282,12 @@ impl<P: Provider> Loop<P> {
                         .map_or((RETRY_BASE_SECS << retries).min(RETRY_MAX_SECS), |after| {
                             after.clamp(1, RETRY_AFTER_MAX_SECS)
                         });
+                    if self
+                        .remaining_time()
+                        .is_some_and(|remaining| remaining.as_secs() <= wait)
+                    {
+                        return Err(error);
+                    }
                     retries += 1;
                     self.push_event(
                         events,
@@ -318,28 +305,85 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    fn completion_request(
+    fn completion_request<'a>(
         &self,
         role: workflow::Role,
-        messages: &[Message],
-        tools: &[ToolDefinition],
-    ) -> CompletionRequest {
-        CompletionRequest {
-            session: self.session_id(),
-            model: self.seat(role).1.to_string(),
-            messages: messages.to_vec(),
-            tools: tools.to_vec(),
-            max_output_tokens: None,
-            emit_deltas: true,
-            effort: self.effort_for(role),
-        }
+        messages: &'a [Message],
+        tools: &'a [ToolDefinition],
+    ) -> CompletionRequest<'a> {
+        self.request(role, messages, tools, true)
     }
 
     pub(super) fn remaining_time(&self) -> Option<Duration> {
         let limit = self.budget.max_secs?.saturating_mul(1_000);
         Some(Duration::from_millis(
-            limit.saturating_sub(self.session.replay().elapsed_millis),
+            limit.saturating_sub(self.session.elapsed_millis()),
         ))
+    }
+
+    pub(super) async fn complete_once(
+        &mut self,
+        role: workflow::Role,
+        request: &CompletionRequest<'_>,
+    ) -> Result<std::result::Result<AssistantMessage, WaitError>> {
+        if let Some(reason) = self.round_abort() {
+            return Err(Error::Config(reason));
+        }
+        let chars = request_chars(
+            request.messages,
+            request.tools,
+            self.seat(role).0.keeps_reasoning(),
+        );
+        let attempt = self
+            .session
+            .start_round(
+                purpose_of(role),
+                &request.model,
+                super::exposure(request, chars),
+            )
+            .map_err(super::session_err)?;
+        let started = Instant::now();
+        match Self::wait(self.seat(role).0.complete(request), self.remaining_time()).await {
+            Ok(message) => {
+                let meter = super::meter(&message.usage, super::elapsed_millis(started));
+                self.session
+                    .finish_provider(
+                        attempt,
+                        message.content.as_deref().unwrap_or(""),
+                        message.reasoning_content.as_deref().unwrap_or(""),
+                        meter,
+                    )
+                    .map_err(super::session_err)?;
+                self.spent_tokens = self.spent_tokens.saturating_add(u64::from(
+                    message
+                        .usage
+                        .prompt_tokens
+                        .saturating_add(message.usage.completion_tokens),
+                ));
+                Ok(Ok(message))
+            }
+            Err(wait_error) => {
+                let millis = wait_error.millis(started);
+                let deadline = match wait_error {
+                    WaitError::Deadline(remaining) => Some(remaining),
+                    WaitError::Provider(_) => None,
+                };
+                let error = wait_error.error();
+                self.session
+                    .fail_provider(
+                        attempt,
+                        &error.to_string(),
+                        millis,
+                        deadline.is_some() || super::billable(&error),
+                    )
+                    .map_err(super::session_err)?;
+                self.spent_tokens = self.session.spent_tokens();
+                Ok(Err(deadline.map_or_else(
+                    || WaitError::Provider(error),
+                    WaitError::Deadline,
+                )))
+            }
+        }
     }
 
     pub(super) async fn wait<F>(
@@ -364,7 +408,7 @@ impl<P: Provider> Loop<P> {
         messages: &[Message],
         tools: &[ToolDefinition],
     ) -> usize {
-        let chars = request_chars(messages, tools);
+        let chars = request_chars(messages, tools, self.provider.keeps_reasoning());
         super::compaction::estimate(chars, self.context_sample)
     }
 
@@ -378,17 +422,17 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
-        let snapshot = crate::diff::snapshot(&self.workspace);
         let messages = self.begin_turn(input.into())?;
+        let mut pre = self.checkpoint();
         let mut events = Vec::new();
         let mut usage = Usage::default();
         let mut rounds = 0;
         let remaining = self.remaining_time();
-        let before = self.session.replay().elapsed_millis;
+        let before = self.session.elapsed_millis();
         let started = Instant::now();
         let turn = self.run_turn(
             messages,
-            snapshot.clone(),
+            &mut pre,
             &mut emit,
             &mut events,
             &mut usage,
@@ -400,7 +444,7 @@ impl<P: Provider> Loop<P> {
                 .map_err(|_elapsed| ()),
             None => Ok(turn.await),
         };
-        let accounted = self.session.replay().elapsed_millis.saturating_sub(before);
+        let accounted = self.session.elapsed_millis().saturating_sub(before);
         let millis = super::elapsed_millis(started).saturating_sub(accounted);
         if millis > 0 {
             self.session
@@ -437,7 +481,7 @@ impl<P: Provider> Loop<P> {
                     &mut emit,
                     &mut usage,
                     rounds,
-                    snapshot,
+                    &mut pre,
                 )
                 .await
             }
@@ -458,7 +502,7 @@ impl<P: Provider> Loop<P> {
     async fn run_turn(
         &mut self,
         mut messages: Vec<Message>,
-        snapshot: String,
+        pre: &mut Pretask,
         mut emit: impl FnMut(&Event),
         events: &mut Vec<Event>,
         usage: &mut Usage,
@@ -466,7 +510,6 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Turn> {
         let abort_reason;
         self.settle_mcp(events, &mut emit).await?;
-        self.checkpoint(events, &mut emit)?;
         let tools = self.advertised_tools().to_vec();
         if std::mem::take(&mut self.accepted) {
             self.push_event(
@@ -565,14 +608,12 @@ impl<P: Provider> Loop<P> {
                             .to_string(),
                     },
                 )?;
-                self.commit(&messages);
                 continue;
             }
             if calls.is_empty() {
                 return self
                     .finish_turn(
                         message,
-                        messages,
                         events,
                         emit,
                         round,
@@ -580,7 +621,7 @@ impl<P: Provider> Loop<P> {
                         durable_attempt,
                         reasoning,
                         meter,
-                        snapshot,
+                        pre,
                     )
                     .await;
             }
@@ -594,10 +635,11 @@ impl<P: Provider> Loop<P> {
                     &calls,
                 )
                 .map_err(super::session_err)?;
+            self.settle(pre, events, &mut emit).await?;
             self.execute_calls(planned, calls, &mut messages, events, &mut emit, usage)
                 .await?;
         }
-        self.abort_turn(abort_reason, events, emit, usage, *reached, snapshot)
+        self.abort_turn(abort_reason, events, emit, usage, *reached, pre)
             .await
     }
 
@@ -625,7 +667,9 @@ impl<P: Provider> Loop<P> {
                 self.session
                     .select_plan(&text, &commands)
                     .map_err(super::session_err)?;
-                messages.push(Message::user(UserInput::from(plan::note(&text))));
+                let input = UserInput::from(plan::note(&text));
+                self.session.steer(&input).map_err(super::session_err)?;
+                messages.push(Message::user(input));
                 self.push_event(
                     events,
                     emit,
@@ -686,7 +730,6 @@ impl<P: Provider> Loop<P> {
         let input = UserInput::from(scout::note(&brief));
         self.session.steer(&input).map_err(super::session_err)?;
         messages.push(Message::user(input));
-        self.commit(messages);
         self.push_event(
             events,
             emit,
@@ -725,7 +768,7 @@ impl<P: Provider> Loop<P> {
                 .map_err(super::session_err)?
                 .is_none()
             {
-                self.select_goal(&input.text, &commands, 0)?;
+                self.select_goal(&input.text, &commands)?;
             }
             match self
                 .session
@@ -752,15 +795,13 @@ impl<P: Provider> Loop<P> {
             );
         }
         input.text = decorate(&harness, &input.text);
-        let queued = self
-            .session
+        self.session
             .start_input(&input)
             .map_err(super::session_err)?;
-        self.history.extend(queued.into_iter().map(Message::user));
-        self.history.push(Message::user(input.clone()));
-        let mut messages = Vec::with_capacity(self.history.len() + 2);
+        let history = self.session.history();
+        let mut messages = Vec::with_capacity(history.len() + 1);
         messages.push(Message::system(self.system_prompt.clone()));
-        messages.extend(self.history.iter().cloned());
+        messages.extend(history.iter().cloned());
         Ok(messages)
     }
 
@@ -895,7 +936,6 @@ impl<P: Provider> Loop<P> {
     async fn finish_turn(
         &mut self,
         message: Message,
-        messages: Vec<Message>,
         events: &mut Vec<Event>,
         mut emit: impl FnMut(&Event),
         round: usize,
@@ -903,8 +943,9 @@ impl<P: Provider> Loop<P> {
         attempt: Attempt,
         reasoning: String,
         meter: Meter,
-        snapshot: String,
+        pre: &mut Pretask,
     ) -> Result<Turn> {
+        let snapshot = self.settle(pre, events, &mut emit).await?;
         if message.content.trim().is_empty() {
             self.session
                 .fail_provider(
@@ -932,7 +973,6 @@ impl<P: Provider> Loop<P> {
                     &context,
                 )
                 .map_err(super::session_err)?;
-            self.commit(&messages);
             let progress = self.work_progress()?;
             self.push_event(events, &mut emit, Event::Work { progress })?;
             self.push_event(events, &mut emit, Event::Receipt { receipt })?;
@@ -970,7 +1010,7 @@ impl<P: Provider> Loop<P> {
                 && let Some(reason) = self.round_abort()
             {
                 return self
-                    .abort_turn(Some(reason), events, emit, usage, round, snapshot)
+                    .abort_turn(Some(reason), events, emit, usage, round, pre)
                     .await;
             }
             if !running.is_empty() {
@@ -983,7 +1023,6 @@ impl<P: Provider> Loop<P> {
                     .defer(&note, unsettled)
                     .map_err(super::session_err)?
                 {
-                    self.commit(&messages);
                     let progress = self.work_progress()?;
                     self.push_event(events, &mut emit, Event::Work { progress })?;
                     self.push_event(
@@ -1122,7 +1161,6 @@ impl<P: Provider> Loop<P> {
             self.session.close().map_err(super::session_err)?;
             (message.content, Vec::new(), None)
         };
-        self.commit(&messages);
         let progress = self.work_progress()?;
         self.push_event(events, &mut emit, Event::Work { progress })?;
         if let Some(receipt) = receipt {
@@ -1385,7 +1423,6 @@ impl<P: Provider> Loop<P> {
         }
         let (planned, calls) = self.screen(planned, calls, messages, events, emit).await?;
         if calls.is_empty() {
-            self.commit(messages);
             return Ok(());
         }
         let outputs = if calls.iter().all(|call| call.function.name == "task") {
@@ -1402,16 +1439,24 @@ impl<P: Provider> Loop<P> {
                 })
                 .collect()
         } else if calls.iter().all(|call| readonly(&call.function.name)) {
-            let tools = &self.tools;
-            futures::future::join_all(calls.iter().map(|call| async move {
+            let mut ran = Vec::with_capacity(calls.len());
+            for call in &calls {
                 let started = Instant::now();
-                (
-                    tools.execute_outcome(call).await,
+                ran.push((
+                    self.tools.execute_outcome(call).await,
                     super::elapsed_millis(started),
                     None,
-                )
-            }))
-            .await
+                ));
+            }
+            let mut outputs = Vec::with_capacity(ran.len());
+            for ((output, millis, child_usage), call) in ran.into_iter().zip(&calls) {
+                outputs.push((
+                    self.with_grant(output, call, events, emit).await?,
+                    millis,
+                    child_usage,
+                ));
+            }
+            outputs
         } else {
             for (planned, call) in planned.into_iter().zip(calls) {
                 let started = Instant::now();
@@ -1433,15 +1478,7 @@ impl<P: Provider> Loop<P> {
                         None,
                     )
                 } else if is_bus_tool(&call.function.name) {
-                    (
-                        self.bus_execute(&call).map(|text| ToolOutput {
-                            text,
-                            success: true,
-                            mutated: false,
-                            grant: None,
-                        }),
-                        None,
-                    )
+                    (self.bus_execute(&call).map(ToolOutput::ok), None)
                 } else {
                     let approval = self.manual && call.function.name == "run_command";
                     let denied = if approval {
@@ -1497,7 +1534,6 @@ impl<P: Provider> Loop<P> {
                 )
                 .await?;
             }
-            self.commit(messages);
             return Ok(());
         };
         for ((planned, call), (output, millis, child_usage)) in
@@ -1509,7 +1545,6 @@ impl<P: Provider> Loop<P> {
             self.finish_call(planned, call, (output, millis), messages, events, emit)
                 .await?;
         }
-        self.commit(messages);
         Ok(())
     }
 
@@ -1563,10 +1598,13 @@ impl<P: Provider> Loop<P> {
                     )
                 })
                 .collect();
-            if self.session.apply_todos(&items).is_ok()
-                && let Ok(progress) = self.work_progress()
-            {
-                self.push_event(events, emit, Event::Work { progress })?;
+            match self.session.apply_todos(&items) {
+                Ok(()) => {
+                    let progress = self.work_progress()?;
+                    self.push_event(events, emit, Event::Work { progress })?;
+                }
+                Err(crate::durable::driver::DriverError::NoWork) => {}
+                Err(error) => return Err(super::session_err(error)),
             }
         }
         Ok(())
@@ -1728,8 +1766,9 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
         usage: &mut Usage,
         reached: usize,
-        snapshot: String,
+        pre: &mut Pretask,
     ) -> Result<Turn> {
+        let snapshot = self.settle(pre, events, &mut emit).await?;
         let reason = abort_reason.unwrap_or_else(|| "turn aborted".to_string());
         self.push_event(
             events,
@@ -1752,7 +1791,6 @@ impl<P: Provider> Loop<P> {
             .abort(&reason, Some(&receipt.text))
             .map_err(super::session_err)?;
         self.sync_usage(&mut emit);
-        self.hydrate();
         Ok(Turn {
             text: reason,
             events: std::mem::take(events),
@@ -1761,14 +1799,6 @@ impl<P: Provider> Loop<P> {
             checks: Vec::new(),
             aborted: true,
         })
-    }
-
-    pub(super) fn commit(&mut self, _messages: &[Message]) {
-        self.hydrate();
-    }
-
-    pub(super) fn hydrate(&mut self) {
-        self.history = self.session.replay().history;
     }
 
     pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {
@@ -1789,10 +1819,21 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-fn request_chars(messages: &[Message], tools: &[ToolDefinition]) -> usize {
+fn purpose_of(role: workflow::Role) -> Purpose {
+    match role {
+        workflow::Role::Implement => Purpose::Agent,
+        workflow::Role::Summary => Purpose::Summary,
+        workflow::Role::Judge => Purpose::Judge,
+        workflow::Role::Review => Purpose::Review,
+        workflow::Role::Scout => Purpose::Scout,
+        workflow::Role::Plan => Purpose::Plan,
+    }
+}
+
+fn request_chars(messages: &[Message], tools: &[ToolDefinition], reasoning_on_wire: bool) -> usize {
     messages
         .iter()
-        .map(super::compaction::message_chars)
+        .map(|message| super::compaction::message_chars(message, reasoning_on_wire))
         .sum::<usize>()
         + serde_json::to_string(tools).map_or(0, |schema| schema.len())
 }

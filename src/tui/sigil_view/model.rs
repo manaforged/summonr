@@ -5,7 +5,7 @@ use std::time::Instant;
 use image::load_from_memory;
 use sigil::prelude::ImageSource;
 
-use crate::prefs::{Prefs, ToolOutput, Visibility};
+use crate::prefs::{Prefs, ToolOutput};
 use crate::tools::Event;
 
 use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
@@ -16,7 +16,7 @@ use super::speed::Speed;
 mod entry;
 mod event;
 
-pub(in crate::tui::sigil_view) use entry::{Entry, entry_markdown, itemized, preview};
+pub(in crate::tui::sigil_view) use entry::{Entry, decode, entry_markdown, itemized, preview};
 pub(in crate::tui::sigil_view) use state::{Agent, Entries, View};
 mod state;
 mod tools;
@@ -31,7 +31,6 @@ impl Deref for Entries {
 
 impl DerefMut for Entries {
     fn deref_mut(&mut self) -> &mut [Entry] {
-        self.invalidate();
         &mut self.inner
     }
 }
@@ -47,7 +46,6 @@ impl<'a> IntoIterator for &'a Entries {
 
 impl Extend<Entry> for Entries {
     fn extend<I: IntoIterator<Item = Entry>>(&mut self, iter: I) {
-        self.invalidate();
         self.inner.extend(iter);
     }
 }
@@ -148,13 +146,20 @@ impl Model {
         match msg {
             Msg::Session(id) => self.session = id,
             Msg::User(text) => self.entries.push(Entry::User(text)),
-            Msg::Image(image) => self.entries.push(match preview(&image.bytes) {
-                Ok(source) => Entry::Image {
-                    label: format!("Attached image · {}", image.media_type),
-                    source,
+            Msg::Image(image) => self.entries.push(
+                match image
+                    .bytes()
+                    .map_err(|error| error.to_string())
+                    .and_then(|bytes| preview(&bytes).map(|source| (bytes, source)))
+                {
+                    Ok((bytes, source)) => Entry::Image {
+                        label: format!("Attached image · {}", image.media_type),
+                        source,
+                        bytes: bytes.into(),
+                    },
+                    Err(error) => Entry::Error(format!("cannot show attached image: {error}")),
                 },
-                Err(error) => Entry::Error(format!("cannot show attached image: {error}")),
-            }),
+            ),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::Bye => return false,
             Msg::Calling(name) => self.live_tool = Some((name, "…".to_string())),
@@ -228,7 +233,7 @@ impl Model {
                     file,
                     text,
                     added,
-                    image: image.and_then(|bytes| preview(&bytes).ok()),
+                    image: image.and_then(|bytes| decode(&bytes, 1920, 1200).ok()),
                 })
             }
             Msg::Saved { .. } => {}

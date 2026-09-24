@@ -38,7 +38,7 @@ pub fn list() -> Result<String> {
     let mut lines = Vec::new();
     push_names("skills", &home.join("skills"), &mut lines);
     push_names("bin", &home.join("bin"), &mut lines);
-    let file = config::load()?;
+    let file = config::file()?;
     if !file.mcp.is_empty() {
         lines.push(format!(
             "mcp\t{}",

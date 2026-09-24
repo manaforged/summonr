@@ -1,6 +1,5 @@
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::PathBuf;
-use std::time::Duration;
 
 use leyline::Response;
 use leyline::http::StatusCode;
@@ -9,7 +8,7 @@ use url::Url;
 use super::{Format, Search};
 use crate::error::{Error, Result};
 
-const TIMEOUT: Duration = Duration::from_secs(20);
+use crate::limits::WEB_FETCH as TIMEOUT;
 const MAX_BYTES: usize = 512 * 1024;
 const OUT_MAX: usize = 32 * 1024;
 

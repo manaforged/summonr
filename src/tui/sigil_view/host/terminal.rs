@@ -10,7 +10,7 @@ pub(in crate::tui::sigil_view) struct Paste {
 
 impl Clipboard for Paste {
     fn get(&self) -> Option<String> {
-        self.text.borrow_mut().take().or_else(|| OsClipboard.get())
+        self.text.borrow_mut().take()
     }
 
     fn set(&self, text: &str) -> std::result::Result<(), ClipError> {

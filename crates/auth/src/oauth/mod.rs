@@ -100,32 +100,34 @@ pub(crate) async fn token(parts: Parts<'_>, http: &Session, store: &dyn Store) -
     if let Some(live) = held(&parts)? {
         return Ok(live.access);
     }
-    if let Some(grant) = stored(&parts, store)? {
+    if let Some(grant) = stored(&parts, store)?
+        && grant.fresh()
+    {
+        return exchanged(&parts, http, grant).await;
+    }
+    let claim = store.claim(parts.name)?;
+    let outcome = renew(&parts, http, store).await;
+    drop(claim);
+    outcome
+}
+
+async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<String> {
+    if let Some(grant) = stored(parts, store)? {
         if grant.fresh() {
-            return exchanged(&parts, http, grant).await;
+            return exchanged(parts, http, grant).await;
         }
         if grant.refresh.is_some() {
-            match refresh(parts.spec, http, &grant).await {
+            return match refresh(parts.spec, http, &grant).await {
                 Ok(next) => {
-                    save(&parts, store, next.clone())?;
-                    return exchanged(&parts, http, next).await;
+                    save(parts, store, next.clone())?;
+                    exchanged(parts, http, next).await
                 }
-                Err(error) => {
-                    if let Some(again) = stored(&parts, store)?
-                        && again.fresh()
-                        && again.access != grant.access
-                    {
-                        return exchanged(&parts, http, again).await;
-                    }
-                    if parts.spec.grant.interactive() {
-                        return Err(Error::NeedsLogin {
-                            name: parts.name.to_string(),
-                            detail: format!("refresh failed ({error})"),
-                        });
-                    }
-                    return Err(error);
-                }
-            }
+                Err(error) if parts.spec.grant.interactive() => Err(Error::NeedsLogin {
+                    name: parts.name.to_string(),
+                    detail: format!("refresh failed ({error})"),
+                }),
+                Err(error) => Err(error),
+            };
         }
     }
     if parts.spec.grant.interactive() {
@@ -141,8 +143,8 @@ pub(crate) async fn token(parts: Parts<'_>, http: &Session, store: &dyn Store) -
         identity: None,
     };
     let minted = refresh(parts.spec, http, &seed).await?;
-    save(&parts, store, minted.clone())?;
-    exchanged(&parts, http, minted).await
+    save(parts, store, minted.clone())?;
+    exchanged(parts, http, minted).await
 }
 
 pub(crate) async fn login(

@@ -135,7 +135,7 @@ pub(super) fn build(
         if endpoint.images {
             None
         } else {
-            summonr::vision_endpoint()
+            summonr::vision_endpoint()?
         },
     );
     loop_.set_modules(&switches);
@@ -147,11 +147,13 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    if args.sandbox || args.plan || summonr::sandbox_on()? {
+    if args.plan || args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
         loop_ = loop_.with_sandbox(!args.network)?;
     } else {
         if !args.network {
-            eprintln!("summonr: --no-net needs --sandbox; sockets stay open");
+            return Err(summonr::Error::Config(
+                "--no-net needs the sandbox: pass --sandbox".to_string(),
+            ));
         }
         loop_ = loop_.with_unrestricted_commands();
     }

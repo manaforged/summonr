@@ -2,7 +2,6 @@ use std::path::PathBuf;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::command::Category;
 use crate::error::Result;
 use crate::prefs::Prefs;
 use crate::provider::Client;
@@ -12,8 +11,11 @@ use crate::session::Prompt;
 use crate::tools::Event;
 
 mod help;
+mod matching;
 mod sigil_view;
 pub(crate) use help::help_text;
+pub(crate) use matching::matching_commands;
+pub(crate) use sigil_view::ellipsize;
 pub use sigil_view::profile::run as profile;
 mod worker;
 
@@ -38,18 +40,22 @@ pub enum Msg {
     Cleared,
     Reset,
     RunMode(crate::RunMode),
-    OpenSettings,
+    OpenLogin(String),
     OpenHelp,
     Settings(Snapshot),
     Models {
         request: u64,
-        rows: Vec<String>,
-        facts: std::collections::BTreeMap<String, crate::catalog::Model>,
-        groups: std::collections::BTreeMap<String, String>,
+        rows: Vec<crate::recent::Seat>,
+        facts: std::collections::BTreeMap<crate::recent::Seat, crate::catalog::Model>,
+        groups: std::collections::BTreeMap<String, crate::endpoint::State>,
+        causes: std::collections::BTreeMap<String, String>,
+        pinned: usize,
         recent: usize,
         loading: bool,
         error: String,
     },
+    ModelNote(String),
+    Defaulted(Option<crate::recent::Seat>),
     Sessions(std::result::Result<Vec<(crate::session::SessionInfo, bool)>, String>),
     Usage(std::result::Result<Vec<crate::session::Spend>, String>),
     Prompts {
@@ -67,6 +73,7 @@ pub enum Msg {
     },
     Peers(Vec<crate::bus::Agent>),
     Files(Vec<String>),
+    Clipboard(std::result::Result<Vec<u8>, String>),
     Diff(crate::diff::Diff),
     DiffFailed(String),
     Trees(Vec<crate::worktree::Status>),
@@ -90,6 +97,17 @@ pub enum Msg {
         result: std::result::Result<String, String>,
     },
     Resume(String),
+    LoginStep {
+        name: String,
+        text: String,
+        url: String,
+        code: String,
+        asking: bool,
+    },
+    LoginDone {
+        name: String,
+        result: std::result::Result<String, String>,
+    },
     Bye,
 }
 
@@ -124,6 +142,8 @@ enum Cmd {
     Command(String),
     Login(String),
     SetKey(String, String),
+    LoginAnswer(String),
+    Logout(String),
     Submit(UserInput),
     Mail,
     Steer(UserInput),
@@ -137,8 +157,11 @@ enum Cmd {
     SetSeat(String, String),
     ListModels {
         request: u64,
+        only: Option<String>,
         cancel: tokio::sync::oneshot::Receiver<()>,
     },
+    Pin(crate::recent::Seat, bool),
+    SaveDefault(Option<crate::recent::Seat>),
     ListSessions,
     ListUsage,
     ListPrompts(Option<String>),
@@ -147,6 +170,7 @@ enum Cmd {
         turn: usize,
     },
     ListFiles,
+    Clipboard,
     Diff(Option<std::path::PathBuf>),
     Patch(Option<std::path::PathBuf>, String),
     Trees,
@@ -200,8 +224,6 @@ pub struct Snapshot {
     pub workflow: Option<String>,
 }
 
-impl Snapshot {}
-
 #[derive(Clone, Debug)]
 pub struct Info {
     pub version: String,
@@ -209,6 +231,7 @@ pub struct Info {
     pub relay: Option<String>,
     pub session: String,
     pub endpoint: String,
+    pub pick: Option<&'static str>,
     pub prefs: Prefs,
     pub splash: bool,
     pub plan: bool,
@@ -216,84 +239,6 @@ pub struct Info {
     pub workspace: String,
     pub workflow: Option<crate::workflow::Workflow>,
     pub config: Option<std::path::PathBuf>,
-}
-
-#[must_use]
-pub(crate) fn matching_commands(typed: &str) -> Vec<(&'static str, &'static str)> {
-    if !typed.starts_with('/') || typed.contains('\n') || typed.contains('\r') {
-        return Vec::new();
-    }
-    let query = typed.to_lowercase();
-    let needle = query.trim_start_matches('/');
-    let mut prefix: Vec<_> = crate::command_specs()
-        .iter()
-        .filter(|spec| {
-            if needle.is_empty() {
-                matches!(spec.category, Category::Common | Category::Contextual)
-            } else {
-                spec.name.trim_start_matches('/').starts_with(needle)
-            }
-        })
-        .collect();
-    if !prefix.is_empty() {
-        prefix.sort_by_key(|spec| spec.category == Category::Shortcuts);
-        return prefix
-            .into_iter()
-            .map(|spec| (spec.name, spec.description))
-            .collect();
-    }
-    if needle.contains(char::is_whitespace) {
-        return Vec::new();
-    }
-    let mut matches: Vec<_> = crate::command_specs()
-        .iter()
-        .enumerate()
-        .filter_map(|(index, spec)| {
-            let name = spec.name.trim_start_matches('/');
-            rank(name, spec.description, needle).map(|score| {
-                (
-                    score,
-                    spec.category == Category::Shortcuts,
-                    index,
-                    spec.name,
-                    spec.description,
-                )
-            })
-        })
-        .collect();
-    matches.sort_unstable_by_key(|(score, shortcut, index, _, _)| (*score, *shortcut, *index));
-    if let Some(best) = matches.first().map(|row| row.0) {
-        matches.retain(|(score, _, _, _, _)| *score == best);
-    }
-    matches
-        .into_iter()
-        .map(|(_, _, _, name, description)| (name, description))
-        .collect()
-}
-
-fn rank(name: &str, description: &str, needle: &str) -> Option<u8> {
-    if needle.is_empty() || name.starts_with(needle) {
-        Some(0)
-    } else if name.contains(needle) {
-        Some(1)
-    } else if description.to_lowercase().contains(needle) {
-        Some(2)
-    } else if subsequence(name, needle) {
-        Some(3)
-    } else {
-        None
-    }
-}
-
-fn subsequence(text: &str, needle: &str) -> bool {
-    let mut chars = needle.chars();
-    let mut next = chars.next();
-    for ch in text.chars() {
-        if next == Some(ch) {
-            next = chars.next();
-        }
-    }
-    next.is_none()
 }
 
 pub fn run(
@@ -315,9 +260,7 @@ pub fn run(
     sigil_view::run(loop_, workspace, info, ui_tx, ui_rx)
 }
 
-pub(crate) fn short_session(id: &str) -> String {
-    crate::session::short(id).to_string()
-}
+pub(crate) use crate::session::short as short_session;
 
 #[cfg_attr(
     not(feature = "gui"),

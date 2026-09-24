@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::decisions::tests::endpoint;
+use crate::classify::tests::endpoint;
 use crate::endpoint::Wire;
 
 #[test]
@@ -72,12 +72,11 @@ fn a_choice_beyond_the_documented_cardinality_is_refused() {
 #[test]
 fn state_may_be_an_object_because_the_api_takes_one() {
     let questions = BTreeMap::from([("q".to_string(), Question::noul("is it urgent"))]);
-    let body = serde_json::to_value(Ask {
-        model: "m",
-        state: &serde_json::json!({"message": "charged twice", "order_id": "A-104"}),
-        questions: &questions,
-    })
-    .unwrap();
+    let body = crate::provider::decisions::body(
+        "m",
+        &serde_json::json!({"message": "charged twice", "order_id": "A-104"}),
+        &questions,
+    );
     assert_eq!(body["state"]["order_id"], "A-104");
 }
 

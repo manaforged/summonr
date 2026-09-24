@@ -59,7 +59,7 @@ fn section(title: &'static str) -> NodeBuilder {
 
 fn sessions(app: &App) -> NodeBuilder {
     let here = app.workspace.display().to_string();
-    let current = app.model.borrow().session.clone();
+    let current = app.model.get().session.clone();
     let mut rows: Vec<session::SessionInfo> = session::list()
         .unwrap_or_default()
         .into_iter()
@@ -104,6 +104,6 @@ fn sessions(app: &App) -> NodeBuilder {
 }
 
 fn seat(app: &App) -> NodeBuilder {
-    let model = app.model.borrow().snapshot.model.clone();
+    let model = app.model.get().snapshot.model.clone();
     list_row(false, app.info.endpoint.clone(), model).child(icons::avatar())
 }

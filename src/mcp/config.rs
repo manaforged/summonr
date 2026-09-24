@@ -5,6 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config;
+use crate::error::Result;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub(crate) struct Entry {
@@ -88,9 +89,9 @@ impl Entry {
     }
 }
 
-pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
+pub(crate) fn servers(workspace: &Path) -> Result<Vec<Server>> {
     let mut entries: BTreeMap<String, Entry> = BTreeMap::new();
-    for layer in layers(workspace) {
+    for layer in layers(workspace)? {
         for (name, entry) in layer {
             match entries.get_mut(&name) {
                 Some(base) => base.overlay(entry),
@@ -100,7 +101,7 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
             }
         }
     }
-    entries
+    Ok(entries
         .into_iter()
         .filter(|(_, entry)| entry.enabled != Some(false))
         .filter_map(|(name, entry)| {
@@ -110,20 +111,17 @@ pub(crate) fn servers(workspace: &Path) -> Vec<Server> {
             })
         })
         .filter(|server| !ours(server))
-        .collect()
+        .collect())
 }
 
-fn layers(workspace: &Path) -> Vec<BTreeMap<String, Entry>> {
+fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut layers = Vec::new();
     let mut approved = BTreeSet::new();
     let mut all = false;
-    let file = config::load().ok();
-    let user = file
-        .as_ref()
-        .map(|file| file.mcp.clone())
-        .unwrap_or_default();
-    let import_peers = file.as_ref().and_then(|file| file.import_mcp) == Some(true);
+    let file = config::file()?;
+    let user = file.mcp;
+    let import_peers = file.import_mcp == Some(true);
     approved.extend(
         user.iter()
             .filter(|(_, entry)| entry.enabled == Some(true))
@@ -160,14 +158,14 @@ fn layers(workspace: &Path) -> Vec<BTreeMap<String, Entry>> {
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
     let path = workspace.join(".summonr/config.toml");
     if path.is_file()
-        && let Ok(file) = config::load_from(&path)
+        && let Ok(file) = config::parse(&path)
     {
         shared.extend(file.mcp);
     }
     shared.retain(|name, _entry| all || approved.contains(name));
     layers.push(shared);
     layers.push(user);
-    layers
+    Ok(layers)
 }
 
 fn read_json(path: &Path) -> Option<Value> {

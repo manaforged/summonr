@@ -3,12 +3,20 @@ use super::*;
 impl Worker {
     pub(in crate::tui::worker) fn session(&self) -> bool {
         self.system(&format!(
-            "{}{} · {}",
+            "{}{} · {}\n{} · {}{}",
             self.loop_.session_id(),
             self.loop_
                 .name()
                 .map_or_else(String::new, |name| format!(" ({name})")),
-            self.loop_.session_path().display()
+            self.loop_.session_path().display(),
+            self.endpoint,
+            self.loop_.model(),
+            self.loop_
+                .effort()
+                .map_or_else(String::new, |effort| format!(
+                    " · effort {}",
+                    effort.as_str()
+                ))
         ));
         true
     }
@@ -89,7 +97,7 @@ impl Worker {
             Some(text) => match text.parse::<usize>() {
                 Ok(turn) => Some(turn),
                 Err(_) => {
-                    self.fail("/rollback takes a turn number");
+                    self.fail("/undo files takes a turn number");
                     return true;
                 }
             },
@@ -123,7 +131,7 @@ impl Worker {
 
     pub(in crate::tui::worker) fn branch(&mut self, session: &str, turn: usize) -> bool {
         if self.loop_.session_id() != session {
-            self.fail("The active session changed. Open /branch again.");
+            self.fail("The active session changed. Run /fork TEXT again.");
             drop(self.ui.send(Msg::Busy(None)));
             return true;
         }
@@ -135,7 +143,7 @@ impl Worker {
                 drop(self.ui.send(Msg::Session(id)));
                 self.send_settings();
                 self.system(&format!(
-                    "Branched after turn {}. Workspace files are unchanged. Use /tree to return to the parent.",
+                    "Branched after turn {}. Workspace files are unchanged. Use /resume to return to the parent.",
                     turn + 1
                 ));
             }

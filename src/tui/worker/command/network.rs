@@ -7,9 +7,9 @@ impl Worker {
                 let state = if !self.loop_.has_sandbox() {
                     "sandbox off — commands already have network"
                 } else if self.loop_.denies_network() {
-                    "network denied in the sandbox — /net on for this session or /net once"
+                    "network denied in the sandbox — /permissions net on, or net once"
                 } else {
-                    "network allowed for this session — /net off to deny again"
+                    "network allowed for this session — /permissions net off denies it again"
                 };
                 self.system(state);
             }
@@ -25,81 +25,52 @@ impl Worker {
                 self.loop_.allow_network_once();
                 self.system("network allowed for the next command");
             }
-            Some(_) => self.system("/net on | off | once"),
+            Some(_) => self.system("/permissions net on | off | once"),
         }
         true
     }
 
-    pub(in crate::tui::worker) fn auth(&self, name: &str) {
-        match crate::endpoint::auth_info(name) {
-            Ok(info) => self.system(&info.status()),
-            Err(error) => self.fail(&error.to_string()),
-        }
-    }
-
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let info = match crate::endpoint::auth_info(name) {
-            Ok(info) => info,
-            Err(error) => {
-                self.fail(&error.to_string());
-                return true;
-            }
-        };
-        if !info.flow.signs_in() {
-            self.auth(name);
-            return true;
-        }
         let endpoint = match crate::endpoint::resolve(Some(name), None) {
             Ok(endpoint) => endpoint,
             Err(error) => {
-                self.fail(&error.to_string());
+                self.done(name, Err(error.to_string()));
                 return true;
             }
         };
         let notice = self.ui.clone();
         let asking = self.ui.clone();
+        let owner = name.to_string();
+        let asker = name.to_string();
         let (answers, typed) = tokio::sync::mpsc::unbounded_channel::<String>();
         let typed = std::sync::Arc::new(tokio::sync::Mutex::new(typed));
         let mut prompt = summonr_auth::Prompt::new(
-            move |line| drop(notice.send(Msg::System(line.to_string()))),
+            move |line| drop(notice.send(step(&owner, line, false))),
             move |line| {
                 let asking = asking.clone();
                 let typed = typed.clone();
+                let step = step(&asker, &line, true);
                 Box::pin(async move {
-                    drop(asking.send(Msg::System(line)));
+                    drop(asking.send(step));
                     typed.lock().await.recv().await
                 })
             },
         );
         let login = crate::provider::Client::login(&endpoint, &mut prompt);
-        self.system(&format!("{name}: signing in. Press Escape to cancel."));
         drop(self.ui.send(Msg::Busy(Some(Activity::Login))));
-        let outcome = attend(
-            Inbox {
-                cmd: &mut self.cmd,
-                reader: &self.reader,
-                followups: &mut self.followups,
-                deferred: &mut self.deferred,
-                ui: &self.ui,
-                answers: Some(answers),
-            },
-            login,
-        )
-        .await;
+        let outcome = attend(self.inbox(Some(answers)), login).await;
         let running = match outcome {
             Attended::Done(Ok(())) => {
-                self.system(&format!("{name}: login complete"));
+                self.done(name, Ok(format!("✓ Signed in to {name}.")));
                 true
             }
             Attended::Done(Err(error)) => {
-                self.fail(&format!("{error}. Use /login {name} to try again."));
+                self.done(name, Err(format!("✗ {error}. ↵ try again")));
                 self.recover();
                 true
             }
             Attended::Cancelled => {
-                self.system(&format!(
-                    "{name}: sign-in cancelled. Use /login {name} to try again."
-                ));
+                self.done(name, Err(String::new()));
                 self.recover();
                 true
             }
@@ -109,37 +80,95 @@ impl Worker {
         running
     }
 
-    pub(in crate::tui::worker) fn effort(&mut self, level: Option<&str>) -> bool {
-        match level {
-            None => {
-                let next = self.loop_.effort().unwrap_or(crate::Effort::None).next();
-                self.dial = Some(next);
-                self.loop_.set_effort(Some(next));
-            }
-            Some(level) => match crate::Effort::parse(level) {
-                Some(effort) => {
-                    self.dial = Some(effort);
-                    self.loop_.set_effort(Some(effort));
-                }
-                None => {
-                    self.fail(&format!(
-                        "effort takes none, low, medium, or high, not `{level}`"
-                    ));
-                    return true;
-                }
-            },
-        }
-        let current = self
-            .loop_
-            .effort()
-            .map_or("endpoint default", crate::Effort::as_str);
-        let scope = if self.dial.is_some() {
-            " · not saved"
-        } else {
-            ""
+    pub(in crate::tui::worker) async fn set_key(&mut self, name: &str, key: &str) -> bool {
+        let outcome = attend(self.inbox(None), checked(name, key)).await;
+        let result = match outcome {
+            Attended::Done(result) => result,
+            Attended::Cancelled => Err(String::new()),
+            Attended::Quit => return false,
         };
-        self.system(&format!("effort: {current}{scope}"));
-        self.send_settings();
+        if result.is_ok() && name == self.endpoint {
+            self.set_endpoint(name).await;
+        }
+        self.done(name, result);
         true
     }
+
+    pub(in crate::tui::worker) fn logout(&self, name: &str) {
+        self.done(
+            name,
+            crate::endpoint::logout(name).map_err(|error| error.to_string()),
+        );
+    }
+
+    fn done(&self, name: &str, result: std::result::Result<String, String>) {
+        drop(self.ui.send(Msg::LoginDone {
+            name: name.to_string(),
+            result,
+        }));
+    }
+
+    fn inbox(&mut self, answers: Option<tokio::sync::mpsc::UnboundedSender<String>>) -> Inbox<'_> {
+        Inbox {
+            cmd: &mut self.cmd,
+            reader: &self.reader,
+            followups: &mut self.followups,
+            deferred: &mut self.deferred,
+            ui: &self.ui,
+            answers,
+        }
+    }
+
+    pub(in crate::tui::worker) fn permissions(&mut self, argument: Option<&str>) -> bool {
+        let (topic, rest) = argument.map_or(("", None), |text| {
+            text.split_once(char::is_whitespace)
+                .map_or((text, None), |(topic, rest)| (topic, Some(rest.trim())))
+        });
+        match topic {
+            "" => self.network(None) && self.write(None) && self.approve(None),
+            "net" => self.network(rest),
+            "write" => self.write(rest),
+            "approve" => self.approve(rest),
+            other => {
+                self.fail(&format!(
+                    "/permissions takes net, write, or approve, not `{other}`"
+                ));
+                true
+            }
+        }
+    }
+}
+
+fn step(name: &str, line: &str, asking: bool) -> Msg {
+    let rest = line.strip_prefix("open ").unwrap_or_default();
+    let (url, code) = rest.split_once(" and enter ").unwrap_or((rest, ""));
+    Msg::LoginStep {
+        name: name.to_string(),
+        text: if rest.is_empty() {
+            line.to_string()
+        } else {
+            String::new()
+        },
+        url: url.to_string(),
+        code: code.to_string(),
+        asking,
+    }
+}
+
+async fn checked(name: &str, key: &str) -> std::result::Result<String, String> {
+    let source = crate::endpoint::check_key(name, key)
+        .await
+        .map_err(|error| match error.provider_failure() {
+            Some(failure) => format!("✗ {failure}"),
+            None => format!("✗ {error}"),
+        })?;
+    let store = match source {
+        crate::secret::Source::Keychain => "the keychain",
+        crate::secret::Source::File => "credentials.toml",
+        crate::secret::Source::Config => "config.toml",
+        crate::secret::Source::Env
+        | crate::secret::Source::Builtin
+        | crate::secret::Source::Peer(_) => source.label(),
+    };
+    Ok(format!("✓ Saved the {name} key in {store}."))
 }

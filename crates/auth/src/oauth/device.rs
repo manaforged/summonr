@@ -1,17 +1,18 @@
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use leyline::Session;
 use serde_json::Value;
 
-use crate::{Error, Parts, Prompt, Result, Store};
+use crate::{
+    DEVICE_EXPIRY, Error, POLL_CEILING, POLL_FLOOR, POLL_STEP, Parts, Prompt, Result, Store,
+    seconds,
+};
 
 use super::pkce::{challenge, random};
 use super::store::{keep, save};
 use super::token::{exchange, minted, post};
 
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
-const POLL_FLOOR: Duration = Duration::from_secs(1);
-const POLL_CEILING: Duration = Duration::from_secs(30);
 
 pub(super) async fn login(
     parts: &Parts<'_>,
@@ -64,13 +65,13 @@ pub(super) async fn login(
     let mut wait = body
         .get("interval")
         .and_then(Value::as_u64)
-        .map_or(Duration::from_secs(5), Duration::from_secs)
+        .map_or(POLL_STEP, seconds)
         .clamp(POLL_FLOOR, POLL_CEILING);
     let stop = Instant::now()
         + body
             .get("expires_in")
             .and_then(Value::as_u64)
-            .map_or(Duration::from_secs(900), Duration::from_secs);
+            .map_or(DEVICE_EXPIRY, seconds);
     while Instant::now() < stop {
         tokio::time::sleep(wait).await;
         let mut form = vec![
@@ -89,7 +90,7 @@ pub(super) async fn login(
         match body.get("error").and_then(Value::as_str) {
             Some("authorization_pending") => continue,
             Some("slow_down") => {
-                wait = (wait + Duration::from_secs(5)).min(POLL_CEILING);
+                wait = (wait + POLL_STEP).min(POLL_CEILING);
                 continue;
             }
             Some(other) => return Err(Error::Denied(format!("the login was refused: {other}"))),

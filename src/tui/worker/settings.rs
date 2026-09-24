@@ -44,15 +44,24 @@ impl Worker {
         match endpoint
             .and_then(|endpoint| Self::client(&self.ui, &endpoint).map(|client| (endpoint, client)))
         {
-            Ok((mut endpoint, provider)) => {
-                if endpoint.context_window.is_none() {
-                    endpoint.context_window = provider.context(&endpoint.model).await;
-                }
+            Ok((endpoint, provider)) => {
+                let probe = endpoint
+                    .context_window
+                    .is_none()
+                    .then(|| (provider.clone(), endpoint.model.clone()));
                 self.use_endpoint(endpoint, provider);
+                self.send_settings();
+                if let Some((provider, model)) = probe {
+                    self.loop_
+                        .set_context_window(provider.context(&model).await);
+                    self.send_settings();
+                }
             }
-            Err(error) => self.fail(&error.to_string()),
+            Err(error) => {
+                self.fail(&error.to_string());
+                self.send_settings();
+            }
         }
-        self.send_settings();
     }
 
     fn client(ui: &UnboundedSender<Msg>, endpoint: &Endpoint) -> crate::Result<Client> {
@@ -263,8 +272,8 @@ impl Worker {
 
     pub(super) fn remember_seat(&self) {
         if let Some(home) = &self.home {
-            let seat = format!("{}\t{}", self.endpoint, self.loop_.model());
-            crate::recent::record(home, &seat);
+            let seat = crate::recent::Seat::new(self.endpoint.clone(), self.loop_.model());
+            drop(crate::recent::record(home, &seat));
         }
     }
 

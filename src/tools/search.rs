@@ -27,7 +27,7 @@ impl ToolRegistry {
         let search = self.search.as_ref().ok_or_else(|| {
             Error::Tool("web_search is unavailable in this embedded session".to_string())
         })?;
-        let args: serde_json::Value = parse_args("web_search", arguments)?;
+        let args: serde_json::Value = parse_args("web", arguments)?;
         let query = object_string(&args, "query")?;
         let count = object_usize(&args, "count");
         let freshness = args.get("freshness").and_then(serde_json::Value::as_str);
@@ -38,7 +38,7 @@ impl ToolRegistry {
         let search = self.search.as_ref().ok_or_else(|| {
             Error::Tool("web_fetch is unavailable in this embedded session".to_string())
         })?;
-        let args: serde_json::Value = parse_args("web_fetch", arguments)?;
+        let args: serde_json::Value = parse_args("web", arguments)?;
         let url = object_string(&args, "url")?;
         let format =
             crate::web::Format::parse(args.get("format").and_then(serde_json::Value::as_str))?;

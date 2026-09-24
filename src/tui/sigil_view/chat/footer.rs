@@ -23,11 +23,10 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
         )
         .children_reactive(move || {
             drop(update.status.get());
-            let _panes = update.panes.get();
             let _context_open = update.context_open.get();
             let _cache_open = update.cache_open.get();
             drop(update.meter_hover.get());
-            let model = update.model.borrow();
+            let model = update.model.get();
             let show_ctx =
                 update.context_open.peek() || update.meter_hover.peek() == Some(Target::Context);
             let show_cache =
@@ -43,12 +42,20 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
             } else if show_cache && !show_ctx {
                 column = column.child(meter_overlay(&model, width, Target::Cache));
             }
-            column = column.child(footer_row(update.clone(), &model));
+            column = column.child(footer_row(update.clone(), &model, width));
             vec![column]
         })
 }
 
-fn footer_row(app: App, model: &Model) -> NodeBuilder {
+fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
+    let speed = model.speed.last().map(Speed::label);
+    let taken = 42
+        + app
+            .git_branch
+            .as_deref()
+            .map_or(0, |branch| cell_width(branch) + 3)
+        + speed.as_deref().map_or(0, |rate| cell_width(rate) + 2);
+    let place = canvas::ellipsize(&app.info.workspace, width.saturating_sub(taken));
     let mut row = container()
         .layout(
             LayoutStyle::flex_row()
@@ -56,13 +63,13 @@ fn footer_row(app: App, model: &Model) -> NodeBuilder {
                 .align_items(AlignItems::Center)
                 .gap(12.0),
         )
-        .child(label(app.info.workspace.clone()).class(classes!("text-xs text-gray-12")));
+        .child(label(place).class(classes!("text-xs text-gray-12")));
     if let Some(branch) = &app.git_branch {
         row = row.child(label(format!("⌞{branch}")).class(classes!("text-xs text-warn-11")));
     }
     row = row.child(spacer());
-    if let Some(rate) = model.speed.last() {
-        row = row.child(label(Speed::label(rate)).class(classes!("text-xs text-gray-11")));
+    if let Some(rate) = speed {
+        row = row.child(label(rate).class(classes!("text-xs text-gray-11")));
     }
     row = row.child(meter_button(
         app.clone(),

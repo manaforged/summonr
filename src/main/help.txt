@@ -1,0 +1,76 @@
+summonr — a small agent harness
+
+Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
+  summonr grok                start on an endpoint (same as -e grok)
+  summonr kimi -p PROMPT      run one prompt and exit
+
+Sessions:
+  resume [ID|NAME]            resume a session; bare resumes the last one here
+  sessions                    list sessions
+  export [ID|NAME]            write a session as markdown (--digest for classify)
+  profile [ID|NAME]           time and tokens of a session (--all [--last N])
+  diff [PATH]                 changes against the base (--stat, --json, --turn N|last)
+  worktrees [prune]           list summonr worktrees, or drop gone ones (--json)
+
+Providers:
+  endpoints                   list endpoints, their models, and each key state
+  login [NAME] [--key]        list keys and plans, or sign in to NAME
+  logout NAME                 forget the stored key or token
+
+Setup:
+  workflows                   list saved workflows
+  modules                     list the built-in modules
+  install PATH                install a directory of extras (--list shows them)
+  doctor [--logs]             report crashed runs; --logs lists run logs
+
+Integrations:
+  acp                         serve the Agent Client Protocol on stdio
+  room serve|host codex|setup claude|setup codex
+  tool NAME [JSON]            run one tool and print the result
+  classify --set NAME [STATE] answer typed questions about text (below)
+
+Options:
+  -e, --endpoint NAME  endpoint: {endpoints}
+      --model NAME     override the endpoint model
+      --effort LEVEL   none, low, medium, or high
+  -w, --workflow NAME  seat each step from [workflows.NAME]
+  -p, --print          run one prompt and exit
+      --json           print JSON (with -p, diff, worktrees, classify)
+  -c, --continue       resume the last session here
+      --session ID     resume a session by id, prefix, or name
+      --fork           copy the resumed session before continuing
+      --name TEXT      name this session
+      --plan           read-only workspace
+      --steps PLAN.md  run each step under `## Steps` and gate on its check
+      --goal TEXT      work toward TEXT across turns
+      --sandbox        contain commands; writes stay under the roots
+      --no-sandbox     run uncontained, even with [sandbox] on = true
+      --no-net         deny sandboxed network (needs the sandbox)
+      --add-dir DIR    extra writable root (repeatable)
+      --strict         allow only commands listed in policy.toml
+      --no-trust       ignore workspace AGENTS.md
+      --no-verify      skip the .summonr/check.toml gate
+      --worktree       isolate this session in a git worktree
+      --max-tokens N   session token budget; a breach exits 3
+      --max-secs N     session wall-clock budget; a breach exits 3
+      --no-splash      skip the startup banner
+      --gui            open the desktop window (a --features gui build)
+  -h, --help           show this help
+  -V, --version        show the version
+
+Exit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short
+
+Interactive commands (/help in the interface lists the keys):
+{commands}
+
+Classify:
+  summonr classify --set NAME [STATE]       sets: {sets}
+  summonr classify --questions @FILE [STATE]
+  summonr classify --noul QUESTION [STATE]  a yes/no question; repeatable
+  summonr classify --patch                  rank the files of the working patch
+  summonr classify --review --session ID
+  summonr classify --set NAME --eval FILE
+  --json prints answers and probabilities; --gate N sets the confidence floor.
+  State comes from arguments or stdin.
+
+Keys, sandbox, and policy: docs/guide/reference.md

@@ -84,7 +84,7 @@ impl ToolRegistry {
         {
             return Ok(ToolOutput {
                 text: format!(
-                    "summon: not run — `{command}` needs the user's approval because {reason}"
+                    "summonr: not run — `{command}` needs the user's approval because {reason}"
                 ),
                 success: false,
                 mutated: false,
@@ -154,7 +154,10 @@ impl ToolRegistry {
     }
 
     fn check_policy(&self, command: &str) -> Result<()> {
-        self.policy.command_policy(command)
+        self.policy.command_policy_checked(
+            command.trim(),
+            &crate::policy::split_segments(command.trim()),
+        )
     }
 
     fn command_dir(&self, args: &serde_json::Value) -> Result<PathBuf> {
@@ -293,11 +296,7 @@ impl ToolRegistry {
         let started = std::time::Instant::now();
         let waited = match timeout {
             Some(seconds) => {
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(seconds),
-                    wait_shell(&mut child),
-                )
-                .await
+                tokio::time::timeout(crate::limits::seconds(seconds), wait_shell(&mut child)).await
             }
             None => Ok(wait_shell(&mut child).await),
         };

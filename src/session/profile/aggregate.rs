@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::durable::log::{self, Line};
 use crate::error::Result;
 
-use super::{count, head_tail, line, secs, share};
+use super::fmt::{count, head_tail, line, secs, share};
 
 pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     let home = crate::prompt::summonr_home()?;
@@ -66,6 +66,7 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
                     text,
                     success,
                     millis: ms,
+                    ..
                 } => {
                     index += 1;
                     calls += 1;
@@ -126,8 +127,8 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
                 | Line::Summary { .. }
                 | Line::Rewrite { .. }
                 | Line::Clear => {}
-                Line::Close { rss_kb, .. } => {
-                    if let Some(kb) = rss_kb {
+                Line::Close { footprint_kb, .. } => {
+                    if let Some(kb) = footprint_kb {
                         rss.push(kb);
                     }
                 }
@@ -206,7 +207,7 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
         line(
             &mut out,
             format!(
-                "rss      median {:.0} MB · max {:.0} MB",
+                "mem      median {:.0} MB · max {:.0} MB",
                 median as f64 / 1024.0,
                 max as f64 / 1024.0
             ),

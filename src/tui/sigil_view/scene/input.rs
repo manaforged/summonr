@@ -9,7 +9,7 @@ pub(in crate::tui::sigil_view) const ROW_WIPE_MS: u64 = 130;
 pub(in crate::tui::sigil_view) const FACTS_MS: u64 = 560;
 
 pub(in crate::tui::sigil_view) fn prompt_area(app: &App, cols: u16, rows: u16) -> [u16; 3] {
-    let model = app.model.borrow();
+    let model = app.model.get();
     let facts = facts(&model, app);
     let [body_width, body_rows] = cover(crate::splash::logo(), &facts);
     let [_, _, input_x, input_y, input_width] = layout(cols, rows, body_width, body_rows);
@@ -145,7 +145,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     if visible && app.view_edit.peek() {
         let path = app
             .model
-            .borrow()
+            .get()
             .view
             .as_ref()
             .map(|view| view.path.clone())
@@ -179,7 +179,7 @@ pub(in crate::tui::sigil_view) fn prompt(
         .select
         .peek()
         .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-    if let Some(status) = super::chat::busy_status(model).filter(|_| y > 1) {
+    if let Some(status) = super::chat::busy_status(model, app.ticks.peek()).filter(|_| y > 1) {
         let shown = super::canvas::ellipsize(&status, usize::from(width));
         let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
         write(cells, cols, x, y.saturating_sub(1), spinner, accent);

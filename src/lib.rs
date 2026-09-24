@@ -20,7 +20,7 @@ pub(crate) const SKIP_DIRS: &[&str] = &[
     "dist",
     "__pycache__",
 ];
-pub mod decisions;
+pub mod classify;
 mod endpoint;
 mod error;
 mod goal;
@@ -29,6 +29,7 @@ mod herdr;
 mod hooks;
 mod jobs;
 mod language;
+pub mod limits;
 mod mcp;
 pub mod modules;
 mod plan;
@@ -59,14 +60,16 @@ pub mod workflow;
 
 pub use bundle::{add as add_bundle, list as list_extras};
 pub use command::{CommandSpec, SlashCommand, command_specs, parse_command};
-pub use config::sandbox_on;
 pub use config::tilde;
+pub use config::{check as check_config, sandbox_on};
+pub use durable::store::lock as lock_file;
 pub use durable::work::{WorkKind, WorkPhase, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, LoginFlow, adopt_keys, auth_info, decisions_keys,
-    fallbacks as endpoint_fallbacks, first_decisions as decisions_endpoint, forget_key,
-    is_named as is_endpoint, names as endpoint_names, resolve as resolve_endpoint,
-    resolve_unauthed as resolve_endpoint_unauthed, save_key, vision as vision_endpoint,
+    AuthInfo, Endpoint, LoginFlow, State as EndpointState, adopt_keys, auth_info, check_key,
+    chosen_by as endpoint_chosen_by, closest as closest_endpoint, fallbacks as endpoint_fallbacks,
+    first_classify as classify_endpoint, is_named as is_endpoint, logout, names as endpoint_names,
+    resolve as resolve_endpoint, resolve_unauthed as resolve_endpoint_unauthed,
+    vision as vision_endpoint,
 };
 pub use error::{Error, ProviderFailure, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
@@ -76,6 +79,7 @@ pub use prompt::{harness_section, summonr_home, system_prompt, system_prompt_wit
 pub use provider::{
     Client, Effort, Image, Message, Partial, Price, Provider, Usage, UserInput, dollars,
 };
+pub use recent::Seat;
 pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
     Replay, SessionInfo, Spend, export as export_session, last_for, list as list_sessions,

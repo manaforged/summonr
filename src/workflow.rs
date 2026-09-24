@@ -98,15 +98,15 @@ impl Workflow {
 }
 
 pub fn names() -> Result<Vec<String>> {
-    Ok(config::load()?.workflows.keys().cloned().collect())
+    Ok(config::file()?.workflows.keys().cloned().collect())
 }
 
 pub fn default_name() -> Result<Option<String>> {
-    Ok(config::load()?.workflow)
+    Ok(config::file()?.workflow)
 }
 
 pub fn load(name: &str) -> Result<Workflow> {
-    from_file(&config::load()?, name)
+    from_file(&config::file()?, name)
 }
 
 pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {
@@ -154,6 +154,6 @@ pub(crate) fn save(workflow: &Workflow) -> Result<()> {
 
 pub(crate) fn set_default(name: &str) -> Result<()> {
     let path = config::path()?;
-    from_file(&config::load_from(&path)?, name)?;
+    from_file(&config::parse(&path)?, name)?;
     config::save_default_workflow(&path, name)
 }

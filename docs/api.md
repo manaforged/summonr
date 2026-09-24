@@ -27,14 +27,14 @@ The first argument can be an endpoint name: `summonr grok` is
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
 | `summonr worktrees [--json]`, `summonr worktrees prune` | List session worktrees, or drop records of missing directories |
 | `summonr endpoints` | Probe every endpoint and show its key status |
-| `summonr login [NAME] [--key]`, `summonr auth`, `summonr logout NAME` | List, store, or forget keys and plan sign-ins |
+| `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and plan sign-ins |
 | `summonr modules` | List compiled modules and their state |
 | `summonr workflows` | List configured workflows |
-| `summonr add PATH`, `summonr add --list` | Install a directory of extras, or list the installed extras |
+| `summonr install PATH`, `summonr install --list` | Install a directory of extras, or list the installed extras |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr room [serve\|host codex\|setup claude\|setup codex]` | Agent room server and setup |
-| `summonr infer ...` | Ask typed questions of a decisions endpoint |
-| `summonr logs`, `summonr doctor` | List per-run JSONL logs, or report incomplete and crashed runs |
+| `summonr classify ...` | Ask typed questions of a decisions endpoint |
+| `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
 
 ## Quick paths
@@ -71,7 +71,7 @@ echo $?
 | Seat workflow steps | `-w NAME`, from `[workflows.NAME]` |
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
-| Classify text | `summonr infer --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--diff`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
+| Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--diff`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
 | Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
 
 ## Exit codes
@@ -124,7 +124,7 @@ One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`.
 One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and
 `session`.
 
-### `summonr infer --json`
+### `summonr classify --json`
 
 One pretty-printed object: `model`, `answers`, and `usage` with
 `input_tokens`, `output_tokens`, and `cost`. With `--diff`, the output is
@@ -151,8 +151,12 @@ notification. Source: `src/acp.rs`.
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
   - `~/.summonr/skills/<name>/SKILL.md`, `~/.summonr/bin/<name>/`.
 - Key lookup order: the endpoint's environment variable, then
-  `credentials.toml`, then `api_key` in `config.toml`. `SUMMONR_API_KEY`
-  applies only with `SUMMONR_BASE_URL`.
+  `credentials.toml`, then peer stores
+  (`~/.local/share/opencode/auth.json`,
+  `~/.kimi-code/credentials/kimi-code.json`), then `api_key` in
+  `config.toml`, then the built-in default. An endpoint with no key
+  fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with
+  `SUMMONR_BASE_URL`.
 - `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`.
   Use one key, not both. The checks decide exit code 2.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't
@@ -160,7 +164,7 @@ notification. Source: `src/acp.rs`.
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn
   a module on. `task` and `mcp` are off by default.
 - The advertised tool list freezes after the first model round.
-  `/modules NAME on|off` writes config for the next process.
+  A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a
   shell command that reads JSON on stdin. A `pre_tool` hook that exits
   nonzero blocks the call.

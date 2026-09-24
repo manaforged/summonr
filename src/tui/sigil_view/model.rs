@@ -75,7 +75,6 @@ pub(super) struct Model {
     pub(super) cached_tokens: u64,
     pub(super) unreported_tokens: u64,
     pub(super) rounds: usize,
-    pub(super) spinner: usize,
     pub(super) speed: Speed,
     pub(super) queued: (usize, usize),
     pub(super) busy_since: Option<(Activity, Instant)>,
@@ -84,19 +83,11 @@ pub(super) struct Model {
     pub(super) agents_hidden: bool,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
+    pub(super) pick: Option<&'static str>,
     pub(super) peers: Vec<crate::bus::Agent>,
 }
 
 impl Model {
-    pub(super) fn is_model(&self, choice: &str) -> bool {
-        match choice.split_once('\t') {
-            Some((endpoint, name)) => {
-                endpoint == self.snapshot.endpoint && name == self.snapshot.model
-            }
-            None => choice == self.snapshot.model,
-        }
-    }
-
     pub(super) fn new(info: &Info) -> Self {
         Self {
             session: info.session.clone(),
@@ -122,7 +113,6 @@ impl Model {
             cached_tokens: 0,
             unreported_tokens: 0,
             rounds: 0,
-            spinner: 0,
             speed: Speed::default(),
             queued: (0, 0),
             busy_since: None,
@@ -139,6 +129,7 @@ impl Model {
                 ..Snapshot::default()
             },
             peers: Vec::new(),
+            pick: info.pick,
         }
     }
 
@@ -199,9 +190,18 @@ impl Model {
                 self.snapshot.work = mode == crate::RunMode::Work;
                 self.snapshot.goal = mode == crate::RunMode::Goal;
             }
-            Msg::OpenSettings | Msg::OpenHelp | Msg::Secret(_) => {}
-            Msg::Settings(snapshot) => self.snapshot = snapshot,
+            Msg::OpenLogin(_) | Msg::OpenHelp | Msg::Secret(_) | Msg::Clipboard(_) => {}
+            Msg::Settings(snapshot) => {
+                if (&snapshot.endpoint, &snapshot.model)
+                    != (&self.snapshot.endpoint, &self.snapshot.model)
+                {
+                    self.pick = None;
+                }
+                self.snapshot = snapshot;
+            }
             Msg::Models { .. }
+            | Msg::ModelNote(_)
+            | Msg::Defaulted(_)
             | Msg::Sessions(_)
             | Msg::Usage(_)
             | Msg::Prompts { .. }
@@ -238,7 +238,7 @@ impl Model {
             }
             Msg::Saved { .. } => {}
             Msg::Patch { path, result, .. } => self.patch = Some((path, result)),
-            Msg::Resume(_) => {}
+            Msg::Resume(_) | Msg::LoginStep { .. } | Msg::LoginDone { .. } => {}
         }
         if self
             .ledger

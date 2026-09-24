@@ -1,7 +1,7 @@
+#[path = "startup/classify.rs"]
+mod classify;
 #[path = "startup/commands.rs"]
 mod commands;
-#[path = "startup/inference.rs"]
-mod inference;
 #[path = "startup/lifecycle.rs"]
 mod lifecycle;
 #[path = "startup/session.rs"]
@@ -13,11 +13,11 @@ use summonr::Result;
 
 use super::cli::Args;
 use super::diagnostics;
+use classify::run_classify;
 use commands::{
     adopt, export_session_cmd, manage_worktrees, print_diff, print_sessions, print_workflows,
     probe_endpoints, run_login, session_path, workspace,
 };
-use inference::run_decide;
 use lifecycle::launch;
 use session::{SessionAction, build};
 
@@ -71,19 +71,11 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
                 "logout needs an endpoint name".to_string(),
             ));
         };
-        let gone = summonr::forget_key(name)?;
-        println!(
-            "{}",
-            if gone {
-                format!("forgot the stored key for {name}")
-            } else {
-                format!("nothing stored for {name}")
-            }
-        );
+        println!("{}", summonr::logout(name)?);
         return Ok(0);
     }
-    if args.decide {
-        return run_decide(&args).await;
+    if args.classify {
+        return run_classify(&args).await;
     }
     if args.list {
         return probe_endpoints().await.map(|()| 0);

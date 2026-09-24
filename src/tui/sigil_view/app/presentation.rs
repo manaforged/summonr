@@ -132,7 +132,7 @@ pub(in crate::tui::sigil_view) fn stats(rounds: &[Round]) -> String {
 }
 impl super::App {
     pub(in crate::tui::sigil_view) fn set_diff_layout(&self, layout: crate::prefs::DiffLayout) {
-        if self.model.borrow().prefs.diff_layout == layout {
+        if self.model.get().prefs.diff_layout == layout {
             return;
         }
         self.flip(|prefs| prefs.diff_layout = layout);

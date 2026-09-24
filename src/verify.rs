@@ -184,7 +184,16 @@ fn tally(events: &[Event], receipt: &mut Receipt) {
                 arguments,
             } => {
                 calls.insert(id.as_str(), name.as_str());
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) {
+                let canon = crate::tools::canonical(name);
+                let op = crate::tools::retired_op(name);
+                if canon == "web" || (canon == "read" && matches!(op, Some("search" | "list"))) {
+                    receipt.searches += 1;
+                } else if name == "run_command" {
+                    receipt.commands += 1;
+                } else if canon == "read"
+                    && matches!(op, None | Some("file"))
+                    && let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments)
+                {
                     let pattern = value
                         .get("pattern")
                         .and_then(serde_json::Value::as_str)
@@ -193,21 +202,12 @@ fn tally(events: &[Event], receipt: &mut Receipt) {
                         .get("glob")
                         .and_then(serde_json::Value::as_str)
                         .is_some_and(|glob| !glob.trim().is_empty());
-                    if matches!(name.as_str(), "read" | "read_file") && (pattern || glob) {
+                    if pattern || glob {
                         receipt.searches += 1;
-                    } else if matches!(name.as_str(), "read" | "read_file")
-                        && let Some(path) = value.get("path").and_then(serde_json::Value::as_str)
+                    } else if let Some(path) = value.get("path").and_then(serde_json::Value::as_str)
                     {
                         read_calls.insert(id.as_str(), path.to_string());
                     }
-                }
-                if matches!(
-                    name.as_str(),
-                    "grep" | "list_dir" | "web" | "web_search" | "web_fetch"
-                ) {
-                    receipt.searches += 1;
-                } else if name == "run_command" {
-                    receipt.commands += 1;
                 }
             }
             Event::ToolResult {

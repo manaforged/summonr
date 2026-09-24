@@ -40,12 +40,13 @@ async fn attend<T>(inbox: Inbox<'_>, task: impl Future<Output = T>) -> Attended<
                 Some(Cmd::Cancel) => break Attended::Cancelled,
                 Some(Cmd::Quit) | None => break Attended::Quit,
                 Some(Cmd::Tick) => {}
-                Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_))) => inbox.reader.run(command).await,
-                Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => {
+                Some(command @ (Cmd::ListModels { .. } | Cmd::ListPrompts(_) | Cmd::Clipboard)) => inbox.reader.run(command).await,
+                Some(Cmd::LoginAnswer(code)) => {
                     if let Some(answers) = &inbox.answers {
-                        drop(answers.send(input.text));
-                        continue;
+                        drop(answers.send(code));
                     }
+                }
+                Some(Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input)) => {
                     inbox.followups.push_back(input);
                     drop(inbox.ui.send(Msg::Queued {
                         steering: 0,

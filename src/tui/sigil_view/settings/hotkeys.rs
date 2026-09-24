@@ -4,7 +4,7 @@ use sigil::prelude::{
 };
 
 use super::prelude::*;
-use super::{App, canvas, watch};
+use super::{App, canvas};
 use crate::prefs::Hotkey;
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
@@ -12,6 +12,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     shell(
         app.hotkeys_open,
         "Hotkeys",
+        app.viewport.peek().0,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -19,12 +20,12 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .gap(canvas::overlay_gap()),
             )
             .children_reactive(move || {
-                watch(&paint);
                 let selected = paint.hotkey_sel.get().min(Hotkey::ALL.len() - 1);
+                let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
                 let recording = paint.hotkey_recording.get();
                 let note = paint.hotkey_note.get();
                 let rows: Vec<(Hotkey, String)> = {
-                    let model = paint.model.borrow();
+                    let model = paint.model.get();
                     Hotkey::ALL
                         .iter()
                         .copied()
@@ -51,8 +52,8 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                             entry(source.clone(), index, row, selected)
                         })
                         .row_height(canvas::overlay_list_row())
-                        .height(canvas::overlay_list_row() * 8.0)
-                        .viewport_height(canvas::overlay_list_row() * 8.0)
+                        .height(canvas::overlay_list_row() * visible as f32)
+                        .viewport_height(canvas::overlay_list_row() * visible as f32)
                         .scroll_into_view(selected),
                     ),
                 );
@@ -71,7 +72,6 @@ fn entry(
     let active = index == selected;
     pick(
         active,
-        false,
         action.name().to_string(),
         format!("{} · {}", binding, description(*action)),
     )

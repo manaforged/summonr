@@ -9,7 +9,6 @@ impl Model {
         }
         if activity.is_some() {
             self.rounds = 0;
-            self.spinner = 0;
         } else {
             self.live_tool = None;
             self.agents.retain(|agent| !agent.done);
@@ -99,7 +98,18 @@ impl Model {
                 if files.len() == 1 { "" } else { "s" }
             ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
-            Event::Note { text } => self.entries.push(Entry::System(text)),
+            Event::Note { text } => {
+                if text.starts_with("stream failed — retrying once")
+                    && let Some(at) = self
+                        .entries
+                        .iter()
+                        .rposition(|entry| matches!(entry, Entry::Assistant { done: false, .. }))
+                {
+                    self.entries.invalidate();
+                    self.entries.inner.remove(at);
+                }
+                self.entries.push(Entry::System(text));
+            }
             Event::Verify { command, passed } => {
                 self.entries.push(Entry::Verify { command, passed });
             }

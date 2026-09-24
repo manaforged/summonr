@@ -1,11 +1,11 @@
-# Work
+# Architecture
 
 Summonr is a local coding harness. `summonr NAME` selects a configured
 endpoint; `summonr` uses your default. The connector owns HTTP and SSE
-(`src/provider.rs`) and credentials (`src/provider/auth.rs`). Completions
+(`src/provider.rs`) and credentials (`src/credentials.rs`, `src/endpoint/auth.rs`, and `crates/auth`). Completions
 seats (including `zen`, `go`, and `opencode`) speak OpenAI
 `chat/completions`. Anthropic Messages and Gemini use their own wires
-in `src/provider/native.rs`.
+in `src/provider/wire/anthropic.rs` and `src/provider/wire/gemini.rs`.
 
 Reasoning text uses `reasoning_content`. Provider continuation data stays
 on the tool call in the session log. Anthropic tool turns preserve their
@@ -56,7 +56,7 @@ the old names.
 | `run_command` | Sandboxed shell |
 
 On when the module is on: `skill`, `lsp`, `web`, `task`, `bus`. `task` is
-off until `/modules task on`. Plan mode advertises `read` and `run_command`
+off until you turn it on in `/settings`. Plan mode advertises `read` and `run_command`
 (plus `skill` and `web`).
 
 ## What the harness holds between turns

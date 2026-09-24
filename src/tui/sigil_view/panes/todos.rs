@@ -4,7 +4,7 @@ use super::App;
 use super::body::header;
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
-    let model = app.model.borrow();
+    let model = app.model.get();
     let count = match (model.plan_current, model.plan_total) {
         (Some(current), total) if total > 0 => format!("{current}/{total}"),
         _ => String::new(),

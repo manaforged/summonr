@@ -67,9 +67,13 @@ pub(super) fn theme(_name: &str) -> Theme {
     theme
 }
 
-fn tokens(palette: Palette) -> [(&'static str, Rgba8); 30] {
+fn tokens(palette: Palette) -> [(&'static str, Rgba8); 31] {
     [
         ("accent", palette.accent),
+        (
+            "accent-5",
+            canvas::blend(palette.base, palette.accent, 0.18),
+        ),
         ("accent-11", palette.accent),
         ("surface", palette.base),
         ("surface-hover", palette.tool_bg),

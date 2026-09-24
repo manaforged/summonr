@@ -9,9 +9,10 @@ use crate::prompt::summonr_home;
 
 const FILE: &str = "models.json";
 const STALE: u64 = 6 * 3600;
-const REGISTRY_URL: &str = "https://models.dev/api.json";
-const REGISTRY_FILE: &str = "models-dev.json";
-const REGISTRY_STALE: u64 = 24 * 3600;
+
+mod registry;
+
+pub use registry::{enrich, refresh_registry};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -56,6 +57,12 @@ pub struct Model {
     pub about: Option<String>,
     #[serde(default)]
     pub cost: Cost,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reasoning: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub vision: bool,
 }
 
 impl Model {
@@ -79,6 +86,14 @@ impl Model {
             Some(tokens) => tokens.to_string(),
             None => String::new(),
         }
+    }
+
+    #[must_use]
+    pub fn fresh(&self) -> bool {
+        self.about.as_deref() == Some("new")
+            || self
+                .release
+                .is_some_and(|day| now() / 86_400 <= day.saturating_add(14))
     }
 }
 
@@ -105,47 +120,52 @@ fn now() -> u64 {
 }
 
 pub fn parse(value: &Value, fallback: Cost) -> Vec<Model> {
-    let mut models: Vec<Model> = value
+    value
         .get("data")
         .or_else(|| value.get("models"))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
         .filter_map(|item| row(item, fallback))
-        .collect();
-    models.sort_by(|left, right| left.id.cmp(&right.id));
-    models.dedup_by(|left, right| left.id == right.id);
-    models
+        .collect()
 }
 
 fn row(item: &Value, fallback: Cost) -> Option<Model> {
-    let id = item
+    let raw = item
         .get("id")
         .or_else(|| item.get("name"))
         .and_then(Value::as_str)?;
+    let id = raw.strip_prefix("models/").unwrap_or(raw);
     Some(Model {
         id: id.to_string(),
         display: item
             .get("display_name")
+            .or_else(|| item.get("displayName"))
             .or_else(|| item.get("name"))
             .and_then(Value::as_str)
-            .filter(|name| *name != id)
+            .filter(|name| *name != raw)
             .map(str::to_string),
-        context: ["context_length", "context_window", "max_input_tokens"]
-            .into_iter()
-            .find_map(|field| item.get(field).and_then(Value::as_u64))
-            .or_else(|| {
-                item.get("top_provider")
-                    .and_then(|top| top.get("context_length"))
-                    .and_then(Value::as_u64)
-            })
-            .and_then(|tokens| u32::try_from(tokens).ok()),
+        context: [
+            "context_length",
+            "context_window",
+            "max_input_tokens",
+            "inputTokenLimit",
+        ]
+        .into_iter()
+        .find_map(|field| item.get(field).and_then(Value::as_u64))
+        .or_else(|| {
+            item.get("top_provider")
+                .and_then(|top| top.get("context_length"))
+                .and_then(Value::as_u64)
+        })
+        .and_then(|tokens| u32::try_from(tokens).ok()),
         about: item
             .get("description")
             .and_then(Value::as_str)
             .map(|text| text.split(". ").next().unwrap_or(text).trim().to_string())
             .filter(|text| !text.is_empty()),
         cost: priced(item).unwrap_or(fallback),
+        ..Model::default()
     })
 }
 
@@ -162,27 +182,23 @@ fn priced(item: &Value) -> Option<Cost> {
     Some(if charged { Cost::Metered } else { Cost::Free })
 }
 
-#[must_use]
-pub fn plan_cost(name: &str) -> Cost {
-    match crate::endpoint::auth_info(name) {
-        Ok(info) if info.catalog_heading() == "Coding plans" => Cost::Plan,
-        Ok(info) if info.catalog_heading() == "Local" => Cost::Free,
-        Ok(_) | Err(_) => Cost::Unknown,
+pub fn cached() -> BTreeMap<String, Listing> {
+    load(FILE).unwrap_or_default()
+}
+
+fn load<T: serde::de::DeserializeOwned + Default>(file: &str) -> Result<T> {
+    match std::fs::read_to_string(summonr_home()?.join(file)) {
+        Ok(raw) => serde_json::from_str(&raw)
+            .map_err(|error| crate::error::Error::Config(format!("{file} is corrupt: {error}"))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
+        Err(error) => Err(error.into()),
     }
 }
 
-pub fn cached() -> BTreeMap<String, Listing> {
-    let Ok(home) = summonr_home() else {
-        return BTreeMap::new();
-    };
-    std::fs::read_to_string(home.join(FILE))
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
 pub fn remember(name: &str, models: Vec<Model>) -> Result<()> {
-    let mut all = cached();
+    let path = summonr_home()?.join(FILE);
+    let held = crate::durable::store::lock(&path, true)?;
+    let mut all: BTreeMap<String, Listing> = load(FILE)?;
     all.insert(
         name.to_string(),
         Listing {
@@ -190,205 +206,7 @@ pub fn remember(name: &str, models: Vec<Model>) -> Result<()> {
             fetched: now(),
         },
     );
-    let home = summonr_home()?;
-    crate::durable::store::write(&home.join(FILE), serde_json::to_string(&all)?)?;
+    crate::durable::store::write(&path, serde_json::to_string(&all)?)?;
+    drop(held);
     Ok(())
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct Meta {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    display: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    context: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    metered: Option<bool>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct ProviderMeta {
-    id: String,
-    name: String,
-    host: String,
-    #[serde(default)]
-    models: BTreeMap<String, Meta>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct Registry {
-    #[serde(default)]
-    etag: String,
-    #[serde(default)]
-    fetched: u64,
-    #[serde(default)]
-    providers: Vec<ProviderMeta>,
-}
-
-fn registry() -> Registry {
-    let Ok(home) = summonr_home() else {
-        return Registry::default();
-    };
-    std::fs::read_to_string(home.join(REGISTRY_FILE))
-        .ok()
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default()
-}
-
-fn reduce(value: &Value) -> Registry {
-    let providers = value
-        .as_object()
-        .into_iter()
-        .flatten()
-        .map(|(id, provider)| {
-            let host = provider
-                .get("api")
-                .and_then(Value::as_str)
-                .and_then(|api| url::Url::parse(api).ok())
-                .and_then(|url| url.host_str().map(str::to_string))
-                .unwrap_or_default();
-            let models = provider
-                .get("models")
-                .and_then(Value::as_object)
-                .into_iter()
-                .flatten()
-                .map(|(model_id, model)| {
-                    let meta = Meta {
-                        display: model
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .filter(|name| *name != *model_id)
-                            .map(str::to_string),
-                        context: model
-                            .get("limit")
-                            .and_then(|limit| limit.get("context"))
-                            .and_then(Value::as_u64)
-                            .and_then(|tokens| u32::try_from(tokens).ok()),
-                        metered: model.get("cost").map(|cost| {
-                            ["input", "output", "cache_read", "cache_write"]
-                                .into_iter()
-                                .find_map(|field| cost.get(field).and_then(Value::as_f64))
-                                .is_some_and(|rate| rate > 0.0)
-                        }),
-                    };
-                    (model_id.clone(), meta)
-                })
-                .collect();
-            ProviderMeta {
-                id: id.clone(),
-                name: provider
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or(id)
-                    .to_string(),
-                host,
-                models,
-            }
-        })
-        .collect();
-    Registry {
-        etag: String::new(),
-        fetched: now(),
-        providers,
-    }
-}
-
-pub async fn refresh_registry() -> Result<()> {
-    let mut cache = registry();
-    if !cache.providers.is_empty() && now().saturating_sub(cache.fetched) < REGISTRY_STALE {
-        return Ok(());
-    }
-    let http = crate::credentials::http()?;
-    let url = std::env::var("SUMMONR_MODELS_URL")
-        .ok()
-        .filter(|url| !url.trim().is_empty())
-        .unwrap_or_else(|| REGISTRY_URL.to_string());
-    let mut request = http.get(&url);
-    if !cache.etag.is_empty() {
-        request = request.header("if-none-match", cache.etag.as_str());
-    }
-    let mut response = request
-        .send()
-        .await
-        .map_err(|error| crate::error::Error::Config(error.to_string()))?;
-    if response.status().as_u16() == 304 {
-        cache.fetched = now();
-        let home = summonr_home()?;
-        crate::durable::store::write(&home.join(REGISTRY_FILE), serde_json::to_string(&cache)?)?;
-        return Ok(());
-    }
-    if !response.status().is_success() {
-        return Err(crate::error::Error::Config(format!(
-            "models.dev returned {}",
-            response.status().as_u16()
-        )));
-    }
-    let etag = response.header("etag").unwrap_or_default().to_string();
-    let value: Value = response
-        .json()
-        .await
-        .map_err(|error| crate::error::Error::Config(error.to_string()))?;
-    let mut fresh = reduce(&value);
-    fresh.etag = etag;
-    let home = summonr_home()?;
-    crate::durable::store::write(&home.join(REGISTRY_FILE), serde_json::to_string(&fresh)?)?;
-    Ok(())
-}
-
-pub fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
-    let registry = registry();
-    if registry.providers.is_empty() {
-        return;
-    }
-    let host = base_url
-        .and_then(|base| url::Url::parse(base).ok())
-        .and_then(|url| url.host_str().map(str::to_string));
-    const ALIAS: &[(&str, &str)] = &[
-        ("copilot", "github-copilot"),
-        ("fireworks", "fireworks-ai"),
-        ("gemini", "google"),
-        ("glm", "zai"),
-        ("glm-intl", "zai"),
-        ("grok", "xai"),
-        ("kimi", "moonshotai"),
-        ("together", "togetherai"),
-        ("zai-cn", "zai"),
-    ];
-    let alias = ALIAS
-        .iter()
-        .find_map(|(from, to)| (*from == endpoint).then_some(*to));
-    let named = |provider: &&ProviderMeta| {
-        [endpoint]
-            .into_iter()
-            .chain(alias)
-            .any(|name| provider.id == name || provider.name.eq_ignore_ascii_case(name))
-    };
-    let provider = host
-        .as_deref()
-        .and_then(|host| {
-            registry
-                .providers
-                .iter()
-                .find(|provider| provider.host == host)
-        })
-        .or_else(|| registry.providers.iter().find(named));
-    let Some(provider) = provider else {
-        return;
-    };
-    for model in models.iter_mut() {
-        let id = model.id.strip_prefix("models/").unwrap_or(&model.id);
-        let Some(meta) = provider.models.get(id) else {
-            continue;
-        };
-        if model.display.is_none() {
-            model.display = meta.display.clone();
-        }
-        if model.context.is_none() {
-            model.context = meta.context;
-        }
-        if model.cost == Cost::Unknown
-            && let Some(metered) = meta.metered
-        {
-            model.cost = if metered { Cost::Metered } else { Cost::Free };
-        }
-    }
 }

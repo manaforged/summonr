@@ -49,7 +49,10 @@ struct Conn {
 
 impl Hub {
     pub(crate) async fn connect(workspace: PathBuf) -> Self {
-        let servers = config::servers(&workspace);
+        let (servers, failed) = match config::servers(&workspace) {
+            Ok(servers) => (servers, None),
+            Err(error) => (Vec::new(), Some(format!("mcp config: {error}"))),
+        };
         let opened = futures::future::join_all(servers.into_iter().map(|server| {
             let workspace = workspace.clone();
             async move {
@@ -74,6 +77,7 @@ impl Hub {
                 Err(note) => hub.notes.push(note),
             }
         }
+        hub.notes.extend(failed);
         hub
     }
 

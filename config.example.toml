@@ -1,4 +1,4 @@
-default = "zai"
+default = "anthropic"
 
 [endpoint.zai]
 base_url = "https://api.z.ai/api/coding/paas/v4"
@@ -8,20 +8,13 @@ model = "glm-5.3-flash"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
 
-[endpoint.qwen]
-base_url = "http://127.0.0.1:8081/v1"
-model = "qwen3.8-27b-ud"
+[endpoint.local]
+base_url = "http://127.0.0.1:8080/v1"
+model = "qwen3"
 api_key = "local"
-
-[endpoint.qwen-impl]
-base_url = "http://127.0.0.1:8081/v1"
-model = "qwen3.8-27b-ud"
-api_key = "local"
-[endpoint.qwen-impl.body]
+[endpoint.local.body]
 temperature = 0.6
 top_p = 0.95
-top_k = 20
-chat_template_kwargs = { reasoning_effort = "low" }
 
 [endpoint.kimi]
 base_url = "https://api.kimi.com/coding/v1"

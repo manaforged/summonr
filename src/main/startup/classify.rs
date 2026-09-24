@@ -5,11 +5,11 @@ use crate::cli::Args;
 
 async fn run_diff_review(
     args: &Args,
-    asked: &std::collections::BTreeMap<String, summonr::decisions::Question>,
+    asked: &std::collections::BTreeMap<String, summonr::classify::Question>,
     floor: f64,
 ) -> Result<i32> {
     let questions = if asked.is_empty() {
-        summonr::decisions::sets::diff()
+        summonr::classify::sets::diff()
     } else {
         asked.clone()
     };
@@ -20,15 +20,14 @@ async fn run_diff_review(
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut piped)?;
         piped
     };
-    let changes = summonr::decisions::patch::split(&patch);
+    let changes = summonr::classify::patch::split(&patch);
     if changes.is_empty() {
         println!("no changes to review");
         return Ok(0);
     }
-    let endpoint = decisions_endpoint(args)?;
-    let budget = summonr::decisions::budget(&endpoint, &questions);
-    let decided =
-        summonr::decisions::patch::review(&endpoint, &changes, &questions, budget).await?;
+    let endpoint = classify_endpoint(args)?;
+    let budget = summonr::classify::budget(&endpoint, &questions);
+    let decided = summonr::classify::patch::review(&endpoint, &changes, &questions, budget).await?;
     if args.json {
         let rows: Vec<_> = changes
             .iter()
@@ -41,7 +40,7 @@ async fn run_diff_review(
     } else {
         print!(
             "{}",
-            summonr::decisions::patch::table(&changes, &decided, floor)
+            summonr::classify::patch::table(&changes, &decided, floor)
         );
     }
     Ok(0)
@@ -49,7 +48,7 @@ async fn run_diff_review(
 
 async fn run_eval(
     args: &Args,
-    questions: &std::collections::BTreeMap<String, summonr::decisions::Question>,
+    questions: &std::collections::BTreeMap<String, summonr::classify::Question>,
     path: &str,
     floor: f64,
 ) -> Result<i32> {
@@ -60,34 +59,33 @@ async fn run_eval(
     }
     let text = std::fs::read_to_string(path)
         .map_err(|error| summonr::Error::Config(format!("cannot read {path}: {error}")))?;
-    let examples = summonr::decisions::eval::load(&text)?;
-    let endpoint = decisions_endpoint(args)?;
-    let budget = summonr::decisions::budget(&endpoint, questions);
-    let decided = summonr::decisions::eval::run(&endpoint, &examples, questions, budget).await?;
-    let (tallies, misses) = summonr::decisions::eval::score(&examples, &decided, floor)?;
+    let examples = summonr::classify::eval::load(&text)?;
+    let endpoint = classify_endpoint(args)?;
+    let budget = summonr::classify::budget(&endpoint, questions);
+    let decided = summonr::classify::eval::run(&endpoint, &examples, questions, budget).await?;
+    let (tallies, misses) = summonr::classify::eval::score(&examples, &decided, floor)?;
     print!(
         "{}",
-        summonr::decisions::eval::report(&tallies, &misses, floor)
+        summonr::classify::eval::report(&tallies, &misses, floor)
     );
     let clean = tallies.values().all(|tally| tally.gated_accuracy() >= 1.0);
     Ok(i32::from(!clean))
 }
 
-fn decisions_endpoint(args: &Args) -> Result<summonr::Endpoint> {
+fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
     let name = match args.endpoint.as_deref() {
         Some(name) => name.to_string(),
-        None => summonr::decisions_endpoint().ok_or_else(|| {
-            summonr::Error::Config(format!(
-                "no decisions endpoint has a key — set one of {}, or `summonr login NAME`",
-                summonr::decisions_keys().join(", ")
-            ))
+        None => summonr::classify_endpoint().ok_or_else(|| {
+            summonr::Error::Config(
+                "no classify endpoint is set up — add an [endpoint.NAME] row with base_url and wire = \"decisions\" to ~/.summonr/config.toml, then `summonr login NAME`".to_string(),
+            )
         })?,
     };
     resolve_endpoint(Some(&name), args.model.as_deref())
 }
 
-pub(super) async fn run_decide(args: &Args) -> Result<i32> {
-    let mut questions: std::collections::BTreeMap<String, summonr::decisions::Question> =
+pub(super) async fn run_classify(args: &Args) -> Result<i32> {
+    let mut questions: std::collections::BTreeMap<String, summonr::classify::Question> =
         match args.questions.as_deref() {
             Some(source) => {
                 let text = match source.strip_prefix('@') {
@@ -101,13 +99,13 @@ pub(super) async fn run_decide(args: &Args) -> Result<i32> {
             None => std::collections::BTreeMap::new(),
         };
     if args.review {
-        questions.extend(summonr::decisions::sets::review());
+        questions.extend(summonr::classify::sets::review());
     }
     if let Some(name) = args.set.as_deref() {
-        let set = summonr::decisions::sets::by_name(name).ok_or_else(|| {
+        let set = summonr::classify::sets::by_name(name).ok_or_else(|| {
             summonr::Error::Config(format!(
                 "unknown question set `{name}` — try one of: {}",
-                summonr::decisions::sets::NAMES.join(", ")
+                summonr::classify::sets::NAMES.join(", ")
             ))
         })?;
         questions.extend(set);
@@ -115,7 +113,7 @@ pub(super) async fn run_decide(args: &Args) -> Result<i32> {
     for (index, text) in args.noul.iter().enumerate() {
         questions.insert(
             format!("noul{}", index + 1),
-            summonr::decisions::Question::noul(text.clone()),
+            summonr::classify::Question::noul(text.clone()),
         );
     }
     let floor = args.gate.unwrap_or(0.7);
@@ -130,7 +128,7 @@ pub(super) async fn run_decide(args: &Args) -> Result<i32> {
             Some(id) => resolve_session(id)?,
             None => session_path(args)?,
         };
-        summonr::decisions::digest::digest(&summonr::export_session(&path)?)
+        summonr::classify::digest::digest(&summonr::export_session(&path)?)
     } else if args.prompt.is_empty() {
         let mut input = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
@@ -148,9 +146,9 @@ pub(super) async fn run_decide(args: &Args) -> Result<i32> {
             "ask something: --review, --noul, or --questions".to_string(),
         ));
     }
-    let endpoint = decisions_endpoint(args)?;
-    let budget = summonr::decisions::budget(&endpoint, &questions);
-    let (decision, windows) = summonr::decisions::sweep::sweep(
+    let endpoint = classify_endpoint(args)?;
+    let budget = summonr::classify::budget(&endpoint, &questions);
+    let (decision, windows) = summonr::classify::sweep::sweep(
         &endpoint,
         &serde_json::Value::from(state),
         &questions,
@@ -174,7 +172,7 @@ pub(super) async fn run_decide(args: &Args) -> Result<i32> {
             }))?
         );
     } else {
-        print!("{}", summonr::decisions::render(&decision));
+        print!("{}", summonr::classify::render(&decision));
     }
     Ok(0)
 }

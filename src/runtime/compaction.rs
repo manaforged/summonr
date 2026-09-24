@@ -92,13 +92,12 @@ impl<P: Provider> Loop<P> {
         system: &Message,
         slice: &[Message],
         tools: &[ToolDefinition],
-    ) -> Result<Option<(AssistantMessage, String)>> {
+    ) -> Result<Option<AssistantMessage>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
         request_messages.push(system.clone());
         request_messages.extend(slice.iter().cloned());
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
         let request = self.request(workflow::Role::Summary, &request_messages, tools, false);
-        let prefix_hash = request.prefix_hash();
         match self
             .complete_once(workflow::Role::Summary, &request)
             .await?
@@ -110,7 +109,7 @@ impl<P: Provider> Loop<P> {
                         .as_ref()
                         .is_some_and(|text| !text.trim().is_empty()) =>
             {
-                Ok(Some((message, prefix_hash)))
+                Ok(Some(message))
             }
             Ok(_) | Err(WaitError::Provider(_)) => Ok(None),
             Err(wait_error) => Err(wait_error.error()),
@@ -155,8 +154,7 @@ impl<P: Provider> Loop<P> {
         let Some(keep_from) = compact_boundary(messages, tail_chars, keep) else {
             return Ok(());
         };
-        let started = std::time::Instant::now();
-        let Some((summary, prefix_hash)) = self
+        let Some(summary) = self
             .summarize(&messages[0], &messages[1..keep_from], tools)
             .await?
         else {
@@ -171,15 +169,8 @@ impl<P: Provider> Loop<P> {
             )?;
             return Ok(());
         };
-        self.record_usage(
-            &summary,
-            prefix_hash,
-            workflow::Role::Summary,
-            Some(super::elapsed_millis(started)),
-            usage,
-            events,
-            emit,
-        )?;
+        self.count_usage(&summary, usage);
+        self.emit_records(events, emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
@@ -226,8 +217,7 @@ impl<P: Provider> Loop<P> {
             return Ok(false);
         };
         let tools = self.tool_definitions();
-        let started = Instant::now();
-        let Some((reply, prefix_hash)) = self
+        let Some(reply) = self
             .summarize(&messages[0], &messages[1..keep_from], &tools)
             .await?
         else {
@@ -235,15 +225,8 @@ impl<P: Provider> Loop<P> {
                 "the compaction summary failed; the context is unchanged".to_string(),
             ));
         };
-        self.record_usage(
-            &reply,
-            prefix_hash,
-            workflow::Role::Summary,
-            Some(super::elapsed_millis(started)),
-            &mut Usage::default(),
-            &mut Vec::new(),
-            &mut emit,
-        )?;
+        self.count_usage(&reply, &mut Usage::default());
+        self.emit_records(&mut Vec::new(), &mut emit)?;
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }

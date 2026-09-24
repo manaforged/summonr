@@ -17,12 +17,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn edit_start(&self) {
-        let text = self
-            .model
-            .borrow()
-            .view
-            .as_ref()
-            .map(|view| view.text.clone());
+        let text = self.model.get().view.as_ref().map(|view| view.text.clone());
         let Some(text) = text else {
             return;
         };
@@ -41,7 +36,7 @@ impl App {
         }
         if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
             self.discard_armed.set(true);
-            self.model.borrow_mut().entries.push(Entry::System(
+            self.push_entry(Entry::System(
                 "unsaved edits — ctrl+s saves, esc again discards".to_string(),
             ));
             self.refresh();
@@ -54,12 +49,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn edit_save(&self) {
-        let path = self
-            .model
-            .borrow()
-            .view
-            .as_ref()
-            .map(|view| view.file.clone());
+        let path = self.model.get().view.as_ref().map(|view| view.file.clone());
         let Some(path) = path else {
             return;
         };
@@ -70,13 +60,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn view_external(&self) {
-        if let Some(path) = self
-            .model
-            .borrow()
-            .view
-            .as_ref()
-            .map(|view| view.file.clone())
-        {
+        if let Some(path) = self.model.get().view.as_ref().map(|view| view.file.clone()) {
             self.open_file.set(Some(path));
         }
         self.refresh();
@@ -84,7 +68,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn view_lines(&self) -> usize {
         self.model
-            .borrow()
+            .get()
             .view
             .as_ref()
             .map_or(0, |view| view.text.lines().count())
@@ -101,19 +85,11 @@ impl App {
         match argument {
             Some(path) => self.view_open(path.trim_start_matches('@').to_string()),
             None => {
-                let path = self
-                    .model
-                    .borrow()
-                    .view
-                    .as_ref()
-                    .map(|view| view.path.clone());
+                let path = self.model.get().view.as_ref().map(|view| view.path.clone());
                 match path {
                     Some(path) => self.view_open(path),
                     None => {
-                        self.model
-                            .borrow_mut()
-                            .entries
-                            .push(Entry::Error("usage: /view PATH".to_string()));
+                        self.push_entry(Entry::Error("usage: /view PATH".to_string()));
                         self.refresh();
                     }
                 }

@@ -1,9 +1,9 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, card, container,
-    icon_button, label, list_row, notice_band, section_label, spacer,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Tone, button, card,
+    container, icon_button, label, list_row_with, notice_band, section_label, spacer,
+    spinner_frame,
 };
 
-use super::composer;
 use super::{App, Model, canvas};
 use super::{busy_status, secret_row};
 
@@ -17,18 +17,16 @@ pub(super) fn agents(app: App, width: usize) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let _panes = update.panes.get();
-            let _ticks = update.ticks.get();
-            let model = update.model.borrow();
+            let model = update.model.get();
             let live = model.agents.iter().filter(|agent| !agent.done).count();
             if model.agents_hidden || live == 0 || width < 12 {
                 return Vec::new();
             }
-            vec![agent_panel(update.clone(), &model, width)]
+            vec![agent_panel(update.clone(), &model, update.ticks.get())]
         })
 }
 
-fn agent_panel(app: App, model: &Model, width: usize) -> NodeBuilder {
+fn agent_panel(app: App, model: &Model, tick: u64) -> NodeBuilder {
     let count = model.agents.iter().filter(|agent| !agent.done).count();
     let title = if count == 1 {
         "1 agent".to_string()
@@ -53,13 +51,14 @@ fn agent_panel(app: App, model: &Model, width: usize) -> NodeBuilder {
         let state = if agent.failed {
             "!"
         } else {
-            composer::SPINNER[model.spinner % composer::SPINNER.len()]
+            spinner_frame(tick)
         };
-        body = body.child(list_row(
-            false,
-            format!("{state} {}", agent.id),
-            canvas::ellipsize(&agent.last, width.saturating_sub(8)),
-        ));
+        let slots = ListRowSlots {
+            status: Some(agent.last.clone().into()),
+            shrink: true,
+            ..ListRowSlots::default()
+        };
+        body = body.child(list_row_with(false, format!("{state} {}", agent.id), slots));
     }
     card(body)
 }
@@ -74,11 +73,9 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let _panes = update.panes.get();
-            let _ticks = update.ticks.get();
             let approval = update.approval.get();
             let secret = update.secret.get();
-            let model = update.model.borrow();
+            let model = update.model.get();
             let mut nodes = Vec::new();
             if let Some((detail, persist)) = approval {
                 nodes.push(above(approval_band(update.clone(), width, detail, persist)));
@@ -87,7 +84,7 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                     secret_row(&prompt, typed, width),
                     Tone::Warn,
                 )));
-            } else if let Some(status) = busy_status(&model) {
+            } else if let Some(status) = busy_status(&model, update.ticks.get()) {
                 nodes.push(above(notice_band(status, Tone::Neutral)));
             } else if update.attached.get() > 0 {
                 let attached = update.attached.peek();

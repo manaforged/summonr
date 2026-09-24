@@ -220,6 +220,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     shell(
         picker.open,
         picker.title(),
+        app.viewport.peek().0,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -245,7 +246,6 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            super::view::watch(&paint);
             let warning = picker.warning.get();
             let mut items: Vec<NodeBuilder> = Vec::new();
             if !warning.is_empty() {
@@ -253,7 +253,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     container().child(label(warning).class(classes!("text-xs text-error-11"))),
                 );
             }
-            match picker.rows(&paint.model.borrow()) {
+            match picker.rows(&paint.model.get()) {
                 Ok(rows) => {
                     let selected = picker.selected.get().min(rows.len().saturating_sub(1));
                     if rows.is_empty() {
@@ -300,7 +300,7 @@ fn row(
         format!("{}  {preview}", entry + 1)
     };
     let detail = picker.detail(entry);
-    pick(index == selected, false, title, detail).pointer_down(move |event| {
+    pick(index == selected, title, detail).pointer_down(move |event| {
         choose.search.selected.set(index);
         choose.jump();
         event.stop_propagation();

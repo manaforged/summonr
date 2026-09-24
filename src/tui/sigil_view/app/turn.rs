@@ -2,20 +2,26 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn submit(&self) {
-        if matches!(self.model.borrow().busy_since, Some((Activity::Branch, _))) {
+        if matches!(self.model.get().busy_since, Some((Activity::Branch, _))) {
             return;
         }
         if self.view_edit.peek() {
             return;
         }
-        let text = self.expand_pastes(&self.draft.peek());
+        let mut text = self.expand_pastes(&self.draft.peek());
+        if let Some((line, note)) = crate::command::renamed(&text) {
+            if let Some(note) = note {
+                self.push_entry(Entry::System(note));
+            }
+            text = line;
+        }
         if text.trim().is_empty() && self.attachments.borrow().is_empty() {
             return;
         }
         let argument = match argument(&text) {
             Ok(argument) => argument,
             Err(error) => {
-                self.model.borrow_mut().entries.push(Entry::Error(error));
+                self.push_entry(Entry::Error(error));
                 self.splash.set(false);
                 self.refresh();
                 return;
@@ -31,14 +37,11 @@ impl App {
             drop(self.cmd.send(Cmd::Command(text)));
             return;
         }
-        let peers = super::suggest::peers(&text, &self.model.borrow());
+        let peers = super::suggest::peers(&text, &self.model.get());
         if !peers.is_empty() {
             self.replace(String::new());
             self.splash.set(false);
-            self.model
-                .borrow_mut()
-                .entries
-                .push(Entry::User(text.clone()));
+            self.push_entry(Entry::User(text.clone()));
             drop(self.cmd.send(Cmd::Send(peers, text)));
             self.refresh();
             return;
@@ -53,8 +56,7 @@ impl App {
             return;
         }
         self.splash.set(false);
-        {
-            let mut model = self.model.borrow_mut();
+        self.model_mut(|model| {
             model.entries.push(Entry::User(text.clone()));
             for attachment in pending {
                 if let Some(source) = attachment.source {
@@ -66,15 +68,12 @@ impl App {
                 }
                 input.images.push(attachment.image);
             }
-        }
-        let activity = self.model.borrow().busy_since.map(|(activity, _)| activity);
+        });
+        let activity = self.model.get().busy_since.map(|(activity, _)| activity);
         let command = match activity {
             Some(Activity::Turn) => Cmd::Steer(input),
             Some(_) => {
-                self.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::System("queued for the next turn".to_string()));
+                self.push_entry(Entry::System("queued for the next turn".to_string()));
                 Cmd::Queue(input)
             }
             None => Cmd::Submit(input),
@@ -85,8 +84,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn retry(&self) {
-        if self.model.borrow().busy_since.is_some() {
-            self.model.borrow_mut().entries.push(Entry::System(
+        if self.model.get().busy_since.is_some() {
+            self.push_entry(Entry::System(
                 "Cancel the active turn before retrying.".to_string(),
             ));
             self.refresh();
@@ -96,14 +95,16 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn complete(&self) -> bool {
-        if self.settings_open.peek() || self.model.borrow().busy_since.is_some() {
+        if self.settings_open.peek() || self.model.get().busy_since.is_some() {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) = self
-            .commands
-            .complete(&typed, self.caret.peek(), &self.model.borrow())
-        else {
+        let Some(name) = self.commands.complete(
+            &typed,
+            self.caret.peek(),
+            &self.model.get(),
+            &self.model_facts.peek(),
+        ) else {
             return false;
         };
         self.completion(&name);
@@ -111,37 +112,38 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn accept(&self) -> bool {
-        if self.settings_open.peek() || self.model.borrow().busy_since.is_some() {
+        if self.settings_open.peek() || self.model.get().busy_since.is_some() {
             return false;
         }
         let typed = self.draft.peek();
-        let Some(name) = self
+        let Some((name, run)) = self
             .commands
-            .accept(&typed, self.caret.peek(), &self.model.borrow())
+            .accept(&typed, self.caret.peek(), &self.model.get())
         else {
             return false;
         };
         self.completion(&name);
-        true
+        !run
     }
 
     pub(in crate::tui::sigil_view) fn escape_idle(&self) -> bool {
         if !armed(&self.escape_armed, REPEAT_WINDOW) {
             return false;
         }
-        self.local("/tree", None)
+        self.open_sessions(true);
+        true
     }
 
     pub(in crate::tui::sigil_view) fn dismiss(&self) -> bool {
         self.commands
-            .hide(&self.draft.peek(), self.caret.peek(), &self.model.borrow())
+            .hide(&self.draft.peek(), self.caret.peek(), &self.model.get())
     }
 
     pub(in crate::tui::sigil_view) fn interrupt(&self) {
         if self.overlay_close() {
             return;
         }
-        if let Some((activity, _)) = self.model.borrow().busy_since {
+        if let Some((activity, _)) = self.model.get().busy_since {
             if activity != Activity::Branch {
                 drop(self.cmd.send(Cmd::Cancel));
             }
@@ -149,17 +151,14 @@ impl App {
             if armed(&self.quit_armed, REPEAT_WINDOW) {
                 self.quit.set(true);
             } else {
-                self.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::System("press ctrl+c again to quit".to_string()));
+                self.push_entry(Entry::System("press ctrl+c again to quit".to_string()));
                 self.refresh();
             }
         } else {
             self.replace(String::new());
             self.pasted_text.borrow_mut().clear();
             if !self.take_attachments().is_empty() {
-                self.model.borrow_mut().entries.push(Entry::System(
+                self.push_entry(Entry::System(
                     "Draft discarded. Attached images were removed.".to_string(),
                 ));
                 self.refresh();

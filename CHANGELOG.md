@@ -1,81 +1,118 @@
 # Changelog
 
-## Unreleased
+## 0.1.0-rc.1 - 2026-09-23
 
-- Forced compaction and tool-argument repair are recorded in the session
-  journal, so the next turn keeps them. Compaction and `/clear` reset read
-  dedup, so a re-read after compaction returns the file.
-- Plan mode entered mid-session turns on the command sandbox; without a
-  sandbox, `run_command` is not offered in plan mode.
-- The per-turn git snapshot and checkpoint run in the background and join
-  before the first tool call.
-- Multi-path `read` shares one 50 KB cap, write echoes are line-capped,
-  receipts stay out of model history, and the tool schema is frozen for
+### Added
+
+- Release binaries for macOS (arm64, x86_64) and Linux (x86_64, arm64),
+  each with a SHA-256 file, and `scripts/install.sh` to download,
+  check, and install one.
+- The `/model` picker opens from cache in about 0.3 s and checks each
+  provider in the background. It groups current, pinned (`alt+p`), recent,
+  and providers, and shows one state word per provider with a one-line
+  fix. `F5` rechecks a failed provider. `summonr endpoints` uses the
+  same state words and the same discovery path.
+- Sign-in happens inside the dialog. A pasted key is checked against the
+  provider before it is saved. OAuth shows the device URL, code, and
+  elapsed time. `/login` filters and groups providers, `/login NAME`
+  opens the key prompt, and `alt+d` signs out.
+- Endpoints read keys from OpenCode's `auth.json` and Kimi's
+  `kimi-code.json`. `summonr auth` names the source.
+- Built-in endpoints `together`, `groq`, `cerebras`, `mistral`, `muse`,
+  `zen`, `go`, and `opencode`. `responses` is a selectable wire.
+- A sandboxed write or network denial asks `[ allow ]`, `[ always ]`, or
+  `[ deny ]`.
+- `web` fetches as markdown, text, or html.
+- A fenced `chart` block, or mermaid `xychart`, renders as labeled bars.
+- `theme` accepts `space`, `fantasy`, `nord`, `gruvbox`, `solarized`,
+  and `light`.
+- CLI verbs `summonr resume`, `summonr install`, and
+  `summonr doctor --logs`.
+
+### Changed
+
+- The `/` popup and `/help` list 30 commands, grouped by job. Old names
+  still work for one release; see Renamed commands.
+- `ctrl+d` only quits. `alt+d` deletes a session in the sessions
+  picker, signs out in `/login`, and sets the default in `/model`.
+  `alt+p` pins a model. `F5` is the only picker refresh; `ctrl+r`
+  stays prompt history.
+- `↑` on an empty draft pulls queued input back; `ctrl+q` no longer
+  does.
+- A key stored with `summonr login` wins over peer keys. An endpoint
+  with no key fails with the missing-key message.
+- The model sees five core tools: `read`, `edit`, `write`,
+  `run_command`, and `todo`. Modules add `skill`, `lsp`, `web`, `task`,
+  and `bus`. `read` search takes `literal`, `caseSensitive`, and
+  `include`; `edit` and `write` take a `files` batch.
+- Chat runs at once. `shift+tab` and `/plan` enter plan mode, which is
+  read-only and saves the plan to `.summonr/plan.md`. `/plan accept`
+  runs the plan in the same turn.
+- The `task` module is off by default.
+- `--goal`, `--steps`, and `implement` children edit the launch
+  directory. `--worktree` isolates the session.
+- Sandboxed network is on by default; `--no-net` denies it.
+- Anthropic: models before Claude 4.6 get a manual thinking budget,
+  newer models get adaptive thinking. Defaults are `claude-sonnet-5`
+  and `claude-opus-5-5`.
+- Gemini tool schemas use `parametersJsonSchema`. Effort maps to
+  `thinkingBudget` on 2.5 and `thinkingLevel` on 3.
+- Dialogs size from the terminal and repaint on resize. Copy is
+  `ctrl+b` everywhere.
+- A malformed `config.toml` stops startup with one error.
+- `src/limits.rs` holds every timeout. Transport retries run in
+  leyline's `RetryPolicy`. A stream cut mid-body retries once.
+- The per-turn git snapshot runs in the background. The transcript
+  repaints only changed entries, and an idle session skips paints.
+- Multi-path `read` shares one 50 KB cap. The tool schema is frozen for
   the session.
-- `--max-turns` is removed. Only `--max-tokens` and `--max-secs` bound a
-  run.
-- Release builds use fat LTO, one codegen unit, and strip. The runtime
-  uses two worker threads.
-- The transcript rebuilds only entries that changed, not every entry on
-  each streamed delta and animation tick. Overlay chrome uses Sigil
-  `section_label`, `hint_bar`, and `notice_band`.
-- The advertised tool catalog freezes after the first `prefix_hash` in
-  the process. `/modules` writes apply on the next process.
-- The TUI skips a full paint when the session is idle.
-- `/plan accept` enters work and runs the plan in that turn. Work is not
-  a sibling of plan: without a selected plan, a work request stays in
-  plan mode. `shift+tab` switches auto and plan only.
-- The `task` module is off by default. Turn it on with `/modules task on`
-  when the work has disjoint paths. The harness prompt tells the model
-  to spawn a child only then, and that the completion check decides done.
-- Transcript pictures keep the full preview bitmap in the overlay.
-  A picture is 48 rows tall at most.
-- A fenced `chart` block, or mermaid `xychart` / `xychart-beta`,
-  renders as labeled bars.
-- Crate and command are `summonr`. `summon` and `summoner` remain PATH
-  aliases of the same binary. Config stays under `~/.summonr`.
-- The model sees five core tools every round: `read` (file, directory,
-  image, or search), `edit`, `write`, `run_command`, and `todo`. Plan
-  mode drops `edit` and `write`. Optional modules add `skill`, `lsp`,
-  `web`, `task`, and `bus`. Old names still
-  run and are not advertised.
-- Ordinary chat executes immediately. `shift+tab` and `/plan` enter
-  plan mode. The reply is saved to `.summonr/plan.md`. Sandboxed network
-  is on by default; `--no-net` denies it. Destructive writes still ask.
-- The core tools got deeper without growing: `read` search takes
-  `literal`, `caseSensitive`, and `include`; `edit` takes a `files`
-  batch and a `to` rename; `write` takes a `files` batch;
-  `run_command` takes `workdir` and names the full log for a long
-  output.
-- `web` fetches as markdown, text, or html, and keeps the full page
-  when the output is truncated.
-- Plan mode is read-only. `edit` and `write` are unavailable. The model
-  inspects with `read` and `run_command`, then proposes diffs in the
-  answer.
-- `--goal`, `--steps`, and `implement` children edit the directory you
-  launched from. Pass `--worktree` to isolate the whole session.
-- A sandboxed write or network denial pauses in the interface:
-  `[ allow ]`, `[ always ]`, or `[ deny ]`. `[ always ]` appends the
-  path to `[sandbox] write`. `/write PATH` and `/net on` / `/net once`
-  do the same without a prompt.
-- Built-in endpoints add `together`, `groq`, `cerebras`, `mistral`, and
-  `muse` (chat/completions). They set no default model: name one with
-  `--model`. `muse` defaults to `muse-spark-1.3`.
-- Built-in OpenCode seats: `zen`, `go`, and `opencode`
-  (`chat/completions`). Keys are `OPENCODE_API_KEY` and
-  `OPENCODE_GO_API_KEY`. Every wire sends `x-opencode-session`, and
-  `responses` is a selectable wire.
-- The Sigil dependency fetches over https, so a checkout needs no SSH
-  key once the repository is visible.
-- Streamed reasoning is italic `thought` text on the canvas. There is no
-  separate reasoning band.
-- `theme` in `config.toml` accepts six presets: `space`, `fantasy`,
-  `nord`, `gruvbox`, `solarized`, and `light`. `/theme` reloads theme
-  files.
+- Release builds use fat LTO, one codegen unit, and strip.
+- Crate and command are `summonr`. `summon` and `summoner` stay PATH
+  aliases.
 
-## 0.1.0 - 2026-09-10
+### Fixed
 
-First public release of the Mage harness under the Summoner name.
+- Anthropic tool results carry `is_error` and images. Usage counts cache
+  reads and the final `message_delta`. Refusals show the provider text.
+- Gemini keeps text-part signatures, reports blocked prompts, sends the
+  real function name, and honors `retryDelay` on 429.
+- Responses shows stream errors, streams commentary and reasoning
+  summaries as reasoning, and keeps a `max_output_tokens` stop as a
+  length stop. Resumed sessions keep message phase.
+- Error frames and cut streams fail instead of returning a partial
+  reply. Thinking replays only to the model that produced it.
+- `--json` keeps its event order, and an abort emits Aborted then
+  Receipt.
+- Compaction and tool-argument repair are saved in the journal, and
+  compaction resets read dedup.
+- Plan mode entered mid-session turns on the command sandbox.
+- Clipboard paste attaches the full image on macOS.
+
+### Removed
+
+- `--max-turns`. Use `--max-tokens` or `--max-secs`.
+- The header fps readout and the separate reasoning band.
+- AppKit from the default terminal build.
+
+### Renamed commands
+
+| Old | New |
+| --- | --- |
+| `/auth` | `/login` |
+| `/quit` | `/exit` |
+| `/effort` | `/model` |
+| `/rollback` | `/undo files` |
+| `/branch` | `/fork` |
+| `/tree` | `/resume` |
+| `/session`, `/stats` | `/status` |
+| `/profile` | `/usage session` |
+| `/net` | `/permissions net` |
+| `/write` | `/permissions write` |
+| `/approve` | `/permissions approve` |
+| `/layout` | `/pane` |
+| `/theme`, `/tools`, `/reasoning`, `/receipts`, `/bus`, `/modules` | `/settings` |
+
+### Earlier work in this release
 
 - Native Anthropic and Gemini requests include user images. Gemini tool
   calls retain thought signatures. Anthropic tool turns retain ordered
@@ -91,8 +128,6 @@ First public release of the Mage harness under the Summoner name.
   otherwise fail with `Operation not permitted`.
 - A research child that finishes before its batch is cancelled keeps its
   result; the model reads it on the next turn.
-- A `Retry-After` header on a 429 or 5xx reply sets the retry wait, up to
-  600 s, instead of the doubling backoff.
 - Fenced code in replies colours keywords; `/export [PATH]` writes the
   session as markdown from inside the interface, also during a turn.
 - Pictures in the transcript: a pasted or attached image, a `show_image`

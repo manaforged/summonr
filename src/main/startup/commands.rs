@@ -2,45 +2,40 @@ use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 
 use summonr::{
-    Client, Result, last_for, list_sessions, resolve_session, splash, sweep_worktrees, workflow,
+    Client, EndpointState as State, Result, last_for, list_sessions, resolve_session, splash,
+    sweep_worktrees, workflow,
 };
 
 use crate::cli::Args;
 
 pub(super) async fn probe_endpoints() -> Result<()> {
     for name in summonr::endpoint_names()? {
-        let endpoint = match summonr::resolve_endpoint(Some(&name), None) {
-            Ok(endpoint) => endpoint,
-            Err(error) => {
-                println!("{name:<14} unresolved · {error}");
-                continue;
+        let info = summonr::auth_info(&name).ok();
+        let seat = summonr::resolve_endpoint_unauthed(Some(&name), None).ok();
+        let model = seat.as_ref().map_or("", |seat| seat.model.as_str());
+        let base = seat.as_ref().and_then(|seat| seat.base_url.as_deref());
+        let host = base.map_or("", |base| splash::host_of(Some(base)).unwrap_or(base));
+        let status = match (&info, summonr::resolve_endpoint(Some(&name), None)) {
+            (Some(info), _) if !info.configured && !info.keyless() => {
+                format!("{} · {}", info.state(), info.setup)
+            }
+            (Some(_), Err(_)) if seat.is_none() => format!(
+                "{} · run `summonr {name} --model NAME` or set model in config.toml",
+                State::NeedsModel
+            ),
+            (_, Err(error)) => format!("{} · {error}", State::Error),
+            (_, Ok(endpoint)) if endpoint.base_url.is_none() => "adapter".to_string(),
+            (_, Ok(endpoint)) => {
+                let key = endpoint
+                    .source
+                    .map_or_else(String::new, |source| format!(" · key: {}", source.label()));
+                match Client::discover(&endpoint).await {
+                    Ok(models) => format!("{} · {} models{key}", State::Ready, models.len()),
+                    Err(error) => format!("{} · {error}{key}", Client::state(&error)),
+                }
             }
         };
-        let Some(base) = endpoint.base_url.as_deref() else {
-            println!("{name:<14} {:<22} adapter", endpoint.model);
-            continue;
-        };
-        let host = splash::host_of(Some(base)).unwrap_or(base);
-        let client = match Client::connect(&endpoint) {
-            Ok(client) => client,
-            Err(error) => {
-                println!("{name:<14} {:<22} {host:<34} {error}", endpoint.model);
-                continue;
-            }
-        };
-        let status =
-            match tokio::time::timeout(std::time::Duration::from_secs(6), client.models()).await {
-                Ok(Ok(_)) => "ok".to_string(),
-                Ok(Err(error)) => error.to_string(),
-                Err(_) => "timeout".to_string(),
-            };
-        println!(
-            "{name:<14} {:<22} {host:<34} {status} · key: {}",
-            endpoint.model,
-            endpoint
-                .source
-                .map_or("none", summonr::secret::Source::label)
-        );
+        println!("{name:<14} {model:<22} {host:<34} {status}");
     }
     Ok(())
 }
@@ -57,7 +52,7 @@ pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
 pub(super) fn export_session_cmd(args: &Args) -> Result<()> {
     let text = summonr::export_session(&session_path(args)?)?;
     if args.digest {
-        print!("{}", summonr::decisions::digest::digest(&text));
+        print!("{}", summonr::classify::digest::digest(&text));
     } else {
         print!("{text}");
     }
@@ -319,10 +314,18 @@ fn read_secret(prompt: &str) -> Result<String> {
 }
 
 pub(super) fn print_login_catalog() -> Result<()> {
-    let mut rows: Vec<summonr::AuthInfo> = summonr::endpoint_names()?
+    let (rows, errors): (Vec<_>, Vec<_>) = summonr::endpoint_names()?
         .into_iter()
-        .filter_map(|name| summonr::auth_info(&name).ok())
+        .map(|name| summonr::auth_info(&name))
+        .partition(Result::is_ok);
+    let mut errors: Vec<String> = errors
+        .into_iter()
+        .filter_map(Result::err)
+        .map(|error| error.to_string())
         .collect();
+    errors.dedup();
+    errors.iter().for_each(|error| eprintln!("{error}"));
+    let mut rows: Vec<summonr::AuthInfo> = rows.into_iter().flatten().collect();
     rows.sort_by_key(|row| (row.catalog_rank(), row.name.clone()));
     let mut heading = "";
     for row in &rows {
@@ -331,7 +334,7 @@ pub(super) fn print_login_catalog() -> Result<()> {
             if heading == "Coding plans" {
                 println!("\n{heading}  (Claude Pro/Max, Copilot, Kimi, GLM/Z.AI, OpenCode)");
             } else if heading == "Decisions" {
-                println!("\n{heading}  (summonr infer / Jev)");
+                println!("\n{heading}  (summonr classify / Jev)");
             } else if heading == "Local" {
                 println!("\n{heading}  (no key)");
             } else {
@@ -352,13 +355,13 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
     let name = args.endpoint.as_deref().unwrap_or_default();
     if !args.prompt.is_empty() {
         return Err(summonr::Error::Config(
-            "do not put credentials on the command line — `summon login NAME` asks for them"
+            "do not put credentials on the command line — `summonr login NAME` asks for them"
                 .to_string(),
         ));
     }
     if key_login(name, args.key)? {
         let key = read_secret(&format!("key for {name}: "))?;
-        let source = summonr::save_key(name, key.trim())?;
+        let source = summonr::check_key(name, key.trim()).await?;
         println!(
             "key for {name} stored in {} ({} chars)",
             source.label(),

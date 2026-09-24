@@ -57,10 +57,10 @@ pub struct Switches {
 
 impl Switches {
     pub fn load(workspace: &Path) -> Result<Self> {
-        let user = config::load()?.modules;
+        let user = config::file()?.modules;
         let path = workspace.join(".summonr/config.toml");
         let project = if path.is_file() {
-            config::load_from(&path)?.modules
+            config::parse(&path)?.modules
         } else {
             BTreeMap::new()
         };
@@ -116,7 +116,7 @@ pub fn named(name: &str) -> Result<Module> {
         .find(|module| module.name == name)
         .ok_or_else(|| {
             Error::Config(format!(
-                "unknown module `{name}`; `summon modules` lists them"
+                "unknown module `{name}`; `summonr modules` lists them"
             ))
         })
 }

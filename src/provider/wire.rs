@@ -1,26 +1,59 @@
-#![allow(
-    dead_code,
-    reason = "the native wires are proved against the documented shapes and a \
-              reference implementation, and nothing calls them until a key exists \
-              to capture fixtures with and the dispatch moves off genai"
-)]
-
 use serde_json::Value;
-use summonr_auth::Scheme;
 
+use crate::error::{Error, ProviderFailureKind, Result};
 use crate::provider::{AssistantMessage, CompletionRequest};
 
 pub(crate) mod anthropic;
 pub(crate) mod completions;
+pub(crate) mod decisions;
 pub(crate) mod gemini;
+pub(crate) mod responses;
 
-pub(crate) fn arguments(raw: &str) -> Value {
-    serde_json::from_str(raw).unwrap_or_else(|_| serde_json::json!({}))
+pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &'static str)] {
+    match wire {
+        crate::endpoint::Wire::Anthropic => anthropic::Wire::headers(),
+        crate::endpoint::Wire::Gemini => gemini::Wire::headers(),
+        crate::endpoint::Wire::Responses => responses::Wire::headers(),
+        crate::endpoint::Wire::Completions => completions::Wire::headers(),
+        crate::endpoint::Wire::Decisions => &[],
+    }
 }
 
-pub(crate) fn base64(bytes: &[u8]) -> String {
-    use base64::Engine as _;
-    base64::engine::general_purpose::STANDARD.encode(bytes)
+pub(crate) fn arguments(name: &str, raw: &str) -> Result<Value> {
+    serde_json::from_str(raw).map_err(|error| {
+        Error::provider(
+            ProviderFailureKind::MalformedToolCall,
+            format!("{name}: invalid tool arguments: {error}"),
+        )
+    })
+}
+
+pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
+    let lower = kind.to_ascii_lowercase();
+    let code = status.unwrap_or(
+        if ["overload", "unavailable", "server", "api_error", "internal"]
+            .iter()
+            .any(|word| lower.contains(word))
+        {
+            503
+        } else if lower.contains("rate") || lower.contains("exhausted") {
+            429
+        } else {
+            400
+        },
+    );
+    let mut error = super::client::response_failure(code, message, None);
+    if let Error::Provider(failure) = &mut error {
+        failure.status = status;
+    }
+    error
+}
+
+pub(crate) fn blocked(reason: &str) -> Error {
+    Error::provider(
+        ProviderFailureKind::Http,
+        format!("native response was blocked by the provider: {reason}"),
+    )
 }
 
 pub(crate) enum Delta {
@@ -39,15 +72,11 @@ pub(crate) struct Frames {
 }
 
 impl Frames {
-    pub(crate) fn push(
-        &mut self,
-        bytes: &[u8],
-        sentinel: Option<&str>,
-    ) -> crate::error::Result<Vec<String>> {
+    pub(crate) fn push(&mut self, bytes: &[u8], sentinel: Option<&str>) -> Result<Vec<String>> {
         self.buffer.extend_from_slice(bytes);
         if self.buffer.len() > MOST_PENDING {
-            return Err(crate::error::Error::provider(
-                crate::error::ProviderFailureKind::Malformed,
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
                 format!("{MOST_PENDING} bytes arrived with no frame boundary"),
             ));
         }
@@ -57,8 +86,8 @@ impl Frames {
             self.buffer.drain(..width);
             self.scanned = 0;
             let text = std::str::from_utf8(&event).map_err(|error| {
-                crate::error::Error::provider(
-                    crate::error::ProviderFailureKind::Malformed,
+                Error::provider(
+                    ProviderFailureKind::Malformed,
                     format!("invalid SSE bytes: {error}"),
                 )
             })?;
@@ -85,10 +114,10 @@ impl Frames {
     }
 }
 
-pub(crate) fn parse<'a, T: serde::Deserialize<'a>>(data: &'a str) -> crate::error::Result<T> {
+pub(crate) fn parse<'a, T: serde::Deserialize<'a>>(data: &'a str) -> Result<T> {
     serde_json::from_str(data).map_err(|error| {
-        crate::error::Error::provider(
-            crate::error::ProviderFailureKind::Malformed,
+        Error::provider(
+            ProviderFailureKind::Malformed,
             format!("invalid stream frame: {error}"),
         )
     })
@@ -108,7 +137,7 @@ pub(super) fn boundary(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
 
 pub(crate) trait Accumulate {
     fn new(model: &str) -> Self;
-    fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>>;
+    fn on(&mut self, frame: &str) -> Result<Vec<Delta>>;
     fn finish(self) -> AssistantMessage;
     fn finished(&self) -> bool {
         false
@@ -120,8 +149,6 @@ pub(crate) trait Chat {
 
     fn path(model: &str, stream: bool) -> String;
 
-    fn scheme() -> Scheme;
-
     fn headers() -> &'static [(&'static str, &'static str)] {
         &[]
     }
@@ -130,8 +157,9 @@ pub(crate) trait Chat {
         None
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> Value;
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value>;
 
+    #[cfg(test)]
     fn parse(model: &str, body: &Value) -> AssistantMessage;
 }
 

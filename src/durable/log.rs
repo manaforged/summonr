@@ -2,11 +2,10 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
 use super::id::SessionId;
-use crate::provider::{Image, Message, Role, ToolCall};
+use crate::provider::{Continuation, Image, Message, Role, ToolCall};
 use crate::session::Replay;
 
 const FILE: &str = "session.jsonl";
@@ -17,8 +16,17 @@ const DIR: &str = "sessions";
 pub(crate) struct Usage {
     pub(crate) input: u64,
     pub(crate) output: u64,
+    #[serde(default)]
+    pub(crate) reasoning: u64,
     pub(crate) cached: u64,
     pub(crate) millis: u64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct UsageMeta {
+    pub(crate) prefix_hash: String,
+    pub(crate) cost: Option<f64>,
+    pub(crate) continuation: Option<Continuation>,
 }
 
 impl Usage {
@@ -27,7 +35,7 @@ impl Usage {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Line {
     Session {
@@ -71,6 +79,12 @@ pub(crate) enum Line {
         usage: Usage,
         #[serde(default)]
         model: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        prefix_hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        continuation: Option<Continuation>,
     },
     Interrupted {
         text: String,
@@ -81,6 +95,8 @@ pub(crate) enum Line {
         call: String,
         text: String,
         success: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        mutated: bool,
         millis: u64,
     },
     Charge {
@@ -90,9 +106,16 @@ pub(crate) enum Line {
         model: String,
         #[serde(default)]
         reported: bool,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        prefix_hash: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        cost: Option<f64>,
     },
     Receipt {
+        #[serde(default, skip_serializing_if = "String::is_empty")]
         text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        receipt: Option<crate::verify::Receipt>,
     },
     Summary {
         text: String,
@@ -106,13 +129,17 @@ pub(crate) enum Line {
     Close {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        rss_kb: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none", alias = "rss_kb")]
+        footprint_kb: Option<u64>,
     },
 }
 
 fn is_zero(value: &u8) -> bool {
     *value == 0
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -181,6 +208,7 @@ impl State {
                 reasoning,
                 tool_calls,
                 usage,
+                continuation,
                 ..
             } => {
                 self.charge(usage);
@@ -189,6 +217,7 @@ impl State {
                     role: Role::Assistant,
                     tool_calls,
                     reasoning: (!reasoning.is_empty()).then_some(reasoning),
+                    continuation,
                     ..Message::system(text)
                 });
             }
@@ -199,11 +228,18 @@ impl State {
                 }));
             }
             Line::Tool {
-                call, text, millis, ..
+                call,
+                text,
+                success,
+                millis,
+                ..
             } => {
                 self.elapsed = self.elapsed.saturating_add(millis);
                 self.unanswered.retain(|id| *id != call);
-                self.history.push(Message::tool(call, text));
+                self.history.push(Message {
+                    failed: !success,
+                    ..Message::tool(call, text)
+                });
             }
             Line::Charge {
                 usage, reported, ..
@@ -341,81 +377,10 @@ fn now_millis() -> u64 {
         })
 }
 
-pub(crate) fn read(path: &Path) -> io::Result<Vec<Line>> {
-    records(path)
-}
+mod paths;
 
-pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
-    let bytes = fs::read(path)?;
-    let complete = bytes
-        .iter()
-        .rposition(|byte| *byte == b'\n')
-        .map_or(0, |index| index + 1);
-    let text = std::str::from_utf8(&bytes[..complete])
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    let mut lines = Vec::new();
-    for line in text.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        lines.push(serde_json::from_str(line)?);
-    }
-    if let Ok(tail) = std::str::from_utf8(&bytes[complete..])
-        && !tail.trim().is_empty()
-        && let Ok(line) = serde_json::from_str(tail)
-    {
-        lines.push(line);
-    }
-    Ok(lines)
-}
+pub(crate) use paths::*;
 
-pub(crate) fn scan(path: &Path) -> io::Result<impl Iterator<Item = Line>> {
-    use std::io::BufRead;
-    let file = File::open(path)?;
-    Ok(io::BufReader::new(file)
-        .lines()
-        .map_while(|line| line.ok())
-        .filter_map(|line| serde_json::from_str(&line).ok()))
-}
-
-pub(crate) fn header(path: &Path) -> io::Result<Line> {
-    let bytes = fs::read(path)?;
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .unwrap_or(bytes.len());
-    let first = std::str::from_utf8(&bytes[..end])
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    Ok(serde_json::from_str(first)?)
-}
-
-pub(crate) fn session_path(home: &Path, session: SessionId) -> PathBuf {
-    home.join(DIR).join(session.to_string()).join(FILE)
-}
-
-pub(crate) fn work_path(session: &Path) -> PathBuf {
-    session.with_file_name(WORK)
-}
-
-pub(crate) fn name_path(session: &Path) -> PathBuf {
-    session.with_file_name("name")
-}
-
-pub(crate) fn sessions_dir(home: &Path) -> PathBuf {
-    home.join(DIR)
-}
-
-pub(crate) fn parse_path(path: &Path) -> Option<SessionId> {
-    if path.file_name()?.to_str()? != FILE {
-        return None;
-    }
-    let dir = path.parent()?;
-    if dir.parent()?.file_name()?.to_str()? != DIR {
-        return None;
-    }
-    dir.file_name()?.to_str()?.parse().ok()
-}
-
-pub(crate) fn home_of(path: &Path) -> Option<&Path> {
-    path.parent()?.parent()?.parent()
-}
+#[cfg(test)]
+#[path = "log_tests.rs"]
+mod tests;

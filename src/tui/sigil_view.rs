@@ -27,6 +27,7 @@ mod theme;
 mod usage;
 mod view;
 
+pub(crate) use canvas::ellipsize;
 #[cfg(feature = "gui")]
 pub(super) use gui::run as run_gui;
 pub(super) use host::run::run;

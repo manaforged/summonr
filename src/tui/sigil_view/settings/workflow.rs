@@ -4,7 +4,7 @@ use sigil::prelude::{
 };
 
 use super::prelude::*;
-use super::{App, canvas, watch};
+use super::{App, canvas};
 use crate::tui::Cmd;
 use crate::workflow::Role;
 
@@ -13,6 +13,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     shell(
         app.workflow_open,
         title(&app),
+        app.viewport.peek().0,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -20,7 +21,6 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .gap(canvas::overlay_gap()),
             )
             .children_reactive(move || {
-                watch(&paint);
                 if paint.workflow_naming.get() {
                     return naming(&paint);
                 }
@@ -59,7 +59,7 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
     let over = app.drag_over.get();
     let selected = app.workflow_sel.get();
     let driving = {
-        let model = app.model.borrow();
+        let model = app.model.get();
         format!(
             "driving · {} {}",
             model.snapshot.endpoint, model.snapshot.model
@@ -157,7 +157,7 @@ fn entry(
         ' '
     };
     let lit = active || over;
-    pick(lit, false, format!("{marker} {role}"), seat.to_string())
+    pick(lit, format!("{marker} {role}"), seat.to_string())
         .pointer_down(move |event| {
             press.workflow_sel.set(index);
             press.drag_from.set(Some(index));

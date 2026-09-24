@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use super::clip;
+use crate::tui::ellipsize as clip;
 
 const TASK_CHARS: usize = 400;
 const CLOSING_CHARS: usize = 600;

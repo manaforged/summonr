@@ -33,21 +33,22 @@ holds `{ text, fg, bg }`. The second one is on the delete list in §3.
 
 `ImageSource` and `ImageSource::id` are Sigil's.
 
-## 1b. Overlay kit (2026-09-19)
+## 1b. Overlay helpers (2026-09-19)
 
-Owner: `src/tui/sigil_view/kit.rs`. The one visual language for every
+Owner: `src/tui/sigil_view/overlay.rs`. The one visual language for every
 overlay list: accent selection band, `❯` cursor gutter, right-aligned
 status, hint bar, themed field. Chat roles (`user_bg`, `tool_bg`) never
 appear outside the transcript.
 
 | Row | Job | Callers |
 | --- | --- | --- |
-| `kit::row` | one list row: cursor gutter, name, context, right status | `settings/auth.rs`, `settings/models.rs`, `sessions.rs` |
-| `kit::group` | a dim lowercase section header row | `settings/models.rs`, `settings/auth.rs` |
-| `kit::hint_bar` | the overlay footer: dim keys left, accent counter right | `settings/auth.rs`, `settings/models.rs`, `sessions.rs`, `search.rs` |
-| `kit::field` | the one text field: placeholder, focus trigger, optional mask | `settings/auth.rs`, `settings/models.rs` |
-| `kit::band` | a tone-tinted status band (errors, empty states) | `settings/models.rs` |
-| `kit::Tone` | status vocabulary: `Ok` green, `Dim` gray, `Warn` yellow, `Err` red | all of the above |
+| `overlay::shell` | the modal frame: title, width, focus trap | every overlay |
+| `overlay::pick` | one list row: cursor gutter, name, context, right status | `settings/auth.rs`, `settings/models.rs`, `sessions.rs` |
+| `overlay::group` | a dim lowercase section header row | `settings/models.rs`, `settings/auth.rs` |
+| `overlay::hint` | the overlay footer: dim keys left, accent counter right | `settings/auth.rs`, `settings/models.rs`, `sessions.rs`, `search.rs` |
+| `overlay::band` | a tinted status band (errors, empty states) | `settings/models.rs` |
+| `settings/auth.rs::field` | the one text field: placeholder, focus trigger, optional mask | `settings/auth.rs`, `settings/models.rs` |
+| Sigil `Tone` | status vocabulary: `Ok` green, `Dim` gray, `Warn` yellow, `Err` red | all of the above |
 
 ## 2. Target set (redesign)
 
@@ -66,7 +67,7 @@ is one job with one owner; Sigil owns the rest.
 ## 3. Names we delete
 
 Verified against the pinned Sigil revision
-`b5a7ccb23131d8b98590a7200cf75dff1a396483`.
+`e09637ac`.
 
 | Delete | Keep | Why |
 | --- | --- | --- |

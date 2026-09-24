@@ -71,13 +71,10 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     shell(
         app.usage.open,
         "Usage",
+        app.viewport.peek().0,
         container()
             .layout(LayoutStyle::flex_column().fill_width())
-            .children_reactive(move || {
-                super::view::watch(&paint);
-                let _revision = paint.panes.get();
-                vec![body(&paint)]
-            }),
+            .children_reactive(move || vec![body(&paint)]),
     )
 }
 

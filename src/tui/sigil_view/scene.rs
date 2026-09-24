@@ -34,11 +34,10 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 .gap(0.0),
         )
         .children_reactive(move || {
-            super::view::watch(&app);
             let (cols, rows) = app.viewport.get();
             drop(app.theme_name.get());
             let ticks = app.ticks.get();
-            let ticks = if app.model.borrow().prefs.animations {
+            let ticks = if app.model.get().prefs.animations {
                 ticks
             } else {
                 0

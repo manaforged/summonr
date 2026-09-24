@@ -72,7 +72,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .child(
                             text_live(move || {
                                 drop(model.header.get());
-                                model.model.borrow().snapshot.model.clone()
+                                model.model.get().snapshot.model.clone()
                             })
                             .class(classes!("text-sm text-gray-12")),
                         )

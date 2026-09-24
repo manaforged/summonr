@@ -10,6 +10,9 @@ use crate::error::{Error, Result};
 #[cfg(all(windows, sandboxed))]
 pub(crate) mod windows;
 
+#[cfg(target_os = "macos")]
+mod macos;
+
 #[derive(Clone, Debug)]
 pub(crate) struct Sandbox {
     #[cfg(sandboxed)]
@@ -99,8 +102,8 @@ impl Sandbox {
                             .to_string(),
                     )
                 })?;
-                let profile = mac_profile(&workspace, &temp, &write, deny_network, false)?;
-                let read_profile = mac_profile(&workspace, &temp, &write, deny_network, true)?;
+                let profile = macos::profile(&workspace, &temp, &write, deny_network, false)?;
+                let read_profile = macos::profile(&workspace, &temp, &write, deny_network, true)?;
                 let sandbox = Self {
                     backend: Backend::Mac {
                         executable,
@@ -376,62 +379,4 @@ fn is_executable(path: &Path) -> bool {
     }
     #[cfg(not(unix))]
     true
-}
-
-#[cfg(target_os = "macos")]
-fn mac_profile(
-    workspace: &Path,
-    temp: &Path,
-    write: &[PathBuf],
-    deny_network: bool,
-    read_only: bool,
-) -> Result<String> {
-    let workspace = profile_path(workspace)?;
-    let temp = profile_path(temp)?;
-    let extra = write
-        .iter()
-        .map(|path| Ok(format!("    (subpath \"{}\")\n", profile_path(path)?)))
-        .collect::<Result<String>>()?;
-    let network_rule = if deny_network {
-        String::from("(deny network*)\n")
-    } else {
-        String::new()
-    };
-    let (workspace_rule, workspace_deny) = if read_only {
-        (
-            String::new(),
-            format!("(deny file-write* (subpath \"{workspace}\"))\n"),
-        )
-    } else {
-        (
-            format!("    (subpath \"{workspace}\")\n"),
-            format!(
-                "(deny file-write* (literal \"{workspace}/.git\") (subpath \"{workspace}/.git/hooks\") (literal \"{workspace}/.git/config\"))\n"
-            ),
-        )
-    };
-    Ok(format!(
-        "(version 1)\n\
-(allow default)\n\
-{network_rule}\
-(deny file-write*)\n\
-(allow file-write*\n\
-    (literal \"/dev/null\")\n\
-{workspace_rule}\
-{extra}\
-    (subpath \"{temp}\")\n\
- )\n\
-{workspace_deny}"
-    ))
-}
-
-#[cfg(target_os = "macos")]
-fn profile_path(path: &Path) -> Result<String> {
-    let path = path.to_str().ok_or_else(|| {
-        Error::Config(format!(
-            "sandbox path is not valid UTF-8: {}",
-            path.display()
-        ))
-    })?;
-    Ok(path.replace('\\', "\\\\").replace('"', "\\\""))
 }

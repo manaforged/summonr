@@ -10,20 +10,21 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if app.approval.peek().is_some_and(|(_, persist)| persist) {
+                if !app.options_active() && app.approval.peek().is_some_and(|(_, persist)| persist)
+                {
                     event.stop_propagation();
                     app.approval_answer("always");
                 }
             },
         ),
         (LogicalKey::character("y").into(), |app, event| {
-            if app.approval.peek().is_some() {
+            if !app.options_active() && app.approval.peek().is_some() {
                 event.stop_propagation();
                 app.approval_answer("y");
             }
         }),
         (LogicalKey::character("n").into(), |app, event| {
-            if app.approval.peek().is_some() {
+            if !app.options_active() && app.approval.peek().is_some() {
                 event.stop_propagation();
                 app.approval_answer("n");
             }
@@ -40,14 +41,15 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (
-            Shortcut::new(LogicalKey::character("r"), ModifiersState::CONTROL),
-            |app, event| {
-                if app.editing_model.peek() {
-                    event.stop_propagation();
-                    app.refresh_models();
-                }
-            },
+            Shortcut::new(LogicalKey::character("p"), ModifiersState::ALT),
+            pin_key,
         ),
+        (LogicalKey::character("π").into(), pin_key),
+        (
+            Shortcut::new(LogicalKey::character("d"), ModifiersState::ALT),
+            default_key,
+        ),
+        (LogicalKey::character("∂").into(), default_key),
         (Key::Escape.into(), |app, event| {
             event.stop_propagation();
             if app.options_active() {
@@ -69,7 +71,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (Shortcut::ctrl(LogicalKey::character("s")), |app, event| {
-            if app.view_edit.peek() && !app.hotkey_recording.peek() {
+            if app.editing_model.peek() {
+                event.stop_propagation();
+            } else if app.view_edit.peek() && !app.hotkey_recording.peek() {
                 event.stop_propagation();
                 app.edit_save();
             }
@@ -171,13 +175,10 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
-            if app.overlay() == Some(Overlay::Sessions) {
-                event.stop_propagation();
-                app.delete_session();
-            } else if !app.hotkey_recording.peek()
+            if !app.hotkey_recording.peek()
                 && !app.options_active()
                 && app.draft.peek().is_empty()
-                && app.model.borrow().busy_since.is_none()
+                && app.model.get().busy_since.is_none()
             {
                 event.stop_propagation();
                 app.quit.set(true);
@@ -211,10 +212,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 app.page_history(1.0);
             }
         }),
-        (Shortcut::ctrl(LogicalKey::character("q")), |app, event| {
-            event.stop_propagation();
-            app.dequeue();
-        }),
         (Key::ArrowUp.into(), |app, event| {
             if app.overlay() == Some(Overlay::Usage) {
                 return;
@@ -227,6 +224,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             } else if app.pane_active().is_some() {
                 event.stop_propagation();
                 app.pane_move(-1);
+            } else if app.draft.peek().is_empty() && app.model.get().queued != (0, 0) {
+                event.stop_propagation();
+                app.dequeue();
             } else if app.suggesting() {
                 event.stop_propagation();
                 app.shift(-1);
@@ -346,4 +346,26 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         });
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
+}
+
+fn pin_key(app: &App, event: &mut KeyEvent) {
+    if app.editing_model.peek() {
+        event.stop_propagation();
+        app.pin_model();
+    }
+}
+
+fn default_key(app: &App, event: &mut KeyEvent) {
+    if app.editing_model.peek() {
+        event.stop_propagation();
+        if app.model_for.peek().is_none() {
+            app.default_model();
+        }
+    } else if app.overlay() == Some(Overlay::Sessions) {
+        event.stop_propagation();
+        app.delete_session();
+    } else if app.overlay() == Some(Overlay::Auth) {
+        event.stop_propagation();
+        app.confirm_logout();
+    }
 }

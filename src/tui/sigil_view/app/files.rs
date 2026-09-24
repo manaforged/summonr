@@ -2,7 +2,7 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn file_rows(&self) -> Vec<FileRow> {
-        let model = self.model.borrow();
+        let model = self.model.get();
         let expanded = self.expanded.peek();
         file_rows(&model.files, &expanded)
     }
@@ -179,8 +179,7 @@ impl Context {
     }
 }
 
-pub(in crate::tui::sigil_view) const REPEAT_WINDOW: std::time::Duration =
-    std::time::Duration::from_secs(2);
+pub(in crate::tui::sigil_view) use crate::limits::REPEAT_WINDOW;
 
 pub(in crate::tui::sigil_view) fn armed(
     slot: &Cell<Option<std::time::Instant>>,

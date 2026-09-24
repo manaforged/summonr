@@ -1,1 +1,1 @@
-pub(in crate::tui) use super::overlay::{band, group, hint, pick, shell};
+pub(in crate::tui) use super::overlay::{band, group, hint, pick, shell, slotted};

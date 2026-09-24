@@ -7,17 +7,9 @@ use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
 use crate::worktree;
 
-const EDITORS: [&str; 9] = [
-    "edit",
-    "edit_file",
-    "write",
-    "write_file",
-    "replace_text",
-    "replace_texts",
-    "replace_lines",
-    "insert_after",
-    "delete_lines",
-];
+fn editor(name: &str) -> bool {
+    matches!(crate::tools::canonical(name), "edit" | "write")
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Stat {
@@ -229,7 +221,7 @@ fn hunk_header(line: &str) -> Option<(usize, usize)> {
 pub fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for (name, arguments) in calls {
-        if !EDITORS.contains(&name) {
+        if !editor(name) {
             continue;
         }
         let Ok(args) = serde_json::from_str::<serde_json::Value>(arguments) else {

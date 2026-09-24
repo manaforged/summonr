@@ -9,7 +9,6 @@ use crate::secret::{self, Source};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
 const GLM_INTL: &str = "https://api.z.ai/api/coding/paas/v4";
-const QWEN_LOCAL: &str = "http://127.0.0.1:8081/v1";
 const KIMI: &str = "https://api.kimi.com/coding/v1";
 const GROK: &str = "https://api.x.ai/v1";
 const MUSE: &str = "https://api.meta.ai/v1";
@@ -43,6 +42,8 @@ pub struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: bool,
     pub keep_reasoning: bool,
+    pub opencode: bool,
+    pub prompt_cache_key: bool,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -63,6 +64,92 @@ pub enum LoginFlow {
     Browser,
 }
 
+impl Endpoint {
+    #[must_use]
+    pub fn keyless(&self) -> bool {
+        match preset(&self.name) {
+            Some(row) => {
+                row.default_key.is_some() && row.env_keys.is_empty() && row.oauth.is_none()
+            }
+            None => {
+                let url = self.base_url.as_deref();
+                self.oauth.is_none()
+                    && url
+                        .and_then(hosted)
+                        .is_none_or(|row| row.env_keys.is_empty())
+                    && (self.name == "env" || url.is_some_and(local))
+            }
+        }
+    }
+}
+
+fn local(url: &str) -> bool {
+    match url::Url::parse(url).ok().as_ref().and_then(url::Url::host) {
+        Some(url::Host::Ipv4(ip)) => {
+            let [first, second, ..] = ip.octets();
+            ip.is_loopback() || ip.is_private() || (first == 100 && second & 0xc0 == 64)
+        }
+        Some(url::Host::Ipv6(ip)) => ip.is_loopback() || ip.segments()[0] & 0xfe00 == 0xfc00,
+        Some(url::Host::Domain(host)) => {
+            host == "localhost" || host == "host.docker.internal" || host.ends_with(".local")
+        }
+        None => false,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum State {
+    Ready,
+    SignIn,
+    NoKey,
+    NeedsKey,
+    NeedsModel,
+    KeyRejected,
+    RateLimited,
+    Offline,
+    Error,
+    Checking,
+    Loading,
+}
+
+impl State {
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::SignIn => "sign in",
+            Self::NoKey => "no key needed",
+            Self::NeedsKey => "needs key",
+            Self::NeedsModel => "needs model",
+            Self::KeyRejected => "key rejected",
+            Self::RateLimited => "rate limited",
+            Self::Offline => "offline",
+            Self::Error => "error",
+            Self::Checking => "checking",
+            Self::Loading => "loading",
+        }
+    }
+
+    #[must_use]
+    pub const fn failed(self) -> bool {
+        matches!(
+            self,
+            Self::KeyRejected | Self::RateLimited | Self::Offline | Self::Error
+        )
+    }
+
+    #[must_use]
+    pub const fn setup(self) -> bool {
+        matches!(self, Self::SignIn | Self::NeedsKey)
+    }
+}
+
+impl std::fmt::Display for State {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.word())
+    }
+}
+
 impl LoginFlow {
     #[must_use]
     pub fn signs_in(self) -> bool {
@@ -77,6 +164,7 @@ pub struct AuthInfo {
     pub configured: bool,
     pub source: Option<Source>,
     pub setup: String,
+    pub env: Option<&'static str>,
     group: LoginGroup,
 }
 
@@ -111,6 +199,11 @@ impl AuthInfo {
     }
 
     #[must_use]
+    pub fn keyless(&self) -> bool {
+        self.group == LoginGroup::Local
+    }
+
+    #[must_use]
     pub fn catalog_rank(&self) -> u8 {
         self.group as u8
     }
@@ -120,14 +213,26 @@ impl AuthInfo {
         format!("{:<14} {} — {}", self.name, self.state(), self.setup)
     }
 
-    pub(crate) fn state(&self) -> String {
+    #[must_use]
+    pub fn state(&self) -> String {
         match (self.flow.signs_in(), self.configured, self.source) {
-            (true, true, _) => "login configured".to_string(),
-            (true, false, _) => "login required".to_string(),
-            (false, true, Some(source)) => format!("key · {}", source.label()),
-            (false, true, None) => "key configured".to_string(),
-            (false, false, _) => "key missing".to_string(),
+            (true, true, _) | (false, true, None) => State::Ready.to_string(),
+            (true, false, _) => State::SignIn.to_string(),
+            (false, true, Some(Source::Builtin)) => State::NoKey.to_string(),
+            (false, true, Some(source)) => format!("{} · {}", State::Ready, source.label()),
+            (false, false, _) if self.keyless() => State::NoKey.to_string(),
+            (false, false, _) => State::NeedsKey.to_string(),
         }
+    }
+
+    #[must_use]
+    pub fn stored(&self) -> bool {
+        self.configured
+            && (self.flow.signs_in()
+                || matches!(
+                    self.source,
+                    Some(Source::Keychain | Source::File | Source::Config)
+                ))
     }
 }
 
@@ -152,11 +257,8 @@ pub fn is_named(token: &str) -> bool {
 }
 
 pub fn names() -> Result<Vec<String>> {
-    let mut names: Vec<String> = PRESETS
-        .iter()
-        .map(|preset| preset.name.to_string())
-        .collect();
-    for name in config::load()?.endpoint.keys() {
+    let mut names: Vec<String> = presets().map(|preset| preset.name.to_string()).collect();
+    for name in config::file()?.endpoint.keys() {
         if !names.iter().any(|have| have == name) {
             names.push(name.clone());
         }
@@ -169,7 +271,7 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
         return LoginGroup::Decide;
     }
     if let Some(preset) = preset(name) {
-        if preset.default_key.is_some() && preset.env_keys.is_empty() && preset.oauth.is_none() {
+        if endpoint.keyless() {
             return LoginGroup::Local;
         }
         if preset.oauth.is_some()
@@ -187,960 +289,25 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
     let url = endpoint.base_url.as_deref().unwrap_or("");
     if url.contains("/coding/") || url.contains("opencode.ai") || url.contains("githubcopilot") {
         LoginGroup::Plan
-    } else if url.contains("127.0.0.1") || url.contains("localhost") {
+    } else if endpoint.keyless() {
         LoginGroup::Local
     } else {
         LoginGroup::Key
     }
 }
 
-pub fn auth_info(name: &str) -> Result<AuthInfo> {
-    let endpoint = resolve_inner(Some(name), None, false, false)?;
-    let mut info = AuthInfo {
-        name: name.to_string(),
-        flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
-        configured: endpoint.api_key.is_some(),
-        source: endpoint.source,
-        setup: preset(name)
-            .map(|preset| preset.missing.replace("NAME", name))
-            .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| format!("run `summonr login {name}` to store a key")),
-        group: login_group(name, &endpoint),
-    };
-    if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
-        info.setup = match flow(spec) {
-            LoginFlow::Browser => {
-                format!("run `summonr login {name}` to sign in through the browser")
-            }
-            _ => format!("run `summonr login {name}` for device authentication"),
-        };
-        info.configured = match logged_in(spec, name) {
-            Ok(ready) => ready,
-            Err(error) => {
-                info.setup = format!("{error}; {}", info.setup);
-                false
-            }
-        };
-    }
-    Ok(info)
-}
+mod auth;
+mod keys;
+mod preset;
+mod resolve;
 
-pub fn save_key(name: &str, key: &str) -> Result<Source> {
-    if !names()?.iter().any(|candidate| candidate == name) {
-        return Err(Error::Config(format!("unknown endpoint `{name}`")));
-    }
-    let key = key.trim();
-    if key.is_empty() {
-        return Err(Error::Config("API key cannot be empty".to_string()));
-    }
-    let source = secret::set(name, key)?;
-    config::remove_key(&config::path()?, name)?;
-    Ok(source)
-}
+pub use auth::*;
+pub(crate) use keys::peer_token;
+use keys::*;
+pub(crate) use preset::provider_ids;
+use preset::{preset, presets};
+pub use resolve::*;
 
-pub fn forget_key(name: &str) -> Result<bool> {
-    let stored = secret::forget(name)?;
-    let token = secret::forget(&format!("oauth:{name}"))?;
-    let legacy = crate::secret::forget(name)?;
-    let config = config::remove_key(&config::path()?, name)?;
-    Ok(stored || token || legacy || config)
-}
-
-pub fn adopt_keys() -> Result<Vec<String>> {
-    adopt_from(&config::path()?, &secret::Store::discover()?)
-}
-
-pub(crate) fn adopt_from(path: &Path, store: &secret::Store) -> Result<Vec<String>> {
-    let file = config::load_from(path)?;
-    let mut moved = Vec::new();
-    for (name, row) in &file.endpoint {
-        let Some(key) = row
-            .api_key
-            .as_deref()
-            .map(str::trim)
-            .filter(|key| !key.is_empty())
-        else {
-            continue;
-        };
-        if store.get(name)?.is_none() {
-            store.set(name, key)?;
-        }
-        config::remove_key(path, name)?;
-        moved.push(name.clone());
-    }
-    Ok(moved)
-}
-
-pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
-    let mut names = match names() {
-        Ok(names) => names,
-        Err(error) => return (Vec::new(), vec![error.to_string()]),
-    };
-    if let Ok(endpoint) = resolve_inner(None, None, true, require_model)
-        && !names.contains(&endpoint.name)
-    {
-        names.insert(0, endpoint.name);
-    }
-    let mut endpoints = Vec::new();
-    let mut errors = Vec::new();
-    for endpoint in names
-        .into_iter()
-        .filter_map(|name| resolve_inner(Some(&name), None, true, require_model).ok())
-        .filter(|endpoint| endpoint.wire != Wire::Decisions)
-    {
-        let available = endpoint
-            .oauth
-            .as_ref()
-            .map_or(Ok(true), |spec| logged_in(spec, &endpoint.name));
-        match available {
-            Ok(true) => endpoints.push(endpoint),
-            Ok(false) => {}
-            Err(error) => errors.push(format!("{}: {error}", endpoint.name)),
-        }
-    }
-    (endpoints, errors)
-}
-
-pub fn decisions_keys() -> Vec<String> {
-    let mut names: Vec<String> = PRESETS
-        .iter()
-        .filter(|row| row.wire == Wire::Decisions)
-        .flat_map(|row| row.env_keys.iter().map(|key| (*key).to_string()))
-        .collect();
-    names.dedup();
-    names
-}
-
-pub fn first_decisions() -> Option<String> {
-    let configured = names().unwrap_or_default();
-    let shipped = PRESETS
-        .iter()
-        .filter(|row| row.wire == Wire::Decisions)
-        .map(|row| row.name.to_string());
-    configured.into_iter().chain(shipped).find(|name| {
-        resolve_inner(Some(name), None, true, false)
-            .is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
-    })
-}
-
-pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(true);
-    if endpoints.is_empty() {
-        return None;
-    }
-    let index = endpoints
-        .iter()
-        .position(|endpoint| endpoint.name == current);
-    let target = match (index, forward) {
-        (Some(index), true) => (index + 1) % endpoints.len(),
-        (Some(index), false) => (index + endpoints.len() - 1) % endpoints.len(),
-        (None, true) => 0,
-        (None, false) => endpoints.len() - 1,
-    };
-    (endpoints[target].name != current).then(|| endpoints[target].name.clone())
-}
-
-pub(crate) fn catalog(wire: Wire) -> Vec<String> {
-    let mut models = Vec::new();
-    for row in PRESETS {
-        if row.wire != wire {
-            continue;
-        }
-        if !models.iter().any(|model| model == row.model) {
-            models.push(row.model.to_string());
-        }
-        for (_, canon) in row.aliases {
-            if !models.iter().any(|model| model == *canon) {
-                models.push((*canon).to_string());
-            }
-        }
-    }
-    models
-}
-
-pub fn fallbacks<P>(
-    endpoint: &Endpoint,
-    mut connect: impl FnMut(&Endpoint) -> Result<P>,
-) -> (Vec<(P, String)>, Vec<String>) {
-    let mut ready = Vec::new();
-    let mut skipped = Vec::new();
-    for name in &endpoint.fallback {
-        match resolve(Some(name), None)
-            .and_then(|fallback| Ok((connect(&fallback)?, fallback.model)))
-        {
-            Ok(pair) => ready.push(pair),
-            Err(error) => skipped.push(format!("fallback {name} skipped: {error}")),
-        }
-    }
-    (ready, skipped)
-}
-
-pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, true, true)
-}
-
-pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, false, true)
-}
-
-pub fn vision() -> Option<Endpoint> {
-    let file = config::load().ok()?;
-    let mut names: Vec<&str> = file
-        .endpoint
-        .iter()
-        .filter(|(_, row)| row.images == Some(true))
-        .map(|(name, _)| name.as_str())
-        .collect();
-    names.sort_unstable();
-    names
-        .into_iter()
-        .find_map(|name| resolve_inner(Some(name), None, true, true).ok())
-}
-
-fn resolve_inner(
-    name: Option<&str>,
-    model: Option<&str>,
-    require_key: bool,
-    require_model: bool,
-) -> Result<Endpoint> {
-    if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
-        && !base.trim().is_empty()
-        && matches!(name, None | Some("env"))
-    {
-        return Ok(Endpoint {
-            name: "env".to_string(),
-            base_url: Some(trim_slash(&base)),
-            model: model
-                .map(str::to_string)
-                .or_else(|| std::env::var("SUMMONR_MODEL").ok())
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "glm-5.3".to_string()),
-            api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| named_env_key("glm-intl")),
-            source: None,
-            oauth: None,
-            body: std::env::var("SUMMONR_MAX_TOKENS")
-                .ok()
-                .and_then(|value| value.trim().parse::<u32>().ok())
-                .map(|tokens| serde_json::json!({ "max_tokens": tokens })),
-            context_window: None,
-            idle_timeout_secs: None,
-            effort: None,
-            price: None,
-            env: BTreeMap::new(),
-            headers: BTreeMap::new(),
-            wire: Wire::Completions,
-            fallback: Vec::new(),
-            compact_tokens: None,
-            images: false,
-            keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
-        });
-    }
-
-    let file = config::load()?;
-    let chosen = name
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .or_else(|| std::env::var("SUMMONR_ENDPOINT").ok())
-        .or_else(|| file.last_endpoint.clone())
-        .or_else(|| file.default.clone());
-
-    let model_flag = model
-        .map(str::to_string)
-        .or_else(|| std::env::var("SUMMONR_MODEL").ok())
-        .filter(|value| !value.trim().is_empty());
-
-    let fallback = chosen.is_none();
-    let chosen = chosen.unwrap_or_else(|| "zai".to_string());
-    let mut endpoint = builtin(&chosen).or_else(|| from_file(&file, &chosen));
-
-    if let Some(ref mut endpoint) = endpoint
-        && let Some(row) = file.endpoint.get(&chosen)
-    {
-        overlay(endpoint, row);
-    }
-
-    let mut endpoint = endpoint.ok_or_else(|| {
-        Error::Config(format!(
-            "unknown endpoint `{chosen}` — try `summonr endpoints`, or a name from ~/.summonr/config.toml"
-        ))
-    })?;
-
-    if let Some(model) = model_flag {
-        endpoint.model = named_model(&endpoint.name, &model);
-    } else if require_model && endpoint.model.is_empty() {
-        return Err(Error::Config(format!(
-            "endpoint `{}` needs --model (or model in config.toml)",
-            endpoint.name
-        )));
-    } else {
-        endpoint.model = named_model(&endpoint.name, &endpoint.model);
-    }
-
-    fill_key(endpoint, require_key).map_err(|error| {
-        if !fallback {
-            return error;
-        }
-        let list = PRESETS
-            .iter()
-            .map(|preset| preset.name)
-            .collect::<Vec<_>>()
-            .join(", ");
-        Error::Config(format!(
-            "no endpoint is configured. Builtins: {list}. Set that host's key in the environment or api_key in ~/.summonr/config.toml, run `summon login NAME`, or add an [endpoint.NAME] row; `summon endpoints` shows the status of each. (zai: {error})"
-        ))
-    })
-}
-
-fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
-    let row = file.endpoint.get(chosen)?;
-    Some(Endpoint {
-        name: chosen.to_string(),
-        model: row.model.clone().unwrap_or_default(),
-        base_url: row.base_url.as_deref().map(trim_slash),
-        api_key: row.api_key.clone().filter(|key| !key.trim().is_empty()),
-        source: None,
-        oauth: row.auth.clone(),
-        body: row.body.as_ref().map(json),
-        context_window: row.context_window,
-        idle_timeout_secs: row.idle_timeout_secs,
-        effort: row.effort,
-        price: row.price,
-        env: row.env.clone(),
-        headers: row.headers.clone(),
-        fallback: row.fallback.clone(),
-        compact_tokens: row.compact_tokens,
-        images: row.images.unwrap_or(false),
-        keep_reasoning: row.keep_reasoning.unwrap_or(false),
-        wire: row
-            .wire
-            .as_deref()
-            .map(Wire::parse)
-            .unwrap_or(Wire::Completions),
-    })
-}
-
-fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
-    if let Some(base) = &row.base_url {
-        endpoint.base_url = Some(trim_slash(base));
-    }
-    if let Some(model) = &row.model {
-        endpoint.model = model.clone();
-    }
-    if let Some(key) = &row.api_key
-        && !key.trim().is_empty()
-    {
-        endpoint.api_key = Some(key.clone());
-    }
-    if let Some(auth) = &row.auth {
-        endpoint.oauth = Some(auth.clone());
-    }
-    if let Some(body) = &row.body {
-        endpoint.body = Some(json(body));
-    }
-    if let Some(window) = row.context_window {
-        endpoint.context_window = Some(window);
-    }
-    if let Some(effort) = row.effort {
-        endpoint.effort = Some(effort);
-    }
-    if let Some(price) = row.price {
-        endpoint.price = Some(price);
-    }
-    for (key, value) in &row.env {
-        endpoint.env.insert(key.clone(), value.clone());
-    }
-    for (key, value) in &row.headers {
-        endpoint.headers.insert(key.clone(), value.clone());
-    }
-    if let Some(wire) = &row.wire {
-        endpoint.wire = Wire::parse(wire);
-    }
-    if !row.fallback.is_empty() {
-        endpoint.fallback.clone_from(&row.fallback);
-    }
-    if let Some(tokens) = row.compact_tokens {
-        endpoint.compact_tokens = Some(tokens);
-    }
-    if let Some(images) = row.images {
-        endpoint.images = images;
-    }
-    if let Some(keep) = row.keep_reasoning {
-        endpoint.keep_reasoning = keep;
-    }
-}
-
-struct Preset {
-    name: &'static str,
-    base_url: &'static str,
-    model: &'static str,
-    env_keys: &'static [&'static str],
-    default_key: Option<&'static str>,
-    missing: &'static str,
-    aliases: &'static [(&'static str, &'static str)],
-    oauth: Option<fn() -> crate::config::OAuth>,
-    headers: &'static [(&'static str, &'static str)],
-    wire: Wire,
-    context_window: Option<u32>,
-}
-
-const PRESETS: &[Preset] = &[
-    Preset {
-        name: "zai",
-        base_url: GLM_INTL,
-        model: "glm-5.3-flash",
-        env_keys: &["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"],
-        default_key: None,
-        missing: "set ZAI_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "zai-cn",
-        base_url: GLM_CN,
-        model: "glm-5.3-flash",
-        env_keys: &["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"],
-        default_key: None,
-        missing: "set ZAI_CODING_CN_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "glm",
-        base_url: GLM_CN,
-        model: "glm-5.3",
-        env_keys: &[
-            "ZAI_CODING_API_KEY",
-            "GLM_CODING_API_KEY",
-            "ZAI_API_KEY",
-            "GLM_API_KEY",
-        ],
-        default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "glm-intl",
-        base_url: GLM_INTL,
-        model: "glm-5.3",
-        env_keys: &[
-            "ZAI_CODING_API_KEY",
-            "GLM_CODING_API_KEY",
-            "ZAI_API_KEY",
-            "GLM_API_KEY",
-        ],
-        default_key: None,
-        missing: "set ZAI_CODING_API_KEY or ZAI_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "qwen",
-        base_url: QWEN_LOCAL,
-        model: "qwen3.8-27b-ud",
-        env_keys: &[],
-        default_key: Some("local"),
-        missing: "",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "ollama",
-        base_url: "http://127.0.0.1:11434/v1",
-        model: "",
-        env_keys: &[],
-        default_key: Some("ollama"),
-        missing: "",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "deepseek",
-        base_url: "https://api.deepseek.com/v1",
-        model: "deepseek-v4-flash",
-        env_keys: &["DEEPSEEK_API_KEY"],
-        default_key: None,
-        missing: "set DEEPSEEK_API_KEY, or `summon login deepseek`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "kimi",
-        base_url: KIMI,
-        model: "k3",
-        env_keys: &["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"],
-        default_key: None,
-        missing: "set KIMI_CODING_API_KEY or KIMI_API_KEY, put a token in ~/.kimi-code/credentials/kimi-code.json, or `summon login NAME`",
-        aliases: &[
-            ("kimi-k3", "k3"),
-            ("k3", "k3"),
-            ("kimi-for-coding", "k3"),
-            ("kimi-code", "k3"),
-            ("kimi-coding", "k3"),
-        ],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "grok",
-        base_url: GROK,
-        model: "grok-4.6",
-        env_keys: &["XAI_API_KEY", "GROK_API_KEY"],
-        default_key: None,
-        missing: "set XAI_API_KEY, or `summon login NAME`",
-        aliases: &[
-            ("grok", "grok-4.6"),
-            ("grok-4-6", "grok-4.6"),
-            ("grok4.6", "grok-4.6"),
-        ],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "copilot",
-        base_url: COPILOT,
-        model: "gpt-4o",
-        env_keys: &[],
-        default_key: None,
-        missing: "run `summon login copilot`",
-        aliases: &[],
-        oauth: Some(copilot_oauth),
-        headers: &[
-            ("Editor-Version", "vscode/1.95.3"),
-            ("Editor-Plugin-Version", "copilot-chat/0.24.1"),
-            ("Copilot-Integration-Id", "vscode-chat"),
-        ],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "openai",
-        base_url: "https://api.openai.com/v1",
-        model: "gpt-4o",
-        env_keys: &["OPENAI_API_KEY"],
-        default_key: None,
-        missing: "set OPENAI_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "openrouter",
-        base_url: "https://openrouter.ai/api/v1",
-        model: "openai/gpt-4o",
-        env_keys: &["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"],
-        default_key: None,
-        missing: "set OPENROUTER_API_KEY, or `summon login openrouter`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "jev",
-        base_url: "https://api.typesafe.ai/v1/systemone",
-        model: "jev-latest",
-        env_keys: &["TYPESAFE_API_KEY"],
-        default_key: None,
-        missing: "set TYPESAFE_API_KEY, or `summon login jev`",
-        aliases: &[
-            ("~typesafe/jev-latest", "jev-latest"),
-            ("jev", "jev-latest"),
-        ],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Decisions,
-        context_window: Some(32_000),
-    },
-    Preset {
-        name: "typesafe",
-        base_url: "https://api.typesafe.ai/v1/systemone",
-        model: "jev-latest",
-        env_keys: &["TYPESAFE_API_KEY"],
-        default_key: None,
-        missing: "set TYPESAFE_API_KEY, or `summon login typesafe`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Decisions,
-        context_window: Some(32_000),
-    },
-    Preset {
-        name: "together",
-        base_url: "https://api.together.ai/v1",
-        model: "",
-        env_keys: &["TOGETHER_API_KEY"],
-        default_key: None,
-        missing: "set TOGETHER_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "groq",
-        base_url: "https://api.groq.com/openai/v1",
-        model: "",
-        env_keys: &["GROQ_API_KEY"],
-        default_key: None,
-        missing: "set GROQ_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "cerebras",
-        base_url: "https://api.cerebras.ai/v1",
-        model: "",
-        env_keys: &["CEREBRAS_API_KEY"],
-        default_key: None,
-        missing: "set CEREBRAS_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "mistral",
-        base_url: "https://api.mistral.ai/v1",
-        model: "",
-        env_keys: &["MISTRAL_API_KEY"],
-        default_key: None,
-        missing: "set MISTRAL_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "anthropic",
-        base_url: "https://api.anthropic.com/v1/",
-        model: "claude-sonnet-4-5",
-        env_keys: &["ANTHROPIC_API_KEY"],
-        default_key: None,
-        missing: "set ANTHROPIC_API_KEY, or `summon login NAME`",
-        aliases: &[
-            ("sonnet", "claude-sonnet-4-5"),
-            ("claude", "claude-sonnet-4-5"),
-        ],
-        oauth: None,
-        headers: &[("anthropic-version", "2023-06-01")],
-        wire: Wire::Anthropic,
-        context_window: None,
-    },
-    Preset {
-        name: "claude-pro",
-        base_url: "https://api.anthropic.com/v1/",
-        model: "claude-sonnet-4-5",
-        env_keys: &[],
-        default_key: None,
-        missing: "run `summonr login claude-pro` to sign in with a Claude Pro or Max plan",
-        aliases: &[("sonnet", "claude-sonnet-4-5"), ("opus", "claude-opus-4-1")],
-        oauth: Some(claude_oauth),
-        headers: &[(
-            "anthropic-beta",
-            "oauth-2025-04-20,interleaved-thinking-2025-05-14",
-        )],
-        wire: Wire::Anthropic,
-        context_window: None,
-    },
-    Preset {
-        name: "gemini",
-        base_url: "https://generativelanguage.googleapis.com/v1beta/",
-        model: "gemini-2.5-flash",
-        env_keys: &["GEMINI_API_KEY", "GOOGLE_API_KEY"],
-        default_key: None,
-        missing: "set GEMINI_API_KEY or GOOGLE_API_KEY, or `summon login NAME`",
-        aliases: &[("flash", "gemini-2.5-flash"), ("pro", "gemini-2.5-pro")],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Gemini,
-        context_window: None,
-    },
-    Preset {
-        name: "muse",
-        base_url: MUSE,
-        model: "muse-spark-1.3",
-        env_keys: &["META_API_KEY", "MODEL_API_KEY"],
-        default_key: None,
-        missing: "set META_API_KEY, or `summon login NAME`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "zen",
-        base_url: ZEN,
-        model: "glm-5.3-flash",
-        env_keys: &["OPENCODE_API_KEY"],
-        default_key: None,
-        missing: "set OPENCODE_API_KEY, or `summon login zen`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "go",
-        base_url: GO,
-        model: "glm-5.3-flash",
-        env_keys: &["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"],
-        default_key: None,
-        missing: "set OPENCODE_GO_API_KEY, or `summon login go`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "opencode",
-        base_url: ZEN,
-        model: "glm-5.3-flash",
-        env_keys: &["OPENCODE_API_KEY"],
-        default_key: None,
-        missing: "set OPENCODE_API_KEY, or `summon login opencode`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "fireworks",
-        base_url: "https://api.fireworks.ai/inference/v1",
-        model: "",
-        env_keys: &["FIREWORKS_API_KEY"],
-        default_key: None,
-        missing: "set FIREWORKS_API_KEY, or `summon login fireworks`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "deepinfra",
-        base_url: "https://api.deepinfra.com/v1/openai",
-        model: "",
-        env_keys: &["DEEPINFRA_API_KEY", "DEEPINFRA_TOKEN"],
-        default_key: None,
-        missing: "set DEEPINFRA_API_KEY, or `summon login deepinfra`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "minimax",
-        base_url: "https://api.minimax.io/v1",
-        model: "MiniMax-M3",
-        env_keys: &["MINIMAX_API_KEY", "MINIMAX_CODE_API_KEY"],
-        default_key: None,
-        missing: "set MINIMAX_API_KEY, or `summon login minimax`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-    Preset {
-        name: "minimax-cn",
-        base_url: "https://api.minimax.cn/v1",
-        model: "MiniMax-M3",
-        env_keys: &["MINIMAX_CN_API_KEY", "MINIMAX_CODE_CN_API_KEY"],
-        default_key: None,
-        missing: "set MINIMAX_CN_API_KEY, or `summon login minimax-cn`",
-        aliases: &[],
-        oauth: None,
-        headers: &[],
-        wire: Wire::Completions,
-        context_window: None,
-    },
-];
-
-fn claude_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: "https://platform.claude.com/v1/oauth/token".into(),
-        client_id: CLAUDE_CLIENT.into(),
-        authorize_url: Some("https://claude.ai/oauth/authorize".into()),
-        redirect_uri: Some("https://platform.claude.com/oauth/code/callback".into()),
-        scope: Some(CLAUDE_SCOPES.into()),
-        grant: Some("authorization_code".into()),
-        token_style: Some("json".into()),
-        authorize_params: BTreeMap::from([("code".to_string(), "true".to_string())]),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn copilot_oauth() -> crate::config::OAuth {
-    crate::config::OAuth {
-        token_url: GITHUB_TOKEN.into(),
-        client_id: COPILOT_CLIENT.into(),
-        client_secret: None,
-        refresh_token: None,
-        scope: Some("read:user".into()),
-        grant: Some("device_code".into()),
-        device_url: Some(GITHUB_DEVICE.into()),
-        exchange_url: Some("https://api.github.com/copilot_internal/v2/token".into()),
-        ..crate::config::OAuth::default()
-    }
-}
-
-fn preset(name: &str) -> Option<&'static Preset> {
-    PRESETS.iter().find(|preset| preset.name == name)
-}
-
-fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
-    if endpoint.oauth.is_some() {
-        return Ok(endpoint);
-    }
-    if let Some(key) = named_env_key(&endpoint.name) {
-        endpoint.api_key = Some(key);
-        endpoint.source = Some(Source::Env);
-        return Ok(endpoint);
-    }
-    if let Some((key, source)) = secret::get(&endpoint.name)? {
-        endpoint.api_key = Some(key);
-        endpoint.source = Some(source);
-        return Ok(endpoint);
-    }
-    if endpoint.api_key.is_some() {
-        endpoint.source = Some(Source::Config);
-        return Ok(endpoint);
-    }
-    if let Some(row) = preset(&endpoint.name) {
-        if let Some(key) = row.default_key {
-            endpoint.api_key = Some(key.to_string());
-            return Ok(endpoint);
-        }
-        if require_key && !row.missing.is_empty() {
-            return Err(Error::Config(row.missing.replace("NAME", &endpoint.name)));
-        }
-    }
-    Ok(endpoint)
-}
-
-fn named_env_key(name: &str) -> Option<String> {
-    let row = preset(name)?;
-    env_key(row.env_keys).or_else(|| {
-        if name == "kimi" {
-            kimi_cli_token()
-        } else {
-            None
-        }
-    })
-}
-
-fn builtin(name: &str) -> Option<Endpoint> {
-    let row = preset(name)?;
-    Some(Endpoint {
-        name: row.name.into(),
-        base_url: Some(row.base_url.into()),
-        model: row.model.into(),
-        api_key: row.default_key.map(str::to_string),
-        source: None,
-        oauth: row.oauth.map(|make| make()),
-        body: None,
-        context_window: row.context_window,
-        idle_timeout_secs: None,
-        effort: None,
-        price: None,
-        env: BTreeMap::new(),
-        headers: row
-            .headers
-            .iter()
-            .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
-            .collect(),
-        wire: row.wire,
-        fallback: Vec::new(),
-        compact_tokens: None,
-        images: false,
-        keep_reasoning: false,
-    })
-}
-
-fn json(value: &toml::Value) -> serde_json::Value {
-    serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
-}
-
-fn named_model(endpoint: &str, model: &str) -> String {
-    let folded = model.trim().to_ascii_lowercase();
-    if let Some(row) = preset(endpoint) {
-        for (alias, canon) in row.aliases {
-            if *alias == folded {
-                return (*canon).to_string();
-            }
-        }
-    }
-    model.to_string()
-}
-
-fn kimi_cli_token() -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let path = Path::new(&home).join(".kimi-code/credentials/kimi-code.json");
-    let value: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
-    let expires = value
-        .get("expires_at")
-        .and_then(serde_json::Value::as_i64)?;
-    let now = i64::try_from(crate::bus::now()).ok()?;
-    if expires <= now + 60 {
-        return None;
-    }
-    value
-        .get("access_token")
-        .and_then(serde_json::Value::as_str)
-        .filter(|token| !token.trim().is_empty())
-        .map(str::to_string)
-}
-
-fn env_key(names: &[&str]) -> Option<String> {
-    names.iter().find_map(|name| {
-        std::env::var(name)
-            .ok()
-            .filter(|value| !value.trim().is_empty())
-    })
-}
-
-fn trim_slash(url: &str) -> String {
-    url.trim().trim_end_matches('/').to_string()
-}
+#[cfg(test)]
+#[path = "endpoint_tests.rs"]
+mod tests;

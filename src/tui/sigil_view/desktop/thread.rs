@@ -42,10 +42,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
                 .children_reactive({
                     let notice = input.clone();
-                    move || {
-                        let _ticks = notice.ticks.get();
-                        vec![notice_bar(notice.clone())]
-                    }
+                    move || vec![notice_bar(notice.clone())]
                 }),
         )
         .child(
@@ -76,7 +73,7 @@ pub(super) fn title_bar(app: App) -> NodeBuilder {
         .unwrap_or_default();
     let run = app.clone();
     let (added, removed) = {
-        let model = app.model.borrow();
+        let model = app.model.get();
         (model.diff.added(), model.diff.removed())
     };
     let badge_app = app.clone();
@@ -99,7 +96,7 @@ pub(super) fn title_bar(app: App) -> NodeBuilder {
             .class(classes!("text-sm font-medium text-gray-12")),
         )
         .child(
-            label(session::short(&app.model.borrow().session).to_string())
+            label(session::short(&app.model.get().session).to_string())
                 .class(classes!("text-xs text-gray-11")),
         )
         .child(spacer())
@@ -158,7 +155,7 @@ fn notice_bar(app: App) -> NodeBuilder {
             .child(label("The agent is waiting. Allow, Always, or Deny."))
             .child(actions);
     }
-    if let Some(status) = chat::busy_status(&app.model.borrow()) {
+    if let Some(status) = chat::busy_status(&app.model.get(), app.ticks.get()) {
         return notice_band(status, Tone::Neutral);
     }
     container()

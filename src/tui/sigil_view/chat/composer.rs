@@ -15,10 +15,7 @@ mod widget;
 
 pub(super) use widget::widget;
 
-pub(in crate::tui::sigil_view) const SPINNER: [&str; 10] =
-    ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-pub(in crate::tui::sigil_view) fn busy_status(model: &Model) -> Option<String> {
+pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Option<String> {
     model.busy_since.map(|(activity, since)| {
         let doing = match &model.live_tool {
             Some((name, arg)) => format!("{name} {arg}").trim_end().to_string(),
@@ -27,7 +24,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model) -> Option<String> {
         let (steering, queued) = model.queued;
         let waiting = match steering + queued {
             0 => String::new(),
-            n => format!(" · {n} queued, ctrl+q edits"),
+            n => format!(" · {n} queued, ↑ edits"),
         };
         let now = Instant::now();
         let speed = model
@@ -37,7 +34,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model) -> Option<String> {
             .unwrap_or_default();
         format!(
             "{} {doing} · {}s{speed}{waiting}",
-            SPINNER[model.spinner % SPINNER.len()],
+            sigil::prelude::spinner_frame(tick),
             since.elapsed().as_secs()
         )
     })

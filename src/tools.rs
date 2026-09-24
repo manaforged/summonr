@@ -14,7 +14,7 @@ mod help;
 pub use event::Event;
 mod catalog;
 mod dedup;
-pub(crate) use catalog::readonly;
+pub(crate) use catalog::{canonical, readonly, retired_op};
 pub(crate) mod command;
 mod lsp;
 mod paths;

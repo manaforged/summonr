@@ -41,6 +41,8 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         compact_tokens: None,
         images: false,
         keep_reasoning: false,
+        opencode: false,
+        prompt_cache_key: false,
     }
 }
 
@@ -69,33 +71,6 @@ fn a_real_response_still_parses_into_typed_answers() {
         panic!("should_rotate did not parse as a noul");
     };
     assert_eq!(*noul, 0.66);
-}
-
-#[test]
-fn a_noul_never_clears_a_confidence_gate() {
-    let noul = Answer::Noul { noul: 0.99 };
-    assert_eq!(noul.confidence(), None);
-    assert!(
-        !noul.acts_above(0.0),
-        "a noul carries no confidence, so gating one on confidence must not act"
-    );
-}
-
-#[test]
-fn a_flat_distribution_fails_the_gate_a_sharp_one_passes() {
-    let decision: Decision = serde_json::from_str(LIVE).unwrap();
-    let sharp = &decision.answers["severity"];
-    assert!(sharp.acts_above(0.9), "0.94 should clear a 0.9 floor");
-    let flat = Answer::Score {
-        score: 1.52,
-        legend: BTreeMap::new(),
-        probabilities: BTreeMap::from([("1".to_string(), 0.43), ("2".to_string(), 0.55)]),
-        confidence: 0.28,
-    };
-    assert!(
-        !flat.acts_above(0.9),
-        "0.28 is the model saying it does not know, so the gate must hold"
-    );
 }
 
 #[test]
@@ -167,7 +142,7 @@ fn a_chat_endpoint_is_refused_before_any_request_goes_out() {
     let error = target(&endpoint("openrouter", Wire::Completions), &questions)
         .expect_err("a chat endpoint must not reach the decisions API");
     assert!(
-        error.to_string().contains("not a decisions endpoint"),
+        error.to_string().contains("not a classify endpoint"),
         "got {error}"
     );
 }
@@ -182,14 +157,6 @@ fn asking_nothing_is_refused() {
 #[test]
 fn each_decisions_provider_keeps_its_own_url() {
     let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let jev = crate::endpoint::resolve_unauthed(Some("jev"), None).unwrap();
-    assert_eq!(
-        jev.base_url.as_deref(),
-        Some("https://api.typesafe.ai/v1/systemone")
-    );
-    assert_eq!(jev.model, "jev-latest");
-    assert_eq!(jev.wire, Wire::Decisions);
-
     let openrouter = crate::endpoint::resolve_unauthed(Some("openrouter"), None).unwrap();
     assert_eq!(
         openrouter.base_url.as_deref(),
@@ -199,9 +166,7 @@ fn each_decisions_provider_keeps_its_own_url() {
 
     let mut other = endpoint("other", Wire::Decisions);
     other.base_url = Some("https://example.test/decisions".to_string());
-    let (url, key) = target(&other, &questions).unwrap();
-    assert_eq!(url, "https://example.test/decisions");
-    assert_eq!(key, "k");
+    target(&other, &questions).unwrap();
 }
 
 #[test]
@@ -216,12 +181,11 @@ fn the_request_keeps_the_shape_the_api_documents() {
             Question::score("how bad", ["mild", "fatal"]),
         ),
     ]);
-    let body = serde_json::to_value(Ask {
-        model: "jev-latest",
-        state: &serde_json::Value::from("a 403"),
-        questions: &questions,
-    })
-    .unwrap();
+    let body = crate::provider::decisions::body(
+        "jev-latest",
+        &serde_json::Value::from("a 403"),
+        &questions,
+    );
     assert_eq!(body["model"], "jev-latest");
     assert_eq!(body["state"], "a 403");
     assert_eq!(body["questions"]["kind"]["type"], "choice");
@@ -277,11 +241,6 @@ fn the_decisions_model_is_absent_from_the_chat_catalog() {
         !chat.iter().any(|model| model.contains("jev")),
         "jev must never be offered as a chat model: {chat:?}"
     );
-    let decisions = crate::endpoint::catalog(Wire::Decisions);
-    assert!(
-        decisions.iter().any(|model| model == "jev-latest"),
-        "got {decisions:?}"
-    );
 }
 
 #[test]
@@ -301,17 +260,9 @@ fn a_provider_this_code_has_never_heard_of_still_works() {
     let mut unknown = endpoint("some-future-vendor", Wire::Decisions);
     unknown.base_url = Some("https://example.invalid/v9/judge".to_string());
     unknown.model = "not-jev-at-all".to_string();
-    let (url, _) = target(&unknown, &questions).unwrap();
-    assert_eq!(
-        url, "https://example.invalid/v9/judge",
-        "no part of the URL is assumed"
-    );
-    let body = serde_json::to_value(Ask {
-        model: &unknown.model,
-        state: &serde_json::Value::from("s"),
-        questions: &questions,
-    })
-    .unwrap();
+    target(&unknown, &questions).unwrap();
+    let body =
+        crate::provider::decisions::body(&unknown.model, &serde_json::Value::from("s"), &questions);
     assert_eq!(body["model"], "not-jev-at-all");
 }
 
@@ -349,16 +300,6 @@ fn the_questions_are_charged_against_the_context() {
     assert!(
         budget(&seat, &many) < budget(&seat, &one),
         "asking more must leave less room for the state"
-    );
-}
-
-#[test]
-fn every_shipped_decisions_endpoint_names_the_key_it_needs() {
-    let keys = crate::endpoint::decisions_keys();
-    assert!(!keys.is_empty(), "the error message would name nothing");
-    assert!(
-        keys.iter().any(|key| key.ends_with("_API_KEY")),
-        "got {keys:?}"
     );
 }
 

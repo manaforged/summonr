@@ -4,7 +4,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) {
         if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
             if self.view_text.peek() != self.view_saved.peek() {
-                self.model.borrow_mut().entries.push(Entry::Error(
+                self.push_entry(Entry::Error(
                     "unsaved edits in the view pane — ctrl+s saves, esc leaves".to_string(),
                 ));
                 self.refresh();
@@ -21,13 +21,13 @@ impl App {
         if opened {
             self.load();
         }
-        let mut model = self.model.borrow_mut();
-        model.prefs.layout = layout.text();
-        model
-            .entries
-            .push(Entry::System(format!("layout: {}", layout.text())));
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.layout = layout.text();
+            model
+                .entries
+                .push(Entry::System(format!("layout: {}", layout.text())));
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
     }
@@ -275,10 +275,10 @@ impl App {
         match argument {
             None => {
                 let names: Vec<&str> = Pane::SECONDARY.iter().map(|pane| pane.name()).collect();
-                self.model.borrow_mut().entries.push(Entry::System(format!(
-                    "layout: {} · /pane {} · /pane off · /layout focus|run|files|review",
+                self.push_entry(Entry::System(format!(
+                    "layout: {} · /pane {} · off · focus · run · review",
                     layout.text(),
-                    names.join("|")
+                    names.join(" · ")
                 )));
                 self.refresh();
             }
@@ -286,30 +286,15 @@ impl App {
                 secondary: None,
                 ..layout
             }),
-            Some(name) => match Pane::parse(name) {
-                Some(Pane::Chat) | None => {
-                    self.model
-                        .borrow_mut()
-                        .entries
-                        .push(Entry::Error(format!("no pane named `{name}`")));
-                    self.refresh();
-                }
-                Some(pane) => self.set_layout(Layout {
+            Some(name) => match (Pane::parse(name), Layout::parse(name)) {
+                (Some(pane), _) if pane != Pane::Chat => self.set_layout(Layout {
                     secondary: Some(pane),
                     ..layout
                 }),
-            },
-        }
-    }
-
-    pub(in crate::tui::sigil_view) fn layout_command(&self, argument: Option<&str>) {
-        match argument {
-            None => self.pane_command(None),
-            Some(text) => match Layout::parse(text) {
-                Some(layout) => self.set_layout(layout),
-                None => {
-                    self.model.borrow_mut().entries.push(Entry::Error(format!(
-                        "no layout `{text}` — focus, run, files, review, or `chat | ledger 40%`"
+                (_, Some(preset)) => self.set_layout(preset),
+                (Some(_) | None, None) => {
+                    self.push_entry(Entry::Error(format!(
+                        "no pane or layout `{name}` — files, ledger, diff, worktrees, off, focus, run, review, or `chat | ledger 40%`"
                     )));
                     self.refresh();
                 }

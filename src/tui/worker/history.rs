@@ -1,4 +1,4 @@
-use crate::durable::log::{self, Line, Usage};
+use crate::durable::log::{self, Line};
 use crate::session::user_text;
 use crate::tools::Event;
 
@@ -30,7 +30,7 @@ impl Worker {
     }
 
     fn restore(&self, line: Line) {
-        match line {
+        match &line {
             Line::User {
                 text,
                 source,
@@ -38,101 +38,34 @@ impl Worker {
                 start,
                 ..
             } => {
-                let text = source.unwrap_or_else(|| user_text(&text).to_string());
-                let message = if start {
+                let text = source
+                    .clone()
+                    .unwrap_or_else(|| user_text(text).to_string());
+                let message = if *start {
                     Msg::User(text)
                 } else {
                     Msg::System(text)
                 };
                 drop(self.ui.send(message));
                 for image in images {
-                    drop(self.ui.send(Msg::Image(image)));
+                    drop(self.ui.send(Msg::Image(image.clone())));
                 }
+                return;
             }
-            Line::Assistant {
+            Line::Receipt {
                 text,
-                reasoning,
-                tool_calls,
-                usage,
-                ..
+                receipt: None,
             } => {
-                if !reasoning.is_empty() {
-                    drop(
-                        self.ui
-                            .send(Msg::Event(Event::Reasoning { text: reasoning })),
-                    );
-                }
-                if !text.is_empty() {
-                    drop(self.ui.send(Msg::Event(Event::Assistant { text })));
-                }
-                for call in tool_calls {
-                    drop(self.ui.send(Msg::Event(Event::ToolCall {
-                        id: call.id,
-                        name: call.function.name,
-                        arguments: call.function.arguments,
-                    })));
-                }
-                self.usage(usage, String::new());
+                drop(self.ui.send(Msg::Receipt(text.clone())));
             }
-            Line::Interrupted { text, reasoning } => {
-                if !reasoning.is_empty() {
-                    drop(
-                        self.ui
-                            .send(Msg::Event(Event::Reasoning { text: reasoning })),
-                    );
-                }
-                if !text.is_empty() {
-                    drop(self.ui.send(Msg::Event(Event::Assistant { text })));
-                }
-                self.system("Partial answer · interrupted");
-            }
-            Line::Charge {
-                usage,
-                note,
-                model,
-                reported: true,
-            } => self.usage(usage, format!("{note} · {model}")),
-            Line::Charge {
-                reported: false, ..
-            } => {}
-            Line::Tool {
-                call,
-                text,
-                success,
-                millis,
-            } => {
-                drop(self.ui.send(Msg::Event(Event::ToolResult {
-                    id: call,
-                    output: text,
-                    success,
-                    mutated: false,
-                    millis: Some(millis),
-                })));
-            }
-            Line::Receipt { text } => drop(self.ui.send(Msg::Receipt(text))),
             Line::Clear => drop(self.ui.send(Msg::Cleared)),
-            Line::Close {
-                reason: Some(reason),
-                ..
-            } => {
-                drop(self.ui.send(Msg::Event(Event::Aborted { reason })));
-            }
             _ => {}
         }
-    }
-
-    fn usage(&self, usage: Usage, prefix_hash: String) {
-        if usage.input == 0 && usage.output == 0 {
-            return;
+        for event in line.events() {
+            drop(self.ui.send(Msg::Event(event)));
         }
-        drop(self.ui.send(Msg::Event(Event::Usage {
-            prompt_tokens: u32::try_from(usage.input).unwrap_or(u32::MAX),
-            completion_tokens: u32::try_from(usage.output).unwrap_or(u32::MAX),
-            cached_tokens: u32::try_from(usage.cached).unwrap_or(u32::MAX),
-            reasoning_tokens: 0,
-            millis: Some(usage.millis),
-            prefix_hash,
-            cost: None,
-        })));
+        if matches!(line, Line::Interrupted { .. }) {
+            self.system("Partial answer · interrupted");
+        }
     }
 }

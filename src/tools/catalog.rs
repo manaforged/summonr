@@ -71,6 +71,13 @@ pub(crate) fn canonical(name: &str) -> &str {
         .map_or(name, |(_, live, _)| live)
 }
 
+pub(crate) fn retired_op(name: &str) -> Option<&'static str> {
+    RETIRED
+        .iter()
+        .find(|(retired, _, _)| *retired == name)
+        .and_then(|(_, _, op)| *op)
+}
+
 pub(crate) fn readonly(name: &str) -> bool {
     matches!(canonical(name), "read" | "lsp" | "skill" | "todo" | "web")
 }

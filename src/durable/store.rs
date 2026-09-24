@@ -1,6 +1,6 @@
-use std::fs::Permissions;
+use std::fs::{File, OpenOptions, Permissions, TryLockError};
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::NamedTempFile;
 
@@ -11,6 +11,28 @@ pub(crate) struct Staged<'a> {
 
 pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
     stage(path, bytes.as_ref(), false)?.commit()
+}
+
+pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".lock");
+    let name = PathBuf::from(name);
+    std::fs::create_dir_all(parent(&name))?;
+    let file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(&name)?;
+    if wait {
+        file.lock()?;
+        return Ok(Some(file));
+    }
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(TryLockError::WouldBlock) => Ok(None),
+        Err(TryLockError::Error(error)) => Err(error),
+    }
 }
 
 pub(crate) fn stage<'a>(path: &'a Path, bytes: &[u8], keep_mode: bool) -> io::Result<Staged<'a>> {

@@ -1,18 +1,18 @@
 use std::path::Path;
 
-use super::{Block, builtin_deny, split_segments, unquoted, write_block};
+use super::{Block, builtin_deny, split_segments, unquoted, write_block_segments};
 
 pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
-    if builtin_deny(command) {
+    let segments = split_segments(command.trim());
+    if builtin_deny(command, &segments) {
         return Some("it can damage the system");
     }
     if matches!(
-        write_block(command.trim(), workspace, &[]),
+        write_block_segments(&segments, workspace, &[]),
         Some(Block::Protected(_))
     ) {
         return Some("it writes a protected path");
     }
-    let segments = split_segments(command);
     let moved = segments
         .iter()
         .any(|segment| matches!(verb(&argv(segment)).as_deref(), Some("cd" | "pushd")));

@@ -3,9 +3,6 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use image::codecs::png::PngEncoder;
-use image::{ExtendedColorType, ImageEncoder};
-use sigil::clipboard;
 use sigil::prelude::{ImageSource, Signal, TextEditState, signal};
 use sigil::reactive::batch;
 use sigil_tui::cell_width;
@@ -13,8 +10,10 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
 use crate::command::argument;
+use crate::endpoint::State;
 use crate::prefs::{self, Hotkey, Prefs, ToolOutput};
 use crate::provider::{Image, UserInput};
+use crate::recent::Seat;
 use crate::tools::IMAGES_MAX_BYTES;
 use crate::workflow::Role;
 
@@ -36,6 +35,7 @@ pub(super) use crate::tui::{Activity, Cmd, Info, Msg};
 mod adjust;
 mod attachments;
 mod auth;
+pub(super) use auth::{Login, matching, section};
 mod commands;
 mod composer;
 mod diff;
@@ -81,7 +81,7 @@ pub(super) enum Overlay {
 
 #[derive(Clone)]
 pub(super) struct App {
-    pub(super) model: Rc<RefCell<Model>>,
+    pub(super) model: Signal<Rc<Model>>,
     pub(super) search: super::search::Picker,
     pub(super) help: super::help::View,
     pub(super) cmd: UnboundedSender<Cmd>,
@@ -102,7 +102,6 @@ pub(super) struct App {
     pub(super) status: Signal<String>,
     pub(super) settings: Signal<String>,
     pub(super) facts: Signal<String>,
-    pub(super) panes: Signal<u64>,
     pub(super) settings_open: Signal<bool>,
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
@@ -116,11 +115,14 @@ pub(super) struct App {
     pub(super) hotkey_note: Signal<String>,
     pub(super) editing_model: Signal<bool>,
     pub(super) model_draft: Signal<String>,
-    pub(super) model_caret: Signal<usize>,
-    pub(super) model_choices: Signal<Vec<String>>,
-    pub(super) model_facts: Signal<std::collections::BTreeMap<String, crate::catalog::Model>>,
-    pub(super) model_groups: Signal<std::collections::BTreeMap<String, String>>,
-    pub(super) model_recent: Signal<usize>,
+    pub(super) model_choices: Signal<Rc<Vec<Seat>>>,
+    pub(super) model_shown: Signal<Rc<Vec<Seat>>>,
+    pub(super) model_facts: Signal<Rc<std::collections::BTreeMap<Seat, crate::catalog::Model>>>,
+    pub(super) model_default: Signal<Option<Seat>>,
+    pub(super) model_groups: Signal<std::collections::BTreeMap<String, crate::endpoint::State>>,
+    pub(super) model_causes: Signal<std::collections::BTreeMap<String, String>>,
+    pub(super) model_recent: Signal<[usize; 3]>,
+    pub(super) model_note: Signal<String>,
     pub(super) model_sel: Signal<usize>,
     pub(super) model_loading: Signal<bool>,
     pub(super) model_error: Signal<String>,
@@ -140,13 +142,14 @@ pub(super) struct App {
     pub(super) auth_open: Signal<bool>,
     pub(super) auth_choices: Signal<Vec<crate::endpoint::AuthInfo>>,
     pub(super) auth_sel: Signal<usize>,
-    pub(super) auth_entering: Signal<bool>,
+    pub(super) auth_step: Signal<Login>,
+    pub(super) auth_filter: Signal<String>,
+    pub(super) auth_seat: Signal<Option<(String, String)>>,
     pub(super) auth_focus: Signal<u64>,
     pub(super) auth_key: Signal<String>,
     pub(super) models_focus: Signal<u64>,
     pub(super) auth_caret: Signal<usize>,
     pub(super) ticks: Signal<u64>,
-    pub(super) fps: Signal<u32>,
     pub(super) splash_revealed: Signal<bool>,
     pub(super) splash: Signal<bool>,
     pub(super) theme_name: Signal<String>,
@@ -225,7 +228,7 @@ impl App {
         let draft = signal(String::new());
         let caret = signal(0);
         Self {
-            model: Rc::new(RefCell::new(model)),
+            model: signal(Rc::new(model)),
             search: super::search::Picker::new(),
             help: super::help::View::new(),
             cmd,
@@ -242,7 +245,6 @@ impl App {
             status: signal(String::new()),
             settings: signal(String::new()),
             facts: signal(String::new()),
-            panes: signal(0),
             settings_open: signal(false),
             context_open: signal(false),
             cache_open: signal(false),
@@ -267,11 +269,14 @@ impl App {
             hotkey_note: signal(String::new()),
             editing_model: signal(false),
             model_draft: signal(String::new()),
-            model_caret: signal(0),
-            model_choices: signal(Vec::new()),
-            model_facts: signal(std::collections::BTreeMap::new()),
+            model_choices: signal(Rc::default()),
+            model_shown: signal(Rc::default()),
+            model_facts: signal(Rc::default()),
+            model_default: signal(None),
             model_groups: signal(std::collections::BTreeMap::new()),
-            model_recent: signal(0),
+            model_causes: signal(std::collections::BTreeMap::new()),
+            model_recent: signal([0; 3]),
+            model_note: signal(String::new()),
             model_sel: signal(0),
             model_loading: signal(false),
             model_error: signal(String::new()),
@@ -291,13 +296,14 @@ impl App {
             auth_open: signal(false),
             auth_choices: signal(Vec::new()),
             auth_sel: signal(0),
-            auth_entering: signal(false),
+            auth_step: signal(Login::List(String::new())),
+            auth_filter: signal(String::new()),
+            auth_seat: signal(None),
             auth_focus: signal(0),
             auth_key: signal(String::new()),
             models_focus: signal(0),
             auth_caret: signal(0),
             ticks: signal(0),
-            fps: signal(0),
             splash_revealed: signal(!info.prefs.animations),
             splash: signal(info.splash),
             theme_name: signal(info.prefs.theme.clone()),
@@ -345,5 +351,13 @@ impl App {
             prefs_path: info.config.clone(),
             info,
         }
+    }
+
+    pub(super) fn model_mut(&self, change: impl FnOnce(&mut Model)) {
+        self.model.update(|model| change(Rc::make_mut(model)));
+    }
+
+    pub(super) fn push_entry(&self, entry: Entry) {
+        self.model_mut(|model| model.entries.push(entry));
     }
 }

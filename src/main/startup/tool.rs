@@ -13,8 +13,14 @@ pub(super) async fn run(args: &Args, tool: &[String]) -> Result<i32> {
         Some(rest) if !rest.is_empty() => rest.join(" "),
         Some(_) | None => "{}".to_string(),
     };
-    let outcome =
-        summonr::run_tool(&workspace()?, name, &arguments, args.sandbox, !args.network).await?;
+    let outcome = summonr::run_tool(
+        &workspace()?,
+        name,
+        &arguments,
+        args.sandbox == Some(true),
+        !args.network,
+    )
+    .await?;
     println!("{}", outcome.text);
     Ok(if outcome.success { 0 } else { 1 })
 }

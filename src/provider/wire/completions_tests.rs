@@ -22,18 +22,18 @@ fn hi() -> [Message; 1] {
 
 #[test]
 fn a_streamed_request_asks_for_the_usage_it_would_otherwise_lose() {
-    let body = Wire::request(&ask(None, &hi()), true);
+    let body = Wire::request(&ask(None, &hi()), true).unwrap();
     assert_eq!(body["stream"], true);
     assert_eq!(
         body["stream_options"]["include_usage"], true,
         "without this the final usage never arrives on a streamed turn"
     );
-    assert!(Wire::request(&ask(None, &hi()), false)["stream_options"].is_null());
+    assert!(Wire::request(&ask(None, &hi()), false).unwrap()["stream_options"].is_null());
 }
 
 #[test]
 fn effort_reaches_this_wire_under_its_own_name() {
-    let body = Wire::request(&ask(Some(Effort::High), &hi()), false);
+    let body = Wire::request(&ask(Some(Effort::High), &hi()), false).unwrap();
     assert_eq!(body["reasoning_effort"], "high");
     assert!(
         body.get("output_config").is_none(),
@@ -44,7 +44,10 @@ fn effort_reaches_this_wire_under_its_own_name() {
 #[test]
 fn this_wire_is_the_one_that_ends_on_a_marker() {
     assert_eq!(Wire::sentinel(), Some("[DONE]"));
-    assert_eq!(Wire::scheme(), Scheme::Bearer);
+    assert_eq!(
+        crate::credentials::scheme(crate::endpoint::Wire::Completions),
+        summonr_auth::Scheme::Bearer
+    );
     assert_eq!(Wire::path("glm-5.3", true), "/chat/completions");
 }
 
@@ -102,4 +105,18 @@ fn text_and_reasoning_both_reach_the_caller() {
     let message = stream.finish();
     assert_eq!(message.reasoning_content.as_deref(), Some("weighing"));
     assert_eq!(message.content.as_deref(), Some("hello"));
+}
+
+#[test]
+fn a_content_filter_stop_keeps_the_text() {
+    let mut stream = <Stream as Accumulate>::new("glm-5.3");
+    stream
+        .on(&json!({"choices": [{"delta": {"content": "partial answer"}}]}).to_string())
+        .unwrap();
+    stream
+        .on(&json!({"choices": [{"delta": {}, "finish_reason": "content_filter"}]}).to_string())
+        .expect("a filtered stop is not an error on this wire");
+    let message = stream.finish();
+    assert_eq!(message.content.as_deref(), Some("partial answer"));
+    assert_ne!(message.stop_reason, crate::provider::StopReason::Stop);
 }

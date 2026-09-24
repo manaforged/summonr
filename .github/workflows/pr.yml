@@ -29,21 +29,8 @@ jobs:
         run: rustup show active-toolchain
       - name: cargo fmt
         run: cargo fmt --all -- --check
-      - name: private git deps
-        id: deps
-        env:
-          TOKEN: ${{ secrets.CI_CROSS_REPO_TOKEN }}
-        run: |
-          if [ -n "$TOKEN" ]; then
-            git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "CI_CROSS_REPO_TOKEN is not set: private dependencies cannot be fetched, so clippy and tests did not run here. The pre-push hook runs them before each push." >> "$GITHUB_STEP_SUMMARY"
-          fi
       - name: Select affected packages
         id: scope
-        if: steps.deps.outputs.ok == 'true'
         run: |
           pkgs=$(node scripts/affected-packages.mjs \
             --base "${{ github.event.pull_request.base.sha }}" \
@@ -53,20 +40,36 @@ jobs:
           for p in $pkgs; do args="$args -p $p"; done
           echo "args=$args" >> "$GITHUB_OUTPUT"
           echo "scope: ${args:-none (docs or non-Rust change)}" >> "$GITHUB_STEP_SUMMARY"
-      - name: fetch dependencies, then drop the token
+      - name: fetch dependencies
+        id: deps
         if: steps.scope.outputs.args != ''
+        env:
+          TOKEN: ${{ secrets.CI_CROSS_REPO_TOKEN }}
         run: |
-          cargo fetch --locked
+          if [ -n "$TOKEN" ]; then
+            git config --global url."https://x-access-token:$TOKEN@github.com/".insteadOf "https://github.com/"
+          fi
+          ok=true
+          cargo fetch --locked || ok=false
           git config --global --get-regexp '^url\..*\.insteadof$' | cut -d' ' -f1 | while read -r key; do
             git config --global --unset-all "$key"
           done
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+          if [ "$ok" = false ]; then
+            if [ -n "$TOKEN" ]; then
+              exit 1
+            fi
+            echo "cargo fetch failed without CI_CROSS_REPO_TOKEN (private dependencies). Only cargo fmt ran on this PR; clippy and tests did not run." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-        if: steps.scope.outputs.args != ''
+        if: steps.deps.outputs.ok == 'true'
         with:
           save-if: 'false'
       - name: cargo clippy
-        if: steps.scope.outputs.args != ''
+        if: steps.deps.outputs.ok == 'true'
         run: cargo clippy ${{ steps.scope.outputs.args }} --all-targets --locked --no-deps -- -D warnings
       - name: cargo test
-        if: steps.scope.outputs.args != ''
-        run: cargo test ${{ steps.scope.outputs.args }} --locked
+        if: steps.deps.outputs.ok == 'true'
+        run: |
+          cargo test ${{ steps.scope.outputs.args }} --locked
+          echo "ran: cargo fmt, then cargo clippy and cargo test for${{ steps.scope.outputs.args }}" >> "$GITHUB_STEP_SUMMARY"

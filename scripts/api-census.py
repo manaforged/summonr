@@ -236,6 +236,27 @@ def write_baseline(hits: list[tuple[str, str, int]]) -> None:
     BASELINE.write_text("\n".join(lines) + "\n")
 
 
+def command_drift() -> list[str]:
+    specs = (ROOT / "src/command/specs.rs").read_text().split("const ALIASES")[0]
+    code = {
+        name
+        for name, category in re.findall(
+            r'spec\(\s*"(/[^"]+)",\s*"[^"]*",\s*SlashCommand::\w+,\s*\w+,\s*(\w+)', specs
+        )
+        if category != "Developer"
+    }
+    doc = set(
+        re.findall(
+            r"^\| `(/[a-z]+(?: accept| reject)?)[ `]",
+            (ROOT / "docs/guide/reference.md").read_text(),
+            re.M,
+        )
+    )
+    return sorted(f"{name} missing from reference.md" for name in code - doc) + sorted(
+        f"{name} in reference.md but not a visible command" for name in doc - code
+    )
+
+
 def main() -> int:
     args = set(sys.argv[1:])
     check = "--check" in args
@@ -301,6 +322,13 @@ def main() -> int:
         print("counts fell (re-baseline with --update):")
         for label, was, now in fell:
             print(f"  {label}: {was} -> {now}")
+
+    drift = command_drift()
+    if drift:
+        print("api-census deny: commands table")
+        for line in drift:
+            print(f"  {line}")
+        return 1
 
     if grew:
         print("api-census deny:")

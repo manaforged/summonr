@@ -10,8 +10,9 @@ impl Worker {
                 running
             }
             Cmd::Login(name) => self.login(&name).await,
-            Cmd::SetKey(name, key) => {
-                self.set_key(&name, &key).await;
+            Cmd::SetKey(name, key) => self.set_key(&name, &key).await,
+            Cmd::Logout(name) => {
+                self.logout(&name);
                 true
             }
             Cmd::Quit => {
@@ -42,6 +43,10 @@ impl Worker {
                 self.tick();
                 true
             }
+            Cmd::LoginAnswer(_) => {
+                self.system("the sign-in already ended; the pasted code was not sent");
+                true
+            }
             Cmd::SetRunMode(mode) => {
                 set_run_mode(&mut self.loop_, &self.ui, mode);
                 true
@@ -69,11 +74,14 @@ impl Worker {
                 true
             }
             command @ (Cmd::ListModels { .. }
+            | Cmd::Pin(..)
+            | Cmd::SaveDefault(_)
             | Cmd::ListSessions
             | Cmd::ListUsage
             | Cmd::DeleteSession(_)
             | Cmd::ListPrompts(_)
             | Cmd::ListFiles
+            | Cmd::Clipboard
             | Cmd::Diff(_)
             | Cmd::Patch(..)
             | Cmd::Trees

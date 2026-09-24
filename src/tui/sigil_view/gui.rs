@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use sigil::prelude::{Cx, signal};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
@@ -17,7 +17,7 @@ use crate::tui::{Cmd, Exit, Info, Msg, worker};
 
 const TITLE: &str = "Summonr";
 const SIZE: (u32, u32) = (1280, 800);
-const FRAME: Duration = Duration::from_millis(40);
+use crate::limits::ANIMATION as FRAME;
 
 type Inbox = Rc<RefCell<UnboundedReceiver<Msg>>>;
 
@@ -46,7 +46,7 @@ pub(crate) fn run(
             let tick = app.clone();
             let inbox = inbox.clone();
             let status_at = Cell::new(Instant::now());
-            let _interval = cx.interval(FRAME, move || pump(&tick, &inbox, &status_at));
+            sigil::reactive::register_interval(FRAME, move || pump(&tick, &inbox, &status_at));
             cx.add(root(app))
         })
     });
@@ -56,7 +56,7 @@ pub(crate) fn run(
             let mut worker = worker;
             tokio::select! {
                 _ = &mut worker => {}
-                () = tokio::time::sleep(Duration::from_secs(2)) => {
+                () = tokio::time::sleep(crate::limits::WORKER_STOP) => {
                     worker.abort();
                     drop(worker.await);
                 }
@@ -80,8 +80,8 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     }
     if changed {
         app.refresh();
-    } else if app.model.borrow().busy_since.is_some()
-        && status_at.get().elapsed() >= Duration::from_secs(1)
+    } else if app.model.get().busy_since.is_some()
+        && status_at.get().elapsed() >= crate::limits::STATUS_REFRESH
     {
         app.refresh_status();
         status_at.set(Instant::now());
@@ -90,10 +90,7 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
     if let Some(path) = app.open_file.peek() {
         app.open_file.set(None);
         if let Err(error) = reveal(&path) {
-            app.model
-                .borrow_mut()
-                .entries
-                .push(Entry::Error(error.to_string()));
+            app.push_entry(Entry::Error(error.to_string()));
         }
         app.refresh();
     }
@@ -102,19 +99,19 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
         match sigil::clipboard::copy(&text) {
             Ok(()) => app.copied(&text, CopyStatus::Confirmed),
             Err(error) => {
-                app.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::Error(format!("clipboard: {error}")));
+                app.push_entry(Entry::Error(format!("clipboard: {error}")));
                 app.refresh();
             }
         }
     }
     if app.editor_requested.peek() {
         app.editor_requested.set(false);
-        app.model.borrow_mut().entries.push(Entry::System(
-            "ctrl+g opens $EDITOR in the terminal interface; the window edits in place".to_string(),
-        ));
+        app.model_mut(|model| {
+            model.entries.push(Entry::System(
+                "ctrl+g opens $EDITOR in the terminal interface; the window edits in place"
+                    .to_string(),
+            ))
+        });
         app.refresh();
     }
     if app.quit.peek() {

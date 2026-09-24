@@ -51,7 +51,7 @@ fn close(app: App) -> impl IntoNode {
 }
 
 fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
-    let model = app.model.borrow();
+    let model = app.model.get();
     if let Some(path) = app.diff_view.peek() {
         let back = app.clone();
         column = column
@@ -192,7 +192,7 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
 }
 
 fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
-    let trees = app.model.borrow().trees.clone();
+    let trees = app.model.get().trees.clone();
     column = column.child(header(
         &app,
         "Worktrees".to_string(),
@@ -233,7 +233,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
 }
 
 fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
-    let model = app.model.borrow();
+    let model = app.model.get();
     let Some(view) = model.view.as_ref() else {
         return column.child(label("no file open").class(classes!("text-xs text-gray-11")));
     };

@@ -38,7 +38,7 @@ pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .key(tab, move |event| {
                     event.stop_propagation();
                     if complete.overlay_tab(1) {
-                    } else if complete.model.borrow().busy_since.is_some() {
+                    } else if complete.model.get().busy_since.is_some() {
                         complete.queue_if_busy();
                     } else {
                         complete.complete();
@@ -65,7 +65,7 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             move |event| {
                 if !route.hotkey_recording.peek()
                     && !route.options_active()
-                    && route.model.borrow().prefs.hotkeys.action(key)
+                    && route.model.get().prefs.hotkeys.action(key)
                         == Some(crate::prefs::Hotkey::Newline)
                 {
                     event.key = Key::Enter.into();
@@ -84,7 +84,7 @@ pub(super) fn escape(app: &App) {
     if app.overlay_close() {
         return;
     }
-    if app.model.borrow().busy_since.is_some() {
+    if app.model.get().busy_since.is_some() {
         drop(app.cmd.send(Cmd::Cancel));
     } else if app.dismiss() {
     } else if app.splash.peek() {

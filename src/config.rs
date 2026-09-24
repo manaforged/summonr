@@ -14,6 +14,7 @@ use crate::workflow::Workflow;
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct File {
     pub default: Option<String>,
+    pub default_model: Option<String>,
     #[serde(default)]
     pub last_endpoint: Option<String>,
     #[serde(default)]
@@ -50,6 +51,8 @@ pub(crate) struct File {
     pub import_mcp: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
+    #[serde(flatten)]
+    pub other: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -119,6 +122,8 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
+    #[serde(flatten)]
+    pub other: BTreeMap<String, toml::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -164,12 +169,13 @@ pub(crate) fn path() -> Result<PathBuf> {
 }
 
 static PARSED: RwLock<Option<File>> = RwLock::new(None);
+static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub(crate) fn load() -> Result<File> {
+pub(crate) fn file() -> Result<File> {
     if let Some(file) = PARSED.read().ok().and_then(|cached| cached.clone()) {
         return Ok(file);
     }
-    let file = load_from(&path()?)?;
+    let file = parse(&path()?)?;
     drop(
         PARSED
             .write()
@@ -178,24 +184,89 @@ pub(crate) fn load() -> Result<File> {
     Ok(file)
 }
 
-fn persist(path: &Path, document: DocumentMut) -> Result<()> {
-    store::write(path, document.to_string())?;
-    drop(PARSED.write().map(|mut cached| *cached = None));
-    Ok(())
+fn update(path: &Path, change: impl FnOnce(&mut DocumentMut) -> Result<bool>) -> Result<bool> {
+    let held = hold(path)?;
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error.into()),
+    };
+    let mut document = text
+        .parse::<DocumentMut>()
+        .map_err(|error| Error::Config(format!("{}: {error}", tilde(path))))?;
+    let changed = change(&mut document)?;
+    if changed {
+        store::write(path, document.to_string())?;
+        drop(PARSED.write().map(|mut cached| *cached = None));
+    }
+    drop(held);
+    Ok(changed)
+}
+
+pub(crate) fn hold(path: &Path) -> Result<std::fs::File> {
+    if let Some(file) = store::lock(path, false)? {
+        return Ok(file);
+    }
+    let locked = || {
+        Error::Config(format!(
+            "{} is locked by another summonr process; gave up after {}s",
+            tilde(path),
+            crate::limits::AUTH.as_secs()
+        ))
+    };
+    let (send, wait) = std::sync::mpsc::channel();
+    let owned = path.to_path_buf();
+    std::thread::spawn(move || drop(send.send(store::lock(&owned, true))));
+    match wait.recv_timeout(crate::limits::AUTH) {
+        Ok(held) => held?.ok_or_else(locked),
+        Err(_) => Err(locked()),
+    }
+}
+
+pub fn check() -> Result<()> {
+    file().map(drop)
 }
 
 pub fn sandbox_on() -> Result<bool> {
-    Ok(load()?.sandbox.on)
+    Ok(file()?.sandbox.on)
 }
 
-pub(crate) fn load_from(path: &Path) -> Result<File> {
+pub(crate) fn parse(path: &Path) -> Result<File> {
     let text = match std::fs::read_to_string(path) {
         Ok(text) => text,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(File::default()),
         Err(error) => return Err(error.into()),
     };
-    let bad = |field: &str| Error::Config(format!("config.toml: {field}"));
-    let file: File = toml::from_str(&text).map_err(|error| bad(&error.to_string()))?;
+    let bad = |field: &str| Error::Config(format!("{}: {field}", tilde(path)));
+    let file: File = toml::from_str(&text).map_err(|error| {
+        let line = error.span().map_or(1, |span| {
+            text.get(..span.start)
+                .map_or(1, |head| head.matches('\n').count() + 1)
+        });
+        bad(&format!(
+            "line {line}: {} — fix that line, or move the file aside to start fresh",
+            error.message().trim().replace('\n', "; ")
+        ))
+    })?;
+    let unknown: Vec<String> = file
+        .other
+        .keys()
+        .cloned()
+        .chain(file.endpoint.iter().flat_map(|(name, row)| {
+            row.other
+                .keys()
+                .map(move |key| format!("endpoint.{name}.{key}"))
+        }))
+        .collect();
+    if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        eprintln!(
+            "summonr: {} has unknown key{} {} — check the spelling; summonr ignores {}",
+            tilde(path),
+            if unknown.len() == 1 { "" } else { "s" },
+            unknown.join(", "),
+            if unknown.len() == 1 { "it" } else { "them" }
+        );
+    }
     if file
         .tools
         .as_deref()
@@ -242,156 +313,13 @@ pub(crate) fn load_from(path: &Path) -> Result<File> {
     Ok(file)
 }
 
-pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    let mut document = text
-        .parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("config.toml: {error}")))?;
-    document["theme"] = value(&prefs.theme);
-    document["splash"] = value(prefs.splash);
-    document["animations"] = value(prefs.animations);
-    document["fps"] = value(i64::from(prefs.fps));
-    document["reasoning"] = value(prefs.reasoning.name());
-    document["receipts"] = value(prefs.receipts.name());
-    document["tools"] = value(prefs.tools.name());
-    document["diff_layout"] = value(prefs.diff_layout.name());
-    document["bus"] = value(prefs.bus);
-    document["ban_comments"] = value(prefs.ban_comments);
-    document["ban_tests"] = value(prefs.ban_tests);
-    document["layout"] = value(&prefs.layout);
-    let mut hotkeys = toml_edit::InlineTable::new();
-    for (action, binding) in prefs.hotkeys.entries() {
-        hotkeys.insert(action.name(), binding.into());
-    }
-    document["hotkeys"] = toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys));
-    match &prefs.last_endpoint {
-        Some(name) => document["last_endpoint"] = value(name),
-        None => {
-            document.as_table_mut().remove("last_endpoint");
-        }
-    }
-    persist(path, document)?;
-    Ok(())
-}
+mod edit;
+pub use edit::tilde;
+pub(crate) use edit::{
+    remove_key, sandbox_entry, save_default_seat, save_default_workflow, save_module, save_prefs,
+    save_sandbox_write, save_workflow,
+};
 
-pub(crate) fn remove_key(path: &Path, name: &str) -> Result<bool> {
-    let mut document = read_document(path)?;
-    let removed = document["endpoint"][name]
-        .as_table_like_mut()
-        .is_some_and(|row| row.remove("api_key").is_some());
-    if removed {
-        persist(path, document)?;
-    }
-    Ok(removed)
-}
-
-pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
-    let mut document = read_document(path)?;
-    let mut table = toml_edit::Table::new();
-    for (role, seat) in &workflow.seats {
-        table[role.name()] = match &seat.model {
-            None => value(&seat.endpoint),
-            Some(model) => {
-                let mut row = toml_edit::InlineTable::new();
-                row.insert("endpoint", seat.endpoint.as_str().into());
-                row.insert("model", model.as_str().into());
-                toml_edit::Item::Value(toml_edit::Value::InlineTable(row))
-            }
-        };
-    }
-    document["workflows"][workflow.name.as_str()] = toml_edit::Item::Table(table);
-    if let Some(parent) = document["workflows"].as_table_mut() {
-        parent.set_implicit(true);
-    }
-    persist(path, document)?;
-    Ok(())
-}
-
-pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
-    let mut document = read_document(path)?;
-    document["modules"][name] = value(on);
-    if let Some(table) = document["modules"].as_table_mut() {
-        table.set_implicit(true);
-    }
-    persist(path, document)?;
-    Ok(())
-}
-
-pub(crate) fn save_default_workflow(path: &Path, name: &str) -> Result<()> {
-    let mut document = read_document(path)?;
-    document["workflow"] = value(name);
-    persist(path, document)?;
-    Ok(())
-}
-
-fn read_document(path: &Path) -> Result<DocumentMut> {
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(error) => return Err(error.into()),
-    };
-    text.parse::<DocumentMut>()
-        .map_err(|error| Error::Config(format!("config.toml: {error}")))
-}
-
-pub fn tilde(path: &Path) -> String {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
-    if let Some(home) = home
-        && let Ok(rest) = path.strip_prefix(&home)
-    {
-        let rest = rest.to_string_lossy();
-        if rest.is_empty() {
-            return "~".to_string();
-        }
-        return format!("~/{rest}");
-    }
-    path.display().to_string()
-}
-
-pub(crate) fn sandbox_entry(path: &Path) -> String {
-    let entry = tilde(path);
-    if entry == "~" {
-        "~/".to_string()
-    } else {
-        entry
-    }
-}
-
-pub(crate) fn save_sandbox_write(path: &Path, dir: &str) -> Result<()> {
-    let mut document = read_document(path)?;
-    let entry = if Path::new(dir).is_absolute() {
-        sandbox_entry(Path::new(dir))
-    } else {
-        dir.to_string()
-    };
-    let existing = document
-        .get("sandbox")
-        .and_then(|sandbox| sandbox.get("write"));
-    if existing.is_some_and(|item| !item.is_none() && item.as_array().is_none()) {
-        return Err(Error::Config(
-            "config.toml: [sandbox] write must be an array".to_string(),
-        ));
-    }
-    let mut array = existing
-        .and_then(toml_edit::Item::as_array)
-        .cloned()
-        .unwrap_or_else(toml_edit::Array::new);
-    if !array
-        .iter()
-        .any(|value| value.as_str() == Some(entry.as_str()))
-    {
-        array.push(entry.as_str());
-    }
-    document["sandbox"]["write"] = toml_edit::Item::Value(toml_edit::Value::Array(array));
-    if let Some(table) = document["sandbox"].as_table_mut() {
-        table.set_implicit(true);
-    }
-    persist(path, document)?;
-    Ok(())
-}
+#[cfg(test)]
+#[path = "config_tests.rs"]
+mod tests;

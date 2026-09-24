@@ -5,7 +5,7 @@ use super::{
     AssistantMessage, Client, CompletionRequest, Partial, StopReason, ToolCall, ToolFunction,
     ToolKind, think,
 };
-use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
+use crate::error::{Error, ProviderFailureKind, Result};
 
 impl Client {
     pub(super) async fn complete_stream(
@@ -13,8 +13,24 @@ impl Client {
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        self.stream_wire::<super::wire::completions::Wire>(request, partial)
-            .await
+        match self.wire {
+            crate::endpoint::Wire::Anthropic => {
+                self.stream_wire::<super::wire::anthropic::Wire>(request, partial)
+                    .await
+            }
+            crate::endpoint::Wire::Gemini => {
+                self.stream_wire::<super::wire::gemini::Wire>(request, partial)
+                    .await
+            }
+            crate::endpoint::Wire::Responses => {
+                self.stream_wire::<super::wire::responses::Wire>(request, partial)
+                    .await
+            }
+            crate::endpoint::Wire::Completions | crate::endpoint::Wire::Decisions => {
+                self.stream_wire::<super::wire::completions::Wire>(request, partial)
+                    .await
+            }
+        }
     }
 
     async fn stream_wire<W: super::wire::Chat>(
@@ -25,53 +41,67 @@ impl Client {
         use super::wire::{Accumulate, Delta};
 
         let body = self.request_body(request, true)?;
+        let url = self.url_for::<W>(&request.model, true);
+        let sink = super::capture::Sink::open(self.wire, "stream");
+        if let Some(sink) = &sink {
+            sink.write("request", &body.to_string());
+        }
         let mut bytes = self
-            .send(&body, &request.session)
+            .send(&url, &body, &request.session, true)
             .await?
             .into_stream()
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let mut frames = super::wire::Frames::default();
         let mut state = W::Stream::new(&request.model);
-        let mut started = false;
+        let cut = |error: Error| match error {
+            Error::Provider(mut failure) => {
+                failure.partial_output = true;
+                Error::Provider(failure)
+            }
+            error => error,
+        };
         while let Some(chunk) = bytes.next().await {
             let chunk = chunk.map_err(|error| {
-                Error::Provider(ProviderFailure {
-                    kind: ProviderFailureKind::Transport,
-                    status: None,
-                    message: error.to_string(),
-                    partial_output: started
-                        || !partial.text.is_empty()
-                        || !partial.reasoning.is_empty(),
-                    retry_after: None,
-                })
+                cut(Error::provider(
+                    ProviderFailureKind::Transport,
+                    error.to_string(),
+                ))
             })?;
-            for frame in frames.push(&chunk, W::sentinel())? {
-                for delta in state.on(&frame)? {
-                    started = true;
+            if let Some(sink) = &sink {
+                sink.write("chunk", &String::from_utf8_lossy(&chunk));
+            }
+            for frame in frames.push(&chunk, W::sentinel()).map_err(cut)? {
+                for delta in state.on(&frame).map_err(cut)? {
                     match delta {
                         Delta::Text(text) => {
-                            if let Some(emit) = &self.on_delta {
+                            if request.emit_deltas
+                                && let Some(emit) = &self.on_delta
+                            {
                                 emit(&text);
                             }
                             partial.text.push_str(&text);
                         }
                         Delta::Thinking(text) => {
-                            if let Some(emit) = &self.on_reasoning {
+                            if request.emit_deltas
+                                && let Some(emit) = &self.on_reasoning
+                            {
                                 emit(&text);
                             }
                             partial.reasoning.push_str(&text);
                         }
                         Delta::Call(name) => {
-                            if let Some(emit) = &self.on_tool {
+                            if request.emit_deltas
+                                && let Some(emit) = &self.on_tool
+                            {
                                 emit(&name);
                             }
                         }
                     }
                     if partial.text.len() > PARTIAL_CAP || partial.reasoning.len() > PARTIAL_CAP {
-                        return Err(Error::provider(
+                        return Err(cut(Error::provider(
                             ProviderFailureKind::Malformed,
                             format!("streamed output exceeded {PARTIAL_CAP} bytes"),
-                        ));
+                        )));
                     }
                 }
             }
@@ -79,18 +109,13 @@ impl Client {
                 break;
             }
         }
-        if W::sentinel().is_some() && !frames.ended() && !state.finished() {
-            return Err(Error::Provider(ProviderFailure {
-                kind: ProviderFailureKind::Transport,
-                status: None,
-                message: "stream ended without a completion sentinel".to_string(),
-                partial_output: started
-                    || !partial.text.is_empty()
-                    || !partial.reasoning.is_empty(),
-                retry_after: None,
-            }));
+        if !frames.ended() && !state.finished() {
+            return Err(cut(Error::provider(
+                ProviderFailureKind::Transport,
+                "stream ended before the provider finished the reply",
+            )));
         }
-        finish(state.finish())
+        finish(state.finish()).map_err(cut)
     }
 }
 

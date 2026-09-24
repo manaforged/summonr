@@ -3,7 +3,7 @@ use super::*;
 impl App {
     pub(in crate::tui::sigil_view) fn request_resume(&self, id: String) {
         if !self.draft.peek().is_empty() || !self.attachments.borrow().is_empty() {
-            self.model.borrow_mut().entries.push(Entry::Error(
+            self.push_entry(Entry::Error(
                 "Draft kept. Send it or press Ctrl+C to discard it before switching sessions."
                     .to_string(),
             ));
@@ -38,7 +38,7 @@ impl App {
         let position = text.len().saturating_sub(draft.len()) + caret;
         self.replace(text);
         self.caret.set(position);
-        self.model.borrow_mut().entries.push(Entry::System(
+        self.push_entry(Entry::System(
             "Pending input restored. Edit the composer, then press Enter to send.".to_string(),
         ));
     }
@@ -53,7 +53,7 @@ impl App {
         ) else {
             return;
         };
-        if info.id == self.model.borrow().session {
+        if info.id == self.model.get().session {
             self.sessions.note("the open session cannot be deleted");
             return;
         }
@@ -62,7 +62,7 @@ impl App {
             self.sessions.note("");
         } else {
             self.sessions.note(&format!(
-                "ctrl+d again deletes {}",
+                "alt+d again deletes {}",
                 crate::session::short(&info.id)
             ));
         }
@@ -76,7 +76,7 @@ impl App {
                 .peek()
                 .min(rows.len().saturating_sub(1)),
         ) {
-            if info.id != self.model.borrow().session {
+            if info.id != self.model.get().session {
                 drop(self.cmd.send(Cmd::Command(format!("/resume {}", info.id))));
             }
             self.sessions.open.set(false);

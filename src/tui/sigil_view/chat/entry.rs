@@ -30,7 +30,7 @@ pub(in crate::tui::sigil_view) fn row(entry: Entry, prefs: &Prefs, app: &App) ->
         Entry::Assistant { text: body, .. } => wrap(markdown(signal(body))),
         Entry::Thinking(body) => {
             let live = {
-                let model = app.model.borrow();
+                let model = app.model.get();
                 model.busy_since.is_some()
                     && matches!(model.entries.last(), Some(Entry::Thinking(last)) if *last == body)
             };

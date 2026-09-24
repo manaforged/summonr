@@ -68,8 +68,17 @@ pub(super) fn overlay_list_row() -> f32 {
     }
 }
 
-pub(super) fn overlay_shown(count: usize) -> usize {
-    count.clamp(1, 8)
+pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
+    overlay_room(count, rows, 16).min(14)
+}
+
+pub(super) fn overlay_room(count: usize, rows: u16, used: u16) -> usize {
+    let room = if WINDOW.load(Ordering::Relaxed) {
+        8
+    } else {
+        usize::from(rows.saturating_sub(used)).max(1)
+    };
+    count.clamp(1, room)
 }
 
 #[cfg(feature = "gui")]
@@ -141,7 +150,7 @@ pub(super) fn write_at(
     }
 }
 
-pub(super) fn ellipsize(text: &str, width: usize) -> String {
+pub(crate) fn ellipsize(text: &str, width: usize) -> String {
     if cell_width(text) <= width {
         return text.to_string();
     }

@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::time::Duration;
 
 pub mod digest;
 pub mod eval;
@@ -10,7 +9,6 @@ pub mod sweep;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::credentials;
 use crate::endpoint::{Endpoint, Wire};
 use crate::error::{Error, ProviderFailureKind, Result};
 
@@ -151,19 +149,6 @@ pub enum Answer {
     },
 }
 
-impl Answer {
-    pub fn confidence(&self) -> Option<f64> {
-        match self {
-            Self::Choice { confidence, .. } | Self::Score { confidence, .. } => Some(*confidence),
-            Self::Noul { .. } => None,
-        }
-    }
-
-    pub fn acts_above(&self, floor: f64) -> bool {
-        self.confidence().is_some_and(|value| value >= floor)
-    }
-}
-
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 pub struct Usage {
     #[serde(default)]
@@ -182,63 +167,14 @@ pub struct Decision {
     pub usage: Usage,
 }
 
-#[derive(Serialize)]
-struct Ask<'a> {
-    model: &'a str,
-    state: &'a Value,
-    questions: &'a BTreeMap<String, Question>,
-}
-
 pub async fn ask(
     endpoint: &Endpoint,
     state: &Value,
     questions: &BTreeMap<String, Question>,
 ) -> Result<Decision> {
-    let (url, key) = target(endpoint, questions)?;
-    let http = credentials::http()?;
-    let auth = credentials::bearer(key);
-    let mut request = http.post(&url).user_agent(summonr_auth::AGENT).retry(
-        leyline::RetryPolicy::transient()
-            .with_max_retries(3)
-            .with_backoff(Duration::from_secs(1), Duration::from_secs(8)),
-    );
-    request = auth
-        .apply(request, &http)
-        .await
-        .map_err(|error| Error::Config(error.to_string()))?;
-    for (name, value) in &endpoint.headers {
-        request = request.header(name.as_str(), value.as_str());
-    }
-    let mut response = request
-        .json(&Ask {
-            model: &endpoint.model,
-            state,
-            questions,
-        })
-        .send()
-        .await
-        .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
-    let status = response.status();
-    let after = response
-        .header("retry-after")
-        .and_then(|value| value.trim().parse().ok());
-    let body = response
-        .text()
-        .await
-        .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
-    if !status.is_success() {
-        return Err(crate::provider::response_failure(
-            status.as_u16(),
-            &body,
-            after,
-        ));
-    }
-    let decision: Decision = serde_json::from_str(&body).map_err(|error| {
-        Error::provider(
-            ProviderFailureKind::Malformed,
-            format!("{error}: {}", body.chars().take(200).collect::<String>()),
-        )
-    })?;
+    target(endpoint, questions)?;
+    let client = crate::provider::Client::connect(endpoint)?;
+    let decision = client.classify(&endpoint.model, state, questions).await?;
     for (name, question) in questions {
         if !matches!(
             (question, decision.answers.get(name)),
@@ -255,13 +191,10 @@ pub async fn ask(
     Ok(decision)
 }
 
-fn target<'a>(
-    endpoint: &'a Endpoint,
-    questions: &BTreeMap<String, Question>,
-) -> Result<(String, &'a str)> {
+fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result<()> {
     if endpoint.wire != Wire::Decisions {
         return Err(Error::Config(format!(
-            "`{}` is not a decisions endpoint — see `summonr endpoints`",
+            "`{}` is not a classify endpoint — see `summonr endpoints`",
             endpoint.name
         )));
     }
@@ -271,17 +204,28 @@ fn target<'a>(
     for (name, question) in questions {
         question.check(name)?;
     }
-    let base = endpoint
+    if endpoint
         .base_url
         .as_deref()
-        .ok_or_else(|| Error::Config(format!("`{}` has no base URL", endpoint.name)))?;
-    let key = endpoint.api_key.as_deref().ok_or_else(|| {
-        Error::Config(format!(
+        .is_none_or(|base| base.trim().is_empty())
+    {
+        return Err(Error::Config(format!(
+            "`{}` has no base URL",
+            endpoint.name
+        )));
+    }
+    if endpoint
+        .api_key
+        .as_deref()
+        .is_none_or(|key| key.trim().is_empty())
+        && endpoint.oauth.is_none()
+    {
+        return Err(Error::Config(format!(
             "no key for `{}` — set its environment variable, or `summonr login {}`",
             endpoint.name, endpoint.name
-        ))
-    })?;
-    Ok((base.to_string(), key))
+        )));
+    }
+    Ok(())
 }
 
 pub const CONTEXT_CHARS: usize = 84_000;
@@ -338,21 +282,11 @@ pub fn render(decision: &Decision) -> String {
 }
 
 fn headline(name: &str, value: &str, confidence: Option<f64>) -> String {
-    let value = clip(value, 28);
+    let value = crate::tui::ellipsize(value, 28);
     match confidence {
         Some(confidence) => format!("{name:<16} {value:<28} conf {confidence:.2}\n"),
         None => format!("{name:<16} {value}\n"),
     }
-}
-
-fn clip(text: &str, width: usize) -> String {
-    if text.chars().count() <= width {
-        return text.to_string();
-    }
-    text.chars()
-        .take(width.saturating_sub(1))
-        .collect::<String>()
-        + "…"
 }
 
 fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -> String {
@@ -364,16 +298,16 @@ fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -
         let bar: String = "█".repeat(filled) + &"░".repeat(WIDTH - filled);
         out.push_str(&format!(
             "  {:<18} {bar} {share:.2}\n",
-            clip(&label(key), 18)
+            crate::tui::ellipsize(&label(key), 18)
         ));
     }
     out
 }
 
 #[cfg(test)]
-#[path = "decisions_tests.rs"]
+#[path = "classify_tests.rs"]
 pub(crate) mod tests;
 
 #[cfg(test)]
-#[path = "decisions/question_tests.rs"]
+#[path = "classify/question_tests.rs"]
 mod question_tests;

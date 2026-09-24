@@ -49,8 +49,8 @@ impl Worker {
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
                         Some(Cmd::Export(target)) => super::export_session(&session_path, &session_id, target, &self.ui),
-                        Some(command @ (Cmd::ListModels { .. } | Cmd::ListSessions | Cmd::ListUsage | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
-                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Merge(_) | Cmd::Discard(_))) => {
+                        Some(command @ (Cmd::ListModels { .. } | Cmd::Pin(..) | Cmd::SaveDefault(_) | Cmd::ListSessions | Cmd::ListUsage | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Clipboard | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
+                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Logout(_) | Cmd::Merge(_) | Cmd::Discard(_))) => {
                             self.deferred.push_back(command);
                             drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
                         }
@@ -93,7 +93,7 @@ impl Worker {
                         }
                         Some(Cmd::Mail) => {}
                         Some(Cmd::Send(to, text)) => mail(&self.ui, &session_id, &to, &text),
-                        Some(Cmd::Tick) => {}
+                        Some(Cmd::Tick | Cmd::LoginAnswer(_)) => {}
                         None => { quit = true; break None; }
                     }
                 }

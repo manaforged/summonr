@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::collections::VecDeque;
 use std::fs::read_to_string;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -23,9 +22,8 @@ use crossterm::terminal::{
     enable_raw_mode,
 };
 use crossterm::{cursor, execute, queue};
-use sigil::prelude::{
-    ClipError, Clipboard, Cx, Key, LogicalKey, OsClipboard, Point, ShellEvent, Signal, install,
-};
+use sigil::prelude::{ClipError, Clipboard, Cx, Key, LogicalKey, Point, ShellEvent, Signal};
+use sigil::widgets::install;
 use sigil_tui::{EventRouter, Grid, Host, Screen, calibrate};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 

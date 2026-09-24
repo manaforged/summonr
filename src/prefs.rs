@@ -301,7 +301,7 @@ impl Default for Prefs {
 }
 
 pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
-    let file = config::load_from(path)?;
+    let file = config::parse(path)?;
     let mut prefs = Prefs {
         hotkeys: Hotkeys::configured(&file.hotkeys)?,
         ..Prefs::default()

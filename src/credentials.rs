@@ -1,13 +1,10 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use summonr_auth::{Auth, Grant, Method, Scheme, Spec, Store, TokenStyle};
 
 use crate::endpoint::{Endpoint, LoginFlow, Wire};
 use crate::error::{Error, Result};
 use crate::secret;
-
-const AUTH_TIMEOUT: Duration = Duration::from_secs(30);
 
 struct Keeper;
 
@@ -26,6 +23,23 @@ impl Store for Keeper {
 
     fn forget(&self, name: &str) -> summonr_auth::Result<bool> {
         secret::forget(name).map_err(|error| summonr_auth::Error::Config(error.to_string()))
+    }
+
+    fn claim(&self, name: &str) -> summonr_auth::Result<Box<dyn Send>> {
+        let safe: String = name
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        crate::prompt::summonr_home()
+            .and_then(|home| crate::config::hold(&home.join("locks").join(safe)))
+            .map(|file| Box::new(file) as Box<dyn Send>)
+            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 }
 
@@ -80,18 +94,23 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
 pub(crate) fn auth(endpoint: &Endpoint) -> Result<Auth> {
     let method = match endpoint.oauth.as_ref() {
         Some(row) => Method::Login(Box::new(spec(row)?)),
-        None => Method::Key(
-            endpoint
-                .api_key
-                .clone()
-                .filter(|key| !key.trim().is_empty())
-                .unwrap_or_else(|| "local".to_string()),
-        ),
+        None => match endpoint
+            .api_key
+            .clone()
+            .filter(|key| !key.trim().is_empty())
+        {
+            Some(_) if matches!(endpoint.source, Some(secret::Source::Peer(_))) => {
+                Method::Peer(crate::endpoint::peer_token, endpoint.name.clone())
+            }
+            Some(key) => Method::Key(key),
+            None if endpoint.keyless() => Method::Key("local".to_string()),
+            None => Method::Key(String::new()),
+        },
     };
     let carrier = match (&method, endpoint.oauth.as_ref().and_then(named_scheme)) {
         (Method::Login(_), Some(named)) => named,
         (Method::Login(_), None) => Scheme::Bearer,
-        (Method::Key(_), _) => scheme(endpoint.wire),
+        (Method::Key(_) | Method::Peer(..), _) => scheme(endpoint.wire),
     };
     Ok(Auth::new(method, carrier, &endpoint.name, keeper()))
 }
@@ -110,7 +129,8 @@ pub(crate) fn bearer(key: impl Into<String>) -> Auth {
 }
 
 pub(crate) fn http() -> Result<leyline::Session> {
-    summonr_auth::http(AUTH_TIMEOUT).map_err(|error| Error::Config(error.to_string()))
+    summonr_auth::http(crate::limits::AUTH, crate::limits::CONNECT)
+        .map_err(|error| Error::Config(error.to_string()))
 }
 
 pub(crate) fn logged_in(row: &crate::config::OAuth, name: &str) -> Result<bool> {

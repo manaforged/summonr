@@ -38,7 +38,7 @@ impl App {
             Setting::Reasoning => self.reasoning_command(None),
             Setting::Tools => self.toggle_tools(),
             Setting::DiffLayout => {
-                let layout = self.model.borrow().prefs.diff_layout.toggle();
+                let layout = self.model.get().prefs.diff_layout.toggle();
                 self.set_diff_layout(layout);
             }
             Setting::Bus => self.toggle_bus(),
@@ -53,18 +53,17 @@ impl App {
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => {
                 self.flip(|prefs| prefs.animations = !prefs.animations);
-                self.splash_revealed
-                    .set(!self.model.borrow().prefs.animations);
+                self.splash_revealed.set(!self.model.get().prefs.animations);
             }
         }
     }
 
     pub(in crate::tui::sigil_view) fn flip(&self, change: impl FnOnce(&mut crate::prefs::Prefs)) {
-        let mut model = self.model.borrow_mut();
-        change(&mut model.prefs);
-        model.entries.invalidate();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            change(&mut model.prefs);
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
     }
@@ -119,10 +118,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn reset_hotkeys(&self) {
-        let mut model = self.model.borrow_mut();
-        model.prefs.hotkeys = Default::default();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.hotkeys = Default::default();
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.hotkey_recording.set(false);
         self.hotkey_note.set(String::new());
         self.persist(&prefs);
@@ -136,17 +135,17 @@ impl App {
                 return true;
             }
             let action = Hotkey::ALL[self.hotkey_sel.peek().min(Hotkey::ALL.len() - 1)];
-            let mut model = self.model.borrow_mut();
-            let _ = model.prefs.hotkeys.assign(action, key);
-            let prefs = model.prefs.clone();
-            drop(model);
+            self.model_mut(|model| {
+                let _ = model.prefs.hotkeys.assign(action, key);
+            });
+            let prefs = self.model.peek().prefs.clone();
             self.hotkey_recording.set(false);
             self.hotkey_note.set(String::new());
             self.persist(&prefs);
             self.refresh();
             return true;
         }
-        let action = self.model.borrow().prefs.hotkeys.action(key);
+        let action = self.model.get().prefs.hotkeys.action(key);
         let Some(action) = action else {
             return false;
         };
@@ -171,31 +170,31 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn toggle_theme(&self) {
         let names = theme::Palette::ALL;
-        let mut model = self.model.borrow_mut();
-        let next = names
-            .iter()
-            .position(|(name, _)| *name == model.prefs.theme)
-            .map_or(names[0].0, |index| names[(index + 1) % names.len()].0);
-        model.prefs.theme = next.to_string();
-        model.entries.invalidate();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            let next = names
+                .iter()
+                .position(|(name, _)| *name == model.prefs.theme)
+                .map_or(names[0].0, |index| names[(index + 1) % names.len()].0);
+            model.prefs.theme = next.to_string();
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
         theme::install(&prefs.theme, &self.workspace, self.info.config.as_deref());
         self.persist(&prefs);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn hide_agents(&self) {
-        self.model.borrow_mut().agents_hidden = true;
+        self.model_mut(|model| model.agents_hidden = true);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn toggle_bus(&self) {
-        let mut model = self.model.borrow_mut();
-        model.prefs.bus = !model.prefs.bus;
-        let on = model.prefs.bus;
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.bus = !model.prefs.bus;
+        });
+        let prefs = self.model.peek().prefs.clone();
+        let on = prefs.bus;
         self.persist(&prefs);
         drop(self.cmd.send(Cmd::SetBus(on)));
         self.refresh();
@@ -214,7 +213,7 @@ impl App {
         let next = match argument {
             None => self
                 .model
-                .borrow()
+                .get()
                 .snapshot
                 .effort
                 .unwrap_or(crate::provider::Effort::None)
@@ -222,7 +221,7 @@ impl App {
             Some(level) => match crate::provider::Effort::parse(level) {
                 Some(effort) => effort,
                 None => {
-                    self.model.borrow_mut().entries.push(Entry::Error(format!(
+                    self.push_entry(Entry::Error(format!(
                         "effort takes none, low, medium, or high, not `{level}`"
                     )));
                     self.refresh();
@@ -230,45 +229,47 @@ impl App {
                 }
             },
         };
-        self.model.borrow_mut().snapshot.effort = Some(next);
+        self.model_mut(|model| model.snapshot.effort = Some(next));
         drop(self.cmd.send(Cmd::SetEffort(Some(next))));
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn reasoning_command(&self, argument: Option<&str>) {
-        let mut model = self.model.borrow_mut();
-        model.prefs.reasoning = match argument {
-            Some(value) => {
-                crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Collapsed)
-            }
-            None => model.prefs.reasoning.toggle(),
-        };
-        model.entries.invalidate();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.reasoning = match argument {
+                Some(value) => {
+                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Collapsed)
+                }
+                None => model.prefs.reasoning.toggle(),
+            };
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn receipts_command(&self, argument: Option<&str>) {
-        let mut model = self.model.borrow_mut();
-        model.prefs.receipts = match argument {
-            Some(value) => crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Off),
-            None => model.prefs.receipts.toggle(),
-        };
-        model.entries.invalidate();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.receipts = match argument {
+                Some(value) => {
+                    crate::prefs::Visibility::parse(value, crate::prefs::Visibility::Off)
+                }
+                None => model.prefs.receipts.toggle(),
+            };
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn toggle_tools(&self) {
-        let mut model = self.model.borrow_mut();
-        model.prefs.tools = model.prefs.tools.toggle();
-        model.entries.invalidate();
-        let prefs = model.prefs.clone();
-        drop(model);
+        self.model_mut(|model| {
+            model.prefs.tools = model.prefs.tools.toggle();
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();
     }

@@ -11,6 +11,15 @@ pub use oauth::{Grant, Spec, TokenStyle};
 pub const AGENT: &str = concat!("summonr/", env!("CARGO_PKG_VERSION"));
 
 const SKEW: Duration = Duration::from_secs(60);
+const LOGIN_WAIT: Duration = Duration::from_secs(300);
+const POLL_FLOOR: Duration = Duration::from_secs(1);
+const POLL_CEILING: Duration = Duration::from_secs(30);
+const POLL_STEP: Duration = Duration::from_secs(5);
+const DEVICE_EXPIRY: Duration = Duration::from_secs(900);
+
+const fn seconds(value: u64) -> Duration {
+    Duration::from_secs(value)
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -67,6 +76,9 @@ pub trait Store: Send + Sync {
     fn get(&self, name: &str) -> Result<Option<String>>;
     fn set(&self, name: &str, secret: &str) -> Result<()>;
     fn forget(&self, name: &str) -> Result<bool>;
+    fn claim(&self, _name: &str) -> Result<Box<dyn Send>> {
+        Ok(Box::new(()))
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,6 +103,7 @@ impl Scheme {
 pub enum Method {
     Key(String),
     Login(Box<Spec>),
+    Peer(fn(&str) -> Option<String>, String),
 }
 
 struct Seat {
@@ -117,6 +130,7 @@ impl Issued {
 enum Held {
     Key(String),
     Login(Box<Seat>),
+    Peer(fn(&str) -> Option<String>, String),
 }
 
 #[derive(Clone)]
@@ -130,6 +144,7 @@ impl Auth {
     pub fn new(method: Method, scheme: Scheme, name: &str, store: Arc<dyn Store>) -> Self {
         let held = match method {
             Method::Key(key) => Held::Key(key),
+            Method::Peer(read, name) => Held::Peer(read, name),
             Method::Login(spec) => Held::Login(Box::new(Seat {
                 spec: *spec,
                 name: name.to_string(),
@@ -154,6 +169,10 @@ impl Auth {
     pub async fn token(&self, http: &Session) -> Result<String> {
         match self.held.as_ref() {
             Held::Key(key) => Ok(key.clone()),
+            Held::Peer(read, name) => read(name).ok_or_else(|| Error::NeedsLogin {
+                name: name.clone(),
+                detail: "the peer login expired; sign in with that tool again".to_string(),
+            }),
             Held::Login(seat) => oauth::token(parts(seat), http, self.store.as_ref()).await,
         }
     }
@@ -198,7 +217,7 @@ impl Auth {
 
     pub fn ready(&self) -> Result<bool> {
         match self.held.as_ref() {
-            Held::Key(_) => Ok(true),
+            Held::Key(_) | Held::Peer(..) => Ok(true),
             Held::Login(seat) => Ok(self
                 .store
                 .get(&seat.name)?
@@ -221,10 +240,10 @@ fn parts(seat: &Seat) -> Parts<'_> {
     }
 }
 
-pub fn http(timeout: Duration) -> Result<Session> {
+pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
     Session::builder()
         .timeout(timeout)
-        .connect_timeout(Duration::from_secs(20))
+        .connect_timeout(connect)
         .build()
         .map_err(|error| Error::Transport(error.to_string()))
 }

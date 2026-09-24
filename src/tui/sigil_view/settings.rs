@@ -1,7 +1,6 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
 pub(super) use super::prelude;
-pub(super) use super::view::watch;
 
 mod auth;
 mod hotkeys;
@@ -43,7 +42,7 @@ pub(super) struct Row {
 }
 
 pub(super) fn setting_rows(app: &App) -> Vec<Row> {
-    let model = app.model.borrow();
+    let model = app.model.get();
     let snapshot = &model.snapshot;
     let prefs = &model.prefs;
     let mode = if snapshot.plan {

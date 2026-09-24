@@ -31,18 +31,25 @@ pub(super) fn root(app: App) -> NodeBuilder {
         } else {
             surface::layer(screen.clone())
         };
-        let dialog = match screen.overlay() {
-            Some(Overlay::Help) => super::help::layer(screen.clone()),
-            Some(Overlay::Search) => super::search::layer(screen.clone()),
-            Some(Overlay::Sessions) => super::sessions::layer(screen.clone()),
-            Some(Overlay::Usage) => super::usage::layer(screen.clone()),
-            Some(Overlay::Auth) => settings::auth_layer(screen.clone()),
-            Some(Overlay::Model) => settings::model_picker_layer(screen.clone()),
-            Some(Overlay::Workflow) => settings::workflow_layer(screen.clone()),
-            Some(Overlay::Hotkeys) => settings::hotkeys_layer(screen.clone()),
-            Some(Overlay::Settings) => settings::settings_layer(screen.clone()),
-            Some(Overlay::Context | Overlay::Cache) | None => container(),
-        };
+        let overlays = screen.clone();
+        let dialog = container()
+            .layout(LayoutStyle::block())
+            .children_reactive(move || {
+                let _viewport = overlays.viewport.get();
+                let screen = overlays.clone();
+                vec![match screen.overlay() {
+                    Some(Overlay::Help) => super::help::layer(screen.clone()),
+                    Some(Overlay::Search) => super::search::layer(screen.clone()),
+                    Some(Overlay::Sessions) => super::sessions::layer(screen.clone()),
+                    Some(Overlay::Usage) => super::usage::layer(screen.clone()),
+                    Some(Overlay::Auth) => settings::auth_layer(screen.clone()),
+                    Some(Overlay::Model) => settings::model_picker_layer(screen.clone()),
+                    Some(Overlay::Workflow) => settings::workflow_layer(screen.clone()),
+                    Some(Overlay::Hotkeys) => settings::hotkeys_layer(screen.clone()),
+                    Some(Overlay::Settings) => settings::settings_layer(screen.clone()),
+                    Some(Overlay::Context | Overlay::Cache) | None => container(),
+                }]
+            });
         vec![
             container()
                 .layout(LayoutStyle::block().fill_width().fill_height())
@@ -52,15 +59,4 @@ pub(super) fn root(app: App) -> NodeBuilder {
                 .theme(surface::theme(&screen.theme_name.get())),
         ]
     })
-}
-
-pub(super) fn watch(app: &App) {
-    drop((
-        app.panes.get(),
-        app.select.get(),
-        app.draft.get(),
-        app.caret.get(),
-        app.view_edit.get(),
-        app.model_choices.get(),
-    ));
 }

@@ -258,6 +258,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     shell(
         picker.open,
         picker.heading(),
+        app.viewport.peek().0,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -283,7 +284,6 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            super::view::watch(&paint);
             let rows = picker.rows();
             let selected = picker.selected.get().min(rows.len().saturating_sub(1));
             if rows.is_empty() {
@@ -291,7 +291,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
             }
             let source = paint.clone();
             let band = canvas::overlay_list_row();
-            let shown = canvas::overlay_shown(rows.len());
+            let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
             let total = rows.len();
             let mut items = vec![
                 container().layout(LayoutStyle::block().fill_width()).child(
@@ -316,7 +316,7 @@ fn row(app: App, picker: Picker, index: usize, info: &SessionInfo, selected: usi
     let choose = app.clone();
     let title = picker.title(info);
     let detail = picker.detail(info);
-    pick(index == selected, false, title, detail).pointer_down(move |event| {
+    pick(index == selected, title, detail).pointer_down(move |event| {
         choose.sessions.selected.set(index);
         choose.resume_session();
         event.stop_propagation();

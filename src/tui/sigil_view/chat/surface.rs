@@ -36,12 +36,7 @@ pub(in crate::tui::sigil_view) fn layer(
                 .min_size(0.0, 0.0)
                 .padding_x(16.0)
                 .gap(canvas::cell().h);
-            let empty = || {
-                empty_state(
-                    "Summonr",
-                    "ask anything · /login setup · @file attaches · !cmd runs · /help",
-                )
-            };
+            let empty = || empty_state("Summonr", "ask anything · /login · @file · !cmd · /help");
             cx.add(
                 transcript(transcript_app.clone(), layout, empty).pointer_down(move |event| {
                     if event.button == Some(MouseButton::Left) {
@@ -69,9 +64,7 @@ fn header(app: App) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let _panes = update.panes.get();
-            let fps = update.fps.get();
-            let model = update.model.borrow();
+            let model = update.model.get();
             let mode = if model.snapshot.plan {
                 "plan"
             } else if model.snapshot.work {
@@ -100,6 +93,12 @@ fn header(app: App) -> NodeBuilder {
                         label(model.snapshot.model.clone()).class(classes!("text-sm text-gray-12")),
                     ),
                 ];
+            if let Some(pick) = model.pick {
+                row.push(
+                    container()
+                        .child(label(format!("({pick})")).class(classes!("text-xs text-gray-11"))),
+                );
+            }
             if let Some(relay) = model
                 .snapshot
                 .relay
@@ -119,12 +118,6 @@ fn header(app: App) -> NodeBuilder {
                 ),
             );
             row.push(container().child(mode_label));
-            if fps > 0 {
-                row.push(
-                    container()
-                        .child(label(format!("{fps} fps")).class(classes!("text-xs text-gray-11"))),
-                );
-            }
             row
         })
 }
@@ -161,7 +154,7 @@ fn build(
 ) -> Box<dyn IntoNode> {
     node(move |cx: &mut Cx| {
         let (entry, prefs) = {
-            let model = app.model.borrow();
+            let model = app.model.get();
             (model.entries.get(index).cloned(), model.prefs.clone())
         };
         let Some(entry) = entry else {
@@ -209,9 +202,8 @@ pub(in crate::tui::sigil_view) fn transcript(
         })
         .layout(layout)
         .children_keyed(move || {
-            let _revision = live.panes.get();
             let target = live.search.target.peek();
-            let model = live.model.borrow();
+            let model = live.model.get();
             let entries = &model.entries;
             if entries.is_empty() {
                 return vec![((entries.stamp, usize::MAX, 0, 0, false), node(empty()))];

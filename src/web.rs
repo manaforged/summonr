@@ -1,5 +1,4 @@
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use leyline::http::Uri;
 use leyline::{RedirectAction, RedirectPolicy, Session};
@@ -8,7 +7,7 @@ use url::Url;
 use crate::config;
 use crate::error::{Error, Result};
 
-const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
+use crate::limits::WEB_SEARCH as SEARCH_TIMEOUT;
 const HITS_DEFAULT: usize = 5;
 const HITS_MAX: usize = 8;
 const QUERY_MAX: usize = 400;
@@ -52,7 +51,7 @@ pub(crate) struct Search {
 
 impl Search {
     pub(crate) fn discover() -> Result<Self> {
-        let file = config::load()?.search;
+        let file = config::file()?.search;
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);
         let allowed = normalize_domains(file.allowed_domains.unwrap_or_default());
         let excluded = normalize_domains(file.excluded_domains.unwrap_or_default());
@@ -153,7 +152,7 @@ fn client() -> Result<Session> {
     Session::builder()
         .chrome()
         .timeout(SEARCH_TIMEOUT)
-        .connect_timeout(Duration::from_secs(8))
+        .connect_timeout(crate::limits::WEB_CONNECT)
         .redirect_policy(RedirectPolicy::custom(|attempt| {
             if attempt.previous.len() >= 5 || !safe_redirect(attempt.url) {
                 RedirectAction::Stop

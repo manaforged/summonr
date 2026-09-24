@@ -59,11 +59,39 @@ async fn launch_once(
         && !adopted.contains(&endpoint.name)
     {
         eprintln!(
-            "the key for {} is plaintext in config.toml — `summon login {} --key` moves it into the credential store",
+            "the key for {} is plaintext in config.toml — `summonr login {} --key` moves it into the credential store",
             endpoint.name, endpoint.name
         );
     }
     let ui = channels(use_tui(args));
+    if let Some(ui) = &ui.0
+        && endpoint.api_key.is_none()
+        && endpoint.oauth.is_none()
+    {
+        let (ui, seat) = (ui.clone(), endpoint.clone());
+        let named = args.endpoint.is_some();
+        drop(tokio::spawn(async move {
+            let note = if !seat.keyless() && named {
+                format!(
+                    "{} has no key yet. Paste its key, or pick another provider.",
+                    seat.name
+                )
+            } else if !seat.keyless() {
+                "No provider is set up yet. Pick one and paste its key.".to_string()
+            } else {
+                match Client::discover(&seat).await {
+                    Err(error) if Client::state(&error) == summonr::EndpointState::KeyRejected => {
+                        format!(
+                            "{} rejected the request. Paste its key, or pick another provider.",
+                            seat.name
+                        )
+                    }
+                    Ok(_) | Err(_) => return,
+                }
+            };
+            drop(ui.send(summonr::tui::Msg::OpenLogin(note)));
+        }));
+    }
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
     let probe = endpoint.context_window.is_none().then(|| {
         let client = provider.clone();
@@ -214,6 +242,7 @@ async fn dispatch(
             relay: splash::host_of(endpoint.base_url.as_deref()).map(str::to_string),
             session: loop_.session_id().to_string(),
             endpoint: endpoint.name.clone(),
+            pick: summonr::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
             prefs,
             splash,
             plan: args.plan,

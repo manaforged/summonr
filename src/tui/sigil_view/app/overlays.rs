@@ -36,7 +36,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn overlay_move(&self, delta: isize) -> bool {
         match self.overlay() {
             Some(Overlay::Help) => {}
-            Some(Overlay::Search) => self.search.shift(&self.model.borrow(), delta),
+            Some(Overlay::Search) => self.search.shift(&self.model.get(), delta),
             Some(Overlay::Sessions) => self.sessions.shift(delta),
             Some(Overlay::Auth) => self.move_auth(delta),
             Some(Overlay::Model) => self.move_model(delta),
@@ -87,7 +87,16 @@ impl App {
             Some(Overlay::Help) => self.help.open.set(false),
             Some(Overlay::Search) => self.search.open.set(false),
             Some(Overlay::Sessions) => self.sessions.open.set(false),
+            Some(Overlay::Auth)
+                if matches!(self.auth_step.peek(), Login::List(_))
+                    && !self.auth_filter.peek().is_empty() =>
+            {
+                self.replace_auth_filter(String::new());
+            }
             Some(Overlay::Auth) => self.cancel_auth(),
+            Some(Overlay::Model) if !self.model_draft.peek().is_empty() => {
+                self.replace_model_draft(String::new());
+            }
             Some(Overlay::Model) => self.cancel_model_edit(),
             Some(Overlay::Workflow) => self.close_workflow(),
             Some(Overlay::Hotkeys) if self.hotkey_recording.peek() => {

@@ -3,7 +3,7 @@ use sigil::prelude::{IntoNode, button, hairline, kv_row, spacer, status_bar};
 
 pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
     let (plan, context, tokens, cached) = {
-        let model = app.model.borrow();
+        let model = app.model.get();
         let cached = (model.cached_tokens > 0 && model.prompt_tokens > 0)
             .then(|| model.cached_tokens.saturating_mul(100) / model.prompt_tokens);
         (
@@ -26,12 +26,12 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
         )
         .class(classes!("rounded-md bg-gray-3"))
         .child(seg("Auto", !plan, move || {
-            if auto.model.borrow().snapshot.plan {
+            if auto.model.get().snapshot.plan {
                 auto.toggle_mode();
             }
         }))
         .child(seg("Plan", plan, move || {
-            if !planned.model.borrow().snapshot.plan {
+            if !planned.model.get().snapshot.plan {
                 planned.toggle_mode();
             }
         }));

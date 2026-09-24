@@ -52,7 +52,7 @@ impl ToolRegistry {
     }
 
     pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
-        let args: Value = parse_args("read_file", arguments)?;
+        let args: Value = parse_args("read", arguments)?;
         let path = object_string(&args, "path")?;
         let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
         let limit = object_usize(&args, "limit")

@@ -3,7 +3,7 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn diff_stats(&self) -> Vec<crate::diff::Stat> {
-        let model = self.model.borrow();
+        let model = self.model.get();
         let recent = self.diff_recent.peek();
         model
             .diff
@@ -24,7 +24,7 @@ impl App {
         let viewed = self.diff_view.peek();
         let result = self
             .model
-            .borrow()
+            .get()
             .patch
             .as_ref()
             .filter(|(path, _)| viewed.as_deref() == Some(path.as_str()))
@@ -47,14 +47,10 @@ impl App {
     pub(in crate::tui::sigil_view) fn patch_copy(&self, result: Result<String, String>) {
         match result {
             Ok(text) if !text.is_empty() => self.copy.set(Some(text)),
-            Ok(_) => self.model.borrow_mut().entries.push(Entry::System(
+            Ok(_) => self.push_entry(Entry::System(
                 "there are no patch changes to copy".to_string(),
             )),
-            Err(error) => self
-                .model
-                .borrow_mut()
-                .entries
-                .push(Entry::Error(format!("cannot copy patch: {error}"))),
+            Err(error) => self.push_entry(Entry::Error(format!("cannot copy patch: {error}"))),
         }
     }
 
@@ -62,7 +58,7 @@ impl App {
         let text = match scope {
             None => self
                 .model
-                .borrow()
+                .get()
                 .entries
                 .iter()
                 .rev()
@@ -70,23 +66,16 @@ impl App {
                     Entry::Assistant { text, .. } if !text.trim().is_empty() => Some(text.clone()),
                     _ => None,
                 }),
-            Some("all") => Some(self.model.borrow().transcript()),
+            Some("all") => Some(self.model.get().transcript()),
             Some(_) => {
-                self.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::System("usage: /copy [all]".to_string()));
+                self.push_entry(Entry::System("usage: /copy [all]".to_string()));
                 self.refresh();
                 return;
             }
         };
         match text.filter(|text| !text.trim().is_empty()) {
             Some(text) => self.copy.set(Some(text)),
-            None => self
-                .model
-                .borrow_mut()
-                .entries
-                .push(Entry::System("there is no reply to copy".to_string())),
+            None => self.push_entry(Entry::System("there is no reply to copy".to_string())),
         }
         self.refresh();
     }
@@ -100,7 +89,7 @@ impl App {
                 "copy requested for {lines} line{plural}; terminal acceptance is unconfirmed"
             ),
         };
-        self.model.borrow_mut().entries.push(Entry::System(notice));
+        self.push_entry(Entry::System(notice));
         self.refresh();
     }
 
@@ -120,7 +109,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn patch_lines(&self) -> usize {
         let width = usize::from(self.layout.peek().split(self.viewport.peek().0).1);
         self.model
-            .borrow()
+            .get()
             .patch
             .as_ref()
             .map_or(0, |(_, result)| match result {
@@ -131,7 +120,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn constrain(&self) {
-        if self.model.borrow().patch.is_some() {
+        if self.model.get().patch.is_some() {
             self.diff_scroll.set(
                 self.diff_scroll
                     .peek()
@@ -169,7 +158,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn diff_open(&self, path: String) {
-        self.model.borrow_mut().patch = None;
+        self.model_mut(|model| model.patch = None);
         self.diff_scroll.set(0);
         self.diff_view.set(Some(path.clone()));
         drop(self.cmd.send(Cmd::Patch(self.root(), path)));
@@ -181,13 +170,13 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn compare(&self, root: Option<(PathBuf, String)>) {
-        self.model.borrow_mut().patch = None;
+        self.model_mut(|model| model.patch = None);
         self.diff_root.set(root);
     }
 
     pub(in crate::tui::sigil_view) fn tree_rows(&self) -> Vec<FileRow> {
         self.model
-            .borrow()
+            .get()
             .trees
             .iter()
             .map(|row| FileRow {

@@ -75,7 +75,7 @@ pub(super) fn segment_verbs(command: &str) -> impl Iterator<Item = String> {
 pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: &str) -> String {
     match grant {
         Some(Grant::Network) => {
-            "\nnote: network is off in the sandbox. /net on for this session or /net once, then retry.\n"
+            "\nnote: network is off in the sandbox. /permissions net on for this session, or /permissions net once, then retry.\n"
                 .to_string()
         }
         Some(Grant::Write(path) | Grant::Guarded(path)) => format!(

@@ -2,10 +2,17 @@ use crate::command::Category;
 use crate::prefs::{Hotkey, Hotkeys};
 
 pub(crate) fn help_text(keys: &Hotkeys) -> String {
-    let specs = crate::command_specs();
-    let width = specs.iter().map(|spec| spec.name.len()).max().unwrap_or(0);
+    let specs: Vec<_> = crate::command_specs()
+        .iter()
+        .filter(|spec| spec.shown())
+        .map(|spec| (spec.category, spec.name, spec.description))
+        .collect();
+    let width = specs.iter().map(|spec| spec.1.len()).max().unwrap_or(0);
     let mut lines = Vec::new();
     for category in Category::ALL {
+        if !specs.iter().any(|spec| spec.0 == category) {
+            continue;
+        }
         if !lines.is_empty() {
             lines.push(String::new());
         }
@@ -13,8 +20,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
         lines.extend(
             specs
                 .iter()
-                .filter(|spec| spec.category == category)
-                .map(|spec| format!("  {:<width$}  {}", spec.name, spec.description)),
+                .filter(|spec| spec.0 == category)
+                .map(|spec| format!("  {:<width$}  {}", spec.1, spec.2)),
         );
     }
     lines.extend(
@@ -23,9 +30,9 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "composer".to_string(),
             "  enter        send, or steer the running turn".to_string(),
             "  tab          complete a /command or @path; queue while busy".to_string(),
-            "  ctrl+q       pull queued input back into the editor".to_string(),
+            "  ↑            on an empty draft, pull queued input back".to_string(),
             "  shift+tab    switch between auto and plan mode".to_string(),
-            "  esc          cancel; twice on an idle composer opens /tree".to_string(),
+            "  esc          cancel; twice on an idle composer opens the session tree".to_string(),
             "  ctrl+c       clear the draft; twice on an empty draft quits".to_string(),
             "  ctrl+d       quit when the draft is empty".to_string(),
             format!("  {:<12} newline", keys.label(Hotkey::Newline)),
@@ -50,7 +57,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
             "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),
             "  diff         t last turn only · c copy the patch".to_string(),
-            "  sessions     ↑↓ · enter resume · tab scope · ctrl+d twice deletes · esc".to_string(),
+            "  sessions     ↑↓ · enter resume · tab scope · alt+d twice deletes · esc".to_string(),
+            "  models       ↑↓ · enter use · alt+p pin · alt+d default · F5 refresh".to_string(),
             "  workflow     ↑↓ role · enter seat · d driving · ←→ saved · s save".to_string(),
         ],
     );

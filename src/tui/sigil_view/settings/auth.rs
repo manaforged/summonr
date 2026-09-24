@@ -4,13 +4,21 @@ use sigil::prelude::{
 };
 
 use super::prelude::*;
-use super::{App, canvas, watch};
+use super::{App, canvas};
+use crate::endpoint::State;
+use crate::tui::sigil_view::app::{Login, matching, section};
+use crate::{AuthInfo, LoginFlow};
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
+    let title = match app.auth_choice() {
+        Some(choice) if app.editing_model.peek() => format!("Models › {}", choice.name),
+        Some(_) | None => "Providers".to_string(),
+    };
     shell(
         app.auth_open,
-        "Authentication",
+        title,
+        app.viewport.peek().0,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -18,123 +26,263 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .gap(canvas::overlay_gap()),
             )
             .children_reactive(move || {
-                watch(&paint);
-                if paint.auth_entering.get() {
-                    return entering(&paint);
+                let name = paint
+                    .auth_choice()
+                    .map(|choice| choice.name)
+                    .unwrap_or_default();
+                match paint.auth_step.get() {
+                    Login::List(note) => choices(&paint, &note),
+                    Login::Key(note) => entering(&paint, &note),
+                    Login::Checking => {
+                        vec![line("Checking the key…"), hint("esc cancel", String::new())]
+                    }
+                    Login::SignIn {
+                        text,
+                        url,
+                        code,
+                        asking,
+                        note,
+                    } => signing(&paint, &name, [text, url, code, note], asking),
+                    Login::Confirm => vec![
+                        line(format!("Sign out of {name}?")),
+                        hint("↵ yes · esc no", String::new()),
+                    ],
                 }
-                choices(&paint)
             }),
     )
 }
 
-fn chip(state: &str) -> String {
-    if state.contains("missing") {
-        "not set".to_string()
-    } else if state.contains("required") {
-        "sign in".to_string()
-    } else {
-        format!("✓ {state}")
+fn line(text: impl Into<String>) -> NodeBuilder {
+    container().child(label(text.into()).class(classes!("text-sm")))
+}
+
+fn wrapped(text: &str, width: usize) -> Vec<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match parts.last_mut() {
+            Some(last)
+                if sigil_tui::cell_width(last) + 1 + sigil_tui::cell_width(word) <= width =>
+            {
+                last.push(' ');
+                last.push_str(word);
+            }
+            Some(_) | None => parts.push(canvas::ellipsize(word, width)),
+        }
+    }
+    parts
+}
+
+fn span(app: &App) -> usize {
+    let (cols, _) = app.viewport.get();
+    (canvas::dialog_width(cols, 72.0) / canvas::cell().w) as usize
+}
+
+fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
+    state
+        .filter(|state| state.failed())
+        .map_or_else(|| choice.state(), ToString::to_string)
+}
+
+fn action(choice: &AuthInfo, state: &str) -> String {
+    match (choice.flow, choice.env) {
+        (LoginFlow::Browser, _) => "↵ opens the browser to sign in".to_string(),
+        (LoginFlow::Device, _) => "↵ shows a device code to sign in".to_string(),
+        (LoginFlow::Key, Some(env)) => format!("key comes from ${env}"),
+        (LoginFlow::Key, None) if choice.stored() => "↵ replaces the key".to_string(),
+        (LoginFlow::Key, None) if state == State::NoKey.word() => {
+            "no key needed · ↵ sets a key if the server asks for one".to_string()
+        }
+        (LoginFlow::Key, None) => "↵ opens a field to paste the key".to_string(),
     }
 }
 
-fn choices(app: &App) -> Vec<NodeBuilder> {
-    let source = app.clone();
-    let rows = app.auth_choices.get();
-    let selected = app.auth_sel.get().min(rows.len().saturating_sub(1));
-    if rows.is_empty() {
-        return vec![
-            container().child(
-                label("No providers to sign in to.").class(classes!("text-xs text-gray-11")),
-            ),
-        ];
+const SEARCH: &str = "Search providers";
+
+fn choices(app: &App, note: &str) -> Vec<NodeBuilder> {
+    let paint = app.clone();
+    let mut nodes = Vec::new();
+    for part in wrapped(note, span(app).saturating_sub(10)) {
+        nodes.push(band(part, note.starts_with('✗')));
     }
-    let (_, term_rows) = app.viewport.get();
-    let visible = usize::from(term_rows.saturating_sub(12)).clamp(6, 14);
-    let lookup = rows
-        .iter()
-        .map(|choice| (choice.name.clone(), choice.state()))
-        .collect::<Vec<_>>();
-    let mut items = vec![
+    nodes.push(field(app, SEARCH, false));
+    nodes.push(
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .children_reactive(move || listing(&paint)),
+    );
+    nodes
+}
+
+fn listing(app: &App) -> Vec<NodeBuilder> {
+    let source = app.clone();
+    let rows = matching(app.auth_choices.get(), &app.auth_filter.get());
+    let selected = app.auth_sel.get().min(rows.len().saturating_sub(1));
+    let Some(choice) = rows.get(selected) else {
+        return vec![group("No providers match."), hint("esc close", "0 / 0")];
+    };
+    let states = app.model_groups.get();
+    let mut lookup: Vec<(String, String, Option<usize>)> = Vec::new();
+    let (mut shown, mut header) = (0, 0);
+    for (index, row) in rows.iter().enumerate() {
+        let tier = section(row);
+        if index == 0 || tier != section(&rows[index - 1]) {
+            let title = ["connected", "local", "not connected"][usize::from(tier.min(2))];
+            lookup.push((title.to_string(), String::new(), None));
+        }
+        if index == selected {
+            shown = lookup.len();
+            header = lookup
+                .iter()
+                .rposition(|(_, _, index)| index.is_none())
+                .unwrap_or(0);
+        }
+        lookup.push((
+            row.name.clone(),
+            chip(row, states.get(&row.name)),
+            Some(index),
+        ));
+    }
+    let visible = canvas::overlay_shown(lookup.len() + 3, app.viewport.get().1).saturating_sub(3);
+    let anchor = if shown < visible {
+        0
+    } else if shown - header < visible {
+        header
+    } else {
+        shown + 1 - visible
+    };
+    let state = chip(choice, states.get(&choice.name));
+    let keys = if choice.stored() {
+        "↑↓ move · ↵ open · alt+d sign out · esc close"
+    } else {
+        "↑↓ move · ↵ open · esc close"
+    };
+    vec![
         container().layout(LayoutStyle::block().fill_width()).child(
-            virtual_list(lookup, move |index, (name, state): &(String, String)| {
-                entry(source.clone(), name, state, index, index == selected)
-            })
+            virtual_list(
+                lookup,
+                move |_, (name, chip, index): &(String, String, Option<usize>)| match index {
+                    Some(index) => entry(source.clone(), name, chip, *index, *index == selected),
+                    None => group(name.clone()),
+                },
+            )
             .row_height(canvas::overlay_list_row())
             .height(canvas::overlay_list_row() * visible as f32)
             .viewport_height(canvas::overlay_list_row() * visible as f32)
-            .follow(app.auth_sel),
+            .scroll_into_view(anchor),
         ),
-    ];
-    if let Some(choice) = rows.get(selected) {
-        items.push(group(format!(
-            "{} — {}",
-            choice.name,
-            canvas::ellipsize(&choice.setup, 60)
-        )));
-        items.push(pick(
-            false,
-            false,
-            "sign in with",
-            match choice.flow {
-                crate::LoginFlow::Browser => "browser sign-in — opens a tab",
-                crate::LoginFlow::Device => "device login — shows a code",
-                crate::LoginFlow::Key => "api key — paste to store",
-            },
-        ));
-    }
-    items.push(hint(
-        "↑↓ move · ↵ sign in · esc close",
-        format!("{} / {}", selected + 1, rows.len()),
-    ));
-    items
+        group(canvas::ellipsize(
+            &format!("{} — {}", choice.name, action(choice, &state)),
+            span(app).saturating_sub(10),
+        )),
+        hint(keys, format!("{} / {}", selected + 1, rows.len())),
+    ]
 }
 
-fn entry(app: App, name: &str, state: &str, index: usize, active: bool) -> NodeBuilder {
+fn entry(app: App, name: &str, chip: &str, index: usize, active: bool) -> NodeBuilder {
     let choose = app.clone();
-    pick(active, false, name.to_string(), chip(state)).pointer_down(move |event| {
+    pick(active, name.to_string(), chip.to_string()).pointer_down(move |event| {
         choose.auth_sel.set(index);
         choose.commit_auth();
         event.stop_propagation();
     })
 }
 
-fn entering(app: &App) -> Vec<NodeBuilder> {
+fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
     let typing = app.clone();
     let save = app.clone();
+    let filter = placeholder == SEARCH;
+    let value = if filter {
+        app.auth_filter
+    } else {
+        app.auth_key
+    };
+    let field = text_field(value)
+        .placeholder(placeholder)
+        .focus_when(app.auth_focus)
+        .change(move |text| {
+            if filter {
+                typing.replace_auth_filter(text.to_string());
+            } else {
+                typing.replace_auth_key(text.to_string());
+            }
+        })
+        .submit(move |_| save.commit_auth())
+        .height(canvas::overlay_field());
+    container().child(if secret { field.password() } else { field })
+}
+
+fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
     let count = app.clone();
-    let choices = app.auth_choices.get();
-    let selected = app.auth_sel.get().min(choices.len().saturating_sub(1));
-    let provider = choices
-        .get(selected)
-        .map(|choice| choice.name.clone())
-        .unwrap_or_default();
-    let (cols, _) = app.viewport.get();
-    let span = (canvas::dialog_width(cols, 48.0) / canvas::cell().w) as usize;
-    let guide = canvas::ellipsize(
-        &format!("paste the {provider} key — it is masked before it is stored"),
-        span.saturating_sub(6),
-    );
-    let items = vec![
-        group(guide),
-        container().child(
-            text_field(app.auth_key)
-                .placeholder("paste or type the api key")
-                .focus_when(app.auth_focus)
-                .password()
-                .change(move |key| typing.replace_auth_key(key.to_string()))
-                .submit(move |_| save.commit_auth())
-                .height(canvas::overlay_field()),
-        ),
-        container().children_reactive(move || {
-            let characters = count.auth_key.get().chars().count();
-            vec![pick(
-                false,
-                false,
-                format!("{characters} characters"),
-                "↵ save",
-            )]
-        }),
-        hint("↵ save · esc back", provider),
+    let choice = app.auth_choice();
+    let name = choice.as_ref().map(|choice| choice.name.clone());
+    let width = span(app).saturating_sub(10);
+    let mut nodes = vec![
+        line(format!("Paste the {} API key.", name.unwrap_or_default())),
+        field(app, "paste or type the api key", true),
     ];
-    items
+    nodes.extend(
+        wrapped(note, width)
+            .into_iter()
+            .map(|part| band(part, true)),
+    );
+    nodes.push(container().children_reactive(move || {
+        let characters = count.auth_key.get().chars().count();
+        vec![hint(
+            "↵ save and check · esc back",
+            format!("{characters} chars"),
+        )]
+    }));
+    nodes
+}
+
+fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
+    let [text, url, code, note] = lines;
+    let wide = span(app).saturating_sub(10);
+    let width = wide.saturating_sub(6);
+    let mut nodes = vec![group(format!("Sign in to {name}"))];
+    if !url.is_empty() {
+        nodes.push(line(format!("1. Open  {}", canvas::ellipsize(&url, width))));
+    }
+    if !code.is_empty() {
+        nodes.push(line(format!("2. Enter code   {code}")));
+    }
+    nodes.extend(wrapped(&text, wide).into_iter().map(line));
+    if asking {
+        nodes.push(field(app, "Paste the code if the browser shows one", false));
+    }
+    if !note.is_empty() {
+        nodes.extend(
+            wrapped(&note, wide)
+                .into_iter()
+                .map(|part| band(part, true)),
+        );
+        nodes.push(hint("↵ try again · esc back", String::new()));
+        return nodes;
+    }
+    let clock = app.clone();
+    let owner = name.to_string();
+    nodes.push(container().children_reactive(move || {
+        let spin = sigil::prelude::spinner_frame(clock.ticks.get());
+        let seconds = clock
+            .model
+            .peek()
+            .busy_since
+            .map_or(0, |(_, since)| since.elapsed().as_secs());
+        vec![line(format!(
+            "{spin} Waiting for {owner}…  {}:{:02}",
+            seconds / 60,
+            seconds % 60
+        ))]
+    }));
+    let keys = if asking {
+        "↵ send code · esc cancel"
+    } else {
+        "esc cancel"
+    };
+    nodes.push(hint(keys, String::new()));
+    nodes
 }

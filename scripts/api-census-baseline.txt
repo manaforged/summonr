@@ -32,17 +32,17 @@ name collision: Backend	2	one word, one domain
 name collision: Source	1	one word, one domain
 name collision: Kind	1	one word, one domain
 name collision: Role	2	one word, one domain
-name collision: Event	2	one word, one domain
-clip-shaped helper	4	check the job, then name it
-short-shaped helper	5	check the job, then name it
+name collision: Event	1	one word, one domain
+clip-shaped helper	2	check the job, then name it
+short-shaped helper	4	check the job, then name it
 wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports
-direct file write	3	store::write
-legacy tool alias literal	33	one alias table
-match wildcard arm	120	name the arm
-duration literal	42	one timeout policy
-timeout mention	26	one timeout policy
+direct file write	1	store::write
+legacy tool alias literal	13	one alias table
+match wildcard arm	114	name the arm
+duration literal	33	one timeout policy
+timeout mention	22	one timeout policy
 dead dependency unicode-width	0	delete
 dead dependency winapi-util	0	delete
-source file over 400 lines	18	split it
+source file over 400 lines	0	split it

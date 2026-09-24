@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use leyline::Session;
@@ -14,7 +12,7 @@ use crate::{Error, Parts, Prompt, Result, Store};
 use super::store::{keep, save};
 use super::token::{exchange, minted, post};
 
-const WAIT: Duration = Duration::from_secs(300);
+use crate::LOGIN_WAIT as WAIT;
 const HEAD_CEILING: usize = 8192;
 
 pub(super) async fn login(

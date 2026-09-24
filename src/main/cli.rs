@@ -23,7 +23,7 @@ pub(super) struct Args {
     pub(super) fork: bool,
     pub(super) trust: bool,
     pub(super) strict: bool,
-    pub(super) sandbox: bool,
+    pub(super) sandbox: Option<bool>,
     pub(super) add_dir: Vec<String>,
     pub(super) network: bool,
     pub(super) plan: bool,
@@ -49,7 +49,7 @@ pub(super) struct Args {
     pub(super) login: bool,
     pub(super) key: bool,
     pub(super) logout: bool,
-    pub(super) decide: bool,
+    pub(super) classify: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
     pub(super) review: bool,
@@ -67,7 +67,7 @@ pub(super) fn parse() -> Result<Args> {
 }
 
 fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
-    let mut input = args.into_iter();
+    let mut input = args.into_iter().peekable();
     let mut args = Args {
         trust: true,
         network: true,
@@ -85,9 +85,7 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
                     && args.endpoint.is_none()
                     && named(name)
                 {
-                    return Err(Error::Config(format!(
-                        "unknown endpoint `{name}` — `summon endpoints` lists them; a prompt goes after -p"
-                    )));
+                    return Err(unknown(name, "; a prompt goes after -p"));
                 }
                 args.print = true;
             }
@@ -95,8 +93,8 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--trust" => args.trust = true,
             "--no-trust" => args.trust = false,
             "--strict" => args.strict = true,
-            "--sandbox" => args.sandbox = true,
-            "--no-sandbox" => args.sandbox = false,
+            "--sandbox" => args.sandbox = Some(true),
+            "--no-sandbox" => args.sandbox = Some(false),
             "--add-dir" => {
                 args.add_dir
                     .push(value(&mut input, "--add-dir", "a directory")?);
@@ -112,26 +110,34 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--fork" => args.fork = true,
             "endpoints" if command => args.list = true,
             "sessions" if command => args.list_sessions = true,
-            "logs" if command => args.logs = true,
-            "doctor" if command => args.doctor = true,
-            "infer" if command => args.decide = true,
-            "decide" if command => {
-                return Err(Error::Config(
-                    "use `summonr infer`; `decide` was removed".to_string(),
-                ));
+            "resume" if command => match input.next_if(|next| !next.starts_with('-')) {
+                Some(key) => args.session = Some(key),
+                None => args.resume = true,
+            },
+            "logs" if command => {
+                renamed("logs", "doctor --logs");
+                args.logs = true;
             }
-            "--questions" => {
+            "doctor" if command => args.doctor = true,
+            "--logs" if args.doctor => args.logs = true,
+            "classify" if command => args.classify = true,
+            "--questions" if args.classify => {
                 args.questions = Some(value(&mut input, "--questions", "JSON or @file")?);
             }
-            "--noul" => args
-                .noul
-                .push(value(&mut input, "--noul", "a yes/no question")?),
-            "--review" => args.review = true,
-            "--digest" => args.digest = true,
-            "--diff" if args.decide => args.review_diff = true,
-            "--set" => args.set = Some(value(&mut input, "--set", "a question set name")?),
-            "--eval" => args.eval = Some(value(&mut input, "--eval", "a labelled .jsonl path")?),
-            "--gate" => {
+            "--noul" if args.classify => {
+                args.noul
+                    .push(value(&mut input, "--noul", "a yes/no question")?)
+            }
+            "--review" if args.classify => args.review = true,
+            "--digest" if args.export => args.digest = true,
+            "--patch" | "--diff" if args.classify => args.review_diff = true,
+            "--set" if args.classify => {
+                args.set = Some(value(&mut input, "--set", "a question set name")?)
+            }
+            "--eval" if args.classify => {
+                args.eval = Some(value(&mut input, "--eval", "a labelled .jsonl path")?)
+            }
+            "--gate" if args.classify => {
                 let raw = value(&mut input, "--gate", "a confidence from 0 to 1")?;
                 let floor: f64 = raw.parse().map_err(|error| {
                     Error::Config(format!("--gate wants a number from 0 to 1: {error}"))
@@ -156,7 +162,11 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "--name" => args.name = Some(value(&mut input, "--name", "a session name")?),
             "workflows" if command => args.list_workflows = true,
             "modules" if command => args.list_modules = true,
-            "add" if command => args.add = true,
+            "install" if command => args.add = true,
+            "add" if command => {
+                renamed("add", "install");
+                args.add = true;
+            }
             "--list" if args.add => args.add_list = true,
             "acp" if command => args.acp = true,
             "room" if command => {
@@ -165,14 +175,20 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             "tool" if command => {
                 args.tool = Some(input.by_ref().collect());
             }
-            "login" | "auth" if command => args.login = true,
+            "login" if command => args.login = true,
+            "auth" if command => {
+                renamed("auth", "login");
+                args.login = true;
+            }
             "logout" if command => args.logout = true,
-            "--key" => args.key = true,
+            "--key" if args.login => args.key = true,
             "worktrees" if command => args.list_worktrees = true,
             "diff" if command => args.diff = true,
-            "--stat" => args.stat = true,
+            "--stat" if args.diff => args.stat = true,
             "--gui" => args.gui = true,
-            "--turn" => args.turn = Some(value(&mut input, "--turn", "a turn number or `last`")?),
+            "--turn" if args.diff => {
+                args.turn = Some(value(&mut input, "--turn", "a turn number or `last`")?)
+            }
             "--steps" => args.steps = Some(value(&mut input, "--steps", "a plan path")?),
             "prune" if args.list_worktrees => args.prune_worktrees = true,
             "--goal" => args.goal = Some(value(&mut input, "--goal", "an objective")?),
@@ -198,14 +214,20 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
                     ))
                 })?);
             }
-            "-h" | "--help" => exit_help(),
+            "-h" | "--help" => exit_help(None),
+            "help" if command => exit_help(input.next().as_deref()),
             "-V" | "--version" => exit_version(),
             "--" => {
                 args.prompt.extend(input.by_ref());
                 break;
             }
             option if option.starts_with('-') => {
-                return Err(Error::Config(format!("unknown option `{option}`")));
+                return Err(Error::Config(
+                    SCOPED.iter().find(|(flag, _)| *flag == option).map_or_else(
+                        || format!("unknown option `{option}`"),
+                        |(_, verb)| format!("`{option}` works only after `summonr {verb}`"),
+                    ),
+                ));
             }
             name if args.endpoint.is_none()
                 && (command || args.login || args.logout)
@@ -222,9 +244,7 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
         && (args.goal.is_some() || args.steps.is_some())
         && named(name)
     {
-        return Err(Error::Config(format!(
-            "unknown endpoint `{name}` — `summon endpoints` lists them"
-        )));
+        return Err(unknown(name, ""));
     }
     if args.here && args.worktree {
         return Err(Error::Config(
@@ -233,10 +253,42 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
     }
     if (args.logs || args.doctor) && !args.prompt.is_empty() {
         return Err(Error::Config(
-            "logs and doctor do not accept arguments".to_string(),
+            "doctor does not accept arguments".to_string(),
         ));
     }
     Ok(args)
+}
+
+const SCOPED: [(&str, &str); 16] = [
+    ("--stat", "diff"),
+    ("--turn", "diff"),
+    ("--all", "profile"),
+    ("--last", "profile"),
+    ("--list", "install"),
+    ("--key", "login"),
+    ("--digest", "export"),
+    ("--logs", "doctor"),
+    ("--questions", "classify"),
+    ("--noul", "classify"),
+    ("--review", "classify"),
+    ("--set", "classify"),
+    ("--eval", "classify"),
+    ("--gate", "classify"),
+    ("--patch", "classify"),
+    ("--diff", "classify"),
+];
+
+fn unknown(name: &str, tail: &str) -> Error {
+    let names = summonr::endpoint_names().unwrap_or_default();
+    let hint = summonr::closest_endpoint(name, &names)
+        .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
+    Error::Config(format!(
+        "unknown endpoint `{name}` — {hint}`summonr endpoints` lists them{tail}"
+    ))
+}
+
+fn renamed(old: &str, new: &str) {
+    eprintln!("summonr: renamed: use `summonr {new}` instead of `summonr {old}`");
 }
 
 fn named(token: &str) -> bool {
@@ -270,7 +322,7 @@ where
 
 fn interactive() -> String {
     let mut lines = vec![String::new()];
-    for spec in summonr::command_specs() {
+    for spec in summonr::command_specs().iter().filter(|spec| spec.shown()) {
         let last = lines.last_mut().expect("one line");
         if last.len() + spec.name.len() + 3 > 70 {
             lines.push(String::new());
@@ -288,35 +340,30 @@ fn interactive() -> String {
         .join("\n")
 }
 
-fn exit_help() -> ! {
-    let bin = option_env!("CARGO_BIN_NAME").unwrap_or("summonr");
-    let commands = interactive();
-    let sets = summonr::decisions::sets::NAMES.join(", ");
+fn exit_help(verb: Option<&str>) -> ! {
     let endpoints = summonr::endpoint_names().map_or_else(
         |_| "the built-in endpoint names".to_string(),
         |names| names.join(", "),
     );
-    println!(
-        "{bin} — Summonr, a small agent harness\n\nUsage:\n  {bin} [OPTIONS]\n  {bin} grok\n  {bin} kimi -p [PROMPT]\n  {bin} -c\n  {bin} --session ID\n  {bin} -e zai -p [PROMPT]\n  {bin} sessions\n  {bin} export [ID|NAME]\n  {bin} profile [ID|NAME|--all [--last N]]\n  {bin} workflows\n  {bin} modules\n  {bin} add PATH\n  {bin} add --list\n  {bin} room [serve|host codex|setup claude|setup codex]\n  {bin} acp\n  {bin} tool NAME [JSON]\n  {bin} endpoints\n  {bin} infer --set NAME [STATE]\n  {bin} infer --questions @FILE [STATE]\n  {bin} login\n  {bin} login NAME [--key]\n  {bin} auth\n  {bin} logout NAME\n  {bin} logs\n  {bin} doctor\n  {bin} worktrees [--json]\n  {bin} worktrees prune\n  {bin} diff [PATH] [--turn N|last] [--stat|--json]\n\nOptions:\n  -e, --endpoint NAME  A built-in or configured endpoint\n  -p, --print          Run one prompt and exit\n      --steps PLAN.md  Step mode: run each numbered step under `## Steps`, gate on its `Run `…`` check\n      --goal TEXT      Goal mode: work toward TEXT across turns; check.toml gates must pass and a judge decides done\n  -c, --continue       Resume the last session for this directory\n      --session ID     Resume a session by id (prefix ok) or name\n      --name TEXT      Name this session; /name in the interface\n      --json           Print JSON events as they happen\n      --model NAME     Override the endpoint model\n      --effort LEVEL   Reasoning effort for this session: none, low, medium, high\n  -w, --workflow NAME  Seat each step from [workflows.NAME] in ~/.summonr/config.toml\n      --no-trust       Ignore workspace AGENTS.md\n      --strict         Allow only commands listed in policy.toml\n      --plan           Read-only workspace; inspection commands remain available\n      --net            Allow network access inside the sandbox (default)\n      --no-net         Deny network access inside the sandbox (needs --sandbox)\n      --sandbox        Contain shell commands and keep writes under the roots
-      --no-sandbox     Uncontained commands and file access (the default)
-      --add-dir DIR    Extra writable root (repeatable; same as [sandbox] write)\n      --no-verify      Skip the .summonr/check.toml verify gate for this run\n      --no-splash      Skip the startup banner\n      --gui            Open the desktop window instead of the terminal (a `--features gui` build)\n      --here           Stay in this directory (no git worktree)\n      --worktree       Isolate this session in a git worktree\n      --max-tokens N   Session token budget; breach aborts nonzero\n      --max-secs N     Session wall-clock budget; breach aborts nonzero\n  -h, --help           Show this help\n  -V, --version        Show the version\n\nExit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short (budget, stall, impossible, abort)\n\nInteractive:\n{commands}\n  @path attach a workspace file · ctrl+e files · ctrl+l ledger · ctrl+x diff\n  ctrl+y copy reply · ctrl+t select text · ctrl+o settings · ctrl+p hide/show pane\n  ctrl+→/← focus · ctrl+shift+←/→ resize\n\nEndpoints:\n  Available endpoints: {endpoints}\n  The first argument can be an endpoint name: `{bin} grok` is `{bin} -e grok`.\n  {bin} endpoints probes them\n  {bin} login / {bin} auth  list API keys, coding plans, and decisions seats\n  {bin} login NAME  ask for an API key, or run the plan sign-in when supported\n  {bin} login NAME --key  force an API-key prompt instead of signing in\n  {bin} logout NAME  forget the stored key or token\n\nKeys: the named endpoint environment, then ~/.summonr/credentials.toml (0600; `secrets = \"keychain\"` in config.toml uses the OS store), then api_key in config.toml. SUMMONR_API_KEY applies only with SUMMONR_BASE_URL.\nKimi: KIMI_CODING_API_KEY / KIMI_API_KEY, or ~/.kimi-code/credentials/kimi-code.json.\nGrok: XAI_API_KEY.\nMuse: META_API_KEY / MODEL_API_KEY.\nAnthropic: ANTHROPIC_API_KEY. Gemini: GEMINI_API_KEY / GOOGLE_API_KEY.
-TypeSafe / Jev: TYPESAFE_API_KEY, or `{bin} login jev`. OpenRouter is a chat seat: OPENROUTER_API_KEY, or `{bin} login openrouter`, then `/model`.
-OpenCode: OPENCODE_API_KEY / OPENCODE_GO_API_KEY.
-Qwen needs no key. Completions seats speak OpenAI chat/completions; anthropic and gemini use native APIs. Override URLs in ~/.summonr/config.toml.\nPolicy: ~/.summonr/policy.toml and .summonr/policy.toml both restrict access; repository rules cannot widen user permissions (see policy.example.toml).\nLong commands: run_command background true, then poll job."
-    );
-    println!(
-        "\nInference:\n  {bin} infer -e jev --set errors [STATE]\n  {bin} infer --noul QUESTION [STATE]\n  {bin} infer --diff\n  {bin} infer --review --session ID\n  {bin} infer --set NAME --eval FILE\n\n  --set NAME        Built-in questions: {sets}\n  --questions JSON  Custom questions as JSON or @file\n  --noul QUESTION   A yes/no question; repeat to ask several\n  --json            Print typed answers, probabilities, and usage\n  --gate NUMBER     Confidence threshold for diff ranking and evaluation\n\nState comes from arguments or stdin. Use -e to select an inference endpoint."
-    );
-    println!(
-        "\nDiagnostics: `summonr logs` lists recent per-run JSONL files; `summonr doctor` reports incomplete or crashed runs.\n\nSandbox: off by default. Pass --sandbox, or set `on = true` under [sandbox] in ~/.summonr/config.toml, to contain commands and post-edit checks with network allowed.\n\
-With the sandbox on, writes are allowed under the launch directory, temp, [sandbox] write, and --add-dir.\n\
-Use --no-net to deny sandboxed sockets (it needs --sandbox), or /net off in the interface. Uncontained sessions bypass command and file policy.\n\
---plan contains commands, denies writes, and refuses uncontained shell work.\n\
---strict reapplies policy but does not restore containment. Language servers run as trusted host processes.\n\
-Summonr exits with a configuration error when the selected backend is unavailable.\n\
-Worktrees: sessions run in this directory. `--worktree` isolates a session in a git worktree (branch summonr/<id>), merge --ff-only on success, and remove it. `--here` is the default. `summonr worktrees` lists; `summonr worktrees prune` drops records for directories that are already gone.\n\
-Diff: `summonr diff` prints the patch against the worktree base (HEAD outside a worktree); `--stat` per-file counts; `--json` the same as JSON; `--turn N` (or `last`) keeps only the files that turn of the latest session here edited; `/pane diff` shows it in the interface."
-    );
+    let text = include_str!("help.txt")
+        .replace("{endpoints}", &endpoints)
+        .replace("{commands}", &interactive())
+        .replace("{sets}", &summonr::classify::sets::NAMES.join(", "));
+    let lines: Vec<&str> = verb.map_or_else(Vec::new, |verb| {
+        text.lines()
+            .filter(|line| {
+                let line = line.trim_start();
+                line.strip_prefix(verb)
+                    .is_some_and(|rest| rest.is_empty() || rest.starts_with([' ', '|']))
+                    || line.starts_with(&format!("summonr {verb} "))
+            })
+            .collect()
+    });
+    if lines.is_empty() {
+        print!("{text}");
+    } else {
+        println!("{}", lines.join("\n"));
+    }
     std::process::exit(0)
 }
 

@@ -14,7 +14,7 @@ pub(in crate::tui::sigil_view) fn compose(
     if width == 0 || rows == 0 {
         return;
     }
-    let model = app.model.borrow();
+    let model = app.model.get();
     let facts = facts(&model, app);
     let logo = crate::splash::logo();
     let [body_width, body_rows] = cover(logo, &facts);
@@ -107,9 +107,9 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     let mut facts = vec![
         ("summonr", app.info.version.clone()),
         ("model", shown_model),
-        ("session", short_session(&model.session)),
+        ("session", short_session(&model.session).to_string()),
         ("workdir", app.info.workspace.clone()),
-        ("setup", "/auth · /model · /help".to_string()),
+        ("setup", "/login · /model · /help".to_string()),
     ];
     if model.snapshot.plan {
         facts.push(("mode", "plan · read-only".to_string()));

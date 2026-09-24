@@ -46,7 +46,7 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn rollback(&mut self, turn: Option<usize>) -> Result<(usize, Vec<String>)> {
         let checkpoints = self
             .checkpoints()
-            .ok_or_else(|| Error::Config("rollback needs a git workspace".to_string()))?;
+            .ok_or_else(|| Error::Config("/undo files needs a git workspace".to_string()))?;
         let turn = turn.unwrap_or_else(|| checkpoints.count());
         Ok((turn, checkpoints.restore(turn)?))
     }

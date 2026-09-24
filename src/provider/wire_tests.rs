@@ -12,6 +12,8 @@ fn user(text: &str) -> Message {
         tool_calls: Vec::new(),
         tool_call_id: None,
         reasoning: None,
+        failed: false,
+        continuation: None,
     }
 }
 
@@ -117,7 +119,7 @@ fn a_replayed_turn_survives_the_round_trip_with_its_reasoning() {
     let mut assistant = user("");
     assistant.role = Role::Assistant;
     assistant.tool_calls = reply.tool_calls.clone();
-    let body = anthropic::Wire::request(&ask(&[user("go"), assistant]), false);
+    let body = anthropic::Wire::request(&ask(&[user("go"), assistant]), false).unwrap();
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(parts[0]["type"], "thinking", "got {parts:?}");
     assert_eq!(parts[0]["signature"], "sig");
@@ -144,9 +146,9 @@ fn a_result_can_be_matched_back_to_the_call_that_asked_for_it() {
         result.role = Role::Tool;
         result.tool_call_id = Some(id);
         let body = if wire == 0 {
-            anthropic::Wire::request(&ask(&[user("go"), result]), false)
+            anthropic::Wire::request(&ask(&[user("go"), result]), false).unwrap()
         } else {
-            gemini::Wire::request(&ask(&[user("go"), result]), false)
+            gemini::Wire::request(&ask(&[user("go"), result]), false).unwrap()
         };
         let text = body.to_string();
         assert!(
@@ -244,8 +246,12 @@ fn a_request_never_loses_a_turn() {
         },
         user("second"),
     ];
-    let anthropic = anthropic::Wire::request(&ask(&turns), false).to_string();
-    let gemini = gemini::Wire::request(&ask(&turns), false).to_string();
+    let anthropic = anthropic::Wire::request(&ask(&turns), false)
+        .unwrap()
+        .to_string();
+    let gemini = gemini::Wire::request(&ask(&turns), false)
+        .unwrap()
+        .to_string();
     for (name, body) in [("anthropic", anthropic), ("gemini", gemini)] {
         for needle in ["first", "answer", "contents", "second"] {
             assert!(

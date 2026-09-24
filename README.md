@@ -4,27 +4,42 @@ A terminal coding agent written in Rust that works until your test command passe
 
 ![summonr in a terminal](docs/guide/assets/summonr-splash.png)
 
-Using a coding agent with summonr? Give it [docs/api.md](docs/api.md). `summonr --gui` is the same session in a Sigil desktop window (`cargo install --path . --locked --features gui`).
-
-## Requirements
-
-- macOS, Linux, or Windows.
-- Git.
-- Rust 1.98.
-- For `--sandbox`: Seatbelt on macOS, or bubblewrap on Linux. Windows AppContainer is unfinished and needs a `--features windows-sandbox` build. Git for Windows and user-installed toolchains stay blocked, so don't treat `--sandbox` as containment on Windows.
-
 ## Install
 
+macOS and Linux:
+
 ```sh
-git clone https://github.com/manaforged/summonr
-cd summonr
-cargo install --path . --locked
+curl -fsSL https://raw.githubusercontent.com/manaforged/summonr/main/scripts/install.sh | sh
 ```
+
+The script checks the SHA-256 of the download and installs `summonr` to `~/.local/bin`. Set `SUMMONR_INSTALL_DIR` to change the directory, or `SUMMONR_VERSION` to pick a release tag.
+
+From source (any platform, Rust 1.98 and Git):
+
+```sh
+cargo install --git https://github.com/manaforged/summonr --locked
+```
+
+## First run
+
+1. Run `summonr` in a project directory.
+2. Type `/login` and pick a provider.
+3. Paste the API key, or sign in to a coding plan in the browser.
+
+To skip the prompt, set a key such as `ANTHROPIC_API_KEY` and run `summonr anthropic`.
+
+Docs: [user guide](docs/guide/README.md), [reference](docs/guide/reference.md), and [docs/api.md](docs/api.md) for a coding agent that drives summonr.
+
+## Sandbox
+
+`--sandbox` uses Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer is unfinished and needs a `--features windows-sandbox` build. Git for Windows and user-installed toolchains stay blocked, so don't treat `--sandbox` as containment on Windows.
+
+## Desktop window
 
 `summonr --gui` opens the same session in a Sigil desktop window. It needs a build with the `gui` feature:
 
 ```sh
-cargo install --path . --locked --features gui
+cargo install --git https://github.com/manaforged/summonr --locked --features gui
 summonr --gui
 ```
 
@@ -64,8 +79,8 @@ summonr anthropic --goal "make cargo test pass"
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
-- `/modules task on` turns on child sessions: batch, background, poll, and kill.
-- `/modules mcp on`, then a `[mcp.NAME]` table in `~/.summonr/config.toml`, connects an MCP server.
+- The `task` module in `/settings` turns on child sessions: batch, background, poll, and kill.
+- The `mcp` module in `/settings`, then a `[mcp.NAME]` table in `~/.summonr/config.toml`, connects an MCP server.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
@@ -74,12 +89,12 @@ Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, 
 
 ```toml
 [endpoint.local]
-base_url = "http://127.0.0.1:8081/v1"
+base_url = "http://127.0.0.1:8080/v1"
 model = "qwen3"
 api_key = "local"
 ```
 
-Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr add PATH` installs a directory of those files. See [Extending summonr](docs/guide/extending.md).
+Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a directory of those files. See [Extending summonr](docs/guide/extending.md).
 
 ## Benchmarks
 
@@ -131,6 +146,7 @@ Where the savings come from: the first-round prefix is one short system paragrap
 | [Reference](docs/guide/reference.md) | Every flag, config key, exit code, and environment variable. |
 | [API map](docs/api.md) | For agents and tools: each job mapped to its symbol or command, the error model, and what is off-limits. |
 | [Architecture](docs/guide/architecture.md) | How it works inside. |
+| [Contributing](CONTRIBUTING.md) | Build, check, and test commands, and where each kind of change goes. |
 
 The [changelog](CHANGELOG.md) lists the changes in each release. Example configs: [`config.example.toml`](config.example.toml) and [`policy.example.toml`](policy.example.toml).
 

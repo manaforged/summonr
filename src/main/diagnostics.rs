@@ -3,11 +3,11 @@ use std::ffi::OsString;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::json;
 
-const RETAIN: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+use summonr::limits::LOG_RETAIN as RETAIN;
 
 pub(super) struct Log {
     path: PathBuf,
@@ -57,14 +57,26 @@ impl Log {
             return None;
         }
         sweep(&dir);
-        if runs(&dir, None).is_ok_and(|runs| {
-            runs.iter()
-                .any(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
-        }) {
-            eprintln!("summonr: a previous run ended without an exit record; run `summonr logs`");
+        let seen = dir.join("crash-seen");
+        let noted = fs::read_to_string(&seen).unwrap_or_default();
+        if let Some(latest) = runs(&dir, None).ok().and_then(|runs| {
+            runs.into_iter()
+                .filter(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
+                .filter_map(|run| Some(run.path.file_name()?.to_string_lossy().into_owned()))
+                .max()
+        }) && !noted.contains(&latest)
+        {
+            eprintln!(
+                "summonr: a previous run ended without an exit record — `summonr doctor --logs` shows it"
+            );
+            if let Err(error) = append(&seen, &json!(latest)) {
+                eprintln!("summonr: cannot record the crash note: {error}");
+            }
         }
         let path = dir.join(format!("{run}.jsonl"));
-        let lock = match lock(&path) {
+        let held = summonr::lock_file(&path, false)
+            .and_then(|held| held.ok_or_else(|| io::Error::from(ErrorKind::WouldBlock)));
+        let lock = match held {
             Ok(lock) => lock,
             Err(error) => {
                 eprintln!("summonr: cannot lock the diagnostic log: {error}");
@@ -272,17 +284,6 @@ fn active(path: &Path) -> bool {
         Err(fs::TryLockError::WouldBlock) => true,
         Err(fs::TryLockError::Error(_)) => true,
     }
-}
-
-fn lock(path: &Path) -> io::Result<File> {
-    let lock = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(lock_path(path))?;
-    lock.try_lock().map_err(io::Error::from)?;
-    Ok(lock)
 }
 
 fn lock_path(path: &Path) -> PathBuf {

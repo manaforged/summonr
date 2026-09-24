@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
-const WINDOW: Duration = Duration::from_secs(3);
+use crate::limits::SPEED_WINDOW as WINDOW;
 const FLOOR: f64 = 0.25;
 
 #[derive(Clone, Debug)]

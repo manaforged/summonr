@@ -1,40 +1,11 @@
 use super::terminal::Terminal;
 use super::*;
 
-pub(in crate::tui::sigil_view) const ANIMATION: Duration = Duration::from_millis(40);
+pub(in crate::tui::sigil_view) use crate::limits::ANIMATION;
 
 pub(in crate::tui::sigil_view) fn frame_budget(fps: u32) -> Duration {
     let fps = fps.clamp(crate::prefs::FPS_MIN, crate::prefs::FPS_MAX);
-    Duration::from_secs_f64(1.0 / f64::from(fps))
-}
-
-#[derive(Default)]
-pub(in crate::tui::sigil_view) struct Fps {
-    samples: VecDeque<Instant>,
-}
-
-impl Fps {
-    pub(in crate::tui::sigil_view) fn tick(&mut self, now: Instant) -> u32 {
-        self.samples.push_back(now);
-        let cap = (crate::prefs::FPS_MAX as usize).saturating_mul(2);
-        while self
-            .samples
-            .front()
-            .is_some_and(|at| now.duration_since(*at) > Duration::from_secs(1))
-            || self.samples.len() > cap
-        {
-            self.samples.pop_front();
-        }
-        let Some(&first) = self.samples.front() else {
-            return 0;
-        };
-        let span = now.duration_since(first).as_secs_f64();
-        if span < 0.25 {
-            return 0;
-        }
-        let frames = self.samples.len().saturating_sub(1) as f64;
-        (frames / span).round() as u32
-    }
+    crate::limits::FRAME_WINDOW / fps
 }
 
 pub(in crate::tui::sigil_view) fn is_enter(event: &ShellEvent) -> bool {
@@ -119,11 +90,6 @@ pub(in crate::tui::sigil_view) fn read_event(
                 term.deselect(screen);
                 term.redraw = true;
                 return Ok(true);
-            } else if paste_chord(&key) && key.modifiers.contains(KeyModifiers::SUPER) {
-                term.deselect(screen);
-                if let Ok(text) = sigil::clipboard::paste() {
-                    return take_paste(text, incoming, screen, term, app, already);
-                }
             } else {
                 term.deselect(screen);
                 incoming.extend(sigil_tui::map_key(&key));

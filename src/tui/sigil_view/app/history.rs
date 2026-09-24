@@ -7,7 +7,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn jump(&self) {
-        let rows = match self.search.rows(&self.model.borrow()) {
+        let rows = match self.search.rows(&self.model.get()) {
             Ok(rows) => rows,
             Err(_) => return,
         };
@@ -24,8 +24,8 @@ impl App {
                 return;
             };
             if self.search.is_branch() {
-                if self.model.borrow().busy_since.is_some() {
-                    self.model.borrow_mut().entries.push(Entry::Error(
+                if self.model.get().busy_since.is_some() {
+                    self.push_entry(Entry::Error(
                         "Wait for the active operation or cancel it before branching.".to_string(),
                     ));
                     self.search.open.set(false);
@@ -45,7 +45,7 @@ impl App {
             self.editor.insert(&prompt.text);
             self.change(&self.draft.peek());
             if prompt.images > 0 {
-                self.model.borrow_mut().entries.push(Entry::System(
+                self.push_entry(Entry::System(
                     "Inserted prompt text. Saved images were not added.".to_string(),
                 ));
                 self.refresh();
@@ -53,9 +53,9 @@ impl App {
             return;
         }
         if matches!(
-            self.model.borrow().entries.get(*entry),
+            self.model.get().entries.get(*entry),
             Some(Entry::Tool { .. })
-        ) && self.model.borrow().prefs.tools == ToolOutput::Compact
+        ) && self.model.get().prefs.tools == ToolOutput::Compact
         {
             self.toggle_tools();
         }

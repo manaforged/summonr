@@ -64,7 +64,7 @@ impl Worker {
                 drop(self.ui.send(Msg::OpenHelp));
                 true
             }
-            Some(crate::SlashCommand::Auth | crate::SlashCommand::Login) => {
+            Some(crate::SlashCommand::Login) => {
                 let name = argument.unwrap_or(&self.endpoint).to_string();
                 return Some(self.login(&name).await);
             }
@@ -87,11 +87,15 @@ impl Worker {
             Some(crate::SlashCommand::Goal) => {
                 return Some(self.goal(argument.unwrap_or_default()).await);
             }
-            Some(crate::SlashCommand::Session) => self.session(),
-            Some(crate::SlashCommand::Profile) => {
-                match crate::profile_session(self.loop_.session_path()) {
-                    Ok(report) => self.system(report.trim_end()),
-                    Err(error) => self.fail(&error.to_string()),
+            Some(crate::SlashCommand::Status) => self.session(),
+            Some(crate::SlashCommand::Usage) => {
+                match argument {
+                    Some("session") => match crate::profile_session(self.loop_.session_path()) {
+                        Ok(report) => self.system(report.trim_end()),
+                        Err(error) => self.fail(&error.to_string()),
+                    },
+                    Some(other) => self.fail(&format!("/usage takes `session`, not `{other}`")),
+                    None => {}
                 }
                 true
             }
@@ -101,15 +105,19 @@ impl Worker {
             Some(crate::SlashCommand::Steps) => {
                 return Some(self.steps(argument.unwrap_or_default()).await);
             }
-            Some(crate::SlashCommand::Effort) => self.effort(argument),
-            Some(crate::SlashCommand::Network) => self.network(argument),
-            Some(crate::SlashCommand::Write) => self.write(argument),
-            Some(crate::SlashCommand::Approve) => self.approve(argument),
+            Some(crate::SlashCommand::Permissions) => self.permissions(argument),
             Some(crate::SlashCommand::Fork) => self.fork(),
-            Some(crate::SlashCommand::Rollback) => self.rollback(argument),
-            Some(crate::SlashCommand::Undo) => self.undo(),
+            Some(crate::SlashCommand::Undo) => {
+                match argument.map(|text| text.strip_prefix("files")) {
+                    None => self.undo(),
+                    Some(Some(turn)) => self.rollback(Some(turn)),
+                    Some(None) => {
+                        self.fail("/undo takes `files` or `files N`");
+                        true
+                    }
+                }
+            }
             Some(crate::SlashCommand::Agents) => self.agents(),
-            Some(crate::SlashCommand::Modules) => self.modules(argument),
             Some(_) => self.unknown(line).unwrap_or(true),
             None if line.starts_with('/') => self.unknown(line).unwrap_or(true),
             _ => false,
@@ -130,7 +138,8 @@ impl Worker {
             None | Some("") => {
                 let roots = self.loop_.write_roots();
                 let list = if roots.is_empty() {
-                    "no extra write paths — /write PATH persists to [sandbox] write".to_string()
+                    "no extra write paths — /permissions write PATH persists to [sandbox] write"
+                        .to_string()
                 } else {
                     roots.join(" · ")
                 };
@@ -142,7 +151,7 @@ impl Worker {
                     None => (true, path),
                 };
                 if path.is_empty() {
-                    self.system("/write PATH  (or /write --session PATH)");
+                    self.system("/permissions write [--session] PATH");
                     return true;
                 }
                 let protected = crate::policy::protected_write(&crate::policy::expand_path(path));
@@ -198,9 +207,11 @@ impl Worker {
             }
             None | Some("") => {
                 let state = if self.loop_.manual() { "on" } else { "off" };
-                self.system(&format!("manual approval {state} — /approve on|off"));
+                self.system(&format!(
+                    "manual approval {state} — /permissions approve on|off"
+                ));
             }
-            Some(_) => self.system("/approve on | off"),
+            Some(_) => self.system("/permissions approve on | off"),
         }
         true
     }
@@ -228,43 +239,6 @@ impl Worker {
                 .into(),
         )
         .await
-    }
-
-    pub(in crate::tui::worker) fn modules(&mut self, argument: Option<&str>) -> bool {
-        let workspace = self.loop_.workspace().to_path_buf();
-        if let Some(argument) = argument {
-            let mut words = argument.split_whitespace();
-            let (Some(name), Some(state)) = (words.next(), words.next()) else {
-                self.system("/modules NAME on|off");
-                return true;
-            };
-            let on = match state {
-                "on" => true,
-                "off" => false,
-                _ => {
-                    self.system("/modules NAME on|off");
-                    return true;
-                }
-            };
-            if let Err(error) = crate::modules::set(name, on) {
-                self.fail(&error.to_string());
-                return true;
-            }
-        }
-        match crate::modules::Switches::load(&workspace) {
-            Ok(switches) => {
-                if argument.is_some() {
-                    if self.loop_.catalog_frozen() {
-                        self.system("saved for the next process; this session's tools stay frozen");
-                    } else {
-                        self.loop_.set_modules(&switches);
-                    }
-                }
-                self.system(&switches.table());
-            }
-            Err(error) => self.fail(&error.to_string()),
-        }
-        true
     }
 
     pub(in crate::tui::worker) fn agents(&self) -> bool {

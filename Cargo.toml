@@ -1,6 +1,6 @@
 [package]
 name = "summonr"
-version = "0.1.0"
+version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -9,13 +9,15 @@ description = "Terminal coding agent in Rust"
 readme = "README.md"
 repository = "https://github.com/manaforged/summonr"
 homepage = "https://summonr.dev"
+keywords = ["agent", "llm", "cli", "tui", "coding-assistant"]
+categories = ["command-line-utilities", "development-tools"]
 publish = false
 
 [workspace]
 members = ["crates/auth"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -39,7 +41,7 @@ url = "2"
 [dependencies]
 summonr-auth = { path = "crates/auth" }
 base64 = { workspace = true }
-futures = { version = "0.3", default-features = false, features = ["std"] }
+futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -54,11 +56,10 @@ uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
 leyline-http = { git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
 url = { workspace = true }
-genai = { version = "=0.7.0-beta.23", default-features = false, features = ["native-tls"] }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", rev = "e09637ac", default-features = false, features = ["clipboard-image", "image-decode"] }
-sigil-tui = { git = "https://github.com/manaforged/sigil.git", rev = "e09637ac" }
+sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false }
+sigil-tui = { git = "https://github.com/manaforged/sigil.git", branch = "main" }
 ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"

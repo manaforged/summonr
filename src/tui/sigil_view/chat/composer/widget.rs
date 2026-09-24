@@ -17,7 +17,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
             .position(Position::Relative),
     );
     if editing {
-        let model = app.model.borrow();
+        let model = app.model.get();
         let path = model.view.as_ref().map_or("", |view| view.path.as_str());
         editor_area = editor_area
             .child(notice_band(
@@ -92,8 +92,7 @@ fn header_row(app: App) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let _panes = app.panes.get();
-            let model = app.model.borrow();
+            let model = app.model.get();
             vec![mode_label(&model), rule(), model_label(&model)]
         })
 }
@@ -108,9 +107,8 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let _panes = app.panes.get();
             let _select = app.select.get();
-            let model = app.model.borrow();
+            let model = app.model.get();
             let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
             let select = app
                 .select

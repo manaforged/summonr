@@ -206,7 +206,7 @@ fn a_kept_thinking_block_is_replayed_whole_on_the_next_turn() {
             ],
         }),
     }];
-    let body = request(&ask(&[message(Role::User, "go"), assistant]), false);
+    let body = request(&ask(&[message(Role::User, "go"), assistant]), false).unwrap();
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(
         parts[0]["type"], "thinking",
@@ -223,8 +223,108 @@ fn a_kept_thinking_block_is_replayed_whole_on_the_next_turn() {
 fn a_turn_with_nothing_kept_is_still_rebuilt_from_what_we_have() {
     let mut assistant = message(Role::Assistant, "hello");
     assistant.tool_calls = vec![call("toolu_9", "read", "{}")];
-    let body = request(&ask(&[message(Role::User, "go"), assistant]), false);
+    let body = request(&ask(&[message(Role::User, "go"), assistant]), false).unwrap();
     let parts = body["messages"][1]["content"].as_array().unwrap();
     assert_eq!(parts[0]["text"], "hello");
     assert_eq!(parts[1]["id"], "toolu_9");
+}
+
+#[test]
+fn the_final_message_delta_sets_the_prompt_count() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    feed(
+        &mut stream,
+        &[
+            json!({"type": "message_start", "message": {"usage": {"input_tokens": 43}}}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                   "usage": {"input_tokens": 61, "output_tokens": 2}}),
+            json!({"type": "message_stop"}),
+        ],
+    );
+    assert_eq!(stream.finish().usage.prompt_tokens, 61);
+}
+
+#[test]
+fn cache_reads_count_toward_the_prompt() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    feed(
+        &mut stream,
+        &[
+            json!({"type": "message_start", "message": {"usage": {
+                "input_tokens": 10, "cache_read_input_tokens": 90}}}),
+            json!({"type": "message_stop"}),
+        ],
+    );
+    let usage = stream.finish().usage;
+    assert_eq!(usage.prompt_tokens, 100);
+    assert_eq!(usage.cached_tokens, 90);
+}
+
+#[test]
+fn an_error_event_fails_the_turn_with_its_message() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    let error = stream
+        .on(
+            &json!({"type": "error", "error": {"type": "overloaded_error",
+                     "message": "Overloaded"}})
+            .to_string(),
+        )
+        .err()
+        .expect("an error event must not read as a reply");
+    assert!(error.to_string().contains("Overloaded"), "got {error}");
+}
+
+#[test]
+fn a_refusal_fails_with_the_providers_explanation() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    let error = stream
+        .on(
+            &json!({"type": "message_delta", "delta": {"stop_reason": "refusal",
+                     "stop_details": {"explanation": "blocked by policy"}}})
+            .to_string(),
+        )
+        .err()
+        .expect("a refusal is not a clean stop");
+    assert!(
+        error.to_string().contains("blocked by policy"),
+        "got {error}"
+    );
+}
+
+#[test]
+fn a_reply_cut_inside_a_tool_call_keeps_its_text_as_a_length_stop() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    feed(
+        &mut stream,
+        &[
+            json!({"type": "message_start", "message": {"usage": {"input_tokens": 5}}}),
+            json!({"type": "content_block_start", "index": 0,
+                   "content_block": {"type": "text", "text": ""}}),
+            json!({"type": "content_block_delta", "index": 0,
+                   "delta": {"type": "text_delta", "text": "Reading"}}),
+            json!({"type": "content_block_stop", "index": 0}),
+            json!({"type": "content_block_start", "index": 1,
+                   "content_block": {"type": "tool_use", "id": "t1", "name": "read"}}),
+            json!({"type": "content_block_delta", "index": 1,
+                   "delta": {"type": "input_json_delta", "partial_json": "{\"path\": \"a"}}),
+            json!({"type": "content_block_stop", "index": 1}),
+            json!({"type": "message_delta", "delta": {"stop_reason": "max_tokens"},
+                   "usage": {"output_tokens": 9}}),
+            json!({"type": "message_stop"}),
+        ],
+    );
+    let message = stream.finish();
+    assert_eq!(message.stop_reason, StopReason::Length);
+    assert_eq!(message.content.as_deref(), Some("Reading"));
+    assert!(message.tool_calls.is_empty());
+}
+
+#[test]
+fn a_stream_without_message_stop_is_not_finished() {
+    let mut stream = Stream::new("claude-sonnet-5");
+    feed(
+        &mut stream,
+        &[json!({"type": "message_start", "message": {"usage": {"input_tokens": 5}}})],
+    );
+    assert!(!stream.finished());
 }

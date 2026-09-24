@@ -1,6 +1,5 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
-use summonr_auth::Scheme;
 
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
@@ -16,15 +15,11 @@ impl Chat for Wire {
         "/chat/completions".to_string()
     }
 
-    fn scheme() -> Scheme {
-        Scheme::Bearer
-    }
-
     fn sentinel() -> Option<&'static str> {
         Some("[DONE]")
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> Value {
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
         let mut body = json!({
             "model": call.model,
             "stream": stream,
@@ -43,9 +38,10 @@ impl Chat for Wire {
         if let Some(effort) = call.effort {
             body["reasoning_effort"] = json!(effort.as_str());
         }
-        body
+        Ok(body)
     }
 
+    #[cfg(test)]
     fn parse(_model: &str, body: &Value) -> AssistantMessage {
         let reply: Reply = serde_json::from_value(body.clone()).unwrap_or_default();
         let mut message = reply
@@ -67,6 +63,7 @@ impl Chat for Wire {
     }
 }
 
+#[cfg(test)]
 #[derive(Default, Deserialize)]
 struct Reply {
     #[serde(default)]
@@ -74,6 +71,7 @@ struct Reply {
     usage: Option<Usage>,
 }
 
+#[cfg(test)]
 #[derive(Deserialize)]
 struct Choice {
     #[serde(default)]
@@ -99,7 +97,7 @@ struct Failure {
 struct FrameChoice {
     #[serde(default)]
     delta: Piece,
-    finish_reason: Option<StopReason>,
+    finish_reason: Option<String>,
 }
 
 #[derive(Default, Deserialize)]
@@ -153,7 +151,7 @@ impl Accumulate for Stream {
             return Ok(deltas);
         };
         if let Some(reason) = choice.finish_reason {
-            self.stop = reason;
+            self.stop = serde_json::from_value(Value::String(reason))?;
             self.finished = true;
         }
         if let Some(part) = choice
@@ -214,6 +212,7 @@ impl Accumulate for Stream {
             reasoning_content: (!self.reasoning.is_empty()).then_some(self.reasoning),
             usage: self.usage,
             stop_reason: self.stop,
+            continuation: None,
         }
     }
 }

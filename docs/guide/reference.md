@@ -9,27 +9,35 @@ workflow seat, child session, and the agent room. The
 
 ```sh
 summonr grok
-summon anthropic
-summon kimi -p "What is in Cargo.toml?"
+summonr anthropic
+summonr kimi -p "What is in Cargo.toml?"
 ```
+
+Summonr starts on the first seat that applies: the endpoint and
+`--model` flags, then `SUMMONR_ENDPOINT` and `SUMMONR_MODEL`, then the
+default (`default` and `default_model` in `config.toml`), then the
+last seat you used. `alt+d` in the `/model` picker sets the selected row
+as the default, and `alt+d` on the default row clears it. The header
+shows which rule chose the seat, for example `(default)` or
+`(last used)`, until you switch.
 
 Add any other host in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]
-base_url = "http://127.0.0.1:8081/v1"
+base_url = "http://127.0.0.1:8080/v1"
 model = "whatever-the-server-calls-it"
 api_key = "local"
 ```
 
 Then `summonr local`. `effort = "low"` on a row (or `--effort LEVEL`,
-`/effort LEVEL` in the interface) sets the reasoning effort for that
+`/model LEVEL` in the interface) sets the reasoning effort for that
 seat. Set it only on a seat whose model reasons; a host that does not
 accept `reasoning_effort` rejects the request. `price = { input, output, cached }` in USD per million tokens
-prices every round in `/stats` and the footer. A workflow seat keeps
-its own row's effort and price; `--effort` and `/effort` set the
+prices every round in the footer. A workflow seat keeps
+its own row's effort and price; `--effort` and `/model LEVEL` set the
 driving seat and any role seat whose row does not say.
-`summonr endpoints` probes `GET /models` for each name so a dead host fails before the first tool round. `summonr login NAME`
+`summonr endpoints` lists the models of each name through `GET /models`. Each row shows the key state: `ready`, `needs key`, `sign in`, `key rejected`, `rate limited`, `offline`, `error`, or `no key needed`. `summonr login NAME`
 prompts for an API key. `grant = "device_code"` runs a device login, and
 `grant = "authorization_code"` runs a browser sign-in with PKCE (S256).
 
@@ -68,10 +76,23 @@ keychain is locked, Summonr reports an error and keeps `config.toml`
 untouched. The key prompt disables echo and stores the key;
 `summonr login NAME --key` forces it for a device-login endpoint.
 `summonr logout NAME` forgets the key and any login
-token. A plaintext `api_key` in `config.toml` is moved into that file
-the first time Summonr runs, and it says so once. Resolution order is
-the host's environment variable, the store, then `api_key` in
-`config.toml`.
+token, and names the key that applies next. A plaintext `api_key` in
+`config.toml` is moved into that file the first time Summonr runs, and
+it says so once. Resolution order is the host's environment variable,
+the store, peer stores, `api_key` in `config.toml`, then the built-in
+default. An endpoint with no key fails with the missing-key message;
+only local and keyless endpoints run without one. `--key` is refused on
+a login endpoint, so it cannot replace the login token.
+
+Peer stores are read live: OpenCode's
+`~/.local/share/opencode/auth.json` lends `type: "api"` keys, plus
+unexpired `type: "oauth"` access tokens on bearer seats; Kimi's
+`~/.kimi-code/credentials/kimi-code.json` lends its unexpired token.
+A peer key reports as `key · opencode` or `key · kimi-code` in
+`summonr login`. A stored `summonr login NAME` key wins over a peer
+key; `summonr logout NAME` returns the endpoint to the peer. Configured
+endpoints whose `base_url` host matches a built-in share that
+built-in's peer mapping.
 
 If you want the OS store instead, set `secrets = "keychain"` in
 `config.toml` (or `SUMMONR_SECRETS=keychain`). On macOS that is one
@@ -83,11 +104,11 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`qwen`, `ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
+`ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
 `groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`,
 `fireworks`, `deepinfra`, `minimax`, `minimax-cn`; native
-wires `anthropic` (Messages) and `gemini`; decisions seats `jev` and
-`typesafe` (TypeSafe System One, `TYPESAFE_API_KEY`). OpenRouter is a
+wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
+`[endpoint.NAME]` row with `wire = "decisions"` to use `summonr classify`. OpenRouter is a
 chat seat (`OPENROUTER_API_KEY`); `/model` lists its catalog the same
 way it lists OpenCode. `together`, `groq`, `cerebras`,
 `mistral`, `fireworks`, `deepinfra`, and `ollama` carry no default model: pass `--model`. `deepseek` defaults to `deepseek-v4-flash`. `summonr login
@@ -110,7 +131,7 @@ summonr --steps PLAN.md
 `summonr --name TEXT` (or `/name TEXT`) names a session; `--session`
 takes a name or an id prefix, `summonr sessions` lists both, and
 `summonr export [ID|NAME]` prints the transcript as Markdown.
-`summonr logs` lists the last 20 per-run diagnostic logs. `summonr doctor`
+`summonr doctor --logs` lists the last 20 per-run diagnostic logs. `summonr doctor`
 prints the running binary path and reports crashed or incomplete runs.
 Logs older than 14 days are removed unless their process is still active.
 
@@ -130,7 +151,7 @@ carries the ledger to the model and to the transcript: phases as Roman
 numerals, `[x]` done, `[/]` this step, `[ ]` later, `[!]` blocked.
 Both edit this directory. `--worktree` isolates in a git worktree
 (`<repo>-worktrees/<id>`). Exit 0 then commits the files the run changed as
-`summon: <objective>` (files over 5 MB and anything the run did not
+`summonr: <objective>` (files over 5 MB and anything the run did not
 touch are left in place and named), fast-forwards your branch, and
 removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
@@ -208,8 +229,8 @@ focuses it, `↑↓` move, `←→` collapse or expand, `PgUp/PgDn/Home/End`
 jump, Enter opens a directory or attaches `@path` to your prompt, and
 a right-click (or the mouse) opens a menu: attach, open in `$EDITOR`,
 insert path. `ctrl+←` or `esc` returns to the composer. `/pane off`
-closes the pane. `/layout focus`, `run`, `files`, and `review` are
-presets, `/layout "chat | files 30%"` sets the split, and
+closes the pane. `/pane focus`, `run`, and `review` are
+presets, `/pane "chat | files 30%"` sets the split, and
 ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml`
 as `layout`. `ctrl+o` opens the settings modal, where every hotkey is
 editable; the choice is stored under `[hotkeys]` in the same file.
@@ -258,11 +279,14 @@ only called tools. The footer shows the last round's rate after the turn.
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
 | `enter` | send | steer: delivered after the current tool calls |
-| `tab` | complete a `/command` or `@path` | queue: delivered after the turn |
-| `ctrl+q` | | pull queued input back into the editor |
-| `esc` | dismiss; twice within two seconds opens `/tree` | cancel the turn |
+| `tab` | complete a `/command`, its argument, or `@path` | queue: delivered after the turn |
+| `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
+| `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
-| `ctrl+d` | quit when the draft is empty; in the sessions picker, twice deletes the selected session | |
+| `ctrl+d` | quit when the draft is empty; it only quits | |
+| `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
+| `alt+p` | in `/model`, pins or unpins the selected model | |
+| `F5` | retry a failed turn; in `/model`, refresh the providers | |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
 | `shift+tab` | switch between auto and plan | takes effect when the turn ends |
@@ -270,6 +294,50 @@ only called tools. The footer shows the last round's rate after the turn.
 | `ctrl+w` `alt+backspace` | delete the word before the caret | |
 | `alt+d` | delete the word after the caret | |
 | `ctrl+u` `ctrl+k` | delete to the line start or end | |
+
+### Commands
+
+`/help` lists these by job. Old names such as `/rollback`, `/tree`, and
+`/net` still work for one release and print the new name once.
+
+| Command | Job |
+| --- | --- |
+| `/resume [ID\|NAME]` | open another session |
+| `/name [TEXT]` | name this session |
+| `/clear` | start a fresh context; files stay |
+| `/compact` | summarize earlier turns |
+| `/retry` | continue a failed or cancelled turn (F5) |
+| `/undo [files [N]]` | undo the last turn; files N restores files |
+| `/fork [TEXT]` | fork this session; TEXT picks a turn |
+| `/export [PATH]` | write this session as markdown |
+| `/copy [all]` | copy the last reply; all copies everything |
+| `/search TEXT` | find text in this conversation |
+| `/history [TEXT]` | reuse an earlier prompt |
+| `/status` | session id, log path, and model |
+| `/usage [session]` | token spend; session profiles this session |
+| `/agents` | list sessions on the peer bus |
+| `/exit` | quit summonr |
+| `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
+| `/workflow [NAME]` | choose models for plan, work, and review |
+| `/login [NAME]` | sign in to a provider or store its key |
+| `/plan` | enter plan mode: read and plan, no edits |
+| `/plan accept` | run the saved plan |
+| `/plan reject` | leave plan mode without running the plan |
+| `/auto` | return to auto mode |
+| `/goal TEXT` | work toward an objective across turns |
+| `/steps PLAN.md\|clear` | run a plan's `## Steps` one at a time |
+| `/diff [PATH]` | changes against the base, or one PATH |
+| `/view PATH` | read a file in a pane |
+| `/pane [NAME]` | files, ledger, diff, worktrees, or a layout |
+| `/settings` | theme, tool output, reasoning, modules, keys |
+| `/permissions [net\|write\|approve]` | sandbox network, write paths, approval |
+| `/help` | list commands and keys |
+
+Typing `/` opens the command list above the composer. Each row shows
+the command, its argument, and one line of help. After `/model `,
+or `/login `, the list shows the values that command takes:
+the current endpoint's cached models or the endpoint names. `↑` and `↓` move, `tab` completes, `enter` runs, and `esc`
+hides the list.
 
 A draft that starts with `!` runs in the command sandbox before any
 model round: `!cmd` shows the output as a tool card and then sends
@@ -303,19 +371,18 @@ the pasted text when the prompt is sent or queued; `ctrl+c` discards
 them with the draft.
 
 While a turn runs, the composer status also counts waiting input
-(`2 queued, ctrl+q edits`). The terminal title reads
+(`2 queued, ↑ edits`). The terminal title reads
 `summonr · <workspace> · working` or `· ready`, and the terminal bell
 rings once when a turn ends while the terminal is not focused.
 
-`/tools` switches tool output between compact and full; `/reasoning`
-sets chain of thought to `collapsed` (the default: one dim line with
-a line count), `expanded`, or `off`; `/receipts` sets turn receipts
-to `off` (the default), `collapsed`, or `expanded`; `/model next`
-and `/model prev` step through the ready seats without the picker.
+`/settings` switches tool output between compact and full, sets chain
+of thought to `collapsed` (the default: one dim line with a line
+count), `expanded`, or `off`, and sets turn receipts to `off` (the
+default), `collapsed`, or `expanded`.
 
 `/export` writes the session as markdown to `~/.summonr/exports/<id>.md`;
 `/export PATH` writes it where you say. It works while a turn runs.
-`ctrl+y` copies the latest assistant reply. `/copy all` copies the full
+`ctrl+b` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full
 transcript. Both use OSC 52 in the terminal and the system clipboard in the
 window. `ctrl+t` releases the mouse to the terminal so you can select and copy
 any transcript span; press it again to restore mouse interaction.
@@ -325,7 +392,7 @@ branch, commits ahead of the base, dirty or clean, the session that ran
 there, and the directory. Enter or `→` opens that worktree's diff (`esc`
 comes back); the right-click menu offers show diff, merge (the same
 ff-only merge a run ends with; a dirty tree is refused), remove
-worktree (only when clean and fully merged), and insert path. `summon
+worktree (only when clean and fully merged), and insert path. `summonr
 worktrees` prints the same rows; `summonr worktrees --json` as JSON.
 
 The card takes the keyboard (↑↓ role, enter picks a seat, `d` returns
@@ -408,7 +475,7 @@ Every optional capability is a **module** compiled into the binary: `search`,
 `lsp`, `jobs`, `task`, `skills`, `mcp`, `bus`, and `gui`. That list is the
 built-in module set: curated, switchable, and inside the harness process RSS. `task` is off by
 default. `mcp` is off by default so unused server schemas stay out of the
-first `prefix_hash`. `summonr modules` lists them with their state; `/modules NAME on|off`
+first `prefix_hash`. `summonr modules` lists them with their state; the Modules rows in `/settings`
 in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
 After the first `prefix_hash` in this process, that write is for the next
 process only. A workspace `.summonr/config.toml` may turn a module off for that
@@ -515,31 +582,33 @@ that list, launch Summonr in the parent directory, or pass `--add-dir`.
 Commands use Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer
 is unfinished and needs a build with `--features windows-sandbox`; Git for Windows and user-installed toolchains stay blocked.
 A missing backend is a hard stop. Sandboxed sockets are allowed by default.
-`--no-net` or `/net off` denies them. `--net` turns them back on. That flag
+`--no-net` or `/permissions net off` denies them. That flag
 does not change file permissions. Model requests and language servers use
 host networking separately from shell commands.
 
-`/net on` allows sockets for the rest of the session, `/net once` allows only
-the next command, and `/net off` denies again.
+`/permissions net on` allows sockets for the rest of the session,
+`/permissions net once` allows only the next command, and
+`/permissions net off` denies again.
 The interface also prompts when a sandboxed command fails with a network error:
 `[ allow ]` turns the session network on and retries the command; `[ deny ]`
-returns the failure to the model. `/net` alone reports the current state.
+returns the failure to the model. `/permissions` alone reports the network, write, and approval state.
 
-`/approve on` is manual mode: the harness asks before extra-root writes and
+`/permissions approve on` is manual mode: the harness asks before extra-root writes and
 before each shell command. A bar appears above the composer with
 `[ allow ]` and `[ deny ]` buttons; click one, or press `y` or `n`. An approved
 command runs uncontained with your account's access, so review it first.
-`/approve off` returns to auto mode; `/approve` alone shows the mode. A command
+`/permissions approve off` returns to auto mode. A command
 the user denies is reported to the model as a failed tool.
 
 Auto mode grants a write outside the writable roots for this session and
 retries the tool. It does not write `~/.summonr/config.toml`. Plan mode still
-refuses writes. `/approve on` prompts with the same bar
+refuses writes. `/permissions approve on` prompts with the same bar
 (`approve ~/.cargo/bin` plus `[ allow ]` / `[ always ]` / `[ deny ]`).
 `[ allow ]` or `y` grants the directory for this session and retries the tool.
 `[ always ]` or `Y` appends the path to `[sandbox] write`.
-`/write PATH` persists to that list without a prompt.
-`/write --session PATH` grants for this session only. `/write` alone lists
+`/permissions write PATH` persists to that list without a prompt.
+`/permissions write --session PATH` grants for this session only.
+`/permissions write` alone lists
 the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
 target those paths, and the OS sandbox allows the write. `write` and `edit`
@@ -605,13 +674,13 @@ name that package a plugin; Summonr does not load guest code.
 | Layer | Where | What the model sees |
 | --- | --- | --- |
 | Skill | `~/.summonr/skills/<name>/SKILL.md` or `.summonr/skills/<name>/SKILL.md` | One `skill` tool. The body is a later tool result. |
-| MCP | `/modules mcp on`, then `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash` |
+| MCP | the `mcp` row in `/settings`, then `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash` |
 | Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` | Not a tool. `pre_tool` may block a call (stdin is JSON). |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy, danger prompt, and `--sandbox` apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
 
-`summonr add PATH` copies `skills/`, `bin/` (to `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` / `hooks.toml` into `~/.summonr/config.toml`. Conflicts refuse. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr add --list` prints extras. There is no marketplace and no in-process loader.
+`summonr install PATH` copies `skills/`, `bin/` (to `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` / `hooks.toml` into `~/.summonr/config.toml`. Conflicts refuse. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints extras. There is no marketplace and no in-process loader.
 
-After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. `/modules` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
+After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
 
@@ -625,7 +694,7 @@ Browser: the `web` module fetches. A Playwright MCP is a child process, not Chro
 
 `summonr export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
 
-Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP after `/modules mcp on`, not a second grep tool.
+Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP after you turn on the `mcp` module in `/settings`, not a second grep tool.
 
 ## Theme
 
@@ -641,7 +710,7 @@ code_bg = "#1e202a"
 Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to
 `<workspace>/.summonr/theme.toml` for one project. Unset tokens keep the preset.
 Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
-`/theme` re-applies both theme files. The tokens are
+The Theme row in `/settings` switches between the two theme files. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
 `green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,
 `code_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,

@@ -30,7 +30,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                     container()
                         .layout(LayoutStyle::block().fill_height().shrink(0.0))
                         .children_reactive(move || {
-                            let _updates = (navigation.panes.get(), navigation.layout.get());
+                            let _updates = navigation.layout.get();
                             vec![rail::rail(navigation.clone())]
                         }),
                 )
@@ -42,7 +42,6 @@ pub(super) fn root(app: App) -> NodeBuilder {
                             drop((
                                 side.status.get(),
                                 side.layout.get(),
-                                side.panes.get(),
                                 side.pane_focus.get(),
                                 side.settings_open.get(),
                                 side.settings_sel.get(),
@@ -73,7 +72,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                 container()
                     .layout(LayoutStyle::block().fill_width())
                     .children_reactive(move || {
-                        let _updates = (top.panes.get(), top.layout.get());
+                        let _updates = top.layout.get();
                         vec![thread::title_bar(top.clone())]
                     }),
                 work,

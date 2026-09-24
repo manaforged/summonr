@@ -75,8 +75,8 @@ pub(crate) fn prefix(id: &str, key: &str) -> bool {
 
 #[must_use]
 pub fn short(id: &str) -> &str {
-    let short = id.trim_start_matches('0');
-    if short.is_empty() { id } else { short }
+    let short = Some(id.trim_start_matches('0')).filter(|short| !short.is_empty());
+    short.map_or(id, |short| short.get(..12).unwrap_or(short))
 }
 
 pub(crate) fn preview(text: &str) -> String {
@@ -164,7 +164,7 @@ pub fn export(path: &Path) -> Result<String> {
                     if success { "" } else { "(failed)\n" }
                 ));
             }
-            Line::Receipt { text } => {
+            Line::Receipt { text, .. } => {
                 out.push_str(&format!("> {}\n\n", text.replace('\n', "\n> ")));
             }
             Line::Summary { text, .. } => {

@@ -30,15 +30,18 @@ impl View {
 pub(super) fn layer(app: App) -> NodeBuilder {
     let query = app.help.query;
     let keys = app.clone();
+    let (cols, rows) = app.viewport.peek();
+    let visible = canvas::overlay_shown(usize::MAX, rows).saturating_sub(1) as f32;
     let rows = derived(move || {
         matching(
-            &crate::tui::help_text(&keys.model.borrow().prefs.hotkeys),
+            &crate::tui::help_text(&keys.model.get().prefs.hotkeys),
             &query.get(),
         )
     });
     shell(
         app.help.open,
         "Help",
+        cols,
         container()
             .layout(
                 LayoutStyle::flex_column()
@@ -51,13 +54,17 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     .height(canvas::overlay_field()),
             )
             .child(
-                virtual_list(rows, |_, line: &String| {
-                    pick(false, false, line.clone(), String::new())
+                virtual_list(rows, move |_, line: &String| {
+                    pick(false, line.clone(), String::new())
                 })
                 .row_height(canvas::overlay_list_row())
-                .height(canvas::overlay_list_row() * 8.0)
-                .viewport_height(canvas::overlay_list_row() * 8.0),
-            ),
+                .height(canvas::overlay_list_row() * visible)
+                .viewport_height(canvas::overlay_list_row() * visible),
+            )
+            .child(hint(
+                "type to filter · scroll for more · esc close",
+                String::new(),
+            )),
     )
 }
 

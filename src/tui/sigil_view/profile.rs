@@ -216,6 +216,7 @@ fn info() -> Info {
         relay: None,
         session: String::from("profile"),
         endpoint: String::from("profile"),
+        pick: None,
         prefs: Prefs {
             animations: false,
             splash: false,

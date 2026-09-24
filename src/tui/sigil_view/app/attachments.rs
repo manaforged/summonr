@@ -39,10 +39,7 @@ impl App {
         match input {
             Ok(input) => Some(input),
             Err(error) => {
-                self.model
-                    .borrow_mut()
-                    .entries
-                    .push(Entry::Error(format!("cannot attach files: {error}")));
+                self.push_entry(Entry::Error(format!("cannot attach files: {error}")));
                 self.refresh();
                 None
             }
@@ -80,7 +77,7 @@ impl App {
                 }
                 Ok(None) => return false,
                 Err(error) => {
-                    self.model.borrow_mut().entries.push(Entry::Error(format!(
+                    self.push_entry(Entry::Error(format!(
                         "cannot attach image {}: {error}",
                         path.display()
                     )));
@@ -97,51 +94,38 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn clipboard(&self) -> bool {
-        if self.options_active() || self.view_edit.peek() {
+        if !cfg!(target_os = "macos") || self.options_active() || self.view_edit.peek() {
             return false;
         }
-        match clipboard::image() {
-            Ok(Some(source)) => {
-                if let Err(error) = self.image(&source) {
-                    self.model.borrow_mut().entries.push(Entry::Error(format!(
-                        "cannot attach clipboard image: {error}"
-                    )));
-                    self.refresh();
-                }
-                true
-            }
-            Ok(None) => clipboard::paste().is_ok_and(|text| self.paste(&text)),
-            Err(error) => {
-                self.model.borrow_mut().entries.push(Entry::Error(format!(
-                    "cannot read clipboard image: {error}; paste an image file path instead"
-                )));
-                self.refresh();
-                false
-            }
-        }
+        drop(self.cmd.send(Cmd::Clipboard));
+        true
     }
 
-    pub(in crate::tui::sigil_view) fn image(&self, source: &ImageSource) -> Result<(), String> {
-        let mut bytes = Vec::new();
-        PngEncoder::new(&mut bytes)
-            .write_image(
-                source.rgba(),
-                source.width(),
-                source.height(),
-                ExtendedColorType::Rgba8,
-            )
-            .map_err(|error| error.to_string())?;
-        if bytes.len() > IMAGES_MAX_BYTES {
-            return Err("image exceeds the 10 MB limit".to_string());
+    pub(super) fn pasted(&self, read: std::result::Result<Vec<u8>, String>) {
+        match read {
+            Ok(bytes) if bytes.len() > IMAGES_MAX_BYTES => {
+                self.push_entry(Entry::Error(
+                    "cannot attach clipboard image: image exceeds the 10 MB limit".to_string(),
+                ));
+            }
+            Ok(bytes) => {
+                if let Some((image, source)) = image_from_bytes(&bytes) {
+                    self.attach_picture(image, source, "📷 Clipboard image".to_string());
+                } else {
+                    let text = String::from_utf8_lossy(&bytes);
+                    if !text.is_empty() && !self.paste(&text) && !self.paste_text(&text) {
+                        self.editor.insert(&text);
+                        self.change(&self.draft.peek());
+                    }
+                }
+            }
+            Err(error) => self.model_mut(|model| {
+                model.entries.push(Entry::Error(format!(
+                    "cannot read the clipboard: {error}; paste an image file path instead"
+                )))
+            }),
         }
-        let preview = preview(&bytes)?;
-        self.attach_picture(
-            Image::encode("image/png", &bytes),
-            preview,
-            "📷 Clipboard image".to_string(),
-        );
         self.refresh();
-        Ok(())
     }
 
     pub(in crate::tui::sigil_view) fn paste_image(

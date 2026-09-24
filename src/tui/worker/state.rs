@@ -133,17 +133,6 @@ impl Worker {
         }
     }
 
-    pub(super) async fn set_key(&mut self, name: &str, key: &str) {
-        match crate::endpoint::save_key(name, key) {
-            Ok(source) if name == self.endpoint => {
-                self.set_endpoint(name).await;
-                self.system(&format!("{name}: API key saved in the {}", source.label()));
-            }
-            Ok(source) => self.system(&format!("{name}: API key saved in the {}", source.label())),
-            Err(error) => self.fail(&error.to_string()),
-        }
-    }
-
     pub(super) fn system(&self, text: &str) {
         drop(self.ui.send(Msg::System(text.to_string())));
     }

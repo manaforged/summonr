@@ -165,7 +165,7 @@ async fn a_paste_back_login_exchanges_the_code_the_user_typed() {
         ..Spec::default()
     };
     let auth = Auth::new(Method::Login(Box::new(spec)), Scheme::Bearer, "paste", kept);
-    let http = http(Duration::from_secs(5)).expect("a client builds");
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("a client builds");
 
     let lines = Arc::new(Mutex::new(Vec::<String>::new()));
     let heard = lines.clone();
@@ -253,7 +253,7 @@ async fn a_browser_login_completes_a_pkce_round_trip() {
         "mock",
         kept.clone(),
     );
-    let http = http(Duration::from_secs(5)).expect("a client builds");
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("a client builds");
 
     let asked = Arc::new(Mutex::new(Vec::new()));
     let lines = asked.clone();

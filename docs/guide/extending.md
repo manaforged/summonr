@@ -9,8 +9,8 @@ This keeps the 18 MB RSS of a `-p` print run and the short first-round
 prefix. There is no in-process package loader and no marketplace.
 
 After the first model round, the advertised tool list and the skill
-catalog stay frozen until the process exits. `/modules` still writes the
-config for the next process.
+catalog stay frozen until the process exits. A module switch in
+`/settings` still writes the config for the next process.
 
 ## Add a skill
 
@@ -20,7 +20,7 @@ body arrives as a later tool result.
 
 ## Add an MCP server
 
-1. Run `/modules mcp on`.
+1. Turn on the `mcp` module in `/settings`.
 2. Add a `[mcp.NAME]` table to `~/.summonr/config.toml`.
 3. Restart summonr so the new tool aliases join the next prefix.
 
@@ -44,10 +44,10 @@ until you approve it, the same way as `.mcp.json`.
 
 ## Install a directory of extras
 
-`summonr add PATH` copies `skills/` and `bin/` (to
+`summonr install PATH` copies `skills/` and `bin/` (to
 `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` and `hooks.toml` into
 `~/.summonr/config.toml`. If a name conflicts, summonr refuses the copy.
-Copying doesn't execute a binary. `summonr add --list` prints what you
+Copying doesn't execute a binary. `summonr install --list` prints what you
 installed.
 
 ## Keep memory across sessions

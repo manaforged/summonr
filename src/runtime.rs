@@ -7,7 +7,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use crate::bus::{Bus, Mail};
 use crate::durable::driver::{Exposure, SessionDriver};
-use crate::durable::log::Usage as Meter;
+use crate::durable::log::{Usage as Meter, UsageMeta};
 use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::policy::{Grant, Policy};
@@ -19,11 +19,7 @@ use crate::tools::{Event, ToolRegistry};
 use crate::verify::Outcome;
 use crate::workflow;
 
-#[cfg(not(test))]
-pub(crate) const JOB_WAIT_SECS: u64 = 120;
-#[cfg(test)]
-pub(crate) const JOB_WAIT_SECS: u64 = 1;
-pub(crate) const JOB_WAIT: std::time::Duration = std::time::Duration::from_secs(JOB_WAIT_SECS);
+pub(crate) use crate::limits::{JOB_WAIT, JOB_WAIT_SECS};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
     pub max_tokens: Option<u64>,
@@ -249,6 +245,7 @@ pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
     Meter {
         input: u64::from(usage.prompt_tokens),
         output: u64::from(usage.completion_tokens),
+        reasoning: u64::from(usage.reasoning_tokens),
         cached: u64::from(usage.cached_tokens),
         millis,
     }

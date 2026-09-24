@@ -1,9 +1,10 @@
 use super::edit::{edit, edit_external, editor};
-use super::intake::{ANIMATION, Fps, finish_intake, frame, read_event};
+
+use super::intake::{ANIMATION, finish_intake, frame, read_event};
 use super::terminal::{Paste, Terminal};
 use super::*;
 
-const BEAT: Duration = Duration::from_secs(2);
+use crate::limits::BEAT;
 
 pub(crate) fn run(
     loop_: Loop<Client>,
@@ -19,7 +20,7 @@ pub(crate) fn run(
     let (exit, session) = sigil::reactive::Runtime::scope("summonr-tui", || {
         let app = App::new(info, workspace, cmd_tx.clone());
         let exit = live(app.clone(), ui_rx);
-        let session = app.model.borrow().session.clone();
+        let session = app.model.get().session.clone();
         exit.map(|exit| (exit, session))
     })?;
     drop(cmd_tx.send(Cmd::Quit));
@@ -89,19 +90,18 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
     let mut status_at = Instant::now();
     let mut animation_at = Instant::now();
     let mut was_busy = None;
-    let mut meter = Fps::default();
     term.title(&title(&app, false))?;
     let mut framed = Instant::now();
     loop {
         let mut incoming = Vec::new();
-        let busy = app.model.borrow().busy_since.is_some();
-        let splash_on = app.splash.peek()
-            && (app.model.borrow().prefs.animations || !app.splash_revealed.peek());
-        let budget = frame_budget(app.model.borrow().prefs.fps);
+        let busy = app.model.get().busy_since.is_some();
+        let splash_on =
+            app.splash.peek() && (app.model.get().prefs.animations || !app.splash_revealed.peek());
+        let budget = frame_budget(app.model.get().prefs.fps);
         let mut wait = if busy || splash_on {
             budget
         } else {
-            Duration::from_millis(250)
+            crate::limits::IDLE_POLL
         };
         while event::poll(wait)? {
             let mut staged = false;
@@ -130,7 +130,7 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
                 break;
             }
         }
-        let mut dirty = !incoming.is_empty();
+        let mut dirty = !incoming.is_empty() || term.redraw;
         while let Ok(msg) = ui.try_recv() {
             app.update(msg);
             dirty = true;
@@ -141,7 +141,7 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
         if let Some(code) = status(ui.is_closed(), app.quit.peek()) {
             return Ok(Exit::Code(code));
         }
-        let busy = app.model.borrow().busy_since.is_some();
+        let busy = app.model.get().busy_since.is_some();
         if was_busy != Some(busy) {
             term.title(&title(&app, busy))?;
             if was_busy == Some(true) && !busy && !term.focused {
@@ -151,8 +151,8 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
         }
         if dirty {
             app.refresh();
-        } else if app.model.borrow().busy_since.is_some()
-            && status_at.elapsed() >= Duration::from_secs(1)
+        } else if app.model.get().busy_since.is_some()
+            && status_at.elapsed() >= crate::limits::STATUS_REFRESH
         {
             app.refresh_status();
             dirty = true;
@@ -168,7 +168,6 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
             || app.editor_requested.peek()
             || app.selection_anchor.peek().is_some();
         if dirty {
-            app.note_fps(meter.tick(Instant::now()));
             let grid = frame(&mut screen, &mut host, &mut router, incoming, (cols, rows))?;
             framed = Instant::now();
             if let Some((col, row)) = app.selection_anchor.peek() {
@@ -190,10 +189,7 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
                 term.resume(selecting)?;
                 screen.invalidate();
                 if let Err(error) = opened {
-                    app.model
-                        .borrow_mut()
-                        .entries
-                        .push(Entry::Error(error.to_string()));
+                    app.push_entry(Entry::Error(error.to_string()));
                 }
                 app.refresh();
             }
@@ -210,10 +206,7 @@ pub(in crate::tui::sigil_view) fn live(app: App, mut ui: UnboundedReceiver<Msg>)
                 match edited {
                     Ok(draft) => app.edit(&draft),
                     Err(error) => {
-                        app.model
-                            .borrow_mut()
-                            .entries
-                            .push(Entry::Error(error.to_string()));
+                        app.push_entry(Entry::Error(error.to_string()));
                         app.refresh();
                     }
                 }

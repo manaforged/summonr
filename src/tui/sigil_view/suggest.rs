@@ -1,5 +1,3 @@
-use sigil_tui::cell_width;
-
 use super::app::App;
 use super::canvas;
 use super::model::Model;
@@ -13,13 +11,17 @@ use sigil::prelude::{
 use super::prelude::*;
 
 const LIMIT: usize = 9;
-const MIN_WIDTH: usize = 34;
+const MAX_WIDTH: usize = 72;
+
+type Rows = Vec<(String, String)>;
+type Facts = std::collections::BTreeMap<crate::recent::Seat, crate::catalog::Model>;
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
     cursor: Signal<usize>,
     hidden: Signal<bool>,
     query: Signal<String>,
+    args: Signal<std::rc::Rc<(String, Rows)>>,
 }
 
 impl Picker {
@@ -28,13 +30,19 @@ impl Picker {
             cursor: signal(0),
             hidden: signal(false),
             query: signal(String::new()),
+            args: signal(std::rc::Rc::default()),
         }
     }
 
-    pub(super) fn change(self, draft: &str) {
+    pub(super) fn change(self, draft: &str, endpoint: &str, facts: &Facts) {
         self.cursor.set(0);
         self.hidden.set(false);
         self.query.set(draft.to_string());
+        let head = draft.split_once(' ').map_or("", |(head, _)| head);
+        if self.args.peek().0 != head {
+            let rows = arguments(head, endpoint, facts);
+            self.args.set(std::rc::Rc::new((head.to_string(), rows)));
+        }
     }
 
     pub(super) fn mentions(self) -> bool {
@@ -69,26 +77,45 @@ impl Picker {
         true
     }
 
-    pub(super) fn accept(self, draft: &str, caret: usize, model: &Model) -> Option<String> {
-        if self.hidden.peek() {
+    pub(super) fn accept(self, draft: &str, caret: usize, model: &Model) -> Option<(String, bool)> {
+        let command = self.head(draft).is_none() && mention(draft, caret).is_none();
+        if self.hidden.peek() || (command && draft.ends_with(' ')) {
             return None;
         }
         let rows = self.rows(draft, caret, model);
         let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
-        (row.0 != draft).then(|| row.0.clone())
+        (row.0 != draft).then(|| (row.0.clone(), command))
     }
 
-    pub(super) fn complete(self, draft: &str, caret: usize, model: &Model) -> Option<String> {
+    pub(super) fn complete(
+        self,
+        draft: &str,
+        caret: usize,
+        model: &Model,
+        facts: &Facts,
+    ) -> Option<String> {
         let rows = self.rows(draft, caret, model);
         if rows.is_empty() || self.hidden.peek() {
             return None;
         }
         let mut cursor = self.cursor.peek().min(rows.len() - 1);
+        if rows[cursor].0 == draft && !usage(draft).is_empty() {
+            let rows = arguments(draft, &model.snapshot.endpoint, facts);
+            self.args.set(std::rc::Rc::new((draft.to_string(), rows)));
+            return Some(format!("{draft} "));
+        }
         if rows[cursor].0 == draft && rows.len() > 1 {
             cursor = (cursor + 1) % rows.len();
             self.cursor.set(cursor);
         }
         Some(rows[cursor].0.clone())
+    }
+
+    fn head(self, draft: &str) -> Option<&str> {
+        let (head, typed) = draft.split_once(' ')?;
+        let held = self.args.get();
+        (held.0 == head && !held.1.is_empty() && !typed.contains(char::is_whitespace))
+            .then_some(head)
     }
 
     fn cursor(self, count: usize) -> usize {
@@ -102,7 +129,7 @@ impl Picker {
                 .peers
                 .iter()
                 .filter_map(|agent| {
-                    let score = crate::tui::rank(&agent.id.to_lowercase(), "", &query)?;
+                    let score = sigil::prelude::fuzzy_score(&query, &agent.id)?.score;
                     Some((score, agent))
                 })
                 .collect();
@@ -111,7 +138,7 @@ impl Picker {
                 .files
                 .iter()
                 .filter_map(|path| {
-                    let score = crate::tui::rank(&path.to_lowercase(), "", &query)?;
+                    let score = sigil::prelude::fuzzy_score(&query, path)?.score;
                     Some((score, path))
                 })
                 .collect();
@@ -131,6 +158,24 @@ impl Picker {
                 )
                 .collect();
         }
+        if let Some(head) = self.head(draft) {
+            let typed = draft[head.len()..].trim_start().to_lowercase();
+            let mut ranked: Vec<_> = self
+                .args
+                .get()
+                .1
+                .iter()
+                .filter_map(|(value, about)| {
+                    let score = sigil::prelude::fuzzy_score(&typed, value)?.score;
+                    Some((score, format!("{head} {value}"), about.clone()))
+                })
+                .collect();
+            ranked.sort_by_key(|(score, ..)| *score);
+            return ranked
+                .into_iter()
+                .map(|(_, value, about)| (value, about))
+                .collect();
+        }
         let query = self.query.get();
         let exact = crate::command_specs().iter().any(|spec| spec.name == draft);
         let rows = if exact && !query.is_empty() {
@@ -148,6 +193,56 @@ impl Picker {
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))
             .collect()
+    }
+}
+
+fn usage(name: &str) -> &'static str {
+    crate::command_specs()
+        .iter()
+        .find(|spec| spec.name == name)
+        .map_or("", |spec| spec.usage)
+}
+
+fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
+    let plain = |names: Vec<String>| {
+        names
+            .into_iter()
+            .map(|name| (name, String::new()))
+            .collect()
+    };
+    match parse_command(head).filter(|_| !usage(head).is_empty()) {
+        Some(SlashCommand::Model) => {
+            let mut held: Vec<(String, crate::catalog::Model)> = if facts.is_empty() {
+                crate::catalog::cached()
+                    .into_iter()
+                    .flat_map(|(name, listing)| {
+                        listing
+                            .models
+                            .into_iter()
+                            .map(move |model| (name.clone(), model))
+                    })
+                    .collect()
+            } else {
+                facts
+                    .iter()
+                    .map(|(seat, model)| (seat.endpoint.clone(), model.clone()))
+                    .collect()
+            };
+            held.sort_by_key(|(name, _)| name != endpoint);
+            held.into_iter()
+                .map(|(name, model)| {
+                    let about = [name.clone(), model.window()].join(" · ");
+                    let value = if name == endpoint {
+                        model.id
+                    } else {
+                        format!("{name}/{}", model.id)
+                    };
+                    (value, about.trim_end_matches(" · ").to_string())
+                })
+                .collect()
+        }
+        Some(SlashCommand::Login) => plain(crate::endpoint::names().unwrap_or_default()),
+        Some(_) | None => Vec::new(),
     }
 }
 
@@ -184,11 +279,10 @@ pub(super) fn widget(app: App, width: usize) -> NodeBuilder {
     container()
         .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
         .children_reactive(move || {
-            let _panes = app.panes.get();
             let draft = app.draft.get();
             let caret = app.caret.get();
             let rows = app.viewport.get().1;
-            let model = app.model.borrow();
+            let model = app.model.get();
             if app.view_edit.get()
                 || model.busy_since.is_some()
                 || !app.commands.open(&draft, caret, &model)
@@ -207,68 +301,56 @@ pub(super) fn widget(app: App, width: usize) -> NodeBuilder {
             }
             let start = cursor.saturating_add(1).saturating_sub(limit);
             let shown = &matches[start..matches.len().min(start + limit)];
-            let popup = popup_width(&matches, width);
-            let title = if mention(&draft, caret).is_some() {
-                "mentions"
-            } else {
-                "commands"
+            let head = app.commands.head(&draft);
+            let title = match (mention(&draft, caret), head) {
+                (Some(_), _) => "mentions".to_string(),
+                (None, Some(head)) => format!("{head} {}", usage(head)),
+                (None, None) => "commands".to_string(),
             };
+            let labels: Vec<String> = shown
+                .iter()
+                .map(|(name, _)| match head {
+                    Some(head) => name.trim_start_matches(head).trim_start().to_string(),
+                    None => format!("{name} {}", usage(name)).trim_end().to_string(),
+                })
+                .collect();
+            let popup = MAX_WIDTH.min(width.saturating_sub(4).max(1));
             let mut body = container()
                 .layout(
                     LayoutStyle::flex_column()
                         .width(popup as f32 * canvas::cell().w)
                         .gap(0.0),
                 )
-                .child(group(format!(
-                    "{title} {}–{}/{}",
-                    start + 1,
-                    start + shown.len(),
-                    matches.len()
-                )));
-            for (offset, (name, description)) in shown.iter().enumerate() {
+                .child(group(title));
+            for (offset, ((_, description), name)) in shown.iter().zip(labels).enumerate() {
                 let index = start + offset;
                 let click = app.clone();
                 body = body.child(
-                    pick(index == cursor, false, name.clone(), description.clone()).pointer_down(
-                        move |event| {
-                            if event.button == Some(MouseButton::Left) {
-                                click.commands.cursor.set(index);
-                                click.accept();
-                                event.stop_propagation();
-                            }
-                        },
-                    ),
+                    pick(index == cursor, name, description.as_str()).pointer_down(move |event| {
+                        if event.button == Some(MouseButton::Left) {
+                            click.commands.cursor.set(index);
+                            click.accept();
+                            event.stop_propagation();
+                        }
+                    }),
                 );
             }
-            let keys = if draft == "/" {
-                "type to search · ↑↓ · tab · esc"
+            let keys = if head.is_some() || mention(&draft, caret).is_some() {
+                "↑↓ · tab complete · ↵ complete · esc"
             } else {
-                "↑↓ select · tab accept · esc"
+                "↑↓ · tab complete · ↵ run · esc"
             };
+            let count = format!("{} / {}", cursor + 1, matches.len());
             vec![
                 container()
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .padding_x(8.0)
-                            .padding_y(8.0)
-                            .gap(0.0),
-                    )
+                    .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
                     .class(classes!("border border-gray-6"))
                     .style(
                         Style::new()
                             .bg(canvas::palette().tool_bg)
                             .border_width(canvas::cell().h as i16),
                     )
-                    .child(body.child(hint(keys, String::new()))),
+                    .child(body.child(hint(keys, count))),
             ]
         })
-}
-
-fn popup_width(matches: &[(String, String)], viewport: usize) -> usize {
-    let widest = matches
-        .iter()
-        .map(|(name, description)| cell_width(name.as_str()) + cell_width(description.as_str()) + 7)
-        .max()
-        .unwrap_or(MIN_WIDTH);
-    widest.max(MIN_WIDTH).min(viewport.saturating_sub(4).max(1))
 }

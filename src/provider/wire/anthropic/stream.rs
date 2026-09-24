@@ -8,8 +8,12 @@ use crate::provider::{AssistantMessage, StopReason, ToolCall, ToolFunction, Tool
 enum Block {
     #[default]
     Other,
-    Text,
-    Thinking,
+    Raw(Value),
+    Text(String),
+    Thinking {
+        text: String,
+        signature: String,
+    },
     Call {
         id: String,
         name: String,
@@ -24,45 +28,61 @@ pub(crate) struct Stream {
     block: Block,
     text: String,
     thinking: String,
-    signature: String,
     calls: Vec<ToolCall>,
     usage: Usage,
+    counted: Value,
+    broken: Option<crate::error::Error>,
     stop: StopReason,
+    done: bool,
 }
 
 impl Accumulate for Stream {
     fn new(model: &str) -> Self {
         Self {
             model: model.to_string(),
+            counted: json!({}),
             ..Self::default()
         }
     }
 
     fn on(&mut self, event: &str) -> crate::error::Result<Vec<Delta>> {
         let event = crate::provider::wire::parse::<Value>(event)?;
-        Ok(self.event(&event).into_iter().collect())
+        Ok(self.event(&event)?.into_iter().collect())
     }
 
-    fn finish(mut self) -> AssistantMessage {
-        self.close();
+    fn finished(&self) -> bool {
+        self.done
+    }
+
+    fn finish(self) -> AssistantMessage {
         self.done()
     }
 }
 
 impl Stream {
-    fn event(&mut self, event: &Value) -> Option<Delta> {
-        match event.get("type").and_then(Value::as_str)? {
+    fn event(&mut self, event: &Value) -> crate::error::Result<Option<Delta>> {
+        let Some(kind) = event.get("type").and_then(Value::as_str) else {
+            return Ok(None);
+        };
+        Ok(match kind {
             "message_start" => {
-                self.usage = usage(event.pointer("/message/usage"));
+                self.counted = event
+                    .pointer("/message/usage")
+                    .filter(|counted| counted.is_object())
+                    .cloned()
+                    .unwrap_or_else(|| json!({}));
+                self.usage = usage(Some(&self.counted));
                 None
             }
             "content_block_start" => {
-                self.block = opened(event.pointer("/content_block")?);
-                if let Block::Thinking = self.block {
-                    self.signature
-                        .push_str(text_at(event, "/content_block/signature"));
+                if let Some(block) = event.pointer("/content_block") {
+                    self.block = opened(block);
                 }
-                None
+                if let Block::Call { name, .. } = &self.block {
+                    Some(Delta::Call(name.clone()))
+                } else {
+                    None
+                }
             }
             "content_block_delta" => self.delta(event),
             "content_block_stop" => {
@@ -70,20 +90,53 @@ impl Stream {
                 None
             }
             "message_delta" => {
-                let counted = usage(event.get("usage"));
-                self.usage.completion_tokens = counted.completion_tokens;
-                self.stop =
-                    stop_reason(event.pointer("/delta/stop_reason").and_then(Value::as_str));
+                if let (Some(Value::Object(fields)), Value::Object(counted)) =
+                    (event.get("usage"), &mut self.counted)
+                {
+                    counted.extend(fields.clone());
+                }
+                self.usage = usage(Some(&self.counted));
+                let raw = event.pointer("/delta/stop_reason").and_then(Value::as_str);
+                if let Some(reason @ ("refusal" | "pause_turn")) = raw {
+                    let explanation = text_at(event, "/delta/stop_details/explanation");
+                    return Err(crate::provider::wire::blocked(&if explanation.is_empty() {
+                        reason.to_string()
+                    } else {
+                        format!("{reason}: {explanation}")
+                    }));
+                }
+                self.stop = stop_reason(raw);
+                if let Some(error) = self.broken.take()
+                    && self.stop != StopReason::Length
+                {
+                    return Err(error);
+                }
                 None
             }
+            "message_stop" => {
+                self.done = true;
+                None
+            }
+            "error" => {
+                return Err(crate::provider::wire::failed(
+                    None,
+                    text_at(event, "/error/type"),
+                    text_at(event, "/error/message"),
+                ));
+            }
             _ => None,
-        }
+        })
     }
 
     fn done(mut self) -> AssistantMessage {
         let mut calls = std::mem::take(&mut self.calls);
         if !calls.is_empty()
-            && !self.signature.is_empty()
+            && self.blocks.iter().any(|block| {
+                matches!(
+                    block.get("type").and_then(Value::as_str),
+                    Some("thinking" | "redacted_thinking")
+                )
+            })
             && let Some(call) = calls.first_mut()
         {
             call.continuation = Some(crate::provider::Continuation::Anthropic {
@@ -97,6 +150,7 @@ impl Stream {
             reasoning_content: (!self.thinking.is_empty()).then_some(self.thinking),
             usage: self.usage,
             stop_reason: self.stop,
+            continuation: None,
         }
     }
 }
@@ -104,17 +158,19 @@ impl Stream {
 impl Stream {
     fn delta(&mut self, event: &Value) -> Option<Delta> {
         match &mut self.block {
-            Block::Text => {
+            Block::Text(text) => {
                 let chunk = text_at(event, "/delta/text").to_string();
+                text.push_str(&chunk);
                 self.text.push_str(&chunk);
                 Some(Delta::Text(chunk))
             }
-            Block::Thinking => {
-                self.signature.push_str(text_at(event, "/delta/signature"));
+            Block::Thinking { text, signature } => {
+                signature.push_str(text_at(event, "/delta/signature"));
                 let chunk = text_at(event, "/delta/thinking").to_string();
                 if chunk.is_empty() {
                     return None;
                 }
+                text.push_str(&chunk);
                 self.thinking.push_str(&chunk);
                 Some(Delta::Thinking(chunk))
             }
@@ -122,55 +178,62 @@ impl Stream {
                 input.push_str(text_at(event, "/delta/partial_json"));
                 None
             }
-            Block::Other => None,
+            Block::Raw(_) | Block::Other => None,
         }
     }
 
     fn close(&mut self) {
-        match &self.block {
-            Block::Thinking if !self.thinking.is_empty() => self.blocks.push(json!({
+        match std::mem::take(&mut self.block) {
+            Block::Thinking { text, signature } => self.blocks.push(json!({
                 "type": "thinking",
-                "thinking": self.thinking,
-                "signature": self.signature,
+                "thinking": text,
+                "signature": signature,
             })),
-            Block::Text if !self.text.is_empty() => {
-                self.blocks.push(json!({"type": "text", "text": self.text}));
+            Block::Text(text) if !text.is_empty() => {
+                self.blocks.push(json!({"type": "text", "text": text}));
             }
-            _ => {}
+            Block::Raw(block) => self.blocks.push(block),
+            Block::Call { id, name, input } => self.call(id, name, input),
+            Block::Text(_) | Block::Other => {}
         }
-        if let Block::Call { id, name, input } = std::mem::take(&mut self.block) {
-            self.blocks.push(json!({
-                "type": "tool_use",
-                "id": id,
-                "name": name,
-                "input": crate::provider::wire::arguments(if input.is_empty() { "{}" } else { &input }),
-            }));
-            self.calls.push(ToolCall {
-                id,
-                kind: ToolKind::Function,
-                function: ToolFunction {
-                    name,
-                    arguments: if input.is_empty() {
-                        "{}".to_string()
-                    } else {
-                        input
-                    },
-                },
-                continuation: None,
-            });
-        }
-        self.block = Block::Other;
     }
 
+    fn call(&mut self, id: String, name: String, input: String) {
+        let arguments = if input.is_empty() {
+            "{}".to_string()
+        } else {
+            input
+        };
+        if let Err(error) = crate::provider::wire::arguments(&name, &arguments) {
+            self.broken = Some(error);
+            return;
+        }
+        self.blocks.push(json!({"type": "tool_use", "id": id}));
+        self.calls.push(ToolCall {
+            id,
+            kind: ToolKind::Function,
+            function: ToolFunction { name, arguments },
+            continuation: None,
+        });
+    }
+
+    #[cfg(test)]
     pub(crate) fn signature(&self) -> &str {
-        &self.signature
+        self.blocks
+            .iter()
+            .rev()
+            .find_map(|block| block.get("signature").and_then(Value::as_str))
+            .unwrap_or("")
     }
 }
 
 fn opened(block: &Value) -> Block {
     match block.get("type").and_then(Value::as_str) {
-        Some("text") => Block::Text,
-        Some("thinking") => Block::Thinking,
+        Some("text") => Block::Text(text_at(block, "/text").to_string()),
+        Some("thinking") => Block::Thinking {
+            text: text_at(block, "/thinking").to_string(),
+            signature: text_at(block, "/signature").to_string(),
+        },
         Some("tool_use") => Block::Call {
             id: block
                 .get("id")
@@ -184,7 +247,7 @@ fn opened(block: &Value) -> Block {
                 .to_string(),
             input: String::new(),
         },
-        _ => Block::Other,
+        _ => Block::Raw(block.clone()),
     }
 }
 

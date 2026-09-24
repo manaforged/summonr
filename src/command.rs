@@ -1,25 +1,27 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use Argument::{Bare, Text, Value};
-use Category::{Advanced, Common, Contextual, Preferences, Shortcuts};
+use Category::{Developer, Files, Model, Session, Settings};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Category {
-    Common,
-    Contextual,
-    Preferences,
-    Advanced,
-    Shortcuts,
+    Session,
+    Model,
+    Files,
+    Settings,
+    Developer,
 }
 
 impl Category {
-    pub(crate) const ALL: [Self; 5] = [Common, Contextual, Preferences, Advanced, Shortcuts];
+    pub(crate) const ALL: [Self; 5] = [Session, Model, Files, Settings, Developer];
 
     pub(crate) const fn title(self) -> &'static str {
         match self {
-            Common => "commands",
-            Contextual => "plan actions",
-            Preferences => "preferences · also in /settings",
-            Advanced => "advanced commands",
-            Shortcuts => "shortcuts",
+            Session => "conversation and sessions",
+            Model => "model and mode",
+            Files => "files and panes",
+            Settings => "settings and permissions",
+            Developer => "developer",
         }
     }
 }
@@ -28,41 +30,25 @@ impl Category {
 pub enum SlashCommand {
     Help,
     Settings,
-    Auth,
     Login,
     Model,
     Workflow,
-    Theme,
-    Tools,
-    Reasoning,
-    Receipts,
-    Session,
+    Status,
     Resume,
     Search,
     History,
-    Branch,
-    Tree,
     Retry,
-    Stats,
-    Effort,
     Compact,
     Name,
     Steps,
     Pane,
-    Layout,
     Diff,
     Copy,
     Export,
     View,
     Agents,
-    Modules,
-    Bus,
-    Network,
-    Write,
-    Approve,
+    Permissions,
     Fork,
-    Rollback,
-    Profile,
     Usage,
     Demo,
     Undo,
@@ -82,12 +68,18 @@ pub struct CommandSpec {
     pub command: SlashCommand,
     argument: Argument,
     pub(crate) category: Category,
+    pub(crate) usage: &'static str,
 }
 
 impl CommandSpec {
-    const fn category(mut self, category: Category) -> Self {
-        self.category = category;
+    const fn usage(mut self, usage: &'static str) -> Self {
+        self.usage = usage;
         self
+    }
+
+    #[must_use]
+    pub fn shown(&self) -> bool {
+        self.category != Developer || std::env::var_os("SUMMONR_DEV").is_some()
     }
 }
 
@@ -98,301 +90,11 @@ enum Argument {
     Text,
 }
 
-const SPECS: &[CommandSpec] = &[
-    spec("/help", "keys and commands", SlashCommand::Help, Bare),
-    spec(
-        "/model",
-        "choose the active model; next or prev switches configured endpoints",
-        SlashCommand::Model,
-        Value,
-    ),
-    spec(
-        "/diff",
-        "changes against the base in a pane; /diff PATH shows one file's hunks",
-        SlashCommand::Diff,
-        Value,
-    ),
-    spec(
-        "/view",
-        "read a workspace file in a pane: /view PATH; o opens it in $EDITOR",
-        SlashCommand::View,
-        Value,
-    ),
-    spec(
-        "/search",
-        "find text in this conversation",
-        SlashCommand::Search,
-        Text,
-    ),
-    spec(
-        "/history",
-        "reuse a prompt you sent in this or another session",
-        SlashCommand::History,
-        Text,
-    ),
-    spec(
-        "/resume",
-        "choose a session, or /resume ID|NAME",
-        SlashCommand::Resume,
-        Value,
-    ),
-    spec("/settings", "open settings", SlashCommand::Settings, Bare),
-    spec(
-        "/login",
-        "authenticate a provider",
-        SlashCommand::Login,
-        Value,
-    ),
-    spec("/auth", "alias for /login", SlashCommand::Auth, Value).category(Shortcuts),
-    spec(
-        "/workflow",
-        "choose models for planning, implementation, and review",
-        SlashCommand::Workflow,
-        Text,
-    )
-    .category(Advanced),
-    spec(
-        "/theme",
-        "reload the interface theme",
-        SlashCommand::Theme,
-        Bare,
-    )
-    .category(Preferences),
-    spec(
-        "/tools",
-        "compact or full tool output",
-        SlashCommand::Tools,
-        Bare,
-    )
-    .category(Preferences),
-    spec(
-        "/export",
-        "write this session as markdown: /export [PATH]",
-        SlashCommand::Export,
-        Value,
-    ),
-    spec(
-        "/reasoning",
-        "reasoning: off · collapsed · expanded",
-        SlashCommand::Reasoning,
-        Value,
-    )
-    .category(Preferences),
-    spec(
-        "/receipts",
-        "turn receipts: off · collapsed · expanded",
-        SlashCommand::Receipts,
-        Value,
-    )
-    .category(Preferences),
-    spec(
-        "/pane",
-        "open a pane beside the chat: /pane files · ledger · diff · worktrees · off",
-        SlashCommand::Pane,
-        Value,
-    ),
-    spec(
-        "/layout",
-        "arrange the screen: focus · run · files · review · `chat | files 30%`",
-        SlashCommand::Layout,
-        Value,
-    )
-    .category(Advanced),
-    spec(
-        "/copy",
-        "copy the last reply; /copy all copies the transcript",
-        SlashCommand::Copy,
-        Value,
-    ),
-    spec(
-        "/session",
-        "session id and log path",
-        SlashCommand::Session,
-        Bare,
-    )
-    .category(Advanced),
-    spec(
-        "/retry",
-        "continue a failed or cancelled turn from its saved results (F5)",
-        SlashCommand::Retry,
-        Bare,
-    ),
-    spec(
-        "/name",
-        "name this session; bare shows the name",
-        SlashCommand::Name,
-        Value,
-    ),
-    spec(
-        "/steps",
-        "run a plan's `## Steps` one at a time: /steps PLAN.md · clear",
-        SlashCommand::Steps,
-        Value,
-    )
-    .category(Advanced),
-    spec(
-        "/stats",
-        "token usage and cost per round",
-        SlashCommand::Stats,
-        Bare,
-    ),
-    spec(
-        "/effort",
-        "reasoning effort: none · low · medium · high, or bare to cycle",
-        SlashCommand::Effort,
-        Value,
-    ),
-    spec(
-        "/agents",
-        "show connected Summonr sessions",
-        SlashCommand::Agents,
-        Bare,
-    )
-    .category(Advanced),
-    spec(
-        "/modules",
-        "list the built-in modules, or /modules NAME on|off",
-        SlashCommand::Modules,
-        Text,
-    )
-    .category(Advanced),
-    spec(
-        "/bus",
-        "turn automatic replies to peers on or off",
-        SlashCommand::Bus,
-        Bare,
-    )
-    .category(Preferences),
-    spec(
-        "/net",
-        "sandbox network: on, off, or once",
-        SlashCommand::Network,
-        Value,
-    )
-    .category(Advanced),
-    spec(
-        "/write",
-        "persist a writable root; /write --session PATH for this session",
-        SlashCommand::Write,
-        Value,
-    )
-    .category(Advanced),
-    spec(
-        "/approve",
-        "manual: ask before extra-root writes and shell commands",
-        SlashCommand::Approve,
-        Value,
-    )
-    .category(Advanced),
-    spec(
-        "/fork",
-        "branch at the latest completed turn",
-        SlashCommand::Fork,
-        Bare,
-    )
-    .category(Shortcuts),
-    spec(
-        "/undo",
-        "drop the last turn from the conversation and restore its files",
-        SlashCommand::Undo,
-        Bare,
-    ),
-    spec(
-        "/profile",
-        "where this session spent time and tokens: model, tools, harness, slowest calls, repeats",
-        SlashCommand::Profile,
-        Bare,
-    ),
-    spec(
-        "/usage",
-        "token spend by model over 24h · 7d · 30d · lifetime",
-        SlashCommand::Usage,
-        Bare,
-    ),
-    spec(
-        "/rollback",
-        "restore files to before the last turn; /rollback N counts every turn run, including retries and mail",
-        SlashCommand::Rollback,
-        Value,
-    ),
-    spec(
-        "/branch",
-        "branch after an earlier turn",
-        SlashCommand::Branch,
-        Text,
-    ),
-    spec(
-        "/clear",
-        "start fresh context; keep workspace files",
-        SlashCommand::Clear,
-        Bare,
-    ),
-    spec(
-        "/tree",
-        "navigate related sessions",
-        SlashCommand::Tree,
-        Bare,
-    )
-    .category(Shortcuts),
-    spec(
-        "/compact",
-        "summarize earlier turns, keep the latest",
-        SlashCommand::Compact,
-        Bare,
-    ),
-    spec(
-        "/plan",
-        "enter plan mode; /plan accept executes that plan as work",
-        SlashCommand::Plan,
-        Bare,
-    ),
-    spec(
-        "/plan accept",
-        "approve the saved plan and execute it",
-        SlashCommand::PlanAccept,
-        Bare,
-    )
-    .category(Contextual),
-    spec(
-        "/plan reject",
-        "leave plan mode without implementing",
-        SlashCommand::PlanReject,
-        Bare,
-    )
-    .category(Contextual),
-    spec("/auto", "return to auto mode", SlashCommand::Auto, Bare).category(Contextual),
-    spec(
-        "/goal",
-        "loop on an objective with no written plan",
-        SlashCommand::Goal,
-        Text,
-    )
-    .category(Advanced),
-    spec(
-        "/demo",
-        "showcase chat rendering: markdown, mermaid, charts, images, diffs",
-        SlashCommand::Demo,
-        Bare,
-    )
-    .category(Advanced),
-    spec("/exit", "quit summon", SlashCommand::Exit, Bare),
-    spec("/quit", "alias for /exit", SlashCommand::Exit, Bare).category(Shortcuts),
-];
+mod specs;
 
-const fn spec(
-    name: &'static str,
-    description: &'static str,
-    command: SlashCommand,
-    argument: Argument,
-) -> CommandSpec {
-    CommandSpec {
-        name,
-        description,
-        command,
-        argument,
-        category: Common,
-    }
-}
+use specs::{ALIASES, SPECS};
+
+static NOTED: AtomicU64 = AtomicU64::new(0);
 
 #[must_use]
 pub const fn command_specs() -> &'static [CommandSpec] {
@@ -405,13 +107,39 @@ pub fn parse_command(line: &str) -> Option<SlashCommand> {
     if !tokens.first().is_some_and(|head| head.starts_with('/')) {
         return None;
     }
-    (1..=tokens.len().min(2)).rev().find_map(|count| {
-        let head = tokens[..count].join(" ");
-        SPECS
-            .iter()
-            .find(|spec| spec.name == head)
-            .map(|spec| spec.command)
-    })
+    (1..=tokens.len().min(2))
+        .rev()
+        .find_map(|count| {
+            let head = tokens[..count].join(" ");
+            SPECS
+                .iter()
+                .find(|spec| spec.name == head && spec.shown())
+                .map(|spec| spec.command)
+        })
+        .or_else(|| {
+            ALIASES
+                .iter()
+                .find(|(name, _)| *name == tokens[0])
+                .and_then(|(_, target)| parse_command(target))
+        })
+}
+
+pub(crate) fn renamed(line: &str) -> Option<(String, Option<String>)> {
+    let line = line.trim();
+    let (head, tail) = line.split_once(char::is_whitespace).unwrap_or((line, ""));
+    let index = ALIASES.iter().position(|(name, _)| *name == head)?;
+    let target = ALIASES[index].1;
+    let bare = SPECS
+        .iter()
+        .any(|spec| spec.name == target && spec.argument == Bare);
+    let expanded = if bare || tail.trim().is_empty() {
+        target.to_string()
+    } else {
+        format!("{target} {}", tail.trim())
+    };
+    let bit = 1_u64 << index;
+    let first = NOTED.fetch_or(bit, Ordering::Relaxed) & bit == 0;
+    Some((expanded, first.then(|| format!("renamed: use {target}"))))
 }
 
 pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
@@ -457,3 +185,7 @@ pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "command_tests.rs"]
+mod tests;

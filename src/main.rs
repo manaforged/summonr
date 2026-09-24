@@ -41,7 +41,10 @@ fn main() {
 
 async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {
     match args {
-        Some(args) => startup::run(args).await,
+        Some(args) => {
+            summonr::check_config()?;
+            startup::run(args).await
+        }
         None => summonr::tui::profile(std::env::args().skip(2)).map(|()| 0),
     }
 }

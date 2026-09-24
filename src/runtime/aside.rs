@@ -55,7 +55,10 @@ impl<P: Provider> Loop<P> {
                     Err(error) => (false, error.to_string()),
                 };
                 let text = self.tool_text(&call, success, output).await;
-                messages.push(Message::tool(call.id, text));
+                messages.push(Message {
+                    failed: !success,
+                    ..Message::tool(call.id, text)
+                });
             }
         }
     }

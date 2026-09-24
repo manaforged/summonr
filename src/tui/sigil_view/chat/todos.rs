@@ -17,11 +17,10 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let _panes = update.panes.get();
             let _viewport = update.viewport.get();
             let draft = update.draft.get();
             let caret = update.caret.get();
-            let model = update.model.borrow();
+            let model = update.model.get();
             let width = usize::from(cols);
             if width == 0
                 || model.ledger.iter().all(|line| item(line).0 == '✓')
@@ -65,7 +64,6 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
         .child(
             pick(
                 false,
-                false,
                 format!("Tasks {done}/{}", model.ledger.len()),
                 if expanded { "hide".to_string() } else { detail },
             )
@@ -83,12 +81,7 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
             .min(model.ledger.len().saturating_sub(count));
         for task in model.ledger.iter().skip(start).take(count) {
             let (mark, text) = item(task);
-            body = body.child(pick(
-                mark == '●',
-                mark == '●',
-                format!("{mark} {text}"),
-                String::new(),
-            ));
+            body = body.child(pick(mark == '●', format!("{mark} {text}"), String::new()));
         }
     }
     let scroll = app.clone();
@@ -111,37 +104,44 @@ fn visible_rows(model: &Model, rows: u16) -> usize {
 
 impl App {
     pub(in crate::tui::sigil_view) fn toggle_todos(&self) {
-        let mut model = self.model.borrow_mut();
-        if model.ledger.iter().all(|line| item(line).0 == '✓') {
-            drop(model);
+        if self
+            .model
+            .peek()
+            .ledger
+            .iter()
+            .all(|line| item(line).0 == '✓')
+        {
             self.toggle_pane(Pane::Ledger);
             return;
         }
-        model.todos_expanded = !model.todos_expanded;
-        model.todos_offset = model
-            .ledger
-            .iter()
-            .position(|line| item(line).0 == '●')
-            .unwrap_or(0)
-            .saturating_sub(1);
-        drop(model);
+        self.model_mut(|model| {
+            model.todos_expanded = !model.todos_expanded;
+            model.todos_offset = model
+                .ledger
+                .iter()
+                .position(|line| item(line).0 == '●')
+                .unwrap_or(0)
+                .saturating_sub(1);
+        });
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn scroll_todos(&self, delta: isize) -> bool {
-        let mut model = self.model.borrow_mut();
-        let count = if model.todos_expanded {
-            visible_rows(&model, self.viewport.peek().1)
-        } else {
-            1
-        };
-        let before = model.todos_offset;
-        model.todos_offset = model
-            .todos_offset
-            .saturating_add_signed(delta)
-            .min(model.ledger.len().saturating_sub(count));
-        let changed = model.todos_offset != before;
-        drop(model);
+        let rows = self.viewport.peek().1;
+        let mut changed = false;
+        self.model_mut(|model| {
+            let count = if model.todos_expanded {
+                visible_rows(model, rows)
+            } else {
+                1
+            };
+            let before = model.todos_offset;
+            model.todos_offset = model
+                .todos_offset
+                .saturating_add_signed(delta)
+                .min(model.ledger.len().saturating_sub(count));
+            changed = model.todos_offset != before;
+        });
         if changed {
             self.refresh();
         }

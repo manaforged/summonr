@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::provider::{Continuation, FunctionDefinition, Image, ToolDefinition};
+use crate::provider::{Effort, Image};
 
 fn message(role: Role, content: &str) -> Message {
     Message {
@@ -10,6 +10,8 @@ fn message(role: Role, content: &str) -> Message {
         tool_calls: Vec::new(),
         tool_call_id: None,
         reasoning: None,
+        failed: false,
+        continuation: None,
     }
 }
 
@@ -30,7 +32,8 @@ fn the_system_turn_becomes_a_system_instruction() {
     let body = request(&ask(&[
         message(Role::System, "be terse"),
         message(Role::User, "hello"),
-    ]));
+    ]))
+    .unwrap();
     assert_eq!(body["systemInstruction"]["parts"][0]["text"], "be terse");
     assert_eq!(body["contents"].as_array().unwrap().len(), 1);
     assert_eq!(body["contents"][0]["role"], "user");
@@ -43,7 +46,8 @@ fn two_system_turns_join_rather_than_the_second_winning() {
         message(Role::System, "first"),
         message(Role::System, "second"),
         message(Role::User, "hi"),
-    ]));
+    ]))
+    .unwrap();
     assert_eq!(
         body["systemInstruction"]["parts"][0]["text"], "first\nsecond",
         "Gemini takes one instruction, so dropping the earlier one would lose it"
@@ -55,55 +59,16 @@ fn the_assistant_is_called_model_on_this_wire() {
     let body = request(&ask(&[
         message(Role::User, "hi"),
         message(Role::Assistant, "hello"),
-    ]));
+    ]))
+    .unwrap();
     assert_eq!(body["contents"][1]["role"], "model");
-}
-
-#[test]
-fn two_results_for_one_model_turn_merge_into_a_single_user_turn() {
-    let mut assistant = message(Role::Assistant, "");
-    assistant.tool_calls = vec![
-        ToolCall {
-            id: "one".to_string(),
-            kind: ToolKind::Function,
-            function: ToolFunction {
-                name: "read".to_string(),
-                arguments: "{}".to_string(),
-            },
-            continuation: None,
-        },
-        ToolCall {
-            id: "two".to_string(),
-            kind: ToolKind::Function,
-            function: ToolFunction {
-                name: "list".to_string(),
-                arguments: "{}".to_string(),
-            },
-            continuation: None,
-        },
-    ];
-    let mut first = message(Role::Tool, "a");
-    first.tool_call_id = Some("one".to_string());
-    let mut second = message(Role::Tool, "b");
-    second.tool_call_id = Some("two".to_string());
-    let body = request(&ask(&[message(Role::User, "go"), assistant, first, second]));
-    let turns = body["contents"].as_array().unwrap();
-    assert_eq!(
-        turns.len(),
-        3,
-        "user, model, then one user turn holding both results: {turns:?}"
-    );
-    let parts = turns[2]["parts"].as_array().unwrap();
-    assert_eq!(parts.len(), 2, "both responses ride in one turn");
-    assert_eq!(parts[0]["functionResponse"]["name"], "one");
-    assert_eq!(parts[1]["functionResponse"]["response"]["content"], "b");
 }
 
 #[test]
 fn a_user_turn_and_a_following_result_do_not_open_two_turns() {
     let mut result = message(Role::Tool, "a");
     result.tool_call_id = Some("one".to_string());
-    let body = request(&ask(&[message(Role::User, "go"), result]));
+    let body = request(&ask(&[message(Role::User, "go"), result])).unwrap();
     assert_eq!(
         body["contents"].as_array().unwrap().len(),
         1,
@@ -115,74 +80,11 @@ fn a_user_turn_and_a_following_result_do_not_open_two_turns() {
 fn an_image_is_inline_data_with_its_mime_type() {
     let mut user = message(Role::User, "what is this");
     user.images = vec![Image::encode("image/png", &[1, 2, 3])];
-    let body = request(&ask(&[user]));
+    let body = request(&ask(&[user])).unwrap();
     let parts = body["contents"][0]["parts"].as_array().unwrap();
     assert_eq!(parts[0]["inlineData"]["mimeType"], "image/png");
     assert!(parts[0]["inlineData"]["data"].is_string());
     assert_eq!(parts[1]["text"], "what is this");
-}
-
-#[test]
-fn a_tool_is_declared_with_parameters_not_input_schema() {
-    let messages = vec![message(Role::User, "hi")];
-    let tools = vec![ToolDefinition {
-        kind: ToolKind::Function,
-        function: FunctionDefinition {
-            name: "read".to_string(),
-            description: "Read a file".to_string(),
-            parameters: json!({"type": "object"}),
-        },
-    }];
-    let mut call = ask(&messages);
-    call.tools = &tools;
-    let body = request(&call);
-    let declared = &body["tools"][0]["functionDeclarations"][0];
-    assert_eq!(declared["name"], "read");
-    assert_eq!(
-        declared["parameters"]["type"], "object",
-        "Gemini names the schema parameters, unlike Anthropic"
-    );
-}
-
-#[test]
-fn a_replayed_call_carries_its_thought_signature_back() {
-    let mut assistant = message(Role::Assistant, "");
-    assistant.tool_calls = vec![ToolCall {
-        id: "c1".to_string(),
-        kind: ToolKind::Function,
-        function: ToolFunction {
-            name: "read".to_string(),
-            arguments: r#"{"path":"a.rs"}"#.to_string(),
-        },
-        continuation: Some(Continuation::Gemini {
-            model: "gemini-2.5-flash".to_string(),
-            signatures: vec!["sig-1".to_string()],
-        }),
-    }];
-    let body = request(&ask(&[message(Role::User, "go"), assistant]));
-    let parts = body["contents"][1]["parts"].as_array().unwrap();
-    assert_eq!(parts[0]["functionCall"]["name"], "read");
-    assert_eq!(parts[0]["functionCall"]["args"]["path"], "a.rs");
-    assert_eq!(
-        parts[1]["thoughtSignature"], "sig-1",
-        "a reasoning model needs its own signature back or it degrades"
-    );
-}
-
-#[test]
-fn effort_sets_a_thinking_level_and_asks_for_the_thoughts() {
-    let messages = vec![message(Role::User, "hi")];
-    let mut call = ask(&messages);
-    call.effort = Some(Effort::High);
-    let body = request(&call);
-    assert_eq!(
-        body["generationConfig"]["thinkingConfig"]["thinkingLevel"],
-        "high"
-    );
-    assert_eq!(
-        body["generationConfig"]["thinkingConfig"]["includeThoughts"],
-        true
-    );
 }
 
 #[test]
@@ -201,7 +103,7 @@ fn a_reply_parses_into_text_thinking_calls_and_signatures() {
         "usageMetadata": {"promptTokenCount": 30, "candidatesTokenCount": 5}
     }));
     assert_eq!(chunk.as_deref(), Some("Reading it."));
-    assert_eq!(reply.signatures, vec!["sig-1".to_string()]);
+    assert_eq!(reply.said, "sig-1");
     let message = reply.finish();
     assert_eq!(message.content.as_deref(), Some("Reading it."));
     assert_eq!(message.reasoning_content.as_deref(), Some("weighing"));
@@ -242,22 +144,6 @@ fn a_call_with_null_arguments_still_parses() {
 }
 
 #[test]
-fn cached_tokens_are_not_counted_twice() {
-    let counted = usage(&json!({
-        "promptTokenCount": 1000,
-        "cachedContentTokenCount": 800,
-        "candidatesTokenCount": 20,
-        "thoughtsTokenCount": 15
-    }));
-    assert_eq!(
-        counted.prompt_tokens, 200,
-        "promptTokenCount already includes the cached tokens on this wire"
-    );
-    assert_eq!(counted.cached_tokens, 800);
-    assert_eq!(counted.reasoning_tokens, 15);
-}
-
-#[test]
 fn a_stream_of_frames_joins_into_one_reply() {
     let mut reply = <Reply as Accumulate>::new("gemini-2.5-flash");
     let first = reply.take(&json!({
@@ -286,34 +172,136 @@ fn an_unknown_finish_reason_is_not_a_clean_stop() {
     assert_eq!(stop_reason("STOP"), StopReason::Stop);
 }
 
-#[test]
-fn a_response_names_the_function_not_the_call_id_we_invented() {
-    let mut reply = <Reply as Accumulate>::new("gemini-2.5-flash");
-    drop(reply.take(&json!({
-        "candidates": [{"content": {"parts": [
-            {"functionCall": {"name": "read", "args": {}}}
-        ]}}]
-    })));
-    let id = reply.finish().tool_calls[0].id.clone();
-    let mut result = message(Role::Tool, "contents");
-    result.tool_call_id = Some(id.clone());
-    let body = request(&ask(&[message(Role::User, "go"), result]));
-    let part = &body["contents"][0]["parts"][1];
-    assert_eq!(
-        part["functionResponse"]["name"], "read",
-        "Gemini matches the response to the declared function, not to `{id}`"
-    );
-    assert_eq!(part["functionResponse"]["response"]["content"], "contents");
+fn with_effort<'a>(model: &str, messages: &'a [Message], effort: Effort) -> CompletionRequest<'a> {
+    let mut call = ask(messages);
+    call.model = model.to_string();
+    call.effort = Some(effort);
+    call
+}
+
+fn call_for(id: &str, name: &str) -> ToolCall {
+    ToolCall {
+        id: id.to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            name: name.to_string(),
+            arguments: "{}".to_string(),
+        },
+        continuation: None,
+    }
 }
 
 #[test]
-fn a_real_call_id_is_used_as_given() {
-    assert_eq!(called_name("read"), "read");
-    assert_eq!(called_name("call-read-0"), "read");
-    assert_eq!(called_name("call-my-tool-3"), "my-tool");
+fn a_replayed_call_carries_its_signature_on_the_call_part() {
+    let mut assistant = message(Role::Assistant, "");
+    let mut called = call_for("call-weather-0", "weather");
+    called.continuation = Some(Continuation::Gemini {
+        model: "gemini-2.5-flash".to_string(),
+        signatures: vec!["sig-1".to_string()],
+    });
+    assistant.tool_calls = vec![called];
+    let messages = vec![message(Role::User, "weather?"), assistant];
+    let body = request(&ask(&messages)).unwrap();
+    let part = &body["contents"][1]["parts"][0];
+    assert_eq!(part["functionCall"]["name"], "weather");
+    assert_eq!(part["thoughtSignature"], "sig-1");
+}
+
+#[test]
+fn a_tool_result_names_the_function_and_keeps_a_real_call_id() {
+    let mut assistant = message(Role::Assistant, "");
+    assistant.tool_calls = vec![call_for("fc_42", "weather")];
+    let mut result = message(Role::Tool, "sunny");
+    result.tool_call_id = Some("fc_42".to_string());
+    let messages = vec![message(Role::User, "weather?"), assistant, result];
+    let body = request(&ask(&messages)).unwrap();
+    let response = &body["contents"][2]["parts"][0]["functionResponse"];
+    assert_eq!(response["name"], "weather");
+    assert_eq!(response["id"], "fc_42");
+}
+
+#[test]
+fn a_tool_schema_goes_as_json_schema() {
+    let messages = vec![message(Role::User, "hi")];
+    let tools = vec![crate::provider::ToolDefinition {
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::FunctionDefinition {
+            name: "read".to_string(),
+            description: "read a file".to_string(),
+            parameters: serde_json::json!({"type": "object", "additionalProperties": false}),
+        },
+    }];
+    let mut call = ask(&messages);
+    call.tools = &tools;
+    let body = request(&call).unwrap();
+    let declared = &body["tools"][0]["functionDeclarations"][0];
     assert_eq!(
-        called_name("call-weird"),
-        "call-weird",
-        "an id that is not one of ours is passed through untouched"
+        declared["parametersJsonSchema"]["additionalProperties"],
+        false
     );
+    assert!(declared.get("parameters").is_none());
+}
+
+#[test]
+fn effort_none_turns_thinking_off_on_flash() {
+    let messages = vec![message(Role::User, "hi")];
+    let body = request(&with_effort("gemini-2.5-flash", &messages, Effort::None)).unwrap();
+    assert_eq!(
+        body["generationConfig"]["thinkingConfig"]["thinkingBudget"],
+        0
+    );
+}
+
+#[test]
+fn a_thinking_level_goes_only_to_gemini_3() {
+    let messages = vec![message(Role::User, "hi")];
+    let three = request(&with_effort("gemini-3-flash", &messages, Effort::High)).unwrap();
+    assert_eq!(
+        three["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "high"
+    );
+    let older = request(&with_effort("gemini-2.0-flash", &messages, Effort::High)).unwrap();
+    assert!(older["generationConfig"].get("thinkingConfig").is_none());
+}
+
+#[test]
+fn a_blocked_prompt_fails_as_blocked() {
+    let mut reply = <Reply as Accumulate>::new("gemini-2.5-flash");
+    let error = reply
+        .on(r#"{"promptFeedback":{"blockReason":"PROHIBITED_CONTENT"}}"#)
+        .err()
+        .expect("a blocked prompt is not an empty reply");
+    assert!(
+        error.to_string().contains("PROHIBITED_CONTENT"),
+        "got {error}"
+    );
+}
+
+#[test]
+fn a_malformed_call_finish_asks_for_a_repair() {
+    let mut reply = <Reply as Accumulate>::new("gemini-2.5-flash");
+    let error = reply
+        .on(r#"{"candidates":[{"finishReason":"MALFORMED_FUNCTION_CALL"}]}"#)
+        .err()
+        .expect("a malformed call must fail");
+    let crate::error::Error::Provider(failure) = error else {
+        panic!("not a provider failure");
+    };
+    assert_eq!(
+        failure.kind,
+        crate::error::ProviderFailureKind::MalformedToolCall
+    );
+}
+
+#[test]
+fn cached_tokens_stay_in_the_prompt_and_thoughts_count_as_output() {
+    let used = usage(&serde_json::json!({
+        "promptTokenCount": 100_000,
+        "cachedContentTokenCount": 90_000,
+        "candidatesTokenCount": 23,
+        "thoughtsTokenCount": 185,
+    }));
+    assert_eq!(used.prompt_tokens, 100_000);
+    assert_eq!(used.cached_tokens, 90_000);
+    assert_eq!(used.completion_tokens, 208);
 }

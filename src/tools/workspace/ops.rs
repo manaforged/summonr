@@ -6,8 +6,11 @@ use crate::hashline::resolve_span;
 use super::edit::Patch;
 use super::object_string;
 
+const OP_REPLACE_TEXT: &str = "replace_text";
+const OP_INSERT_AFTER: &str = "insert_after";
+
 pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
-    if let Some(tag) = op.get("replace_text").and_then(Value::as_str) {
+    if let Some(tag) = op.get(OP_REPLACE_TEXT).and_then(Value::as_str) {
         return replace_text_patch(
             text,
             Some(tag),
@@ -58,7 +61,7 @@ pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
         let end = replace.get("end_tag").and_then(Value::as_str);
         return replace_patch(text, tag, end, new);
     }
-    if let Some(replace) = op.get("replace_text") {
+    if let Some(replace) = op.get(OP_REPLACE_TEXT) {
         if !replace.is_object() {
             return Err(Error::Tool(
                 "replace_text must be an object with old, new, and optional tag".to_string(),
@@ -72,7 +75,7 @@ pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
             replace_all(replace),
         );
     }
-    if let Some(insert) = op.get("insert_after") {
+    if let Some(insert) = op.get(OP_INSERT_AFTER) {
         if !insert.is_object() {
             return Err(Error::Tool(
                 "insert_after must be an object with tag and text".to_string(),

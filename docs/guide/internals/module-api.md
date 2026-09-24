@@ -61,14 +61,14 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
 | plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.summonr/plan.md` |
-| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw |
+| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw; `Line` is the session record and `Line::events` projects `Event`; `SessionDriver::answer` is the one `Line::Assistant` writer; `--json` order per round is Usage, ToolCall…, ToolResult…, Work, Receipt, Assistant, and an abort is Aborted then Receipt; memory is `footprint_kb` (KiB; old journals read `rss_kb`) |
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
 | endpoint | `endpoint.rs`, `~/.summonr/config.toml` | 28 built-in rows, four wires |
-| model catalog | `catalog.rs::{parse,remember,cached,refresh_registry,enrich}`, `~/.summonr/models{,-dev}.json` | provider listings plus reduced models.dev metadata; ETag refresh after 24h, `SUMMONR_MODELS_URL` overrides the source |
-| infer | `decisions::ask`, `summonr infer` | typed questions over supplied state; Choice, Score, Noul; credentials through `summonr login typesafe`, `/login typesafe`, or `TYPESAFE_API_KEY` |
-| sweep | `decisions::sweep::{sweep, merge}` | merge state windows; require matching answer keys and types; blended Choice confidence is capped by the top-two probability margin, a conservative aggregation rule rather than calibrated model confidence |
-| evaluate | `decisions::eval::{load, run, score, report}`, `infer --eval` | validate labels before inference; `score` returns an error for empty or incomplete results, invalid labels, or invalid confidence; the CLI requires perfect gated accuracy and at least one gated answer per labelled question |
+| model catalog | `Client::discover`, `Client::state`, `catalog.rs::{remember,cached,refresh_registry,enrich}`, `~/.summonr/models{,-dev}.json` | one discovery path for the picker and `summonr endpoints`: cached rows show first, only `GET /models` is timed, a fresh listing replaces the endpoint's rows, models unknown to models.dev show as `new`, failures read `key rejected`, `rate limited`, or `unreachable`; models.dev refreshes hourly in the background by ETag and matches the exact `api` URL before the host; `SUMMONR_MODELS_URL` overrides the source |
+| classify | `classify::ask`, `summonr classify` | typed questions over supplied state; Choice, Score, Noul; requests ride `provider::Client` on the decisions wire; the seat is a config row with `wire = "decisions"`; no classify seat ships |
+| sweep | `classify::sweep::{sweep, merge}` | merge state windows; require matching answer keys and types; blended Choice confidence is capped by the top-two probability margin, a conservative aggregation rule rather than calibrated model confidence |
+| evaluate | `classify::eval::{load, run, score, report}`, `classify --eval` | validate labels before classification; `score` returns an error for empty or incomplete results, invalid labels, or invalid confidence; the CLI requires perfect gated accuracy and at least one gated answer per labelled question |
 | policy | `policy.rs`, `~/.summonr/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
@@ -88,6 +88,11 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, tool health (per-tool calls and failures, native vs shell search, head-pipe rate, first edit), slowest tools and rounds, largest results, repeated calls, all from `session.jsonl`; `--all` aggregates every session journal (calls, failures, native vs shell search, head-pipe rate, size per call, first-edit index) |
 | read dedup | `tools/dedup.rs`, `ToolRegistry::forget_reads` | skips re-sending unchanged file ranges; every compaction and `/clear` resets it |
 | tool | `tools.rs::run_tool`, `main/startup/tool.rs`, `summonr tool NAME [JSON]` | invoke one model-facing tool from the CLI under the workspace policy; checks and benches without a paid model turn |
+| timeouts | `limits.rs`, `limits::{seconds, retry_policy}` | every timeout constant; `seconds` converts runtime and config seconds; `retry_policy` is the one leyline `RetryPolicy` (3 retries, 1–8 s backoff on connection errors, 429, and 5xx; a Retry-After over 60 s stops the retry so the turn can fall back) that `provider::Client::attach` gives every request; the turn retries a failed stream body once, then falls back |
+| config | `config::file`, `summonr::check_config` | one cached parse of `~/.summonr/config.toml`; `main` checks it once at startup, so a malformed file stops the run; readers propagate the error; `persist` clears the cache |
+| wires | `provider/wire/{completions,anthropic,gemini,responses,decisions}.rs`, `Chat::request -> Result`, `wire::{arguments, failed, blocked}` | request shape and stream state per wire; an error frame is `wire::failed`, a refusal or content-filter stop is `wire::blocked`, a bad history argument is `MalformedToolCall`; every stream must reach `finished()` |
+| login | `endpoint::{save_key, logout}`, `Endpoint::keyless`, `AuthInfo::keyless`, `Source::Builtin`, `Msg::{LoginStep, LoginDone}`, `Cmd::Logout` | key order env → stored → peer → config → built-in; a missing key fails instead of sending a placeholder; the TUI checks a pasted key through `Client::discover` before saving; `endpoint::logout` owns the sign-out sentence for the CLI and the TUI |
+| clipboard | `Cmd::Clipboard`, `reader::files::clipboard`, `Msg::Clipboard` | macOS `osascript` PNG, then `pbpaste` text, read on the worker; other systems paste through the terminal or Sigil `text_edit` |
 
 Process surface: 34 flags in `main/cli.rs`, 47 commands in `command.rs`, exit
 codes 0/1/2/3. Keys, env, config, and disk are in the
@@ -100,8 +105,13 @@ not against the name.
 
 | Delete | Keep | Evidence |
 | --- | --- | --- |
-| `summonr decide` | `summonr infer` | retired spelling exits with a migration error; inference uses the existing decisions API |
-| `Line`, `Event`, `Msg`/`Cmd`, `Entry` | one session event, plus projections | four types describe the same session facts: 13, 16, 38/37, and 12 variants |
+| `summonr decide`, `summonr infer`, `decisions` module | `summonr classify`, `classify` | one command and one module name the typed-question job; the requests ride `provider::Client` like every other wire |
+| a second session record beside `Line` | `Line`, with `Event` projected by `Line::events`; `Msg`/`Cmd` stay UI transport | `Event` was built by hand beside the journal line |
+| `provider::limits`, `secs`, `secs_f64`, `RETRY_AFTER_MAX`, `FALLBACK_RETRIES` | `limits.rs`, leyline `RetryPolicy` | a second backoff loop and timeout builder beside leyline |
+| `config::load`, `Policy::command_policy`, `policy::write_block`, `tui::short_session` wrapper | `config::file`, `command_policy_checked`, `write_block_segments`, `session::short` | duplicate entry points for one job |
+| `ModelMut`, `Model::spinner`, `App::image`, `host::run::{pbpaste, clipboard_image}` | `App::model_mut(FnOnce)`, the `ticks` signal, `Cmd::Clipboard` | a guard cloned the model on each write; a busy frame wrote the model; the clipboard read blocked the UI thread |
+| `Client::models`, `catalog::plan_cost`, `gemini::called_name`, `STARTUP_PROBE` | `Client::discover`, the function name from the assistant `tool_calls` | a second listing path and a name guessed from a call id |
+| `preset::{plans, apis}`, `PLANS`, `APIS` | `presets()` over `preset::{head, tail}` in the original order | the split reordered the endpoint list |
 | 23 orphan functions | nothing | 13 live, 10 `cfg(test)`-only, zero callers |
 | `unicode-width`, `winapi-util`, `smol_str`, direct `reqwest` | nothing | declared in `Cargo.toml`, zero references in `src` |
 | `Error::MaxRounds`, `--max-turns`, `Goal.max_turns` | `--max-tokens`, `--max-secs` | round caps are banned; only token and wall-clock budgets bound a run |

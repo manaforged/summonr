@@ -17,6 +17,24 @@ pub(super) struct Preset {
     pub(super) context_window: Option<u32>,
     pub(super) opencode: bool,
     pub(super) prompt_cache_key: bool,
+    pub(super) cli_token: Option<CliToken>,
+    pub(super) opencode_oauth: bool,
+    pub(super) env_default: bool,
+    pub(super) plan: bool,
+}
+
+pub(super) struct CliToken {
+    pub(super) label: &'static str,
+    pub(super) read: fn() -> Option<String>,
+}
+
+pub(super) const KIMI_CLI: CliToken = CliToken {
+    label: "kimi-code",
+    read: super::keys::kimi_cli_token,
+};
+
+pub(super) fn env_default() -> Option<&'static Preset> {
+    presets().find(|preset| preset.env_default)
 }
 
 fn claude_oauth() -> crate::config::OAuth {
@@ -81,6 +99,7 @@ const PROVIDER_IDS: &[(&str, &[&str])] = &[
     ("cerebras", &["cerebras"]),
     ("mistral", &["mistral"]),
     ("anthropic", &["anthropic"]),
+    ("claude-pro", &["anthropic"]),
     ("gemini", &["google"]),
     ("muse", &["meta"]),
     ("zen", &["opencode"]),

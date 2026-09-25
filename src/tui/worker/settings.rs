@@ -53,7 +53,7 @@ impl Worker {
                 self.send_settings();
                 if let Some((provider, model)) = probe {
                     self.loop_
-                        .set_context_window(provider.context(&model).await);
+                        .set_context_window(provider.context(&self.endpoint, &model).await);
                     self.send_settings();
                 }
             }

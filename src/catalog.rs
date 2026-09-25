@@ -46,7 +46,9 @@ impl Cost {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+const CURRENT_DAYS: u64 = 183;
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Model {
     pub id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -63,6 +65,14 @@ pub struct Model {
     pub reasoning: bool,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub vision: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub family: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub deprecated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tools: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price: Option<crate::provider::Price>,
 }
 
 impl Model {
@@ -82,6 +92,14 @@ impl Model {
     #[must_use]
     pub fn window(&self) -> String {
         match self.context {
+            Some(tokens) if tokens >= 950_000 => {
+                let millions = f64::from(tokens) / 1_000_000.0;
+                if (millions - millions.round()).abs() < 0.1 {
+                    format!("{}M", millions.round())
+                } else {
+                    format!("{millions:.1}M")
+                }
+            }
             Some(tokens) if tokens >= 1000 => format!("{}k", tokens / 1000),
             Some(tokens) => tokens.to_string(),
             None => String::new(),
@@ -89,12 +107,71 @@ impl Model {
     }
 
     #[must_use]
-    pub fn fresh(&self) -> bool {
-        self.about.as_deref() == Some("new")
-            || self
-                .release
-                .is_some_and(|day| now() / 86_400 <= day.saturating_add(14))
+    pub fn usable(&self) -> bool {
+        !self.deprecated && self.tools != Some(false)
     }
+
+    #[must_use]
+    pub fn aged(&self) -> bool {
+        self.release
+            .is_some_and(|day| now() / 86_400 > day.saturating_add(CURRENT_DAYS))
+    }
+
+    #[must_use]
+    pub fn released(&self) -> Option<String> {
+        let (year, month, _) = civil(self.release?)?;
+        Some(format!("{year}-{month:02}"))
+    }
+
+    #[must_use]
+    pub fn released_on(&self) -> Option<String> {
+        let (year, month, day) = civil(self.release?)?;
+        Some(format!("{year}-{month:02}-{day:02}"))
+    }
+
+    #[must_use]
+    pub fn fresh(&self) -> bool {
+        self.release
+            .is_some_and(|day| now() / 86_400 <= day.saturating_add(14))
+    }
+}
+
+fn civil(epoch_day: u64) -> Option<(i64, i64, i64)> {
+    let days = i64::try_from(epoch_day).ok()? + 719_468;
+    let era = days.div_euclid(146_097);
+    let of_era = days - era * 146_097;
+    let year_of_era = (of_era - of_era / 1460 + of_era / 36_524 - of_era / 146_096) / 365;
+    let of_year = of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted = (5 * of_year + 2) / 153;
+    let day = of_year - (153 * shifted + 2) / 5 + 1;
+    let month = if shifted < 10 {
+        shifted + 3
+    } else {
+        shifted - 9
+    };
+    let year = year_of_era + era * 400 + i64::from(month <= 2);
+    Some((year, month, day))
+}
+
+#[must_use]
+pub fn current(models: &[(&str, &Model)]) -> Vec<bool> {
+    let mut newest: BTreeMap<(&str, &str), u64> = BTreeMap::new();
+    for (endpoint, model) in models {
+        if let (Some(family), Some(day)) = (model.family.as_deref(), model.release) {
+            let held = newest.entry((endpoint, family)).or_insert(day);
+            *held = (*held).max(day);
+        }
+    }
+    models
+        .iter()
+        .map(|(endpoint, model)| {
+            !model.aged()
+                && match (model.family.as_deref(), model.release) {
+                    (Some(family), Some(day)) => newest.get(&(*endpoint, family)) == Some(&day),
+                    (None, _) | (Some(_), None) => true,
+                }
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -136,6 +213,13 @@ fn row(item: &Value, fallback: Cost) -> Option<Model> {
         .or_else(|| item.get("name"))
         .and_then(Value::as_str)?;
     let id = raw.strip_prefix("models/").unwrap_or(raw);
+    let parameters = item.get("supported_parameters").and_then(Value::as_array);
+    let supports = |name: &str| parameters.map(|list| list.iter().any(|param| param == name));
+    let capability = |name: &str| {
+        item.get("capabilities")
+            .and_then(|capabilities| capabilities.get(name))
+            .and_then(Value::as_bool)
+    };
     Some(Model {
         id: id.to_string(),
         display: item
@@ -145,27 +229,71 @@ fn row(item: &Value, fallback: Cost) -> Option<Model> {
             .and_then(Value::as_str)
             .filter(|name| *name != raw)
             .map(str::to_string),
-        context: [
-            "context_length",
-            "context_window",
-            "max_input_tokens",
-            "inputTokenLimit",
-        ]
-        .into_iter()
-        .find_map(|field| item.get(field).and_then(Value::as_u64))
-        .or_else(|| {
-            item.get("top_provider")
-                .and_then(|top| top.get("context_length"))
-                .and_then(Value::as_u64)
-        })
-        .and_then(|tokens| u32::try_from(tokens).ok()),
+        context: window(item),
         about: item
             .get("description")
             .and_then(Value::as_str)
             .map(|text| text.split(". ").next().unwrap_or(text).trim().to_string())
             .filter(|text| !text.is_empty()),
         cost: priced(item).unwrap_or(fallback),
+        release: item
+            .get("created_at")
+            .and_then(Value::as_str)
+            .and_then(|date| registry::epoch_day(date.get(..10)?)),
+        reasoning: supports("reasoning") == Some(true)
+            || item.get("thinking").and_then(Value::as_bool) == Some(true),
+        vision: capability("vision") == Some(true)
+            || item
+                .pointer("/architecture/input_modalities")
+                .and_then(Value::as_array)
+                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "image")),
+        tools: supports("tools").or_else(|| capability("function_calling")),
+        price: price(item),
         ..Model::default()
+    })
+}
+
+pub(crate) fn window(item: &Value) -> Option<u32> {
+    [
+        "context_length",
+        "context_window",
+        "max_model_len",
+        "max_context_length",
+        "max_input_tokens",
+        "inputTokenLimit",
+    ]
+    .into_iter()
+    .filter_map(|field| item.get(field))
+    .chain(item.pointer("/top_provider/context_length"))
+    .find_map(tokens)
+}
+
+pub(crate) fn tokens(value: &Value) -> Option<u32> {
+    value
+        .as_u64()
+        .or_else(|| value.as_str()?.parse().ok())
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+}
+
+fn price(item: &Value) -> Option<crate::provider::Price> {
+    let pricing = item.get("pricing")?;
+    let rate = |field: &str| {
+        let value = pricing.get(field)?;
+        value
+            .as_f64()
+            .or_else(|| value.as_str()?.parse().ok())
+            .filter(|rate| *rate >= 0.0)
+    };
+    let (input, output, cached, scale) = if pricing.get("prompt").is_some() {
+        ("prompt", "completion", "input_cache_read", 1_000_000.0)
+    } else {
+        ("input", "output", "cached_input", 1.0)
+    };
+    Some(crate::provider::Price {
+        input: rate(input)? * scale,
+        output: rate(output)? * scale,
+        cached: rate(cached).unwrap_or_default() * scale,
     })
 }
 
@@ -184,6 +312,15 @@ fn priced(item: &Value) -> Option<Cost> {
 
 pub fn cached() -> BTreeMap<String, Listing> {
     load(FILE).unwrap_or_default()
+}
+
+#[must_use]
+pub fn known(endpoint: &str, id: &str) -> Option<Model> {
+    cached()
+        .remove(endpoint)?
+        .models
+        .into_iter()
+        .find(|model| model.id == id)
 }
 
 fn load<T: serde::de::DeserializeOwned + Default>(file: &str) -> Result<T> {
@@ -210,3 +347,7 @@ pub fn remember(name: &str, models: Vec<Model>) -> Result<()> {
     drop(held);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "catalog_tests.rs"]
+mod tests;

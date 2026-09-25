@@ -95,8 +95,9 @@ async fn launch_once(
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
     let probe = endpoint.context_window.is_none().then(|| {
         let client = provider.clone();
+        let name = endpoint.name.clone();
         let model = endpoint.model.clone();
-        tokio::spawn(async move { client.context(&model).await })
+        tokio::spawn(async move { client.context(&name, &model).await })
     });
     let checks = if args.no_verify {
         None

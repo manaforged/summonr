@@ -6,12 +6,14 @@ use serde_json::Value;
 use super::{Cost, Model, load, now};
 use crate::error::Result;
 use crate::prompt::summonr_home;
+use crate::provider::Price;
 
 const REGISTRY_URL: &str = "https://models.dev/api.json";
 const REGISTRY_FILE: &str = "models-dev.json";
 const REGISTRY_STALE: u64 = 3600;
+const REGISTRY_SCHEMA: u32 = 2;
 
-fn epoch_day(date: &str) -> Option<u64> {
+pub(super) fn epoch_day(date: &str) -> Option<u64> {
     let mut parts = date.splitn(3, '-').map(str::parse::<i64>);
     let (year, month, day) = (
         parts.next()?.ok()?,
@@ -40,6 +42,14 @@ struct Meta {
     reasoning: bool,
     #[serde(default)]
     vision: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    family: Option<String>,
+    #[serde(default)]
+    deprecated: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tools: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    price: Option<Price>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -54,6 +64,8 @@ struct ProviderMeta {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 struct Registry {
+    #[serde(default)]
+    schema: u32,
     #[serde(default)]
     etag: String,
     #[serde(default)]
@@ -105,6 +117,21 @@ fn reduce(value: &Value) -> Registry {
                             .pointer("/modalities/input")
                             .and_then(Value::as_array)
                             .is_some_and(|kinds| kinds.iter().any(|kind| kind == "image")),
+                        family: model
+                            .get("family")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                        deprecated: model.get("status").and_then(Value::as_str)
+                            == Some("deprecated"),
+                        tools: model.get("tool_call").and_then(Value::as_bool),
+                        price: model.get("cost").and_then(|cost| {
+                            let rate = |field: &str| cost.get(field).and_then(Value::as_f64);
+                            Some(Price {
+                                input: rate("input")?,
+                                output: rate("output")?,
+                                cached: rate("cache_read").unwrap_or_default(),
+                            })
+                        }),
                     };
                     (model_id.clone(), meta)
                 })
@@ -122,6 +149,7 @@ fn reduce(value: &Value) -> Registry {
         })
         .collect();
     Registry {
+        schema: REGISTRY_SCHEMA,
         etag: String::new(),
         fetched: now(),
         providers,
@@ -129,7 +157,10 @@ fn reduce(value: &Value) -> Registry {
 }
 
 pub async fn refresh_registry() -> Result<()> {
-    let cache: Registry = load(REGISTRY_FILE).unwrap_or_default();
+    let cache = load::<Registry>(REGISTRY_FILE)
+        .ok()
+        .filter(|cache| cache.schema == REGISTRY_SCHEMA)
+        .unwrap_or_default();
     if now().saturating_sub(cache.fetched) < REGISTRY_STALE {
         return Ok(());
     }
@@ -176,13 +207,21 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
     }))
 }
 
+fn authority(url: &str) -> Option<String> {
+    let url = url::Url::parse(url).ok()?;
+    Some(format!(
+        "{}:{}",
+        url.host_str()?,
+        url.port_or_known_default()?
+    ))
+}
+
 pub fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
     let registry: Registry = load(REGISTRY_FILE).unwrap_or_default();
     if registry.providers.is_empty() {
         return;
     }
     let base = base_url.unwrap_or_default().trim_end_matches('/');
-    let host = |url: &str| Some(url::Url::parse(url).ok()?.host_str()?.to_string());
     let named = |provider: &&ProviderMeta| {
         [endpoint]
             .into_iter()
@@ -190,37 +229,59 @@ pub fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
             .any(|name| provider.id == name || provider.name.eq_ignore_ascii_case(name))
     };
     let providers = &registry.providers;
+    let wanted = authority(base);
+    let same_host: Vec<&ProviderMeta> = providers
+        .iter()
+        .filter(|provider| wanted.is_some() && authority(&provider.api) == wanted)
+        .collect();
     let provider = providers
         .iter()
         .find(|provider| !base.is_empty() && provider.api == base)
-        .or_else(|| {
-            let wanted = host(base)?;
-            providers
-                .iter()
-                .find(|provider| host(&provider.api).as_deref() == Some(wanted.as_str()))
-        })
+        .or_else(|| same_host.first().copied())
         .or_else(|| providers.iter().find(named));
-    let Some(provider) = provider else {
-        return;
-    };
     for model in models.iter_mut() {
-        let Some(meta) = provider.models.get(&model.id) else {
-            model.about.get_or_insert_with(|| "new".to_string());
+        let own = provider.and_then(|provider| provider.models.get(&model.id));
+        let Some(meta) = own
+            .or_else(|| {
+                same_host
+                    .iter()
+                    .find_map(|provider| provider.models.get(&model.id))
+            })
+            .or_else(|| {
+                providers
+                    .iter()
+                    .find_map(|provider| provider.models.get(&model.id))
+            })
+        else {
             continue;
         };
-        if model.display.is_none() {
-            model.display = meta.display.clone();
+        apply(model, meta);
+        if let Some(own) = own {
+            price(model, own);
         }
-        if model.context.is_none() {
-            model.context = meta.context;
-        }
-        model.release = model.release.or(meta.release);
-        model.reasoning |= meta.reasoning;
-        model.vision |= meta.vision;
-        if model.cost == Cost::Unknown
-            && let Some(metered) = meta.metered
-        {
-            model.cost = if metered { Cost::Metered } else { Cost::Free };
-        }
+    }
+}
+
+fn apply(model: &mut Model, meta: &Meta) {
+    if model.display.is_none() {
+        model.display = meta.display.clone();
+    }
+    if model.context.is_none() {
+        model.context = meta.context;
+    }
+    model.release = model.release.or(meta.release);
+    model.reasoning |= meta.reasoning;
+    model.vision |= meta.vision;
+    model.family = model.family.take().or_else(|| meta.family.clone());
+    model.deprecated |= meta.deprecated;
+    model.tools = model.tools.or(meta.tools);
+}
+
+fn price(model: &mut Model, meta: &Meta) {
+    model.price = model.price.or(meta.price);
+    if model.cost == Cost::Unknown
+        && let Some(metered) = meta.metered
+    {
+        model.cost = if metered { Cost::Metered } else { Cost::Free };
     }
 }

@@ -3,8 +3,8 @@ use super::*;
 impl App {
     pub(in crate::tui::sigil_view) fn suggesting(&self) -> bool {
         !self.settings_open.peek()
-            && !self.workflow_open.peek()
-            && !self.editing_model.peek()
+            && !self.workflow.open.peek()
+            && !self.picker.open.peek()
             && self.model.get().busy_since.is_none()
             && self
                 .commands
@@ -75,11 +75,15 @@ impl App {
                 drop(self.cmd.send(Cmd::ListUsage));
             }
             Some(crate::SlashCommand::Settings) => {
-                self.hotkeys_open.set(false);
+                self.hotkeys.open.set(false);
                 self.settings_open.set(true);
             }
             Some(crate::SlashCommand::Login) => self.begin_auth(argument),
             Some(crate::SlashCommand::Model) => self.model_command(argument),
+            Some(crate::SlashCommand::Effort) => match argument {
+                Some(level) => self.effort_command(level),
+                None => self.effort.show(self.model.peek().snapshot.effort),
+            },
             Some(crate::SlashCommand::Workflow) if argument.is_none() => {
                 self.open_workflow();
             }
@@ -120,16 +124,14 @@ impl App {
             .filter(|word| crate::provider::Effort::parse(word).is_some())
         {
             words.pop();
-            self.effort_command(Some(level));
+            self.effort_command(level);
         }
         match words.as_slice() {
             [] if argument.is_none() => self.begin_model_edit(),
             [] => {}
             [model] => {
                 let endpoint = self.model.peek().snapshot.endpoint.clone();
-                let own = crate::catalog::cached()
-                    .get(&endpoint)
-                    .is_some_and(|listing| listing.models.iter().any(|known| known.id == *model));
+                let own = crate::catalog::known(&endpoint, model).is_some();
                 drop(self.cmd.send(match model.split_once('/') {
                     Some((name, id)) if !own && crate::endpoint::is_named(name) => {
                         Cmd::SetSeat(name.to_string(), id.to_string())

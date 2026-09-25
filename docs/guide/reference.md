@@ -284,6 +284,8 @@ only called tools. The footer shows the last round's rate after the turn.
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
 | `ctrl+d` | quit when the draft is empty; it only quits | |
+| `pgup` `pgdn` | scroll the transcript a page | same |
+| `home` `end` | on an empty draft, jump to the top or the latest reply | same |
 | `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
 | `alt+p` | in `/model`, pins or unpins the selected model | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |

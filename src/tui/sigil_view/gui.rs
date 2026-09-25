@@ -1,25 +1,21 @@
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Instant;
 
-use sigil::prelude::{Cx, signal};
+use sigil::prelude::{Cx, defer, effect, on_message, untrack};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
-use super::app::{App, CopyStatus};
+use super::app::App;
 use super::desktop::root;
-use super::host::start_tick;
+use super::host::{copy_out, start_tick, stop};
 use super::model::Entry;
 use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tui::{Cmd, Exit, Info, Msg, worker};
+use crate::tui::{Exit, Info, Msg, worker};
 
 const TITLE: &str = "Summonr";
 const SIZE: (u32, u32) = (1280, 800);
-use crate::limits::ANIMATION as FRAME;
-
-type Inbox = Rc<RefCell<UnboundedReceiver<Msg>>>;
 
 pub(crate) fn run(
     loop_: Loop<Client>,
@@ -31,38 +27,32 @@ pub(crate) fn run(
     let (cmd_tx, cmd_rx) = unbounded_channel();
     start_tick(cmd_tx.clone());
     let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
-    let inbox: Inbox = Rc::new(RefCell::new(ui_rx));
+    let inbox = RefCell::new(Some(ui_rx));
     let commands = cmd_tx.clone();
     let resume = Rc::new(RefCell::new(None));
     let requested = resume.clone();
     let opened = tokio::task::block_in_place(|| {
-        sigil::launch(window(), move |cx: &mut Cx| {
+        sigil::run(window(), move |cx: &mut Cx| {
             super::canvas::window_cells();
             let mut app = App::new(info, workspace, commands);
-            app.extent = signal(1.0);
             app.resume = requested;
             app.resize(160, 50);
             app.refresh();
-            let tick = app.clone();
-            let inbox = inbox.clone();
-            let status_at = Cell::new(Instant::now());
-            sigil::reactive::register_interval(FRAME, move || pump(&tick, &inbox, &status_at));
+            app.animate();
+            if let Some(ui_rx) = inbox.borrow_mut().take() {
+                let receiver = app.clone();
+                on_message(ui_rx, move |msg| {
+                    untrack(|| {
+                        receiver.update(msg);
+                        receiver.refresh();
+                    });
+                });
+            }
+            watch_outputs(&app);
             cx.add(root(app))
         })
     });
-    drop(cmd_tx.send(Cmd::Quit));
-    tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            let mut worker = worker;
-            tokio::select! {
-                _ = &mut worker => {}
-                () = tokio::time::sleep(crate::limits::WORKER_STOP) => {
-                    worker.abort();
-                    drop(worker.await);
-                }
-            }
-        });
-    });
+    stop(worker, &cmd_tx, crate::limits::WORKER_STOP);
     opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
     let selected = resume.borrow().clone();
     Ok(selected.map_or(Exit::Code(0), Exit::Resume))
@@ -72,21 +62,21 @@ fn window() -> sigil::AppConfig {
     sigil::AppConfig::from((TITLE, SIZE.0, SIZE.1)).esc_exits(false)
 }
 
-fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
-    let mut changed = false;
-    while let Ok(msg) = inbox.borrow_mut().try_recv() {
-        app.update(msg);
-        changed = true;
-    }
-    if changed {
-        app.refresh();
-    } else if app.model.get().busy_since.is_some()
-        && status_at.get().elapsed() >= crate::limits::STATUS_REFRESH
-    {
-        app.refresh_status();
-        status_at.set(Instant::now());
-    }
-    app.tick();
+fn watch_outputs(app: &App) {
+    let app = app.clone();
+    effect(move || {
+        let pending = app.open_file.get().is_some()
+            || app.copy.get().is_some()
+            || app.editor_requested.get()
+            || app.quit.get();
+        if pending {
+            let handler = app.clone();
+            defer(move || outputs(&handler));
+        }
+    });
+}
+
+fn outputs(app: &App) {
     if let Some(path) = app.open_file.peek() {
         app.open_file.set(None);
         if let Err(error) = reveal(&path) {
@@ -94,16 +84,7 @@ fn pump(app: &App, inbox: &Inbox, status_at: &Cell<Instant>) {
         }
         app.refresh();
     }
-    if let Some(text) = app.copy.peek() {
-        app.copy.set(None);
-        match sigil::clipboard::copy(&text) {
-            Ok(()) => app.copied(&text, CopyStatus::Confirmed),
-            Err(error) => {
-                app.push_entry(Entry::Error(format!("clipboard: {error}")));
-                app.refresh();
-            }
-        }
-    }
+    copy_out(app);
     if app.editor_requested.peek() {
         app.editor_requested.set(false);
         app.model_mut(|model| {

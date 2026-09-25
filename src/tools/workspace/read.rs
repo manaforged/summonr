@@ -142,7 +142,7 @@ impl ToolRegistry {
             }
         }
         if total == 0 && !total_unknown {
-            return Ok(format!("{path}  lines 0-0/0"));
+            return Ok(format!("{path} · empty file"));
         }
         if first >= total && !total_unknown {
             return Err(Error::Tool(format!(

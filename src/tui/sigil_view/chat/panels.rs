@@ -1,7 +1,7 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Tone, button, card,
-    container, icon_button, label, list_row_with, notice_band, section_label, spacer,
-    spinner_frame,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, NodeStyleExt, Tone,
+    button, card, classes, container, icon_button, label, list_row_with, notice_band,
+    section_label, spacer, spinner_frame,
 };
 
 use super::{App, Model, canvas};
@@ -45,7 +45,7 @@ fn agent_panel(app: App, model: &Model, tick: u64) -> NodeBuilder {
                 )
                 .child(section_label(title))
                 .child(spacer())
-                .child(icon_button("×", move || close.hide_agents()).accessible("Hide agents")),
+                .child(icon_button("✕", move || close.hide_agents()).accessible("Hide agents")),
         );
     for agent in model.agents.iter().filter(|agent| !agent.done).take(6) {
         let state = if agent.failed {
@@ -85,7 +85,7 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                     Tone::Warn,
                 )));
             } else if let Some(status) = busy_status(&model, update.ticks.get()) {
-                nodes.push(above(notice_band(status, Tone::Neutral)));
+                nodes.push(busy_row(&canvas::ellipsize(&status, width)));
             } else if update.attached.get() > 0 {
                 let attached = update.attached.peek();
                 let noun = if attached == 1 { "image" } else { "images" };
@@ -96,6 +96,19 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
             }
             nodes
         })
+}
+
+fn busy_row(status: &str) -> NodeBuilder {
+    let (spinner, rest) = status.split_at(status.find(' ').unwrap_or(status.len()));
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .shrink(0.0)
+                .min_size(0.0, 0.0),
+        )
+        .child(label(spinner.to_owned()).class(classes!("text-xs text-accent")))
+        .child(label(rest.to_owned()).class(classes!("text-xs text-gray-11")))
 }
 
 fn above(child: NodeBuilder) -> NodeBuilder {

@@ -61,7 +61,7 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
     for word in text.split_whitespace() {
         match parts.last_mut() {
             Some(last)
-                if sigil_tui::cell_width(last) + 1 + sigil_tui::cell_width(word) <= width =>
+                if sigil::app::cell_width(last) + 1 + sigil::app::cell_width(word) <= width =>
             {
                 last.push(' ');
                 last.push_str(word);

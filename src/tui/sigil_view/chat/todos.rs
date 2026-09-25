@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
-    ScrollDelta, classes, container,
+    LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, NodeEventsExt,
+    NodeStyleExt, classes, container, list_row_with,
 };
 
 use super::panes::ledger::item;
@@ -21,8 +21,10 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
             let draft = update.draft.get();
             let caret = update.caret.get();
             let model = update.model.get();
+            let layout = update.layout.get();
             let width = usize::from(cols);
             if width == 0
+                || (layout.secondary == Some(Pane::Ledger) && layout.split(cols).1 > 0)
                 || model.ledger.iter().all(|line| item(line).0 == '✓')
                 || update.commands.open(&draft, caret, &model)
             {
@@ -35,11 +37,7 @@ pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
 fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
     let _ = width;
     let expanded = model.todos_expanded;
-    let done = model
-        .ledger
-        .iter()
-        .filter(|line| item(line).0 == '✓')
-        .count();
+    let (done, total) = tally(&model.ledger);
     let current = model
         .ledger
         .iter()
@@ -52,20 +50,28 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
                 .map(|line| item(line))
                 .find(|(mark, _)| *mark != '✓')
         });
-    let detail = current.map_or(String::new(), |(mark, text)| format!("{mark} {text}"));
+    let detail = current.map_or(String::new(), |(mark, text)| {
+        format!("{} {text}", glyph(mark))
+    });
     let toggle = app.clone();
     let mut body = container()
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .gap(canvas::overlay_gap()),
+                .gap(canvas::overlay_gap())
+                .padding_top(canvas::cell().h)
+                .padding_x(canvas::GUTTER - 8.0),
         )
         .class(classes!("rounded"))
         .child(
-            pick(
+            list_row_with(
                 false,
-                format!("Tasks {done}/{}", model.ledger.len()),
-                if expanded { "hide".to_string() } else { detail },
+                format!("Todos {done}/{total}"),
+                ListRowSlots {
+                    status: Some(if expanded { "hide".to_string() } else { detail }.into()),
+                    shrink: true,
+                    ..ListRowSlots::default()
+                },
             )
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Left) {
@@ -81,18 +87,38 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
             .min(model.ledger.len().saturating_sub(count));
         for task in model.ledger.iter().skip(start).take(count) {
             let (mark, text) = item(task);
-            body = body.child(pick(mark == '●', format!("{mark} {text}"), String::new()));
+            body = body.child(pick(
+                mark == '●',
+                format!("{} {text}", glyph(mark)),
+                String::new(),
+            ));
         }
     }
     let scroll = app.clone();
     body.on_scroll(move |event| {
-        let delta = match event.delta {
-            ScrollDelta::Pixels(point) => point.y / canvas::cell().h,
-            ScrollDelta::Lines(point) => point.y,
-        };
+        let delta = canvas::scroll_lines(event.delta);
         scroll.scroll_todos(-delta.round() as isize);
         event.stop_propagation();
     })
+}
+
+pub(in crate::tui::sigil_view) fn tally(ledger: &[String]) -> (usize, usize) {
+    let listed = ledger
+        .iter()
+        .map(|line| item(line).0)
+        .filter(|mark| *mark != ' ');
+    let (done, total) = listed.fold((0, 0), |(done, total), mark| {
+        (done + usize::from(mark == '✓'), total + 1)
+    });
+    (done, total)
+}
+
+pub(in crate::tui::sigil_view) fn glyph(mark: char) -> char {
+    match mark {
+        '●' => '▸',
+        '○' => '◦',
+        other => other,
+    }
 }
 
 fn visible_rows(model: &Model, rows: u16) -> usize {

@@ -27,15 +27,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
         )
         .class(classes!("bg-gray-1"))
         .child(node(move |cx: &mut Cx| {
-            let layout = LayoutStyle::flex_column()
-                .fill_width()
-                .fill_height()
-                .grow(1.0)
-                .min_size(0.0, 0.0)
-                .padding_x(36.0)
-                .padding_y(20.0)
-                .gap(16.0);
-            cx.add(chat::transcript(transcript_app, layout, empty_home))
+            cx.add(chat::transcript(transcript_app, (36.0, 16.0), empty_home))
         }))
         .child(
             container()

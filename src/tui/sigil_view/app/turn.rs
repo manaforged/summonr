@@ -33,7 +33,7 @@ impl App {
         }
         if text.trim_start().starts_with('/') {
             self.replace(String::new());
-            self.scroll_y.set(self.extent.peek());
+            self.scroll_y.set(self.max_scroll.peek());
             drop(self.cmd.send(Cmd::Command(text)));
             return;
         }
@@ -79,7 +79,7 @@ impl App {
             None => Cmd::Submit(input),
         };
         drop(self.cmd.send(command));
-        self.scroll_y.set(self.extent.peek());
+        self.scroll_y.set(self.max_scroll.peek());
         self.refresh();
     }
 

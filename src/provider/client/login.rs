@@ -36,7 +36,7 @@ impl Client {
             .total(STREAM_TOTAL)
             .connect(CONNECT)
             .read(opts.idle_timeout);
-        let builder = leyline::Session::builder().timeouts(timeouts);
+        let builder = leyline::Session::builder().timeout(timeouts);
         let mut headers = headers;
         if opts.opencode
             && !headers

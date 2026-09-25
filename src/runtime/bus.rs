@@ -2,7 +2,12 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn join_bus(&mut self) {
-        self.bus = crate::bus::Bus::join(&self.session_id(), &self.model, &self.workspace);
+        self.bus = crate::bus::Bus::join(
+            &self.session_id(),
+            &self.model,
+            &self.workspace,
+            self.bus_module,
+        );
     }
 
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {

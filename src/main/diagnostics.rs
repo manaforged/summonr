@@ -69,7 +69,7 @@ impl Log {
             eprintln!(
                 "summonr: a previous run ended without an exit record — `summonr doctor --logs` shows it"
             );
-            if let Err(error) = append(&seen, &json!(latest)) {
+            if let Err(error) = append(&seen, &json!(latest), true) {
                 eprintln!("summonr: cannot record the crash note: {error}");
             }
         }
@@ -98,6 +98,7 @@ impl Log {
                     .ok()
                     .map(|path| path.display().to_string()),
             }),
+            false,
         );
         if let Err(error) = result {
             eprintln!("summonr: cannot create the diagnostic log: {error}");
@@ -122,6 +123,7 @@ impl Log {
                 "journal": journal.display().to_string(),
                 "workspace": workspace.display().to_string(),
             }),
+            false,
         ) {
             eprintln!("summonr: cannot write the diagnostic session record: {source}");
         }
@@ -137,6 +139,7 @@ impl Log {
                 "code": code,
                 "error": error,
             }),
+            true,
         ) {
             eprintln!("summonr: cannot write the diagnostic exit record: {source}");
         }
@@ -195,6 +198,7 @@ fn hook(path: PathBuf, run: String) {
                 "message": info.to_string(),
                 "backtrace": Backtrace::force_capture().to_string(),
             }),
+            true,
         );
         match result {
             Ok(()) => eprintln!("summonr: crash recorded in {}", path.display()),
@@ -207,12 +211,12 @@ fn hook(path: PathBuf, run: String) {
     }));
 }
 
-fn append(path: &Path, value: &serde_json::Value) -> io::Result<()> {
+fn append(path: &Path, value: &serde_json::Value, durable: bool) -> io::Result<()> {
     let mut line = serde_json::to_vec(value).map_err(io::Error::other)?;
     line.push(b'\n');
     let mut file = OpenOptions::new().create(true).append(true).open(path)?;
     file.write_all(&line)?;
-    file.sync_data()
+    if durable { file.sync_data() } else { Ok(()) }
 }
 
 fn runs(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<RunInfo>> {

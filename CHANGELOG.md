@@ -31,6 +31,10 @@
 
 ### Changed
 
+- Summonr depends on the one Sigil package `sigil-ui` (feature
+  `terminal`) instead of `sigil-gui` plus `sigil-tui`.
+- The terminal interface runs on Sigil's terminal loop. Sigil restores
+  the terminal on exit, panic, and SIGTERM, SIGHUP, or SIGINT.
 - The `/` popup and `/help` list 30 commands, grouped by job. Old names
   still work for one release; see Renamed commands.
 - `ctrl+d` only quits. `alt+d` deletes a session in the sessions

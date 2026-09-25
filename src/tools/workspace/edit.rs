@@ -12,6 +12,16 @@ pub(super) fn move_target(args: &Value) -> Option<&str> {
         .filter(|to| !to.is_empty())
 }
 
+pub(super) fn uses_tags(args: &Value) -> bool {
+    match args {
+        Value::Object(map) => map
+            .iter()
+            .any(|(key, value)| key == "tag" || uses_tags(value)),
+        Value::Array(items) => items.iter().any(uses_tags),
+        _ => false,
+    }
+}
+
 pub(super) fn edit_error_context(error: Error, text: &str, args: &Value) -> Error {
     let Error::Tool(message) = error else {
         return error;

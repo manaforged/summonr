@@ -1,4 +1,4 @@
-use sigil_tui::cell_width;
+use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) use super::app::App;

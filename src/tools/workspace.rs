@@ -21,7 +21,11 @@ use list::{format_directory, format_tree};
 impl ToolRegistry {
     pub(super) fn read(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("read", arguments)?;
-        if let Some(paths) = args.get("paths").and_then(Value::as_array) {
+        if let Some(paths) = args
+            .get("paths")
+            .and_then(Value::as_array)
+            .filter(|paths| !paths.is_empty())
+        {
             match args.get("op").and_then(Value::as_str) {
                 None | Some("file") => return self.read_files(&args, paths),
                 Some(operation) => {
@@ -133,7 +137,7 @@ impl ToolRegistry {
                 .map_err(|error| edit::edit_error_context(error, &original, args))?,
         };
         let edited = edit::restore(&endings, &original, &edited);
-        let preview = self.atomic_write(&dest, path, &edited)?;
+        let preview = self.atomic_write(&dest, path, &edited, edit::uses_tags(args))?;
         let mut out = format!("edited {path}\n{preview}");
         if relaxed {
             out.push_str(
@@ -163,9 +167,9 @@ impl ToolRegistry {
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
         let dest = self.resolve_write(path)?;
         self.check_write(&dest)?;
-        let preview = self.atomic_write(&dest, path, content)?;
+        let preview = self.atomic_write(&dest, path, content, false)?;
         let mut out = format!(
-            "wrote {path} ({} lines)\n{preview}\n",
+            "wrote {path} ({} lines)\n{preview}",
             content.lines().count()
         );
         if let Some(check) = self.check_after_edit(&dest).await {
@@ -195,7 +199,7 @@ impl ToolRegistry {
             let dest = self.resolve_write(&path)?;
             self.check_write(&dest)?;
             let before = write::current(&dest, &path)?;
-            let preview = self.stage_write(&dest, &before, content)?;
+            let preview = self.stage_write(&dest, &before, content, false)?;
             out.push_str(&format!(
                 "wrote {path} ({} lines)\n{preview}\n",
                 content.lines().count()
@@ -214,7 +218,7 @@ impl ToolRegistry {
             }
         }
         Ok(ToolOutput {
-            text: out,
+            text: out.trim_end().to_string(),
             success: true,
             mutated: true,
             grant: None,

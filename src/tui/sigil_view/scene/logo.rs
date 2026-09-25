@@ -38,7 +38,7 @@ pub(in crate::tui::sigil_view) fn compose(
     let elapsed = if revealed {
         u64::MAX / 2
     } else {
-        ticks.saturating_mul(40)
+        u64::try_from(app.splash_since.get().elapsed().as_millis()).unwrap_or(u64::MAX / 2)
     };
     let facts_visible = elapsed >= FACTS_MS;
     let logo_width = crate::splash::logo_width() as u16;

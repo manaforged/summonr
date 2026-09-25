@@ -2,8 +2,13 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn page_history(&self, direction: f32) {
-        let page = self.transcript_height.peek().max(cell().h);
+        let page = (self.content_height.peek() - self.max_scroll.peek()).max(cell().h);
         self.scroll_history(-direction * page);
+    }
+
+    pub(in crate::tui::sigil_view) fn history_edge(&self, end: bool) {
+        self.scroll_y
+            .set(if end { self.max_scroll.peek() } else { 0.0 });
     }
 
     pub(in crate::tui::sigil_view) fn jump(&self) {
@@ -68,18 +73,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn scroll_history(&self, delta: f32) {
-        let extent = self.extent.peek();
         let next = self.scroll_y.peek() - delta;
-        self.scroll_y.set(next.clamp(0.0, extent));
-    }
-
-    pub(in crate::tui::sigil_view) fn reflow(&self) {
-        if !self.tui_chat_active.peek() {
-            return;
-        }
-        if self.scroll_y.peek() >= self.extent.peek() {
-            self.scroll_y.set(self.extent.peek());
-        }
+        self.scroll_y.set(next.clamp(0.0, self.max_scroll.peek()));
     }
 
     pub(in crate::tui::sigil_view) fn prompt_history(&self, query: &str) {

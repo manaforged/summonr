@@ -87,6 +87,9 @@ impl Model {
                 self.finish_tool(&id, success, output);
             }
             Event::Assistant { text } => self.finish_assistant(text),
+            Event::Aborted { reason } if reason == "cancelled by user" => self.entries.push(
+                Entry::Aborted("cancelled · F5 or /retry continues · Up edits the prompt".into()),
+            ),
             Event::Aborted { reason } => self.entries.push(Entry::Aborted(reason)),
             Event::Merged {
                 branch,
@@ -124,7 +127,7 @@ impl Model {
                 self.plan_current = progress.current;
                 self.plan_total = progress.total;
                 self.plan_objective = progress.objective.clone();
-                if progress.kind != crate::WorkKind::Single || progress.reason.is_some() {
+                if progress.reason.is_some() {
                     self.entries.push(Entry::System(progress.to_string()));
                 }
             }

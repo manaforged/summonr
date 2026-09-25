@@ -33,6 +33,7 @@ pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64) -> Vec
                     bg: ink(palette().base),
                     bold: false,
                     italic: false,
+                    ..Cell::blank()
                 },
             );
         }
@@ -64,6 +65,7 @@ pub(in crate::tui::sigil_view) fn space(cols: u16, rows: u16, ticks: u64) -> Vec
                     bg: ink(palette().base),
                     bold: false,
                     italic: false,
+                    ..Cell::blank()
                 },
             );
         }

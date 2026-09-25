@@ -1,17 +1,18 @@
 use std::env;
 use std::path::PathBuf;
 
+use sigil::Host;
+use sigil::events::EventRouter;
 use sigil::prelude::Cx;
 use sigil::profile;
 use sigil::reactive::Runtime;
-use sigil_tui::{EventRouter, Grid, Host, Screen, render};
+use sigil::terminal::{ColorDepth, Grid, Screen, render};
 use tokio::runtime::Handle;
 use tokio::sync::mpsc::unbounded_channel;
 use tokio::task::block_in_place;
 use tokio::time::sleep;
 
 use super::app::App;
-use super::host::frame_budget;
 use super::view::root;
 use crate::durable::store::write;
 use crate::error::{Error, Result};
@@ -151,7 +152,7 @@ async fn capture(options: &Options) -> Result<()> {
         .frame(&mut host, &mut router, [], size)
         .map_err(|error| Error::Tool(error.to_string()))?;
     let mut ansi = Vec::new();
-    render(&mut ansi, &Grid::new(0, 0), grid)?;
+    render(&mut ansi, &Grid::new(0, 0), grid, ColorDepth::Truecolor)?;
     write(&options.output.with_extension("ansi"), ansi)?;
     write(&options.output.with_extension("txt"), grid.text())?;
     Ok(())
@@ -209,7 +210,7 @@ fn counts(options: &Options, size: (u16, u16), bytes: usize) {
     }
 }
 
-fn info() -> Info {
+pub(super) fn info() -> Info {
     Info {
         version: env!("CARGO_PKG_VERSION").to_owned(),
         model: String::from("profile"),
@@ -229,4 +230,8 @@ fn info() -> Info {
         workflow: None,
         config: None,
     }
+}
+
+fn frame_budget(fps: u32) -> std::time::Duration {
+    crate::limits::FRAME_WINDOW / fps.clamp(FPS_MIN, FPS_MAX)
 }

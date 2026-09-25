@@ -134,6 +134,7 @@ impl<P: Provider> Loop<P> {
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
             bus: None,
+            bus_module: false,
             mcp: None,
             guard: super::guard::Guard::default(),
             checkpoints: None,
@@ -173,8 +174,9 @@ impl<P: Provider> Loop<P> {
             switches.enabled("skills"),
         );
         self.tasks = switches.enabled("task");
-        if !switches.enabled("bus") {
-            self.bus = None;
+        self.bus_module = switches.enabled("bus");
+        if self.bus.is_some() != crate::bus::wanted(self.bus_module) {
+            self.join_bus();
         }
         self.switch_mcp(switches.enabled("mcp"));
         self.schema = None;

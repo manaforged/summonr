@@ -125,7 +125,7 @@ impl Client {
 
     pub(super) async fn get(&self, url: String) -> Result<Value> {
         let token = self.token().await?;
-        let mut response = self
+        let response = self
             .attach(self.http.get(&url), &token, None)
             .send()
             .await
@@ -206,9 +206,8 @@ impl Client {
         let mut request = self
             .auth
             .scheme()
-            .apply(request.user_agent(summonr_auth::AGENT), token)
-            .retry(crate::limits::retry_policy())
-            .allow_non_idempotent_retry(true);
+            .apply(request.header("user-agent", summonr_auth::AGENT), token)
+            .retry(crate::limits::retry_policy().allow_non_idempotent(true));
         for (key, value) in wire::headers(self.wire) {
             request = request.header(*key, *value);
         }

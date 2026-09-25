@@ -103,6 +103,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             if app.pane_active().is_some() {
                 event.stop_propagation();
                 app.pane_edge(false);
+            } else if app.overlay().is_none() && app.draft.peek().is_empty() {
+                event.stop_propagation();
+                app.history_edge(false);
             }
         }),
         (Key::End.into(), |app, event| {
@@ -112,6 +115,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             if app.pane_active().is_some() {
                 event.stop_propagation();
                 app.pane_edge(true);
+            } else if app.overlay().is_none() && app.draft.peek().is_empty() {
+                event.stop_propagation();
+                app.history_edge(true);
             }
         }),
         (Key::ArrowLeft.into(), |app, event| {
@@ -318,10 +324,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
     let shell = shell
         .child(super::input::tab_shortcuts(app))
         .on_scroll(move |event| {
-            let lines = match event.delta {
-                ScrollDelta::Pixels(point) => point.y / super::canvas::cell().h,
-                ScrollDelta::Lines(point) => point.y,
-            };
+            let lines = super::canvas::scroll_lines(event.delta);
             if scroll.overlay_move(-lines.round() as isize) {
                 event.stop_propagation();
                 return;
@@ -335,10 +338,7 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
                 return;
             }
-            let delta = match event.delta {
-                ScrollDelta::Pixels(point) => point.y,
-                ScrollDelta::Lines(point) => point.y * super::canvas::cell().h,
-            };
+            let delta = lines * super::canvas::cell().h;
             let before = scroll.scroll_y.peek();
             scroll.scroll_history(delta);
             if scroll.scroll_y.peek() != before {

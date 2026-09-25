@@ -2,12 +2,14 @@ use sigil::prelude::{NodeBuilder, NodeStyleExt, classes, label};
 
 use super::App;
 use super::body::header;
+use super::ledger::item;
+use crate::tui::sigil_view::chat::todos::{glyph, tally};
 
 pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
-    let count = match (model.plan_current, model.plan_total) {
-        (Some(current), total) if total > 0 => format!("{current}/{total}"),
-        _ => String::new(),
+    let count = match tally(&model.ledger) {
+        (_, 0) => String::new(),
+        (done, total) => format!("{done}/{total}"),
     };
     let lines = model.ledger.clone();
     drop(model);
@@ -27,23 +29,10 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
 }
 
 pub(super) fn plan_mark(line: &str) -> (String, bool) {
-    let pad = " ".repeat(line.len() - line.trim_start().len());
-    let body = line.trim_start();
-    if let Some(rest) = body.strip_prefix("[x] ") {
-        (format!("{pad}✓ {rest}"), true)
-    } else if let Some(rest) = body.strip_prefix("[/] ") {
-        (format!("{pad}● {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("[ ] ") {
-        (format!("{pad}○ {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("[!] ") {
-        (format!("{pad}! {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("✓ ") {
-        (format!("{pad}✓ {rest}"), true)
-    } else if let Some(rest) = body.strip_prefix("● ") {
-        (format!("{pad}● {rest}"), false)
-    } else if let Some(rest) = body.strip_prefix("○ ") {
-        (format!("{pad}○ {rest}"), false)
-    } else {
-        (line.to_string(), false)
+    let (mark, rest) = item(line);
+    if mark == ' ' {
+        return (line.to_string(), false);
     }
+    let pad = &line[..line.len() - line.trim_start().len()];
+    (format!("{pad}{} {rest}", glyph(mark)), mark == '✓')
 }

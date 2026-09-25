@@ -53,6 +53,7 @@ impl App {
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => {
                 self.flip(|prefs| prefs.animations = !prefs.animations);
+                self.splash_since.set(std::time::Instant::now());
                 self.splash_revealed.set(!self.model.get().prefs.animations);
             }
         }

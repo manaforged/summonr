@@ -7,6 +7,7 @@ impl<P: Provider> Loop<P> {
         }
         self.provider = provider;
         self.model = model.into();
+        self.herdr.set_model(&self.model);
         self.context_sample = None;
     }
 

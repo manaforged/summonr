@@ -312,16 +312,15 @@ impl ToolRegistry {
                     .flatten();
                 let full = self.full_output_note(&log_path, &raw);
                 let output = format!(
-                    "exit {code}\n{}{}{}{}{}",
+                    "exit {code}{full}\n{}{}{}{}",
                     super::digest(command, &raw),
-                    full,
                     slow_search_note(command, started.elapsed().as_secs()),
                     plan_write_note(read_only, &raw),
                     sandbox_note(grant.as_ref(), self, &raw)
                 );
                 self.keep_log(temp, &raw);
                 Ok(ToolOutput {
-                    text: output,
+                    text: output.trim_end().to_string(),
                     success: code == 0,
                     mutated: !read_only && code == 0 && !readonly_verb(command),
                     grant,
@@ -356,10 +355,11 @@ impl ToolRegistry {
                 self.keep_log(temp, &raw);
                 Ok(ToolOutput {
                     text: format!(
-                        "{timeout}\n{warning}\n{}{}",
-                        super::digest(command, &raw),
-                        full
-                    ),
+                        "{timeout}\n{warning}{full}\n{}",
+                        super::digest(command, &raw)
+                    )
+                    .trim_end()
+                    .to_string(),
                     success: false,
                     mutated: !read_only,
                     grant: None,

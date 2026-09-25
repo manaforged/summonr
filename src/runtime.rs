@@ -128,6 +128,7 @@ pub struct Loop<P> {
     summary_failed: bool,
     workspace: PathBuf,
     bus: Option<Bus>,
+    bus_module: bool,
     mcp: Option<Arc<crate::mcp::Hub>>,
     guard: guard::Guard,
     checkpoints: Option<crate::checkpoint::Checkpoints>,

@@ -1,193 +1,91 @@
-use super::terminal::Terminal;
+use sigil::prelude::KeyPhase;
+
 use super::*;
 
-pub(in crate::tui::sigil_view) use crate::limits::ANIMATION;
-
-pub(in crate::tui::sigil_view) fn frame_budget(fps: u32) -> Duration {
-    let fps = fps.clamp(crate::prefs::FPS_MIN, crate::prefs::FPS_MAX);
-    crate::limits::FRAME_WINDOW / fps
-}
-
-pub(in crate::tui::sigil_view) fn is_enter(event: &ShellEvent) -> bool {
-    matches!(
-        event,
-        ShellEvent::Key(key)
-            if key.key == LogicalKey::Named(Key::Enter) && key.modifiers.is_empty()
-    )
-}
-
-pub(in crate::tui::sigil_view) fn paste_chord(key: &KeyEvent) -> bool {
-    key.code == KeyCode::Char('v')
-        && key.kind == KeyEventKind::Press
-        && key
-            .modifiers
-            .intersects(KeyModifiers::CONTROL | KeyModifiers::SUPER)
-        && !key.modifiers.contains(KeyModifiers::ALT)
-}
-
-pub(in crate::tui::sigil_view) fn graphics_junk(text: &str) -> bool {
-    text.chars()
-        .any(|ch| ch == '\u{1b}' || (ch.is_control() && !matches!(ch, '\n' | '\t' | '\r')))
-}
-
-pub(in crate::tui::sigil_view) fn finish_intake(
-    incoming: &mut Vec<ShellEvent>,
-    staged: bool,
-    term: &mut Terminal,
-) {
-    if staged {
-        incoming.retain(|event| !is_enter(event));
-        term.redraw = true;
-    }
-}
-
-pub(in crate::tui::sigil_view) fn read_event(
-    event: TermEvent,
-    incoming: &mut Vec<ShellEvent>,
-    pointer: &mut Point,
-    screen: &mut Screen,
-    term: &mut Terminal,
-    app: &App,
-    already: bool,
-) -> Result<bool> {
-    match event {
-        TermEvent::Key(key) if app.secret_active() => {
-            if key.kind != KeyEventKind::Release {
-                let chord = key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER);
-                if key.code == KeyCode::Enter {
-                    app.secret_finish(true);
-                } else if key.code == KeyCode::Esc
-                    || (key.code == KeyCode::Char('c')
-                        && key.modifiers.contains(KeyModifiers::CONTROL))
-                {
-                    app.secret_finish(false);
-                } else if key.code == KeyCode::Backspace {
-                    app.secret_pop();
-                } else if let KeyCode::Char(ch) = key.code
-                    && !chord
-                {
-                    app.secret_push(ch.encode_utf8(&mut [0; 4]));
-                }
+pub(super) fn intake(app: &App, events: &mut Vec<ShellEvent>) {
+    let mut staged = false;
+    for event in std::mem::take(events) {
+        let ShellEvent::Key(key) = &event else {
+            events.push(event);
+            continue;
+        };
+        if key.phase != KeyPhase::Down {
+            if !app.secret_active() {
+                events.push(event);
             }
-            term.redraw = true;
-        }
-        TermEvent::Paste(text) if app.secret_active() => {
-            app.secret_push(text.trim_end_matches(['\r', '\n']));
-            term.redraw = true;
-        }
-        TermEvent::Key(key) => {
-            if key.code == KeyCode::Char('c')
-                && key.modifiers.contains(KeyModifiers::CONTROL)
-                && let Some(text) = term.selection.as_ref().and_then(Selection::text)
-            {
-                app.copied(&text, term.copy(&text)?);
-            } else if paste_chord(&key) && already {
-                term.deselect(screen);
-                return Ok(true);
-            } else if paste_chord(&key) && app.clipboard() {
-                term.deselect(screen);
-                term.redraw = true;
-                return Ok(true);
+        } else if app.secret_active() {
+            secret(app, key);
+        } else if let Some(text) = pasted(key) {
+            let text = text.replace("\r\n", "\n").replace('\r', "\n");
+            match if staged {
+                Some(true)
             } else {
-                term.deselect(screen);
-                incoming.extend(sigil_tui::map_key(&key));
+                stage(app, &text)
+            } {
+                Some(true) => staged = true,
+                Some(false) => {}
+                None => events.push(sigil::terminal::paste(&text)),
             }
+        } else if staged && is_enter(key) {
+        } else if paste_chord(key) && (staged || app.clipboard()) {
+            staged = true;
+        } else {
+            events.push(event);
         }
-        TermEvent::Resize(next_cols, next_rows) => {
-            term.deselect(screen);
-            app.resize(next_cols, next_rows);
-            screen.invalidate();
-            term.redraw = true;
-        }
-        TermEvent::Mouse(mouse) => {
-            match mouse.kind {
-                MouseEventKind::Drag(MouseButton::Left) => {
-                    if let Some(selection) = &mut term.selection {
-                        selection.move_to(mouse.column, mouse.row);
-                        term.redraw = true;
-                        return Ok(false);
-                    }
-                }
-                MouseEventKind::Up(MouseButton::Left) => {
-                    if let Some(selection) = &mut term.selection {
-                        selection.move_to(mouse.column, mouse.row);
-                        if let Some(text) = selection.text() {
-                            app.copied(&text, term.copy(&text)?);
-                            term.redraw = true;
-                        }
-                        return Ok(false);
-                    }
-                }
-                MouseEventKind::ScrollUp
-                | MouseEventKind::ScrollDown
-                | MouseEventKind::ScrollLeft
-                | MouseEventKind::ScrollRight
-                | MouseEventKind::Down(_) => term.deselect(screen),
-                _ => {}
-            }
-            incoming.extend(sigil_tui::map_mouse(&mouse, Host::CELL, pointer));
-        }
-        TermEvent::Paste(text) => {
-            return take_paste(text, incoming, screen, term, app, already);
-        }
-        TermEvent::FocusGained => term.focused = true,
-        TermEvent::FocusLost => term.focused = false,
     }
-    Ok(false)
 }
 
-pub(in crate::tui::sigil_view) fn take_paste(
-    text: String,
-    incoming: &mut Vec<ShellEvent>,
-    screen: &mut Screen,
-    term: &mut Terminal,
-    app: &App,
-    already: bool,
-) -> Result<bool> {
-    term.deselect(screen);
-    if already {
-        return Ok(true);
+fn secret(app: &App, key: &sigil::prelude::KeyEvent) {
+    let chord = key
+        .modifiers
+        .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META);
+    if key.key == LogicalKey::Named(Key::Enter) {
+        app.secret_finish(true);
+    } else if key.key == LogicalKey::Named(Key::Escape)
+        || (key.key == LogicalKey::character("c")
+            && key.modifiers.contains(ModifiersState::CONTROL))
+    {
+        app.secret_finish(false);
+    } else if key.key == LogicalKey::Named(Key::Backspace) {
+        app.secret_pop();
+    } else if let Some(text) = key.text.as_deref()
+        && !chord
+    {
+        app.secret_push(text.trim_end_matches(['\r', '\n']));
     }
-    let text = text.replace("\r\n", "\n").replace('\r', "\n");
+}
+
+fn stage(app: &App, text: &str) -> Option<bool> {
     if app.pane_active().is_some() && !app.options_active() {
         app.focus_pane(false);
     }
     if text.trim().is_empty() {
-        if app.clipboard() {
-            term.redraw = true;
-            return Ok(true);
-        }
-        return Ok(false);
+        return Some(app.clipboard());
     }
-    if app.paste(&text) {
-        term.redraw = true;
-        return Ok(true);
+    if app.paste(text) || (graphics_junk(text) && app.clipboard()) {
+        return Some(true);
     }
-    if graphics_junk(&text) && app.clipboard() {
-        term.redraw = true;
-        return Ok(true);
-    }
-    if app.paste_text(&text) {
-        return Ok(false);
-    }
-    *term.paste.borrow_mut() = Some(text);
-    incoming.extend(sigil_tui::map_key(&KeyEvent::new(
-        KeyCode::Char('v'),
-        KeyModifiers::CONTROL,
-    )));
-    Ok(false)
+    app.paste_text(text).then_some(false)
 }
 
-pub(in crate::tui::sigil_view) fn frame<'a>(
-    screen: &'a mut Screen,
-    host: &mut Host,
-    router: &mut EventRouter,
-    incoming: impl IntoIterator<Item = ShellEvent>,
-    size: (u16, u16),
-) -> Result<&'a Grid> {
-    screen
-        .frame(host, router, incoming, size)
-        .map_err(|error| Error::Tool(format!("Sigil layout failed: {error}")))
+fn pasted(key: &sigil::prelude::KeyEvent) -> Option<&str> {
+    let text = key.text.as_deref()?;
+    (text.chars().count() > 1 || text.contains(['\n', '\r'])).then_some(text)
+}
+
+fn is_enter(key: &sigil::prelude::KeyEvent) -> bool {
+    key.key == LogicalKey::Named(Key::Enter) && key.modifiers.is_empty()
+}
+
+fn paste_chord(key: &sigil::prelude::KeyEvent) -> bool {
+    key.key == LogicalKey::character("v")
+        && key
+            .modifiers
+            .intersects(ModifiersState::CONTROL | ModifiersState::META)
+        && !key.modifiers.contains(ModifiersState::ALT)
+}
+
+fn graphics_junk(text: &str) -> bool {
+    text.chars()
+        .any(|ch| ch == '\u{1b}' || (ch.is_control() && !matches!(ch, '\n' | '\t' | '\r')))
 }

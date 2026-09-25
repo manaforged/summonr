@@ -3,9 +3,9 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use sigil::app::cell_width;
 use sigil::prelude::{ImageSource, Signal, TextEditState, signal};
 use sigil::reactive::batch;
-use sigil_tui::cell_width;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
@@ -20,11 +20,9 @@ use crate::workflow::Role;
 pub(super) use super::chat;
 
 use super::canvas::cell;
-pub(super) use super::input;
 pub(super) use super::model;
 use super::model::{Entry, Model, preview};
 use super::pane::{Layout, Pane};
-use super::patch::{self, SPLIT};
 pub(super) use super::scene;
 pub(super) use super::settings;
 pub(super) use super::suggest;
@@ -59,11 +57,6 @@ mod secret;
 
 use presentation::{facts, header, settings_text, status};
 
-pub(super) enum CopyStatus {
-    Confirmed,
-    Requested,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Overlay {
     Help,
@@ -89,11 +82,9 @@ pub(super) struct App {
     pub(super) workspace: PathBuf,
     pub(super) git_branch: Option<String>,
     pub(super) prefs_path: Option<PathBuf>,
-    pub(super) extent: Signal<f32>,
-    pub(super) transcript_height: Signal<f32>,
-    pub(super) tui_chat_active: Signal<bool>,
+    pub(super) max_scroll: Signal<f32>,
+    pub(super) content_height: Signal<f32>,
     pub(super) scroll_y: Signal<f32>,
-    pub(super) selection_anchor: Signal<Option<(u16, u16)>>,
     pub(super) draft: Signal<String>,
     pub(super) caret: Signal<usize>,
     pub(super) editor: TextEditState,
@@ -151,6 +142,7 @@ pub(super) struct App {
     pub(super) auth_caret: Signal<usize>,
     pub(super) ticks: Signal<u64>,
     pub(super) splash_revealed: Signal<bool>,
+    pub(super) splash_since: Rc<Cell<std::time::Instant>>,
     pub(super) splash: Signal<bool>,
     pub(super) theme_name: Signal<String>,
     pub(super) viewport: Signal<(u16, u16)>,
@@ -162,7 +154,6 @@ pub(super) struct App {
     pub(super) context: Signal<Option<Context>>,
     pub(super) diff_cursor: Signal<usize>,
     pub(super) diff_view: Signal<Option<String>>,
-    pub(super) diff_scroll: Signal<usize>,
     pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
     pub(super) tree_cursor: Signal<usize>,
     pub(super) view_scroll: Signal<usize>,
@@ -232,11 +223,9 @@ impl App {
             search: super::search::Picker::new(),
             help: super::help::View::new(),
             cmd,
-            extent: signal(0.0),
-            transcript_height: signal(0.0),
-            tui_chat_active: signal(false),
+            max_scroll: signal(0.0),
+            content_height: signal(0.0),
             scroll_y: signal(0.0),
-            selection_anchor: signal(None),
             draft,
             caret,
             editor: TextEditState::new(draft, caret),
@@ -305,6 +294,7 @@ impl App {
             auth_caret: signal(0),
             ticks: signal(0),
             splash_revealed: signal(!info.prefs.animations),
+            splash_since: Rc::new(Cell::new(std::time::Instant::now())),
             splash: signal(info.splash),
             theme_name: signal(info.prefs.theme.clone()),
             viewport: signal((80, 24)),
@@ -316,7 +306,6 @@ impl App {
             context: signal(None),
             diff_cursor: signal(0),
             diff_view: signal(None),
-            diff_scroll: signal(0),
             diff_root: signal(None),
             tree_cursor: signal(0),
             view_scroll: signal(0),

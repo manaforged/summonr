@@ -297,20 +297,33 @@ fn tool_arg(arguments: &str) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
         return String::new();
     };
-    let picked = ["path", "command", "pattern", "name", "query", "url"]
+    let field = |name: &str| value.get(name).and_then(serde_json::Value::as_str);
+    if let Some(pattern) = field("pattern") {
+        let scope = field("glob").or_else(|| field("path")).unwrap_or("");
+        return format!("search \"{pattern}\" {scope}")
+            .trim_end()
+            .to_string();
+    }
+    let picked = ["path", "command", "name", "query", "url"]
         .iter()
-        .find_map(|field| value.get(field).and_then(serde_json::Value::as_str))
+        .find_map(|name| field(name))
         .unwrap_or("");
-    let picked = after_cd(picked)
+    let mut picked = after_cd(picked)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
-    let chars: Vec<char> = picked.chars().collect();
-    if chars.len() > 46 {
-        format!("{}…", chars[..45].iter().collect::<String>())
-    } else {
-        picked.to_string()
+    for key in ["line", "character"] {
+        if let Some(number) = value.get(key).and_then(serde_json::Value::as_u64) {
+            picked.push_str(&format!(":{number}"));
+        }
     }
+    if let Some(op) = field("op") {
+        picked.push_str(&format!(" {op}"));
+    }
+    if value.get("references").and_then(serde_json::Value::as_bool) == Some(true) {
+        picked.push_str(" refs");
+    }
+    picked
 }
 
 fn after_cd(command: &str) -> &str {

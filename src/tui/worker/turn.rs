@@ -123,10 +123,6 @@ impl Worker {
             if let Err(error) = self.abort("cancelled by user") {
                 self.fail(&format!("cancellation not recorded: {error}"));
             }
-            drop(self.ui.send(Msg::Event(Event::Aborted {
-                reason: "cancelled by user".to_string(),
-            })));
-            self.system("F5 or /retry continues this turn. Up recalls your prompt for editing.");
             drop(self.ui.send(Msg::Busy(None)));
         } else if let Some(Err(error)) = result {
             if let Err(abort) = self.abort("turn failed") {
@@ -134,9 +130,8 @@ impl Worker {
                     "{error}; and the turn could not be closed: {abort}"
                 ));
             } else {
-                self.fail(&error.to_string());
+                self.fail(&format!("{error} · F5 or /retry continues"));
             }
-            self.system("F5 or /retry continues this turn. Up recalls your prompt for editing.");
             drop(self.ui.send(Msg::Busy(None)));
         } else {
             self.send_diff(true);

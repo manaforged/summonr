@@ -31,7 +31,8 @@ pub(crate) const SPEED_WINDOW: Duration = Duration::from_secs(3);
 pub(crate) const READER_WINDOW: Duration = Duration::from_millis(400);
 pub(crate) const FRAME_WINDOW: Duration = Duration::from_secs(1);
 pub(crate) const ANIMATION: Duration = Duration::from_millis(40);
-pub(crate) const IDLE_POLL: Duration = Duration::from_millis(250);
+pub(crate) const SPINNER: Duration = Duration::from_millis(100);
+pub(crate) const SPLASH_REVEAL_MS: u128 = 760;
 pub(crate) const STATUS_REFRESH: Duration = Duration::from_secs(1);
 pub(crate) const BEAT: Duration = Duration::from_secs(2);
 #[cfg(feature = "gui")]
@@ -49,9 +50,10 @@ pub(crate) const fn seconds(value: u64) -> Duration {
 
 pub(crate) fn retry_policy() -> leyline::RetryPolicy {
     leyline::RetryPolicy::transient()
-        .with_max_retries(RETRY_LIMIT as u32)
-        .with_backoff(RETRY_BASE, RETRY_MAX)
-        .with_max_retry_after(RETRY_AFTER_MAX)
+        .max_retries(RETRY_LIMIT as u32)
+        .initial_backoff(RETRY_BASE)
+        .max_backoff(RETRY_MAX)
+        .max_retry_after(RETRY_AFTER_MAX)
         .retry_on([
             leyline::RetryTrigger::ConnectionError,
             leyline::RetryTrigger::Status(429),

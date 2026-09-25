@@ -125,14 +125,14 @@ impl ToolRegistry {
                         Error::Tool(format!("cannot read {}: {error}", dest.display()))
                     })?;
                     let edited = apply_text_edits(&original, &edits)?;
-                    drop(self.atomic_write(&dest, &self.relative(&dest)?, &edited)?);
+                    drop(self.atomic_write(&dest, &self.relative(&dest)?, &edited, false)?);
                     names.push(self.relative(&dest)?);
                 }
                 Change::Create { uri } => {
                     let dest = self.uri_path(&uri)?;
                     self.check_write(&dest)?;
                     if !dest.exists() {
-                        drop(self.atomic_write(&dest, &self.relative(&dest)?, "")?);
+                        drop(self.atomic_write(&dest, &self.relative(&dest)?, "", false)?);
                     }
                     names.push(self.relative(&dest)?);
                 }

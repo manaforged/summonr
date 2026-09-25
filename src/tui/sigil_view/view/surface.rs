@@ -1,5 +1,5 @@
 use super::*;
-use sigil::prelude::Dimension;
+use sigil::prelude::{Cx, Dimension, request_focus, untrack};
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();
@@ -31,6 +31,14 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
             changed.change(draft);
         })
         .submit(move |_| submit.submit());
+    let focus = app.clone();
+    let editor = move |cx: &mut Cx| {
+        let id = cx.add(editor);
+        if untrack(|| focus.overlay().is_none()) {
+            request_focus(id);
+        }
+        id
+    };
     let surface = if app.view_edit.get() {
         chat::layer(app, cols, container())
     } else {

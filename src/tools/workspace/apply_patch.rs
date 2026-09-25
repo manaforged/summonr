@@ -55,7 +55,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
                     text = apply_patches(&text, vec![patch])?.0;
                 }
                 let edited = restore(&endings, &raw, &text);
-                let preview = registry.stage_write(&dest, &raw, &edited)?;
+                let preview = registry.stage_write(&dest, &raw, &edited, false)?;
                 out.push_str(&format!("edited {path}\n{preview}\n"));
                 changes.push(Change {
                     dest,
@@ -74,7 +74,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
                     )));
                 }
                 let content = format!("{}\n", lines.join("\n"));
-                let preview = registry.stage_write(&dest, "", &content)?;
+                let preview = registry.stage_write(&dest, "", &content, false)?;
                 out.push_str(&format!("added {path}\n{preview}\n"));
                 changes.push(Change {
                     dest,

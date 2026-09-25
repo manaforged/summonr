@@ -53,19 +53,30 @@ fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
         + app
             .git_branch
             .as_deref()
-            .map_or(0, |branch| cell_width(branch) + 3)
+            .map_or(0, |branch| cell_width(branch) + 4)
         + speed.as_deref().map_or(0, |rate| cell_width(rate) + 2);
     let place = canvas::ellipsize(&app.info.workspace, width.saturating_sub(taken));
-    let mut row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center)
-                .gap(12.0),
-        )
-        .child(label(place).class(classes!("text-xs text-gray-12")));
+    let mut row = container().layout(
+        LayoutStyle::flex_row()
+            .fill_width()
+            .align_items(AlignItems::Center)
+            .gap(12.0),
+    );
+    if !place.is_empty() {
+        row = row.child(label(place).class(classes!("text-xs text-gray-12")));
+    }
     if let Some(branch) = &app.git_branch {
-        row = row.child(label(format!("⌞{branch}")).class(classes!("text-xs text-warn-11")));
+        row = row.child(
+            container()
+                .layout(
+                    LayoutStyle::flex_row()
+                        .align_items(AlignItems::Center)
+                        .shrink(0.0)
+                        .gap(8.0),
+                )
+                .child(label("⎇").class(classes!("text-xs text-gray-11")))
+                .child(label(branch.clone()).class(classes!("text-xs text-warn-11"))),
+        );
     }
     row = row.child(spacer());
     if let Some(rate) = speed {

@@ -211,7 +211,6 @@ impl App {
                 self.model_mut(|model| {
                     model.apply(msg);
                 });
-                self.constrain();
             }
             msg => {
                 let mut alive = true;
@@ -228,14 +227,13 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn reveal_plan(&self) {
         let layout = self.layout.peek();
-        if layout.secondary.is_some() {
+        if layout.secondary.is_some() || self.viewport.peek().0 < 120 {
             return;
         }
         self.layout.set(Layout {
             secondary: Some(Pane::Ledger),
             share: 20,
         });
-        self.constrain();
         self.refresh();
     }
 

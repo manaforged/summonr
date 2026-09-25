@@ -54,6 +54,13 @@ impl Reporter {
         }
     }
 
+    pub(crate) fn set_model(&self, model: &str) {
+        if let Some(target) = &self.target {
+            store(&target.model, short_model(model));
+            target.metadata();
+        }
+    }
+
     pub(crate) fn retarget(&self, session: &str) {
         if let Some(target) = &self.target {
             target.set_session(session);

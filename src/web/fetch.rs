@@ -9,7 +9,6 @@ use super::{Format, Search};
 use crate::error::{Error, Result};
 
 use crate::limits::WEB_FETCH as TIMEOUT;
-const MAX_BYTES: usize = 512 * 1024;
 const OUT_MAX: usize = 32 * 1024;
 
 impl Search {
@@ -30,7 +29,10 @@ impl Search {
             .unwrap_or("")
             .to_ascii_lowercase();
         validate(&response, &ctype)?;
-        let bytes = read_capped(response).await?;
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
         if bytes.contains(&0) {
             return Err(Error::Tool("web_fetch: binary body".to_string()));
         }
@@ -93,14 +95,6 @@ fn validate(response: &Response, ctype: &str) -> Result<()> {
     if ctype.starts_with("image/") || ctype.starts_with("video/") || ctype.starts_with("audio/") {
         return Err(Error::Tool(
             "web_fetch: that URL is not a text page".to_string(),
-        ));
-    }
-    if response
-        .content_length()
-        .is_some_and(|len| len > MAX_BYTES as u64)
-    {
-        return Err(Error::Tool(
-            "web_fetch: page is larger than 512 KiB".to_string(),
         ));
     }
     Ok(())
@@ -193,24 +187,6 @@ pub(super) fn resolves_blocked(host: &str) -> bool {
         let addrs: Vec<_> = addrs.collect();
         addrs.is_empty() || addrs.iter().any(|addr| ip_blocked(addr.ip()))
     })
-}
-
-async fn read_capped(response: Response) -> Result<Vec<u8>> {
-    use futures::StreamExt;
-    let mut out = Vec::new();
-    let mut stream = response
-        .into_stream()
-        .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))?;
-        if out.len().saturating_add(chunk.len()) > MAX_BYTES {
-            return Err(Error::Tool(
-                "web_fetch: page is larger than 512 KiB".to_string(),
-            ));
-        }
-        out.extend_from_slice(&chunk);
-    }
-    Ok(out)
 }
 
 fn looks_like_html(text: &str) -> bool {

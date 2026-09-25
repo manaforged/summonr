@@ -1,5 +1,5 @@
 use super::*;
-use crate::catalog::{Cost, Model};
+use crate::catalog::{Cost, Model, tokens};
 use crate::limits::{MODEL_PROBE, PROBE};
 
 pub(super) fn loaded(value: &Value) -> Option<u32> {
@@ -14,30 +14,13 @@ pub(super) fn listed(value: &Value, model: &str) -> Option<u32> {
     let row = rows
         .iter()
         .find(|row| row.get("id").and_then(Value::as_str) == Some(model))?;
-    [
-        row.get("context_length"),
-        row.get("context_window"),
-        row.get("max_model_len"),
-        row.get("max_context_length"),
-        row.pointer("/top_provider/context_length"),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(tokens)
+    crate::catalog::window(row)
 }
 
 pub(crate) fn input_cap(text: &str) -> Option<u32> {
     let rest = text.split("maximum allowed length (").nth(1)?;
     let digits: String = rest.chars().take_while(|ch| ch.is_ascii_digit()).collect();
     digits.parse().ok().filter(|value| *value > 0)
-}
-
-pub(super) fn tokens(value: &Value) -> Option<u32> {
-    value
-        .as_u64()
-        .or_else(|| value.as_str()?.parse().ok())
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| *value > 0)
 }
 
 pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
@@ -243,11 +226,12 @@ impl Client {
         Ok(models)
     }
 
-    pub async fn context(&self, model: &str) -> Option<u32> {
+    pub async fn context(&self, endpoint: &str, model: &str) -> Option<u32> {
         tokio::time::timeout(PROBE, self.probe(model))
             .await
             .ok()
             .flatten()
+            .or_else(|| crate::catalog::known(endpoint, model)?.context)
     }
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {

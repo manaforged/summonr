@@ -93,7 +93,7 @@ pub fn table(changes: &[Change], decided: &[Decision], floor: f64) -> String {
             .unwrap_or("-");
         out.push_str(&format!(
             "{:<44} {:<10} risk {:.2}\n",
-            clip(&change.path, 44),
+            crate::text::ellipsize_start(&change.path, 44),
             kind,
             severity(decision)
         ));
@@ -103,15 +103,6 @@ pub fn table(changes: &[Change], decided: &[Decision], floor: f64) -> String {
         }
     }
     out
-}
-
-fn clip(text: &str, width: usize) -> String {
-    let count = text.chars().count();
-    if count <= width {
-        return text.to_string();
-    }
-    let tail: String = text.chars().skip(count - width.saturating_sub(1)).collect();
-    format!("…{tail}")
 }
 
 #[cfg(test)]

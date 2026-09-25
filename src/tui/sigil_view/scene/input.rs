@@ -121,7 +121,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     let accent = palette().accent;
     let border = if busy { accent } else { palette().gray };
     let right_width = usize::from(width).saturating_sub(6 + mode.len());
-    let right = super::canvas::ellipsize(&model.snapshot.model, right_width);
+    let right = crate::text::ellipsize(&model.snapshot.model, right_width);
     let fill = usize::from(width).saturating_sub(6 + mode.len() + cell_width(right.as_str()));
     write(
         cells,
@@ -187,7 +187,7 @@ pub(in crate::tui::sigil_view) fn prompt(
         .peek()
         .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
     if let Some(status) = super::chat::busy_status(model, app.ticks.peek()).filter(|_| y > 1) {
-        let shown = super::canvas::ellipsize(&status, usize::from(width));
+        let shown = crate::text::ellipsize(&status, usize::from(width));
         let (spinner, rest) = shown.split_at(shown.find(' ').unwrap_or(shown.len()));
         write(cells, cols, x, y.saturating_sub(1), spinner, accent);
         let after = x.saturating_add(cell_width(spinner) as u16);

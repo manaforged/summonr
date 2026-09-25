@@ -8,6 +8,7 @@ pub(crate) mod completions;
 pub(crate) mod decisions;
 pub(crate) mod gemini;
 pub(crate) mod responses;
+pub(crate) mod traits;
 
 pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &'static str)] {
     match wire {

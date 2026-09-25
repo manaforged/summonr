@@ -1,5 +1,5 @@
 use super::*;
-use crate::child::bounded;
+use crate::text::ellipsize;
 
 const SYSTEM: &str = "You review one shell command a coding agent wants to run on the user's machine. \
 The user wants the agent out of their way, but must not lose data or damage the machine. \
@@ -87,7 +87,7 @@ impl<P: Provider> Loop<P> {
             .history()
             .iter()
             .filter(|message| message.role == Role::User)
-            .map(|message| bounded(crate::session::user_text(&message.content), CLIP))
+            .map(|message| ellipsize(crate::session::user_text(&message.content), CLIP))
             .collect();
         let calls: Vec<String> = self
             .session
@@ -98,7 +98,7 @@ impl<P: Provider> Loop<P> {
                 format!(
                     "{} {}",
                     call.function.name,
-                    bounded(&call.function.arguments, CLIP)
+                    ellipsize(&call.function.arguments, CLIP)
                 )
             })
             .collect();

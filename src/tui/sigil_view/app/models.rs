@@ -18,14 +18,15 @@ fn score(query: &str, row: &Seat, display: &str) -> Option<usize> {
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_model_edit(&self) {
-        self.model_choices.set(Rc::default());
+        self.picker.choices.set(Rc::default());
         self.replace_model_draft(String::new());
-        self.models_focus.set(self.models_focus.peek() + 1);
-        self.model_groups.set(std::collections::BTreeMap::new());
-        self.model_causes.set(std::collections::BTreeMap::new());
-        self.model_default.set(crate::endpoint::default_seat());
-        self.model_recent.set([0; 3]);
-        self.editing_model.set(true);
+        self.picker.focus.set(self.picker.focus.peek() + 1);
+        self.picker.groups.set(std::collections::BTreeMap::new());
+        self.picker.causes.set(std::collections::BTreeMap::new());
+        self.picker.default.set(crate::endpoint::default_seat());
+        self.picker.recent.set([0; 3]);
+        self.picker.older.set(false);
+        self.picker.open.set(true);
         self.list_models(None);
     }
 
@@ -33,17 +34,17 @@ impl App {
         let only = self
             .picked_model()
             .map(|row| row.endpoint)
-            .filter(|name| self.model_causes.peek().contains_key(name));
+            .filter(|name| self.picker.causes.peek().contains_key(name));
         self.list_models(only);
     }
 
     pub(in crate::tui::sigil_view) fn list_models(&self, only: Option<String>) {
-        self.model_error.set(String::new());
-        self.model_loading.set(true);
-        let request = self.model_request.get().wrapping_add(1);
-        self.model_request.set(request);
+        self.picker.error.set(String::new());
+        self.picker.loading.set(true);
+        let request = self.picker.request.get().wrapping_add(1);
+        self.picker.request.set(request);
         let (sender, cancel) = oneshot::channel();
-        *self.model_cancel.borrow_mut() = Some(sender);
+        *self.picker.cancel.borrow_mut() = Some(sender);
         if self
             .cmd
             .send(Cmd::ListModels {
@@ -53,16 +54,17 @@ impl App {
             })
             .is_err()
         {
-            self.model_loading.set(false);
-            self.model_error
+            self.picker.loading.set(false);
+            self.picker
+                .error
                 .set("Model discovery is unavailable.".to_string());
         }
     }
 
     pub(in crate::tui::sigil_view) fn picked_model(&self) -> Option<Seat> {
-        let shown = self.model_shown.peek();
+        let shown = self.picker.shown.peek();
         shown
-            .get(self.model_sel.peek().min(shown.len().saturating_sub(1)))
+            .get(self.picker.sel.peek().min(shown.len().saturating_sub(1)))
             .cloned()
     }
 
@@ -70,8 +72,8 @@ impl App {
         let Some(row) = self.picked_model() else {
             return;
         };
-        let [current, mut pins, mut recent] = self.model_recent.peek();
-        let mut rows = Vec::clone(&self.model_choices.peek());
+        let [current, mut pins, mut recent] = self.picker.recent.peek();
+        let mut rows = Vec::clone(&self.picker.choices.peek());
         let at = rows
             .iter()
             .skip(current)
@@ -102,21 +104,28 @@ impl App {
         }
         drop(self.cmd.send(Cmd::Pin(row.clone(), pinned)));
         let name = self.label(&row);
-        self.model_note.set(if pinned {
-            format!("★ pinned {name}")
+        self.picker.note.set(if pinned {
+            format!("★ favorite {name}")
         } else {
-            format!("unpinned {name}")
+            format!("removed {name} from favorites")
         });
-        self.model_recent.set([current, pins, recent]);
-        self.model_choices.set(Rc::new(rows));
+        self.picker.recent.set([current, pins, recent]);
+        self.picker.choices.set(Rc::new(rows));
         self.rank();
-        if let Some(at) = self.model_shown.peek().iter().position(|held| *held == row) {
-            self.model_sel.set(at);
+        if let Some(at) = self
+            .picker
+            .shown
+            .peek()
+            .iter()
+            .position(|held| *held == row)
+        {
+            self.picker.sel.set(at);
         }
     }
 
     pub(in crate::tui::sigil_view) fn label(&self, row: &Seat) -> String {
-        self.model_facts
+        self.picker
+            .facts
             .peek()
             .get(row)
             .map_or_else(|| row.model.clone(), |fact| fact.label().to_string())
@@ -126,12 +135,12 @@ impl App {
         let Some(row) = self.picked_model() else {
             return;
         };
-        let clear = self.model_default.peek().as_ref() == Some(&row);
+        let clear = self.picker.default.peek().as_ref() == Some(&row);
         drop(self.cmd.send(Cmd::SaveDefault((!clear).then_some(row))));
     }
 
     pub(in crate::tui::sigil_view) fn defaulted(&self, seat: Option<Seat>) {
-        let note = match (&seat, self.model_default.peek()) {
+        let note = match (&seat, self.picker.default.peek()) {
             (Some(seat), _) => format!("◆ default {} · summonr starts on it", self.label(seat)),
             (None, Some(old)) => format!(
                 "cleared the default; {} is no longer the start seat",
@@ -139,26 +148,26 @@ impl App {
             ),
             (None, None) => "cleared the default".to_string(),
         };
-        self.model_default.set(seat);
-        self.model_note.set(note);
+        self.picker.default.set(seat);
+        self.picker.note.set(note);
     }
 
     pub(in crate::tui::sigil_view) fn replace_model_draft(&self, draft: String) {
-        if self.model_draft.peek() != draft {
-            self.model_draft.set(draft);
+        if self.picker.draft.peek() != draft {
+            self.picker.draft.set(draft);
         }
         self.rank();
-        self.model_note.set(String::new());
-        self.model_sel.set(0);
+        self.picker.note.set(String::new());
+        self.picker.sel.set(0);
     }
 
     pub(in crate::tui::sigil_view) fn commit_model_edit(&self) {
-        let draft = self.model_draft.peek().trim().to_string();
+        let draft = self.picker.draft.peek().trim().to_string();
         let current = self.model.peek().snapshot.endpoint.clone();
-        let groups = self.model_groups.peek();
+        let groups = self.picker.groups.peek();
         let picked = match self.picked_model() {
             Some(picked) => picked,
-            None if draft.is_empty() || self.model_loading.peek() => return,
+            None if draft.is_empty() || self.picker.loading.peek() => return,
             None => draft
                 .split_once('/')
                 .filter(|(name, _)| groups.contains_key(*name))
@@ -172,10 +181,10 @@ impl App {
             Some(state) if state.setup() || *state == State::KeyRejected
         ) {
             self.begin_auth(Some(&picked.endpoint));
-            self.auth_seat.set(Some((picked.endpoint, picked.model)));
+            self.auth.seat.set(Some((picked.endpoint, picked.model)));
             return;
         }
-        let target = self.model_for.peek();
+        let target = self.picker.target.peek();
         self.cancel_model_edit();
         let Seat { endpoint, model } = picked;
         drop(
@@ -189,29 +198,80 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn cancel_model_edit(&self) {
-        drop(self.model_cancel.borrow_mut().take());
-        self.editing_model.set(false);
-        self.model_loading.set(false);
-        self.model_for.set(None);
+        drop(self.picker.cancel.borrow_mut().take());
+        self.picker.open.set(false);
+        self.picker.loading.set(false);
+        self.picker.target.set(None);
         self.replace_model_draft(String::new());
     }
 
     pub(in crate::tui::sigil_view) fn move_model(&self, delta: isize) {
-        self.model_note.set(String::new());
-        let last = self.model_shown.peek().len().saturating_sub(1);
-        self.model_sel
-            .set(self.model_sel.peek().saturating_add_signed(delta).min(last));
+        self.picker.note.set(String::new());
+        let last = self.picker.shown.peek().len().saturating_sub(1);
+        self.picker.sel.set(
+            self.picker
+                .sel
+                .peek()
+                .saturating_add_signed(delta)
+                .min(last),
+        );
+    }
+
+    fn picker_rows(&self, older: bool) -> (Vec<Seat>, usize) {
+        let listed: usize = self.picker.recent.peek().iter().sum();
+        let facts = self.picker.facts.peek();
+        let choices = self.picker.choices.peek();
+        let (held, rest) = choices.split_at(listed.min(choices.len()));
+        let served: Vec<(&Seat, Option<&crate::catalog::Model>)> = rest
+            .iter()
+            .map(|seat| (seat, facts.get(seat)))
+            .filter(|(_, fact)| fact.is_none_or(|fact| fact.usable()))
+            .collect();
+        let shelf: Vec<(&str, &crate::catalog::Model)> = served
+            .iter()
+            .filter_map(|(seat, fact)| Some((seat.endpoint.as_str(), (*fact)?)))
+            .collect();
+        let mut current = crate::catalog::current(&shelf).into_iter();
+        let mut hidden = 0;
+        let kept: Vec<Seat> = served
+            .iter()
+            .filter(|(_, fact)| {
+                let now = fact.is_none() || current.next().unwrap_or(true);
+                hidden += usize::from(!now);
+                older || now
+            })
+            .map(|(seat, _)| (*seat).clone())
+            .collect();
+        (held.iter().cloned().chain(kept).collect(), hidden)
+    }
+
+    pub(in crate::tui::sigil_view) fn toggle_older_models(&self) {
+        let held = self.picked_model();
+        self.picker.older.set(!self.picker.older.peek());
+        self.rank();
+        let at = held
+            .and_then(|held| {
+                self.picker
+                    .shown
+                    .peek()
+                    .iter()
+                    .position(|seat| *seat == held)
+            })
+            .unwrap_or(0);
+        self.picker.sel.set(at);
     }
 
     pub(in crate::tui::sigil_view) fn rank(&self) {
-        let query = self.model_draft.peek().to_lowercase();
-        let choices = self.model_choices.peek();
+        let query = self.picker.draft.peek().to_lowercase();
         if query.trim().is_empty() {
-            self.model_shown.set(choices);
+            let (rows, hidden) = self.picker_rows(self.picker.older.peek());
+            self.picker.hidden.set(hidden);
+            self.picker.shown.set(Rc::new(rows));
             return;
         }
+        let (choices, _) = self.picker_rows(true);
         let words: Vec<&str> = query.split_whitespace().collect();
-        let facts = self.model_facts.peek();
+        let facts = self.picker.facts.peek();
         let mut ranked: Vec<(usize, &Seat)> = choices
             .iter()
             .filter_map(|row| {
@@ -224,7 +284,7 @@ impl App {
             })
             .collect();
         ranked.sort_by_key(|(rank, _)| *rank);
-        self.model_shown.set(Rc::new(
+        self.picker.shown.set(Rc::new(
             ranked.into_iter().map(|(_, row)| row.clone()).collect(),
         ));
     }

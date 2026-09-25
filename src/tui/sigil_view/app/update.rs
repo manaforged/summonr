@@ -37,12 +37,12 @@ impl App {
             }
             Msg::Event(crate::Event::ToolCall {
                 name, arguments, ..
-            }) if name == "todo" => {
+            }) if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo) => {
                 crate::tools::todos_from_args(arguments).is_ok_and(|items| !items.is_empty())
             }
             Msg::Event(crate::Event::Child { event, .. }) => matches!(
                 event.as_ref(),
-                crate::Event::ToolCall { name, .. } if name == "todo"
+                crate::Event::ToolCall { name, .. } if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo)
             ),
             _ => false,
         };
@@ -94,9 +94,9 @@ impl App {
             Msg::OpenLogin(note) => {
                 self.begin_auth(None);
                 if self.unseated() {
-                    self.auth_sel.set(0);
+                    self.auth.sel.set(0);
                 }
-                self.auth_step.set(Login::List(note));
+                self.auth.step.set(Login::List(note));
             }
             Msg::Prompts { session, result } => {
                 let current = match session {
@@ -160,11 +160,11 @@ impl App {
                 loading,
                 error,
             } => {
-                if request != self.model_request.get() {
+                if request != self.picker.request.get() {
                     return;
                 }
-                if !self.editing_model.peek() {
-                    self.model_groups.update(|held| held.extend(groups));
+                if !self.picker.open.peek() {
+                    self.picker.groups.update(|held| held.extend(groups));
                     return;
                 }
                 let snapshot = self.model.peek().snapshot.clone();
@@ -180,32 +180,32 @@ impl App {
                     rows.insert(0, current.clone());
                 }
                 let selected = self.picked_model();
-                self.model_facts.set(Rc::new(facts));
-                self.model_causes.update(|held| {
+                self.picker.facts.set(Rc::new(facts));
+                self.picker.causes.update(|held| {
                     held.retain(|name, _| !groups.contains_key(name));
                     held.extend(causes);
                 });
-                self.model_groups.update(|held| held.extend(groups));
-                self.model_choices.set(Rc::new(rows));
+                self.picker.groups.update(|held| held.extend(groups));
+                self.picker.choices.set(Rc::new(rows));
+                self.picker.recent.set(counts);
                 self.rank();
-                let shown = self.model_shown.peek();
+                let shown = self.picker.shown.peek();
                 let sel = [selected.unwrap_or_default(), current]
                     .iter()
                     .find_map(|wanted| shown.iter().position(|row| row == wanted))
                     .unwrap_or(0);
-                self.model_recent.set(counts);
-                self.model_sel.set(sel);
-                self.model_loading.set(loading);
-                self.model_error.set(error);
+                self.picker.sel.set(sel);
+                self.picker.loading.set(loading);
+                self.picker.error.set(error);
             }
-            Msg::ModelNote(note) => self.model_note.set(note),
+            Msg::ModelNote(note) => self.picker.note.set(note),
             Msg::Defaulted(seat) => self.defaulted(seat),
             Msg::Workflow { name, names, seats } => {
-                self.workflow_name.set(name.unwrap_or_default());
-                self.workflow_names.set(names);
+                self.workflow.name.set(name.unwrap_or_default());
+                self.workflow.names.set(names);
                 let mut seats = seats;
                 seats.resize(Role::ALL.len(), None);
-                self.workflow_seats.set(seats);
+                self.workflow.seats.set(seats);
             }
             msg @ Msg::Patch { .. } => {
                 self.model_mut(|model| {

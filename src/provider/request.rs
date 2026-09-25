@@ -34,6 +34,8 @@ impl<'de> Deserialize<'de> for Effort {
 }
 
 impl Effort {
+    pub const ALL: [Self; 4] = [Self::None, Self::Low, Self::Medium, Self::High];
+
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {

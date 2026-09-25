@@ -1,5 +1,5 @@
 use crate::prefs::Prefs;
-use crate::tui::{Activity, Info, Round, Snapshot, short_session};
+use crate::tui::{Activity, Info, Round, Snapshot};
 
 use super::model::Model;
 
@@ -14,7 +14,7 @@ pub(super) fn header(model: &Model) -> String {
         "summonr  {}{}   session {}   {mode}",
         model.snapshot.model,
         relay,
-        short_session(&model.session),
+        crate::session::short(&model.session),
     )
 }
 
@@ -82,7 +82,7 @@ pub(super) fn facts(model: &Model, info: &Info) -> String {
     let mut rows = vec![
         format!("summonr  {}", info.version),
         format!("   model  {}{relay}", model.snapshot.model),
-        format!(" session  {}", short_session(&model.session)),
+        format!(" session  {}", crate::session::short(&model.session)),
         format!(" workdir  {}", info.workspace),
     ];
     if model.snapshot.plan {

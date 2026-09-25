@@ -7,9 +7,10 @@ use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
 
 use super::*;
-use crate::child::{Access, ChildRecord, ChildResult, ChildState, bounded};
+use crate::child::{Access, ChildRecord, ChildResult, ChildState};
 use crate::durable::id::SessionId;
 use crate::durable::log::{self, State, Usage as Meter};
+use crate::text::ellipsize;
 use crate::tools::{ToolOutput, tool};
 use crate::worktree::{self, Tree};
 

@@ -329,7 +329,7 @@ impl Work {
                 StepState::Blocked => "[!]",
             };
             let indent = if phase.is_some() { "  " } else { "" };
-            let title = crate::child::bounded(&step.title, LEDGER_WIDTH);
+            let title = crate::text::ellipsize(&step.title, LEDGER_WIDTH);
             lines.push(format!("{indent}{mark} {title}"));
         }
         lines

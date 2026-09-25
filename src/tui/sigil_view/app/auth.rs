@@ -81,34 +81,35 @@ impl App {
             .position(|choice| choice.name == focus)
             .or_else(|| choices.iter().position(|choice| choice.name == current))
             .unwrap_or(0);
-        self.auth_choices.set(choices);
-        self.auth_filter.set(String::new());
-        self.auth_seat.set(None);
-        self.auth_focus.set(self.auth_focus.peek() + 1);
-        self.auth_sel.set(selected);
-        self.auth_step.set(Login::List(String::new()));
+        self.auth.choices.set(choices);
+        self.auth.filter.set(String::new());
+        self.auth.seat.set(None);
+        self.auth.focus.set(self.auth.focus.peek() + 1);
+        self.auth.sel.set(selected);
+        self.auth.step.set(Login::List(String::new()));
         self.replace_auth_key(String::new());
-        self.auth_open.set(true);
+        self.auth.open.set(true);
         if named {
             self.commit_auth();
-        } else if !self.editing_model.peek() {
+        } else if !self.picker.open.peek() {
             self.list_models(None);
         }
     }
 
     pub(in crate::tui::sigil_view) fn move_auth(&self, delta: isize) {
-        if !matches!(self.auth_step.peek(), Login::List(_)) {
+        if !matches!(self.auth.step.peek(), Login::List(_)) {
             return;
         }
         let last = self.filtered_auth().len().saturating_sub(1);
-        self.auth_sel
-            .set(self.auth_sel.peek().saturating_add_signed(delta).min(last));
+        self.auth
+            .sel
+            .set(self.auth.sel.peek().saturating_add_signed(delta).min(last));
     }
 
     pub(in crate::tui::sigil_view) fn auth_choice(&self) -> Option<crate::endpoint::AuthInfo> {
         let choices = self.filtered_auth();
         choices
-            .get(self.auth_sel.peek().min(choices.len().saturating_sub(1)))
+            .get(self.auth.sel.peek().min(choices.len().saturating_sub(1)))
             .cloned()
     }
 
@@ -117,34 +118,34 @@ impl App {
             return;
         };
         let name = choice.name.clone();
-        match self.auth_step.peek() {
+        match self.auth.step.peek() {
             Login::List(_) if choice.flow.signs_in() => self.sign_in(name),
             Login::List(_) if self.env_note(&choice) => {}
             Login::List(_) => {
-                self.auth_step.set(Login::Key(String::new()));
-                self.auth_focus.set(self.auth_focus.peek() + 1);
+                self.auth.step.set(Login::Key(String::new()));
+                self.auth.focus.set(self.auth.focus.peek() + 1);
                 self.replace_auth_key(String::new());
             }
             Login::Key(_) => {
-                let key = self.auth_key.peek();
+                let key = self.auth.key.peek();
                 if key.trim().is_empty() {
                     return;
                 }
-                self.auth_step.set(Login::Checking);
+                self.auth.step.set(Login::Checking);
                 drop(self.cmd.send(Cmd::SetKey(name, key)));
             }
             Login::SignIn { asking: true, .. } => {
-                let code = self.auth_key.peek();
+                let code = self.auth.key.peek();
                 if code.trim().is_empty() {
                     return;
                 }
                 self.replace_auth_key(String::new());
-                self.auth_step.set(Login::signing());
+                self.auth.step.set(Login::signing());
                 drop(self.cmd.send(Cmd::LoginAnswer(code)));
             }
             Login::SignIn { note, .. } if !note.is_empty() => self.sign_in(name),
             Login::Confirm => {
-                self.auth_step.set(Login::Checking);
+                self.auth.step.set(Login::Checking);
                 drop(self.cmd.send(Cmd::Logout(name)));
             }
             Login::SignIn { .. } | Login::Checking => {}
@@ -152,19 +153,19 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn filtered_auth(&self) -> Vec<crate::endpoint::AuthInfo> {
-        matching(self.auth_choices.peek(), &self.auth_filter.peek())
+        matching(self.auth.choices.peek(), &self.auth.filter.peek())
     }
 
     pub(in crate::tui::sigil_view) fn replace_auth_filter(&self, filter: String) {
-        if self.auth_filter.peek() != filter {
-            self.auth_filter.set(filter);
-            self.auth_sel.set(0);
+        if self.auth.filter.peek() != filter {
+            self.auth.filter.set(filter);
+            self.auth.sel.set(0);
         }
     }
 
     fn sign_in(&self, name: String) {
         self.replace_auth_key(String::new());
-        self.auth_step.set(Login::signing());
+        self.auth.step.set(Login::signing());
         drop(self.cmd.send(Cmd::Login(name)));
     }
 
@@ -172,11 +173,11 @@ impl App {
         let Some(choice) = self.auth_choice() else {
             return;
         };
-        if matches!(self.auth_step.peek(), Login::List(_))
+        if matches!(self.auth.step.peek(), Login::List(_))
             && !self.env_note(&choice)
             && choice.stored()
         {
-            self.auth_step.set(Login::Confirm);
+            self.auth.step.set(Login::Confirm);
         }
     }
 
@@ -188,34 +189,34 @@ impl App {
         let Some(env) = choice.env else {
             return false;
         };
-        self.auth_step.set(Login::List(format!(
+        self.auth.step.set(Login::List(format!(
             "key comes from ${env} — unset it to sign out"
         )));
-        self.auth_focus.set(self.auth_focus.peek() + 1);
+        self.auth.focus.set(self.auth.focus.peek() + 1);
         true
     }
 
     pub(in crate::tui::sigil_view) fn cancel_auth(&self) {
-        let step = self.auth_step.peek();
+        let step = self.auth.step.peek();
         let waiting = matches!(step, Login::Checking)
             || matches!(step, Login::SignIn { ref note, .. } if note.is_empty());
         if waiting {
             drop(self.cmd.send(Cmd::Cancel));
         }
         self.replace_auth_key(String::new());
-        self.auth_seat.set(None);
-        if matches!(step, Login::List(_)) || self.editing_model.peek() {
-            self.auth_open.set(false);
+        self.auth.seat.set(None);
+        if matches!(step, Login::List(_)) || self.picker.open.peek() {
+            self.auth.open.set(false);
         }
-        if matches!(step, Login::List(_)) && !self.editing_model.peek() && self.unseated() {
+        if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
             self.push_entry(Entry::System(
                 "No provider is set up — /login to add one".to_string(),
             ));
             self.splash.set(false);
             self.refresh();
         }
-        self.auth_focus.set(self.auth_focus.peek() + 1);
-        self.auth_step.set(Login::List(String::new()));
+        self.auth.focus.set(self.auth.focus.peek() + 1);
+        self.auth.step.set(Login::List(String::new()));
     }
 
     pub(in crate::tui::sigil_view) fn auth_progress(
@@ -230,14 +231,14 @@ impl App {
             url: shown,
             code: typed,
             ..
-        } = self.auth_step.peek()
+        } = self.auth.step.peek()
         else {
             return;
         };
         if asking {
-            self.auth_focus.set(self.auth_focus.peek() + 1);
+            self.auth.focus.set(self.auth.focus.peek() + 1);
         }
-        self.auth_step.set(Login::SignIn {
+        self.auth.step.set(Login::SignIn {
             text: if text.is_empty() { last } else { text },
             url: if url.is_empty() { shown } else { url },
             code: if code.is_empty() { typed } else { code },
@@ -251,16 +252,16 @@ impl App {
         name: &str,
         result: std::result::Result<String, String>,
     ) {
-        let mut groups = self.model_groups.peek();
+        let mut groups = self.picker.groups.peek();
         match result {
             Ok(text) => {
                 groups.remove(name);
-                self.model_groups.set(groups);
+                self.picker.groups.set(groups);
                 self.replace_auth_key(String::new());
-                if self.editing_model.peek() {
+                if self.picker.open.peek() {
                     self.push_entry(Entry::System(text.clone()));
-                    self.auth_open.set(false);
-                    match self.auth_seat.peek().filter(|(owner, _)| owner == name) {
+                    self.auth.open.set(false);
+                    match self.auth.seat.peek().filter(|(owner, _)| owner == name) {
                         Some((owner, model)) => {
                             self.cancel_model_edit();
                             drop(self.cmd.send(Cmd::SetSeat(owner, model)));
@@ -269,23 +270,23 @@ impl App {
                     }
                     return;
                 }
-                self.auth_choices.set(providers());
+                self.auth.choices.set(providers());
                 let found = self
                     .filtered_auth()
                     .iter()
                     .position(|choice| choice.name == name);
-                self.auth_sel.set(found.unwrap_or_default());
-                self.auth_step.set(Login::List(text));
-                self.auth_focus.set(self.auth_focus.peek() + 1);
+                self.auth.sel.set(found.unwrap_or_default());
+                self.auth.step.set(Login::List(text));
+                self.auth.focus.set(self.auth.focus.peek() + 1);
             }
             Err(text) if text.is_empty() => {}
-            Err(text) if !self.auth_open.peek() => self.push_entry(Entry::Error(text)),
+            Err(text) if !self.auth.open.peek() => self.push_entry(Entry::Error(text)),
             Err(text) => {
                 if text.ends_with("rejected the key") {
                     groups.insert(name.to_string(), State::KeyRejected);
-                    self.model_groups.set(groups);
+                    self.picker.groups.set(groups);
                 }
-                let step = match self.auth_step.peek() {
+                let step = match self.auth.step.peek() {
                     Login::SignIn {
                         text: shown,
                         url,
@@ -298,18 +299,18 @@ impl App {
                         asking: false,
                         note: text,
                     },
-                    Login::Checking if !self.auth_key.peek().is_empty() => Login::Key(text),
+                    Login::Checking if !self.auth.key.peek().is_empty() => Login::Key(text),
                     Login::List(_) | Login::Key(_) | Login::Checking | Login::Confirm => {
                         Login::List(text)
                     }
                 };
-                self.auth_step.set(step);
+                self.auth.step.set(step);
             }
         }
     }
 
     pub(in crate::tui::sigil_view) fn replace_auth_key(&self, key: String) {
-        self.auth_caret.set(key.len());
-        self.auth_key.set(key);
+        self.auth.caret.set(key.len());
+        self.auth.key.set(key);
     }
 }

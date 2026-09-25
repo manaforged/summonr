@@ -8,11 +8,11 @@ mod models;
 mod options;
 mod workflow;
 
-pub(super) use auth::layer as auth_layer;
-pub(super) use hotkeys::layer as hotkeys_layer;
-pub(super) use models::layer as model_picker_layer;
-pub(super) use options::layer as settings_layer;
-pub(super) use workflow::layer as workflow_layer;
+pub(super) use auth::{keys as auth_keys, layer as auth_layer};
+pub(super) use hotkeys::{keys as hotkeys_keys, layer as hotkeys_layer};
+pub(super) use models::{keys as model_picker_keys, layer as model_picker_layer};
+pub(super) use options::{keys as settings_keys, layer as settings_layer};
+pub(super) use workflow::{keys as workflow_keys, layer as workflow_layer};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Setting {

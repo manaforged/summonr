@@ -1,5 +1,6 @@
 use serde_json::{Map, Value, json};
 
+use crate::provider::wire::traits::{Thinking, traits};
 use crate::provider::{CompletionRequest, Effort};
 
 pub(super) fn generation(call: &CompletionRequest<'_>) -> Value {
@@ -14,26 +15,26 @@ pub(super) fn generation(call: &CompletionRequest<'_>) -> Value {
 }
 
 fn thinking(model: &str, effort: Effort) -> Option<Value> {
-    if model.contains("gemini-2.5") {
-        let budget = match effort {
-            Effort::None if model.contains("pro") => return None,
-            Effort::None => return Some(json!({"thinkingBudget": 0})),
-            Effort::Low => 1024,
-            Effort::Medium => 8192,
-            Effort::High => -1,
-        };
-        return Some(json!({"thinkingBudget": budget, "includeThoughts": true}));
+    match traits(model).thinking {
+        Thinking::Budget { can_disable } => {
+            let budget = match effort {
+                Effort::None if !can_disable => return None,
+                Effort::None => return Some(json!({"thinkingBudget": 0})),
+                Effort::Low => 1024,
+                Effort::Medium => 8192,
+                Effort::High => -1,
+            };
+            Some(json!({"thinkingBudget": budget, "includeThoughts": true}))
+        }
+        Thinking::Level { minimal, medium } => {
+            let level = match effort {
+                Effort::None if minimal => "minimal",
+                Effort::None | Effort::Low => "low",
+                Effort::Medium if medium => "medium",
+                Effort::Medium | Effort::High => "high",
+            };
+            Some(json!({"thinkingLevel": level, "includeThoughts": effort != Effort::None}))
+        }
+        Thinking::Adaptive | Thinking::Budgeted | Thinking::None => None,
     }
-    if !model.contains("gemini-3") {
-        return None;
-    }
-    let minimal = !model.contains("pro") && !model.contains("3.7") && !model.contains("3.8");
-    let level = match effort {
-        Effort::None if minimal => "minimal",
-        Effort::None | Effort::Low => "low",
-        Effort::Medium if model.contains("gemini-3-pro") => "high",
-        Effort::Medium => "medium",
-        Effort::High => "high",
-    };
-    Some(json!({"thinkingLevel": level, "includeThoughts": effort != Effort::None}))
 }

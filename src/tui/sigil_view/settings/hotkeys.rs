@@ -7,10 +7,19 @@ use super::prelude::*;
 use super::{App, canvas};
 use crate::prefs::Hotkey;
 
+pub(in crate::tui::sigil_view) fn keys() -> Bindings {
+    vec![press("r", |app, event| {
+        if !app.hotkeys.recording.peek() {
+            event.stop_propagation();
+            app.reset_hotkeys();
+        }
+    })]
+}
+
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     shell(
-        app.hotkeys_open,
+        app.hotkeys.open,
         "Hotkeys",
         app.viewport.peek().0,
         container()
@@ -20,10 +29,10 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .gap(canvas::overlay_gap()),
             )
             .children_reactive(move || {
-                let selected = paint.hotkey_sel.get().min(Hotkey::ALL.len() - 1);
+                let selected = paint.hotkeys.sel.get().min(Hotkey::ALL.len() - 1);
                 let visible = canvas::overlay_shown(Hotkey::ALL.len(), paint.viewport.get().1);
-                let recording = paint.hotkey_recording.get();
-                let note = paint.hotkey_note.get();
+                let recording = paint.hotkeys.recording.get();
+                let note = paint.hotkeys.note.get();
                 let rows: Vec<(Hotkey, String)> = {
                     let model = paint.model.get();
                     Hotkey::ALL
@@ -76,8 +85,8 @@ fn entry(
         format!("{} · {}", binding, description(*action)),
     )
     .pointer_down(move |event| {
-        choose.hotkey_recording.set(false);
-        choose.hotkey_sel.set(index);
+        choose.hotkeys.recording.set(false);
+        choose.hotkeys.sel.set(index);
         choose.edit_hotkey();
         event.stop_propagation();
     })

@@ -1,4 +1,5 @@
 use super::*;
+use crate::tools::Builtin;
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn execute_calls(
@@ -14,7 +15,10 @@ impl<P: Provider> Loop<P> {
         if calls.is_empty() {
             return Ok(());
         }
-        let outputs = if calls.iter().all(|call| call.function.name == "task") {
+        let outputs = if calls
+            .iter()
+            .all(|call| Builtin::is(&call.function.name, Builtin::Task))
+        {
             self.tasks_execute(&calls, events, emit)
                 .await
                 .into_iter()
@@ -49,7 +53,7 @@ impl<P: Provider> Loop<P> {
         } else {
             for (planned, call) in planned.into_iter().zip(calls) {
                 let started = Instant::now();
-                let (output, child_usage) = if call.function.name == "task" {
+                let (output, child_usage) = if Builtin::is(&call.function.name, Builtin::Task) {
                     match self.task_execute(&call, events, emit).await {
                         Ok(execution) => (Ok(execution.output), Some(execution.usage)),
                         Err(error) => (Err(error), None),
@@ -69,7 +73,8 @@ impl<P: Provider> Loop<P> {
                 } else if is_bus_tool(&call.function.name) {
                     (self.bus_execute(&call).map(ToolOutput::ok), None)
                 } else {
-                    let approval = self.manual && call.function.name == "run_command";
+                    let approval =
+                        self.manual && Builtin::is(&call.function.name, Builtin::RunCommand);
                     let denied = if approval {
                         let detail =
                             serde_json::from_str::<serde_json::Value>(&call.function.arguments)
@@ -161,7 +166,7 @@ impl<P: Provider> Loop<P> {
             ..Message::tool(call.id, text)
         });
         if success
-            && call.function.name == "todo"
+            && Builtin::is(&call.function.name, Builtin::Todo)
             && let Ok(todos) = crate::tools::todos_from_args(&call.function.arguments)
         {
             let items: Vec<(String, crate::durable::work::StepState)> = todos

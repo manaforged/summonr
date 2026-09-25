@@ -51,7 +51,7 @@ fn clip_lines(lines: &[&str]) -> String {
 
 pub(crate) fn searchish(command: &str) -> bool {
     super::rewrite::segment_verbs(command)
-        .any(|verb| matches!(verb.as_str(), "rg" | "grep" | "ag" | "ack" | "find" | "fd"))
+        .any(|verb| crate::policy::verb_row(&verb).is_some_and(|row| row.search))
 }
 
 fn search_output(lines: &[&str]) -> String {

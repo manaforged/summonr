@@ -378,12 +378,14 @@ pub(crate) fn protected_read(path: &Path) -> bool {
 mod blocks;
 mod paths;
 mod shell;
+mod verbs;
 
 use blocks::*;
 use paths::*;
 use shell::*;
 
 pub(crate) use paths::{expand_path, split_segments};
+pub(crate) use verbs::*;
 
 #[cfg(test)]
 #[path = "policy_tests.rs"]

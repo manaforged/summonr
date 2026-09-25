@@ -235,13 +235,14 @@ fn failure(error: Error) -> (i64, String) {
 }
 
 fn kind(name: &str) -> &'static str {
-    match name {
-        "read" => "read",
-        "edit" | "write" => "edit",
-        "run_command" => "execute",
-        "web" => "fetch",
-        "lsp" => "search",
-        _other => "other",
+    use crate::tools::Builtin;
+    match Builtin::live(name) {
+        Some(Builtin::Read) => "read",
+        Some(Builtin::Edit | Builtin::Write) => "edit",
+        Some(Builtin::RunCommand) => "execute",
+        Some(Builtin::Web) => "fetch",
+        Some(Builtin::Lsp) => "search",
+        Some(Builtin::Skill | Builtin::Todo | Builtin::Task) | None => "other",
     }
 }
 

@@ -121,8 +121,11 @@ pub(crate) fn resolve_inner(
                 .map(str::to_string)
                 .or_else(|| std::env::var("SUMMONR_MODEL").ok())
                 .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| "glm-5.3".to_string()),
-            api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| named_env_key("glm-intl")),
+                .or_else(|| super::preset::env_default().map(|preset| preset.model.to_string()))
+                .unwrap_or_default(),
+            api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| {
+                super::preset::env_default().and_then(|preset| env_key(preset.env_keys))
+            }),
             source: None,
             oauth: None,
             body: std::env::var("SUMMONR_MAX_TOKENS")

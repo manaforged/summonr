@@ -241,14 +241,17 @@ fn parts(seat: &Seat) -> Parts<'_> {
 }
 
 pub fn http(timeout: Duration, connect: Duration) -> Result<Session> {
-    Session::builder()
-        .timeout(
-            leyline::TimeoutConfig::new()
-                .total(timeout)
-                .connect(connect),
-        )
+    builder(timeout, connect)
         .build()
         .map_err(|error| Error::Transport(error.to_string()))
+}
+
+pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder {
+    Session::builder().timeout(
+        leyline::TimeoutConfig::new()
+            .total(timeout)
+            .connect(connect),
+    )
 }
 
 #[cfg(test)]

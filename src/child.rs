@@ -86,16 +86,7 @@ pub(crate) struct ChildResult {
     pub(crate) diagnostic: Option<String>,
 }
 
-pub(crate) fn tag(id: &str) -> String {
+#[must_use]
+pub fn tag(id: &str) -> String {
     id.chars().take(8).collect()
-}
-
-pub(crate) fn bounded(text: &str, max: usize) -> String {
-    let mut chars = text.chars();
-    let clipped: String = chars.by_ref().take(max).collect();
-    if chars.next().is_some() {
-        format!("{clipped}…")
-    } else {
-        clipped
-    }
 }

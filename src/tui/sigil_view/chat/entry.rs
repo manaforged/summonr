@@ -1,8 +1,8 @@
 use sigil::prelude::{
     AlignItems, DiffBuilder, DiffLayout as SigilDiffLayout, Fill, Geometry, IntoNode,
     LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
-    ObjectFit, Overflow, PointerEvent, WidgetLayoutExt, chart, classes, container, diff, image,
-    label, markdown, markdown_inline, signal, text,
+    ObjectFit, Overflow, PointerEvent, WidgetLayoutExt, chart, classes, container, diff,
+    icon_button, image, label, markdown, markdown_inline, signal, text,
 };
 
 use super::{App, Entry};
@@ -13,7 +13,6 @@ use crate::tui::ToolState;
 mod preview;
 
 const COMPACT_ROWS: usize = 32;
-const THINKING_ROWS: usize = 6;
 
 pub(in crate::tui::sigil_view) fn row(
     entry: Entry,
@@ -36,7 +35,29 @@ pub(in crate::tui::sigil_view) fn row(
         Entry::Assistant { text: body, .. } if body.trim().is_empty() => container(),
         Entry::Thinking(body) if body.trim().is_empty() => container(),
         Entry::Receipt(body) if body.trim().is_empty() => container(),
-        Entry::Assistant { text: body, .. } => wrap(markdown(signal(body))),
+        Entry::Assistant { text: body, .. } => {
+            let copy_app = app.clone();
+            let copied = body.clone();
+            wrap(
+                container()
+                    .layout(
+                        LayoutStyle::flex_row()
+                            .fill_width()
+                            .align_items(AlignItems::Start)
+                            .gap(8.0),
+                    )
+                    .child(
+                        container()
+                            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                            .child(markdown(signal(body))),
+                    )
+                    .child(
+                        icon_button("⧉", move || copy_app.copy.set(Some(copied.clone())))
+                            .ghost()
+                            .accessible("Copy reply"),
+                    ),
+            )
+        }
         Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
         Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
         Entry::Tool {
@@ -129,7 +150,7 @@ fn collapsible(
             wrap(label(format!("⌄ {kind} · hidden")).class(classes!("text-xs italic text-gray-11")))
                 .pointer_down(press)
         }
-        Visibility::Collapsed | Visibility::Expanded if reasoning && !live => {
+        Visibility::Collapsed if reasoning => {
             let words = body.split_whitespace().count();
             wrap(
                 label(format!("⌄ {kind} · {words} words"))
@@ -155,7 +176,7 @@ fn collapsible(
                 })
                 .class(classes!("text-xs italic text-gray-11")),
             )
-            .child(capped(body, reasoning))
+            .child(prose(body, "text-xs italic text-gray-10"))
             .pointer_down(press),
     }
 }
@@ -164,22 +185,6 @@ fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
         .child(child)
-}
-
-fn capped(body: &str, reasoning: bool) -> NodeBuilder {
-    let class = "text-xs italic text-gray-10";
-    let lines: Vec<&str> = body
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .collect();
-    if !reasoning || lines.len() <= THINKING_ROWS {
-        return prose(body, class);
-    }
-    let hidden = lines.len() - THINKING_ROWS;
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(label(format!("… +{hidden} lines")).class(class))
-        .child(prose(&lines[hidden..].join("\n"), class))
 }
 
 fn patch_of(output: &str) -> Option<String> {
@@ -306,7 +311,7 @@ fn tool_card(
         .border_w(0)
         .path(path)
         .max_rows(rows);
-    if matches!(name, "edit" | "write" | "apply_patch") {
+    if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
         return card.child(view.status(status));
     }
     card.child(view)

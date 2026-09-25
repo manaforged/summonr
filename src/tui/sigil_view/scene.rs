@@ -2,13 +2,11 @@ use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) use super::app::App;
-pub(super) use super::canvas;
 pub(super) use super::chat;
 
 use super::canvas::write_at;
 use super::canvas::{Cell, Ink, blend, cell as metrics, ink, palette, rgb, shown};
 use super::model::Model;
-use crate::tui::short_session;
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Position, Rgba8, Style, container,
     label,

@@ -4,7 +4,7 @@ use sigil::prelude::{
     section_label, spacer, spinner_frame,
 };
 
-use super::{App, Model, canvas};
+use super::{App, Model};
 use super::{busy_status, secret_row};
 
 pub(super) fn agents(app: App, width: usize) -> NodeBuilder {
@@ -85,7 +85,7 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                     Tone::Warn,
                 )));
             } else if let Some(status) = busy_status(&model, update.ticks.get()) {
-                nodes.push(busy_row(&canvas::ellipsize(&status, width)));
+                nodes.push(busy_row(&crate::text::ellipsize(&status, width)));
             } else if update.attached.get() > 0 {
                 let attached = update.attached.peek();
                 let noun = if attached == 1 { "image" } else { "images" };
@@ -118,7 +118,7 @@ fn above(child: NodeBuilder) -> NodeBuilder {
 }
 
 fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeBuilder {
-    let text = canvas::ellipsize(&detail, width.saturating_sub(4));
+    let text = crate::text::ellipsize(&detail, width.saturating_sub(4));
     let mut actions = container().layout(
         LayoutStyle::flex_row()
             .gap(12.0)

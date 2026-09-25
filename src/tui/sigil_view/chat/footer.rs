@@ -1,5 +1,5 @@
 use sigil::prelude::{
-    AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
+    AlignItems, LayoutBuilderExt, LayoutStyle, LengthPercentageAuto, MouseButton, NodeBuilder,
     NodeEventsExt, NodeStyleExt, Position, classes, container, label, spacer,
 };
 
@@ -27,23 +27,7 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
             let _cache_open = update.cache_open.get();
             drop(update.meter_hover.get());
             let model = update.model.get();
-            let show_ctx =
-                update.context_open.peek() || update.meter_hover.peek() == Some(Target::Context);
-            let show_cache =
-                update.cache_open.peek() || update.meter_hover.peek() == Some(Target::Cache);
-            let mut column = container().layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .shrink(0.0)
-                    .position(Position::Relative),
-            );
-            if show_ctx && !show_cache {
-                column = column.child(meter_overlay(&model, width, Target::Context));
-            } else if show_cache && !show_ctx {
-                column = column.child(meter_overlay(&model, width, Target::Cache));
-            }
-            column = column.child(footer_row(update.clone(), &model, width));
-            vec![column]
+            vec![footer_row(update.clone(), &model, width)]
         })
 }
 
@@ -55,7 +39,7 @@ fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
             .as_deref()
             .map_or(0, |branch| cell_width(branch) + 4)
         + speed.as_deref().map_or(0, |rate| cell_width(rate) + 2);
-    let place = canvas::ellipsize(&app.info.workspace, width.saturating_sub(taken));
+    let place = crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken));
     let mut row = container().layout(
         LayoutStyle::flex_row()
             .fill_width()
@@ -84,13 +68,17 @@ fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
     }
     row = row.child(meter_button(
         app.clone(),
+        model,
         Target::Context,
         meter("ctx", chrome::context_percent(model), "bg-accent"),
+        width,
     ));
     row.child(meter_button(
         app,
+        model,
         Target::Cache,
         meter("cache", chrome::cache_percent(model), "bg-info-11"),
+        width,
     ))
 }
 
@@ -120,20 +108,50 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
         .child(label(format!("{percent}%")).class(classes!("text-xs text-gray-12")))
 }
 
-fn meter_button(app: App, target: Target, child: NodeBuilder) -> NodeBuilder {
+fn showing(app: &App, target: &Target) -> bool {
+    let pinned = match target {
+        Target::Context => app.context_open.peek(),
+        Target::Cache => app.cache_open.peek(),
+    };
+    app.meter_hover
+        .peek()
+        .map_or(pinned, |hovered| hovered == *target)
+}
+
+fn meter_button(
+    app: App,
+    model: &Model,
+    target: Target,
+    child: NodeBuilder,
+    width: usize,
+) -> NodeBuilder {
     let press = app.clone();
     let enter = app.clone();
     let leave = app.clone();
     let down_target = target.clone();
     let enter_target = target.clone();
-    container()
+    let mut button = container()
         .layout(
             LayoutStyle::flex_row()
                 .align_items(AlignItems::Center)
                 .shrink(0.0)
-                .min_size(0.0, 0.0),
+                .min_size(0.0, 0.0)
+                .position(Position::Relative),
         )
-        .child(child)
+        .child(child);
+    if showing(&app, &target) {
+        button = button.child(
+            container()
+                .layout(
+                    LayoutStyle::block()
+                        .position(Position::Absolute)
+                        .inset_bottom(LengthPercentageAuto::Percent(1.0))
+                        .inset_right(0.0),
+                )
+                .child(meter_card(model, width, target.clone())),
+        );
+    }
+    button
         .pointer_down(move |event| {
             if event.button == Some(MouseButton::Left) {
                 press.toggle_meter(down_target.clone());
@@ -146,21 +164,6 @@ fn meter_button(app: App, target: Target, child: NodeBuilder) -> NodeBuilder {
                 leave.meter_hover.set(None);
             }
         })
-}
-
-fn meter_overlay(model: &Model, width: usize, target: Target) -> NodeBuilder {
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .position(Position::Absolute)
-                .inset_left(0.0)
-                .inset_right(0.0)
-                .inset_bottom(canvas::cell().h * 3.0 + 34.0)
-                .padding_x(16.0)
-                .justify_content(JustifyContent::End),
-        )
-        .child(meter_card(model, width, target))
 }
 
 fn meter_card(model: &Model, width: usize, target: Target) -> NodeBuilder {

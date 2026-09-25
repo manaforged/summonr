@@ -30,26 +30,11 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (Key::F5.into(), |app, event| {
-            if app.editing_model.peek() {
-                event.stop_propagation();
-                app.refresh_models();
-                return;
-            }
             if !app.options_active() && !app.view_edit.peek() {
                 event.stop_propagation();
                 app.retry();
             }
         }),
-        (
-            Shortcut::new(LogicalKey::character("p"), ModifiersState::ALT),
-            pin_key,
-        ),
-        (LogicalKey::character("π").into(), pin_key),
-        (
-            Shortcut::new(LogicalKey::character("d"), ModifiersState::ALT),
-            default_key,
-        ),
-        (LogicalKey::character("∂").into(), default_key),
         (Key::Escape.into(), |app, event| {
             event.stop_propagation();
             if app.options_active() {
@@ -71,9 +56,9 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         }),
         (Shortcut::ctrl(LogicalKey::character("s")), |app, event| {
-            if app.editing_model.peek() {
+            if app.picker.open.peek() {
                 event.stop_propagation();
-            } else if app.view_edit.peek() && !app.hotkey_recording.peek() {
+            } else if app.view_edit.peek() && !app.hotkeys.recording.peek() {
                 event.stop_propagation();
                 app.edit_save();
             }
@@ -175,13 +160,13 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             },
         ),
         (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
-            if !app.hotkey_recording.peek() {
+            if !app.hotkeys.recording.peek() {
                 event.stop_propagation();
                 app.interrupt();
             }
         }),
         (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
-            if !app.hotkey_recording.peek()
+            if !app.hotkeys.recording.peek()
                 && !app.options_active()
                 && app.draft.peek().is_empty()
                 && app.model.get().busy_since.is_none()
@@ -265,42 +250,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 event.stop_propagation();
             }
         }),
-        (LogicalKey::character("d").into(), |app, event| {
-            if app.workflow_keys() {
-                event.stop_propagation();
-                app.clear_workflow_seat();
-            }
-        }),
-        (LogicalKey::character("s").into(), |app, event| {
-            if app.workflow_keys() {
-                event.stop_propagation();
-                app.begin_workflow_save();
-            }
-        }),
-        (LogicalKey::character(" ").into(), |app, event| {
-            if app.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                app.adjust_setting();
-            }
-        }),
-        (LogicalKey::character("+").into(), |app, event| {
-            if app.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                app.overlay_adjust(1);
-            }
-        }),
-        (LogicalKey::character("-").into(), |app, event| {
-            if app.overlay() == Some(Overlay::Settings) {
-                event.stop_propagation();
-                app.overlay_adjust(-1);
-            }
-        }),
-        (LogicalKey::character("r").into(), |app, event| {
-            if app.overlay() == Some(Overlay::Hotkeys) && !app.hotkey_recording.peek() {
-                event.stop_propagation();
-                app.reset_hotkeys();
-            }
-        }),
     ];
     for (shortcut, action) in bindings {
         let app = app.clone();
@@ -346,26 +295,4 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         });
     super::input::hotkey_shortcuts(super::input::composer_keys(shell, app), app)
-}
-
-fn pin_key(app: &App, event: &mut KeyEvent) {
-    if app.editing_model.peek() {
-        event.stop_propagation();
-        app.pin_model();
-    }
-}
-
-fn default_key(app: &App, event: &mut KeyEvent) {
-    if app.editing_model.peek() {
-        event.stop_propagation();
-        if app.model_for.peek().is_none() {
-            app.default_model();
-        }
-    } else if app.overlay() == Some(Overlay::Sessions) {
-        event.stop_propagation();
-        app.delete_session();
-    } else if app.overlay() == Some(Overlay::Auth) {
-        event.stop_propagation();
-        app.confirm_logout();
-    }
 }

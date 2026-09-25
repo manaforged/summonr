@@ -107,7 +107,7 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     let mut facts = vec![
         ("summonr", app.info.version.clone()),
         ("model", shown_model),
-        ("session", short_session(&model.session).to_string()),
+        ("session", crate::session::short(&model.session).to_string()),
         ("workdir", app.info.workspace.clone()),
         ("setup", "/login · /model · /help".to_string()),
     ];

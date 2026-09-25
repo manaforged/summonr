@@ -7,6 +7,23 @@ use super::prelude::*;
 use super::{App, canvas};
 use super::{Row, setting_rows};
 
+pub(in crate::tui::sigil_view) fn keys() -> Bindings {
+    vec![
+        press(" ", |app, event| {
+            event.stop_propagation();
+            app.adjust_setting();
+        }),
+        press("+", |app, event| {
+            event.stop_propagation();
+            app.overlay_adjust(1);
+        }),
+        press("-", |app, event| {
+            event.stop_propagation();
+            app.overlay_adjust(-1);
+        }),
+    ]
+}
+
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     shell(

@@ -13,6 +13,13 @@ pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
     stage(path, bytes.as_ref(), false)?.commit()
 }
 
+pub(crate) fn read_or_empty(path: &Path) -> io::Result<String> {
+    match std::fs::read_to_string(path) {
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(String::new()),
+        other => other,
+    }
+}
+
 pub(crate) fn scratch(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
     OpenOptions::new()
         .create(true)

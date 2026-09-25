@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::prompt::summonr_home;
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
@@ -283,28 +283,36 @@ impl Bus {
 
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
         let path = self.inbox_path(&self.id.clone());
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let text = store::read_or_empty(&path)?;
         let lines: Vec<&str> = text.lines().collect();
-        if self.cursor >= lines.len() {
-            self.cursor = lines.len();
-            return Ok(Vec::new());
+        let mut mail = Vec::new();
+        while let Some(line) = lines.get(self.cursor) {
+            match serde_json::from_str::<Mail>(line) {
+                Ok(item) => mail.push(item),
+                Err(_) if !mail.is_empty() => return Ok(mail),
+                Err(error) => {
+                    self.cursor += 1;
+                    return Err(Error::Config(format!(
+                        "{} line {}: {error}",
+                        path.display(),
+                        self.cursor
+                    )));
+                }
+            }
+            self.cursor += 1;
         }
-        let mail: Vec<Mail> = lines[self.cursor..]
-            .iter()
-            .filter_map(|line| serde_json::from_str::<Mail>(line).ok())
-            .collect();
         self.cursor = lines.len();
         Ok(mail)
     }
 
     pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {
         let path = self.board_path(cwd);
-        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        let text = store::read_or_empty(&path)?;
         let mut board: Vec<(String, String, String)> = Vec::new();
-        for line in text.lines() {
-            let Ok(post) = serde_json::from_str::<Post>(line) else {
-                continue;
-            };
+        for (index, line) in text.lines().enumerate() {
+            let post = serde_json::from_str::<Post>(line).map_err(|error| {
+                Error::Config(format!("{} line {}: {error}", path.display(), index + 1))
+            })?;
             match board.iter_mut().find(|(key, _, _)| *key == post.key) {
                 Some(slot) => *slot = (post.key, post.value, post.from),
                 None => board.push((post.key, post.value, post.from)),

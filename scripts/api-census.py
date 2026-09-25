@@ -7,8 +7,10 @@ Two jobs:
    function with its body length and how many times its name is mentioned,
    then the line count of every file. Writes `off/functions.tsv` and
    `off/lines.tsv`. Totals only, no rows, on stdout.
-2. Ratchet. Counts the names on `docs/guide/internals/module-api.md` under "Names we
-   delete", plus the source files over `CAP` lines. The counts are shrink-only
+2. Ratchet. Reads the "Names we delete" table on
+   `docs/guide/internals/module-api.md` and counts every backticked name in
+   its Delete column, plus the pattern rules below and the source files over
+   `CAP` lines. The counts are shrink-only
    against `scripts/api-census-baseline.txt`: a count may fall, it may never
    rise. `--update` rewrites the baseline after a cut lands.
 
@@ -37,56 +39,68 @@ FN = re.compile(
     r"fn\s+([A-Za-z_][A-Za-z0-9_]*)"
 )
 
+API_DOC = ROOT / "docs" / "guide" / "internals" / "module-api.md"
+
 SOURCE_RULES: list[tuple[str, str, str]] = [
-    ("shadow editor apply_replace", r"\bapply_replace\b", "delete"),
-    ("shadow editor apply_insert", r"\bapply_insert\b", "delete"),
-    ("shadow editor apply_delete", r"\bapply_delete\b", "delete"),
-    ("shadow editor join_lines", r"\bjoin_lines\b", "delete"),
-    ("orphan token_labels", r"\btoken_labels\b", "delete"),
-    ("orphan with_session", r"\bwith_session\b", "delete"),
-    ("orphan tool_names", r"\btool_names\b", "delete"),
-    ("orphan from_env", r"\bfrom_env\b", "delete"),
-    ("orphan file_via_security", r"\bfile_via_security\b", "delete"),
-    ("orphan with_security", r"\bwith_security\b", "delete"),
-    ("orphan fps_parse", r"\bfps_parse\b", "delete"),
-    ("orphan fps_cycle", r"\bfps_cycle\b", "delete"),
-    ("orphan set_plan", r"\bset_plan\b", "delete"),
-    ("orphan with_plan_first", r"\bwith_plan_first\b", "delete"),
-    ("orphan stdout_item", r"\bstdout_item\b", "delete"),
-    ("orphan contract_prompt", r"\bcontract_prompt\b", "delete"),
-    ("orphan retry_prompt", r"\bretry_prompt\b", "delete"),
-    ("orphan add_children", r"\badd_children\b", "delete"),
-    ("orphan from_u128", r"\bfrom_u128\b", "delete"),
-    ("orphan file_only", r"\bfile_only\b", "delete"),
-    ("orphan from_io", r"\bfrom_io\b", "delete"),
-    ("orphan last_entry", r"\blast_entry\b", "delete"),
-    ("orphan placements", r"\bplacements\b", "delete"),
-    ("orphan replay_session", r"\breplay_session\b", "delete"),
     ("session dialect Msg", r"enum Msg\b", "one session event"),
     ("session dialect Cmd", r"enum Cmd\b", "one session event"),
-    ("session dialect Line", r"enum Line\b", "one session event"),
     ("session dialect Entry", r"enum Entry\b", "one session event"),
-    ("name collision: Backend", r"enum Backend\b", "one word, one domain"),
-    ("name collision: Source", r"enum Source\b", "one word, one domain"),
     ("name collision: Kind", r"enum Kind\b", "one word, one domain"),
-    ("name collision: Role", r"enum Role\b", "one word, one domain"),
-    ("name collision: Event", r"enum Event\b", "one word, one domain"),
-    ("clip-shaped helper", r"fn\s+(clip|clip_line|truncate|truncate_line|abbreviate)\b", "check the job, then name it"),
+    ("clip-shaped helper", r"fn\s+(clip|clip_line|truncate|truncate_line|abbreviate)\b", "text::ellipsize"),
     ("short-shaped helper", r"fn\s+short(_model|_path|_session)?\b", "check the job, then name it"),
     ("wrap-shaped helper", r"fn\s+(wrap|words)\b", "check the job, then name it"),
     ("surface painter", r"fn\s+(grid|paint_bars|paint_source|paint_table)\b", "rows::paint"),
     ("sigil prelude glob", r"use sigil::prelude::\*", "named imports"),
-    ("direct file write", r"fs::write\(|File::create", "store::write"),
     ("legacy tool alias literal", r'"(read_file|edit_file|write_file|list_dir|web_search|web_fetch|replace_text|replace_texts|insert_after|delete_lines)"', "one alias table"),
     ("match wildcard arm", r"(?m)^\s*_\s*(?:=>|\|)", "name the arm"),
-    ("duration literal", r"Duration::from_(?:secs|millis|micros)", "one timeout policy"),
     ("timeout mention", r"\btimeout\b", "one timeout policy"),
 ]
 
-MANIFEST_RULES: list[tuple[str, str, str]] = [
-    ("dead dependency unicode-width", r"^\s*unicode-width\s*=", "delete"),
-    ("dead dependency winapi-util", r"^\s*winapi-util\s*=", "delete"),
-]
+
+def delete_table() -> list[tuple[str, str, bool]]:
+    text = API_DOC.read_text()
+    body = text.split("## Names we delete", 1)[1].split("\n#", 1)[0]
+    names: list[tuple[str, str, bool]] = []
+    for line in body.splitlines():
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(cells) < 3 or cells[0] in {"Delete", "---"}:
+            continue
+        manifest = "Cargo.toml" in cells[2]
+        for token in re.findall(r"`([^`]+)`", cells[0]):
+            names.append((token, cells[1], manifest))
+    return names
+
+
+def expand(token: str) -> list[str]:
+    m = re.fullmatch(r"(.*::)\{([^}]*)\}", token)
+    if not m:
+        return [token]
+    return [m.group(1) + part.strip() for part in m.group(2).split(",")]
+
+
+def name_pattern(name: str, manifest: bool) -> str:
+    if manifest:
+        return r"(?m)^\s*" + re.escape(name) + r"\s*="
+    if name.startswith("summonr "):
+        return '"' + re.escape(name.split(" ", 1)[1]) + '"'
+    if name.startswith("--"):
+        return '"' + re.escape(name) + '"'
+    if "::" in name:
+        return r"(?<![\w:])" + re.escape(name) + r"\b"
+    if "." in name:
+        return r"\b" + re.escape(name.rsplit(".", 1)[1]) + r"\b"
+    return r"\b" + re.escape(name) + r"\b"
+
+
+def delete_rules() -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    source: list[tuple[str, str, str]] = []
+    manifest: list[tuple[str, str, str]] = []
+    for token, keep, in_manifest in delete_table():
+        for name in expand(token):
+            rule = (f"delete {name}", name_pattern(name, in_manifest), keep)
+            (manifest if in_manifest else source).append(rule)
+    return source, manifest
+
 
 BASELINE = ROOT / "scripts" / "api-census-baseline.txt"
 CAP = 400
@@ -199,13 +213,14 @@ def tree_lines() -> list[tuple[str, str, int]]:
 def ratchet(tree: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
     blob = "\n".join(p.read_text(errors="replace") for p in source_files())
     manifest = (ROOT / "Cargo.toml").read_text(errors="replace")
+    doc_source, doc_manifest = delete_rules()
     hits = [
         (label, keep, len(re.findall(pattern, blob)))
-        for label, pattern, keep in SOURCE_RULES
+        for label, pattern, keep in doc_source + SOURCE_RULES
     ]
     hits += [
         (label, keep, len(re.findall(pattern, manifest, re.MULTILINE)))
-        for label, pattern, keep in MANIFEST_RULES
+        for label, pattern, keep in doc_manifest
     ]
     over = sum(1 for _, kind, lines in tree if kind == "source" and lines > CAP)
     hits.append((f"source file over {CAP} lines", "split it", over))

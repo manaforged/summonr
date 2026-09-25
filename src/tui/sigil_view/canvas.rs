@@ -57,6 +57,9 @@ pub(super) fn cell() -> Metrics {
     })
 }
 
+pub(super) const DIALOG_CELLS: f32 = 72.0;
+pub(super) const WIDE_DIALOG_CELLS: f32 = 120.0;
+
 pub(super) fn dialog_width(cols: u16, max_cells: f32) -> f32 {
     if WINDOW.load(Ordering::Relaxed) {
         520.0
@@ -89,8 +92,11 @@ pub(super) fn overlay_list_row() -> f32 {
     }
 }
 
+pub(super) const DIALOG_CHROME: u16 = 16;
+const DIALOG_LIST_CAP: usize = 14;
+
 pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
-    overlay_room(count, rows, 16).min(14)
+    overlay_room(count, rows, DIALOG_CHROME).min(DIALOG_LIST_CAP)
 }
 
 pub(super) fn overlay_room(count: usize, rows: u16, used: u16) -> usize {
@@ -184,29 +190,5 @@ pub(super) fn write_at(
             row[x + pad] = cell("");
         }
         x += step;
-    }
-}
-
-pub(crate) fn ellipsize(text: &str, width: usize) -> String {
-    if cell_width(text) <= width {
-        return text.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut shown = text.to_string();
-    truncate(&mut shown, width.saturating_sub(1));
-    shown.push('…');
-    shown
-}
-
-pub(super) fn truncate(text: &mut String, width: usize) {
-    let mut used = 0;
-    let end = text.grapheme_indices(true).find_map(|(index, grapheme)| {
-        used += cell_width(grapheme);
-        (used > width).then_some(index)
-    });
-    if let Some(end) = end {
-        text.truncate(end);
     }
 }

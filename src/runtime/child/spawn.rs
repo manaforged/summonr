@@ -24,7 +24,7 @@ impl<P: Provider> Loop<P> {
                 text: format!(
                     "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
                     access_name(record.access),
-                    bounded(&record.assignment, LAST_CHARS)
+                    ellipsize(&record.assignment, LAST_CHARS)
                 ),
                 success: true,
                 mutated: false,

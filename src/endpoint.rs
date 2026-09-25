@@ -274,20 +274,13 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
         if endpoint.keyless() {
             return LoginGroup::Local;
         }
-        if preset.oauth.is_some()
-            || preset
-                .env_keys
-                .iter()
-                .any(|key| key.contains("CODING") || key.starts_with("OPENCODE_"))
-            || preset.base_url.contains("/coding/")
-            || preset.base_url.contains("opencode.ai")
-        {
+        if preset.plan {
             return LoginGroup::Plan;
         }
         return LoginGroup::Key;
     }
     let url = endpoint.base_url.as_deref().unwrap_or("");
-    if url.contains("/coding/") || url.contains("opencode.ai") || url.contains("githubcopilot") {
+    if url.contains("/coding/") || hosted(url).is_some_and(|preset| preset.plan) {
         LoginGroup::Plan
     } else if endpoint.keyless() {
         LoginGroup::Local

@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use super::fmt::*;
+use super::health::Health;
 use super::{Call, Round, TOP};
 
 pub(super) struct View<'a> {
@@ -113,76 +114,15 @@ pub(super) fn render(view: &View) -> String {
         line(&mut out, format!("failed  {failed} tool call(s)"));
     }
 
-    let mut per_tool: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
-    let mut native = 0_usize;
-    let mut shell = 0_usize;
-    let mut commands = 0_usize;
-    let mut pipes = 0_usize;
+    let mut tally = Health::default();
     let mut first_edit = None;
     for (index, call) in calls.iter().enumerate() {
-        let entry = per_tool.entry(call.name.as_str()).or_default();
-        entry.0 += 1;
-        if !call.success {
-            entry.1 += 1;
-        }
-        let args: serde_json::Value = serde_json::from_str(&call.arguments).unwrap_or_default();
-        if call.name == "run_command" {
-            commands += 1;
-            let command = args
-                .get("command")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            if crate::tools::command::searchish(command) {
-                if crate::tools::command::native_read_args(command).is_some() {
-                    native += 1;
-                } else {
-                    shell += 1;
-                }
-            }
-            if head_tail(command) {
-                pipes += 1;
-            }
-        } else if call.name == "read" {
-            let op = args
-                .get("op")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            let pattern = args
-                .get("pattern")
-                .and_then(serde_json::Value::as_str)
-                .unwrap_or_default();
-            if op == "search" || (op.is_empty() && !pattern.is_empty()) {
-                native += 1;
-            }
-        } else if call.name == "grep" {
-            native += 1;
-        }
-        if first_edit.is_none() && call.success && matches!(call.name.as_str(), "edit" | "write") {
+        if tally.add(&call.name, &call.arguments, call.success) && first_edit.is_none() {
             first_edit = Some(index + 1);
         }
     }
     if !calls.is_empty() {
-        let mut tools: Vec<String> = per_tool
-            .iter()
-            .map(|(name, (calls, failed))| {
-                if *failed > 0 {
-                    format!("{name} {calls} ({failed} failed)")
-                } else {
-                    format!("{name} {calls}")
-                }
-            })
-            .collect();
-        tools.sort();
-        let mut health = vec![format!("calls    {}", tools.join(" · "))];
-        if native + shell > 0 {
-            health.push(format!("search   native {native} · shell {shell}"));
-        }
-        if commands > 0 {
-            health.push(format!(
-                "pipes    {pipes} of {commands} run_command calls pipe to head/tail ({})",
-                share(pipes as u64, commands as u64)
-            ));
-        }
+        let mut health = tally.lines();
         health.push(match first_edit {
             Some(index) => format!("first successful edit/write at call {index}"),
             None => "no successful edit/write".to_string(),

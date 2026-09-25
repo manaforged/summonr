@@ -1,4 +1,4 @@
-use super::canvas::ellipsize;
+use crate::text::ellipsize;
 
 mod chrome;
 mod composer;

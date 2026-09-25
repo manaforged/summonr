@@ -13,7 +13,7 @@ use super::panels;
 use super::todos;
 use super::{App, Entry, canvas, cell_width};
 use crate::prefs::Prefs;
-use crate::tui::{ToolState, short_session};
+use crate::tui::ToolState;
 
 pub(in crate::tui::sigil_view) fn layer(
     app: App,
@@ -73,7 +73,7 @@ fn fit(parts: &mut Vec<(Part, String)>, width: usize) {
     }
     let over = used(parts).saturating_sub(width);
     if let Some((_, text)) = parts.iter_mut().find(|(part, _)| *part == Part::Model) {
-        *text = canvas::ellipsize(text, cell_width(text).saturating_sub(over));
+        *text = crate::text::ellipsize(text, cell_width(text).saturating_sub(over));
     }
 }
 
@@ -111,7 +111,7 @@ fn header(app: App, width: usize) -> NodeBuilder {
             }
             parts.push((
                 Part::Session,
-                format!("ses {}", short_session(&model.session)),
+                format!("ses {}", crate::session::short(&model.session)),
             ));
             parts.push((Part::Mode, mode.to_owned()));
             fit(&mut parts, width);

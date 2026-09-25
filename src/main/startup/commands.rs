@@ -68,7 +68,7 @@ pub(super) fn print_sessions() -> Result<()> {
     for info in sessions.iter().rev() {
         println!(
             "{}\t{}\t{}\t{}",
-            summonr::short_session(&info.id),
+            summonr::short(&info.id),
             info.name.as_deref().unwrap_or("-"),
             info.cwd.as_deref().unwrap_or("-"),
             info.preview
@@ -141,7 +141,7 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
             row.tree.branch,
             row.ahead,
             if row.dirty { "dirty" } else { "clean" },
-            row.session.as_deref().map_or("-", summonr::short_session),
+            row.session.as_deref().map_or("-", summonr::short),
             row.tree.path.display()
         );
     }

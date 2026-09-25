@@ -2,7 +2,6 @@ use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, app_shell, container, hint_bar,
 };
 
-use super::app::Overlay;
 use super::view::shell;
 use crate::tui::Cmd;
 
@@ -45,23 +44,23 @@ pub(super) fn root(app: App) -> NodeBuilder {
                                 side.pane_focus.get(),
                                 side.settings_open.get(),
                                 side.settings_sel.get(),
-                                side.hotkeys_open.get(),
-                                side.hotkey_sel.get(),
-                                side.hotkey_recording.get(),
-                                side.hotkey_note.get(),
-                                side.editing_model.get(),
-                                side.model_draft.get(),
-                                side.model_choices.get(),
-                                side.model_sel.get(),
-                                side.model_loading.get(),
-                                side.model_error.get(),
-                                side.workflow_open.get(),
-                                side.workflow_name.get(),
-                                side.workflow_names.get(),
-                                side.workflow_seats.get(),
-                                side.workflow_sel.get(),
-                                side.workflow_naming.get(),
-                                side.workflow_draft.get(),
+                                side.hotkeys.open.get(),
+                                side.hotkeys.sel.get(),
+                                side.hotkeys.recording.get(),
+                                side.hotkeys.note.get(),
+                                side.picker.open.get(),
+                                side.picker.draft.get(),
+                                side.picker.choices.get(),
+                                side.picker.sel.get(),
+                                side.picker.loading.get(),
+                                side.picker.error.get(),
+                                side.workflow.open.get(),
+                                side.workflow.name.get(),
+                                side.workflow.names.get(),
+                                side.workflow.seats.get(),
+                                side.workflow.sel.get(),
+                                side.workflow.naming.get(),
+                                side.workflow.draft.get(),
                                 side.diff_view.get(),
                                 side.view_edit.get(),
                             ));
@@ -83,18 +82,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
 }
 
 fn overlay(app: &App) -> Option<NodeBuilder> {
-    match app.overlay() {
-        Some(Overlay::Help) => Some(super::help::layer(app.clone())),
-        Some(Overlay::Search) => Some(super::search::layer(app.clone())),
-        Some(Overlay::Sessions) => Some(super::sessions::layer(app.clone())),
-        Some(Overlay::Usage) => Some(super::usage::layer(app.clone())),
-        Some(Overlay::Auth) => Some(super::settings::auth_layer(app.clone())),
-        Some(Overlay::Model) => Some(super::settings::model_picker_layer(app.clone())),
-        Some(Overlay::Workflow) => Some(super::settings::workflow_layer(app.clone())),
-        Some(Overlay::Settings) => Some(super::settings::settings_layer(app.clone())),
-        Some(Overlay::Hotkeys) => Some(super::settings::hotkeys_layer(app.clone())),
-        Some(Overlay::Context | Overlay::Cache) | None => None,
-    }
+    app.overlay().and_then(|overlay| overlay.layer(app.clone()))
 }
 
 fn pane(app: App) -> NodeBuilder {

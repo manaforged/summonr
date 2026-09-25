@@ -2,7 +2,7 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn move_setting(&self, delta: isize) {
-        if self.editing_model.peek() {
+        if self.picker.open.peek() {
             return;
         }
         let last = super::settings::setting_rows(self).len().saturating_sub(1);
@@ -23,7 +23,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn adjust_setting(&self) {
         use super::settings::Setting;
 
-        if self.editing_model.peek() {
+        if self.picker.open.peek() {
             return;
         }
         let Some(setting) = self.selected_setting() else {
@@ -71,7 +71,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn toggle_options(&self) {
         match self.overlay() {
-            Some(Overlay::Workflow) => self.workflow_open.set(false),
+            Some(Overlay::Workflow) => self.workflow.open.set(false),
             Some(Overlay::Hotkeys) => self.close_hotkeys(),
             Some(Overlay::Settings) | None => {
                 let open = !self.settings_open.peek();
@@ -87,24 +87,25 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn open_hotkeys(&self) {
-        self.hotkey_sel.set(0);
-        self.hotkey_recording.set(false);
-        self.hotkey_note.set(String::new());
-        self.hotkeys_open.set(true);
+        self.hotkeys.sel.set(0);
+        self.hotkeys.recording.set(false);
+        self.hotkeys.note.set(String::new());
+        self.hotkeys.open.set(true);
     }
 
     pub(in crate::tui::sigil_view) fn close_hotkeys(&self) {
-        self.hotkey_recording.set(false);
-        self.hotkey_note.set(String::new());
-        self.hotkeys_open.set(false);
+        self.hotkeys.recording.set(false);
+        self.hotkeys.note.set(String::new());
+        self.hotkeys.open.set(false);
     }
 
     pub(in crate::tui::sigil_view) fn move_hotkey(&self, delta: isize) {
-        if self.hotkey_recording.peek() {
+        if self.hotkeys.recording.peek() {
             return;
         }
-        self.hotkey_sel.set(
-            self.hotkey_sel
+        self.hotkeys.sel.set(
+            self.hotkeys
+                .sel
                 .peek()
                 .saturating_add_signed(delta)
                 .min(Hotkey::ALL.len() - 1),
@@ -112,9 +113,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn edit_hotkey(&self) {
-        if !self.hotkey_recording.peek() {
-            self.hotkey_note.set(String::new());
-            self.hotkey_recording.set(true);
+        if !self.hotkeys.recording.peek() {
+            self.hotkeys.note.set(String::new());
+            self.hotkeys.recording.set(true);
         }
     }
 
@@ -123,25 +124,25 @@ impl App {
             model.prefs.hotkeys = Default::default();
         });
         let prefs = self.model.peek().prefs.clone();
-        self.hotkey_recording.set(false);
-        self.hotkey_note.set(String::new());
+        self.hotkeys.recording.set(false);
+        self.hotkeys.note.set(String::new());
         self.persist(&prefs);
         self.refresh();
     }
 
     pub(in crate::tui::sigil_view) fn route_hotkey(&self, key: char) -> bool {
-        if self.hotkey_recording.peek() {
+        if self.hotkeys.recording.peek() {
             if !crate::prefs::available(key) {
-                self.hotkey_note.set(format!("ctrl+{key} is reserved"));
+                self.hotkeys.note.set(format!("ctrl+{key} is reserved"));
                 return true;
             }
-            let action = Hotkey::ALL[self.hotkey_sel.peek().min(Hotkey::ALL.len() - 1)];
+            let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
             self.model_mut(|model| {
                 let _ = model.prefs.hotkeys.assign(action, key);
             });
             let prefs = self.model.peek().prefs.clone();
-            self.hotkey_recording.set(false);
-            self.hotkey_note.set(String::new());
+            self.hotkeys.recording.set(false);
+            self.hotkeys.note.set(String::new());
             self.persist(&prefs);
             self.refresh();
             return true;
@@ -210,25 +211,22 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn effort_command(&self, argument: Option<&str>) {
-        let next = match argument {
-            None => self
-                .model
-                .get()
-                .snapshot
-                .effort
-                .unwrap_or(crate::provider::Effort::None)
-                .next(),
-            Some(level) => match crate::provider::Effort::parse(level) {
-                Some(effort) => effort,
-                None => {
-                    self.push_entry(Entry::Error(format!(
-                        "effort takes none, low, medium, or high, not `{level}`"
-                    )));
-                    self.refresh();
-                    return;
-                }
-            },
+    pub(in crate::tui::sigil_view) fn commit_effort(&self) {
+        let level = self.effort.picked();
+        self.effort.open.set(false);
+        self.effort_command(level.as_str());
+    }
+
+    pub(in crate::tui::sigil_view) fn effort_command(&self, level: &str) {
+        let next = match crate::provider::Effort::parse(level) {
+            Some(effort) => effort,
+            None => {
+                self.push_entry(Entry::Error(format!(
+                    "effort takes none, low, medium, or high, not `{level}`"
+                )));
+                self.refresh();
+                return;
+            }
         };
         self.model_mut(|model| model.snapshot.effort = Some(next));
         drop(self.cmd.send(Cmd::SetEffort(Some(next))));

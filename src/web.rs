@@ -118,7 +118,7 @@ impl Search {
         if !status.is_success() {
             return Err(Error::Tool(format!(
                 "web_search HTTP {status}: {}",
-                crate::child::bounded(&flat(&body), 200)
+                crate::text::ellipsize(&flat(&body), 200)
             )));
         }
         if !body.contains("<rss") {
@@ -149,7 +149,7 @@ impl Search {
 }
 
 fn client() -> Result<Session> {
-    Session::builder()
+    let builder = Session::builder()
         .browser(Browser::latest(Family::Chrome))
         .timeout(
             TimeoutConfig::new()
@@ -162,9 +162,8 @@ fn client() -> Result<Session> {
             } else {
                 RedirectAction::Follow
             }
-        }))
-        .build()
-        .map_err(|error| Error::Tool(format!("http client: {error}")))
+        }));
+    crate::credentials::session(builder)
 }
 
 fn safe_redirect(url: &Uri) -> bool {

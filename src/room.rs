@@ -6,6 +6,7 @@ use crate::bus;
 use crate::durable::store;
 use crate::error::{Error, Result};
 
+mod clients;
 mod host;
 mod serve;
 
@@ -119,7 +120,7 @@ fn setup_claude(cwd: &Path, root: &Path) -> Result<String> {
 fn setup_codex(root: &Path) -> Result<String> {
     let skill = install_skill(root)?;
     let path = root.join("config.toml");
-    let text = std::fs::read_to_string(&path).unwrap_or_default();
+    let text = store::read_or_empty(&path)?;
     let mut doc: toml_edit::DocumentMut = text
         .parse()
         .map_err(|error| Error::Config(format!("{} is not TOML: {error}", path.display())))?;

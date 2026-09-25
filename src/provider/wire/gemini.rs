@@ -135,7 +135,7 @@ fn model_parts(message: &Message, model: &str) -> crate::error::Result<Vec<Value
     } else {
         &[]
     };
-    let foreign = signatures.is_empty() && model.contains("gemini-3");
+    let foreign = signatures.is_empty() && super::traits::traits(model).skip_signature;
     let signed = |mut part: Value, slot: usize| {
         if let Some(signature) = signatures.get(slot).filter(|found| !found.is_empty()) {
             part["thoughtSignature"] = json!(signature);

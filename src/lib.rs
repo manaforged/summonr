@@ -5,7 +5,7 @@ pub mod askpass;
 mod bundle;
 pub mod catalog;
 mod checkpoint;
-mod child;
+pub mod child;
 mod command;
 mod config;
 mod credentials;
@@ -46,6 +46,7 @@ pub mod secret;
 mod session;
 mod shell;
 mod skills;
+mod text;
 mod tools;
 mod verify;
 mod web;
@@ -84,7 +85,7 @@ pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
     Replay, SessionInfo, Spend, export as export_session, last_for, list as list_sessions,
     profile as profile_session, profile_all as profile_sessions, resolve_id as resolve_session,
-    set_name as name_session, short as short_session,
+    set_name as name_session, short,
 };
 #[cfg(all(windows, feature = "windows-sandbox"))]
 pub use tools::sandbox::windows::entry as sandbox_entry;

@@ -119,7 +119,7 @@ fn cap_rows(lines: Vec<String>) -> Vec<String> {
     let limit = super::read::READ_DEFAULT_LIMIT;
     let mut lines = lines
         .iter()
-        .map(|line| crate::child::bounded(line, 160))
+        .map(|line| crate::text::ellipsize(line, 160))
         .collect::<Vec<_>>();
     if lines.len() > limit {
         let skipped = lines.len() - limit;

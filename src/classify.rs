@@ -282,7 +282,7 @@ pub fn render(decision: &Decision) -> String {
 }
 
 fn headline(name: &str, value: &str, confidence: Option<f64>) -> String {
-    let value = crate::tui::ellipsize(value, 28);
+    let value = crate::text::ellipsize(value, 28);
     match confidence {
         Some(confidence) => format!("{name:<16} {value:<28} conf {confidence:.2}\n"),
         None => format!("{name:<16} {value}\n"),
@@ -298,7 +298,7 @@ fn bars(probabilities: &BTreeMap<String, f64>, label: impl Fn(&str) -> String) -
         let bar: String = "█".repeat(filled) + &"░".repeat(WIDTH - filled);
         out.push_str(&format!(
             "  {:<18} {bar} {share:.2}\n",
-            crate::tui::ellipsize(&label(key), 18)
+            crate::text::ellipsize(&label(key), 18)
         ));
     }
     out

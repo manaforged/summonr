@@ -8,10 +8,27 @@ use super::{App, canvas};
 use crate::tui::Cmd;
 use crate::workflow::Role;
 
+pub(in crate::tui::sigil_view) fn keys() -> Bindings {
+    vec![
+        press("d", |app, event| {
+            if app.workflow_keys() {
+                event.stop_propagation();
+                app.clear_workflow_seat();
+            }
+        }),
+        press("s", |app, event| {
+            if app.workflow_keys() {
+                event.stop_propagation();
+                app.begin_workflow_save();
+            }
+        }),
+    ]
+}
+
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     shell(
-        app.workflow_open,
+        app.workflow.open,
         title(&app),
         app.viewport.peek().0,
         container()
@@ -21,7 +38,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .gap(canvas::overlay_gap()),
             )
             .children_reactive(move || {
-                if paint.workflow_naming.get() {
+                if paint.workflow.naming.get() {
                     return naming(&paint);
                 }
                 seats(&paint)
@@ -30,7 +47,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 }
 
 fn title(app: &App) -> String {
-    let name = app.workflow_name.peek();
+    let name = app.workflow.name.peek();
     if name.is_empty() {
         "⚙ workflow (unsaved)".to_string()
     } else {
@@ -42,8 +59,8 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
     let save = app.clone();
     vec![
         container().child(
-            text_edit(app.workflow_draft)
-                .caret_position(app.workflow_caret)
+            text_edit(app.workflow.draft)
+                .caret_position(app.workflow.caret)
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())
                 .height(canvas::overlay_field()),
@@ -55,9 +72,9 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
 
 fn seats(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
-    let dragging = app.drag_from.get();
-    let over = app.drag_over.get();
-    let selected = app.workflow_sel.get();
+    let dragging = app.workflow.drag_from.get();
+    let over = app.workflow.drag_over.get();
+    let selected = app.workflow.sel.get();
     let driving = {
         let model = app.model.get();
         format!(
@@ -70,7 +87,8 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
         .enumerate()
         .map(|(index, role)| {
             let seat = app
-                .workflow_seats
+                .workflow
+                .seats
                 .get()
                 .get(index)
                 .cloned()
@@ -105,8 +123,8 @@ fn seats(app: &App) -> Vec<NodeBuilder> {
 
 fn saved(app: &App) -> NodeBuilder {
     let close = app.clone();
-    let names = app.workflow_names.get();
-    let current = app.workflow_name.get();
+    let names = app.workflow.names.get();
+    let current = app.workflow.name.get();
     let mut row = container()
         .layout(
             LayoutStyle::flex_row()
@@ -159,26 +177,26 @@ fn entry(
     let lit = active || over;
     pick(lit, format!("{marker} {role}"), seat.to_string())
         .pointer_down(move |event| {
-            press.workflow_sel.set(index);
-            press.drag_from.set(Some(index));
-            press.drag_over.set(Some(index));
+            press.workflow.sel.set(index);
+            press.workflow.drag_from.set(Some(index));
+            press.workflow.drag_over.set(Some(index));
             event.capture_pointer();
             event.stop_propagation();
         })
         .pointer_move(move |event| {
-            if hover.drag_from.peek().is_some() {
-                hover.drag_over.set(Some(index));
+            if hover.workflow.drag_from.peek().is_some() {
+                hover.workflow.drag_over.set(Some(index));
             }
             event.stop_propagation();
         })
         .pointer_up(move |event| {
-            let Some(from) = drop.drag_from.peek() else {
+            let Some(from) = drop.workflow.drag_from.peek() else {
                 return;
             };
-            drop.drag_from.set(None);
-            drop.drag_over.set(None);
+            drop.workflow.drag_from.set(None);
+            drop.workflow.drag_over.set(None);
             if from == index {
-                drop.workflow_sel.set(index);
+                drop.workflow.sel.set(index);
                 drop.pick_workflow_seat();
             } else {
                 drop.copy_seat(from, index);

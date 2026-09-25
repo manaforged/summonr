@@ -1,4 +1,5 @@
 use super::*;
+use crate::tools::Builtin;
 
 impl Model {
     pub(in crate::tui::sigil_view) fn set_busy(&mut self, activity: Option<Activity>) {
@@ -65,12 +66,12 @@ impl Model {
                 name,
                 arguments,
             } => {
-                let shown = match name.as_str() {
-                    "show_image" => Some((arguments.clone(), false)),
-                    "read" | "read_file" => Some((arguments.clone(), true)),
+                let shown = match (Builtin::of(&name), crate::tools::retired_op(&name)) {
+                    (Some(Builtin::Read), Some("image")) => Some((arguments.clone(), false)),
+                    (Some(Builtin::Read), None | Some("file")) => Some((arguments.clone(), true)),
                     _ => None,
                 };
-                if name == "todo" {
+                if Builtin::is(&name, Builtin::Todo) {
                     self.apply_todos(&arguments, None);
                 }
                 self.start_tool(id, name, arguments);
@@ -181,11 +182,11 @@ impl Model {
         if let Event::ToolCall {
             name, arguments, ..
         } = &event
-            && name == "todo"
+            && Builtin::is(name, Builtin::Todo)
         {
             self.apply_todos(arguments, Some(&crate::child::tag(id)));
         }
-        let tag: String = id.chars().take(8).collect();
+        let tag = crate::child::tag(id);
         let compact = ToolOutput::Compact;
         let (last, done, failed) = match event {
             Event::ToolCall {

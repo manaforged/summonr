@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use crate::durable::log::{self, Line};
 use crate::error::Result;
 
-use super::fmt::{count, head_tail, line, secs, share};
+use super::fmt::{count, line, secs, share};
+use super::health::Health;
 
 pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     let home = crate::prompt::summonr_home()?;
@@ -23,11 +24,7 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
     let mut cached = 0_u64;
     let mut warm_input = 0_u64;
     let mut warm_cached = 0_u64;
-    let mut per_tool: BTreeMap<String, (usize, usize)> = BTreeMap::new();
-    let mut native = 0_usize;
-    let mut shell = 0_usize;
-    let mut commands = 0_usize;
-    let mut pipes = 0_usize;
+    let mut health = Health::default();
     let mut first_edit: Vec<usize> = Vec::new();
     let mut rss: Vec<u64> = Vec::new();
     for session in &sessions {
@@ -76,41 +73,7 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
                     millis = millis.saturating_add(ms);
                     chars = chars.saturating_add(text.chars().count() as u64);
                     let (name, arguments) = pending.remove(&call).unwrap_or_default();
-                    let entry = per_tool.entry(name.clone()).or_default();
-                    entry.0 += 1;
-                    if !success {
-                        entry.1 += 1;
-                    }
-                    let args: serde_json::Value =
-                        serde_json::from_str(&arguments).unwrap_or_default();
-                    if name == "run_command" {
-                        commands += 1;
-                        let command = args
-                            .get("command")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default();
-                        if crate::tools::command::searchish(command) {
-                            shell += 1;
-                        }
-                        if head_tail(command) {
-                            pipes += 1;
-                        }
-                    } else if name == "read" {
-                        let op = args
-                            .get("op")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default();
-                        let pattern = args
-                            .get("pattern")
-                            .and_then(serde_json::Value::as_str)
-                            .unwrap_or_default();
-                        if op == "search" || (op.is_empty() && !pattern.is_empty()) {
-                            native += 1;
-                        }
-                    } else if name == "grep" {
-                        native += 1;
-                    }
-                    if !edited && success && matches!(name.as_str(), "edit" | "write") {
+                    if health.add(&name, &arguments, success) && !edited {
                         edited = true;
                         first_edit.push(index);
                     }
@@ -162,34 +125,8 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
             count(output)
         ),
     );
-    let mut tools: Vec<String> = per_tool
-        .iter()
-        .map(|(name, (calls, failed))| {
-            if *failed > 0 {
-                format!("{name} {calls} ({failed} failed)")
-            } else {
-                format!("{name} {calls}")
-            }
-        })
-        .collect();
-    tools.sort();
-    if !tools.is_empty() {
-        line(&mut out, format!("calls    {}", tools.join(" · ")));
-    }
-    if native + shell > 0 {
-        line(
-            &mut out,
-            format!("search   native {native} · shell {shell}"),
-        );
-    }
-    if commands > 0 {
-        line(
-            &mut out,
-            format!(
-                "pipes    {pipes} of {commands} run_command calls pipe to head/tail ({})",
-                share(pipes as u64, commands as u64)
-            ),
-        );
+    for text in health.lines() {
+        line(&mut out, text);
     }
     if calls > 0 {
         line(

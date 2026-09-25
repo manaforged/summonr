@@ -1,6 +1,9 @@
 use std::path::Path;
 
-use super::{Block, builtin_deny, split_segments, unquoted, write_block_segments};
+use super::{
+    Block, Cwd, Hazard, TEXT_HAZARDS, any_hit, builtin_deny, split_segments, subcommand, unquoted,
+    verb_row, write_block_segments,
+};
 
 pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
     let segments = split_segments(command.trim());
@@ -13,9 +16,11 @@ pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
     ) {
         return Some("it writes a protected path");
     }
-    let moved = segments
-        .iter()
-        .any(|segment| matches!(verb(&argv(segment)).as_deref(), Some("cd" | "pushd")));
+    let moved = segments.iter().any(|segment| {
+        verb(&argv(segment))
+            .and_then(|verb| verb_row(&verb))
+            .is_some_and(|row| row.cwd != Cwd::Stays)
+    });
     segments
         .iter()
         .find_map(|segment| risky(segment, workspace, moved))
@@ -39,34 +44,24 @@ fn risky(segment: &str, workspace: &Path, moved: bool) -> Option<&'static str> {
     let verb = verb(&words)?;
     let args = &words[1..];
     let lower = segment.to_ascii_lowercase();
-    if lower.contains("drop database") || lower.contains("drop table") {
-        return Some("it drops database objects");
+    if let Some((_, reason)) = TEXT_HAZARDS.iter().find(|(text, _)| lower.contains(text)) {
+        return Some(reason);
     }
-    match verb.as_str() {
-        "rm" if args.iter().any(|arg| recursive(arg)) && !contained(args, workspace, moved) => {
-            Some("it deletes recursively outside the workspace")
-        }
-        "find" if args.iter().any(|arg| arg == "-delete") => Some("it deletes files"),
-        "sed"
-            if args
+    match verb_row(&verb)?.hazard {
+        Hazard::None => None,
+        Hazard::Args(rules) => rules
+            .iter()
+            .find(|rule| {
+                any_hit(rule.when, args) && !(rule.outside && contained(args, workspace, moved))
+            })
+            .map(|rule| rule.reason),
+        Hazard::Sub { skip, rules } => {
+            let (sub, rest) = subcommand(args, skip)?;
+            rules
                 .iter()
-                .any(|arg| arg.starts_with("-i") || arg.starts_with("--in-place"))
-                && !contained(args, workspace, moved) =>
-        {
-            Some("it edits files outside the workspace in place")
+                .find(|rule| rule.names.contains(&sub) && any_hit(rule.when, rest))
+                .map(|rule| rule.reason)
         }
-        "shred" => Some("it destroys file contents"),
-        "git" => git(args),
-        "terraform" | "tofu" if args.iter().any(|arg| arg == "destroy") => {
-            Some("it destroys infrastructure")
-        }
-        "kubectl" if args.first().is_some_and(|arg| arg == "delete") => {
-            Some("it deletes cluster resources")
-        }
-        "docker" | "podman" if args.iter().any(|arg| arg == "prune") => {
-            Some("it deletes container data")
-        }
-        _other => None,
     }
 }
 
@@ -86,53 +81,4 @@ fn contained(args: &[String], workspace: &Path, moved: bool) -> bool {
                 && !target.starts_with('~')
                 && !target.contains('`')
         })
-}
-
-fn recursive(arg: &str) -> bool {
-    arg == "--recursive"
-        || (arg.starts_with('-') && !arg.starts_with("--") && arg.contains(['r', 'R']))
-}
-
-fn git(args: &[String]) -> Option<&'static str> {
-    let mut rest = args.iter();
-    let command = loop {
-        let word = rest.next()?;
-        if matches!(word.as_str(), "-C" | "-c") {
-            rest.next();
-        } else if !word.starts_with('-') {
-            break word.as_str();
-        }
-    };
-    let rest: Vec<&str> = rest.map(String::as_str).collect();
-    let has = |flag: &str| rest.contains(&flag);
-    match command {
-        "reset" if has("--hard") => Some("it discards uncommitted changes"),
-        "clean"
-            if has("--force")
-                || rest.iter().any(|arg| {
-                    arg.starts_with('-') && !arg.starts_with("--") && arg.contains('f')
-                }) =>
-        {
-            Some("it deletes untracked files")
-        }
-        "checkout" | "restore" if has(".") => Some("it discards uncommitted changes"),
-        "branch" if has("-D") || (has("--delete") && has("--force")) => {
-            Some("it force-deletes a branch")
-        }
-        "push"
-            if has("--force")
-                || has("-f")
-                || has("--force-with-lease")
-                || has("--delete")
-                || has("--mirror")
-                || rest
-                    .iter()
-                    .any(|arg| arg.starts_with('+') || arg.starts_with(':')) =>
-        {
-            Some("it rewrites or deletes remote history")
-        }
-        "stash" if has("drop") || has("clear") => Some("it deletes stashed work"),
-        "filter-branch" | "filter-repo" => Some("it rewrites history"),
-        _other => None,
-    }
 }

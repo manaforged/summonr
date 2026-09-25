@@ -96,7 +96,7 @@ fn only_flags_above_the_gate_reach_the_reviewer() {
 #[test]
 fn a_long_path_keeps_its_end_where_the_filename_is() {
     let long = "crates/modules/target/src/checkout/steps/place/inner/deep.rs";
-    let clipped = clip(long, 44);
+    let clipped = crate::text::ellipsize_start(long, 44);
     assert_eq!(clipped.chars().count(), 44);
     assert!(clipped.ends_with("deep.rs"), "got {clipped}");
 }

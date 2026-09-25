@@ -161,6 +161,7 @@ pub fn profile(path: &Path) -> Result<String> {
 
 mod aggregate;
 mod fmt;
+mod health;
 mod render;
 
 use render::{View, render};

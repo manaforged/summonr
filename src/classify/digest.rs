@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::tui::ellipsize as clip;
+use crate::text::ellipsize;
 
 const TASK_CHARS: usize = 400;
 const CLOSING_CHARS: usize = 600;
@@ -78,25 +78,26 @@ fn close(section: &str, body: &str, seen: &mut Seen) {
         return;
     }
     if section == "You" && seen.task.is_empty() {
-        seen.task = clip(&text.replace('\n', " "), TASK_CHARS);
+        seen.task = ellipsize(&text.replace('\n', " "), TASK_CHARS);
     }
     if section == "Assistant" {
-        seen.closing = clip(&text.replace('\n', " "), CLOSING_CHARS);
+        seen.closing = ellipsize(&text.replace('\n', " "), CLOSING_CHARS);
     }
 }
 
 fn capture_call(call: &str, seen: &mut Seen) {
+    use crate::tools::Builtin;
     let Some((name, rest)) = call.split_once('`') else {
         return;
     };
-    match name {
-        "run_command" => {
+    match Builtin::live(name) {
+        Some(Builtin::RunCommand) => {
             if let Some(command) = field(rest, "command") {
-                seen.commands.push(clip(&command, COMMAND_CHARS));
+                seen.commands.push(ellipsize(&command, COMMAND_CHARS));
             }
         }
-        "read" => seen.reads += 1,
-        "edit" | "write" => {
+        Some(Builtin::Read) => seen.reads += 1,
+        Some(Builtin::Edit | Builtin::Write) => {
             seen.edits += 1;
             if let Some(path) = field(rest, "path")
                 && !seen.files.contains(&path)
@@ -153,7 +154,7 @@ fn capture_output(line: &str, seen: &mut Seen) {
         && !seen.errors.iter().any(|kept| kept == trimmed)
     {
         seen.errors
-            .push(clip(&trimmed.replace('\n', " "), COMMAND_CHARS));
+            .push(ellipsize(&trimmed.replace('\n', " "), COMMAND_CHARS));
     }
 }
 

@@ -1,10 +1,5 @@
 use super::*;
 
-pub(super) const DESTRUCTIVE: [&str; 14] = [
-    "rm", "rmdir", "unlink", "mv", "cp", "chmod", "chown", "truncate", "tee", "dd", "ln", "shred",
-    "install", "rsync",
-];
-
 pub(super) enum Block {
     Outside(String),
     Protected(String),
@@ -63,17 +58,10 @@ pub(super) fn write_block_segments(
                 word.contains('=') || **word != verb && !word.ends_with(&format!("/{verb}"))
             })
             .skip(1);
-        let deletes_via_find = verb == "find"
-            && words
-                .iter()
-                .any(|word| word == "-delete" || word == "-exec" || word == "-execdir");
-        let creates = matches!(verb.as_str(), "mkdir" | "touch" | "md");
-        let edits_in_place = verb == "sed"
-            && words
-                .iter()
-                .any(|word| word.starts_with("-i") || word.starts_with("--in-place"));
-        let destructive =
-            DESTRUCTIVE.contains(&verb.as_str()) || deletes_via_find || edits_in_place;
+        let row = verb_row(&verb);
+        let write = row.map_or(Write::None, |row| row.write);
+        let creates = matches!(write, Write::Creates);
+        let destructive = write.destroys(&words);
         for word in &words {
             if let Some((_, target)) = word.split_once('>') {
                 let target = target.trim_start_matches(['>', '&', '|']);
@@ -100,7 +88,7 @@ pub(super) fn write_block_segments(
             if word.starts_with('-') {
                 continue;
             }
-            if verb == "cd" {
+            if row.is_some_and(|row| row.cwd == Cwd::Tracked) {
                 if is_outside(word, workspace, outside_cwd, roots) {
                     outside_cwd = true;
                 }
@@ -119,7 +107,7 @@ pub(super) fn write_block_segments(
                 targets.push(word.clone());
             }
         }
-        let checked: Vec<&String> = if DEST_ONLY.contains(&verb.as_str()) {
+        let checked: Vec<&String> = if matches!(write, Write::Last) {
             targets.last().into_iter().collect()
         } else {
             targets.iter().collect()
@@ -132,5 +120,3 @@ pub(super) fn write_block_segments(
     }
     None
 }
-
-pub(super) const DEST_ONLY: [&str; 5] = ["cp", "mv", "ln", "install", "rsync"];

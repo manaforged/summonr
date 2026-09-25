@@ -184,13 +184,16 @@ fn tally(events: &[Event], receipt: &mut Receipt) {
                 arguments,
             } => {
                 calls.insert(id.as_str(), name.as_str());
-                let canon = crate::tools::canonical(name);
+                let kind = crate::tools::Builtin::of(name);
+                let read = kind == Some(crate::tools::Builtin::Read);
                 let op = crate::tools::retired_op(name);
-                if canon == "web" || (canon == "read" && matches!(op, Some("search" | "list"))) {
+                if kind == Some(crate::tools::Builtin::Web)
+                    || (read && matches!(op, Some("search" | "list")))
+                {
                     receipt.searches += 1;
-                } else if name == "run_command" {
+                } else if kind == Some(crate::tools::Builtin::RunCommand) {
                     receipt.commands += 1;
-                } else if canon == "read"
+                } else if read
                     && matches!(op, None | Some("file"))
                     && let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments)
                 {

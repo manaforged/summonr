@@ -162,10 +162,6 @@ fn store(value: &Mutex<String>, next: String) {
     slot.push_str(&next);
 }
 
-fn cap(text: &str) -> String {
-    text.trim().chars().take(80).collect()
-}
-
 fn product(executable: &Path) -> Option<&OsStr> {
     let name = executable.file_stem()?;
     let test = executable.components().any(|part| {
@@ -213,7 +209,7 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsStri
         OsString::from("--agent"),
         OsString::from(AGENT),
         OsString::from("--title"),
-        OsString::from(cap(title)),
+        OsString::from(crate::text::ellipsize(title.trim(), 80)),
         OsString::from("--display-agent"),
         OsString::from(shown),
         OsString::from("--seq"),
@@ -224,14 +220,14 @@ fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsStri
 
 fn short_model(model: &str) -> String {
     let name = model.rsplit(['/', ':']).next().unwrap_or(model);
-    cap(name)
+    crate::text::ellipsize(name.trim(), 80)
 }
 
 fn folder(workspace: &Path) -> String {
     workspace
         .file_name()
         .and_then(|name| name.to_str())
-        .map(cap)
+        .map(|name| crate::text::ellipsize(name.trim(), 80))
         .unwrap_or_default()
 }
 

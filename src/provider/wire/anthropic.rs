@@ -1,6 +1,7 @@
 use serde_json::{Map, Value, json};
 
 use super::Chat;
+use super::traits::{Thinking, traits};
 use crate::provider::{CompletionRequest, Effort, Message, Role, StopReason, Usage};
 
 #[cfg(test)]
@@ -97,13 +98,14 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
         .effort
         .filter(|effort| *effort != Effort::None && !unthought)
     {
-        if ADAPTIVE.iter().any(|name| call.model.contains(name)) {
+        let thinking = traits(&call.model).thinking;
+        if thinking == Thinking::Adaptive {
             body.insert(
                 "output_config".to_string(),
                 json!({"effort": effort_name(effort)}),
             );
             body.insert("thinking".to_string(), json!({"type": "adaptive"}));
-        } else if BUDGETED.iter().any(|name| call.model.contains(name)) {
+        } else if thinking == Thinking::Budgeted {
             let budget = most / 4 * effort as u32;
             if (1024..most).contains(&budget) {
                 body.insert(
@@ -115,29 +117,6 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
     }
     Ok(Value::Object(body))
 }
-
-const ADAPTIVE: &[&str] = &[
-    "claude-opus-4-6",
-    "claude-sonnet-4-6",
-    "claude-opus-4-7",
-    "claude-opus-4-8",
-    "claude-opus-5",
-    "claude-sonnet-5",
-    "claude-fable-5",
-    "claude-mythos-5",
-];
-
-const BUDGETED: &[&str] = &[
-    "claude-3",
-    "claude-sonnet-4-5",
-    "claude-opus-4-5",
-    "claude-haiku-4-5",
-    "claude-opus-4-1",
-    "claude-opus-4-0",
-    "claude-sonnet-4-0",
-    "claude-opus-4-2025",
-    "claude-sonnet-4-2025",
-];
 
 fn breakpoint(part: &mut Value) {
     part["cache_control"] = json!({"type": "ephemeral"});

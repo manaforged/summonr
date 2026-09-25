@@ -5,7 +5,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::config;
-use crate::error::Result;
+use crate::durable::store;
+use crate::error::{Error, Result};
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 pub(crate) struct Entry {
@@ -128,11 +129,11 @@ fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
             .map(|(name, _)| name.clone()),
     );
     if import_peers && let Some(home) = &home {
-        let codex = read_toml(&home.join(".codex/config.toml"));
+        let codex = read_toml(&home.join(".codex/config.toml"))?;
         layers.push(toml_map(
             codex.as_ref().and_then(|file| file.get("mcp_servers")),
         ));
-        let claude = read_json(&home.join(".claude.json"));
+        let claude = read_json(&home.join(".claude.json"))?;
         layers.push(json_map(
             claude.as_ref().and_then(|file| file.get("mcpServers")),
         ));
@@ -154,13 +155,11 @@ fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
                 .map(str::to_string),
         );
     }
-    let local = read_json(&workspace.join(".mcp.json"));
+    let local = read_json(&workspace.join(".mcp.json"))?;
     let mut shared = json_map(local.as_ref().and_then(|file| file.get("mcpServers")));
     let path = workspace.join(".summonr/config.toml");
-    if path.is_file()
-        && let Ok(file) = config::parse(&path)
-    {
-        shared.extend(file.mcp);
+    if path.is_file() {
+        shared.extend(config::parse(&path)?.mcp);
     }
     shared.retain(|name, _entry| all || approved.contains(name));
     layers.push(shared);
@@ -168,12 +167,24 @@ fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
     Ok(layers)
 }
 
-fn read_json(path: &Path) -> Option<Value> {
-    serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+fn read_json(path: &Path) -> Result<Option<Value>> {
+    let text = store::read_or_empty(path)?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    serde_json::from_str(&text)
+        .map(Some)
+        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
 }
 
-fn read_toml(path: &Path) -> Option<toml::Value> {
-    toml::from_str(&std::fs::read_to_string(path).ok()?).ok()
+fn read_toml(path: &Path) -> Result<Option<toml::Value>> {
+    let text = store::read_or_empty(path)?;
+    if text.is_empty() {
+        return Ok(None);
+    }
+    toml::from_str(&text)
+        .map(Some)
+        .map_err(|error| Error::Config(format!("{}: {error}", path.display())))
 }
 
 fn json_map(value: Option<&Value>) -> BTreeMap<String, Entry> {

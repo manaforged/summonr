@@ -117,7 +117,7 @@ impl Server {
             .and_then(Value::as_str)
             .unwrap_or("mcp")
             .to_ascii_lowercase();
-        self.push = self.client.contains("claude")
+        self.push = super::clients::client(&self.client).is_some_and(|client| client.push)
             && std::env::var_os("SUMMONR_ROOM_PUSH").is_none_or(|value| value != "off");
         if let Some(path) = std::env::var_os("SUMMONR_ROOM_LOG") {
             drop(store::write(Path::new(&path), params.to_string()));
@@ -137,12 +137,9 @@ impl Server {
         if let Ok(kind) = std::env::var("SUMMONR_BUS_KIND") {
             return kind;
         }
-        for known in ["claude", "codex", "summoner", "summonr"] {
-            if self.client.contains(known) {
-                return known.to_string();
-            }
-        }
-        "mcp".to_string()
+        super::clients::client(&self.client)
+            .map_or("mcp", |client| client.kind)
+            .to_string()
     }
 
     fn join(&mut self, id: Option<&str>, kind: Option<&str>) -> Result<String> {

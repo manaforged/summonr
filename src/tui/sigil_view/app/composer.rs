@@ -81,7 +81,7 @@ impl App {
         self.commands.change(
             draft,
             &self.model.peek().snapshot.endpoint,
-            &self.model_facts.peek(),
+            &self.picker.facts.peek(),
         );
     }
 

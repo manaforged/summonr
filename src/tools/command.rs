@@ -7,16 +7,17 @@ use super::sandbox::Sandbox;
 use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, parse_args};
 
 pub(super) mod digest;
+mod native;
 pub(super) mod proc;
 mod rewrite;
 
 use digest::digest_is_lossy;
 pub(crate) use digest::searchish;
+pub(crate) use native::native_read_args;
 use proc::{
     ProcessGroup, StartedCommand, background_result, spawn_command, stop_command, stop_job,
     wait_shell,
 };
-pub(crate) use rewrite::native_read_args;
 use rewrite::{plan_write_note, readonly_verb, sandbox_grant, sandbox_note, slow_search_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
@@ -65,7 +66,7 @@ impl ToolRegistry {
         }
         let command = object_string(&args, "command")?;
         if let Some((read_args, pipe)) = native_read_args(command) {
-            let mut text = tokio::task::block_in_place(|| self.read(&read_args.to_string()))?;
+            let mut text = tokio::task::block_in_place(|| self.read(&read_args.to_json()))?;
             if let Some(pipe) = pipe {
                 text = pipe.apply(&text);
             }

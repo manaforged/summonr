@@ -31,7 +31,7 @@ pub(super) fn brief(arguments: &str) -> String {
         .or_else(|| value.get("url"))
         .and_then(serde_json::Value::as_str)
         .map_or_else(|| arguments.to_string(), str::to_string);
-    crate::child::bounded(&text.split_whitespace().collect::<Vec<_>>().join(" "), 80)
+    crate::text::ellipsize(&text.split_whitespace().collect::<Vec<_>>().join(" "), 80)
 }
 
 pub(super) fn secs(millis: u64) -> String {

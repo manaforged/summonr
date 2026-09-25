@@ -1,6 +1,6 @@
 use url::Url;
 
-use crate::child::bounded;
+use crate::text::ellipsize;
 
 const SNIPPET_MAX: usize = 280;
 
@@ -28,9 +28,9 @@ pub(super) fn parse_rss(xml: &str) -> Vec<Hit> {
         let title = field(item, "title").unwrap_or_else(|| url.clone());
         if !title.is_empty() {
             hits.push(Hit {
-                title: bounded(&flat(&title), 120),
+                title: ellipsize(&flat(&title), 120),
                 url,
-                snippet: bounded(
+                snippet: ellipsize(
                     &flat(&field(item, "description").unwrap_or_default()),
                     SNIPPET_MAX,
                 ),

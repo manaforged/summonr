@@ -11,7 +11,6 @@ use sigil::prelude::{NodeBuilder, Signal};
 use super::app::App;
 use super::canvas;
 use super::prelude::*;
-use crate::tui::short_session;
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -185,7 +184,7 @@ impl Picker {
         if self.scope.get() == Scope::Related {
             return format!(
                 "{}{} · {}",
-                short_session(&info.id),
+                crate::session::short(&info.id),
                 if info.id == self.current.get() {
                     " (current)"
                 } else {
@@ -193,13 +192,13 @@ impl Picker {
                 },
                 info.parent.as_deref().map_or_else(
                     || "original session".to_string(),
-                    |parent| format!("from {}", short_session(parent))
+                    |parent| format!("from {}", crate::session::short(parent))
                 )
             );
         }
         format!(
             "{} · {} · {}",
-            short_session(&info.id),
+            crate::session::short(&info.id),
             info.cwd
                 .as_deref()
                 .and_then(|cwd| Path::new(cwd).file_name())
@@ -251,6 +250,13 @@ impl Picker {
         });
         self.selected.set(0);
     }
+}
+
+pub(super) fn keys() -> Bindings {
+    alt("d", |app, event| {
+        event.stop_propagation();
+        app.delete_session();
+    })
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {

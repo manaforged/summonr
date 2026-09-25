@@ -3,6 +3,8 @@ use std::fs::{File, Metadata, read_link};
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io::{self, Read};
 #[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
@@ -107,12 +109,22 @@ pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
         return Ok(output
             .split(|byte| *byte == 0)
             .filter(|name| !name.is_empty())
-            .map(|name| PathBuf::from(String::from_utf8_lossy(name).into_owned()))
+            .map(git_path)
             .collect());
     }
     let mut found = Vec::new();
     walk(root, root, &mut found)?;
     Ok(found)
+}
+
+#[cfg(unix)]
+fn git_path(name: &[u8]) -> PathBuf {
+    PathBuf::from(std::ffi::OsStr::from_bytes(name))
+}
+
+#[cfg(not(unix))]
+fn git_path(name: &[u8]) -> PathBuf {
+    PathBuf::from(String::from_utf8_lossy(name).into_owned())
 }
 
 fn skippable(error: &io::Error) -> bool {

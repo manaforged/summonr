@@ -114,7 +114,7 @@ pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
     let mut killed = false;
     let (state, exit_code, running) = if exit.is_file() {
-        let text = std::fs::read_to_string(&exit).unwrap_or_default();
+        let text = crate::durable::store::read_or_empty(&exit)?;
         killed = text.trim() == KILLED;
         let code = text.trim().parse::<i32>().ok();
         (

@@ -34,21 +34,21 @@ The tool schemas. Four core, five behind modules.
 
 | Job | Where | Gating |
 | --- | --- | --- |
-| `read` | `tools/catalog.rs:101` | always |
-| `edit` | `tools/catalog.rs:122` | always |
-| `write` | `tools/catalog.rs:195` | always |
-| `run_command` | `tools/catalog.rs:287` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
-| `todo` | `tools/catalog.rs:227` | always; owns the itemized Work step list |
-| `skill` | `tools/catalog.rs:255` | `.summonr/skills` present |
-| `lsp` | `tools/catalog.rs:268` | `lsp` module on |
-| `web` | `tools/catalog.rs:313` | `web` module on |
-| `task` | `runtime/child.rs:95` | `task` module off until `/modules task on` |
+| `read` | `tools/catalog.rs::read` | always |
+| `edit` | `tools/catalog.rs::edit` | always |
+| `write` | `tools/catalog.rs::write` | always |
+| `run_command` | `tools/catalog.rs::run_command` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
+| `todo` | `tools/catalog.rs::todo` | always; owns the itemized Work step list |
+| `skill` | `tools/catalog.rs::skill` | `.summonr/skills` present |
+| `lsp` | `tools/catalog.rs::lsp` | `lsp` module on |
+| `web` | `tools/catalog.rs::web` | `web` module on |
+| `task` | `runtime/child.rs::definition` | `task` module off until `/modules task on` |
 | `<server>__<tool>` | `mcp.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode keeps `readOnlyHint` tools |
 
 Plan mode advertises `read`, `run_command`, `skill`, and `web` only.
 
 The agent room is its own server with its own seven names — `join`, `agents`,
-`send`, `inbox`, `wait`, `board`, `status` (`room/serve.rs:349`). It is a
+`send`, `inbox`, `wait`, `board`, `status` (`room/serve.rs::tools`). It is a
 menu, but not the model's; it is the room's.
 
 ## Harness jobs
@@ -73,6 +73,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
 | persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
+| state read | `durable/store.rs::read_or_empty` | read a harness state file; a missing file is empty, any other IO error reaches the caller |
 | scratch file | `durable/store.rs::scratch` | a plain write for a file that need not survive a crash, such as the askpass helper in its temp directory; no fsync |
 | mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
@@ -88,6 +89,10 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | mail | `bus.rs::deliver`, `@id` | a prompt that names a live session goes to its inbox |
 | profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, tool health (per-tool calls and failures, native vs shell search, head-pipe rate, first edit), slowest tools and rounds, largest results, repeated calls, all from `session.jsonl`; `--all` aggregates every session journal (calls, failures, native vs shell search, head-pipe rate, size per call, first-edit index) |
 | read dedup | `tools/dedup.rs`, `ToolRegistry::forget_reads` | skips re-sending unchanged file ranges; every compaction and `/clear` resets it |
+| tool names | `tools::Builtin::{live, of, is}`, `catalog::RETIRED`, `tools::retired_op` | the catalog maps a tool name, retired aliases included, to the typed `Builtin`; every caller matches the enum, never the name string |
+| http session | `credentials::{http, session}` | `session` builds every non-provider leyline `Session` with `limits::retry_policy`; `http` is the auth and MCP session; web search passes its browser, timeout, and redirect options to `session` |
+| child tag | `child::tag` | the 8-character label for a child session id in the CLI, the TUI, and child polling |
+| text clip | `text::{ellipsize, ellipsize_start}` | clip text to a display-cell width with `…`; `ellipsize` keeps the start, `ellipsize_start` keeps the end (paths); the TUI, the CLI, classify, and the runtime share it |
 | tool | `tools.rs::run_tool`, `main/startup/tool.rs`, `summonr tool NAME [JSON]` | invoke one model-facing tool from the CLI under the workspace policy; checks and benches without a paid model turn |
 | timeouts | `limits.rs`, `limits::{seconds, retry_policy}` | every timeout constant; `seconds` converts runtime and config seconds; `retry_policy` is the one leyline `RetryPolicy` (3 retries, 1–8 s backoff on connection errors, 429, and 5xx; a Retry-After over 60 s stops the retry so the turn can fall back) that `provider::Client::attach` gives every request; the turn retries a failed stream body once, then falls back |
 | config | `config::file`, `summonr::check_config` | one cached parse of `~/.summonr/config.toml`; `main` checks it once at startup, so a malformed file stops the run; readers propagate the error; `persist` clears the cache |
@@ -106,18 +111,19 @@ not against the name.
 
 | Delete | Keep | Evidence |
 | --- | --- | --- |
-| `summonr decide`, `summonr infer`, `decisions` module | `summonr classify`, `classify` | one command and one module name the typed-question job; the requests ride `provider::Client` like every other wire |
-| a second session record beside `Line` | `Line`, with `Event` projected by `Line::events`; `Msg`/`Cmd` stay UI transport | `Event` was built by hand beside the journal line |
-| `provider::limits`, `secs`, `secs_f64`, `RETRY_AFTER_MAX`, `FALLBACK_RETRIES` | `limits.rs`, leyline `RetryPolicy` | a second backoff loop and timeout builder beside leyline |
-| `config::load`, `Policy::command_policy`, `policy::write_block`, `tui::short_session` wrapper | `config::file`, `command_policy_checked`, `write_block_segments`, `session::short` | duplicate entry points for one job |
+| `summonr decide`, `summonr infer`, the decisions module row | `summonr classify`, `classify` | one command and one module name the typed-question job; the requests ride `provider::Client` like every other wire |
+| a second session record beside Line | `Line`, with `Event` projected by `Line::events`; `Msg`/`Cmd` stay UI transport | `Event` was built by hand beside the journal line |
+| `provider::limits`, `limits::secs`, `limits::secs_f64`, `FALLBACK_RETRIES` | `limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs` | a second backoff loop and timeout builder beside leyline |
+| `config::load`, `Policy::command_policy`, `policy::write_block`, `tui::short_session`, `short_session` | `config::file`, `command_policy_checked`, `write_block_segments`, `session::short` | duplicate entry points for one job |
 | `ModelMut`, `Model::spinner`, `App::image`, `host::run::{pbpaste, clipboard_image}` | `App::model_mut(FnOnce)`, the `ticks` signal, `Cmd::Clipboard` | a guard cloned the model on each write; a busy frame wrote the model; the clipboard read blocked the UI thread |
 | `Client::models`, `catalog::plan_cost`, `gemini::called_name`, `STARTUP_PROBE` | `Client::discover`, the function name from the assistant `tool_calls` | a second listing path and a name guessed from a call id |
 | `preset::{plans, apis}`, `PLANS`, `APIS` | `presets()` over `preset::{head, tail}` in the original order | the split reordered the endpoint list |
-| 23 orphan functions | nothing | 13 live, 10 `cfg(test)`-only, zero callers |
+| `token_labels`, `with_session`, `tool_names`, `from_env`, `file_via_security`, `with_security`, `fps_parse`, `fps_cycle`, `set_plan`, `with_plan_first`, `stdout_item`, `contract_prompt`, `retry_prompt`, `add_children`, `from_u128`, `file_only`, `from_io`, `last_entry`, `placements`, `replay_session` | nothing | orphan functions: zero callers |
+| `apply_replace`, `apply_insert`, `apply_delete`, `join_lines` | the `edit` tool | a shadow editor beside the edit tool |
 | `unicode-width`, `winapi-util`, `smol_str`, direct `reqwest` | nothing | declared in `Cargo.toml`, zero references in `src` |
 | `Error::MaxRounds`, `--max-turns`, `Goal.max_turns` | `--max-tokens`, `--max-secs` | round caps are banned; only token and wall-clock budgets bound a run |
-| `gui` module row | `--gui` flag | the row was never read; the flag decides |
-| `chat::transcript` cell renderer, `canvas::{Span, Line, Source}` | Sigil `markdown` in `chat/entry.rs` | compiled only for one test |
+| the gui module row | `--gui` flag | the row was never read; the flag decides |
+| the old chat transcript cell renderer, `canvas::{Span, Line, Source}` | Sigil `markdown` in `chat/entry.rs` | compiled only for one test |
 | `Loop::commit`, `ToolRegistry::skill_ready` | `Loop::hydrate`, the once-per-registry skills probe | commit ignored its argument; the skills rescan changed the prefix mid-session |
 | per-host transcript builders | `chat::surface::transcript` | the TUI and desktop hosts share one keyed builder |
 
@@ -128,7 +134,7 @@ layer, and each one was read before it was written down here:
 
 - `Policy {Single, Steps, Goal}` is not `WorkKind {Single, Steps,
   Goal}`. `Policy` is the configured budget, `WorkKind` is the reported kind,
-  and `work.rs:467` converts one to the other on purpose.
+  and `durable/work.rs::Work::progress` converts one to the other on purpose.
 - `work::Observation {File, Stdout}` is not `steps::Item {File, Stdout {command,
   expected}}`. The plan contract names the command and the expectation; the
   recorded observation does not.
@@ -156,17 +162,16 @@ Ranked from the census, by job.
 2. The three god objects: `App` 125 functions in one file, `Loop` 84 in
    `runtime/configure.rs` (74 `pub`), `SessionDriver` 65.
 3. Ten grid builders onto one row painter. `settings.rs` is 915 of 1,029 lines.
-4. One atomic writer. Landed at `durable/store.rs::write`: the census rule
-   `direct file write` is 3, and each survivor is a different job.
+4. One atomic writer. Landed at `durable/store.rs::write`; each remaining
+   direct write is a different job, such as a job log opened as stdio.
 5. `pub` that is not reachable: 203 `pub` functions, many inside private
    modules.
 
 ## How this is enforced
 
-- Census: `python3 scripts/api-census.py --check` compares the callable
-  counts against the baseline. Re-run it in the same change that adds a row.
-- File size: the same gate counts the source files over 400 lines (35 today)
-  and denies a rise. Splitting a file re-baselines with `--update`; the number
-  only falls, target 0.
-- The binding for agents working in this repo belongs in `AGENTS.md`, as a
-  line pointing here. Not added yet — it is a change to a tracked file.
+- Census: `python3 scripts/api-census.py --check` reads the "Names we
+  delete" table above and compares the counts against the baseline. Re-run
+  it in the same change that adds a row.
+- File size: the same gate counts the source files over 400 lines (0 today)
+  and denies a rise.
+- `AGENTS.md` § API binds agents working in this repo to this page.

@@ -1,10 +1,49 @@
 use sigil::prelude::{
-    AlignItems, Geometry, IntoNode, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder,
-    NodeStyleExt, Signal, Style, Tone, WidgetLayoutExt, classes, container, hint_bar,
-    list_row_with, modal, notice_band, section_label,
+    AlignItems, Geometry, IntoNode, KeyEvent, LayoutBuilderExt, LayoutStyle, ListRowSlots,
+    LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Signal, Style,
+    Tone, WidgetLayoutExt, classes, container, hint_bar, label, list_row_with, modal, notice_band,
+    section_label,
 };
 
+use super::app::App;
 use super::canvas;
+
+pub(in crate::tui::sigil_view) type KeyAction = fn(&App, &mut KeyEvent);
+pub(in crate::tui::sigil_view) type Bindings = Vec<(Shortcut, KeyAction)>;
+
+const OPTION_GLYPHS: [(&str, &str); 3] = [("p", "π"), ("d", "∂"), ("o", "ø")];
+
+pub(in crate::tui::sigil_view) fn press(
+    key: &'static str,
+    action: KeyAction,
+) -> (Shortcut, KeyAction) {
+    (LogicalKey::character(key).into(), action)
+}
+
+pub(in crate::tui::sigil_view) fn alt(letter: &'static str, action: KeyAction) -> Bindings {
+    let mut bindings = vec![(
+        Shortcut::new(LogicalKey::character(letter), ModifiersState::ALT),
+        action,
+    )];
+    bindings.extend(
+        OPTION_GLYPHS
+            .iter()
+            .filter(|(key, _)| *key == letter)
+            .map(|(_, glyph)| press(glyph, action)),
+    );
+    bindings
+}
+
+pub(in crate::tui::sigil_view) fn keyed(
+    node: NodeBuilder,
+    app: &App,
+    bindings: Bindings,
+) -> NodeBuilder {
+    bindings.into_iter().fold(node, |node, (shortcut, action)| {
+        let app = app.clone();
+        node.key_capture(shortcut, move |event| action(&app, event))
+    })
+}
 
 pub(in crate::tui) fn shell(
     open: Signal<bool>,
@@ -12,11 +51,39 @@ pub(in crate::tui) fn shell(
     cols: u16,
     body: impl IntoNode + 'static,
 ) -> NodeBuilder {
+    framed(
+        open,
+        title.into(),
+        canvas::dialog_width(cols, canvas::DIALOG_CELLS),
+        body,
+    )
+}
+
+pub(in crate::tui) fn wide_shell(
+    open: Signal<bool>,
+    title: impl Into<String>,
+    cols: u16,
+    body: impl IntoNode + 'static,
+) -> NodeBuilder {
+    framed(
+        open,
+        title.into(),
+        canvas::dialog_width(cols, canvas::WIDE_DIALOG_CELLS),
+        body,
+    )
+}
+
+fn framed(
+    open: Signal<bool>,
+    title: String,
+    width: f32,
+    body: impl IntoNode + 'static,
+) -> NodeBuilder {
     container().layout(LayoutStyle::block()).child(
         modal(open)
-            .title(title.into())
+            .title(title)
             .trap(true)
-            .width(canvas::dialog_width(cols, 72.0))
+            .width(width)
             .border_w(canvas::cell().h as i16)
             .child(
                 container()
@@ -77,6 +144,13 @@ fn row(padding: f32) -> LayoutStyle {
 
 pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
     section_label(title.into()).layout(row(8.0))
+}
+
+pub(in crate::tui) fn heading(parts: Vec<(String, &'static str)>) -> NodeBuilder {
+    parts.into_iter().fold(
+        container().layout(row(8.0).align_items(AlignItems::Center)),
+        |line, (text, tone)| line.child(label(text).class("text-xs").class(tone)),
+    )
 }
 
 pub(in crate::tui) fn hint(keys: impl Into<String>, right: impl Into<String>) -> NodeBuilder {

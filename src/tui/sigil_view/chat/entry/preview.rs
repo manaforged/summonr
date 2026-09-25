@@ -35,7 +35,7 @@ pub(super) fn text(tools: ToolOutput, name: &str, output: &str, failed: bool) ->
     if tools == ToolOutput::Full {
         return output.to_string();
     }
-    if name == "todo" && !failed {
+    if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo) && !failed {
         return String::new();
     }
     let lines: Vec<&str> = output

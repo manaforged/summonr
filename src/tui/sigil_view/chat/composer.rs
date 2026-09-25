@@ -3,7 +3,7 @@ use std::time::Instant;
 use sigil::app::cell_width;
 
 use super::Speed;
-use super::canvas::ellipsize;
+use crate::text::ellipsize;
 
 pub(super) use super::{App, Model, suggest};
 use crate::tui::Activity;
@@ -63,10 +63,15 @@ pub(in crate::tui::sigil_view) fn composer_hint(
             " ↵ queue · esc cancel ".to_string(),
         ]
     } else {
+        let copy = format!(" · {} copy reply", options);
         vec![
-            format!(" enter send · {options} options "),
-            format!(" ↵ send · {} options ", options.replace("ctrl+", "^")),
-            " enter send ".to_string(),
+            format!(" enter send · {options} options{copy} · ^t select text "),
+            format!(
+                " ↵ send · {} options{} · ^t select ",
+                options.replace("ctrl+", "^"),
+                copy
+            ),
+            " enter send · ^t select ".to_string(),
         ]
     };
     choices

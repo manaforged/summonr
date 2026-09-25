@@ -103,7 +103,7 @@ impl App {
             &typed,
             self.caret.peek(),
             &self.model.get(),
-            &self.model_facts.peek(),
+            &self.picker.facts.peek(),
         ) else {
             return false;
         };

@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 use crate::worktree;
 
 fn editor(name: &str) -> bool {
-    matches!(crate::tools::canonical(name), "edit" | "write")
+    crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]

@@ -149,7 +149,7 @@ fn print_live(event: &Event) {
         Event::Receipt { receipt } => println!("\n{}", receipt.text),
         Event::Aborted { reason } => eprintln!("\n{reason}"),
         Event::Child { id, event } => {
-            let tag: String = id.chars().take(8).collect();
+            let tag = summonr::child::tag(id);
             match &**event {
                 Event::ToolCall { name, .. } => eprintln!("  [{tag}] → {name}"),
                 Event::ToolResult { success: false, .. } => eprintln!("  [{tag}] (failed)"),

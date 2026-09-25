@@ -15,7 +15,6 @@ mod matching;
 mod sigil_view;
 pub(crate) use help::help_text;
 pub(crate) use matching::matching_commands;
-pub(crate) use sigil_view::ellipsize;
 pub use sigil_view::profile::run as profile;
 mod worker;
 
@@ -259,8 +258,6 @@ pub fn run(
     }
     sigil_view::run(loop_, workspace, info, ui_tx, ui_rx)
 }
-
-pub(crate) use crate::session::short as short_session;
 
 #[cfg_attr(
     not(feature = "gui"),

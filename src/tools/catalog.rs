@@ -21,7 +21,7 @@ impl ToolRegistry {
         if lsp_on && writes {
             all.push(lsp());
         }
-        if self.enabled("run_command") {
+        if self.enabled(Builtin::RunCommand) {
             all.push(run_command());
         }
         all.push(todo());
@@ -31,17 +31,73 @@ impl ToolRegistry {
         all
     }
 
-    pub(super) fn enabled(&self, name: &str) -> bool {
-        match name {
-            "read" => true,
-            "skill" => self.skills,
-            "lsp" => self.language,
-            "edit" | "write" => !self.policy.is_read_only(),
-            "run_command" => !self.policy.is_read_only() || self.sandbox.is_some(),
-            "todo" => true,
-            "web" => self.search.is_some(),
-            _ => false,
+    pub(super) fn enabled(&self, kind: Builtin) -> bool {
+        match kind {
+            Builtin::Read | Builtin::Todo => true,
+            Builtin::Skill => self.skills,
+            Builtin::Lsp => self.language,
+            Builtin::Edit | Builtin::Write => !self.policy.is_read_only(),
+            Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
+            Builtin::Web => self.search.is_some(),
+            Builtin::Task => false,
         }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Builtin {
+    Read,
+    Edit,
+    Write,
+    Lsp,
+    Skill,
+    RunCommand,
+    Todo,
+    Web,
+    Task,
+}
+
+const LIVE: &[(&str, Builtin)] = &[
+    ("read", Builtin::Read),
+    ("edit", Builtin::Edit),
+    ("write", Builtin::Write),
+    ("lsp", Builtin::Lsp),
+    ("skill", Builtin::Skill),
+    ("run_command", Builtin::RunCommand),
+    ("todo", Builtin::Todo),
+    ("web", Builtin::Web),
+    ("task", Builtin::Task),
+];
+
+impl Builtin {
+    #[must_use]
+    pub(crate) fn live(name: &str) -> Option<Self> {
+        LIVE.iter()
+            .find(|(live, _)| *live == name)
+            .map(|(_, kind)| *kind)
+    }
+
+    #[must_use]
+    pub(crate) fn of(name: &str) -> Option<Self> {
+        Self::live(canonical(name))
+    }
+
+    #[must_use]
+    pub(crate) fn is(name: &str, kind: Self) -> bool {
+        Self::of(name) == Some(kind)
+    }
+
+    #[must_use]
+    pub(crate) fn readonly(self) -> bool {
+        matches!(
+            self,
+            Self::Read | Self::Lsp | Self::Skill | Self::Todo | Self::Web
+        )
+    }
+
+    #[must_use]
+    pub(crate) fn edits(self) -> bool {
+        matches!(self, Self::Edit | Self::Write)
     }
 }
 
@@ -64,7 +120,7 @@ pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
 ];
 
 #[must_use]
-pub(crate) fn canonical(name: &str) -> &str {
+fn canonical(name: &str) -> &str {
     RETIRED
         .iter()
         .find(|(retired, _, _)| *retired == name)
@@ -79,14 +135,7 @@ pub(crate) fn retired_op(name: &str) -> Option<&'static str> {
 }
 
 pub(crate) fn readonly(name: &str) -> bool {
-    matches!(canonical(name), "read" | "lsp" | "skill" | "todo" | "web")
-}
-
-pub(super) fn known(name: &str) -> bool {
-    matches!(
-        name,
-        "read" | "edit" | "write" | "lsp" | "skill" | "run_command" | "todo" | "web"
-    )
+    Builtin::of(name).is_some_and(Builtin::readonly)
 }
 
 fn read() -> ToolDefinition {

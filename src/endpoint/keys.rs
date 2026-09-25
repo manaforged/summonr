@@ -62,12 +62,12 @@ fn peer_key(endpoint: &Endpoint, row: Option<&super::preset::Preset>) -> Option<
             .as_deref()
             .is_some_and(|base| trim_slash(base) == trim_slash(row.base_url))
     })?;
-    if row.name == "kimi"
-        && let Some(token) = kimi_cli_token()
+    if let Some(cli) = &row.cli_token
+        && let Some(token) = (cli.read)()
     {
-        return Some((token, Source::Peer("kimi-code")));
+        return Some((token, Source::Peer(cli.label)));
     }
-    let bearer = !matches!(endpoint.wire, Wire::Anthropic | Wire::Gemini);
+    let bearer = row.opencode_oauth && !matches!(endpoint.wire, Wire::Anthropic | Wire::Gemini);
     opencode_peer(provider_ids(row.name), bearer).map(|key| (key, Source::Peer("opencode")))
 }
 
@@ -87,7 +87,7 @@ fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
         let entry = store.get(*id)?;
         let token = match entry.get("type").and_then(serde_json::Value::as_str) {
             Some("api") => entry.get("key"),
-            Some("oauth") if bearer && *id != "openai" => {
+            Some("oauth") if bearer => {
                 let expires = entry.get("expires").and_then(serde_json::Value::as_i64)?;
                 let now = i64::try_from(crate::bus::now()).ok()?.saturating_mul(1000);
                 if expires <= now + 60_000 {
@@ -102,11 +102,6 @@ fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
             .filter(|token| !token.trim().is_empty())
             .map(str::to_string)
     })
-}
-
-pub(super) fn named_env_key(name: &str) -> Option<String> {
-    let row = preset(name)?;
-    env_key(row.env_keys)
 }
 
 pub(super) fn builtin(name: &str) -> Option<Endpoint> {

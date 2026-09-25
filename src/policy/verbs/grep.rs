@@ -1,0 +1,42 @@
+use super::{GrepOpt, SearchFlag, SearchValue};
+
+pub(crate) const GREP_LONG: &[(&str, GrepOpt)] = &[
+    ("files-with-matches", GrepOpt::Set(SearchFlag::Files)),
+    ("count", GrepOpt::Set(SearchFlag::Count)),
+    ("ignore-case", GrepOpt::Set(SearchFlag::IgnoreCase)),
+    ("fixed-strings", GrepOpt::Set(SearchFlag::Literal)),
+    ("after-context", GrepOpt::Value(SearchValue::After)),
+    ("before-context", GrepOpt::Value(SearchValue::Before)),
+    ("context", GrepOpt::Value(SearchValue::Context)),
+    ("no-filename", GrepOpt::Skip),
+    ("with-filename", GrepOpt::Skip),
+    ("line-number", GrepOpt::Skip),
+    ("no-line-number", GrepOpt::Skip),
+    ("smart-case", GrepOpt::Skip),
+    ("hidden", GrepOpt::Skip),
+    ("quiet", GrepOpt::Skip),
+];
+
+pub(crate) const GREP_SHORT: &[(char, GrepOpt)] = &[
+    ('i', GrepOpt::Set(SearchFlag::IgnoreCase)),
+    ('l', GrepOpt::Set(SearchFlag::Files)),
+    ('c', GrepOpt::Set(SearchFlag::Count)),
+    ('F', GrepOpt::Set(SearchFlag::Literal)),
+    ('v', GrepOpt::Reject),
+    ('w', GrepOpt::Reject),
+    ('x', GrepOpt::Reject),
+    ('e', GrepOpt::Value(SearchValue::Pattern)),
+    ('A', GrepOpt::Value(SearchValue::After)),
+    ('B', GrepOpt::Value(SearchValue::Before)),
+    ('C', GrepOpt::Value(SearchValue::Context)),
+    ('E', GrepOpt::Extended),
+    ('n', GrepOpt::Skip),
+    ('N', GrepOpt::Skip),
+    ('r', GrepOpt::Skip),
+    ('R', GrepOpt::Skip),
+    ('S', GrepOpt::Skip),
+    ('H', GrepOpt::Skip),
+    ('h', GrepOpt::Skip),
+    ('s', GrepOpt::Skip),
+    ('q', GrepOpt::Skip),
+];

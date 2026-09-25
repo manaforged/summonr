@@ -9,14 +9,21 @@ use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, matching, section};
 use crate::{AuthInfo, LoginFlow};
 
+pub(in crate::tui::sigil_view) fn keys() -> Bindings {
+    alt("d", |app, event| {
+        event.stop_propagation();
+        app.confirm_logout();
+    })
+}
+
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let title = match app.auth_choice() {
-        Some(choice) if app.editing_model.peek() => format!("Models › {}", choice.name),
+        Some(choice) if app.picker.open.peek() => format!("Models › {}", choice.name),
         Some(_) | None => "Providers".to_string(),
     };
     shell(
-        app.auth_open,
+        app.auth.open,
         title,
         app.viewport.peek().0,
         container()
@@ -30,7 +37,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     .auth_choice()
                     .map(|choice| choice.name)
                     .unwrap_or_default();
-                match paint.auth_step.get() {
+                match paint.auth.step.get() {
                     Login::List(note) => choices(&paint, &note),
                     Login::Key(note) => entering(&paint, &note),
                     Login::Checking => {
@@ -66,7 +73,7 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
                 last.push(' ');
                 last.push_str(word);
             }
-            Some(_) | None => parts.push(canvas::ellipsize(word, width)),
+            Some(_) | None => parts.push(crate::text::ellipsize(word, width)),
         }
     }
     parts
@@ -74,7 +81,7 @@ fn wrapped(text: &str, width: usize) -> Vec<String> {
 
 fn span(app: &App) -> usize {
     let (cols, _) = app.viewport.get();
-    (canvas::dialog_width(cols, 72.0) / canvas::cell().w) as usize
+    (canvas::dialog_width(cols, canvas::DIALOG_CELLS) / canvas::cell().w) as usize
 }
 
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
@@ -119,12 +126,12 @@ fn choices(app: &App, note: &str) -> Vec<NodeBuilder> {
 
 fn listing(app: &App) -> Vec<NodeBuilder> {
     let source = app.clone();
-    let rows = matching(app.auth_choices.get(), &app.auth_filter.get());
-    let selected = app.auth_sel.get().min(rows.len().saturating_sub(1));
+    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
+    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
         return vec![group("No providers match."), hint("esc close", "0 / 0")];
     };
-    let states = app.model_groups.get();
+    let states = app.picker.groups.get();
     let mut lookup: Vec<(String, String, Option<usize>)> = Vec::new();
     let (mut shown, mut header) = (0, 0);
     for (index, row) in rows.iter().enumerate() {
@@ -174,7 +181,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
             .viewport_height(canvas::overlay_list_row() * visible as f32)
             .scroll_into_view(anchor),
         ),
-        group(canvas::ellipsize(
+        group(crate::text::ellipsize(
             &format!("{} — {}", choice.name, action(choice, &state)),
             span(app).saturating_sub(10),
         )),
@@ -185,7 +192,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
 fn entry(app: App, name: &str, chip: &str, index: usize, active: bool) -> NodeBuilder {
     let choose = app.clone();
     pick(active, name.to_string(), chip.to_string()).pointer_down(move |event| {
-        choose.auth_sel.set(index);
+        choose.auth.sel.set(index);
         choose.commit_auth();
         event.stop_propagation();
     })
@@ -196,13 +203,13 @@ fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
     let save = app.clone();
     let filter = placeholder == SEARCH;
     let value = if filter {
-        app.auth_filter
+        app.auth.filter
     } else {
-        app.auth_key
+        app.auth.key
     };
     let field = text_field(value)
         .placeholder(placeholder)
-        .focus_when(app.auth_focus)
+        .focus_when(app.auth.focus)
         .change(move |text| {
             if filter {
                 typing.replace_auth_filter(text.to_string());
@@ -230,7 +237,7 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
             .map(|part| band(part, true)),
     );
     nodes.push(container().children_reactive(move || {
-        let characters = count.auth_key.get().chars().count();
+        let characters = count.auth.key.get().chars().count();
         vec![hint(
             "↵ save and check · esc back",
             format!("{characters} chars"),
@@ -245,7 +252,10 @@ fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeB
     let width = wide.saturating_sub(6);
     let mut nodes = vec![group(format!("Sign in to {name}"))];
     if !url.is_empty() {
-        nodes.push(line(format!("1. Open  {}", canvas::ellipsize(&url, width))));
+        nodes.push(line(format!(
+            "1. Open  {}",
+            crate::text::ellipsize(&url, width)
+        )));
     }
     if !code.is_empty() {
         nodes.push(line(format!("2. Enter code   {code}")));

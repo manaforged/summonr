@@ -14,7 +14,7 @@ mod help;
 pub use event::Event;
 mod catalog;
 mod dedup;
-pub(crate) use catalog::{canonical, readonly, retired_op};
+pub(crate) use catalog::{Builtin, readonly, retired_op};
 pub(crate) mod command;
 mod lsp;
 mod paths;
@@ -267,35 +267,36 @@ impl ToolRegistry {
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {
         let call = normalize(call)?;
-        if !self.enabled(&call.function.name) {
-            return if catalog::known(&call.function.name) {
-                Err(Error::Denied(format!(
-                    "tool `{}` is unavailable in the current mode",
-                    call.function.name
-                )))
-            } else {
-                Err(Error::Tool(format!(
-                    "unknown tool `{}`",
-                    call.function.name
-                )))
-            };
+        match Builtin::live(&call.function.name) {
+            Some(kind) if self.enabled(kind) => self.dispatch(kind, &call).await,
+            Some(kind) if kind != Builtin::Task => Err(Error::Denied(format!(
+                "tool `{}` is unavailable in the current mode",
+                call.function.name
+            ))),
+            Some(_) | None => Err(Error::Tool(format!(
+                "unknown tool `{}`",
+                call.function.name
+            ))),
         }
-        self.dispatch(&call).await
     }
 
-    async fn dispatch(&self, call: &ToolCall) -> Result<ToolOutput> {
-        match call.function.name.as_str() {
-            "read" => tokio::task::block_in_place(|| self.read(&call.function.arguments))
+    async fn dispatch(&self, kind: Builtin, call: &ToolCall) -> Result<ToolOutput> {
+        let arguments = &call.function.arguments;
+        match kind {
+            Builtin::Read => tokio::task::block_in_place(|| self.read(arguments))
                 .map(ToolOutput::ok)
-                .map(|out| self.dedup_read(&call.function.arguments, out)),
-            "edit" => self.edit_file(&call.function.arguments).await,
-            "write" => self.write_file(&call.function.arguments).await,
-            "skill" => self.skill(&call.function.arguments).map(ToolOutput::ok),
-            "run_command" => self.run_command(&call.function.arguments).await,
-            "todo" => parse_todo(&call.function.arguments).map(ToolOutput::ok),
-            "web" => self.web(&call.function.arguments).await.map(ToolOutput::ok),
-            "lsp" => self.lsp(&call.function.arguments).await,
-            name => Err(Error::Tool(format!("unknown tool `{name}`"))),
+                .map(|out| self.dedup_read(arguments, out)),
+            Builtin::Edit => self.edit_file(arguments).await,
+            Builtin::Write => self.write_file(arguments).await,
+            Builtin::Skill => self.skill(arguments).map(ToolOutput::ok),
+            Builtin::RunCommand => self.run_command(arguments).await,
+            Builtin::Todo => parse_todo(arguments).map(ToolOutput::ok),
+            Builtin::Web => self.web(arguments).await.map(ToolOutput::ok),
+            Builtin::Lsp => self.lsp(arguments).await,
+            Builtin::Task => Err(Error::Tool(format!(
+                "unknown tool `{}`",
+                call.function.name
+            ))),
         }
     }
 }

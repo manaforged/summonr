@@ -11,8 +11,8 @@ use super::scene;
 use super::settings;
 use sigil::prelude::{
     Key, KeyEvent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, Position, Rgba8, Role, ScrollDelta, Shortcut, Style, Theme,
-    ThemeValue, WidgetLayoutExt, container, text_edit,
+    NodeEventsExt, NodeStyleExt, Position, Rgba8, Role, Shortcut, Style, Theme, ThemeValue,
+    WidgetLayoutExt, container, text_edit,
 };
 
 mod input;

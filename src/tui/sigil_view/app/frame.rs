@@ -1,4 +1,7 @@
+use sigil::prelude::{derived_eq, effect, interval};
+
 use super::*;
+use crate::limits::{ANIMATION, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
 
 impl App {
     pub(in crate::tui::sigil_view) fn refresh(&self) {
@@ -13,7 +16,6 @@ impl App {
                 .set(settings_text(&model.snapshot, &model.prefs));
             self.facts.set(facts(&model, &self.info));
             self.theme_name.set(model.prefs.theme.clone());
-            self.reflow();
         });
     }
 
@@ -24,20 +26,41 @@ impl App {
     pub(in crate::tui::sigil_view) fn resize(&self, cols: u16, rows: u16) {
         batch(|| {
             self.viewport.set((cols, rows));
-            self.constrain();
             self.reveal(&self.draft.peek());
-            self.reflow();
         });
     }
 
-    pub(in crate::tui::sigil_view) fn tick(&self) {
-        let busy = self.model.peek().busy_since.is_some();
-        let ticks = self.ticks.peek().saturating_add(1);
-        let splash = self.splash.peek() && self.model.get().prefs.animations;
-        if busy || splash || !self.splash_revealed.peek() {
-            self.ticks.set(ticks);
-        }
-        if !self.splash_revealed.peek() && ticks.saturating_mul(40) > 760 {
+    pub(in crate::tui::sigil_view) fn animate(&self) {
+        let app = self.clone();
+        let busy = derived_eq(move || app.model.with(|model| model.busy_since.is_some()));
+        let app = self.clone();
+        let splash = derived_eq(move || {
+            (app.splash.get() && app.model.with(|model| model.prefs.animations))
+                || !app.splash_revealed.get()
+        });
+        let app = self.clone();
+        effect(move || {
+            let period = if splash.get() {
+                Some(ANIMATION)
+            } else {
+                busy.get().then_some(SPINNER)
+            };
+            if let Some(period) = period {
+                let tick = app.clone();
+                interval(period, move || tick.tick());
+            }
+            if busy.get() {
+                let status = app.clone();
+                interval(STATUS_REFRESH, move || status.refresh_status());
+            }
+        });
+    }
+
+    fn tick(&self) {
+        self.ticks.update(|ticks| *ticks = ticks.saturating_add(1));
+        if !self.splash_revealed.peek()
+            && self.splash_since.get().elapsed().as_millis() > SPLASH_REVEAL_MS
+        {
             self.splash_revealed.set(true);
         }
     }

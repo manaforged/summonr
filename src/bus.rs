@@ -15,8 +15,12 @@ const STALE_SECS: u64 = 120;
 const BOARD_COMPACT_BYTES: usize = 256 * 1024;
 const SWEEP_SECS: u64 = 24 * 3600;
 
-fn bus_enabled(value: Option<&OsStr>) -> bool {
-    value.is_some_and(|value| value != OsStr::new("off"))
+fn bus_enabled(value: Option<&OsStr>, module: bool) -> bool {
+    value.map_or(module, |value| value != OsStr::new("off"))
+}
+
+pub(crate) fn wanted(module: bool) -> bool {
+    bus_enabled(std::env::var_os("SUMMONR_BUS").as_deref(), module)
 }
 
 fn clean_id(id: &str) -> String {
@@ -134,8 +138,8 @@ fn append(dir: &Path, targets: &[String], mail: &Mail) -> Result<usize> {
 }
 
 impl Bus {
-    pub(crate) fn join(id: &str, model: &str, cwd: &Path) -> Option<Self> {
-        if !bus_enabled(std::env::var_os("SUMMONR_BUS").as_deref()) {
+    pub(crate) fn join(id: &str, model: &str, cwd: &Path, module: bool) -> Option<Self> {
+        if !wanted(module) {
             return None;
         }
         Self::open(id, "summonr", model, cwd).ok()
@@ -370,3 +374,7 @@ pub(crate) fn definitions() -> Vec<ToolDefinition> {
 pub(crate) fn is_bus_tool(name: &str) -> bool {
     matches!(name, "agents" | "inbox" | "board" | "send")
 }
+
+#[cfg(test)]
+#[path = "bus_tests.rs"]
+mod tests;

@@ -1,7 +1,9 @@
+use std::rc::Rc;
+
 use sigil::prelude::{
-    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutReactiveExt, LayoutStyle,
-    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal, Style, classes, container,
-    effect, empty_state, label, node, scroll, signal, spacer,
+    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt,
+    Style, classes, container, defer, derived_eq, effect, empty_state, label, node, signal, spacer,
+    untrack, virtual_list,
 };
 
 use super::composer;
@@ -9,7 +11,8 @@ use super::entry;
 use super::footer;
 use super::panels;
 use super::todos;
-use super::{App, Entry, canvas};
+use super::{App, Entry, canvas, cell_width};
+use crate::prefs::Prefs;
 use crate::tui::{ToolState, short_session};
 
 pub(in crate::tui::sigil_view) fn layer(
@@ -17,7 +20,7 @@ pub(in crate::tui::sigil_view) fn layer(
     cols: u16,
     editor: impl IntoNode + 'static,
 ) -> NodeBuilder {
-    let width = usize::from(cols);
+    let width = canvas::inner_cols(usize::from(cols));
     let transcript_app = app.clone();
     container()
         .layout(
@@ -27,33 +30,54 @@ pub(in crate::tui::sigil_view) fn layer(
                 .min_size(0.0, 0.0)
                 .gap(0.0),
         )
-        .child(header(app.clone()))
+        .child(canvas::gutter(header(app.clone(), width)))
         .child(node(move |cx: &mut Cx| {
-            transcript_app.tui_chat_active.set(true);
-            let select = transcript_app.clone();
-            let layout = LayoutStyle::flex_column()
-                .fill_width()
-                .min_size(0.0, 0.0)
-                .padding_x(16.0)
-                .gap(canvas::cell().h);
             let empty = || empty_state("Summonr", "ask anything · /login · @file · !cmd · /help");
-            cx.add(
-                transcript(transcript_app.clone(), layout, empty).pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Left) {
-                        select.selection_anchor.set(None);
-                        event.stop_propagation();
-                    }
-                }),
-            )
+            cx.add(transcript(
+                transcript_app.clone(),
+                (canvas::GUTTER, canvas::cell().h),
+                empty,
+            ))
         }))
-        .child(panels::agents(app.clone(), width))
+        .child(canvas::gutter(panels::agents(app.clone(), width)))
         .child(todos::widget(app.clone(), cols))
-        .child(panels::bands(app.clone(), width))
+        .child(canvas::gutter(panels::bands(app.clone(), width)))
         .child(composer::widget(app.clone(), width, editor))
-        .child(footer::footer_bar(app, width))
+        .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-fn header(app: App) -> NodeBuilder {
+#[derive(Clone, Copy, PartialEq)]
+enum Part {
+    Brand,
+    Model,
+    Pick,
+    Relay,
+    Session,
+    Mode,
+}
+
+const DROP_ORDER: [Part; 4] = [Part::Relay, Part::Session, Part::Pick, Part::Mode];
+
+fn fit(parts: &mut Vec<(Part, String)>, width: usize) {
+    let used = |parts: &[(Part, String)]| {
+        parts
+            .iter()
+            .map(|(_, text)| cell_width(text) + 1)
+            .sum::<usize>()
+    };
+    for drop in DROP_ORDER {
+        if used(parts) <= width {
+            return;
+        }
+        parts.retain(|(part, _)| *part != drop);
+    }
+    let over = used(parts).saturating_sub(width);
+    if let Some((_, text)) = parts.iter_mut().find(|(part, _)| *part == Part::Model) {
+        *text = canvas::ellipsize(text, cell_width(text).saturating_sub(over));
+    }
+}
+
+fn header(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
     container()
         .layout(
@@ -65,69 +89,66 @@ fn header(app: App) -> NodeBuilder {
         )
         .children_reactive(move || {
             let model = update.model.get();
-            let mode = if model.snapshot.plan {
-                "plan"
-            } else if model.snapshot.work {
-                "work"
-            } else if model.snapshot.goal {
-                "goal"
+            let snapshot = &model.snapshot;
+            let (mode, mode_class) = if snapshot.plan {
+                ("plan", classes!("text-xs text-accent"))
+            } else if snapshot.work {
+                ("work", classes!("text-xs text-warn-11"))
+            } else if snapshot.goal {
+                ("goal", classes!("text-xs text-error-11"))
             } else {
-                "auto"
+                ("auto", classes!("text-xs text-success-11"))
             };
-            let mode_label = label(mode.to_string());
-            let mode_label = if model.snapshot.plan {
-                mode_label.class(classes!("text-xs text-accent"))
-            } else if model.snapshot.work {
-                mode_label.class(classes!("text-xs text-warn-11"))
-            } else if model.snapshot.goal {
-                mode_label.class(classes!("text-xs text-error-11"))
-            } else {
-                mode_label.class(classes!("text-xs text-success-11"))
-            };
-            let mut row: Vec<NodeBuilder> =
-                vec![
-                    container().child(label("summonr").class(classes!("text-sm font-bold")).style(
-                        Style::new().text_color(ColorAtom::Rgba8(canvas::palette().accent)),
-                    )),
-                    container().child(
-                        label(model.snapshot.model.clone()).class(classes!("text-sm text-gray-12")),
-                    ),
-                ];
+            let mut parts = vec![
+                (Part::Brand, "summonr".to_owned()),
+                (Part::Model, snapshot.model.clone()),
+            ];
             if let Some(pick) = model.pick {
+                parts.push((Part::Pick, format!("({pick})")));
+            }
+            if let Some(relay) = snapshot.relay.as_deref().filter(|relay| !relay.is_empty()) {
+                parts.push((Part::Relay, format!("· {relay}")));
+            }
+            parts.push((
+                Part::Session,
+                format!("ses {}", short_session(&model.session)),
+            ));
+            parts.push((Part::Mode, mode.to_owned()));
+            fit(&mut parts, width);
+            let mut row = Vec::new();
+            let mut spaced = false;
+            for (part, text) in parts {
+                if !spaced && matches!(part, Part::Session | Part::Mode) {
+                    spaced = true;
+                    row.push(spacer());
+                }
+                let shown = label(text);
+                let shown = match part {
+                    Part::Brand => shown
+                        .class(classes!("text-sm font-bold"))
+                        .style(Style::new().text_color(ColorAtom::Rgba8(canvas::palette().accent))),
+                    Part::Model => shown.class(classes!("text-sm text-gray-12")),
+                    Part::Mode => shown.class(mode_class),
+                    Part::Pick | Part::Relay | Part::Session => {
+                        shown.class(classes!("text-xs text-gray-11"))
+                    }
+                };
                 row.push(
                     container()
-                        .child(label(format!("({pick})")).class(classes!("text-xs text-gray-11"))),
+                        .layout(LayoutStyle::block().shrink(0.0))
+                        .child(shown),
                 );
             }
-            if let Some(relay) = model
-                .snapshot
-                .relay
-                .as_deref()
-                .filter(|relay| !relay.is_empty())
-            {
-                row.push(
-                    container()
-                        .child(label(format!("· {relay}")).class(classes!("text-xs text-gray-11"))),
-                );
-            }
-            row.push(spacer());
-            row.push(
-                container().child(
-                    label(format!("ses {}", short_session(&model.session)))
-                        .class(classes!("text-xs text-gray-11")),
-                ),
-            );
-            row.push(container().child(mode_label));
             row
         })
 }
 
-type Key = (u64, usize, usize, u8, bool);
+type Content = (usize, u8, bool, Prefs);
 
-fn key(entry: &Entry, index: usize, stamp: u64, flags: (bool, bool)) -> Key {
+fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
-        Entry::Thinking(text) => (text.len(), u8::from(flags.0)),
+        Entry::Thinking(text) => (text.len(), 0),
         Entry::Tool { state, output, .. } => (
             output.len(),
             u8::from(!matches!(state, ToolState::Running))
@@ -143,136 +164,105 @@ fn key(entry: &Entry, index: usize, stamp: u64, flags: (bool, bool)) -> Key {
         | Entry::Chart(_)
         | Entry::Image { .. } => (0, 0),
     };
-    (stamp, index, size, state, flags.1)
+    (size, state, live, prefs.clone())
 }
 
-fn build(
-    app: App,
-    index: usize,
-    bounds: Signal<(f32, f32, f32, f32)>,
-    target: bool,
-) -> Box<dyn IntoNode> {
-    node(move |cx: &mut Cx| {
-        let (entry, prefs) = {
-            let model = app.model.get();
-            (model.entries.get(index).cloned(), model.prefs.clone())
-        };
-        let Some(entry) = entry else {
-            return cx.add(container());
-        };
-        let row = entry::row(entry, &prefs, &app);
-        if !target {
-            return cx.add(row);
-        }
-        let measured = signal((0.0, 0.0, 0.0, 0.0));
-        let target = app.search.target;
-        let scroll = app.scroll_y;
-        cx.add(row.bounds_reactive(measured).on_added(move |_, _| {
-            effect(move || {
-                let (_, y, _, height) = measured.get();
-                let (_, top, _, body_height) = bounds.get();
-                if target.peek() == Some(index) && height > 0.0 && body_height > 0.0 {
-                    scroll.set((y - top).max(0.0));
-                    target.set(None);
-                }
-            });
-        }))
-    })
+fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
+    let model = app.model;
+    let version = derived_eq(move || {
+        model.with(|model| {
+            let live = model.busy_since.is_some() && index + 1 == model.entries.len();
+            model
+                .entries
+                .get(index)
+                .map(|entry| content(entry, live, &model.prefs))
+        })
+    });
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .min_size(0.0, 0.0)
+                .padding_x(spacing.0)
+                .padding_bottom(spacing.1),
+        )
+        .children_reactive(move || {
+            version.track();
+            untrack(|| {
+                let (entry, live, prefs) = model.with(|model| {
+                    (
+                        model.entries.get(index).cloned(),
+                        model.busy_since.is_some() && index + 1 == model.entries.len(),
+                        model.prefs.clone(),
+                    )
+                });
+                entry
+                    .map(|entry| vec![entry::row(entry, live, &prefs, &app)])
+                    .unwrap_or_default()
+            })
+        })
 }
 
 pub(in crate::tui::sigil_view) fn transcript(
     app: App,
-    layout: LayoutStyle,
+    spacing: (f32, f32),
     empty: fn() -> NodeBuilder,
 ) -> NodeBuilder {
-    let bounds = signal((0.0, 0.0, 0.0, 0.0));
-    let viewport = signal((0.0, 0.0));
-    let transcript_height = app.transcript_height;
-    let extent = app.extent;
-    let live = app.clone();
-    let body = container()
-        .bounds_reactive(bounds)
-        .on_added(move |_, _| {
-            effect(move || {
-                let height = bounds.get().3;
-                if height > 0.0 {
-                    extent.set(height);
-                }
-            });
+    let model = app.model;
+    let keys = derived_eq(move || {
+        model.with(|model| {
+            let stamp = model.entries.stamp;
+            Rc::new(
+                (0..model.entries.len())
+                    .map(|index| (stamp << 32) ^ index as u64)
+                    .collect::<Vec<u64>>(),
+            )
         })
-        .layout(layout)
-        .children_keyed(move || {
-            let target = live.search.target.peek();
-            let model = live.model.get();
-            let entries = &model.entries;
-            if entries.is_empty() {
-                return vec![((entries.stamp, usize::MAX, 0, 0, false), node(empty()))];
-            }
-            let busy = model.busy_since.is_some();
-            let last = entries.len() - 1;
-            entries
-                .iter()
-                .enumerate()
-                .map(|(index, item)| {
-                    let aimed = target == Some(index);
-                    let flags = (busy && index == last, aimed);
-                    let row = build(live.clone(), index, bounds, aimed);
-                    (key(item, index, entries.stamp, flags), row)
-                })
-                .collect()
-        });
+    });
+    let jump = signal(0_usize);
+    let target = app.search.target;
+    effect(move || {
+        if let Some(index) = target.get() {
+            jump.set(index);
+            defer(move || target.set(None));
+        }
+    });
+    let empty_now = derived_eq(move || keys.get().is_empty());
     container()
-        .size_reactive(viewport)
-        .on_added(move |_, _| {
-            effect(move || {
-                let height = viewport.get().1;
-                if height > 0.0 {
-                    transcript_height.set(height);
-                }
-            });
-        })
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .grow(1.0)
                 .min_size(0.0, 0.0),
         )
-        .child(
-            scroll(body, app.extent)
-                .fill()
-                .scroll_bind(app.scroll_y)
-                .auto_pin_to_bottom(app.search.target.peek().is_none()),
-        )
+        .children_reactive(move || {
+            if empty_now.get() {
+                return vec![empty()];
+            }
+            jump.set(keys.peek().len().saturating_sub(1));
+            let live = app.clone();
+            vec![
+                container()
+                    .layout(
+                        LayoutStyle::flex_column()
+                            .fill_width()
+                            .grow(1.0)
+                            .min_size(0.0, 0.0),
+                    )
+                    .child(
+                        virtual_list(keys, move |index, _: &u64| {
+                            row(live.clone(), index, spacing)
+                        })
+                        .key_by(|_, key| *key)
+                        .measured()
+                        .estimate(canvas::cell().h * 2.0)
+                        .viewport_fill()
+                        .scroll_bind(app.scroll_y)
+                        .max_scroll_bind(app.max_scroll)
+                        .content_height_bind(app.content_height)
+                        .auto_pin_to_bottom(true)
+                        .follow(jump),
+                    ),
+            ]
+        })
 }
-
-#[cfg(test)]
-pub(crate) fn visible_range(
-    scroll_y: f32,
-    cell_h: f32,
-    rows: usize,
-    viewport: f32,
-) -> (usize, usize) {
-    if rows == 0 || cell_h <= 0.0 {
-        return (0, 0);
-    }
-    let viewport = viewport.max(cell_h);
-    let visible = (viewport / cell_h).ceil() as usize + 2;
-    let raw = scroll_y / cell_h;
-    let start = if raw.is_finite() {
-        raw.max(0.0).floor() as usize
-    } else {
-        rows.saturating_sub(visible.max(1))
-    };
-    let start = start.min(rows.saturating_sub(visible.max(1)));
-    let end = start.saturating_add(visible).min(rows);
-    (start, end)
-}
-
-#[cfg(test)]
-pub(crate) fn pin_extent(content: f32, viewport: f32, cell_h: f32) -> f32 {
-    (content - viewport.max(cell_h)).max(0.0)
-}
-
-#[cfg(test)]
-#[path = "surface_tests.rs"]
-mod tests;

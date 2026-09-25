@@ -1,7 +1,8 @@
 use sigil::prelude::{
-    AlignItems, DiffLayout as SigilDiffLayout, Fill, Geometry, IntoNode, LayoutBuilderExt,
-    LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, ObjectFit, Overflow,
-    PointerEvent, chart, classes, container, diff, image, label, markdown, signal, text,
+    AlignItems, DiffBuilder, DiffLayout as SigilDiffLayout, Fill, Geometry, IntoNode,
+    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
+    ObjectFit, Overflow, PointerEvent, WidgetLayoutExt, chart, classes, container, diff, image,
+    label, markdown, markdown_inline, signal, text,
 };
 
 use super::{App, Entry};
@@ -9,9 +10,17 @@ use crate::prefs::{DiffLayout, Prefs, ToolOutput, Visibility};
 
 use crate::tui::ToolState;
 
-const COMPACT_ROWS: usize = 32;
+mod preview;
 
-pub(in crate::tui::sigil_view) fn row(entry: Entry, prefs: &Prefs, app: &App) -> NodeBuilder {
+const COMPACT_ROWS: usize = 32;
+const THINKING_ROWS: usize = 6;
+
+pub(in crate::tui::sigil_view) fn row(
+    entry: Entry,
+    live: bool,
+    prefs: &Prefs,
+    app: &App,
+) -> NodeBuilder {
     let tools = prefs.tools;
     let layout = prefs.diff_layout;
     match entry {
@@ -28,14 +37,7 @@ pub(in crate::tui::sigil_view) fn row(entry: Entry, prefs: &Prefs, app: &App) ->
         Entry::Thinking(body) if body.trim().is_empty() => container(),
         Entry::Receipt(body) if body.trim().is_empty() => container(),
         Entry::Assistant { text: body, .. } => wrap(markdown(signal(body))),
-        Entry::Thinking(body) => {
-            let live = {
-                let model = app.model.get();
-                model.busy_since.is_some()
-                    && matches!(model.entries.last(), Some(Entry::Thinking(last)) if *last == body)
-            };
-            collapsible(&body, "thinking", prefs.reasoning, app, true, live)
-        }
+        Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
         Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
         Entry::Tool {
             name,
@@ -127,6 +129,14 @@ fn collapsible(
             wrap(label(format!("⌄ {kind} · hidden")).class(classes!("text-xs italic text-gray-11")))
                 .pointer_down(press)
         }
+        Visibility::Collapsed | Visibility::Expanded if reasoning && !live => {
+            let words = body.split_whitespace().count();
+            wrap(
+                label(format!("⌄ {kind} · {words} words"))
+                    .class(classes!("text-xs italic text-gray-11")),
+            )
+            .pointer_down(press)
+        }
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
             wrap(
@@ -145,7 +155,7 @@ fn collapsible(
                 })
                 .class(classes!("text-xs italic text-gray-11")),
             )
-            .child(prose(body, "text-xs italic text-gray-11"))
+            .child(capped(body, reasoning))
             .pointer_down(press),
     }
 }
@@ -156,16 +166,59 @@ fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
         .child(child)
 }
 
-fn patch_of(output: &str) -> Option<String> {
-    let patch = output
+fn capped(body: &str, reasoning: bool) -> NodeBuilder {
+    let class = "text-xs italic text-gray-10";
+    let lines: Vec<&str> = body
         .lines()
-        .skip_while(|line| !line.starts_with("@@ "))
-        .take_while(|line| line.is_empty() || line.starts_with([' ', '+', '-', '@', '\\']))
-        .collect::<Vec<_>>()
-        .join("\n");
-    let patch = patch.trim_end().to_string();
-    (!patch.is_empty()).then_some(patch)
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if !reasoning || lines.len() <= THINKING_ROWS {
+        return prose(body, class);
+    }
+    let hidden = lines.len() - THINKING_ROWS;
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .child(label(format!("… +{hidden} lines")).class(class))
+        .child(prose(&lines[hidden..].join("\n"), class))
 }
+
+fn patch_of(output: &str) -> Option<String> {
+    let mut patch = Vec::new();
+    for line in output
+        .lines()
+        .skip_while(|line| !line.starts_with("@@ ") && !line.starts_with("diff --git "))
+    {
+        if let Some(rest) = line.strip_prefix("diff --git ") {
+            if !patch.is_empty() {
+                let path = rest.split_whitespace().nth(1).unwrap_or(rest);
+                patch.push(path.trim_start_matches("b/"));
+            }
+        } else if line.starts_with("@@ ")
+            || line.is_empty()
+            || (line.starts_with([' ', '+', '-', '\\'])
+                && !line.starts_with("--- ")
+                && !line.starts_with("+++ "))
+        {
+            patch.push(line);
+        } else if !FILE_HEADERS.iter().any(|head| line.starts_with(head)) {
+            break;
+        }
+    }
+    let patch = patch.join("\n").trim_end().to_string();
+    (patch.contains("@@ ")).then_some(patch)
+}
+
+const FILE_HEADERS: [&str; 9] = [
+    "index ",
+    "--- ",
+    "+++ ",
+    "new file mode",
+    "deleted file mode",
+    "old mode",
+    "new mode",
+    "similarity index",
+    "rename ",
+];
 
 fn patch_path(output: &str) -> Option<String> {
     for line in output.lines() {
@@ -194,6 +247,10 @@ fn glyph(state: &ToolState) -> (&'static str, &'static str) {
 
 fn tool_header(name: &str, arg: &str, state: &ToolState) -> NodeBuilder {
     let (mark, tone) = glyph(state);
+    let (name, arg) = arg
+        .strip_prefix("search ")
+        .filter(|rest| rest.starts_with('"'))
+        .map_or((name, arg), |rest| ("search", rest));
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -224,40 +281,54 @@ fn tool_card(
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(tool_header(name, arg, state));
-    let Some(patch) = patch_of(output) else {
-        return card.child(output_block(tools.text(output)));
+    let output = preview::plain(output);
+    let failed = matches!(state, ToolState::Failed);
+    let Some(patch) = patch_of(&output) else {
+        let shown = preview::text(tools, name, &output, failed);
+        if shown.is_empty() {
+            return card;
+        }
+        return card.child(output_block(shown));
     };
-    let path = patch_path(output).unwrap_or_else(|| arg.to_string());
+    let path = patch_path(&output).unwrap_or_else(|| arg.to_string());
     let status = match state {
         ToolState::Running => "editing",
         ToolState::Ok => "✓ Applied",
         ToolState::Failed => "✗ Failed",
-    };
-    let sigil_layout = match layout {
-        DiffLayout::Split => SigilDiffLayout::Split,
-        DiffLayout::Unified => SigilDiffLayout::Unified,
     };
     let rows = if tools == ToolOutput::Compact {
         COMPACT_ROWS
     } else {
         usize::MAX
     };
+    let view = patch_view(app, patch, layout)
+        .bg("field")
+        .border_w(0)
+        .path(path)
+        .max_rows(rows);
+    if matches!(name, "edit" | "write" | "apply_patch") {
+        return card.child(view.status(status));
+    }
+    card.child(view)
+}
+
+pub(in crate::tui::sigil_view) fn patch_view(
+    app: &App,
+    patch: impl Into<String>,
+    layout: DiffLayout,
+) -> DiffBuilder {
     let pick = app.clone();
-    card.child(
-        diff(patch)
-            .bg("field")
-            .border_w(0)
-            .path(path)
-            .status(status)
-            .layout(sigil_layout)
-            .max_rows(rows)
-            .choose(move |choice| {
-                pick.set_diff_layout(match choice {
-                    SigilDiffLayout::Split => DiffLayout::Split,
-                    SigilDiffLayout::Unified => DiffLayout::Unified,
-                });
-            }),
-    )
+    diff(patch)
+        .layout(match layout {
+            DiffLayout::Split => SigilDiffLayout::Split,
+            DiffLayout::Unified => SigilDiffLayout::Unified,
+        })
+        .choose(move |choice| {
+            pick.set_diff_layout(match choice {
+                SigilDiffLayout::Split => DiffLayout::Split,
+                SigilDiffLayout::Unified => DiffLayout::Unified,
+            });
+        })
 }
 
 fn output_block(output: impl AsRef<str>) -> NodeBuilder {
@@ -298,34 +369,7 @@ fn output_block(output: impl AsRef<str>) -> NodeBuilder {
 fn prose(body: &str, class: &'static str) -> NodeBuilder {
     let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
     for para in body.split('\n') {
-        let mut row = container()
-            .layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .gap(8.0)
-                    .align_items(AlignItems::Center)
-                    .min_size(0.0, 0.0),
-            )
-            .class(classes!("flex-wrap"));
-        let mut rest = para;
-        while let Some(start) = rest.find('`') {
-            if start > 0 {
-                row = row.child(text(rest[..start].to_string()).class(class));
-            }
-            rest = &rest[start + 1..];
-            let Some(end) = rest.find('`') else {
-                break;
-            };
-            row = row.child(
-                text(rest[..end].replace('\n', " "))
-                    .class(classes!("text-xs font-mono text-info-11")),
-            );
-            rest = &rest[end + 1..];
-        }
-        if !rest.is_empty() {
-            row = row.child(text(rest.to_string()).class(class));
-        }
-        column = column.child(row);
+        column = column.child(markdown_inline(para).class(class));
     }
     column
 }

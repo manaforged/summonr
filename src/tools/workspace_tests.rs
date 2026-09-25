@@ -17,3 +17,9 @@ fn a_patch_past_the_last_newline_does_not_panic() {
     .unwrap();
     assert_eq!(text, "x\n");
 }
+
+#[test]
+fn an_edit_preview_ends_with_a_unified_hunk() {
+    let hunk = super::write::unified_hunk("a\nb\nc\nd\n", "a\nb\nx\ny\nd\n");
+    assert_eq!(hunk, "@@ -2,3 +2,4 @@\n b\n-c\n+x\n+y\n d");
+}

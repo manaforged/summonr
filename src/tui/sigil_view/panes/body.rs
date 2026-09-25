@@ -47,7 +47,7 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
 }
 
 fn close(app: App) -> impl IntoNode {
-    icon_button("×", move || app.toggle_side()).accessible("Close pane")
+    icon_button("✕", move || app.toggle_side()).accessible("Close pane")
 }
 
 fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
@@ -72,40 +72,11 @@ fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 return column.child(label(error.clone()).class(classes!("text-xs text-error-11")));
             }
         };
-        let mut hunk = container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-            .class(classes!("rounded-md bg-gray-1"));
-        for line in text.lines() {
-            let (class, tint) = if line.starts_with("+++") || line.starts_with("---") {
-                ("text-xs font-mono text-gray-11", "")
-            } else if line.starts_with('+') {
-                ("text-xs font-mono text-success-11", "bg-success-3")
-            } else if line.starts_with('-') {
-                ("text-xs font-mono text-error-11", "bg-error-3")
-            } else if line.starts_with("@@") {
-                ("text-xs font-mono text-info-11", "")
-            } else {
-                ("text-xs font-mono text-gray-12", "")
-            };
-            let mut row = container().layout(
-                LayoutStyle::flex_row()
-                    .fill_width()
-                    .padding_x(8.0)
-                    .padding_y(1.0),
-            );
-            if !tint.is_empty() {
-                row = row.class(tint);
-            }
-            hunk = hunk.child(
-                row.child(
-                    label(line.replace('\t', "    "))
-                        .ellipsize()
-                        .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                        .class(class),
-                ),
-            );
-        }
-        return column.child(hunk);
+        return column.child(crate::tui::sigil_view::chat::entry::patch_view(
+            &app,
+            text.clone(),
+            model.prefs.diff_layout,
+        ));
     }
     column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
     drop(model);

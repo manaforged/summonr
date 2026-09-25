@@ -42,7 +42,7 @@ direct file write	1	store::write
 legacy tool alias literal	13	one alias table
 match wildcard arm	114	name the arm
 duration literal	33	one timeout policy
-timeout mention	22	one timeout policy
+timeout mention	23	one timeout policy
 dead dependency unicode-width	0	delete
 dead dependency winapi-util	0	delete
 source file over 400 lines	0	split it

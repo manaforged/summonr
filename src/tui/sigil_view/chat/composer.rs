@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use sigil_tui::cell_width;
+use sigil::app::cell_width;
 
 use super::Speed;
 use super::canvas::ellipsize;

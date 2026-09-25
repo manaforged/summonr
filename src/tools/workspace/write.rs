@@ -16,9 +16,10 @@ impl ToolRegistry {
         dest: &Path,
         display: &str,
         content: &str,
+        tags: bool,
     ) -> Result<String> {
         let before = current(dest, display)?;
-        let preview = self.stage_write(dest, &before, content)?;
+        let preview = self.stage_write(dest, &before, content, tags)?;
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
@@ -30,6 +31,7 @@ impl ToolRegistry {
         dest: &Path,
         before: &str,
         content: &str,
+        tags: bool,
     ) -> Result<String> {
         if let Some((option, detail)) =
             crate::prefs::banned_edit(dest, before, content, &self.allowed_edits)
@@ -39,7 +41,7 @@ impl ToolRegistry {
                 detail,
             });
         }
-        Ok(edit_view(before, content))
+        Ok(edit_view(before, content, tags))
     }
 
     pub(crate) fn allow_edit(&mut self, setting: &'static str) {
@@ -97,22 +99,85 @@ pub(in crate::tools) fn apply_changes(changes: &[Change]) -> Result<()> {
     Ok(())
 }
 
-fn edit_view(before: &str, after: &str) -> String {
+fn edit_view(before: &str, after: &str, tags: bool) -> String {
     if before.is_empty() && !after.is_empty() {
         return format!("new file, {} lines", after.lines().count());
     }
+    let hunk = unified_hunk(before, after);
+    if !tags {
+        return hunk;
+    }
     let (first, last) = crate::hashline::dirty_span(before, after);
-    let mut lines =
-        crate::hashline::tagged_span(after, first.saturating_sub(1), last.saturating_add(1))
-            .lines()
-            .map(|line| crate::child::bounded(line, 160))
-            .collect::<Vec<_>>();
-    if lines.len() > super::read::READ_DEFAULT_LIMIT {
-        let skipped = lines.len() - super::read::READ_DEFAULT_LIMIT;
-        lines.truncate(super::read::READ_DEFAULT_LIMIT);
+    let span = crate::hashline::tagged_span(after, first.saturating_sub(1), last.saturating_add(1));
+    format!(
+        "{}\n{hunk}",
+        cap_rows(span.lines().map(str::to_string).collect()).join("\n")
+    )
+}
+
+fn cap_rows(lines: Vec<String>) -> Vec<String> {
+    let limit = super::read::READ_DEFAULT_LIMIT;
+    let mut lines = lines
+        .iter()
+        .map(|line| crate::child::bounded(line, 160))
+        .collect::<Vec<_>>();
+    if lines.len() > limit {
+        let skipped = lines.len() - limit;
+        lines.truncate(limit);
         lines.push(format!("[{skipped} lines clipped]"));
     }
-    lines.join("\n")
+    lines
+}
+
+pub(super) fn unified_hunk(before: &str, after: &str) -> String {
+    let old: Vec<&str> = before.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    let mut first = 0;
+    while first < old.len() && first < new.len() && old[first] == new[first] {
+        first += 1;
+    }
+    if first == old.len() && first == new.len() {
+        return "no change".to_string();
+    }
+    let (mut old_end, mut new_end) = (old.len(), new.len());
+    while old_end > first && new_end > first && old[old_end - 1] == new[new_end - 1] {
+        old_end -= 1;
+        new_end -= 1;
+    }
+    let start = first.saturating_sub(1);
+    let after_end = (new_end + 1).min(new.len());
+    let mut body = Vec::new();
+    body.extend(old[start..first].iter().map(|line| format!(" {line}")));
+    body.extend(old[first..old_end].iter().map(|line| format!("-{line}")));
+    body.extend(new[first..new_end].iter().map(|line| format!("+{line}")));
+    body.extend(
+        new[new_end..after_end]
+            .iter()
+            .map(|line| format!(" {line}")),
+    );
+    let body = cap_rows(body);
+    let limit = super::read::READ_DEFAULT_LIMIT;
+    let (kept, note) = body.split_at(body.len().min(limit));
+    let old_count = kept.iter().filter(|line| !line.starts_with('+')).count();
+    let new_count = kept.iter().filter(|line| !line.starts_with('-')).count();
+    let side = |count: usize| {
+        if count == 0 {
+            format!("{start},0")
+        } else {
+            format!("{},{count}", start + 1)
+        }
+    };
+    let mut out = String::new();
+    if let Some(note) = note.first() {
+        out.push_str(note);
+        out.push('\n');
+    }
+    out.push_str(&format!("@@ -{} +{} @@", side(old_count), side(new_count)));
+    for line in kept {
+        out.push('\n');
+        out.push_str(line);
+    }
+    out
 }
 
 fn stage<'a>(dest: &'a Path, display: &str, content: &str) -> Result<Staged<'a>> {

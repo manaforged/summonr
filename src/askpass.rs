@@ -51,7 +51,7 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
     let socket = dir.path().join("socket");
     let helper = dir.path().join("askpass");
     let exe = std::env::current_exe()?.display().to_string();
-    crate::durable::store::write(
+    crate::durable::store::scratch(
         &helper,
         format!(
             "#!/bin/sh\nexec '{}' askpass \"$@\"\n",

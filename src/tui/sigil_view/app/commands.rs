@@ -92,7 +92,7 @@ impl App {
             Some(crate::SlashCommand::View) => self.view_command(argument),
             Some(crate::SlashCommand::Demo) => {
                 self.model_mut(|model| model.entries.extend(super::super::demo::entries()));
-                self.scroll_y.set(self.extent.peek());
+                self.scroll_y.set(self.max_scroll.peek());
                 self.refresh();
             }
             _ => return false,

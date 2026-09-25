@@ -13,6 +13,15 @@ pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
     stage(path, bytes.as_ref(), false)?.commit()
 }
 
+pub(crate) fn scratch(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
+    OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(path)?
+        .write_all(bytes.as_ref())
+}
+
 pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
     let mut name = path.as_os_str().to_os_string();
     name.push(".lock");

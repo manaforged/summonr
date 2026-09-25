@@ -17,7 +17,6 @@ impl App {
             self.pane_focus.set(false);
         }
         self.layout.set(layout);
-        self.constrain();
         if opened {
             self.load();
         }
@@ -91,11 +90,7 @@ impl App {
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Diff) {
-            let last = if self.diff_view.peek().is_some() {
-                self.patch_lines().saturating_sub(1)
-            } else {
-                self.diff_rows().len().saturating_sub(1)
-            };
+            let last = self.diff_rows().len().saturating_sub(1);
             self.diff_move(if end { last as isize } else { -(last as isize) });
             return;
         }

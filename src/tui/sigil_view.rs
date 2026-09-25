@@ -8,15 +8,15 @@ mod desktop;
 mod gui;
 mod help;
 mod host;
-mod input;
 
 mod model;
 pub(in crate::tui) mod overlay;
 mod pane;
 mod panes;
-mod patch;
 pub(in crate::tui) mod prelude;
 pub(super) mod profile;
+#[cfg(test)]
+mod scale_tests;
 mod scene;
 mod search;
 mod sessions;

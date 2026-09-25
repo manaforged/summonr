@@ -24,7 +24,6 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn compact(&mut self) -> bool {
-        self.system("Compacting context. Press Escape to cancel.");
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
         let ui = self.ui.clone();
         let outcome = attend(

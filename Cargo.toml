@@ -29,7 +29,7 @@ path = "src/main.rs"
 
 [workspace.dependencies]
 base64 = "0.22"
-leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
+leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "stream"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -51,15 +51,13 @@ zeroize = "1"
 toml = "0.8"
 toml_edit = "0.22"
 unicode-segmentation = "1.13.3"
-unicode-linebreak = "0.1.5"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-leyline-http = { git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "cookies", "stream", "system-trust"] }
+leyline-http = { git = "https://github.com/manaforged/leyline-http", branch = "main", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd", "stream"] }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-gui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false }
-sigil-tui = { git = "https://github.com/manaforged/sigil.git", branch = "main" }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["terminal"] }
 ignore = "0.4"
 grep-regex = "0.1"
 grep-searcher = "0.1"
@@ -73,7 +71,7 @@ crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e
 
 [features]
 default = []
-gui = ["sigil/clipboard", "sigil/desktop"]
+gui = ["sigil/desktop"]
 windows-sandbox = []
 
 [profile.release]

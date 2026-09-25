@@ -152,7 +152,7 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
     if !etag.is_empty() {
         request = request.header("if-none-match", etag);
     }
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|error| crate::error::Error::Config(error.to_string()))?;

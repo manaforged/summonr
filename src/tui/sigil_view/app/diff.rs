@@ -1,4 +1,3 @@
-use super::input::Input;
 use super::*;
 
 impl App {
@@ -80,12 +79,14 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn copied(&self, text: &str, status: CopyStatus) {
+    pub(in crate::tui::sigil_view) fn copied(&self, text: &str, status: sigil::prelude::Delivery) {
         let lines = text.lines().count();
         let plural = if lines == 1 { "" } else { "s" };
         let notice = match status {
-            CopyStatus::Confirmed => format!("copied {lines} line{plural} to the clipboard"),
-            CopyStatus::Requested => format!(
+            sigil::prelude::Delivery::Confirmed => {
+                format!("copied {lines} line{plural} to the clipboard")
+            }
+            sigil::prelude::Delivery::Requested => format!(
                 "copy requested for {lines} line{plural}; terminal acceptance is unconfirmed"
             ),
         };
@@ -106,43 +107,17 @@ impl App {
             .collect()
     }
 
-    pub(in crate::tui::sigil_view) fn patch_lines(&self) -> usize {
-        let width = usize::from(self.layout.peek().split(self.viewport.peek().0).1);
-        self.model
-            .get()
-            .patch
-            .as_ref()
-            .map_or(0, |(_, result)| match result {
-                Ok(text) if width >= SPLIT => patch::pairs(text).len(),
-                Ok(text) => text.lines().count(),
-                Err(error) => Input::new(error, width).rows.len(),
-            })
-    }
-
-    pub(in crate::tui::sigil_view) fn constrain(&self) {
-        if self.model.get().patch.is_some() {
-            self.diff_scroll.set(
-                self.diff_scroll
-                    .peek()
-                    .min(self.patch_lines().saturating_sub(1)),
-            );
-        }
-    }
-
     pub(in crate::tui::sigil_view) fn diff_move(&self, delta: isize) {
         if self.diff_view.peek().is_some() {
-            let last = self.patch_lines().saturating_sub(1) as isize;
-            let scroll = (self.diff_scroll.peek() as isize + delta).clamp(0, last);
-            self.diff_scroll.set(scroll as usize);
-        } else {
-            let count = self.diff_rows().len();
-            if count == 0 {
-                return;
-            }
-            let cursor = self.diff_cursor.peek().min(count - 1) as isize;
-            self.diff_cursor
-                .set((cursor + delta).clamp(0, count as isize - 1) as usize);
+            return;
         }
+        let count = self.diff_rows().len();
+        if count == 0 {
+            return;
+        }
+        let cursor = self.diff_cursor.peek().min(count - 1) as isize;
+        self.diff_cursor
+            .set((cursor + delta).clamp(0, count as isize - 1) as usize);
         self.refresh();
     }
 
@@ -159,7 +134,6 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn diff_open(&self, path: String) {
         self.model_mut(|model| model.patch = None);
-        self.diff_scroll.set(0);
         self.diff_view.set(Some(path.clone()));
         drop(self.cmd.send(Cmd::Patch(self.root(), path)));
         self.refresh();

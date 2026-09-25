@@ -25,7 +25,10 @@ impl Search {
             ));
         }
         let response = self.request(&url).await?;
-        let ctype = content_type(&response);
+        let ctype = response
+            .header("content-type")
+            .unwrap_or("")
+            .to_ascii_lowercase();
         validate(&response, &ctype)?;
         let bytes = read_capped(response).await?;
         if bytes.contains(&0) {
@@ -67,15 +70,14 @@ impl Search {
         self.http
             .get(url.as_str())
             .timeout(TIMEOUT)
-            .accept("text/markdown, text/plain, text/html;q=0.9, */*;q=0.1")
+            .header(
+                "accept",
+                "text/markdown, text/plain, text/html;q=0.9, */*;q=0.1",
+            )
             .send()
             .await
             .map_err(|error| Error::Tool(format!("web_fetch failed: {error}")))
     }
-}
-
-fn content_type(response: &Response) -> String {
-    response.content_type().unwrap_or("").to_ascii_lowercase()
 }
 
 fn validate(response: &Response, ctype: &str) -> Result<()> {

@@ -35,7 +35,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn overlay_move(&self, delta: isize) -> bool {
         match self.overlay() {
-            Some(Overlay::Help) => {}
+            Some(Overlay::Help) => crate::tui::sigil_view::help::shift(self, delta),
             Some(Overlay::Search) => self.search.shift(&self.model.get(), delta),
             Some(Overlay::Sessions) => self.sessions.shift(delta),
             Some(Overlay::Auth) => self.move_auth(delta),

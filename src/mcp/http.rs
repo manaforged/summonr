@@ -48,7 +48,7 @@ impl Http {
         let id = json!(self.next);
         self.next += 1;
         let body = rpc::request(&id, method, params.clone());
-        let mut response = self.post(method, &params, &body).await?;
+        let response = self.post(method, &params, &body).await?;
         if let Some(session) = response.header("mcp-session-id") {
             self.session = Some(session.to_string());
         }
@@ -92,7 +92,7 @@ impl Http {
         let mut request = self
             .client
             .post(&self.url)
-            .user_agent(summonr_auth::AGENT)
+            .header("user-agent", summonr_auth::AGENT)
             .header("Accept", "application/json, text/event-stream")
             .header("Mcp-Method", method);
         if let Some(name) = params.get("name").and_then(Value::as_str) {

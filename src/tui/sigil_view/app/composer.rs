@@ -48,7 +48,7 @@ impl App {
                 .push(Entry::System("queued for the next turn".to_string()));
         });
         drop(self.cmd.send(Cmd::Queue(input)));
-        self.scroll_y.set(self.extent.peek());
+        self.scroll_y.set(self.max_scroll.peek());
         self.refresh();
     }
 
@@ -75,7 +75,6 @@ impl App {
     pub(in crate::tui::sigil_view) fn change(&self, draft: &str) {
         self.recalled.set(None);
         self.reveal(draft);
-        self.reflow();
         if draft.contains('@') && !self.commands.mentions() {
             drop(self.cmd.send(Cmd::ListFiles));
         }
@@ -90,7 +89,11 @@ impl App {
         if self.splash.peek() {
             let (cols, rows) = self.viewport.peek();
             let width = super::scene::prompt_area(self, cols, rows)[2].saturating_sub(9);
-            if draft.contains('\n') || cell_width(draft) > usize::from(width) {
+            if draft.contains('\n')
+                || draft.trim_start().starts_with('/')
+                || draft.contains('@')
+                || cell_width(draft) > usize::from(width)
+            {
                 self.splash.set(false);
             }
         }
@@ -155,7 +158,6 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn select(&self, draft: &str) {
         self.reveal(draft);
-        self.reflow();
         self.caret.set(draft.len());
         self.draft.set(draft.to_string());
     }

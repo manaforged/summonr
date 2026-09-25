@@ -24,9 +24,9 @@ pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Resu
     else {
         return Ok(grant);
     };
-    let mut response = http
+    let response = http
         .get(url)
-        .user_agent(crate::AGENT)
+        .header("user-agent", crate::AGENT)
         .header("Accept", "application/json")
         .bearer_auth(&grant.access)
         .send()
@@ -59,7 +59,7 @@ pub(super) async fn post(
 ) -> Result<(u16, Value)> {
     let request = http
         .post(url)
-        .user_agent(crate::AGENT)
+        .header("user-agent", crate::AGENT)
         .header("Accept", "application/json");
     let request = match style {
         TokenStyle::Form => request.form(
@@ -72,7 +72,7 @@ pub(super) async fn post(
                 .collect(),
         )),
     };
-    let mut response = request
+    let response = request
         .send()
         .await
         .map_err(|error| Error::Transport(error.to_string()))?;

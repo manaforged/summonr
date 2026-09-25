@@ -1,4 +1,5 @@
 use super::{App, Model, composer_hint, suggest};
+use crate::tui::sigil_view::canvas::GUTTER;
 use sigil::prelude::{
     AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
     Position, Tone, classes, container, divider_horizontal, label, node, notice_band,
@@ -56,6 +57,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                 .shrink(0.0)
                 .min_size(0.0, 0.0)
                 .padding_top(8.0)
+                .padding_x(GUTTER - 8.0)
                 .gap(0.0),
         )
         .child(suggest::widget(app.clone(), width))
@@ -65,8 +67,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                     LayoutStyle::flex_column()
                         .fill_width()
                         .min_size(0.0, 0.0)
-                        .padding_left(8.0)
-                        .padding_right(16.0)
+                        .padding_x(8.0)
                         .gap(0.0),
                 )
                 .class(classes!("bg-surface"))

@@ -18,7 +18,7 @@ pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
 pub(super) use composer::{busy_status, composer_hint, draft_view};
 pub(in crate::tui::sigil_view) use footer::Target;
-pub(super) use sigil_tui::cell_width;
+pub(super) use sigil::app::cell_width;
 pub(super) use surface::layer;
 #[cfg(feature = "gui")]
 pub(super) use surface::transcript;

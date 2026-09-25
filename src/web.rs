@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use leyline::http::Uri;
-use leyline::{RedirectAction, RedirectPolicy, Session};
+use leyline::{Browser, Family, RedirectAction, RedirectPolicy, Session, TimeoutConfig};
 use url::Url;
 
 use crate::config;
@@ -106,13 +106,13 @@ impl Search {
         let response = self
             .http
             .get(url.as_str())
-            .accept("application/rss+xml, application/xml")
+            .header("accept", "application/rss+xml, application/xml")
             .send()
             .await
             .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
         let status = response.status();
         let body = response
-            .into_text()
+            .text()
             .await
             .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
         if !status.is_success() {
@@ -150,10 +150,13 @@ impl Search {
 
 fn client() -> Result<Session> {
     Session::builder()
-        .chrome()
-        .timeout(SEARCH_TIMEOUT)
-        .connect_timeout(crate::limits::WEB_CONNECT)
-        .redirect_policy(RedirectPolicy::custom(|attempt| {
+        .browser(Browser::latest(Family::Chrome))
+        .timeout(
+            TimeoutConfig::new()
+                .total(SEARCH_TIMEOUT)
+                .connect(crate::limits::WEB_CONNECT),
+        )
+        .redirect(RedirectPolicy::custom(|attempt| {
             if attempt.previous.len() >= 5 || !safe_redirect(attempt.url) {
                 RedirectAction::Stop
             } else {

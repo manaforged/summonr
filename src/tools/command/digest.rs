@@ -20,7 +20,7 @@ pub(crate) fn digest(command: &str, raw: &str) -> String {
     if out.len() > RESULT_BYTES {
         let mut out = out[..out.floor_char_boundary(RESULT_BYTES)].to_string();
         out.push_str(&format!(
-            "\n[output capped at {RESULT_BYTES} bytes — read the full output at the path below]"
+            "\n[output capped at {RESULT_BYTES} bytes — read the full output at the path above]"
         ));
         return out;
     }
@@ -117,7 +117,7 @@ fn plain_output(lines: &[&str]) -> String {
     let head = &lines[..10];
     let tail = &lines[lines.len() - (TAIL_LINES - 10)..];
     format!(
-        "{}\n[{} middle lines omitted — read the full output at the path below]\n{}",
+        "{}\n[{} middle lines omitted — read the full output at the path above]\n{}",
         head.join("\n"),
         lines.len() - TAIL_LINES,
         tail.join("\n")

@@ -29,13 +29,19 @@ pub(in crate::tui::sigil_view) fn dim_rect(
             let index = usize::from(row) * usize::from(cols) + usize::from(col);
             if let Some(cell) = cells.get_mut(index) {
                 let reset = rgb(0, 0, 0);
-                let fg = match cell.fg {
-                    Ink::Exact(colour) if !(reset_background && cell.text == " ") => colour,
-                    Ink::Bare | Ink::Of(_) | Ink::Exact(_) => reset,
+                let fg = if let Ink::Exact(colour) = cell.fg
+                    && !(reset_background && cell.text == " ")
+                {
+                    colour
+                } else {
+                    reset
                 };
-                let bg = match cell.bg {
-                    Ink::Exact(colour) if !reset_background => colour,
-                    Ink::Bare | Ink::Of(_) | Ink::Exact(_) => reset,
+                let bg = if let Ink::Exact(colour) = cell.bg
+                    && !reset_background
+                {
+                    colour
+                } else {
+                    reset
                 };
                 cell.fg = ink(blend(fg, SCRIM, 0.55));
                 cell.bg = ink(blend(bg, SCRIM, 0.55));
@@ -69,6 +75,7 @@ pub(in crate::tui::sigil_view) fn overlay(
                     bg,
                     bold: false,
                     italic: false,
+                    ..Cell::blank()
                 },
             );
         }

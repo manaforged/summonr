@@ -1,8 +1,10 @@
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use sigil::prelude::{Rgba8, Tone};
-use sigil_tui::cell_width;
+use sigil::app::cell_width;
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, ScrollDelta, Tone, container,
+};
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
@@ -15,6 +17,25 @@ pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
         channel(from.g, to.g),
         channel(from.b, to.b),
     )
+}
+
+pub(super) const GUTTER: f32 = 16.0;
+pub(super) const GUTTER_COLS: usize = 2;
+
+pub(super) fn gutter(child: NodeBuilder) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .shrink(0.0)
+                .min_size(0.0, 0.0)
+                .padding_x(GUTTER),
+        )
+        .child(child)
+}
+
+pub(super) fn inner_cols(cols: usize) -> usize {
+    cols.saturating_sub(2 * GUTTER_COLS)
 }
 
 static WINDOW: AtomicBool = AtomicBool::new(false);
@@ -30,8 +51,8 @@ static METRICS: OnceLock<Metrics> = OnceLock::new();
 
 pub(super) fn cell() -> Metrics {
     *METRICS.get_or_init(|| Metrics {
-        w: sigil_tui::Host::CELL,
-        h: sigil_tui::Host::CELL,
+        w: sigil::Host::CELL,
+        h: sigil::Host::CELL,
         text: "",
     })
 }
@@ -91,25 +112,40 @@ pub(super) const fn rgb(r: u8, g: u8, b: u8) -> Rgba8 {
 }
 
 pub(super) use super::theme::palette;
-pub(super) use sigil_tui::{Cell, Ink};
+pub(super) use sigil::terminal::{Cell, Ink};
 
 pub(super) const fn ink(colour: Rgba8) -> Ink {
     Ink::Exact(colour)
 }
 
 pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {
-    match colour {
-        Ink::Bare => fallback,
-        Ink::Of(tone) => match tone {
-            Tone::Neutral => palette().text,
-            Tone::Primary => palette().accent,
-            Tone::Info => palette().cyan,
-            Tone::Success => palette().green,
-            Tone::Warn => palette().yellow,
-            Tone::Error => palette().red,
-        },
-        Ink::Exact(colour) => colour,
+    if let Ink::Exact(colour) = colour {
+        return colour;
     }
+    let Ink::Of(tone) = colour else {
+        return fallback;
+    };
+    let palette = palette();
+    [
+        (Tone::Primary, palette.accent),
+        (Tone::Info, palette.cyan),
+        (Tone::Success, palette.green),
+        (Tone::Warn, palette.yellow),
+        (Tone::Error, palette.red),
+    ]
+    .into_iter()
+    .find(|(named, _)| *named == tone)
+    .map_or(palette.text, |(_, colour)| colour)
+}
+
+pub(super) fn scroll_lines(delta: ScrollDelta) -> f32 {
+    if let ScrollDelta::Pixels(point) = delta {
+        return point.y / cell().h;
+    }
+    let ScrollDelta::Lines(point) = delta else {
+        return 0.0;
+    };
+    point.y
 }
 
 pub(super) fn write_at(
@@ -132,6 +168,7 @@ pub(super) fn write_at(
         bg: ink(bg),
         bold: false,
         italic: false,
+        ..Cell::blank()
     };
     let mut x = 0;
     for grapheme in text.graphemes(true) {

@@ -73,6 +73,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
 | persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
+| scratch file | `durable/store.rs::scratch` | a plain write for a file that need not survive a crash, such as the askpass helper in its temp directory; no fsync |
 | mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
 | checkpoint | `checkpoint.rs`, `runtime/checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; `Loop::checkpoint` captures it in the background and `Loop::settle` joins it before any tool runs; restore and turn undo |

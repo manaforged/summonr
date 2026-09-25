@@ -111,11 +111,7 @@ impl Client {
         )
     }
 
-    pub(super) async fn rejected(
-        &self,
-        mut response: leyline::Response,
-        model: Option<&str>,
-    ) -> Error {
+    pub(super) async fn rejected(&self, response: leyline::Response, model: Option<&str>) -> Error {
         let code = response.status().as_u16();
         let after = response
             .header("retry-after")

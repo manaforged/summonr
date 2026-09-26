@@ -64,6 +64,7 @@ fn order(rows: &mut [Seat], facts: &BTreeMap<Seat, Model>, groups: &BTreeMap<Str
             best.get(&name).copied(),
             name,
             rank(row),
+            std::cmp::Reverse(facts.get(row).and_then(|model| model.release)),
             row.clone(),
         )
     });

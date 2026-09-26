@@ -12,7 +12,9 @@ use super::view::root;
 use crate::tools::Event;
 use crate::tui::{Activity, Info, Msg};
 
+mod effort;
 mod gutter;
+mod picker;
 
 const SIZES: [(u16, u16); 5] = [(40, 12), (60, 20), (80, 24), (110, 34), (200, 60)];
 
@@ -374,7 +376,7 @@ fn tool_headers_name_the_call() {
 }
 
 #[test]
-fn expanded_thinking_is_capped_and_collapses_after_the_turn() {
+fn expanded_thinking_renders_in_full_live_and_after_the_turn() {
     let body = (1..=20)
         .map(|line| format!("step {line} of the plan.\n"))
         .collect::<String>();
@@ -388,11 +390,11 @@ fn expanded_thinking_is_capped_and_collapses_after_the_turn() {
             }
         }
     };
-    let live = frame_with(busy_info(), 110, 40, State::Idle, setup(true)).join("\n");
-    assert!(
-        live.contains("+14 lines") && !live.contains("step 1 of"),
-        "{live}"
-    );
-    let done = frame_with(busy_info(), 110, 40, State::Idle, setup(false)).join("\n");
-    assert!(!done.contains("step 20 of"), "{done}");
+    for busy in [true, false] {
+        let frame = frame_with(busy_info(), 110, 40, State::Idle, setup(busy)).join("\n");
+        assert!(
+            frame.contains("step 1 of") && frame.contains("step 20 of"),
+            "{frame}"
+        );
+    }
 }

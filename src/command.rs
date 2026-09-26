@@ -32,6 +32,7 @@ pub enum SlashCommand {
     Settings,
     Login,
     Model,
+    Effort,
     Workflow,
     Status,
     Resume,

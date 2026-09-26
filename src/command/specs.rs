@@ -120,6 +120,14 @@ pub(super) const SPECS: &[CommandSpec] = &[
     )
     .usage("[NAME] [LEVEL]"),
     spec(
+        "/effort",
+        "set the reasoning effort",
+        SlashCommand::Effort,
+        Value,
+        Model,
+    )
+    .usage("[none|low|medium|high]"),
+    spec(
         "/workflow",
         "choose models for plan, work, and review",
         SlashCommand::Workflow,
@@ -237,7 +245,6 @@ pub(super) const SPECS: &[CommandSpec] = &[
 pub(super) const ALIASES: &[(&str, &str)] = &[
     ("/auth", "/login"),
     ("/quit", "/exit"),
-    ("/effort", "/model"),
     ("/rollback", "/undo files"),
     ("/branch", "/fork"),
     ("/tree", "/resume"),

@@ -242,6 +242,12 @@ fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
                 .collect()
         }
         Some(SlashCommand::Login) => plain(crate::endpoint::names().unwrap_or_default()),
+        Some(SlashCommand::Effort) => plain(
+            crate::provider::Effort::ALL
+                .iter()
+                .map(|level| level.as_str().to_string())
+                .collect(),
+        ),
         Some(_) | None => Vec::new(),
     }
 }

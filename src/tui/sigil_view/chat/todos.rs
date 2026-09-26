@@ -68,7 +68,8 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
                 false,
                 format!("Todos {done}/{total}"),
                 ListRowSlots {
-                    status: Some(if expanded { "hide".to_string() } else { detail }.into()),
+                    status: expanded.then(|| "hide".to_string().into()),
+                    detail: (!expanded).then(|| detail.into()),
                     shrink: true,
                     ..ListRowSlots::default()
                 },

@@ -31,11 +31,11 @@ api_key = "local"
 ```
 
 Then `summonr local`. `effort = "low"` on a row (or `--effort LEVEL`,
-`/model LEVEL` in the interface) sets the reasoning effort for that
+`/effort` in the interface) sets the reasoning effort for that
 seat. Set it only on a seat whose model reasons; a host that does not
 accept `reasoning_effort` rejects the request. `price = { input, output, cached }` in USD per million tokens
 prices every round in the footer. A workflow seat keeps
-its own row's effort and price; `--effort` and `/model LEVEL` set the
+its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say.
 `summonr endpoints` lists the models of each name through `GET /models`. Each row shows the key state: `ready`, `needs key`, `sign in`, `key rejected`, `rate limited`, `offline`, `error`, or `no key needed`. `summonr login NAME`
 prompts for an API key. `grant = "device_code"` runs a device login, and
@@ -287,7 +287,8 @@ only called tools. The footer shows the last round's rate after the turn.
 | `pgup` `pgdn` | scroll the transcript a page | same |
 | `home` `end` | on an empty draft, jump to the top or the latest reply | same |
 | `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
-| `alt+p` | in `/model`, pins or unpins the selected model | |
+| `alt+p` | in `/model`, adds or removes the selected model from favorites | |
+| `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
@@ -320,6 +321,7 @@ only called tools. The footer shows the last round's rate after the turn.
 | `/agents` | list sessions on the peer bus |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
+| `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
 | `/workflow [NAME]` | choose models for plan, work, and review |
 | `/login [NAME]` | sign in to a provider or store its key |
 | `/plan` | enter plan mode: read and plan, no edits |

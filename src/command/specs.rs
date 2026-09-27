@@ -105,7 +105,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
     .usage("[session]"),
     spec(
         "/agents",
-        "list sessions on the peer bus",
+        "list agent sessions on this machine",
         SlashCommand::Agents,
         Bare,
         Session,
@@ -205,7 +205,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
     .usage("PATH"),
     spec(
         "/pane",
-        "files, ledger, diff, worktrees, or a layout",
+        "files, ledger, diff, worktrees, jobs, peers, or a layout",
         SlashCommand::Pane,
         Value,
         Files,
@@ -259,7 +259,7 @@ pub(super) const ALIASES: &[(&str, &str)] = &[
     ("/tools", "/settings"),
     ("/reasoning", "/settings"),
     ("/receipts", "/settings"),
-    ("/bus", "/settings"),
+    ("/mail", "/settings"),
     ("/modules", "/settings"),
 ];
 

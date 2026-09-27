@@ -248,4 +248,45 @@ impl<P: Provider> Loop<P> {
             aborted: false,
         })
     }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one close path for a length-stopped provider round"
+    )]
+    pub(super) async fn steer_length(
+        &mut self,
+        message: &Message,
+        reasoning: &str,
+        durable_attempt: Attempt,
+        meter: Meter,
+        meta: UsageMeta,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        self.session
+            .finish_provider(durable_attempt, &message.content, reasoning, meter, meta)
+            .map_err(super::session_err)?;
+        self.emit_records(events, emit)?;
+        let control = if message.content.trim().is_empty() && !reasoning.is_empty() {
+            UserInput::from(
+                "/no_think [summon control: the previous round used its output on \
+                 reasoning. Stop reasoning and give the concise final answer now.]",
+            )
+        } else {
+            UserInput::from(
+                "[summon control: the previous round reached its output limit. Continue \
+                 briefly from the partial answer.]",
+            )
+        };
+        self.session.steer(&control).map_err(super::session_err)?;
+        messages.push(Message::user(control));
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "round output limit reached — continuing with the same context".to_string(),
+            },
+        )
+    }
 }

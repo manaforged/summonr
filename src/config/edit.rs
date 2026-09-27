@@ -10,7 +10,8 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
         document["receipts"] = value(prefs.receipts.name());
         document["tools"] = value(prefs.tools.name());
         document["diff_layout"] = value(prefs.diff_layout.name());
-        document["bus"] = value(prefs.bus);
+        document["mail"] = value(prefs.mail);
+        document.as_table_mut().remove("bus");
         document["ban_comments"] = value(prefs.ban_comments);
         document["ban_tests"] = value(prefs.ban_tests);
         document["layout"] = value(&prefs.layout);

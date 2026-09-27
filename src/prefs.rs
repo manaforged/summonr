@@ -274,7 +274,7 @@ pub struct Prefs {
     pub receipts: Visibility,
     pub tools: ToolOutput,
     pub diff_layout: DiffLayout,
-    pub bus: bool,
+    pub mail: bool,
     pub ban_comments: bool,
     pub ban_tests: bool,
     pub layout: String,
@@ -293,7 +293,7 @@ impl Default for Prefs {
             receipts: Visibility::Off,
             tools: ToolOutput::Compact,
             diff_layout: DiffLayout::Split,
-            bus: true,
+            mail: true,
             ban_comments: false,
             ban_tests: false,
             hotkeys: Hotkeys::default(),
@@ -347,8 +347,8 @@ pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
     if let Some(layout) = file.layout {
         prefs.layout = layout;
     }
-    if let Some(bus) = file.bus {
-        prefs.bus = bus;
+    if let Some(mail) = file.mail {
+        prefs.mail = mail;
     }
     if let Some(ban) = file.ban_comments {
         prefs.ban_comments = ban;

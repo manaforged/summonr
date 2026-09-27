@@ -46,7 +46,7 @@ impl Worker {
         true
     }
 
-    pub(in crate::tui::worker) fn name(&self, name: Option<&str>) -> bool {
+    pub(in crate::tui::worker) fn name(&mut self, name: Option<&str>) -> bool {
         match name {
             Some(name) => match self.loop_.set_name(name) {
                 Ok(()) => self.system(&format!("session named {name}")),

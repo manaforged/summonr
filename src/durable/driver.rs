@@ -220,6 +220,10 @@ impl SessionDriver {
         self.state.elapsed
     }
 
+    pub(crate) fn last_close_reason(&self) -> Option<&str> {
+        self.state.last_close_reason.as_deref()
+    }
+
     pub(crate) fn path(&self) -> &Path {
         self.log.path()
     }
@@ -362,3 +366,7 @@ fn footprint_kb() -> Option<u64> {
 fn footprint_kb() -> Option<u64> {
     None
 }
+
+#[cfg(test)]
+#[path = "driver_tests.rs"]
+mod tests;

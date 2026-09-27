@@ -14,7 +14,9 @@ use crate::tui::{Activity, Info, Msg};
 
 mod effort;
 mod gutter;
+mod mention;
 mod picker;
+mod secret;
 
 const SIZES: [(u16, u16); 5] = [(40, 12), (60, 20), (80, 24), (110, 34), (200, 60)];
 
@@ -221,22 +223,22 @@ fn header_is_readable_when_narrow() {
 }
 
 #[test]
-fn secret_prompt_takes_at_most_two_rows() {
+fn secret_prompt_renders_as_a_modal() {
     for (cols, rows) in SIZES {
-        let idle = below_transcript(&frame(cols, rows, State::Idle), "idle");
         let lines = frame_with(busy_info(), cols, rows, State::Idle, |app| {
-            app.secret.set(Some(("Password for git:".to_owned(), 0)));
+            app.set_secret(Some(("Password for git:".to_owned(), 3)));
         });
         let label = format!("{cols}x{rows} secret");
         assert!(
-            find(&lines, "Password").is_some(),
-            "{label}: no prompt:\n{}",
+            find(&lines, "Credential").is_some(),
+            "{label}: no modal:\n{}",
             lines.join("\n")
         );
-        let taken = below_transcript(&lines, &label).saturating_sub(idle);
+        let at = find(&lines, "Password")
+            .unwrap_or_else(|| panic!("{label}: no prompt:\n{}", lines.join("\n")));
         assert!(
-            taken <= 2,
-            "{label}: prompt takes {taken} rows:\n{}",
+            lines[at].contains('┃'),
+            "{label}: prompt outside the dialog:\n{}",
             lines.join("\n")
         );
     }

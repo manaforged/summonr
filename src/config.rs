@@ -29,7 +29,8 @@ pub(crate) struct File {
     pub tools: Option<String>,
     pub diff_layout: Option<crate::prefs::DiffLayout>,
     pub receipts: Option<String>,
-    pub bus: Option<bool>,
+    #[serde(alias = "bus")]
+    pub mail: Option<bool>,
     pub layout: Option<String>,
     pub ban_comments: Option<bool>,
     pub ban_tests: Option<bool>,
@@ -51,8 +52,19 @@ pub(crate) struct File {
     pub import_mcp: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
+    #[serde(default)]
+    pub guard: Guard,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct Guard {
+    pub enabled: Option<bool>,
+    pub signature_warn: Option<usize>,
+    pub signature_stop: Option<usize>,
+    pub cycles: Option<bool>,
+    pub checkpoint_rounds: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -248,17 +260,39 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(File::default()),
         Err(error) => return Err(error.into()),
     };
-    let bad = |field: &str| Error::Config(format!("{}: {field}", tilde(path)));
-    let file: File = toml::from_str(&text).map_err(|error| {
+    let file = decode(path, &text)?;
+    warn_unknown(path, &file);
+    validate(path, &file)?;
+    Ok(file)
+}
+
+fn bad(path: &Path, message: &str) -> Error {
+    Error::Config(format!("{}: {message}", tilde(path)))
+}
+
+fn decode(path: &Path, text: &str) -> Result<File> {
+    let mut table: toml::Table = toml::from_str(text).map_err(|error| {
         let line = error.span().map_or(1, |span| {
             text.get(..span.start)
                 .map_or(1, |head| head.matches('\n').count() + 1)
         });
-        bad(&format!(
-            "line {line}: {} — fix that line, or move the file aside to start fresh",
-            error.message().trim().replace('\n', "; ")
-        ))
+        bad(
+            path,
+            &format!(
+                "line {line}: {} — fix that line, or move the file aside to start fresh",
+                error.message().trim().replace('\n', "; ")
+            ),
+        )
     })?;
+    if table.contains_key("mail") {
+        table.remove("bus");
+    }
+    table
+        .try_into()
+        .map_err(|error: toml::de::Error| bad(path, &error.message().trim().replace('\n', "; ")))
+}
+
+fn warn_unknown(path: &Path, file: &File) {
     let unknown: Vec<String> = file
         .other
         .keys()
@@ -278,12 +312,15 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
             if unknown.len() == 1 { "it" } else { "them" }
         );
     }
+}
+
+fn validate(path: &Path, file: &File) -> Result<()> {
     if file
         .tools
         .as_deref()
         .is_some_and(|tools| !matches!(tools, "compact" | "full"))
     {
-        return Err(bad("`tools` must be `compact` or `full`"));
+        return Err(bad(path, "`tools` must be `compact` or `full`"));
     }
     const THEMES: &[&str] = &["space", "fantasy", "nord", "gruvbox", "solarized", "light"];
     if file
@@ -292,6 +329,7 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
         .is_some_and(|theme| !THEMES.contains(&theme))
     {
         return Err(bad(
+            path,
             "`theme` must be space, fantasy, nord, gruvbox, solarized, or light",
         ));
     }
@@ -299,29 +337,33 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
         .fps
         .is_some_and(|fps| !(crate::prefs::FPS_MIN..=crate::prefs::FPS_MAX).contains(&fps))
     {
-        return Err(bad(&format!(
-            "`fps` must be a whole number from {} to {}",
-            crate::prefs::FPS_MIN,
-            crate::prefs::FPS_MAX
-        )));
+        return Err(bad(
+            path,
+            &format!(
+                "`fps` must be a whole number from {} to {}",
+                crate::prefs::FPS_MIN,
+                crate::prefs::FPS_MAX
+            ),
+        ));
     }
     if let Some(other) = file.secrets.as_deref().map(str::trim)
         && !matches!(other, "" | "file" | "keychain")
     {
-        return Err(bad(&format!(
-            "secrets must be \"file\" or \"keychain\", not `{other}`"
-        )));
+        return Err(bad(
+            path,
+            &format!("secrets must be \"file\" or \"keychain\", not `{other}`"),
+        ));
     }
     if file.lsp.module.is_some() && file.lsp.command.is_some() {
-        return Err(bad("[lsp] accepts `module` or `command`, not both"));
+        return Err(bad(path, "[lsp] accepts `module` or `command`, not both"));
     }
     if let Some(module) = file.lsp.module.as_deref() {
         crate::language::named(module)?;
     }
     if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
-        return Err(bad("[lsp] command must not be empty"));
+        return Err(bad(path, "[lsp] command must not be empty"));
     }
-    Ok(file)
+    Ok(())
 }
 
 mod edit;

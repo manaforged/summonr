@@ -1,4 +1,5 @@
-use std::sync::PoisonError;
+use std::collections::VecDeque;
+use std::sync::{Arc, Mutex, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -14,6 +15,151 @@ const SETTINGS_LATER: &str = "settings apply when the current turn ends — esc 
 enum Input {
     User(UserInput),
     Mail,
+}
+
+enum Outcome {
+    Keep,
+    Cancel,
+    Quit,
+}
+
+struct MidTurn<'a> {
+    deferred: &'a mut VecDeque<Cmd>,
+    followups: &'a mut VecDeque<UserInput>,
+    steering: &'a Arc<Mutex<VecDeque<UserInput>>>,
+    auto_reply: &'a mut bool,
+    ui: &'a UnboundedSender<Msg>,
+    reader: &'a super::reader::Reader,
+}
+
+impl MidTurn<'_> {
+    async fn attend(
+        &mut self,
+        command: Option<Cmd>,
+        session_path: &std::path::Path,
+        session_id: &str,
+        workspace: &std::path::Path,
+    ) -> Outcome {
+        match command {
+            Some(Cmd::Cancel) => Outcome::Cancel,
+            Some(Cmd::Quit) => {
+                drop(self.ui.send(Msg::Bye));
+                Outcome::Quit
+            }
+            None => Outcome::Quit,
+            Some(command) => {
+                self.command(command, session_path, session_id, workspace)
+                    .await
+            }
+        }
+    }
+
+    async fn command(
+        &mut self,
+        command: Cmd,
+        session_path: &std::path::Path,
+        session_id: &str,
+        workspace: &std::path::Path,
+    ) -> Outcome {
+        match command {
+            command @ (Cmd::Command(_)
+            | Cmd::Branch { .. }
+            | Cmd::Login(_)
+            | Cmd::SetKey(..)
+            | Cmd::Logout(_)
+            | Cmd::Merge(_)
+            | Cmd::Discard(_)
+            | Cmd::SetVerify(_)
+            | Cmd::SetEndpoint(_)
+            | Cmd::SetModel(_)
+            | Cmd::SetSeat(..)
+            | Cmd::SeatRole(..)
+            | Cmd::ClearRole(_)
+            | Cmd::SaveWorkflow(_)
+            | Cmd::ListWorkflows
+            | Cmd::SetModule(..)) => self.later(command),
+            command @ (Cmd::ListModels { .. }
+            | Cmd::Pin(..)
+            | Cmd::SaveDefault(_)
+            | Cmd::ListSessions
+            | Cmd::ListUsage
+            | Cmd::DeleteSession(_)
+            | Cmd::ListPrompts(_)
+            | Cmd::ListFiles
+            | Cmd::Jobs
+            | Cmd::KillJob(_)
+            | Cmd::Clipboard
+            | Cmd::Diff(_)
+            | Cmd::Patch(..)
+            | Cmd::Review { .. }
+            | Cmd::Trees
+            | Cmd::View(..)
+            | Cmd::Save(..)) => {
+                self.reader.run(command).await;
+                Outcome::Keep
+            }
+            command @ (Cmd::Steer(_) | Cmd::Queue(_) | Cmd::Submit(_) | Cmd::Dequeue) => {
+                self.queued(command, workspace)
+            }
+            Cmd::Export(target) => {
+                super::export_session(session_path, session_id, target, self.ui);
+                Outcome::Keep
+            }
+            Cmd::SetRunMode(mode) => {
+                self.deferred.push_back(Cmd::SetRunMode(mode));
+                drop(self.ui.send(Msg::RunMode(mode)));
+                drop(self.ui.send(Msg::System(MODE_LATER.to_string())));
+                Outcome::Keep
+            }
+            Cmd::SetEffort(effort) => {
+                self.deferred.push_back(Cmd::SetEffort(effort));
+                Outcome::Keep
+            }
+            Cmd::SetMail(on) => {
+                *self.auto_reply = on;
+                Outcome::Keep
+            }
+            Cmd::Send(to, text) => {
+                mail(self.ui, session_id, &to, &text);
+                Outcome::Keep
+            }
+            Cmd::Mail | Cmd::Tick | Cmd::LoginAnswer(_) => Outcome::Keep,
+            Cmd::Cancel | Cmd::Quit => unreachable!("attend handles Cancel and Quit"),
+        }
+    }
+
+    fn later(&mut self, command: Cmd) -> Outcome {
+        self.deferred.push_back(command);
+        drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+        Outcome::Keep
+    }
+
+    fn queued(&mut self, command: Cmd, workspace: &std::path::Path) -> Outcome {
+        match command {
+            Cmd::Steer(text) => {
+                if let Ok(mut queue) = self.steering.lock() {
+                    queue.push_back(text);
+                    if let Some(notes) = crate::hunks::drain(workspace) {
+                        queue.push_back(UserInput::from(notes));
+                    }
+                }
+            }
+            Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
+            Cmd::Dequeue => {
+                let mut pending: Vec<UserInput> = self
+                    .steering
+                    .lock()
+                    .map_or_else(|_| Vec::new(), |mut queue| queue.drain(..).collect());
+                pending.extend(self.followups.drain(..));
+                if !pending.is_empty() {
+                    drop(self.ui.send(Msg::Restored(pending)));
+                }
+            }
+            _command => unreachable!("queued routes only queue commands"),
+        }
+        super::announce(self.ui, self.steering, self.followups);
+        Outcome::Keep
+    }
 }
 
 impl Worker {
@@ -32,6 +178,7 @@ impl Worker {
         let (cancelled, result, quit) = {
             let session_path = self.loop_.session_path().to_path_buf();
             let session_id = self.loop_.session_id();
+            let workspace = self.loop_.workspace().to_path_buf();
             let turn = async {
                 match input {
                     Input::User(input) => self.loop_.turn_with(input, emit).await,
@@ -39,62 +186,31 @@ impl Worker {
                 }
             };
             tokio::pin!(turn);
+            let mut mid = MidTurn {
+                deferred: &mut self.deferred,
+                followups: &mut self.followups,
+                steering: &self.steering,
+                auto_reply: &mut self.auto_reply,
+                ui: &self.ui,
+                reader: &self.reader,
+            };
             let (mut cancelled, mut quit) = (false, false);
             let result = loop {
                 tokio::select! {
                     done = &mut turn => break Some(done),
-                    command = self.cmd.recv() => match command {
-                        Some(command @ (Cmd::Command(_) | Cmd::Branch { .. })) => {
-                            self.deferred.push_back(command);
-                            drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+                    command = self.cmd.recv() => match mid
+                        .attend(command, &session_path, &session_id, &workspace)
+                        .await
+                    {
+                        Outcome::Keep => {}
+                        Outcome::Cancel => {
+                            cancelled = true;
+                            break None;
                         }
-                        Some(Cmd::Export(target)) => super::export_session(&session_path, &session_id, target, &self.ui),
-                        Some(command @ (Cmd::ListModels { .. } | Cmd::Pin(..) | Cmd::SaveDefault(_) | Cmd::ListSessions | Cmd::ListUsage | Cmd::DeleteSession(_) | Cmd::ListPrompts(_) | Cmd::ListFiles | Cmd::Clipboard | Cmd::Diff(_) | Cmd::Patch(..) | Cmd::Trees | Cmd::View(..) | Cmd::Save(..))) => self.reader.run(command).await,
-                        Some(command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Logout(_) | Cmd::Merge(_) | Cmd::Discard(_))) => {
-                            self.deferred.push_back(command);
-                            drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+                        Outcome::Quit => {
+                            quit = true;
+                            break None;
                         }
-                        Some(Cmd::Cancel) => { cancelled = true; break None; }
-                        Some(Cmd::Quit) => { drop(self.ui.send(Msg::Bye)); quit = true; break None; }
-                        Some(Cmd::SetRunMode(mode)) => {
-                            self.deferred.push_back(Cmd::SetRunMode(mode));
-                            drop(self.ui.send(Msg::RunMode(mode)));
-                            drop(self.ui.send(Msg::System(MODE_LATER.to_string())));
-                        }
-                        Some(Cmd::SetEffort(effort)) => {
-                            self.deferred.push_back(Cmd::SetEffort(effort));
-                        }
-                        Some(Cmd::SetBus(on)) => {
-                            self.auto_reply = on;
-                        }
-                        Some(Cmd::Steer(text)) => {
-                            if let Ok(mut queue) = self.steering.lock() { queue.push_back(text); }
-                            super::announce(&self.ui, &self.steering, &self.followups);
-                        }
-                        Some(Cmd::Queue(text)) => {
-                            self.followups.push_back(text);
-                            super::announce(&self.ui, &self.steering, &self.followups);
-                        }
-                        Some(Cmd::Dequeue) => {
-                            let mut pending: Vec<UserInput> = self.steering.lock().map_or_else(|_| Vec::new(), |mut queue| queue.drain(..).collect());
-                            pending.extend(self.followups.drain(..));
-                            if !pending.is_empty() {
-                                drop(self.ui.send(Msg::Restored(pending)));
-                            }
-                            super::announce(&self.ui, &self.steering, &self.followups);
-                        }
-                        Some(command @ (Cmd::SetVerify(_) | Cmd::SetEndpoint(_) | Cmd::SetModel(_) | Cmd::SetSeat(_, _) | Cmd::SeatRole(..) | Cmd::ClearRole(_) | Cmd::SaveWorkflow(_) | Cmd::ListWorkflows | Cmd::SetModule(_, _))) => {
-                            self.deferred.push_back(command);
-                            drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
-                        }
-                        Some(Cmd::Submit(input)) => {
-                            self.followups.push_back(input);
-                            super::announce(&self.ui, &self.steering, &self.followups);
-                        }
-                        Some(Cmd::Mail) => {}
-                        Some(Cmd::Send(to, text)) => mail(&self.ui, &session_id, &to, &text),
-                        Some(Cmd::Tick | Cmd::LoginAnswer(_)) => {}
-                        None => { quit = true; break None; }
                     }
                 }
             };
@@ -226,7 +342,7 @@ impl Worker {
 }
 
 pub(super) fn mail(ui: &UnboundedSender<Msg>, from: &str, to: &[String], text: &str) {
-    let note = match crate::bus::deliver(from, to, text) {
+    let note = match crate::mail::deliver(from, to, text) {
         Ok(_) => format!(
             "sent to {}",
             to.iter()

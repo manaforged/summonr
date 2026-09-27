@@ -7,7 +7,7 @@ impl<P: Provider> Loop<P> {
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
-        let handle = tokio::spawn(run.execute(self.mailbox.0.clone()));
+        let handle = tokio::spawn(run.execute(self.events.0.clone()));
         self.spawned.insert(
             id.clone(),
             Spawned {
@@ -118,7 +118,7 @@ impl<P: Provider> Loop<P> {
         self.session
             .start_child(record.clone())
             .map_err(super::session_err)?;
-        drop(self.mailbox.0.send(Event::Child {
+        drop(self.events.0.send(Event::Child {
             id: record.id.to_string(),
             event: Box::new(Event::Spawned {
                 assignment: record.assignment.clone(),

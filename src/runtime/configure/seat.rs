@@ -105,8 +105,11 @@ impl<P: Provider> Loop<P> {
         self.session.path()
     }
 
-    pub fn set_name(&self, name: &str) -> Result<()> {
+    pub fn set_name(&mut self, name: &str) -> Result<()> {
         crate::session::set_name(self.session.path(), name)?;
+        if self.mailbox.is_some() {
+            self.join_mail();
+        }
         Ok(())
     }
 

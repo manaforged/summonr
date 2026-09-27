@@ -70,8 +70,8 @@ impl<P: Provider> Loop<P> {
                         .await,
                         None,
                     )
-                } else if is_bus_tool(&call.function.name) {
-                    (self.bus_execute(&call).map(ToolOutput::ok), None)
+                } else if is_mail_tool(&call.function.name) {
+                    (self.mail_execute(&call).map(ToolOutput::ok), None)
                 } else {
                     let approval =
                         self.manual && Builtin::is(&call.function.name, Builtin::RunCommand);

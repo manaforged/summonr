@@ -19,7 +19,7 @@ impl<P: Provider> Loop<P> {
                 messages.push(Message::user(input));
             }
         }
-        let (mail, overflow) = self.take_bus_mail(5)?;
+        let (mail, overflow) = self.take_peer_mail(5)?;
         for mail in mail {
             let input = UserInput::from(envelope(&mail));
             self.session.steer(&input).map_err(super::session_err)?;
@@ -28,14 +28,14 @@ impl<P: Provider> Loop<P> {
                 events,
                 emit,
                 Event::Mail {
-                    from: mail.from,
+                    from: mail.sender().to_string(),
                     text: mail.text,
                 },
             )?;
         }
         if overflow > 0 {
             let note = format!(
-                "[summon bus: {overflow} more message(s) waiting — use the inbox tool to drain them]"
+                "[summon mail: {overflow} more message(s) waiting — use the inbox tool to drain them]"
             );
             let input = UserInput::from(note);
             self.session.steer(&input).map_err(super::session_err)?;

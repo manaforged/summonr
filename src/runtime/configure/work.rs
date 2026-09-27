@@ -69,8 +69,8 @@ impl<P: Provider> Loop<P> {
         self.session = session;
         self.tools.set_session(&self.session.id().to_string());
         self.spent_tokens = replay.spent_tokens;
-        self.bus = None;
-        self.join_bus();
+        self.mailbox = None;
+        self.join_mail();
         self.schema = None;
         self.herdr.retarget(&self.session.id().to_string());
     }

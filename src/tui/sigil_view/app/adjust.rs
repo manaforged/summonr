@@ -41,7 +41,7 @@ impl App {
                 let layout = self.model.get().prefs.diff_layout.toggle();
                 self.set_diff_layout(layout);
             }
-            Setting::Bus => self.toggle_bus(),
+            Setting::Mail => self.toggle_mail(),
             Setting::Module(index) => {
                 if let Some(module) = crate::modules::ALL.get(index) {
                     self.toggle_module(module.name);
@@ -197,14 +197,14 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_bus(&self) {
+    pub(in crate::tui::sigil_view) fn toggle_mail(&self) {
         self.model_mut(|model| {
-            model.prefs.bus = !model.prefs.bus;
+            model.prefs.mail = !model.prefs.mail;
         });
         let prefs = self.model.peek().prefs.clone();
-        let on = prefs.bus;
+        let on = prefs.mail;
         self.persist(&prefs);
-        drop(self.cmd.send(Cmd::SetBus(on)));
+        drop(self.cmd.send(Cmd::SetMail(on)));
         self.refresh();
     }
 

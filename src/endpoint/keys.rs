@@ -89,7 +89,7 @@ fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
             Some("api") => entry.get("key"),
             Some("oauth") if bearer => {
                 let expires = entry.get("expires").and_then(serde_json::Value::as_i64)?;
-                let now = i64::try_from(crate::bus::now()).ok()?.saturating_mul(1000);
+                let now = i64::try_from(crate::mail::now()).ok()?.saturating_mul(1000);
                 if expires <= now + 60_000 {
                     return None;
                 }
@@ -158,7 +158,7 @@ pub(super) fn kimi_cli_token() -> Option<String> {
     let expires = value
         .get("expires_at")
         .and_then(serde_json::Value::as_i64)?;
-    let now = i64::try_from(crate::bus::now()).ok()?;
+    let now = i64::try_from(crate::mail::now()).ok()?;
     if expires <= now + 60 {
         return None;
     }

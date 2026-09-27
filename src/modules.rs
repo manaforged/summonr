@@ -43,8 +43,8 @@ pub const ALL: [Module; 7] = [
         default: false,
     },
     Module {
-        name: "bus",
-        summary: "mail and a blackboard between summonr sessions on this machine",
+        name: "mail",
+        summary: "the model's mail tools: agents, send, inbox, board",
         default: false,
     },
 ];

@@ -24,14 +24,14 @@ impl Worker {
             ui,
             endpoint: info.endpoint,
             relay: info.relay,
-            auto_reply: info.prefs.bus,
+            auto_reply: info.prefs.mail,
             pending_mail: false,
             last_auto: Instant::now(),
             steering,
             deferred: VecDeque::new(),
             followups: VecDeque::new(),
             last_turn: None,
-            bus_error: None,
+            mail_error: None,
             last_diff: None,
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
@@ -74,34 +74,48 @@ impl Worker {
         }
     }
 
+    fn peers(&mut self) {
+        let peers: Vec<_> = self
+            .loop_
+            .peers()
+            .into_iter()
+            .filter(|agent| agent.id != self.loop_.session_id())
+            .collect();
+        let last = self.last_peers.as_deref().unwrap_or(&[]);
+        let same = last.len() == peers.len()
+            && last.iter().zip(&peers).all(|(a, b)| {
+                a.id == b.id
+                    && a.name == b.name
+                    && a.kind == b.kind
+                    && a.model == b.model
+                    && a.cwd == b.cwd
+                    && a.pid == b.pid
+                    && a.status == b.status
+            });
+        if !same {
+            self.last_peers = Some(peers.clone());
+            drop(self.ui.send(Msg::Peers(peers)));
+        }
+    }
+
     pub(super) fn tick(&mut self) {
         for event in self.loop_.child_events() {
             drop(self.ui.send(Msg::Event(event)));
         }
-        self.loop_.bus_heartbeat("idle");
-        let peers: Vec<_> = self
-            .loop_
-            .bus_agents()
-            .into_iter()
-            .filter(|agent| agent.id != self.loop_.session_id())
-            .collect();
-        let ids: Vec<String> = peers.iter().map(|agent| agent.id.clone()).collect();
-        if self.last_peers.as_ref() != Some(&ids) {
-            self.last_peers = Some(ids);
-            drop(self.ui.send(Msg::Peers(peers)));
-        }
-        let mail = match self.loop_.bus_poll() {
+        self.loop_.mail_heartbeat("idle");
+        self.peers();
+        let mail = match self.loop_.mail_poll() {
             Ok(mail) => {
-                if self.bus_error.take().is_some() {
-                    drop(self.ui.send(Msg::System("bus recovered".to_string())));
+                if self.mail_error.take().is_some() {
+                    drop(self.ui.send(Msg::System("mail recovered".to_string())));
                 }
                 mail
             }
             Err(error) => {
-                let text = format!("bus poll failed: {error}");
-                if self.bus_error.as_ref() != Some(&text) {
+                let text = format!("mail poll failed: {error}");
+                if self.mail_error.as_ref() != Some(&text) {
                     drop(self.ui.send(Msg::System(text.clone())));
-                    self.bus_error = Some(text);
+                    self.mail_error = Some(text);
                 }
                 Vec::new()
             }
@@ -113,7 +127,7 @@ impl Worker {
         if !self.pending_mail {
             for message in mail {
                 drop(self.ui.send(Msg::Mail {
-                    from: message.from.clone(),
+                    from: message.sender().to_string(),
                     text: message.text.clone(),
                 }));
             }
@@ -126,7 +140,7 @@ impl Worker {
         }
     }
 
-    pub(super) fn set_bus(&mut self, on: bool) {
+    pub(super) fn set_mail_reply(&mut self, on: bool) {
         self.auto_reply = on;
         if !on {
             self.pending_mail = false;

@@ -54,7 +54,7 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             format!("  {:<12} hide or show the pane · ctrl+→ focus it · ctrl+← composer", keys.label(Hotkey::Pane)),
             format!("  {:<12} copy the last reply · /copy all · {} select text", keys.label(Hotkey::Copy), keys.label(Hotkey::Select)),
             "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll".to_string(),
-            "  home/end     on an empty draft, jump to the top or the latest reply".to_string(),
+            "  home/end     on an empty draft, jump to the top or the latest reply · ctrl+home/end always".to_string(),
             "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
             "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),
             "  diff         t last turn only · c copy the patch".to_string(),

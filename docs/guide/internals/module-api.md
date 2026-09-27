@@ -42,7 +42,7 @@ The tool schemas. Four core, five behind modules.
 | `skill` | `tools/catalog.rs::skill` | `.summonr/skills` present |
 | `lsp` | `tools/catalog.rs::lsp` | `lsp` module on |
 | `web` | `tools/catalog.rs::web` | `web` module on |
-| `task` | `runtime/child.rs::definition` | `task` module off until `/modules task on` |
+| `task` | `runtime/child.rs::definition` | `task` module on by default; `/modules task off` disables |
 | `<server>__<tool>` | `mcp.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode keeps `readOnlyHint` tools |
 
 Plan mode advertises `read`, `run_command`, `skill`, and `web` only.

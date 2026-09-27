@@ -1,5 +1,8 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use super::*;
-use sigil::prelude::{button, card, spacer};
+use sigil::prelude::{button, card, request_focus, spacer};
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let submit = app.clone();
@@ -13,6 +16,8 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
         (app.draft, app.caret)
     };
     let model = app.clone();
+    let editor_node = Rc::new(Cell::new(None));
+    let mount = editor_node.clone();
     container()
         .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
             if paste.clipboard() {
@@ -35,6 +40,11 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                 .shrink(0.0)
                 .align_items(AlignItems::Stretch),
         )
+        .pointer_down(move |_| {
+            if let Some(id) = editor_node.get() {
+                request_focus(id);
+            }
+        })
         .child(card(
             container()
                 .layout(
@@ -44,23 +54,27 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .min_size(0.0, 120.0),
                 )
                 .class(classes!("bg-gray-3"))
-                .child(
-                    text_edit(value)
-                        .caret_position(caret)
-                        .placeholder(if editing {
-                            "editing the file — ctrl+s saves, esc leaves"
-                        } else {
-                            "Message — @file attaches, /help lists"
-                        })
-                        .change(move |draft| {
-                            if !editing {
-                                changed.change(draft);
-                            }
-                        })
-                        .submit(move |_| submit.submit())
-                        .layout(LayoutStyle::flex_column().fill_width().height(96.0))
-                        .class(classes!("text-sm text-gray-12")),
-                )
+                .child(move |cx: &mut Cx| {
+                    let id = cx.add(
+                        text_edit(value)
+                            .caret_position(caret)
+                            .placeholder(if editing {
+                                "editing the file — ctrl+s saves, esc leaves"
+                            } else {
+                                "Message — @file attaches, /help lists"
+                            })
+                            .change(move |draft| {
+                                if !editing {
+                                    changed.change(draft);
+                                }
+                            })
+                            .submit(move |_| submit.submit())
+                            .layout(LayoutStyle::flex_column().fill_width().height(96.0))
+                            .class(classes!("text-sm text-gray-12")),
+                    );
+                    mount.set(Some(id));
+                    id
+                })
                 .child(
                     container()
                         .layout(

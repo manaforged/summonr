@@ -3,8 +3,10 @@ use sigil::prelude::{
     NodeEventsExt, NodeStyleExt, Position, classes, container, label, spacer,
 };
 
+use sigil::prelude::derived_eq;
+
 use super::chrome;
-use super::{App, Model, Speed, canvas, cell_width};
+use super::{App, Speed, canvas, cell_width};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Target {
@@ -12,8 +14,38 @@ pub(in crate::tui::sigil_view) enum Target {
     Cache,
 }
 
+type FooterView = (
+    Option<String>,
+    u64,
+    u64,
+    Option<(bool, Vec<(String, String)>)>,
+);
+
+fn footer_view(app: &App) -> FooterView {
+    drop(app.status.get());
+    let context_open = app.context_open.get();
+    let cache_open = app.cache_open.get();
+    let hover = app.meter_hover.get();
+    let model = app.model.get();
+    let speed = model.speed.last().map(Speed::label);
+    let open = if hover == Some(Target::Context) || (hover.is_none() && context_open) {
+        Some((false, chrome::context_facts(&model)))
+    } else if hover == Some(Target::Cache) || (hover.is_none() && cache_open) {
+        Some((true, chrome::cache_facts(&model)))
+    } else {
+        None
+    };
+    (
+        speed,
+        chrome::context_percent(&model),
+        chrome::cache_percent(&model),
+        open,
+    )
+}
+
 pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
+    let view = derived_eq(move || footer_view(&update));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -21,18 +53,11 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
                 .shrink(0.0)
                 .min_size(0.0, 0.0),
         )
-        .children_reactive(move || {
-            drop(update.status.get());
-            let _context_open = update.context_open.get();
-            let _cache_open = update.cache_open.get();
-            drop(update.meter_hover.get());
-            let model = update.model.get();
-            vec![footer_row(update.clone(), &model, width)]
-        })
+        .children_reactive(move || vec![footer_row(app.clone(), view.get(), width)])
 }
 
-fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
-    let speed = model.speed.last().map(Speed::label);
+fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
+    let (speed, context_pct, cache_pct, open) = view;
     let taken = 42
         + app
             .git_branch
@@ -66,18 +91,24 @@ fn footer_row(app: App, model: &Model, width: usize) -> NodeBuilder {
     if let Some(rate) = speed {
         row = row.child(label(rate).class(classes!("text-xs text-gray-11")));
     }
+    let context_card = open
+        .as_ref()
+        .and_then(|(cache, rows)| (!*cache).then_some(rows.clone()));
+    let cache_card = open
+        .as_ref()
+        .and_then(|(cache, rows)| (*cache).then_some(rows.clone()));
     row = row.child(meter_button(
         app.clone(),
-        model,
         Target::Context,
-        meter("ctx", chrome::context_percent(model), "bg-accent"),
+        meter("ctx", context_pct, "bg-accent"),
+        context_card,
         width,
     ));
     row.child(meter_button(
         app,
-        model,
         Target::Cache,
-        meter("cache", chrome::cache_percent(model), "bg-info-11"),
+        meter("cache", cache_pct, "bg-info-11"),
+        cache_card,
         width,
     ))
 }
@@ -108,21 +139,11 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
         .child(label(format!("{percent}%")).class(classes!("text-xs text-gray-12")))
 }
 
-fn showing(app: &App, target: &Target) -> bool {
-    let pinned = match target {
-        Target::Context => app.context_open.peek(),
-        Target::Cache => app.cache_open.peek(),
-    };
-    app.meter_hover
-        .peek()
-        .map_or(pinned, |hovered| hovered == *target)
-}
-
 fn meter_button(
     app: App,
-    model: &Model,
     target: Target,
     child: NodeBuilder,
+    card: Option<Vec<(String, String)>>,
     width: usize,
 ) -> NodeBuilder {
     let press = app.clone();
@@ -139,7 +160,7 @@ fn meter_button(
                 .position(Position::Relative),
         )
         .child(child);
-    if showing(&app, &target) {
+    if let Some(rows) = card {
         button = button.child(
             container()
                 .layout(
@@ -148,7 +169,7 @@ fn meter_button(
                         .inset_bottom(LengthPercentageAuto::Percent(1.0))
                         .inset_right(0.0),
                 )
-                .child(meter_card(model, width, target.clone())),
+                .child(meter_card(rows, width, target.clone())),
         );
     }
     button
@@ -166,10 +187,10 @@ fn meter_button(
         })
 }
 
-fn meter_card(model: &Model, width: usize, target: Target) -> NodeBuilder {
-    let (title, rows) = match target {
-        Target::Context => (" ctx ", chrome::context_facts(model)),
-        Target::Cache => (" cache ", chrome::cache_facts(model)),
+fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> NodeBuilder {
+    let title = match target {
+        Target::Context => " ctx ",
+        Target::Cache => " cache ",
     };
     let card_width = width.min(30);
     let mut card = container()

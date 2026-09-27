@@ -1,9 +1,9 @@
 use std::rc::Rc;
 
 use sigil::prelude::{
-    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt,
-    Style, classes, container, defer, derived_eq, effect, empty_state, label, node, signal, spacer,
-    untrack, virtual_list,
+    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt,
+    NodeStyleExt, Style, classes, container, defer, derived_eq, effect, empty_state, label, node,
+    signal, spacer, untrack, virtual_list,
 };
 
 use super::composer;
@@ -77,8 +77,43 @@ fn fit(parts: &mut Vec<(Part, String)>, width: usize) {
     }
 }
 
+type HeaderParts = (Vec<(Part, String)>, u8);
+
+fn header_parts(app: &App, width: usize) -> HeaderParts {
+    let model = app.model.get();
+    let snapshot = &model.snapshot;
+    let mode_class = if snapshot.plan {
+        0
+    } else if snapshot.work {
+        1
+    } else if snapshot.goal {
+        2
+    } else {
+        3
+    };
+    let mode = ["plan", "work", "goal", "auto"][mode_class as usize];
+    let mut parts = vec![
+        (Part::Brand, "summonr".to_owned()),
+        (Part::Model, snapshot.model.clone()),
+    ];
+    if let Some(pick) = model.pick {
+        parts.push((Part::Pick, format!("({pick})")));
+    }
+    if let Some(relay) = snapshot.relay.as_deref().filter(|relay| !relay.is_empty()) {
+        parts.push((Part::Relay, format!("· {relay}")));
+    }
+    parts.push((
+        Part::Session,
+        format!("ses {}", crate::session::short(&model.session)),
+    ));
+    parts.push((Part::Mode, mode.to_owned()));
+    fit(&mut parts, width);
+    (parts, mode_class)
+}
+
 fn header(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
+    let parts = derived_eq(move || header_parts(&update, width));
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -88,33 +123,13 @@ fn header(app: App, width: usize) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let model = update.model.get();
-            let snapshot = &model.snapshot;
-            let (mode, mode_class) = if snapshot.plan {
-                ("plan", classes!("text-xs text-accent"))
-            } else if snapshot.work {
-                ("work", classes!("text-xs text-warn-11"))
-            } else if snapshot.goal {
-                ("goal", classes!("text-xs text-error-11"))
-            } else {
-                ("auto", classes!("text-xs text-success-11"))
-            };
-            let mut parts = vec![
-                (Part::Brand, "summonr".to_owned()),
-                (Part::Model, snapshot.model.clone()),
-            ];
-            if let Some(pick) = model.pick {
-                parts.push((Part::Pick, format!("({pick})")));
-            }
-            if let Some(relay) = snapshot.relay.as_deref().filter(|relay| !relay.is_empty()) {
-                parts.push((Part::Relay, format!("· {relay}")));
-            }
-            parts.push((
-                Part::Session,
-                format!("ses {}", crate::session::short(&model.session)),
-            ));
-            parts.push((Part::Mode, mode.to_owned()));
-            fit(&mut parts, width);
+            let (parts, mode_class) = parts.get();
+            let mode_class = [
+                classes!("text-xs text-accent"),
+                classes!("text-xs text-warn-11"),
+                classes!("text-xs text-error-11"),
+                classes!("text-xs text-success-11"),
+            ][mode_class as usize];
             let mut row = Vec::new();
             let mut spaced = false;
             for (part, text) in parts {
@@ -211,10 +226,9 @@ pub(in crate::tui::sigil_view) fn transcript(
     let model = app.model;
     let keys = derived_eq(move || {
         model.with(|model| {
-            let stamp = model.entries.stamp;
             Rc::new(
                 (0..model.entries.len())
-                    .map(|index| (stamp << 32) ^ index as u64)
+                    .map(|index| index as u64)
                     .collect::<Vec<u64>>(),
             )
         })
@@ -243,6 +257,7 @@ pub(in crate::tui::sigil_view) fn transcript(
             let live = app.clone();
             vec![
                 container()
+                    .selectable_text(true)
                     .layout(
                         LayoutStyle::flex_column()
                             .fill_width()
@@ -261,6 +276,7 @@ pub(in crate::tui::sigil_view) fn transcript(
                         .max_scroll_bind(app.max_scroll)
                         .content_height_bind(app.content_height)
                         .auto_pin_to_bottom(true)
+                        .scrollbar(true)
                         .follow(jump),
                     ),
             ]

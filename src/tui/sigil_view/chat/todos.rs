@@ -1,41 +1,34 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, classes, container, list_row_with,
+    NodeStyleExt, classes, container, derived_eq, list_row_with,
 };
 
 use super::panes::ledger::item;
 use super::prelude::*;
 use super::{App, Model, Pane, canvas};
 
-pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
-    let update = app.clone();
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            let _viewport = update.viewport.get();
-            let draft = update.draft.get();
-            let caret = update.caret.get();
-            let model = update.model.get();
-            let layout = update.layout.get();
-            let width = usize::from(cols);
-            if width == 0
-                || (layout.secondary == Some(Pane::Ledger) && layout.split(cols).1 > 0)
-                || model.ledger.iter().all(|line| item(line).0 == '✓')
-                || update.commands.open(&draft, caret, &model)
-            {
-                return Vec::new();
-            }
-            vec![panel(update.clone(), &model, width)]
-        })
+#[derive(Clone, PartialEq)]
+struct TodosView {
+    expanded: bool,
+    done: usize,
+    total: usize,
+    detail: String,
+    rows: Vec<(bool, String)>,
 }
 
-fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
-    let _ = width;
+fn view(app: &App, cols: u16) -> Option<TodosView> {
+    let height = app.viewport.get().1;
+    let draft = app.draft.get();
+    let caret = app.caret.get();
+    let model = app.model.get();
+    let layout = app.layout.get();
+    if cols == 0
+        || (layout.secondary == Some(Pane::Ledger) && layout.split(cols).1 > 0)
+        || model.ledger.iter().all(|line| item(line).0 == '✓')
+        || app.commands.open(&draft, caret, &model)
+    {
+        return None;
+    }
     let expanded = model.todos_expanded;
     let (done, total) = tally(&model.ledger);
     let current = model
@@ -53,6 +46,52 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
     let detail = current.map_or(String::new(), |(mark, text)| {
         format!("{} {text}", glyph(mark))
     });
+    let rows = if expanded {
+        let count = visible_rows(&model, height);
+        let start = model
+            .todos_offset
+            .min(model.ledger.len().saturating_sub(count));
+        model
+            .ledger
+            .iter()
+            .skip(start)
+            .take(count)
+            .map(|task| {
+                let (mark, text) = item(task);
+                (mark == '●', format!("{} {text}", glyph(mark)))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Some(TodosView {
+        expanded,
+        done,
+        total,
+        detail,
+        rows,
+    })
+}
+
+pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
+    let update = app.clone();
+    let shown = derived_eq(move || view(&update, cols));
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .shrink(0.0)
+                .min_size(0.0, 0.0),
+        )
+        .children_reactive(move || {
+            shown
+                .get()
+                .map(|view| vec![panel(app.clone(), view)])
+                .unwrap_or_default()
+        })
+}
+
+fn panel(app: App, view: TodosView) -> NodeBuilder {
     let toggle = app.clone();
     let mut body = container()
         .layout(
@@ -66,10 +105,10 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
         .child(
             list_row_with(
                 false,
-                format!("Todos {done}/{total}"),
+                format!("Todos {}/{}", view.done, view.total),
                 ListRowSlots {
-                    status: expanded.then(|| "hide".to_string().into()),
-                    detail: (!expanded).then(|| detail.into()),
+                    status: view.expanded.then(|| "hide".to_string().into()),
+                    detail: (!view.expanded).then(|| view.detail.clone().into()),
                     shrink: true,
                     ..ListRowSlots::default()
                 },
@@ -81,19 +120,8 @@ fn panel(app: App, model: &Model, width: usize) -> NodeBuilder {
                 }
             }),
         );
-    if expanded {
-        let count = visible_rows(model, app.viewport.peek().1);
-        let start = model
-            .todos_offset
-            .min(model.ledger.len().saturating_sub(count));
-        for task in model.ledger.iter().skip(start).take(count) {
-            let (mark, text) = item(task);
-            body = body.child(pick(
-                mark == '●',
-                format!("{} {text}", glyph(mark)),
-                String::new(),
-            ));
-        }
+    for (current, text) in view.rows {
+        body = body.child(pick(current, text, String::new()));
     }
     let scroll = app.clone();
     body.on_scroll(move |event| {

@@ -29,8 +29,8 @@ pub const ALL: [Module; 7] = [
     },
     Module {
         name: "task",
-        summary: "child sessions: batch, background, poll, kill",
-        default: false,
+        summary: "child sessions on the same seat: batch, background, poll, kill",
+        default: true,
     },
     Module {
         name: "skills",

@@ -1,8 +1,13 @@
+use std::cell::Cell;
+use std::rc::Rc;
+
 use super::{App, Model, composer_hint, suggest};
 use crate::tui::sigil_view::canvas::GUTTER;
+use sigil::events::NodeEventsExt;
 use sigil::prelude::{
-    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
-    Position, Tone, classes, container, divider_horizontal, label, node, notice_band,
+    AlignItems, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
+    Position, Tone, classes, container, derived_eq, divider_horizontal, label, node, notice_band,
+    request_focus,
 };
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
@@ -11,6 +16,13 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     editor: E,
 ) -> NodeBuilder {
     let editing = app.view_edit.peek();
+    let editor_node = Rc::new(Cell::new(None));
+    let mount = editor_node.clone();
+    let editor = move |cx: &mut Cx| {
+        let id = cx.add(editor);
+        mount.set(Some(id));
+        id
+    };
     let mut editor_area = container().layout(
         LayoutStyle::flex_column()
             .fill_width()
@@ -51,6 +63,11 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     }
     let inner_width = width.saturating_sub(8);
     container()
+        .pointer_down(move |_| {
+            if let Some(id) = editor_node.get() {
+                request_focus(id);
+            }
+        })
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
@@ -83,7 +100,38 @@ fn rule() -> NodeBuilder {
         .child(divider_horizontal())
 }
 
+type ModeText = (String, u8);
+
+fn mode_text(model: &Model) -> ModeText {
+    let class: usize = if model.snapshot.plan {
+        0
+    } else if model.snapshot.work {
+        1
+    } else if model.snapshot.goal {
+        2
+    } else {
+        3
+    };
+    let mode = ["plan", "work", "goal", "auto"][class];
+    let glyph = ["◇", "▣", "◎", "●"][class];
+    (format!("{glyph} {mode}"), class as u8)
+}
+
+fn model_text(model: &Model) -> String {
+    let suffix = model
+        .snapshot
+        .effort
+        .filter(|effort| *effort != crate::provider::Effort::None)
+        .map_or(String::new(), |effort| format!(" ({})", effort.as_str()));
+    format!("{}{suffix}", model.snapshot.model)
+}
+
 fn header_row(app: App) -> NodeBuilder {
+    let update = app.clone();
+    let labels = derived_eq(move || {
+        let model = update.model.get();
+        (mode_text(&model), model_text(&model))
+    });
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -93,12 +141,31 @@ fn header_row(app: App) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let model = app.model.get();
-            vec![mode_label(&model), rule(), model_label(&model)]
+            let (mode, model) = labels.get();
+            vec![mode_label(mode), rule(), model_label(model)]
         })
 }
 
 fn hint_row(app: App, width: usize) -> NodeBuilder {
+    let update = app.clone();
+    let hint = derived_eq(move || {
+        let select = update.select.get();
+        let model = update.model.get();
+        let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
+        let select = select.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+        if update.view_edit.get() {
+            "ctrl+s save · esc leave".to_string()
+        } else {
+            composer_hint(
+                model.busy_since.map(|(activity, _)| activity),
+                width,
+                &options,
+                select.as_deref(),
+            )
+            .trim()
+            .to_string()
+        }
+    });
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -108,49 +175,22 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 .gap(8.0),
         )
         .children_reactive(move || {
-            let _select = app.select.get();
-            let model = app.model.get();
-            let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
-            let select = app
-                .select
-                .peek()
-                .then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
-            let hint = if app.view_edit.get() {
-                "ctrl+s save · esc leave".to_string()
-            } else {
-                composer_hint(
-                    model.busy_since.map(|(activity, _)| activity),
-                    width,
-                    &options,
-                    select.as_deref(),
-                )
-                .trim()
-                .to_string()
-            };
             vec![
                 node(rule()),
-                node(label(hint).class(classes!("text-xs text-gray-11"))),
+                node(label(hint.get()).class(classes!("text-xs text-gray-11"))),
                 node(rule()),
             ]
         })
 }
 
-fn mode_label(model: &Model) -> NodeBuilder {
-    let (glyph, mode) = if model.snapshot.plan {
-        ("◇", "plan")
-    } else if model.snapshot.work {
-        ("▣", "work")
-    } else if model.snapshot.goal {
-        ("◎", "goal")
-    } else {
-        ("●", "auto")
-    };
-    let title = label(format!("{glyph} {mode}"));
-    let title = if model.snapshot.plan {
+fn mode_label(mode: ModeText) -> NodeBuilder {
+    let (text, class) = mode;
+    let title = label(text);
+    let title = if class == 0 {
         title.class(classes!("text-xs text-accent"))
-    } else if model.snapshot.work {
+    } else if class == 1 {
         title.class(classes!("text-xs text-warn-11"))
-    } else if model.snapshot.goal {
+    } else if class == 2 {
         title.class(classes!("text-xs text-error-11"))
     } else {
         title.class(classes!("text-xs text-success-11"))
@@ -158,13 +198,6 @@ fn mode_label(model: &Model) -> NodeBuilder {
     container().child(title)
 }
 
-fn model_label(model: &Model) -> NodeBuilder {
-    let suffix = model
-        .snapshot
-        .effort
-        .filter(|effort| *effort != crate::provider::Effort::None)
-        .map_or(String::new(), |effort| format!(" ({})", effort.as_str()));
-    container().child(
-        label(format!("{}{suffix}", model.snapshot.model)).class(classes!("text-xs text-gray-11")),
-    )
+fn model_label(model: String) -> NodeBuilder {
+    container().child(label(model).class(classes!("text-xs text-gray-11")))
 }

@@ -211,6 +211,7 @@ fn emit(out: &UnboundedSender<Value>, session: &str, event: &Event) {
         | Event::Verify { .. }
         | Event::Receipt { .. }
         | Event::Work { .. }
+        | Event::Spawned { .. }
         | Event::Child { .. } => return,
     };
     drop(out.send(update(session, content)));

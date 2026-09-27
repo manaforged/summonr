@@ -4,13 +4,13 @@ mod chrome;
 mod composer;
 pub(super) mod entry;
 mod footer;
-mod panels;
+pub(super) mod panels;
 mod surface;
 pub(super) mod todos;
 
 pub(super) use super::app::App;
 pub(super) use super::canvas;
-pub(super) use super::model::{Entry, Model};
+pub(super) use super::model::{Agent, Entry, Model};
 pub(super) use super::pane::Pane;
 pub(super) use super::panes;
 pub(super) use super::prelude;

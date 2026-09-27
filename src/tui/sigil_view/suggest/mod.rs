@@ -3,12 +3,7 @@ use super::canvas;
 use super::model::Model;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Signal,
-    Style, classes, container, signal,
-};
-
-use super::prelude::*;
+use sigil::prelude::{Signal, signal};
 
 const LIMIT: usize = 9;
 const MAX_WIDTH: usize = 72;
@@ -281,82 +276,5 @@ pub(super) fn reference(path: &str) -> String {
     format!("@{}", serde_json::Value::String(path.to_string()))
 }
 
-pub(super) fn widget(app: App, width: usize) -> NodeBuilder {
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
-        .children_reactive(move || {
-            let draft = app.draft.get();
-            let caret = app.caret.get();
-            let rows = app.viewport.get().1;
-            let model = app.model.get();
-            if app.view_edit.get()
-                || model.busy_since.is_some()
-                || !app.commands.open(&draft, caret, &model)
-                || width < 12
-            {
-                return Vec::new();
-            }
-            let matches = app.commands.rows(&draft, caret, &model);
-            let cursor = app.commands.cursor(matches.len());
-            let limit = matches
-                .len()
-                .min(LIMIT)
-                .min(usize::from(rows / 2).saturating_sub(2));
-            if limit == 0 {
-                return Vec::new();
-            }
-            let start = cursor.saturating_add(1).saturating_sub(limit);
-            let shown = &matches[start..matches.len().min(start + limit)];
-            let head = app.commands.head(&draft);
-            let title = match (mention(&draft, caret), head) {
-                (Some(_), _) => "mentions".to_string(),
-                (None, Some(head)) => format!("{head} {}", usage(head)),
-                (None, None) => "commands".to_string(),
-            };
-            let labels: Vec<String> = shown
-                .iter()
-                .map(|(name, _)| match head {
-                    Some(head) => name.trim_start_matches(head).trim_start().to_string(),
-                    None => format!("{name} {}", usage(name)).trim_end().to_string(),
-                })
-                .collect();
-            let popup = MAX_WIDTH.min(width.saturating_sub(4).max(1));
-            let mut body = container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .width(popup as f32 * canvas::cell().w)
-                        .gap(0.0),
-                )
-                .child(group(title));
-            for (offset, ((_, description), name)) in shown.iter().zip(labels).enumerate() {
-                let index = start + offset;
-                let click = app.clone();
-                body = body.child(
-                    pick(index == cursor, name, description.as_str()).pointer_down(move |event| {
-                        if event.button == Some(MouseButton::Left) {
-                            click.commands.cursor.set(index);
-                            click.accept();
-                            event.stop_propagation();
-                        }
-                    }),
-                );
-            }
-            let keys = if head.is_some() || mention(&draft, caret).is_some() {
-                "↑↓ · tab complete · ↵ complete · esc"
-            } else {
-                "↑↓ · tab complete · ↵ run · esc"
-            };
-            let count = format!("{} / {}", cursor + 1, matches.len());
-            vec![
-                container()
-                    .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
-                    .class(classes!("border border-gray-6"))
-                    .style(
-                        Style::new()
-                            .bg(canvas::palette().tool_bg)
-                            .border_width(canvas::cell().h as i16),
-                    )
-                    .child(body.child(hint(keys, count))),
-            ]
-        })
-}
+pub(super) mod widget;
+pub(super) use widget::widget;

@@ -1,4 +1,7 @@
-use super::model::Entry;
+use std::time::Instant;
+
+use super::model::{Agent, Entry};
+use crate::child::Access;
 use crate::tui::{Round, ToolState};
 
 const MARKDOWN: &str = "# render demo\n\
@@ -75,5 +78,63 @@ pub(super) fn entries() -> Vec<Entry> {
                 cost: None,
             },
         ]),
+    ]
+}
+
+pub(super) fn agents() -> Vec<Agent> {
+    let agent = |id: &str,
+                 assignment: &str,
+                 access: Access,
+                 secs_ago: u64,
+                 last: &str,
+                 done: bool,
+                 failed: bool,
+                 tokens: u64,
+                 cost: f64| Agent {
+        id: id.to_string(),
+        assignment: assignment.to_string(),
+        access,
+        started: Instant::now() - std::time::Duration::from_secs(secs_ago),
+        secs: done.then_some(secs_ago),
+        last: last.to_string(),
+        done,
+        failed,
+        tokens,
+        cost,
+    };
+    vec![
+        agent(
+            "a1b2c3d4",
+            "Audit the retry path in src/runtime",
+            Access::Research,
+            74,
+            "grep retry src/runtime/",
+            false,
+            false,
+            18_400,
+            0.11,
+        ),
+        agent(
+            "e5f6a7b8",
+            "Implement the backoff helper",
+            Access::Implement,
+            212,
+            "cargo test backoff",
+            false,
+            false,
+            22_800,
+            0.20,
+        ),
+        agent(
+            "c9d0e1f2",
+            "Summarize session storage layout",
+            Access::Research,
+            96,
+            "docs are consistent",
+            true,
+            false,
+            9_300,
+            0.06,
+        ),
     ]
 }

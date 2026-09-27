@@ -33,6 +33,10 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         cost: Option<f64>,
     },
+    Spawned {
+        assignment: String,
+        access: crate::child::Access,
+    },
     Unreported {
         tokens: u64,
     },

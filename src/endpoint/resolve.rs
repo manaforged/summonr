@@ -181,6 +181,14 @@ pub(crate) fn resolve_inner(
         endpoint.model = named_model(&endpoint.name, &endpoint.model);
     }
 
+    if let Some(spec) = file
+        .endpoint
+        .get(&endpoint.name)
+        .and_then(|row| row.models.get(&endpoint.model))
+    {
+        overlay_model(&mut endpoint, spec);
+    }
+
     fill_key(endpoint, require_key)
 }
 
@@ -334,6 +342,32 @@ pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
         endpoint.images = images;
     }
     if let Some(keep) = row.keep_reasoning {
+        endpoint.keep_reasoning = keep;
+    }
+}
+
+fn overlay_model(endpoint: &mut Endpoint, spec: &crate::config::Model) {
+    if let Some(body) = &spec.body {
+        let body = json(body);
+        match (&mut endpoint.body, body) {
+            (Some(serde_json::Value::Object(existing)), serde_json::Value::Object(extra)) => {
+                for (key, value) in extra {
+                    existing.insert(key, value);
+                }
+            }
+            (slot, body) => *slot = Some(body),
+        }
+    }
+    if let Some(window) = spec.context_window {
+        endpoint.context_window = Some(window);
+    }
+    if let Some(effort) = spec.effort {
+        endpoint.effort = Some(effort);
+    }
+    if let Some(tokens) = spec.compact_tokens {
+        endpoint.compact_tokens = Some(tokens);
+    }
+    if let Some(keep) = spec.keep_reasoning {
         endpoint.keep_reasoning = keep;
     }
 }

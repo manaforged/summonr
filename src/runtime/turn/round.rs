@@ -32,13 +32,17 @@ impl<P: Provider> Loop<P> {
             }
             *reached = reached.saturating_add(1);
             let round = *reached;
-            if let Some(reason) = self.guard.stuck() {
-                let question = format!("{reason}. Let the turn continue?");
-                if self.approve(question, false, events, &mut emit).await? == GrantAnswer::Deny {
-                    abort_reason = Some(reason);
-                    break;
-                }
-                self.guard.forgive();
+            if let Some(reason) = self.guard.stuck()
+                && let Some(reason) = self
+                    .steer_stuck(reason, &mut messages, events, &mut emit)
+                    .await?
+            {
+                abort_reason = Some(reason);
+                break;
+            }
+            if self.checkpoint_rounds > 0 && round.is_multiple_of(self.checkpoint_rounds) {
+                self.steer_checkpoint(round, &mut messages, events, &mut emit)
+                    .await?;
             }
             if let Some(reason) = self.round_abort() {
                 abort_reason = Some(reason);
@@ -78,31 +82,17 @@ impl<P: Provider> Loop<P> {
             let calls = message.tool_calls.clone();
             messages.push(message.clone());
             if stop_reason == StopReason::Length && calls.is_empty() {
-                self.session
-                    .finish_provider(durable_attempt, &message.content, &reasoning, meter, meta)
-                    .map_err(super::session_err)?;
-                self.emit_records(events, &mut emit)?;
-                let control = if message.content.trim().is_empty() && !reasoning.is_empty() {
-                    UserInput::from(
-                        "/no_think [summon control: the previous round used its output on \
-                         reasoning. Stop reasoning and give the concise final answer now.]",
-                    )
-                } else {
-                    UserInput::from(
-                        "[summon control: the previous round reached its output limit. Continue \
-                         briefly from the partial answer.]",
-                    )
-                };
-                self.session.steer(&control).map_err(super::session_err)?;
-                messages.push(Message::user(control));
-                self.push_event(
+                self.steer_length(
+                    &message,
+                    &reasoning,
+                    durable_attempt,
+                    meter,
+                    meta,
+                    &mut messages,
                     events,
                     &mut emit,
-                    Event::Note {
-                        text: "round output limit reached — continuing with the same context"
-                            .to_string(),
-                    },
-                )?;
+                )
+                .await?;
                 continue;
             }
             if calls.is_empty() {
@@ -252,40 +242,10 @@ impl<P: Provider> Loop<P> {
             self.asked.retain(|grant| !matches!(grant, Grant::Edit(_)));
         }
         self.summary_failed = false;
-        self.guard = super::guard::Guard::default();
-        self.turn_started = crate::bus::now();
+        self.guard.reset();
+        self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
-        if self.is_plan() {
-            self.session
-                .prepare_plan_work(&input.text)
-                .map_err(super::session_err)?;
-        } else if self.is_goal() {
-            if self
-                .session
-                .goal_objective()
-                .map_err(super::session_err)?
-                .is_none()
-            {
-                self.select_goal(&input.text, &commands)?;
-            }
-            match self
-                .session
-                .prepare_turn_work(&input.text, &commands, self.plan_first)
-                .map_err(super::session_err)?
-            {
-                TurnWork::Ready { accepted } => self.accepted = accepted,
-                TurnWork::NeedsPlan => {}
-            }
-        } else {
-            match self
-                .session
-                .prepare_turn_work(&input.text, &commands, self.plan_first)
-                .map_err(super::session_err)?
-            {
-                TurnWork::Ready { accepted } => self.accepted = accepted,
-                TurnWork::NeedsPlan => {}
-            }
-        }
+        self.prepare_work(&input.text, &commands)?;
         let mut harness = self.harness_note(&self.work_progress()?);
         if self.accepted {
             harness.push_str(
@@ -303,35 +263,100 @@ impl<P: Provider> Loop<P> {
         Ok(messages)
     }
 
-    pub(in crate::runtime) fn round_abort(&self) -> Option<String> {
-        self.budget.breach(self.spent_tokens, self.elapsed_secs())
+    fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {
+        if self.is_plan() {
+            self.session
+                .prepare_plan_work(text)
+                .map_err(super::session_err)?;
+            return Ok(());
+        }
+        if self.is_goal()
+            && self
+                .session
+                .goal_objective()
+                .map_err(super::session_err)?
+                .is_none()
+        {
+            self.select_goal(text, commands)?;
+        }
+        if let TurnWork::Ready { accepted } = self
+            .session
+            .prepare_turn_work(text, commands, self.plan_first)
+            .map_err(super::session_err)?
+        {
+            self.accepted = accepted;
+        }
+        Ok(())
     }
 
-    pub(super) fn harness_note(&self, progress: &WorkProgress) -> String {
-        let mut note = harness_section(
-            self.mode,
-            self.verify.as_deref().unwrap_or_default(),
-            !self.denies_network(),
-            self.tools.has_sandbox(),
+    async fn steer_stuck(
+        &mut self,
+        reason: String,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<String>> {
+        let interactive = self.steer_shared.is_some();
+        if interactive && self.guard.steered() {
+            let question = format!("{reason}. Let the turn continue?");
+            if self.approve(question, false, events, emit).await? == GrantAnswer::Deny {
+                return Ok(Some(reason));
+            }
+            self.guard.forgive();
+            return Ok(None);
+        }
+        let input = UserInput::from(format!(
+            "[summon control: {reason}. Before the next tool call, state the \
+             hypothesis the next action tests and what result would falsify it. \
+             If the same outcome repeats, change the approach.]"
+        ));
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
+        self.guard.mark_steered();
+        if !interactive {
+            self.guard.forgive();
+        }
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!("loop guard: {reason} — steering the model"),
+            },
+        )?;
+        Ok(None)
+    }
+
+    async fn steer_checkpoint(
+        &mut self,
+        round: usize,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let progress = self.work_progress()?;
+        let mut text = String::from(
+            "[summon control: checkpoint — update the ledger before continuing: what is \
+             proven, what is the current blocker, what is next. If the last actions did \
+             not move the work forward, change approach or ask.]",
         );
-        if progress.kind == WorkKind::Goal {
-            note.push_str(&format!(
-                "\n\nHarness objective (verbatim, this is what must be met):\n{}",
-                progress.objective
-            ));
+        if !progress.ledger.is_empty() {
+            text.push_str("\nCurrent ledger:\n");
+            text.push_str(&progress.ledger.join("\n"));
         }
-        if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
-            note.push_str(
-                "\n\nHarness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n",
-            );
-            note.push_str(&progress.ledger.join("\n"));
-        }
-        if self.seat_model(workflow::Role::Review).is_some() {
-            note.push_str(
-                "\n\nHarness: a reviewer reads the change after the completion check and can send it back.",
-            );
-        }
-        note
+        let input = UserInput::from(text);
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!("checkpoint at round {round}"),
+            },
+        )
+    }
+
+    pub(in crate::runtime) fn round_abort(&self) -> Option<String> {
+        self.budget.breach(self.spent_tokens, self.elapsed_secs())
     }
 
     pub(super) async fn prepare_round(
@@ -342,7 +367,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        self.bus_heartbeat("working");
+        self.mail_heartbeat("working");
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);

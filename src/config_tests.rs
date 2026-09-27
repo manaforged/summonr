@@ -41,3 +41,19 @@ fn clearing_the_default_seat_removes_both_keys() {
     assert!(file.default.is_none());
     assert!(file.default_model.is_none());
 }
+
+#[test]
+fn a_config_that_still_says_bus_loads_after_a_save() {
+    let (_dir, path) = written("bus = false\n");
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let file = parse(&path).unwrap();
+    assert_eq!(file.mail, Some(false));
+}
+
+#[test]
+fn a_config_with_both_mail_and_bus_keeps_mail() {
+    let (_dir, path) = written("mail = true\nbus = false\n");
+    let file = parse(&path).unwrap();
+    assert_eq!(file.mail, Some(true));
+}

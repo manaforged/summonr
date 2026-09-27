@@ -20,6 +20,7 @@ pub(super) mod profile;
 mod scale_tests;
 mod scene;
 mod search;
+mod secret;
 mod sessions;
 pub(in crate::tui) mod settings;
 mod speed;

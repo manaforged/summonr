@@ -8,7 +8,7 @@ use sigil::prelude::{
 use super::app::App;
 use super::canvas::palette;
 use super::prelude::*;
-use crate::bus::now;
+use crate::mail::now;
 use crate::provider::{compact, dollars};
 use crate::session::{DAY, HOUR, Spend, Total, buckets};
 

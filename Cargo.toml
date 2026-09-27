@@ -59,6 +59,7 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg",
 crossterm = "0.29"
 sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
+grep-matcher = "0.1"
 grep-regex = "0.1"
 grep-searcher = "0.1"
 unicode-normalization = "0.1"

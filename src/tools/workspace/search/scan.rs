@@ -1,6 +1,8 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
+use grep_matcher::Matcher;
+use grep_regex::RegexMatcher;
 use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContext, SinkMatch};
 
 use crate::error::Result;
@@ -15,6 +17,7 @@ enum Row {
 
 struct Collect<'a> {
     rel: &'a str,
+    matcher: &'a RegexMatcher,
     out: Vec<Row>,
     matches: usize,
     cap: usize,
@@ -44,16 +47,12 @@ impl Sink for Collect<'_> {
         }
         self.matches += 1;
         let line = hit_line(hit.bytes());
+        let number = hit.line_number().unwrap_or(0);
         let hit = if self.tags {
-            format!(
-                "{}:{}:{}|{}",
-                self.rel,
-                hit.line_number().unwrap_or(0),
-                line_hash(&line),
-                line
-            )
+            format!("{}:{number}:{}|{line}", self.rel, line_hash(&line))
         } else {
-            format!("{}:{}:{}", self.rel, hit.line_number().unwrap_or(0), line)
+            let column = match_column(self.matcher, hit.bytes());
+            format!("{}:{number}:{column}:{line}", self.rel)
         };
         self.out.push(Row::Hit(hit));
         Ok(true)
@@ -88,20 +87,29 @@ impl Sink for Collect<'_> {
     }
 }
 
+#[derive(Default)]
+struct Tally {
+    hits: Vec<String>,
+    matches: usize,
+    match_total: usize,
+    searched: usize,
+    skipped: usize,
+    capped: usize,
+    truncated: bool,
+}
+
 pub(super) fn search(
     base: &Path,
     files: &[(PathBuf, u64)],
-    matcher: &grep_regex::RegexMatcher,
+    matcher: &RegexMatcher,
     spec: &Spec<'_>,
 ) -> Result<String> {
     let Spec {
-        pattern,
         limit,
         before,
         after,
-        mode,
         multiline,
-        tags,
+        ..
     } = *spec;
     let mut searcher = SearcherBuilder::new()
         .binary_detection(BinaryDetection::quit(b'\x00'))
@@ -109,138 +117,158 @@ pub(super) fn search(
         .after_context(after)
         .multi_line(multiline)
         .build();
-    let mut hits: Vec<String> = Vec::new();
-    let mut match_count = 0_usize;
-    let mut match_total = 0_usize;
-    let mut searched = 0_usize;
-    let mut skipped = 0_usize;
-    let mut capped = 0_usize;
-    let mut truncated = false;
+    let mut tally = Tally::default();
     for (path, _) in files {
-        if match_count >= limit {
-            truncated = true;
+        if tally.matches >= limit {
+            tally.truncated = true;
             break;
         }
-        if path.metadata().map(|meta| meta.len()).unwrap_or(0) > GREP_FILE_MAX {
-            skipped += 1;
-            continue;
-        }
-        let rel = relative(base, path);
-        let mut collect = Collect {
-            rel: &rel,
-            out: Vec::new(),
-            matches: 0,
-            cap: GREP_FILE_HITS,
-            mode,
-            tags,
-            over: false,
-            matched: false,
-            binary: false,
-        };
-        searched += 1;
-        if searcher.search_path(matcher, path, &mut collect).is_err() {
-            skipped += 1;
-            continue;
-        }
-        if collect.binary && !collect.matched {
-            skipped += 1;
-            continue;
-        }
-        if collect.over {
-            capped += 1;
-        }
-        match mode {
-            Mode::Files => {
-                if collect.matched {
-                    hits.push(rel);
-                    match_count += 1;
-                }
-                continue;
+        file(base, path, &mut searcher, matcher, spec, &mut tally);
+    }
+    Ok(render(spec, &tally))
+}
+
+fn file(
+    base: &Path,
+    path: &Path,
+    searcher: &mut Searcher,
+    matcher: &RegexMatcher,
+    spec: &Spec<'_>,
+    tally: &mut Tally,
+) {
+    if path.metadata().map(|meta| meta.len()).unwrap_or(0) > GREP_FILE_MAX {
+        tally.skipped += 1;
+        return;
+    }
+    let rel = relative(base, path);
+    let mut collect = Collect {
+        rel: &rel,
+        matcher,
+        out: Vec::new(),
+        matches: 0,
+        cap: GREP_FILE_HITS,
+        mode: spec.mode,
+        tags: spec.tags,
+        over: false,
+        matched: false,
+        binary: false,
+    };
+    tally.searched += 1;
+    if searcher.search_path(matcher, path, &mut collect).is_err()
+        || (collect.binary && !collect.matched)
+    {
+        tally.skipped += 1;
+        return;
+    }
+    if collect.over {
+        tally.capped += 1;
+    }
+    match spec.mode {
+        Mode::Files => {
+            if collect.matched {
+                tally.hits.push(rel);
+                tally.matches += 1;
             }
-            Mode::Count => {
-                if collect.matches > 0 {
-                    hits.push(format!("{rel}:{}", collect.matches));
-                    match_count += 1;
-                    match_total += collect.matches;
-                }
-                continue;
-            }
-            Mode::Content => {}
         }
-        let mut pending_break = false;
-        for row in collect.out {
-            match row {
-                Row::Break => {
-                    pending_break = !hits.is_empty();
+        Mode::Count => {
+            if collect.matches > 0 {
+                tally.hits.push(format!("{rel}:{}", collect.matches));
+                tally.matches += 1;
+                tally.match_total += collect.matches;
+            }
+        }
+        Mode::Content => drain(collect.out, spec.limit, tally),
+    }
+}
+
+fn drain(rows: Vec<Row>, limit: usize, tally: &mut Tally) {
+    let mut pending_break = false;
+    for row in rows {
+        match row {
+            Row::Break => {
+                pending_break = !tally.hits.is_empty();
+            }
+            Row::Ctx(line) => {
+                if pending_break {
+                    tally.hits.push("--".to_string());
+                    pending_break = false;
                 }
-                Row::Ctx(line) => {
-                    if pending_break {
-                        hits.push("--".to_string());
-                        pending_break = false;
-                    }
-                    hits.push(line);
+                tally.hits.push(line);
+            }
+            Row::Hit(line) => {
+                if tally.matches >= limit {
+                    tally.truncated = true;
+                    break;
                 }
-                Row::Hit(line) => {
-                    if match_count >= limit {
-                        truncated = true;
-                        break;
-                    }
-                    match_count += 1;
-                    if pending_break {
-                        hits.push("--".to_string());
-                        pending_break = false;
-                    }
-                    hits.push(line);
+                tally.matches += 1;
+                if pending_break {
+                    tally.hits.push("--".to_string());
+                    pending_break = false;
                 }
+                tally.hits.push(line);
             }
         }
     }
-    if hits.is_empty() {
-        let mut out = format!("no matches for `{pattern}` ({searched} files searched");
-        if skipped > 0 {
+}
+
+fn render(spec: &Spec<'_>, tally: &Tally) -> String {
+    if tally.hits.is_empty() {
+        let mut out = format!(
+            "no matches for `{}` ({} files searched",
+            spec.pattern, tally.searched
+        );
+        if tally.skipped > 0 {
             out.push_str(&format!(
-                ", {skipped} skipped as binary, over 1 MiB, or unreadable"
+                ", {} skipped as binary, over 1 MiB, or unreadable",
+                tally.skipped
             ));
         }
         out.push(')');
-        return Ok(out);
+        return out;
     }
-    let mut out = match mode {
+    let mut out = match spec.mode {
         Mode::Files => format!(
-            "{} with `{pattern}` ({searched} searched)",
-            plural(match_count, "file"),
+            "{} with `{}` ({} searched)",
+            plural(tally.matches, "file"),
+            spec.pattern,
+            tally.searched
         ),
         Mode::Count => format!(
-            "{} in {} ({searched} searched)",
-            plural(match_total, "match"),
-            plural(match_count, "file"),
+            "{} in {} ({} searched)",
+            plural(tally.match_total, "match"),
+            plural(tally.matches, "file"),
+            tally.searched
         ),
         Mode::Content => format!(
-            "{} for `{pattern}` ({searched} files searched)",
-            plural(match_count, "match"),
+            "{} for `{}` ({} files searched)",
+            plural(tally.matches, "match"),
+            spec.pattern,
+            tally.searched
         ),
     };
-    if truncated {
+    if tally.truncated {
         out.push_str(&format!(
-            "; limit {limit} reached — narrow with path, glob, or a more specific pattern"
+            "; limit {} reached — narrow with path, glob, or a more specific pattern",
+            spec.limit
         ));
     }
-    if capped > 0 {
+    if tally.capped > 0 {
         out.push_str(&format!(
             "; {} had more than {GREP_FILE_HITS} matching lines",
-            plural(capped, "file"),
+            plural(tally.capped, "file"),
         ));
     }
-    if skipped > 0 {
+    if tally.skipped > 0 {
         out.push_str(&format!(
-            "; {skipped} files skipped as binary, over 1 MiB, or unreadable"
+            "; {} files skipped as binary, over 1 MiB, or unreadable",
+            tally.skipped
         ));
     }
-    for hit in hits {
+    for hit in &tally.hits {
         out.push('\n');
-        out.push_str(&hit);
+        out.push_str(hit);
     }
-    Ok(out)
+    out
 }
 
 fn plural(count: usize, word: &str) -> String {
@@ -251,6 +279,20 @@ fn plural(count: usize, word: &str) -> String {
     } else {
         format!("{count} {word}s")
     }
+}
+
+fn match_column(matcher: &RegexMatcher, bytes: &[u8]) -> usize {
+    let line = bytes
+        .strip_suffix(b"\n")
+        .map_or(bytes, |line| line.strip_suffix(b"\r").unwrap_or(line));
+    let Ok(Some(found)) = matcher.find(line) else {
+        return 1;
+    };
+    String::from_utf8_lossy(&line[..found.start()])
+        .chars()
+        .map(char::len_utf16)
+        .sum::<usize>()
+        + 1
 }
 
 fn hit_line(bytes: &[u8]) -> String {

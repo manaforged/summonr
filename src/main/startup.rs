@@ -22,7 +22,7 @@ use lifecycle::launch;
 use session::{SessionAction, build};
 
 pub(super) async fn run(args: Args) -> Result<i32> {
-    let log = if args.room.is_some() {
+    let log = if args.mail.is_some() {
         None
     } else {
         diagnostics::Log::start()
@@ -45,8 +45,8 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if args.doctor {
         return diagnostics::doctor(log.map(diagnostics::Log::path));
     }
-    if let Some(words) = &args.room {
-        return summonr::room::run(words, &std::env::current_dir()?).await;
+    if let Some(words) = &args.mail {
+        return summonr::mail::cli::run(words, &std::env::current_dir()?);
     }
     if let Some(tool) = &args.tool {
         return tool::run(&args, tool).await;

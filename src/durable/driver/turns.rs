@@ -352,21 +352,7 @@ impl SessionDriver {
             self.fail_provider(attempt, reason, 0, true)?;
         }
         for call in self.state.unanswered.clone() {
-            let finished = self.state.children.values().find(|child| {
-                child.call.as_deref() == Some(call.as_str())
-                    && matches!(child.state, crate::child::ChildState::Completed(_))
-            });
-            let (text, success) = match finished.map(serde_json::to_string) {
-                Some(Ok(text)) => (text, true),
-                _ => ("aborted".to_string(), false),
-            };
-            self.append(Line::Tool {
-                call,
-                text,
-                success,
-                mutated: false,
-                millis: 0,
-            })?;
+            self.abort_call(call)?;
         }
         self.append(Line::Close {
             reason: Some(reason.to_string()),
@@ -386,5 +372,23 @@ impl SessionDriver {
         }
         self.interrupt_children(reason)?;
         Ok(())
+    }
+
+    fn abort_call(&mut self, call: String) -> Result<(), DriverError> {
+        let finished = self.state.children.values().find(|child| {
+            child.call.as_deref() == Some(call.as_str())
+                && matches!(child.state, crate::child::ChildState::Completed(_))
+        });
+        let (text, success) = match finished.map(serde_json::to_string) {
+            Some(Ok(text)) => (text, true),
+            _ => ("aborted".to_string(), false),
+        };
+        self.append(Line::Tool {
+            call,
+            text,
+            success,
+            mutated: false,
+            millis: 0,
+        })
     }
 }

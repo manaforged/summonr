@@ -3,6 +3,9 @@ pub(super) use super::pane::Pane;
 use sigil::prelude::NodeBuilder;
 
 pub(in crate::tui::sigil_view) mod body;
+mod diff;
+mod jobs;
+mod peers;
 mod todos;
 
 pub(super) mod ledger;

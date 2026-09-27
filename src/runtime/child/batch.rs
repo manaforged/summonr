@@ -112,7 +112,7 @@ impl<P: Provider> Loop<P> {
             let access = args.access;
             runs.push((access, self.task_start(args, &budget, None)));
         }
-        let sender = self.mailbox.0.clone();
+        let sender = self.events.0.clone();
         let mut runs: FuturesUnordered<_> = runs
             .into_iter()
             .enumerate()
@@ -139,7 +139,7 @@ impl<P: Provider> Loop<P> {
                     };
                     finished.push((index, access, done));
                 }
-                Some(event) = self.mailbox.1.recv() => {
+                Some(event) = self.events.1.recv() => {
                     self.saw(&event);
                     emit(&event);
                     events.push(event);

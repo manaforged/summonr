@@ -21,6 +21,18 @@ impl Request {
     }
 }
 
+#[cfg(test)]
+pub(crate) fn request(prompt: &str) -> (Request, std::sync::mpsc::Receiver<Option<Secret>>) {
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    (
+        Request {
+            prompt: prompt.to_string(),
+            reply,
+        },
+        answer,
+    )
+}
+
 #[cfg(unix)]
 struct Broker {
     _dir: tempfile::TempDir,

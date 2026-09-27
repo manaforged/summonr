@@ -36,12 +36,12 @@ const MODULES: &[Module] = &[
         extensions: &["js", "jsx", "mjs", "cjs", "ts", "tsx"],
         servers: &[
             Server {
-                name: "biome",
-                args: &["lsp-proxy"],
-            },
-            Server {
                 name: "typescript-language-server",
                 args: &["--stdio"],
+            },
+            Server {
+                name: "biome",
+                args: &["lsp-proxy"],
             },
         ],
         commands: &["npm", "pnpm", "yarn", "bun", "node --test", "tsc"],
@@ -52,12 +52,12 @@ const MODULES: &[Module] = &[
         extensions: &["py"],
         servers: &[
             Server {
-                name: "ruff",
-                args: &["server"],
-            },
-            Server {
                 name: "pyright-langserver",
                 args: &["--stdio"],
+            },
+            Server {
+                name: "ruff",
+                args: &["server"],
             },
         ],
         commands: &["pytest", "python -m pytest", "ruff", "mypy", "pyright"],

@@ -124,7 +124,7 @@ impl Picker {
                 .peers
                 .iter()
                 .filter_map(|agent| {
-                    let score = sigil::prelude::fuzzy_score(&query, &agent.id)?.score;
+                    let score = sigil::prelude::fuzzy_score(&query, agent.label())?.score;
                     Some((score, agent))
                 })
                 .collect();
@@ -142,7 +142,7 @@ impl Picker {
                 .into_iter()
                 .map(|(_, agent)| {
                     (
-                        agent.id.clone(),
+                        agent.label().to_string(),
                         format!("{} · {} · {}", agent.kind, agent.model, agent.status),
                     )
                 })
@@ -262,14 +262,19 @@ pub(super) fn mention(draft: &str, caret: usize) -> Option<(usize, &str)> {
 }
 
 pub(super) fn peers(text: &str, model: &Model) -> Vec<String> {
-    let mut ids: Vec<String> = text
+    let mut names: Vec<String> = Vec::new();
+    for word in text
         .split_whitespace()
         .filter_map(|word| word.strip_prefix('@'))
-        .filter(|id| model.peers.iter().any(|agent| agent.id == *id))
-        .map(str::to_string)
-        .collect();
-    ids.dedup();
-    ids
+    {
+        let word = word.trim_end_matches([',', '.', ':', ';', '!', '?']);
+        if model.peers.iter().any(|agent| agent.answers_to(word))
+            && !names.iter().any(|name| name == word)
+        {
+            names.push(word.to_string());
+        }
+    }
+    names
 }
 
 pub(super) fn reference(path: &str) -> String {

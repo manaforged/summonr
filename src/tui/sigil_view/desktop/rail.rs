@@ -22,6 +22,8 @@ pub(super) fn rail(app: App) -> NodeBuilder {
         (Pane::Files, "Files"),
         (Pane::Diff, "Changes"),
         (Pane::Worktrees, "Worktrees"),
+        (Pane::Jobs, "Jobs"),
+        (Pane::Peers, "Peers"),
         (Pane::Ledger, "Plan"),
     ] {
         let toggle = app.clone();
@@ -48,6 +50,8 @@ fn glyph(pane: Pane) -> PathNode {
     match pane {
         Pane::Diff => icons::diffs(),
         Pane::Worktrees => icons::branch(),
+        Pane::Jobs => icons::terminal(),
+        Pane::Peers => icons::peers(),
         Pane::Ledger => icons::clock(),
         _ => icons::folder(),
     }

@@ -9,7 +9,7 @@ use crate::workflow;
 use std::future::Future;
 use std::time::Duration;
 
-use crate::bus::{envelope, is_bus_tool};
+use crate::mail::{envelope, is_mail_tool};
 use crate::policy::Grant;
 use crate::prompt::harness_section;
 use crate::provider::StopReason;
@@ -262,7 +262,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub async fn turn_mail_with(&mut self, emit: impl FnMut(&Event)) -> Result<Turn> {
-        if self.mail.is_empty() {
+        if self.inbox.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
         }
         self.turn_with(

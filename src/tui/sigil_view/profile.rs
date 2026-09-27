@@ -224,6 +224,7 @@ pub(super) fn info() -> Info {
             ..Prefs::default()
         },
         splash: false,
+        inline: false,
         plan: false,
         strict: false,
         workspace: String::from("profile"),

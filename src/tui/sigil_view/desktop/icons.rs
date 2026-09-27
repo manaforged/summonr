@@ -42,6 +42,19 @@ pub(super) fn diffs() -> PathNode {
         .line_to(10.0, 12.0)
 }
 
+pub(super) fn terminal() -> PathNode {
+    mark(16, 16)
+        .move_to(3.0, 4.0)
+        .line_to(8.0, 8.0)
+        .line_to(3.0, 12.0)
+        .move_to(8.0, 12.0)
+        .line_to(13.0, 12.0)
+}
+
+pub(super) fn peers() -> PathNode {
+    ring(ring(fine(16, 16), 5.2, 8.0, 3.1), 10.8, 8.0, 3.1)
+}
+
 pub(super) fn avatar() -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fixed_size(18.0, 18.0))

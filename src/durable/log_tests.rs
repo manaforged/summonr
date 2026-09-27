@@ -63,3 +63,11 @@ fn a_resumed_session_keeps_the_reply_phase_and_commentary() {
     let last = state.history.last().expect("the reply is in history");
     assert_eq!(last.continuation.as_ref(), Some(&said));
 }
+
+#[test]
+fn clear_forgets_why_the_last_turn_stopped() {
+    let mut state = State::default();
+    state.apply(serde_json::from_str(r#"{"kind":"close","reason":"cancelled by user"}"#).unwrap());
+    state.apply(Line::Clear);
+    assert_eq!(state.last_close_reason, None);
+}

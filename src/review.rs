@@ -71,15 +71,23 @@ fn parse(reply: &str) -> Verdict {
     if end < start {
         return raw();
     }
-    match serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) {
-        Ok(value) => Verdict {
-            pass: matches!(value.get("pass"), Some(serde_json::Value::Bool(true))),
-            findings: value
-                .get("findings")
-                .and_then(|findings| findings.as_str())
-                .unwrap_or_default()
-                .to_string(),
-        },
-        Err(_) => raw(),
-    }
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&trimmed[start..=end]) else {
+        return raw();
+    };
+    let Some(pass) = value.get("pass").and_then(serde_json::Value::as_bool) else {
+        return raw();
+    };
+    let findings = match (
+        pass,
+        value.get("findings").and_then(serde_json::Value::as_str),
+    ) {
+        (_, Some(findings)) => findings.to_string(),
+        (true, None) => String::new(),
+        (false, None) => trimmed.to_string(),
+    };
+    Verdict { pass, findings }
 }
+
+#[cfg(test)]
+#[path = "review_tests.rs"]
+mod tests;

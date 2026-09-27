@@ -11,7 +11,7 @@ const ID_MAX: usize = 80;
 const KILLED: &str = "killed";
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct Record {
+pub struct Record {
     pub id: String,
     pub pid: u32,
     pub command: String,
@@ -24,11 +24,27 @@ pub(crate) struct Record {
     pub session: Option<String>,
 }
 
-pub(crate) struct Status {
+#[derive(Clone)]
+pub struct Status {
     pub text: String,
     pub exit_code: Option<i32>,
     pub running: bool,
     pub killed: bool,
+}
+
+impl Status {
+    pub(crate) fn label(&self) -> String {
+        if self.running {
+            return "running".to_string();
+        }
+        if self.killed {
+            return "killed".to_string();
+        }
+        match self.exit_code {
+            Some(code) => format!("exit {code}"),
+            None => "dead".to_string(),
+        }
+    }
 }
 
 pub(crate) fn dir(workspace: &Path) -> PathBuf {
@@ -189,7 +205,7 @@ pub(crate) fn stamp(
     background: bool,
     session: Option<String>,
 ) -> Result<Record> {
-    let started = crate::bus::now();
+    let started = crate::mail::now();
     Ok(Record {
         id: id.to_string(),
         pid,
@@ -229,7 +245,7 @@ pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
         let Some(elapsed) = elapsed else {
             return true;
         };
-        crate::bus::now().saturating_sub(elapsed) <= started.saturating_add(5)
+        crate::mail::now().saturating_sub(elapsed) <= started.saturating_add(5)
     }
 }
 

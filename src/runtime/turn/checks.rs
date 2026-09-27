@@ -93,4 +93,38 @@ impl<P: Provider> Loop<P> {
             aborted: true,
         })
     }
+
+    pub(super) fn harness_note(&self, progress: &WorkProgress) -> String {
+        let mut note = String::new();
+        if let Some(reason) = self.session.last_close_reason() {
+            note.push_str(&format!(
+                "Harness: the previous turn stopped early ({reason}) — address the user's \
+                 message directly before resuming tool work.\n\n"
+            ));
+        }
+        note.push_str(&harness_section(
+            self.mode,
+            self.verify.as_deref().unwrap_or_default(),
+            !self.denies_network(),
+            self.tools.has_sandbox(),
+        ));
+        if progress.kind == WorkKind::Goal {
+            note.push_str(&format!(
+                "\n\nHarness objective (verbatim, this is what must be met):\n{}",
+                progress.objective
+            ));
+        }
+        if progress.kind != WorkKind::Single && !progress.ledger.is_empty() {
+            note.push_str(
+                "\n\nHarness ledger ([x] done, [/] this step, [ ] later, [!] blocked):\n",
+            );
+            note.push_str(&progress.ledger.join("\n"));
+        }
+        if self.seat_model(workflow::Role::Review).is_some() {
+            note.push_str(
+                "\n\nHarness: a reviewer reads the change after the completion check and can send it back.",
+            );
+        }
+        note
+    }
 }

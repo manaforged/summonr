@@ -56,12 +56,15 @@ delete canvas::Line	0	Sigil `markdown` in `chat/entry.rs`
 delete canvas::Source	0	Sigil `markdown` in `chat/entry.rs`
 delete Loop::commit	0	`Loop::hydrate`, the once-per-registry skills probe
 delete ToolRegistry::skill_ready	0	`Loop::hydrate`, the once-per-registry skills probe
+delete summonr room serve	0	`summonr mail`, `mail/tools.rs::definitions`
+delete room/serve.rs::tools	0	`summonr mail`, `mail/tools.rs::definitions`
+delete room::host::codex	0	`summonr mail`, `mail/tools.rs::definitions`
 session dialect Msg	1	one session event
 session dialect Cmd	1	one session event
 session dialect Entry	1	one session event
 name collision: Kind	0	one word, one domain
 clip-shaped helper	0	text::ellipsize
-short-shaped helper	4	check the job, then name it
+short-shaped helper	3	check the job, then name it
 wrap-shaped helper	5	check the job, then name it
 surface painter	0	rows::paint
 sigil prelude glob	0	named imports

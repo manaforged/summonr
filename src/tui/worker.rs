@@ -49,12 +49,12 @@ struct Worker {
     deferred: VecDeque<Cmd>,
     followups: VecDeque<UserInput>,
     last_turn: Option<crate::Turn>,
-    bus_error: Option<String>,
+    mail_error: Option<String>,
     workflow: Workflow,
     dial: Option<crate::Effort>,
     home: Option<std::path::PathBuf>,
     last_diff: Option<crate::diff::Diff>,
-    last_peers: Option<Vec<String>>,
+    last_peers: Option<Vec<crate::mail::Agent>>,
     reader: Reader,
 }
 

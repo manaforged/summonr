@@ -9,14 +9,88 @@ impl Model {
         arguments: String,
     ) {
         let arg = tool_arg(&arguments);
-        self.tools.insert(id, self.entries.len());
+        if self.group(&id, &name, arg.clone()) {
+            self.live_tool = Some((name, arg));
+            return;
+        }
+        self.tools.insert(id.clone(), self.entries.len());
         self.entries.push(Entry::Tool {
+            id,
             name: name.clone(),
             arg: arg.clone(),
             state: ToolState::Running,
             output: String::new(),
+            expanded: false,
         });
         self.live_tool = Some((name, arg));
+    }
+
+    fn group(&mut self, id: &str, name: &str, arg: String) -> bool {
+        if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
+            return false;
+        }
+        enum Tail {
+            Group,
+            Single,
+        }
+        let last = self.entries.last();
+        let tail = if matches!(last, Some(Entry::ToolGroup { name: prior, .. }) if prior == name) {
+            Tail::Group
+        } else if matches!(
+            last,
+            Some(Entry::Tool {
+                name: prior,
+                state: ToolState::Ok | ToolState::Failed,
+                ..
+            }) if prior == name
+        ) {
+            Tail::Single
+        } else {
+            return false;
+        };
+        let index = self.entries.len().saturating_sub(1);
+        match tail {
+            Tail::Group => {
+                let Some(Entry::ToolGroup { calls, .. }) = self.entries.last_mut() else {
+                    return false;
+                };
+                calls.push(Call::new(
+                    id.to_string(),
+                    arg,
+                    ToolState::Running,
+                    String::new(),
+                ));
+            }
+            Tail::Single => {
+                let Some(Entry::Tool {
+                    id: old_id,
+                    arg: old_arg,
+                    state: old_state,
+                    output: old_output,
+                    expanded,
+                    ..
+                }) = self.entries.inner.pop()
+                else {
+                    return false;
+                };
+                let calls = vec![
+                    Call {
+                        id: old_id,
+                        arg: old_arg,
+                        state: old_state,
+                        output: old_output,
+                        expanded,
+                    },
+                    Call::new(id.to_string(), arg, ToolState::Running, String::new()),
+                ];
+                self.entries.push(Entry::ToolGroup {
+                    name: name.to_string(),
+                    calls,
+                });
+            }
+        }
+        self.tools.insert(id.to_string(), index);
+        true
     }
 
     pub(in crate::tui::sigil_view) fn finish_tool(
@@ -25,19 +99,26 @@ impl Model {
         success: bool,
         output: String,
     ) {
-        if let Some(index) = self.tools.remove(id)
-            && let Some(Entry::Tool {
-                state,
-                output: stored,
+        let state = if success {
+            ToolState::Ok
+        } else {
+            ToolState::Failed
+        };
+        if let Some(index) = self.tools.remove(id) {
+            if let Some(Entry::Tool {
+                state: stored,
+                output: body,
                 ..
             }) = self.entries.get_mut(index)
-        {
-            *state = if success {
-                ToolState::Ok
-            } else {
-                ToolState::Failed
-            };
-            *stored = output;
+            {
+                *stored = state;
+                *body = output;
+            } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index)
+                && let Some(call) = calls.iter_mut().find(|call| call.id == id)
+            {
+                call.state = state;
+                call.output = output;
+            }
         }
         self.live_tool = Some(("thinking".to_string(), String::new()));
     }

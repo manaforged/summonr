@@ -175,17 +175,6 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
                 .child(actions)
         }
         chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
-        chat::panels::Band::Secret { prompt, typed } => {
-            let label = if prompt.is_empty() {
-                "secret"
-            } else {
-                prompt.as_str()
-            };
-            notice_band(
-                format!("password {label}  {}", "•".repeat(typed.min(24))),
-                Tone::Warn,
-            )
-        }
         chat::panels::Band::Attached(count) => {
             let noun = if count == 1 { "image" } else { "images" };
             notice_band(

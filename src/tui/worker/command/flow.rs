@@ -12,6 +12,10 @@ impl Worker {
                 return keep_running;
             }
         }
+        let mut input = input;
+        if let Some(notes) = crate::hunks::drain(self.loop_.workspace()) {
+            input.text = format!("{notes}\n\n{}", input.text);
+        }
         self.turn(input).await
     }
 
@@ -242,26 +246,7 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) fn agents(&self) -> bool {
-        let roster = self.loop_.bus_agents();
-        let text = if roster.is_empty() {
-            "no live sessions on the bus".to_string()
-        } else {
-            roster
-                .iter()
-                .map(|agent| {
-                    let me = if agent.id == self.loop_.session_id() {
-                        " (you)"
-                    } else {
-                        ""
-                    };
-                    format!(
-                        "{} · {} · {} · {}{me}",
-                        agent.id, agent.model, agent.cwd, agent.status
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("\n")
-        };
+        let text = crate::mail::roster(&self.loop_.peers(), &self.loop_.session_id());
         self.system(&text);
         true
     }

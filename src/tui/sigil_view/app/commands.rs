@@ -34,7 +34,12 @@ impl App {
                     .unwrap_or(draft.len() - caret)
         };
         let following = draft[end..].chars().next().filter(|ch| ch.is_whitespace());
-        let peer = self.model.get().peers.iter().any(|agent| agent.id == value);
+        let peer = self
+            .model
+            .get()
+            .peers
+            .iter()
+            .any(|agent| agent.answers_to(value));
         let mut reference = if peer {
             format!("@{value}")
         } else {

@@ -190,7 +190,7 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) fn child_events(&mut self) -> Vec<Event> {
         let mut drained = Vec::new();
-        while let Ok(event) = self.mailbox.1.try_recv() {
+        while let Ok(event) = self.events.1.try_recv() {
             self.saw(&event);
             drained.push(event);
         }

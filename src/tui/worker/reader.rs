@@ -59,6 +59,27 @@ impl Reader {
 
     pub(super) fn serve(&self, command: Cmd) {
         match command {
+            command @ (Cmd::ListPrompts(_)
+            | Cmd::ListSessions
+            | Cmd::ListUsage
+            | Cmd::DeleteSession(_)) => self.sessions(command),
+            command @ (Cmd::ListFiles
+            | Cmd::Jobs
+            | Cmd::KillJob(_)
+            | Cmd::Clipboard
+            | Cmd::Diff(_)
+            | Cmd::Patch(..)
+            | Cmd::Review { .. }
+            | Cmd::Trees
+            | Cmd::Save(..)
+            | Cmd::View(..)) => self.panes(command),
+            command @ (Cmd::Pin(..) | Cmd::SaveDefault(_)) => self.seats(command),
+            _ => {}
+        }
+    }
+
+    fn sessions(&self, command: Cmd) {
+        match command {
             Cmd::ListPrompts(session) => {
                 let result = prompts(session.as_deref()).map_err(|error| error.to_string());
                 self.send(Msg::Prompts { session, result });
@@ -99,19 +120,26 @@ impl Reader {
                 }
                 self.serve(Cmd::ListSessions);
             }
+            _command => unreachable!("serve routes only session listings"),
+        }
+    }
+
+    fn panes(&self, command: Cmd) {
+        match command {
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
+            Cmd::Jobs => self.jobs(),
+            Cmd::KillJob(id) => self.kill(&id),
             Cmd::Clipboard => self.send(Msg::Clipboard(
                 clipboard().map_err(|error| error.to_string()),
             )),
             Cmd::Diff(root) => self.diff(root.as_deref().unwrap_or(&self.workspace)),
-            Cmd::Patch(root, path) => {
-                let result = diff::patch(
-                    root.as_deref().unwrap_or(&self.workspace),
-                    (!path.is_empty()).then_some(path.as_str()),
-                )
-                .map_err(|error| error.to_string());
-                self.send(Msg::Patch { root, path, result });
-            }
+            Cmd::Patch(root, path) => self.patch(root, path),
+            Cmd::Review {
+                root,
+                path,
+                hunk,
+                op,
+            } => self.review(root, path, hunk, op),
             Cmd::Trees => self.trees(),
             Cmd::Save(file, text) => {
                 let result = crate::durable::store::stage(&file, text.as_bytes(), true)
@@ -132,6 +160,37 @@ impl Reader {
                     Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
                 }
             }
+            _command => unreachable!("serve routes only pane commands"),
+        }
+    }
+
+    fn patch(&self, root: Option<PathBuf>, path: String) {
+        let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
+        let result = diff::patch(&dir, (!path.is_empty()).then_some(path.as_str()))
+            .map_err(|error| error.to_string());
+        self.send(Msg::Patch {
+            root: root.clone(),
+            path,
+            result,
+        });
+        self.send(Msg::Review {
+            root,
+            result: Ok(crate::hunks::load(&dir)),
+        });
+    }
+
+    fn review(&self, root: Option<PathBuf>, path: String, hunk: String, op: crate::hunks::Op) {
+        let rejected = matches!(op, crate::hunks::Op::Reject);
+        let dir = root.clone().unwrap_or_else(|| self.workspace.clone());
+        let result = crate::hunks::apply(&dir, &path, &hunk, op).map_err(|error| error.to_string());
+        if rejected && result.is_ok() {
+            self.send(Msg::System(format!("reverted a hunk in {path}")));
+        }
+        self.send(Msg::Review { root, result });
+    }
+
+    fn seats(&self, command: Cmd) {
+        match command {
             Cmd::Pin(seat, on) => {
                 if let Err(error) = summonr_home()
                     .and_then(|home| crate::recent::pin(&home, &seat, on).map_err(Into::into))
@@ -151,7 +210,7 @@ impl Reader {
                     Err(error) => Msg::ModelNote(error.to_string()),
                 });
             }
-            _ => {}
+            _command => unreachable!("serve routes only seat commands"),
         }
     }
 
@@ -160,6 +219,26 @@ impl Reader {
             Ok(diff) => self.send(Msg::Diff(diff)),
             Err(error) => self.send(Msg::DiffFailed(error.to_string())),
         }
+    }
+
+    pub(super) fn jobs(&self) {
+        let jobs = crate::jobs::since(&self.workspace, 0, None)
+            .into_iter()
+            .filter_map(|record| {
+                crate::jobs::status(&self.workspace, &record.id)
+                    .ok()
+                    .map(|status| (record, status))
+            })
+            .collect();
+        self.send(Msg::Jobs(jobs));
+    }
+
+    fn kill(&self, id: &str) {
+        match crate::tools::command::kill_job(&self.workspace, id) {
+            Ok(status) => self.send(Msg::System(format!("job {id}: {}", status.label()))),
+            Err(error) => self.send(Msg::System(format!("job {id} not stopped: {error}"))),
+        }
+        self.jobs();
     }
 
     pub(super) fn trees(&self) {

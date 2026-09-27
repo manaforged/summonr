@@ -24,7 +24,7 @@ pub(super) enum Setting {
     Reasoning,
     Tools,
     DiffLayout,
-    Bus,
+    Mail,
     Module(usize),
     Theme,
     Splash,
@@ -98,9 +98,9 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         ),
         (
             "agent",
-            Setting::Bus,
-            "bus",
-            if prefs.bus {
+            Setting::Mail,
+            "mail",
+            if prefs.mail {
                 "mail starts a turn"
             } else {
                 "mail waits"

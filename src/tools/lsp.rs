@@ -18,7 +18,6 @@ use crate::rpc;
 use super::command::proc::kill_group;
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args};
 
-pub(super) use crate::limits::LSP_TIMEOUT;
 const CONTENT_MODIFIED: i64 = -32801;
 const INBOX: usize = 64;
 
@@ -30,6 +29,10 @@ pub(super) struct Conn {
     next_id: i64,
     root: String,
     clean: bool,
+    docs: std::collections::HashMap<String, (String, i64)>,
+    options: Value,
+    server: String,
+    key: String,
 }
 
 #[derive(Debug)]
@@ -68,6 +71,13 @@ impl Conn {
             loop {
                 let msg = read_msg(&mut stdout).await;
                 let failed = msg.is_err();
+                if !failed
+                    && msg.as_ref().ok().is_some_and(|value| {
+                        value.get("method").is_some() && value.get("id").is_none()
+                    })
+                {
+                    continue;
+                }
                 if sender.send(msg).await.is_err() || failed {
                     break;
                 }
@@ -81,6 +91,10 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace)?,
             clean: true,
+            docs: std::collections::HashMap::new(),
+            options: launch.options.clone(),
+            server: launch.argv[0].clone(),
+            key: launch.key.clone(),
         };
         conn.handshake(&launch.options).await?;
         Ok(conn)
@@ -213,18 +227,39 @@ impl Conn {
     async fn did_open(&mut self, path: &Path) -> Result<()> {
         let text = std::fs::read_to_string(path)
             .map_err(|error| Error::Tool(format!("cannot read {}: {error}", path.display())))?;
-        self.notify(
-            "textDocument/didOpen",
-            json!({
-                "textDocument": {
-                    "uri": file_uri(path)?,
-                    "languageId": language::language_id(path),
-                    "version": 1,
-                    "text": text
-                }
-            }),
-        )
-        .await
+        let uri = file_uri(path)?;
+        let language_id = language::language_id(path);
+        match self.docs.get_mut(&uri) {
+            Some((held, _)) if *held == text => Ok(()),
+            Some((held, version)) => {
+                *version += 1;
+                *held = text.clone();
+                let version = *version;
+                self.notify(
+                    "textDocument/didChange",
+                    json!({
+                        "textDocument": { "uri": uri, "version": version },
+                        "contentChanges": [{ "text": text }]
+                    }),
+                )
+                .await
+            }
+            None => {
+                self.docs.insert(uri.clone(), (text.clone(), 1));
+                self.notify(
+                    "textDocument/didOpen",
+                    json!({
+                        "textDocument": {
+                            "uri": uri,
+                            "languageId": language_id,
+                            "version": 1,
+                            "text": text
+                        }
+                    }),
+                )
+                .await
+            }
+        }
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -286,14 +321,27 @@ impl Conn {
         let params = msg.get("params").cloned().unwrap_or(Value::Null);
         let result = match method {
             "workspace/workspaceFolders" => json!([{ "uri": self.root, "name": "workspace" }]),
-            "workspace/configuration" => {
-                let n = params
+            "workspace/configuration" => Value::Array(
+                params
                     .get("items")
                     .and_then(Value::as_array)
-                    .map(Vec::len)
-                    .unwrap_or(1);
-                Value::Array(vec![Value::Null; n])
-            }
+                    .map(|items| {
+                        items
+                            .iter()
+                            .map(|item| {
+                                let section = item.get("section").and_then(Value::as_str);
+                                if section
+                                    .is_some_and(|name| name != self.server && name != self.key)
+                                {
+                                    Value::Null
+                                } else {
+                                    self.options.clone()
+                                }
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_else(|| vec![self.options.clone()]),
+            ),
             "window/workDoneProgress/create" | "client/registerCapability" => Value::Null,
             _ => Value::Null,
         };

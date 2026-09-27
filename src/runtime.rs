@@ -5,11 +5,11 @@ use std::time::Instant;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
-use crate::bus::{Bus, Mail};
 use crate::durable::driver::{Exposure, SessionDriver};
 use crate::durable::log::{Usage as Meter, UsageMeta};
 use crate::error::{Error, Result};
 use crate::herdr::Reporter;
+use crate::mail::{Mail, Mailbox};
 use crate::policy::{Grant, Policy};
 use crate::provider::{
     AssistantMessage, CompletionRequest, Effort, Message, Price, Provider, Role, ToolCall,
@@ -127,16 +127,17 @@ pub struct Loop<P> {
     accepted: bool,
     summary_failed: bool,
     workspace: PathBuf,
-    bus: Option<Bus>,
-    bus_module: bool,
+    mailbox: Option<Mailbox>,
+    mail_module: bool,
     mcp: Option<Arc<crate::mcp::Hub>>,
     guard: guard::Guard,
+    checkpoint_rounds: usize,
     checkpoints: Option<crate::checkpoint::Checkpoints>,
     fallbacks: VecDeque<(P, String)>,
     hooks: crate::hooks::Hooks,
     compact_tokens: Option<u32>,
     mcp_start: Option<tokio::task::JoinHandle<crate::mcp::Hub>>,
-    mail: VecDeque<Mail>,
+    inbox: VecDeque<Mail>,
     steer: VecDeque<UserInput>,
     steer_shared: Option<Arc<Mutex<VecDeque<UserInput>>>>,
     depth: u8,
@@ -145,19 +146,19 @@ pub struct Loop<P> {
     asked: Vec<Grant>,
     blocks: (usize, usize),
     spawned: BTreeMap<String, child::Spawned>,
-    mailbox: (UnboundedSender<Event>, UnboundedReceiver<Event>),
+    events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
     catalog_frozen: bool,
 }
 
 mod approval;
 mod aside;
-mod bus;
 mod checkpoint;
 mod child;
 mod compaction;
 mod configure;
 mod guard;
 mod hooks;
+mod mail;
 mod mcp;
 mod turn;
 

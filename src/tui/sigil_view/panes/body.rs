@@ -5,8 +5,7 @@ use sigil::prelude::{
     text_edit,
 };
 
-use super::todos;
-use super::{App, FileRow, Pane};
+use super::{App, FileRow, Pane, diff, jobs, peers, todos};
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
     let mut column = container()
@@ -22,9 +21,11 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         )
         .class(classes!("bg-gray-2 border-l border-gray-6"));
     column = match pane {
-        Pane::Diff => diff(app, column),
+        Pane::Diff => diff::diff(app, column),
         Pane::Files => files(app, column),
         Pane::Worktrees => trees(app, column),
+        Pane::Jobs => jobs::jobs(app, column),
+        Pane::Peers => peers::peers(app, column),
         Pane::View => view(app, column),
         Pane::Ledger => todos::ledger(&app, column),
         Pane::Chat => column,
@@ -48,63 +49,6 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
 
 fn close(app: App) -> impl IntoNode {
     icon_button("✕", move || app.toggle_side()).accessible("Close pane")
-}
-
-fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
-    let model = app.model.get();
-    if let Some(path) = app.diff_view.peek() {
-        let back = app.clone();
-        column = column
-            .child(header(
-                &app,
-                path.clone(),
-                format!("vs {}", model.diff.base),
-            ))
-            .child(button("← all changes").ghost().activate(move || {
-                back.pane_back();
-            }));
-        let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
-            return column.child(label("loading…").class(classes!("text-xs text-gray-11")));
-        };
-        let text = match result {
-            Ok(text) => text,
-            Err(error) => {
-                return column.child(label(error.clone()).class(classes!("text-xs text-error-11")));
-            }
-        };
-        return column.child(crate::tui::sigil_view::chat::entry::patch_view(
-            &app,
-            text.clone(),
-            model.prefs.diff_layout,
-        ));
-    }
-    column = column.child(header(&app, "Changes".to_string(), model.diff.summary()));
-    drop(model);
-    let stats = app.diff_stats();
-    if stats.is_empty() {
-        return column.child(label("no changes").class(classes!("text-xs text-gray-11")));
-    }
-    for (index, stat) in stats.into_iter().enumerate() {
-        let open = app.clone();
-        let path = stat.path.clone();
-        let menu = app.clone();
-        column = column.child(
-            list_row(
-                false,
-                stat.path.clone(),
-                format!("+{} −{}", stat.added, stat.removed),
-            )
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Right) {
-                    menu.context_row(index);
-                } else {
-                    open.diff_open(path.clone());
-                }
-                event.stop_propagation();
-            }),
-        );
-    }
-    column
 }
 
 fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {

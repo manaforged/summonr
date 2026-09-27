@@ -166,6 +166,23 @@ impl Worker {
         self.send_workflow();
     }
 
+    pub(super) fn set_module(&mut self, name: &str, on: bool) {
+        if let Err(error) = crate::modules::set(name, on) {
+            self.fail(&error.to_string());
+            return;
+        }
+        match crate::modules::Switches::load(self.loop_.workspace()) {
+            Ok(switches) => {
+                if self.loop_.catalog_frozen() {
+                    self.system("saved for the next process; this session's tools stay frozen");
+                } else {
+                    self.loop_.set_modules(&switches);
+                }
+            }
+            Err(error) => self.fail(&error.to_string()),
+        }
+    }
+
     pub(super) fn save_workflow(&mut self, name: &str) {
         self.workflow.name = name.trim().to_string();
         let saved = workflow::save(&self.workflow)

@@ -10,10 +10,16 @@ pub(in crate::tui::sigil_view) enum Entry {
         done: bool,
     },
     Tool {
+        id: String,
         name: String,
         arg: String,
         state: ToolState,
         output: String,
+        expanded: bool,
+    },
+    ToolGroup {
+        name: String,
+        calls: Vec<Call>,
     },
     Verify {
         command: String,
@@ -34,6 +40,32 @@ pub(in crate::tui::sigil_view) enum Entry {
     },
 }
 
+#[derive(Clone, Debug)]
+pub(in crate::tui::sigil_view) struct Call {
+    pub(in crate::tui::sigil_view) id: String,
+    pub(in crate::tui::sigil_view) arg: String,
+    pub(in crate::tui::sigil_view) state: ToolState,
+    pub(in crate::tui::sigil_view) output: String,
+    pub(in crate::tui::sigil_view) expanded: bool,
+}
+
+impl Call {
+    pub(in crate::tui::sigil_view) fn new(
+        id: String,
+        arg: String,
+        state: ToolState,
+        output: String,
+    ) -> Self {
+        Self {
+            id,
+            arg,
+            state,
+            output,
+            expanded: false,
+        }
+    }
+}
+
 pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
     match entry {
         Entry::User(text) => format!("### You\n{text}"),
@@ -45,7 +77,13 @@ pub(in crate::tui::sigil_view) fn entry_markdown(entry: &Entry) -> String {
             arg,
             state,
             output,
+            ..
         } => tool_markdown(name, arg, state, output),
+        Entry::ToolGroup { name, calls } => calls
+            .iter()
+            .map(|call| tool_markdown(name, &call.arg, &call.state, &call.output))
+            .collect::<Vec<_>>()
+            .join("\n"),
         Entry::Verify { command, passed } => {
             format!("{} **verify** `{command}`", if *passed { "✓" } else { "✗" })
         }

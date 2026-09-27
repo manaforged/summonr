@@ -5,12 +5,20 @@ pub(super) enum Pane {
     Files,
     Diff,
     Worktrees,
+    Jobs,
+    Peers,
     View,
 }
 
 impl Pane {
-    pub(super) const SECONDARY: [Pane; 4] =
-        [Pane::Ledger, Pane::Files, Pane::Diff, Pane::Worktrees];
+    pub(super) const SECONDARY: [Pane; 6] = [
+        Pane::Ledger,
+        Pane::Files,
+        Pane::Diff,
+        Pane::Worktrees,
+        Pane::Jobs,
+        Pane::Peers,
+    ];
 
     pub(super) fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {
@@ -19,6 +27,8 @@ impl Pane {
             "files" | "tree" | "repo" => Some(Self::Files),
             "diff" | "changes" => Some(Self::Diff),
             "worktrees" | "trees" => Some(Self::Worktrees),
+            "jobs" | "job" | "background" => Some(Self::Jobs),
+            "peers" | "agents" | "live" => Some(Self::Peers),
             "view" | "file" => Some(Self::View),
             _ => None,
         }
@@ -31,6 +41,8 @@ impl Pane {
             Self::Files => "files",
             Self::Diff => "diff",
             Self::Worktrees => "worktrees",
+            Self::Jobs => "jobs",
+            Self::Peers => "peers",
             Self::View => "view",
         }
     }

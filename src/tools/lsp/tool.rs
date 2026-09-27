@@ -1,5 +1,8 @@
+use std::time::Duration;
+
 use super::detect::detect;
 use super::*;
+use crate::limits::{LSP_CHECK, LSP_REQUEST, LSP_START};
 
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
@@ -31,7 +34,7 @@ impl ToolRegistry {
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let text = self
-            .with_lsp(&file, move |conn| {
+            .with_lsp(&file, LSP_REQUEST, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
             .await?;
@@ -43,7 +46,15 @@ impl ToolRegistry {
         let path = nonempty_path(&args, "definition")?;
         let file = self.resolve_existing(path)?;
         let line = object_usize(&args, "line").unwrap_or(1).max(1) as u32;
-        let character = object_usize(&args, "character").unwrap_or(1).max(1) as u32;
+        let character = match object_usize(&args, "character") {
+            Some(character) => character.max(1) as u32,
+            None if args.get("line").is_some() => {
+                return Err(Error::Tool(format!(
+                    "definition at line {line} needs `character` — use the column a read search hit prints (path:line:col)"
+                )));
+            }
+            None => 1,
+        };
         let new_name = args
             .get("new_name")
             .and_then(Value::as_str)
@@ -58,7 +69,7 @@ impl ToolRegistry {
             let name = new_name.to_string();
             let request_path = file.clone();
             let edit = self
-                .with_lsp(&file, move |conn| {
+                .with_lsp(&file, LSP_REQUEST, move |conn| {
                     Box::pin(
                         async move { conn.rename(&request_path, line, character, &name).await },
                     )
@@ -69,7 +80,7 @@ impl ToolRegistry {
         let refs = object_bool(&args, "references");
         let request_path = file.clone();
         let text = self
-            .with_lsp(&file, move |conn| {
+            .with_lsp(&file, LSP_REQUEST, move |conn| {
                 Box::pin(async move {
                     if refs {
                         conn.references(&request_path, line, character).await
@@ -90,7 +101,7 @@ impl ToolRegistry {
         }
         let request_path = dest.to_path_buf();
         let text = self
-            .with_lsp(dest, move |conn| {
+            .with_lsp(dest, LSP_CHECK, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
             .await
@@ -199,6 +210,7 @@ impl ToolRegistry {
     async fn with_lsp<T>(
         &self,
         path: &Path,
+        deadline: Duration,
         f: impl for<'a> FnOnce(&'a mut Conn) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>,
     ) -> Result<T> {
         let launch = detect(&self.workspace, path)?;
@@ -216,19 +228,26 @@ impl ToolRegistry {
         let mut state = slot.lock().await;
         let mut conn = match state.take() {
             Some(conn) => conn,
-            None => tokio::time::timeout(LSP_TIMEOUT, Conn::spawn(&self.workspace, &launch))
+            None => tokio::time::timeout(LSP_START, Conn::spawn(&self.workspace, &launch))
                 .await
                 .map_err(|_elapsed| {
-                    Error::Tool("language server initialization timed out".to_string())
+                    Error::Tool(format!(
+                        "{} did not start within {} s",
+                        launch.argv[0],
+                        LSP_START.as_secs()
+                    ))
                 })??,
         };
-        let outcome = tokio::time::timeout(LSP_TIMEOUT, f(&mut conn)).await;
+        let outcome = tokio::time::timeout(deadline, f(&mut conn)).await;
         if conn.clean {
             *state = Some(conn);
         }
-        match outcome {
-            Ok(result) => result,
-            Err(_elapsed) => Err(Error::Tool("language server request timed out".to_string())),
-        }
+        outcome.map_err(|_elapsed| {
+            Error::Tool(format!(
+                "{} did not answer within {} s; the server may still be indexing",
+                launch.argv[0],
+                deadline.as_secs()
+            ))
+        })?
     }
 }

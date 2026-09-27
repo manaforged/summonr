@@ -1,12 +1,39 @@
 use super::*;
 
-pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
-    type Handler = fn(&App, &mut KeyEvent);
-    let mut shell = container()
-        .role(Role::Main)
-        .label("Summonr agent harness")
-        .layout(LayoutStyle::flex_column().fill_width().fill_height());
-    let bindings: &[(Shortcut, Handler)] = &[
+type Handler = fn(&App, &mut KeyEvent);
+
+fn escape(app: &App, event: &mut KeyEvent) {
+    event.stop_propagation();
+    if app.options_active() {
+        super::input::escape(app);
+    } else if app.edit_stop() || app.note_stop() {
+    } else if app.context.peek().is_some() {
+        app.context_close();
+    } else if app.pane_back() {
+    } else if app.pane_focus.peek() {
+        app.focus_pane(false);
+    } else {
+        super::input::escape(app);
+    }
+}
+
+fn enter(app: &App, event: &mut KeyEvent) {
+    if (app.view_edit.peek() || app.note_target.peek().is_some()) && !app.options_active() {
+        return;
+    }
+    event.stop_propagation();
+    if app.overlay_enter() {
+    } else if app.context.peek().is_some() {
+        app.context_enter();
+    } else if app.pane_active().is_some() {
+        app.pane_enter();
+    } else if !app.accept() {
+        app.submit();
+    }
+}
+
+fn respond() -> Vec<(Shortcut, Handler)> {
+    vec![
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
@@ -35,20 +62,29 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 app.retry();
             }
         }),
-        (Key::Escape.into(), |app, event| {
-            event.stop_propagation();
-            if app.options_active() {
-                super::input::escape(app);
-            } else if app.edit_stop() {
-            } else if app.context.peek().is_some() {
-                app.context_close();
-            } else if app.pane_back() {
-            } else if app.pane_focus.peek() {
-                app.focus_pane(false);
-            } else {
-                super::input::escape(app);
+        (Key::Escape.into(), escape),
+        (Key::Enter.into(), enter),
+        (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
+            if !app.hotkeys.recording.peek() {
+                event.stop_propagation();
+                app.interrupt();
             }
         }),
+        (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
+            if !app.hotkeys.recording.peek()
+                && !app.options_active()
+                && app.draft.peek().is_empty()
+                && app.model.get().busy_since.is_none()
+            {
+                event.stop_propagation();
+                app.quit.set(true);
+            }
+        }),
+    ]
+}
+
+fn panes() -> Vec<(Shortcut, Handler)> {
+    vec![
         (LogicalKey::character("e").into(), |app, event| {
             if app.pane_active() == Some(super::Pane::View) {
                 event.stop_propagation();
@@ -75,46 +111,30 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 app.copy_patch();
             }
         }),
+        (LogicalKey::character("r").into(), |app, event| {
+            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
+                event.stop_propagation();
+                app.hunk_reject();
+            }
+        }),
+        (LogicalKey::character("n").into(), |app, event| {
+            if app.pane_active() == Some(super::Pane::Diff)
+                && let Some(path) = app.diff_view.peek()
+            {
+                let hunks = app.hunks();
+                let Some(hunk) =
+                    hunks.get(app.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
+                else {
+                    return;
+                };
+                event.stop_propagation();
+                app.note_start(path, hunk.id.clone());
+            }
+        }),
         (LogicalKey::character("o").into(), |app, event| {
             if app.pane_active() == Some(super::Pane::View) {
                 event.stop_propagation();
                 app.view_external();
-            }
-        }),
-        (Key::Home.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_edge(false);
-            } else if app.overlay().is_none() && app.draft.peek().is_empty() {
-                event.stop_propagation();
-                app.history_edge(false);
-            }
-        }),
-        (Key::End.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_edge(true);
-            } else if app.overlay().is_none() && app.draft.peek().is_empty() {
-                event.stop_propagation();
-                app.history_edge(true);
-            }
-        }),
-        (Shortcut::ctrl(Key::Home), |app, event| {
-            if app.overlay().is_none() {
-                event.stop_propagation();
-                app.history_edge(false);
-            }
-        }),
-        (Shortcut::ctrl(Key::End), |app, event| {
-            if app.overlay().is_none() {
-                event.stop_propagation();
-                app.history_edge(true);
             }
         }),
         (Key::ArrowLeft.into(), |app, event| {
@@ -127,20 +147,6 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             if app.pane_active().is_some() {
                 event.stop_propagation();
                 app.pane_expand();
-            }
-        }),
-        (Key::Enter.into(), |app, event| {
-            if app.view_edit.peek() && !app.options_active() {
-                return;
-            }
-            event.stop_propagation();
-            if app.overlay_enter() {
-            } else if app.context.peek().is_some() {
-                app.context_enter();
-            } else if app.pane_active().is_some() {
-                app.pane_enter();
-            } else if !app.accept() {
-                app.submit();
             }
         }),
         (Shortcut::ctrl(Key::ArrowLeft), |app, event| {
@@ -171,101 +177,134 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 app.nudge_split(5);
             },
         ),
-        (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
-            if !app.hotkeys.recording.peek() {
-                event.stop_propagation();
-                app.interrupt();
-            }
-        }),
-        (Shortcut::ctrl(LogicalKey::character("d")), |app, event| {
-            if !app.hotkeys.recording.peek()
-                && !app.options_active()
-                && app.draft.peek().is_empty()
-                && app.model.get().busy_since.is_none()
-            {
-                event.stop_propagation();
-                app.quit.set(true);
-            }
-        }),
-        (Key::PageUp.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            event.stop_propagation();
-            if app.overlay_move(-8) {
-                return;
-            }
-            if app.pane_active().is_some() {
-                app.pane_page(-1);
-            } else {
-                app.page_history(-1.0);
-            }
-        }),
-        (Key::PageDown.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            event.stop_propagation();
-            if app.overlay_move(8) {
-                return;
-            }
-            if app.pane_active().is_some() {
-                app.pane_page(1);
-            } else {
-                app.page_history(1.0);
-            }
-        }),
-        (Key::ArrowUp.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            if app.overlay_move(-1) {
-                event.stop_propagation();
-            } else if app.context.peek().is_some() {
-                event.stop_propagation();
-                app.context_move(-1);
-            } else if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_move(-1);
-            } else if app.draft.peek().is_empty() && app.model.get().queued != (0, 0) {
-                event.stop_propagation();
-                app.dequeue();
-            } else if app.suggesting() {
-                event.stop_propagation();
-                app.shift(-1);
-            }
-        }),
-        (Key::ArrowDown.into(), |app, event| {
-            if app.overlay() == Some(Overlay::Usage) {
-                return;
-            }
-            if app.overlay_move(1) {
-                event.stop_propagation();
-            } else if app.context.peek().is_some() {
-                event.stop_propagation();
-                app.context_move(1);
-            } else if app.pane_active().is_some() {
-                event.stop_propagation();
-                app.pane_move(1);
-            } else if app.suggesting() {
-                event.stop_propagation();
-                app.shift(1);
-            }
-        }),
-        (Key::ArrowLeft.into(), |app, event| {
-            if app.overlay_adjust(-1) {
-                event.stop_propagation();
-            }
-        }),
-        (Key::ArrowRight.into(), |app, event| {
-            if app.overlay_adjust(1) {
-                event.stop_propagation();
-            }
-        }),
-    ];
+    ]
+}
+
+fn edge(app: &App, event: &mut KeyEvent, end: bool) {
+    if app.overlay() == Some(Overlay::Usage) {
+        return;
+    }
+    if app.pane_active().is_some() {
+        event.stop_propagation();
+        app.pane_edge(end);
+    } else if app.overlay().is_none() && app.draft.peek().is_empty() {
+        event.stop_propagation();
+        app.history_edge(end);
+    }
+}
+
+fn first(app: &App, event: &mut KeyEvent) {
+    edge(app, event, false);
+}
+
+fn last(app: &App, event: &mut KeyEvent) {
+    edge(app, event, true);
+}
+
+fn ctrl_edge(app: &App, event: &mut KeyEvent, end: bool) {
+    if app.overlay().is_none() {
+        event.stop_propagation();
+        app.history_edge(end);
+    }
+}
+
+fn ctrl_first(app: &App, event: &mut KeyEvent) {
+    ctrl_edge(app, event, false);
+}
+
+fn ctrl_last(app: &App, event: &mut KeyEvent) {
+    ctrl_edge(app, event, true);
+}
+
+fn page(app: &App, event: &mut KeyEvent, dir: isize) {
+    if app.overlay() == Some(Overlay::Usage) {
+        return;
+    }
+    event.stop_propagation();
+    if app.overlay_move(8 * dir) {
+        return;
+    }
+    if app.pane_active().is_some() {
+        app.pane_page(dir);
+    } else {
+        app.page_history(dir as f32);
+    }
+}
+
+fn page_up(app: &App, event: &mut KeyEvent) {
+    page(app, event, -1);
+}
+
+fn page_down(app: &App, event: &mut KeyEvent) {
+    page(app, event, 1);
+}
+
+fn arrow(app: &App, event: &mut KeyEvent, dir: isize) {
+    if app.overlay() == Some(Overlay::Usage) {
+        return;
+    }
+    if app.overlay_move(dir) {
+        event.stop_propagation();
+    } else if app.context.peek().is_some() {
+        event.stop_propagation();
+        app.context_move(dir);
+    } else if app.pane_active().is_some() {
+        event.stop_propagation();
+        app.pane_move(dir);
+    } else if dir < 0 && app.draft.peek().is_empty() && app.model.get().queued != (0, 0) {
+        event.stop_propagation();
+        app.dequeue();
+    } else if app.suggesting() {
+        event.stop_propagation();
+        app.shift(dir);
+    }
+}
+
+fn up(app: &App, event: &mut KeyEvent) {
+    arrow(app, event, -1);
+}
+
+fn down(app: &App, event: &mut KeyEvent) {
+    arrow(app, event, 1);
+}
+
+fn adjust(app: &App, event: &mut KeyEvent, dir: isize) {
+    if app.overlay_adjust(dir) {
+        event.stop_propagation();
+    }
+}
+
+fn left(app: &App, event: &mut KeyEvent) {
+    adjust(app, event, -1);
+}
+
+fn right(app: &App, event: &mut KeyEvent) {
+    adjust(app, event, 1);
+}
+
+fn nav() -> Vec<(Shortcut, Handler)> {
+    vec![
+        (Key::Home.into(), first),
+        (Key::End.into(), last),
+        (Shortcut::ctrl(Key::Home), ctrl_first),
+        (Shortcut::ctrl(Key::End), ctrl_last),
+        (Key::PageUp.into(), page_up),
+        (Key::PageDown.into(), page_down),
+        (Key::ArrowUp.into(), up),
+        (Key::ArrowDown.into(), down),
+        (Key::ArrowLeft.into(), left),
+        (Key::ArrowRight.into(), right),
+    ]
+}
+
+pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
+    let mut shell = container()
+        .role(Role::Main)
+        .label("Summonr agent harness")
+        .layout(LayoutStyle::flex_column().fill_width().fill_height());
+    let bindings = respond().into_iter().chain(panes()).chain(nav());
     for (shortcut, action) in bindings {
         let app = app.clone();
-        let action = *action;
         shell = shell.key_capture(shortcut.clone(), move |event| action(&app, event));
     }
     let older = app.clone();

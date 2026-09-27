@@ -86,20 +86,6 @@ pub(crate) fn notification(method: &str, params: Value) -> Value {
     json!({"jsonrpc": "2.0", "method": method, "params": params})
 }
 
-pub(crate) fn text(result: &Value) -> String {
-    result
-        .get("content")
-        .and_then(Value::as_array)
-        .map(|parts| {
-            parts
-                .iter()
-                .filter_map(|part| part.get("text").and_then(Value::as_str))
-                .collect::<Vec<_>>()
-                .join("\n")
-        })
-        .unwrap_or_default()
-}
-
 pub(crate) struct Client {
     child: Child,
     stdin: ChildStdin,
@@ -150,20 +136,6 @@ impl Client {
         self.write(&notification(method, params)).await
     }
 
-    pub(crate) async fn tool(
-        &mut self,
-        name: &str,
-        arguments: Value,
-        on_note: impl FnMut(&str, &Value),
-    ) -> Result<Value> {
-        self.call(
-            "tools/call",
-            json!({"name": name, "arguments": arguments}),
-            on_note,
-        )
-        .await
-    }
-
     pub(crate) async fn call(
         &mut self,
         method: &str,
@@ -209,10 +181,5 @@ impl Client {
 
     pub(crate) fn alive(&mut self) -> bool {
         matches!(self.child.try_wait(), Ok(None))
-    }
-
-    pub(crate) async fn shutdown(mut self) {
-        drop(self.stdin);
-        drop(self.child.kill().await);
     }
 }

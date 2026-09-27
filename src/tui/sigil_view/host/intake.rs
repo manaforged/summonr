@@ -51,7 +51,8 @@ fn secret(app: &App, key: &sigil::prelude::KeyEvent) {
     } else if let Some(text) = key.text.as_deref()
         && !chord
     {
-        app.secret_push(text.trim_end_matches(['\r', '\n']));
+        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        app.secret_push(text.lines().next().unwrap_or_default());
     }
 }
 

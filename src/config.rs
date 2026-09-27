@@ -122,8 +122,19 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
+    #[serde(default)]
+    pub models: BTreeMap<String, Model>,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct Model {
+    pub body: Option<toml::Value>,
+    pub context_window: Option<u32>,
+    pub effort: Option<crate::provider::Effort>,
+    pub compact_tokens: Option<u32>,
+    pub keep_reasoning: Option<bool>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]

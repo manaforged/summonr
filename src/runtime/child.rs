@@ -75,7 +75,7 @@ pub(super) struct Done {
 pub(super) fn definition() -> ToolDefinition {
     tool(
         "task",
-        "Delegate one assignment to a child. Same tools except task. Several calls in one response run together. background true returns an id; pass child to poll, kill true to stop. implement edits this workspace; research is read-only.",
+        "Delegate one assignment to a child on the same provider and model. Same tools except task. Several calls in one response run together. background true returns an id; pass child to poll, kill true to stop. implement edits this workspace; research is read-only.",
         serde_json::json!({
             "type": "object",
             "properties": {

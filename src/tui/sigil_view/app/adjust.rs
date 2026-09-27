@@ -160,6 +160,7 @@ impl App {
             Hotkey::Editor => self.editor_requested.set(true),
             Hotkey::Files => self.toggle_pane(Pane::Files),
             Hotkey::Ledger => self.toggle_todos(),
+            Hotkey::Agents => self.toggle_agents(),
             Hotkey::Diff => self.toggle_pane(Pane::Diff),
             Hotkey::Copy => self.copy_chat(None),
             Hotkey::Select => self.select.set(!self.select.peek()),
@@ -188,6 +189,11 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn hide_agents(&self) {
         self.model_mut(|model| model.agents_hidden = true);
+        self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn toggle_agents(&self) {
+        self.model_mut(|model| model.agents_expanded = !model.agents_expanded);
         self.refresh();
     }
 

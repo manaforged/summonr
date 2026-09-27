@@ -105,6 +105,18 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 app.history_edge(true);
             }
         }),
+        (Shortcut::ctrl(Key::Home), |app, event| {
+            if app.overlay().is_none() {
+                event.stop_propagation();
+                app.history_edge(false);
+            }
+        }),
+        (Shortcut::ctrl(Key::End), |app, event| {
+            if app.overlay().is_none() {
+                event.stop_propagation();
+                app.history_edge(true);
+            }
+        }),
         (Key::ArrowLeft.into(), |app, event| {
             if app.pane_active().is_some() {
                 event.stop_propagation();

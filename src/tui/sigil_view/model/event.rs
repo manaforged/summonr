@@ -148,7 +148,7 @@ impl Model {
                 prefix_hash,
                 cost,
             ),
-            Event::Approval { .. } => {}
+            Event::Approval { .. } | Event::Spawned { .. } => {}
             Event::Unreported { tokens } => self.unreported_tokens = tokens,
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
@@ -187,6 +187,45 @@ impl Model {
             self.apply_todos(arguments, Some(&crate::child::tag(id)));
         }
         let tag = crate::child::tag(id);
+        if let Event::Spawned { assignment, access } = &event {
+            self.agents.push(Agent {
+                id: tag,
+                assignment: assignment.clone(),
+                access: *access,
+                started: Instant::now(),
+                secs: None,
+                last: String::new(),
+                done: false,
+                failed: false,
+                tokens: 0,
+                cost: 0.0,
+            });
+            self.agents_hidden = false;
+            return;
+        }
+        if let Event::Usage {
+            prompt_tokens,
+            completion_tokens,
+            reasoning_tokens,
+            cost,
+            ..
+        } = &event
+        {
+            let index = match self.agents.iter().position(|agent| agent.id == tag) {
+                Some(index) => index,
+                None => {
+                    self.agents_hidden = false;
+                    self.agents.push(Agent::placeholder(tag.clone()));
+                    self.agents.len() - 1
+                }
+            };
+            let agent = &mut self.agents[index];
+            agent.tokens += u64::from(*prompt_tokens)
+                + u64::from(*completion_tokens)
+                + u64::from(*reasoning_tokens);
+            agent.cost += cost.unwrap_or(0.0);
+            return;
+        }
         let compact = ToolOutput::Compact;
         let (last, done, failed) = match event {
             Event::ToolCall {
@@ -215,15 +254,20 @@ impl Model {
         };
         if let Some(agent) = self.agents.iter_mut().find(|agent| agent.id == tag) {
             agent.last = last.clone();
+            if done && !agent.done {
+                agent.secs = Some(agent.started.elapsed().as_secs());
+            }
             agent.done = done;
             agent.failed |= failed;
         } else {
-            self.agents.push(Agent {
-                id: tag.clone(),
-                last: last.clone(),
-                done,
-                failed,
-            });
+            let mut agent = Agent::placeholder(tag.clone());
+            agent.last = last.clone();
+            agent.done = done;
+            agent.failed = failed;
+            if done {
+                agent.secs = Some(0);
+            }
+            self.agents.push(agent);
             self.agents_hidden = false;
         }
         if done {

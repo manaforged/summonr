@@ -81,6 +81,7 @@ pub(super) struct Model {
     pub(super) live_tool: Option<(String, String)>,
     pub(super) agents: Vec<Agent>,
     pub(super) agents_hidden: bool,
+    pub(super) agents_expanded: bool,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
     pub(super) pick: Option<&'static str>,
@@ -119,6 +120,7 @@ impl Model {
             live_tool: None,
             agents: Vec::new(),
             agents_hidden: false,
+            agents_expanded: false,
             prefs: info.prefs.clone(),
             snapshot: Snapshot {
                 model: info.model.clone(),

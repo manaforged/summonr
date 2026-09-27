@@ -7,10 +7,19 @@ use crate::provider::Usage;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Access {
+pub enum Access {
     #[default]
     Implement,
     Research,
+}
+
+impl Access {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Implement => "implement",
+            Self::Research => "research",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]

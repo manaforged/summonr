@@ -79,7 +79,7 @@ summonr anthropic --goal "make cargo test pass"
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
-- The `task` module in `/settings` turns on child sessions: batch, background, poll, and kill.
+- Child sessions are on by default (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
 - The `mcp` module in `/settings`, then a `[mcp.NAME]` table in `~/.summonr/config.toml`, connects an MCP server.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
@@ -122,13 +122,13 @@ operator's global rules files, which `grade.sh` now keeps out.
 
 Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows. The graded 16-task suite with deterministic verifiers — its full scorecard and limits — lives in [`BENCHMARKS.md`](BENCHMARKS.md).
 
-Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `edit`, `write`, `run_command`, `todo`), plus the modules you turned on. `mcp` and `task` are off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
+Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `edit`, `write`, `run_command`, `todo`), plus the modules you turned on. `mcp` is off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
 
 ## Limits
 
 - summonr refuses force pushes, `sudo`, and `rm -rf /`. Other risky commands ask first. With `-p`, nothing risky runs.
 - Six identical results from the same call end the turn. The terminal UI asks first.
-- The `mcp` and `task` modules are off by default. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` waits for approval.
+- The `mcp` module is off by default. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` waits for approval.
 - A project can turn a module off. A project can't turn a module on.
 - `AGENTS.md` in a trusted workspace is the project instruction file. summonr doesn't read `CLAUDE.md`.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.

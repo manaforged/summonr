@@ -3,9 +3,37 @@ use super::*;
 #[derive(Clone, Debug)]
 pub(in crate::tui::sigil_view) struct Agent {
     pub(in crate::tui::sigil_view) id: String,
+    pub(in crate::tui::sigil_view) assignment: String,
+    pub(in crate::tui::sigil_view) access: crate::child::Access,
+    pub(in crate::tui::sigil_view) started: Instant,
+    pub(in crate::tui::sigil_view) secs: Option<u64>,
     pub(in crate::tui::sigil_view) last: String,
     pub(in crate::tui::sigil_view) done: bool,
     pub(in crate::tui::sigil_view) failed: bool,
+    pub(in crate::tui::sigil_view) tokens: u64,
+    pub(in crate::tui::sigil_view) cost: f64,
+}
+
+impl Agent {
+    pub(in crate::tui::sigil_view) fn placeholder(id: String) -> Self {
+        Self {
+            id,
+            assignment: String::new(),
+            access: crate::child::Access::default(),
+            started: Instant::now(),
+            secs: None,
+            last: String::new(),
+            done: false,
+            failed: false,
+            tokens: 0,
+            cost: 0.0,
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn elapsed(&self) -> u64 {
+        self.secs
+            .unwrap_or_else(|| self.started.elapsed().as_secs())
+    }
 }
 
 #[derive(Clone, Default)]

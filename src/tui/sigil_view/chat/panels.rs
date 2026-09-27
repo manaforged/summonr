@@ -1,14 +1,97 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, NodeStyleExt, Tone,
-    button, card, classes, container, icon_button, label, list_row_with, notice_band,
-    section_label, spacer, spinner_frame,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder,
+    NodeEventsExt, NodeStyleExt, Tone, button, card, classes, container, derived_eq, icon_button,
+    label, list_row_with, notice_band, section_label, spacer, spinner_frame,
 };
 
-use super::{App, Model};
+use super::{Agent, App, Model};
 use super::{busy_status, secret_row};
 
-pub(super) fn agents(app: App, width: usize) -> NodeBuilder {
+#[derive(Clone, PartialEq)]
+struct AgentView {
+    expanded: bool,
+    headline: String,
+    detail: String,
+    spend: String,
+    rows: Vec<AgentRow>,
+}
+
+#[derive(Clone, PartialEq)]
+struct AgentRow {
+    label: String,
+    detail: String,
+    metrics: String,
+    last: String,
+}
+
+fn agent_view(app: &App, model: &Model, width: usize) -> AgentView {
+    let running = model.agents.iter().filter(|agent| !agent.done).count();
+    let tick = if running > 0 { app.ticks.get() } else { 0 };
+    let tokens: u64 = model.agents.iter().map(|agent| agent.tokens).sum();
+    let cost: f64 = model.agents.iter().map(|agent| agent.cost).sum();
+    let priced = model.agents.iter().any(|agent| agent.cost > 0.0);
+    let total = model.agents.len();
+    let noun = if total == 1 { "child" } else { "children" };
+    let glyph = if running == 0 {
+        "✓".to_string()
+    } else {
+        spinner_frame(tick).to_string()
+    };
+    AgentView {
+        expanded: model.agents_expanded,
+        headline: format!("{glyph} {total} {noun}"),
+        detail: format!("{running} running"),
+        spend: {
+            let spend = spend(tokens, cost, priced);
+            if model.agents_expanded {
+                format!("{running} running · {spend}")
+            } else {
+                format!("{spend} ▸")
+            }
+        },
+        rows: if model.agents_expanded {
+            model
+                .agents
+                .iter()
+                .map(|agent| AgentRow {
+                    label: format!("{} {}", agent_glyph(agent, tick), agent.id),
+                    detail: crate::text::ellipsize(&agent.assignment, width.saturating_sub(44))
+                        .to_string(),
+                    metrics: {
+                        let access = match agent.access {
+                            crate::child::Access::Implement => "rw",
+                            crate::child::Access::Research => "ro",
+                        };
+                        let cost = if priced && agent.cost > 0.0 {
+                            format!(" · {}", crate::dollars(agent.cost))
+                        } else {
+                            String::new()
+                        };
+                        format!(
+                            "{access} · {} · {}{cost}",
+                            clock(agent.elapsed()),
+                            crate::provider::compact(agent.tokens),
+                        )
+                    },
+                    last: crate::text::ellipsize(&agent.last, width.saturating_sub(6)).to_string(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        },
+    }
+}
+
+pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
+    let view = derived_eq(move || {
+        let model = update.model.get();
+        if model.agents_hidden || model.agents.is_empty() || width < 12 {
+            None
+        } else {
+            Some(agent_view(&update, &model, width))
+        }
+    });
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -17,22 +100,59 @@ pub(super) fn agents(app: App, width: usize) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let model = update.model.get();
-            let live = model.agents.iter().filter(|agent| !agent.done).count();
-            if model.agents_hidden || live == 0 || width < 12 {
-                return Vec::new();
-            }
-            vec![agent_panel(update.clone(), &model, update.ticks.get())]
+            view.get()
+                .map(|view| vec![agent_panel(app.clone(), view)])
+                .unwrap_or_default()
         })
 }
 
-fn agent_panel(app: App, model: &Model, tick: u64) -> NodeBuilder {
-    let count = model.agents.iter().filter(|agent| !agent.done).count();
-    let title = if count == 1 {
-        "1 agent".to_string()
+fn agent_glyph(agent: &Agent, tick: u64) -> String {
+    if agent.done {
+        if agent.failed { "✗" } else { "✓" }.to_string()
     } else {
-        format!("{count} agents")
-    };
+        spinner_frame(tick).to_string()
+    }
+}
+
+fn clock(secs: u64) -> String {
+    if secs >= 60 {
+        format!("{}:{:02}", secs / 60, secs % 60)
+    } else {
+        format!("{secs}s")
+    }
+}
+
+fn spend(tokens: u64, cost: f64, priced: bool) -> String {
+    let cost = priced.then(|| format!(" · {}", crate::dollars(cost)));
+    format!(
+        "{} tok{}",
+        crate::provider::compact(tokens),
+        cost.unwrap_or_default()
+    )
+}
+
+fn agent_panel(app: App, view: AgentView) -> NodeBuilder {
+    if !view.expanded {
+        let toggle = app.clone();
+        return card(
+            list_row_with(
+                false,
+                view.headline,
+                ListRowSlots {
+                    detail: Some(view.detail.into()),
+                    status: Some(view.spend.into()),
+                    shrink: true,
+                    ..ListRowSlots::default()
+                },
+            )
+            .pointer_down(move |event| {
+                if event.button == Some(MouseButton::Left) {
+                    toggle.toggle_agents();
+                    event.stop_propagation();
+                }
+            }),
+        );
+    }
     let close = app.clone();
     let mut body = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
@@ -41,30 +161,85 @@ fn agent_panel(app: App, model: &Model, tick: u64) -> NodeBuilder {
                 .layout(
                     LayoutStyle::flex_row()
                         .fill_width()
+                        .gap(4.0)
                         .align_items(AlignItems::Center),
                 )
-                .child(section_label(title))
+                .child(section_label(view.spend.clone()))
                 .child(spacer())
-                .child(icon_button("✕", move || close.hide_agents()).accessible("Hide agents")),
+                .child(
+                    icon_button("▾", move || close.toggle_agents()).accessible("Collapse agents"),
+                )
+                .child(
+                    icon_button("✕", {
+                        let app = app.clone();
+                        move || app.hide_agents()
+                    })
+                    .accessible("Hide agents"),
+                ),
         );
-    for agent in model.agents.iter().filter(|agent| !agent.done).take(6) {
-        let state = if agent.failed {
-            "!"
-        } else {
-            spinner_frame(tick)
-        };
+    for row in view.rows {
         let slots = ListRowSlots {
-            status: Some(agent.last.clone().into()),
+            detail: (!row.detail.is_empty()).then(|| row.detail.into()),
+            status: Some(row.metrics.into()),
             shrink: true,
             ..ListRowSlots::default()
         };
-        body = body.child(list_row_with(false, format!("{state} {}", agent.id), slots));
+        body = body.child(list_row_with(false, row.label, slots));
+        if !row.last.is_empty() {
+            body = body.child(
+                label(row.last)
+                    .class(classes!("text-xs text-gray-10"))
+                    .layout(LayoutStyle::block().padding_x(12.0)),
+            );
+        }
     }
     card(body)
 }
 
+#[derive(Clone, PartialEq)]
+pub(in crate::tui::sigil_view) enum Band {
+    Approval { detail: String, persist: bool },
+    Secret { prompt: String, typed: usize },
+    Busy(String),
+    Attached(usize),
+}
+
+pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
+    if let Some((detail, persist)) = app.approval.get() {
+        return Some(Band::Approval { detail, persist });
+    }
+    if let Some((prompt, typed)) = app.secret.get() {
+        return Some(Band::Secret { prompt, typed });
+    }
+    if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
+        return Some(Band::Busy(status));
+    }
+    let attached = app.attached.get();
+    (attached > 0).then_some(Band::Attached(attached))
+}
+
+pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
+    match band {
+        Band::Approval { detail, persist } => {
+            above(approval_band(app.clone(), width, detail, persist))
+        }
+        Band::Secret { prompt, typed } => {
+            above(notice_band(secret_row(&prompt, typed, width), Tone::Warn))
+        }
+        Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
+        Band::Attached(attached) => {
+            let noun = if attached == 1 { "image" } else { "images" };
+            above(notice_band(
+                format!("{attached} {noun} attached · enter sends with your prompt"),
+                Tone::Info,
+            ))
+        }
+    }
+}
+
 pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
+    let active = derived_eq(move || band(&update));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -73,28 +248,10 @@ pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
                 .min_size(0.0, 0.0),
         )
         .children_reactive(move || {
-            let approval = update.approval.get();
-            let secret = update.secret.get();
-            let model = update.model.get();
-            let mut nodes = Vec::new();
-            if let Some((detail, persist)) = approval {
-                nodes.push(above(approval_band(update.clone(), width, detail, persist)));
-            } else if let Some((prompt, typed)) = secret {
-                nodes.push(above(notice_band(
-                    secret_row(&prompt, typed, width),
-                    Tone::Warn,
-                )));
-            } else if let Some(status) = busy_status(&model, update.ticks.get()) {
-                nodes.push(busy_row(&crate::text::ellipsize(&status, width)));
-            } else if update.attached.get() > 0 {
-                let attached = update.attached.peek();
-                let noun = if attached == 1 { "image" } else { "images" };
-                nodes.push(above(notice_band(
-                    format!("{attached} {noun} attached · enter sends with your prompt"),
-                    Tone::Info,
-                )));
-            }
-            nodes
+            active
+                .get()
+                .map(|band| vec![band_nodes(&app, width, band)])
+                .unwrap_or_default()
         })
 }
 

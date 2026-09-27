@@ -74,10 +74,7 @@ pub(super) fn empty(diagnostic: Option<&str>) -> ChildResult {
 }
 
 pub(super) fn access_name(access: Access) -> &'static str {
-    match access {
-        Access::Implement => "implement",
-        Access::Research => "research",
-    }
+    access.name()
 }
 
 pub(super) fn note_record(record: &mut ChildRecord, diagnostic: &str) {

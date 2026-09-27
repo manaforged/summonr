@@ -17,6 +17,7 @@ pub enum Hotkey {
     Editor,
     Files,
     Ledger,
+    Agents,
     Diff,
     Copy,
     Select,
@@ -26,12 +27,13 @@ pub enum Hotkey {
 }
 
 impl Hotkey {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Options,
         Self::Newline,
         Self::Editor,
         Self::Files,
         Self::Ledger,
+        Self::Agents,
         Self::Diff,
         Self::Copy,
         Self::Select,
@@ -48,6 +50,7 @@ impl Hotkey {
             Self::Editor => "editor",
             Self::Files => "files",
             Self::Ledger => "ledger",
+            Self::Agents => "agents",
             Self::Diff => "diff",
             Self::Copy => "copy",
             Self::Select => "select",
@@ -74,7 +77,7 @@ pub struct Hotkeys {
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
-            keys: ['o', 'j', 'g', 'e', 'l', 'x', 'b', 't', 'p', 'f', 'r'],
+            keys: ['o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r'],
         }
     }
 }

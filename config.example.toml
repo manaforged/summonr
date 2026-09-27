@@ -16,6 +16,9 @@ api_key = "local"
 temperature = 0.6
 top_p = 0.95
 
+[endpoint.local.models.qwen3.body]
+top_k = 20
+
 [endpoint.kimi]
 base_url = "https://api.kimi.com/coding/v1"
 model = "k3"

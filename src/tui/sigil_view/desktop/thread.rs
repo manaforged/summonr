@@ -2,8 +2,8 @@ use crate::tui::context;
 use sigil::prelude::{
     AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState,
     NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt, button, classes,
-    container, empty_state, hairline, icon_button, label, node, notice_band, spacer, text_edit,
-    text_live,
+    container, derived_eq, empty_state, hairline, icon_button, label, node, notice_band, spacer,
+    text_edit, text_live,
 };
 
 use super::icons;
@@ -31,10 +31,36 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
         }))
         .child(
             container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .shrink(0.0)
+                        .padding_x(36.0),
+                )
+                .children_reactive({
+                    let strip = app.clone();
+                    move || {
+                        let (cols, _rows) = strip.viewport.get();
+                        vec![chat::panels::agents(
+                            strip.clone(),
+                            chat::canvas::inner_cols(usize::from(cols)),
+                        )]
+                    }
+                }),
+        )
+        .child(
+            container()
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
                 .children_reactive({
                     let notice = input.clone();
-                    move || vec![notice_bar(notice.clone())]
+                    let active = derived_eq(move || chat::panels::band(&notice));
+                    let notice = input.clone();
+                    move || {
+                        active
+                            .get()
+                            .map(|band| vec![notice_bar(notice.clone(), band)])
+                            .unwrap_or_default()
+                    }
                 }),
         )
         .child(
@@ -119,36 +145,53 @@ fn empty_home() -> NodeBuilder {
         ))
 }
 
-fn notice_bar(app: App) -> NodeBuilder {
-    if let Some((detail, persist)) = app.approval.get() {
-        let go = app.clone();
-        let always = app.clone();
-        let stop = app.clone();
-        let mut actions = container().layout(
-            LayoutStyle::flex_row()
-                .gap(8.0)
-                .align_items(AlignItems::Center),
-        );
-        actions = actions.child(
-            button("Allow")
-                .primary()
-                .activate(move || go.approval_answer("y")),
-        );
-        if persist {
-            actions =
-                actions.child(button("Always").activate(move || always.approval_answer("always")));
+fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
+    match band {
+        chat::panels::Band::Approval { detail, persist } => {
+            let go = app.clone();
+            let always = app.clone();
+            let stop = app.clone();
+            let mut actions = container().layout(
+                LayoutStyle::flex_row()
+                    .gap(8.0)
+                    .align_items(AlignItems::Center),
+            );
+            actions = actions.child(
+                button("Allow")
+                    .primary()
+                    .activate(move || go.approval_answer("y")),
+            );
+            if persist {
+                actions = actions
+                    .child(button("Always").activate(move || always.approval_answer("always")));
+            }
+            actions = actions.child(
+                button("Deny")
+                    .destructive()
+                    .activate(move || stop.approval_answer("n")),
+            );
+            notice_band(format!("Needs approval: {detail}"), Tone::Warn)
+                .child(label("The agent is waiting. Allow, Always, or Deny."))
+                .child(actions)
         }
-        actions = actions.child(
-            button("Deny")
-                .destructive()
-                .activate(move || stop.approval_answer("n")),
-        );
-        return notice_band(format!("Needs approval: {detail}"), Tone::Warn)
-            .child(label("The agent is waiting. Allow, Always, or Deny."))
-            .child(actions);
+        chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
+        chat::panels::Band::Secret { prompt, typed } => {
+            let label = if prompt.is_empty() {
+                "secret"
+            } else {
+                prompt.as_str()
+            };
+            notice_band(
+                format!("password {label}  {}", "•".repeat(typed.min(24))),
+                Tone::Warn,
+            )
+        }
+        chat::panels::Band::Attached(count) => {
+            let noun = if count == 1 { "image" } else { "images" };
+            notice_band(
+                format!("{count} {noun} attached · enter sends with your prompt"),
+                Tone::Info,
+            )
+        }
     }
-    if let Some(status) = chat::busy_status(&app.model.get(), app.ticks.get()) {
-        return notice_band(status, Tone::Neutral);
-    }
-    container()
 }

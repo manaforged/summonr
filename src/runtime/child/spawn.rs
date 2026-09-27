@@ -118,6 +118,13 @@ impl<P: Provider> Loop<P> {
         self.session
             .start_child(record.clone())
             .map_err(super::session_err)?;
+        drop(self.mailbox.0.send(Event::Child {
+            id: record.id.to_string(),
+            event: Box::new(Event::Spawned {
+                assignment: record.assignment.clone(),
+                access: record.access,
+            }),
+        }));
         Ok(Run {
             child,
             record,

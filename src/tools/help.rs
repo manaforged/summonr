@@ -2,7 +2,7 @@ pub(crate) const READ: &str = "read op reference — every form honors ignore ru
 
 op=file (default with path): N:text lines; offset starts at line N, limit caps lines (max 1000); paths[] reads several files and reports missing ones inline; tags true adds hash tags for tag-edits.
 op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
-op=search (default when pattern or glob is set): pattern is regex (literal true skips it; caseSensitive defaults true); glob/include filters paths, type names a file type (rust, py, js…), exclude drops a glob; files returns matching paths; count returns per-file match counts; context or before/after add lines; multiline matches across lines; hits are path:N:line grouped per file (tags true adds hash tags for tag-edits).
+op=search (default when pattern or glob is set): pattern is regex (literal true skips it; caseSensitive defaults true); glob/include filters paths, type names a file type (rust, py, js…), exclude drops a glob; files returns matching paths; count returns per-file match counts; context or before/after add lines; multiline matches across lines; hits are path:N:col:line grouped per file, where col is the match's 1-based UTF-16 column that lsp takes as character; tags true prints path:N:hash|line instead, and N:hash is the tag an edit takes.
 op=image: shows an image to the user.";
 
 pub(crate) const EDIT: &str = "edit grammar — tags are N:hash strings that a read with tags true returns.

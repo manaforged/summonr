@@ -52,7 +52,7 @@ appear outside the transcript.
 
 ## 2. Target set (redesign)
 
-`docs/plans/2026-09-18-tui-widget-redesign.md` reduces §1 to this set. Each row
+The redesign reduces §1 to this set. Each row
 is one job with one owner; Sigil owns the rest.
 
 | Row | Job | Owner |

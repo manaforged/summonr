@@ -126,11 +126,11 @@ Where the savings come from: the first-round prefix is one short system paragrap
 
 ## Limits
 
-- summonr refuses force pushes, `sudo`, and `rm -rf /`. Other risky commands ask first. With `-p`, nothing risky runs.
+- Under `--sandbox` or `--strict`, `policy.toml` rules are hard refusals: built-in denies cover force pushes, `sudo`, and `rm -rf /`. Without containment a reviewer model judges risky commands — allow, block, or ask you — and `-p` never asks, so the reviewer decides.
 - Six identical results from the same call end the turn. The terminal UI asks first.
 - The `mcp` module is off by default. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` waits for approval.
 - A project can turn a module off. A project can't turn a module on.
-- `AGENTS.md` in a trusted workspace is the project instruction file. summonr doesn't read `CLAUDE.md`.
+- A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions; `--no-trust` ignores all three.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
 - There is no in-process package loader, `dlopen`, or guest scripting. Write a skill, an MCP server, a hook, or a CLI.
 - Repository search is `read` with `pattern` or `glob`, or `rg` through `run_command`. There is no built-in code graph.

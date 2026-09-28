@@ -9,15 +9,24 @@ pub fn summonr_home() -> Result<PathBuf> {
         }
         return Ok(PathBuf::from(path));
     }
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .ok_or_else(|| {
-            Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
-        })?;
-    let dir = PathBuf::from(home).join(".summonr");
+    let home = user_home().ok_or_else(|| {
+        Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
+    })?;
+    let dir = home.join(".summonr");
     let legacy = dir.with_file_name(".mage");
     if !dir.exists() && legacy.is_dir() {
         drop(std::fs::rename(&legacy, &dir));
+    }
+    if !dir.is_dir() {
+        std::fs::create_dir_all(&dir)?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&dir)?.permissions().mode() & 0o777;
+        if mode != 0o700 {
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+        }
     }
     Ok(dir)
 }
@@ -58,7 +67,9 @@ pub(crate) fn compose(
     if let Some(home) = home {
         push_file(&mut preamble, &home.join("SYSTEM.md"));
     }
-    push_file(&mut preamble, &workspace.join("SYSTEM.md"));
+    if trust {
+        push_file(&mut preamble, &workspace.join("SYSTEM.md"));
+    }
     let mut parts = if preamble.is_empty() {
         vec![DEFAULT.to_string()]
     } else {
@@ -66,47 +77,7 @@ pub(crate) fn compose(
     };
     parts.push(PERSISTENCE.to_string());
     if trust {
-        let mut seen = std::collections::HashSet::new();
-        let mut sections = std::collections::HashSet::new();
-        if let Some(user_home) =
-            std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
-        {
-            let user_home = PathBuf::from(user_home);
-            for rel in [
-                ".agents/AGENTS.md",
-                ".claude/CLAUDE.md",
-                ".config/devin/AGENTS.md",
-            ] {
-                let path = user_home.join(rel);
-                if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
-                    continue;
-                }
-                let mut context = Vec::new();
-                push_file(&mut context, &path);
-                if let Some(text) = context.pop()
-                    && let Some(text) = dedup_sections(&text, &mut sections)
-                {
-                    parts.push(format!(
-                        "<user_context path=\"{rel}\">\n{text}\n</user_context>"
-                    ));
-                }
-            }
-        }
-        for name in ["AGENTS.md", "CLAUDE.md"] {
-            let path = workspace.join(name);
-            if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
-                continue;
-            }
-            let mut context = Vec::new();
-            push_file(&mut context, &path);
-            if let Some(text) = context.pop()
-                && let Some(text) = dedup_sections(&text, &mut sections)
-            {
-                parts.push(format!(
-                    "<project_context path=\"{name}\">\n{text}\n</project_context>"
-                ));
-            }
-        }
+        instructions(&mut parts, workspace);
     }
     parts.push(
         if images {
@@ -173,6 +144,57 @@ pub fn harness_section(
         return String::new();
     }
     parts.join("\n\n")
+}
+
+fn user_home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+fn instructions(parts: &mut Vec<String>, workspace: &Path) {
+    let mut seen = std::collections::HashSet::new();
+    let mut sections = std::collections::HashSet::new();
+    if let Some(home) = user_home() {
+        for rel in [
+            ".agents/AGENTS.md",
+            ".claude/CLAUDE.md",
+            ".config/devin/AGENTS.md",
+        ] {
+            context_file(parts, &mut seen, &mut sections, &home, rel, "user_context");
+        }
+    }
+    for name in ["AGENTS.md", "CLAUDE.md"] {
+        context_file(
+            parts,
+            &mut seen,
+            &mut sections,
+            workspace,
+            name,
+            "project_context",
+        );
+    }
+}
+
+fn context_file(
+    parts: &mut Vec<String>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    sections: &mut std::collections::HashSet<u64>,
+    dir: &Path,
+    rel: &str,
+    tag: &str,
+) {
+    let path = dir.join(rel);
+    if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
+        return;
+    }
+    let mut context = Vec::new();
+    push_file(&mut context, &path);
+    if let Some(text) = context.pop()
+        && let Some(text) = dedup_sections(&text, sections)
+    {
+        parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
+    }
 }
 
 fn push_file(parts: &mut Vec<String>, path: &Path) {

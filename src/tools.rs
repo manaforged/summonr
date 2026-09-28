@@ -251,6 +251,10 @@ impl ToolRegistry {
         self.policy.strict
     }
 
+    pub(crate) fn policy_inert(&self) -> bool {
+        self.policy.is_unrestricted() && self.policy.configured()
+    }
+
     pub(crate) fn is_read_only(&self) -> bool {
         self.policy.is_read_only()
     }

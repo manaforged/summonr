@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `/pane jobs` lists this workspace's background commands with a live
+  status badge, a log view, and a kill action shared with
+  `run_command` job control.
+- `/pane peers` lists the live mail roster; Enter or the menu inserts
+  an `@name` mention that delivers to that session's inbox.
+- The diff pane reviews one hunk at a time: Enter toggles `accepted`,
+  `r` reverts the hunk through `git apply --reverse`, `n` adds a note
+  that rides to the model with the next prompt, and marks persist in
+  `.summonr/review.json`.
+
+### Changed
+
+- A workspace `SYSTEM.md` loads only when the workspace is trusted
+  (`--no-trust` skips it). `~/.summonr/SYSTEM.md` still applies
+  everywhere.
+- `~/.summonr` is created mode `0700` and existing directories are
+  tightened to it.
+
+### Fixed
+
+- A non-empty `policy.toml` with an uncontained session warns at startup
+  that its rules are not enforced.
+- `Endpoint`'s debug form reports `api_key`, `oauth`, `env`, and
+  `headers` as presence flags and key names, never values.
+
 ## 0.1.0-rc.1 - 2026-09-23
 
 ### Added

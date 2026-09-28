@@ -30,7 +30,7 @@ plugin host or a second name for `skill`, `mcp`, or `run_command`.
 
 ## Model-facing jobs
 
-The tool schemas. Four core, five behind modules.
+The tool schemas. Five core, six behind a module or a workspace file.
 
 | Job | Where | Gating |
 | --- | --- | --- |
@@ -44,12 +44,13 @@ The tool schemas. Four core, five behind modules.
 | `web` | `tools/catalog.rs::web` | `web` module on |
 | `task` | `runtime/child.rs::definition` | `task` module on by default; `/modules task off` disables |
 | `<server>__<tool>` | `mcp.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode keeps `readOnlyHint` tools |
+| `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in plan mode |
 
-Plan mode advertises `read`, `run_command`, `skill`, and `web` only.
+Plan mode advertises `read`, `run_command`, `todo`, `skill`, and `web`, plus the
+mail tools when mail is on; `send` and `board` set refuse in plan mode.
 
-The agent room is its own server with its own seven names — `join`, `agents`,
-`send`, `inbox`, `wait`, `board`, `status` (`room/serve.rs::tools`). It is a
-menu, but not the model's; it is the room's.
+Peer mail has no server. Other agent CLIs reach the same files through
+`summonr mail` (`mail/cli.rs::run`).
 
 ## Harness jobs
 
@@ -61,15 +62,16 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
 | plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.summonr/plan.md` |
-| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw; `Line` is the session record and `Line::events` projects `Event`; `SessionDriver::answer` is the one `Line::Assistant` writer; `--json` order per round is Usage, ToolCall…, ToolResult…, Work, Receipt, Assistant, and an abort is Aborted then Receipt; memory is `footprint_kb` (KiB; old journals read `rss_kb`) |
+| session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw; a compaction `Line::Summary` carries the kept tail verbatim for the same reason; `Line` is the session record and `Line::events` projects `Event`; `SessionDriver::answer` is the one `Line::Assistant` writer; `--json` order per round is Usage, ToolCall…, ToolResult…, Work, Receipt, Assistant, and an abort is Aborted then Receipt; memory is `footprint_kb` (KiB; old journals read `rss_kb`) |
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
+| jobs | `jobs.rs`, `.summonr/jobs/{ID}.{json,log,exit}`, `tools/command.rs`, `Msg::Jobs`, `Cmd::{Jobs,KillJob}`, `/pane jobs` | one `Record` per background command; `status` joins the record, its `.exit` marker, and PID liveness; `kill_job` is the one stop path for `run_command` job control and the pane |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
 | endpoint | `endpoint.rs`, `~/.summonr/config.toml` | 28 built-in rows, four wires |
 | model catalog | `Client::discover`, `Client::state`, `catalog.rs::{remember,cached,refresh_registry,enrich}`, `~/.summonr/models{,-dev}.json` | one discovery path for the picker and `summonr endpoints`: cached rows show first, only `GET /models` is timed, a fresh listing replaces the endpoint's rows, models unknown to models.dev show as `new`, failures read `key rejected`, `rate limited`, or `unreachable`; models.dev refreshes hourly in the background by ETag and matches the exact `api` URL before the host; `SUMMONR_MODELS_URL` overrides the source |
 | classify | `classify::ask`, `summonr classify` | typed questions over supplied state; Choice, Score, Noul; requests ride `provider::Client` on the decisions wire; the seat is a config row with `wire = "decisions"`; no classify seat ships |
 | sweep | `classify::sweep::{sweep, merge}` | merge state windows; require matching answer keys and types; blended Choice confidence is capped by the top-two probability margin, a conservative aggregation rule rather than calibrated model confidence |
 | evaluate | `classify::eval::{load, run, score, report}`, `classify --eval` | validate labels before classification; `score` returns an error for empty or incomplete results, invalid labels, or invalid confidence; the CLI requires perfect gated accuracy and at least one gated answer per labelled question |
-| policy | `policy.rs`, `~/.summonr/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only |
+| policy | `policy.rs`, `~/.summonr/policy.toml` | strict, allow, deny, write; the default mode checks `danger` only; `Loop::policy_inert` reports configured rules an uncontained session will not enforce |
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on` | containment is opt-in; when on, writes stay under the roots |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
 | persistence | `durable/store.rs::write` | the one write for every harness state file: parent, temp, fsync, rename |
@@ -78,15 +80,16 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
 | checkpoint | `checkpoint.rs`, `runtime/checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; `Loop::checkpoint` captures it in the background and `Loop::settle` joins it before any tool runs; restore and turn undo |
-| loop guard | `runtime/guard.rs` | repeated identical results: warn at 3, ask or stop at 6, raise `low` effort to `medium` |
+| loop guard | `runtime/guard.rs`, `[guard]` | per turn: one call with one result warns at 3 and steers at 6; one failure text of three words or more, across calls, warns at 4 and steers at 8; a call cycle of 2 to 8 calls that repeats 3 times with the same results steers; the first steer is a control message, then an interactive session asks whether to continue and a headless run steers again, so only a user-set budget ends a turn; a checkpoint message every 40 rounds; raises `low` effort to `medium` |
 | fallback | `endpoint.rs::fallbacks`, `[endpoint.NAME] fallback` | switch to the next endpoint after retries run out |
 | approval | `policy/danger.rs`, `runtime/approval.rs`, `Grant::Danger` | a static check flags destructive commands; the judge seat reviews each one against the user's messages, earlier tool calls, and `git status`, then allows or blocks with a rule; 3 blocks in a row or 20 in a session ask the user, or keep denying headless |
 | edit approval | `prefs::banned_edit`, `Grant::Edit`, `ToolRegistry::{allow_edit,reset_edits}` | tests and comments use saved defaults; an explicit user request or interactive approval allows the current task, and the next user turn resets the exception |
 | task progress | `chat::todos`, `panes::ledger::item`, `App::history_rows` | a compact strip reserves space above the composer; click or the ledger hotkey expands the list, wheel scrolls it, and completion removes it |
 | diff layout | `Prefs::diff_layout`, `DiffLayout`, `chat/entry.rs` diff row | split by default, unified selectable in edit headers or settings; the saved choice applies to inline edits, with unified rendering in narrow panes |
-| askpass | `askpass.rs`, `summonr askpass`, `SUDO_ASKPASS`, `SSH_ASKPASS` | a masked TUI prompt for a password a command asks for; the secret goes to the command over a 0600 socket, never into events or tool output, and later command output replaces it with `[secret]` |
+| hunk review | `hunks.rs::{split, apply, load, drain}`, `Cmd::Review`, `Msg::Review`, `.summonr/review.json` | `split` cuts a file's patch into self-contained one-hunk patches; `apply` records a verdict or note, or reverts one hunk through `git apply --reverse`; `drain` moves pending notes into the next prompt |
+| askpass | `askpass.rs`, `summonr askpass`, `SUDO_ASKPASS`, `SSH_ASKPASS`, `sigil_view/secret.rs::layer` | a masked TUI dialog for a password a command asks for; every way of closing the dialog cancels the request; the secret goes to the command over a 0600 socket, never into events or tool output, and later command output replaces it with `[secret]` |
 | acp | `acp.rs`, `summonr acp` | Agent Client Protocol v1 over stdio through `rpc.rs` |
-| mail | `bus.rs::deliver`, `@id` | a prompt that names a live session goes to its inbox |
+| mail | `mail.rs::{Mailbox, deliver}`, `mail/roster.rs::{live, roster, unique_name, targets}`, `mail/cli.rs::run`, `summonr mail`, `@name` | a roster, one inbox per session, and one board per workspace, as files under `~/.summonr/mail`; every top-level session joins under a unique name (`--name`, or the workspace folder and a number) unless `SUMMONR_MAIL=off`; `targets` is the one resolver for a name, an id, or `all`; a prompt that names a live session goes to its inbox; `store::lock` guards each inbox, so an append, a poll, and a clear never interleave; `summonr mail inbox ID --clear` refuses an inbox that a live session reads; `/pane peers` (`Msg::Peers`) lists the live roster and mentions send to it |
 | profile | `session/profile.rs`, `summonr profile [ID]`, `/profile` | time split (model, tools, harness), token growth and cache rate, tool health (per-tool calls and failures, native vs shell search, head-pipe rate, first edit), slowest tools and rounds, largest results, repeated calls, all from `session.jsonl`; `--all` aggregates every session journal (calls, failures, native vs shell search, head-pipe rate, size per call, first-edit index) |
 | read dedup | `tools/dedup.rs`, `ToolRegistry::forget_reads` | skips re-sending unchanged file ranges; every compaction and `/clear` resets it |
 | tool names | `tools::Builtin::{live, of, is}`, `catalog::RETIRED`, `tools::retired_op` | the catalog maps a tool name, retired aliases included, to the typed `Builtin`; every caller matches the enum, never the name string |
@@ -126,6 +129,7 @@ not against the name.
 | the old chat transcript cell renderer, `canvas::{Span, Line, Source}` | Sigil `markdown` in `chat/entry.rs` | compiled only for one test |
 | `Loop::commit`, `ToolRegistry::skill_ready` | `Loop::hydrate`, the once-per-registry skills probe | commit ignored its argument; the skills rescan changed the prefix mid-session |
 | per-host transcript builders | `chat::surface::transcript` | the TUI and desktop hosts share one keyed builder |
+| `summonr room serve`, `room/serve.rs::tools`, `room::host::codex` | `summonr mail`, `mail/tools.rs::definitions` | a stdio MCP server and a Codex host beside the mail files; any agent CLI reaches the same files through `summonr mail` |
 
 ### Checked and kept
 

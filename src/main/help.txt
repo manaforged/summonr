@@ -25,7 +25,7 @@ Setup:
 
 Integrations:
   acp                         serve the Agent Client Protocol on stdio
-  room serve|host codex|setup claude|setup codex
+  mail                        peer mail between agent sessions: agents, send, inbox, board
   tool NAME [JSON]            run one tool and print the result
   classify --set NAME [STATE] answer typed questions about text (below)
 
@@ -48,12 +48,13 @@ Options:
       --no-net         deny sandboxed network (needs the sandbox)
       --add-dir DIR    extra writable root (repeatable)
       --strict         allow only commands listed in policy.toml
-      --no-trust       ignore workspace AGENTS.md
+      --no-trust       ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md
       --no-verify      skip the .summonr/check.toml gate
       --worktree       isolate this session in a git worktree
       --max-tokens N   session token budget; a breach exits 3
       --max-secs N     session wall-clock budget; a breach exits 3
       --no-splash      skip the startup banner
+      --inline         scrollback transcript, composer pinned at the bottom
       --gui            open the desktop window (a --features gui build)
   -h, --help           show this help
   -V, --version        show the version

@@ -22,7 +22,7 @@ const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_SCOPES: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code \
      user:mcp_servers user:file_upload";
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Endpoint {
     pub name: String,
     pub model: String,
@@ -44,6 +44,34 @@ pub struct Endpoint {
     pub keep_reasoning: bool,
     pub opencode: bool,
     pub prompt_cache_key: bool,
+}
+
+impl std::fmt::Debug for Endpoint {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Endpoint")
+            .field("name", &self.name)
+            .field("model", &self.model)
+            .field("base_url", &self.base_url)
+            .field("api_key", &self.api_key.is_some())
+            .field("source", &self.source)
+            .field("oauth", &self.oauth.is_some())
+            .field("body", &self.body)
+            .field("context_window", &self.context_window)
+            .field("idle_timeout_secs", &self.idle_timeout_secs)
+            .field("effort", &self.effort)
+            .field("price", &self.price)
+            .field("env", &self.env.keys().collect::<Vec<_>>())
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
+            .field("wire", &self.wire)
+            .field("fallback", &self.fallback)
+            .field("compact_tokens", &self.compact_tokens)
+            .field("images", &self.images)
+            .field("keep_reasoning", &self.keep_reasoning)
+            .field("opencode", &self.opencode)
+            .field("prompt_cache_key", &self.prompt_cache_key)
+            .finish()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

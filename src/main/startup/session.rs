@@ -147,16 +147,7 @@ fn configure(
     args: &Args,
     check: Option<Vec<String>>,
 ) -> Result<Loop<Client>> {
-    if args.plan || args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
-        loop_ = loop_.with_sandbox(!args.network)?;
-    } else {
-        if !args.network {
-            return Err(summonr::Error::Config(
-                "--no-net needs the sandbox: pass --sandbox".to_string(),
-            ));
-        }
-        loop_ = loop_.with_unrestricted_commands();
-    }
+    loop_ = contain(loop_, args)?;
     for dir in &args.add_dir {
         loop_.allow_path(dir)?;
     }
@@ -166,21 +157,41 @@ fn configure(
     if args.strict {
         loop_ = loop_.with_strict();
     }
+    if loop_.policy_inert() {
+        eprintln!(
+            "summonr: a policy.toml sets command or write rules, but this session is \
+             uncontained — pass --sandbox or --strict to enforce it"
+        );
+    }
     if let Some(check) = check {
         loop_ = loop_.with_verify(check);
     }
-    let budget = if args.max_tokens.is_some() || args.max_secs.is_some() {
-        Some(Budget {
-            max_tokens: args.max_tokens,
-            max_secs: args.max_secs,
-        })
-    } else {
-        None
-    };
-    if let Some(budget) = budget {
+    if let Some(budget) = budget(args) {
         loop_ = loop_.with_budget(budget)?;
     }
     Ok(loop_)
+}
+
+fn contain(loop_: Loop<Client>, args: &Args) -> Result<Loop<Client>> {
+    if args.plan || args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
+        return loop_.with_sandbox(!args.network);
+    }
+    if !args.network {
+        return Err(summonr::Error::Config(
+            "--no-net needs the sandbox: pass --sandbox".to_string(),
+        ));
+    }
+    Ok(loop_.with_unrestricted_commands())
+}
+
+fn budget(args: &Args) -> Option<Budget> {
+    if args.max_tokens.is_none() && args.max_secs.is_none() {
+        return None;
+    }
+    Some(Budget {
+        max_tokens: args.max_tokens,
+        max_secs: args.max_secs,
+    })
 }
 
 fn candidates(workspace: &Path) -> Vec<PathBuf> {

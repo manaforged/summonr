@@ -29,7 +29,7 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
-        loop_.join_bus();
+        loop_.join_mail();
         Ok(loop_)
     }
 
@@ -77,7 +77,7 @@ impl<P: Provider> Loop<P> {
             Policy::discover(workspace)?,
             Some(crate::web::Search::discover()?),
         )?;
-        loop_.join_bus();
+        loop_.join_mail();
         Ok(loop_)
     }
 
@@ -102,6 +102,7 @@ impl<P: Provider> Loop<P> {
         tools.set_session(&session.id().to_string());
         let herdr =
             crate::herdr::Reporter::discover(&session.id().to_string(), workspace, &model, depth);
+        let config = crate::config::file()?;
         Ok(Self {
             provider,
             model,
@@ -133,16 +134,20 @@ impl<P: Provider> Loop<P> {
             workspace: workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
-            bus: None,
-            bus_module: false,
+            mailbox: None,
+            mail_module: false,
             mcp: None,
-            guard: super::guard::Guard::default(),
+            guard: super::guard::Guard::configured(&config.guard),
+            checkpoint_rounds: config
+                .guard
+                .checkpoint_rounds
+                .unwrap_or(crate::limits::CHECKPOINT_ROUNDS),
             checkpoints: None,
             fallbacks: VecDeque::new(),
             compact_tokens: None,
-            hooks: crate::config::file()?.hooks,
+            hooks: config.hooks,
             mcp_start: None,
-            mail: std::collections::VecDeque::new(),
+            inbox: std::collections::VecDeque::new(),
             steer: std::collections::VecDeque::new(),
             steer_shared: None,
             depth,
@@ -151,7 +156,7 @@ impl<P: Provider> Loop<P> {
             asked: Vec::new(),
             blocks: (0, 0),
             spawned: BTreeMap::new(),
-            mailbox: tokio::sync::mpsc::unbounded_channel(),
+            events: tokio::sync::mpsc::unbounded_channel(),
             catalog_frozen: false,
         })
     }
@@ -174,10 +179,7 @@ impl<P: Provider> Loop<P> {
             switches.enabled("skills"),
         );
         self.tasks = switches.enabled("task");
-        self.bus_module = switches.enabled("bus");
-        if self.bus.is_some() != crate::bus::wanted(self.bus_module) {
-            self.join_bus();
-        }
+        self.mail_module = switches.enabled("mail");
         self.switch_mcp(switches.enabled("mcp"));
         self.schema = None;
     }
@@ -241,6 +243,11 @@ impl<P: Provider> Loop<P> {
     #[must_use]
     pub(crate) fn denies_network(&self) -> bool {
         self.tools.denies_network()
+    }
+
+    #[must_use]
+    pub fn policy_inert(&self) -> bool {
+        self.tools.policy_inert()
     }
 
     pub fn set_context_window(&mut self, window: Option<u32>) {

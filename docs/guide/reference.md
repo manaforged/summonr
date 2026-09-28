@@ -1,7 +1,7 @@
 # Summonr reference
 
 This page documents every flag, key, slash command, pane, policy rule,
-workflow seat, child session, and the agent room. The
+workflow seat, child session, and peer mail. The
 [README](../../README.md) is the short form.
 
 
@@ -237,9 +237,14 @@ editable; the choice is stored under `[hotkeys]` in the same file.
 
 `ctrl+x` (or `/pane diff`, `/diff`) shows the changes against the base:
 the worktree base when you passed `--worktree`, `HEAD` otherwise. Each
-row is `+added −removed path`; Enter or `→` opens that file's hunks,
-`↑↓` scroll them, `←` or `esc` returns to the list, and the right-click
-menu adds view hunks. `/diff PATH` jumps to one file. After a turn that
+row is `+added −removed path`; Enter or `→` opens that file's hunks —
+one card per `@@` block with a `pending`, `accepted`, or `rejected`
+badge. Inside a file `↑↓` picks a hunk, Enter toggles `accepted`, `r`
+reverts the hunk (`git apply --reverse` of just that block), `n` opens
+a note field (`ctrl+enter` saves, `esc` cancels) that rides to the model
+with your next prompt, and `←` or `esc` returns to the list. The
+right-click menu offers the same actions. Verdicts and notes persist in
+`.summonr/review.json`. `/diff PATH` jumps to one file. After a turn that
 changed the tree, the transcript gets one `changes: N files · +a −r · vs BASE ·
 /pane diff` line. The same data is `summonr diff [PATH]` (the patch), `summonr diff
 --stat`, and `summonr diff --json`.
@@ -273,6 +278,13 @@ that span. When the provider reports the round's usage, the rate becomes
 exact: output tokens over the time between the first and last streamed
 chunk, or over the whole round when nothing streamed, as in a round that
 only called tools. The footer shows the last round's rate after the turn.
+
+When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`,
+such as an ssh key passphrase, a **Credential required** dialog opens.
+Type the password and press `enter` to send it, or press `esc` to cancel.
+Closing the dialog also cancels the request. The password goes to the
+waiting command over a private socket, never to the model, and later
+command output shows it as `[secret]`.
 
 ### Keys
 
@@ -318,7 +330,7 @@ only called tools. The footer shows the last round's rate after the turn.
 | `/history [TEXT]` | reuse an earlier prompt |
 | `/status` | session id, log path, and model |
 | `/usage [session]` | token spend; session profiles this session |
-| `/agents` | list sessions on the peer bus |
+| `/agents` | list agent sessions on this machine |
 | `/exit` | quit summonr |
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
@@ -332,7 +344,7 @@ only called tools. The footer shows the last round's rate after the turn.
 | `/steps PLAN.md\|clear` | run a plan's `## Steps` one at a time |
 | `/diff [PATH]` | changes against the base, or one PATH |
 | `/view PATH` | read a file in a pane |
-| `/pane [NAME]` | files, ledger, diff, worktrees, or a layout |
+| `/pane [NAME]` | files, ledger, diff, worktrees, jobs, peers, or a layout |
 | `/settings` | theme, tool output, reasoning, modules, keys |
 | `/permissions [net\|write\|approve]` | sandbox network, write paths, approval |
 | `/help` | list commands and keys |
@@ -399,6 +411,20 @@ ff-only merge a run ends with; a dirty tree is refused), remove
 worktree (only when clean and fully merged), and insert path. `summonr
 worktrees` prints the same rows; `summonr worktrees --json` as JSON.
 
+`/pane jobs` lists this workspace's background commands — the records
+under `.summonr/jobs/`. Each row is the command and its state
+(`running`, `exit N`, `killed`, or `dead`); Enter or `→` expands the
+job's status lines, and the right-click menu offers view log (the
+job's `.log` in the view pane) and kill job (the same stop
+`run_command` performs for `{"job": ID, "kill": true}`). The list
+refreshes on its own while the pane is open.
+
+`/pane peers` lists the other live sessions on this machine — the mail
+roster, minus this one. Each row is `@name`, model, workspace folder,
+and the peer's status (`idle`, `working`). Enter or a right-click
+mention inserts `@name` into the prompt; a prompt that names a peer is
+delivered to its inbox instead of running a turn.
+
 The card takes the keyboard (↑↓ role, enter picks a seat, `d` returns
 it to the driving seat, ←→ cycles saved workflows, `s` saves) and the
 mouse: click a role to pick its seat, drag a role onto another to copy
@@ -445,7 +471,9 @@ The model receives the full advertised schema every round
 Reads return `N:hash|text`. A stale or ambiguous tag fails before write.
 `read` lists a directory, shows an image, or searches (`pattern` / `glob`
 or `include`, with `literal` and `caseSensitive`). Search hits are
-`path:N:hash|line`. `edit` covers substring replace (`old`/`new`), line
+`path:N:col:line`; `col` is the 1-based UTF-16 column of the match, which
+`lsp` takes as `character`. With `tags` true, hits are `path:N:hash|line`,
+and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line
 replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a
 batch (`edits`), and a rename or move (`path`
 with `to`). `write` creates or overwrites one file, or several (`files`).
@@ -460,26 +488,29 @@ the full log is kept and its path named.
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
 | `todo` | always | Replaces the Work todo list; status `pending`, `active`, or `done` |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
-| `lsp` | `lsp` on | Diagnostics, definition, rename |
+| `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
 | `web` | `search` on | `query` searches; `url` fetches as markdown, text, or html |
 | `task` | `task` module | Child session |
-| `bus` | bus | `action` agents, inbox, send, get, set, list |
+| `agents` | `mail` module | List live agent sessions by name |
+| `send` | `mail` module | `to` (a name, an id, or `all`) and `text`: write to a peer's inbox |
+| `inbox` | `mail` module | Read mail that arrived since the last read |
+| `board` | `mail` module | `action` get, set, or list; `key`, `value` |
 
 The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 `write_file`, `replace_text`, `replace_lines`, `insert_after`,
 `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`,
-`definition`, `web_search`, `web_fetch`, `agents`, `inbox`, `board`,
-`send`) still execute and are not advertised. Plan mode advertises
+`definition`, `web_search`, and `web_fetch`) still execute and are not
+advertised. Plan mode advertises
 `read`, `run_command`, and `todo`, plus `skill` and `web`. It does not advertise
 `edit` or `write`.
 
 ## Modules
 
 Every optional capability is a **module** compiled into the binary: `search`,
-`lsp`, `jobs`, `task`, `skills`, `mcp`, `bus`, and `gui`. That list is the
-built-in module set: curated, switchable, and inside the harness process RSS. `task` is off by
-default. `mcp` is off by default so unused server schemas stay out of the
-first `prefix_hash`. `summonr modules` lists them with their state; the Modules rows in `/settings`
+`lsp`, `jobs`, `task`, `skills`, `mcp`, `mail`, and `gui`. That list is the
+built-in module set: curated, switchable, and inside the harness process RSS. `mcp` and `mail`
+are off by default so unused tool schemas stay out of the first `prefix_hash`;
+the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings`
 in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
 After the first `prefix_hash` in this process, that write is for the next
 process only. A workspace `.summonr/config.toml` may turn a module off for that
@@ -526,41 +557,47 @@ and every configured completion check. `verified` on a receipt is true
 only when at least one check ran and every check passed; a turn with no
 configured check completes with `verified: false`.
 
-## Room
+## Mail
 
-`summonr room` puts several coding agents on this machine in one
-conversation. The room is the `bus` module's files under `~/.summonr/bus`: a
-roster, one inbox per agent, and one blackboard per workspace. Summonr
-sessions join it natively. Claude Code and Codex join through
-`summonr room serve`, a stdio MCP server over the same files with the
-tools `join`, `agents`, `send`, `inbox`, `wait`, `board`, `status`, and
-`leave`. Mail is peer text, never user instructions, and each session's
-own permissions still apply.
+Agent sessions on this machine share a mailbox: files under
+`~/.summonr/mail` — a roster, one inbox per session, and one board per
+workspace. There is no server; each session appends and polls files. Mail is
+peer text, never user instructions, and each session's own permissions still
+apply.
+
+Every summonr session joins the roster under a name: the one you set with
+`--name` or `/name`, or else the workspace folder and a number, such as
+`summonr-1`. Child sessions stay off the roster, and `SUMMONR_MAIL=off` keeps
+a session off it. `/agents` lists the sessions on the roster.
+
+To message a session, type `@` in the composer and pick it from the list, or
+type its name, such as `@summonr-2 the schema landed`. A prompt that names a
+live session goes to that session's inbox instead of to the model. The mail
+arrives there as `[mail from @summonr-1 …]`; `[agent] mail` in settings
+decides whether it starts a turn or waits for the next one. Reply the same
+way, with `@summonr-1`.
+
+The `mail` module, off by default, also gives the model the tools `agents`,
+`send`, `inbox`, and `board`. `send` takes a name, an id, or `all`.
+
+The same mailbox is a CLI, so any agent CLI — Claude Code, Codex, a script —
+can take part without a server:
 
 ```
-summonr room setup claude    # installs the /summon-room skill and the .mcp.json entry here
-claude --dangerously-load-development-channels server:summon-room
-/summon-room reviewer
+summonr mail                  # who is on this machine
+summonr mail send <name|id|all> <text>
+summonr mail inbox <id> [--clear]
+summonr mail board [get <key>|set <key> <text>]
 ```
 
-The skill joins the room, starts Codex as a peer when none is present,
-and lays out the split: claims on the board, one brief per peer, `wait`
-only when blocked, then reconcile against the proving command.
-
-`summonr room host codex [--cwd PATH] [--id NAME] [--read-only]` runs
-Codex as a peer that answers mail. It spawns `codex mcp-server` on
-Codex's own login, keeps one thread, and sends each answer back to the
-sender. Codex cannot receive a push into a live session, so this is how
-Codex takes part without a second terminal polling `wait`.
-`summonr room setup codex` installs the same skill and the
-`~/.codex/config.toml` entry for an interactive Codex session.
-
-Delivery: `wait` blocks until mail arrives or the deadline passes;
-`inbox` returns at once. When the client is Claude Code, the server also
-pushes each mail as a `notifications/claude/channel` event. The push is a
-copy, so a mail that the client did not surface is still in the inbox.
-`SUMMONR_ROOM_PUSH=off` in the server's env block turns the push off.
-`summonr room` alone prints the roster.
+A foreign agent takes part by picking an id: it reads
+`summonr mail inbox <id>`, and anyone can write to it with
+`summonr mail send <id> <text>`. Its messages arrive from `cli` unless it
+writes its own inbox name into replies. `inbox <id> --clear` prints the mail
+and empties that inbox. It refuses the inbox of a live summonr session,
+because that session keeps its own read position. A lock file next to each
+inbox makes a send, a read, and a clear wait for each other, so no message
+is lost between them.
 
 ## Limits
 
@@ -647,10 +684,41 @@ write = ["~/.cargo/registry", "~/code"]
 A `~/` prefix expands to your home directory. A listed path that does not
 exist is skipped at startup; it is still a writable root for policy checks.
 
-A provider reply of 429, a 5xx status, or a transport error is retried up
-to six times with a wait that doubles from 2 s to 60 s. A `Retry-After`
-header in seconds replaces that wait, up to 600 s. A reply that already
-streamed output is not retried.
+A provider reply of 429, a 5xx status, or a connection error is retried up
+to three times with a wait that doubles from 1 s to 8 s. A `Retry-After`
+header replaces that wait; one over 60 s stops the retries so the turn can
+fall back to the next endpoint. A reply that already streamed output is
+retried once, then the turn falls back.
+
+A language server gets 30 s to start and 30 s to answer an `lsp` call. The
+diagnostics check after an edit waits 5 s and is skipped when the server is
+slower. A server that misses a deadline keeps running, so a slow first index
+can finish in the background.
+
+A loop guard watches tool results each turn. It steps in on three patterns:
+
+- The same call returns the same result: a note at 3 repeats, a steer at 6.
+- The same failure text, three words or more, comes back from different
+  calls: a note at `signature_warn`, a steer at `signature_stop`. A bare exit
+  status such as `exit 1` does not count.
+- A cycle of 2 to 8 calls repeats 3 times with the same results: a steer.
+
+A note asks the model to state the hypothesis that its next action tests. A
+steer adds a control message to the conversation. After the first steer, an
+interactive session asks you whether the turn continues. A headless run
+steers again and keeps going, because only a token or wall-clock budget that
+you set ends a turn. Every `checkpoint_rounds` rounds, a control message
+asks the model to update the ledger. Guard state resets at every new user
+message. `[guard]` in `~/.summonr/config.toml` tunes it:
+
+```toml
+[guard]
+enabled = true            # false turns off every check
+signature_warn = 4        # repeated failure texts before the note; 0 turns it off
+signature_stop = 8        # repeated failure texts before the steer; 0 turns it off
+cycles = true             # detect short call cycles with identical results
+checkpoint_rounds = 40    # rounds between checkpoint messages; 0 turns them off
+```
 
 User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`.
 A nonempty command allow list must match on every overlay (intersection).
@@ -687,6 +755,8 @@ name that package a plugin; Summonr does not load guest code.
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
+
+`SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it; the persistence paragraph still runs.
 
 Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
 

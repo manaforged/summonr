@@ -123,6 +123,11 @@ impl Policy {
     }
 
     #[must_use]
+    pub(crate) fn configured(&self) -> bool {
+        self.strict || !self.deny.is_empty() || !self.allow.is_empty() || !self.write.is_empty()
+    }
+
+    #[must_use]
     pub(crate) fn restricts_writes(&self) -> bool {
         !self.unrestricted && !self.write.is_empty()
     }

@@ -32,7 +32,7 @@ The first argument can be an endpoint name: `summonr grok` is
 | `summonr workflows` | List configured workflows |
 | `summonr install PATH`, `summonr install --list` | Install a directory of extras, or list the installed extras |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
-| `summonr room [serve\|host codex\|setup claude\|setup codex]` | Agent room server and setup |
+| `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
 | `summonr doctor [--logs]` | List per-run JSONL logs, or report incomplete and crashed runs |
 | `summonr --help`, `summonr --version` | Print help, or the version and revision |
@@ -162,7 +162,7 @@ notification. Source: `src/acp.rs`.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't
   widen it.
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn
-  a module on. `task` and `mcp` are off by default.
+  a module on. `mcp` and `mail` are off by default.
 - The advertised tool list freezes after the first model round.
   A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a
@@ -171,8 +171,9 @@ notification. Source: `src/acp.rs`.
 - A project `.mcp.json` loads only after approval. `import_mcp = true`
   also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default. `--plan` denies writes.
-- `AGENTS.md` at the workspace root is read when the workspace is
-  trusted.
+- `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are
+  read only when the workspace is trusted. A workspace `SYSTEM.md`
+  replaces the built-in preamble.
 
 The [reference](guide/reference.md) has every flag and config key.
 [Extending summonr](guide/extending.md) covers skills, MCP servers,

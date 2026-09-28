@@ -46,6 +46,27 @@ pub(in crate::tui::sigil_view) fn layer(
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
+pub(in crate::tui::sigil_view) fn inline_layer(
+    app: App,
+    cols: u16,
+    editor: impl IntoNode + 'static,
+) -> NodeBuilder {
+    let width = canvas::inner_cols(usize::from(cols));
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .fill_height()
+                .min_size(0.0, 0.0)
+                .gap(0.0),
+        )
+        .child(canvas::gutter(panels::agents(app.clone(), width)))
+        .child(todos::widget(app.clone(), cols))
+        .child(canvas::gutter(panels::bands(app.clone(), width)))
+        .child(composer::widget(app.clone(), width, editor))
+        .child(canvas::gutter(footer::footer_bar(app, width)))
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum Part {
     Brand,
@@ -164,11 +185,27 @@ fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
         Entry::Thinking(text) => (text.len(), 0),
-        Entry::Tool { state, output, .. } => (
+        Entry::Tool {
+            state,
+            output,
+            expanded,
+            ..
+        } => (
             output.len(),
             u8::from(!matches!(state, ToolState::Running))
-                + u8::from(matches!(state, ToolState::Failed)),
+                + u8::from(matches!(state, ToolState::Failed))
+                + u8::from(*expanded) * 4,
         ),
+        Entry::ToolGroup { calls, .. } => {
+            let size: usize = calls.iter().map(|call| call.output.len()).sum();
+            let mut state = 0_u8;
+            for call in calls {
+                state |= u8::from(!matches!(call.state, ToolState::Running));
+                state |= u8::from(matches!(call.state, ToolState::Failed)) * 2;
+                state |= u8::from(call.expanded) * 4;
+            }
+            (size, state)
+        }
         Entry::User(_)
         | Entry::Receipt(_)
         | Entry::Verify { .. }
@@ -212,7 +249,7 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
                     )
                 });
                 entry
-                    .map(|entry| vec![entry::row(entry, live, &prefs, &app)])
+                    .map(|entry| vec![entry::row(entry, live, &prefs, &app, index)])
                     .unwrap_or_default()
             })
         })

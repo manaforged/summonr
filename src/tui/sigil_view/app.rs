@@ -40,9 +40,11 @@ mod diff;
 mod files;
 mod frame;
 mod history;
+mod jobs;
 mod models;
 mod overlays;
 mod panes;
+mod peers;
 pub(super) mod presentation;
 mod sessions;
 mod turn;
@@ -62,6 +64,7 @@ use presentation::{facts, header, settings_text, status};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Overlay {
+    Secret,
     Help,
     Search,
     Sessions,
@@ -78,6 +81,7 @@ pub(super) enum Overlay {
 
 #[derive(Clone)]
 pub(super) struct App {
+    pub(super) inline: bool,
     pub(super) model: Signal<Rc<Model>>,
     pub(super) search: super::search::Picker,
     pub(super) help: super::help::View,
@@ -119,7 +123,14 @@ pub(super) struct App {
     pub(super) diff_cursor: Signal<usize>,
     pub(super) diff_view: Signal<Option<String>>,
     pub(super) diff_root: Signal<Option<(PathBuf, String)>>,
+    pub(super) hunk_cursor: Signal<usize>,
+    pub(super) note_target: Signal<Option<(String, String)>>,
+    pub(super) note_text: Signal<String>,
+    pub(super) note_caret: Signal<usize>,
     pub(super) tree_cursor: Signal<usize>,
+    pub(super) job_cursor: Signal<usize>,
+    pub(super) job_open: Signal<Option<String>>,
+    pub(super) peer_cursor: Signal<usize>,
     pub(super) view_scroll: Signal<usize>,
     pub(super) view_from: Signal<Option<Pane>>,
     pub(super) diff_recent: Signal<bool>,
@@ -131,6 +142,7 @@ pub(super) struct App {
     pub(super) copy: Signal<Option<String>>,
     pub(super) approval: Signal<Option<(String, bool)>>,
     pub(super) secret: Signal<Option<(String, usize)>>,
+    pub(super) secret_dialog: Signal<bool>,
     pending: Rc<RefCell<Option<(crate::askpass::Request, crate::askpass::Secret)>>>,
     pub(super) select: Signal<bool>,
     copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
@@ -187,7 +199,8 @@ impl App {
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
         let caret = signal(0);
-        Self {
+        let app = Self {
+            inline: info.inline,
             model: signal(Rc::new(model)),
             search: super::search::Picker::new(),
             help: super::help::View::new(),
@@ -236,7 +249,14 @@ impl App {
             diff_cursor: signal(0),
             diff_view: signal(None),
             diff_root: signal(None),
+            hunk_cursor: signal(0),
+            note_target: signal(None),
+            note_text: signal(String::new()),
+            note_caret: signal(0),
             tree_cursor: signal(0),
+            job_cursor: signal(0),
+            job_open: signal(None),
+            peer_cursor: signal(0),
             view_scroll: signal(0),
             view_from: signal(None),
             diff_recent: signal(false),
@@ -248,6 +268,7 @@ impl App {
             copy: signal(None),
             approval: signal(None),
             secret: signal(None),
+            secret_dialog: signal(false),
             pending: Rc::new(RefCell::new(None)),
             select: signal(false),
             copy_pending: signal(None),
@@ -273,7 +294,9 @@ impl App {
             workspace,
             prefs_path: info.config.clone(),
             info,
-        }
+        };
+        app.cancel_secret_on_close();
+        app
     }
 
     pub(super) fn model_mut(&self, change: impl FnOnce(&mut Model)) {

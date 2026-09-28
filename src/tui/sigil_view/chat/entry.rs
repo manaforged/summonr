@@ -1,16 +1,15 @@
 use sigil::prelude::{
-    AlignItems, DiffBuilder, DiffLayout as SigilDiffLayout, Fill, Geometry, IntoNode,
+    AlignItems, DiffBuilder, DiffLayout as SigilDiffLayout, ImageSource, IntoNode,
     LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
     ObjectFit, Overflow, PointerEvent, WidgetLayoutExt, chart, classes, container, diff,
     icon_button, image, label, markdown, markdown_inline, signal, text,
 };
 
-use super::{App, Entry};
-use crate::prefs::{DiffLayout, Prefs, ToolOutput, Visibility};
-
-use crate::tui::ToolState;
+use super::{App, Call, Entry};
+use crate::prefs::{DiffLayout, Prefs, Visibility};
 
 mod preview;
+mod tools;
 
 const COMPACT_ROWS: usize = 32;
 
@@ -19,9 +18,52 @@ pub(in crate::tui::sigil_view) fn row(
     live: bool,
     prefs: &Prefs,
     app: &App,
+    index: usize,
 ) -> NodeBuilder {
     let tools = prefs.tools;
     let layout = prefs.diff_layout;
+    match entry {
+        Entry::Tool {
+            name,
+            arg,
+            state,
+            output,
+            expanded,
+            ..
+        } => tools::tool_card(
+            &name,
+            &Call {
+                id: String::new(),
+                arg,
+                state,
+                output,
+                expanded,
+            },
+            tools,
+            layout,
+            app,
+            index,
+            None,
+        ),
+        Entry::ToolGroup { name, calls } => {
+            tools::group_card(&name, &calls, tools, layout, app, index)
+        }
+        entry => passive(entry, live, prefs, app),
+    }
+}
+
+fn blank(entry: &Entry) -> bool {
+    matches!(
+        entry,
+        Entry::Assistant { text, .. } | Entry::Thinking(text) | Entry::Receipt(text)
+            if text.trim().is_empty()
+    )
+}
+
+fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
+    if blank(&entry) {
+        return container();
+    }
     match entry {
         Entry::User(body) => container()
             .layout(
@@ -32,47 +74,10 @@ pub(in crate::tui::sigil_view) fn row(
             )
             .class(classes!("bg-gray-5"))
             .child(text(format!("▌ {body}")).class(classes!("text-sm text-gray-12"))),
-        Entry::Assistant { text: body, .. } if body.trim().is_empty() => container(),
-        Entry::Thinking(body) if body.trim().is_empty() => container(),
-        Entry::Receipt(body) if body.trim().is_empty() => container(),
-        Entry::Assistant { text: body, .. } => {
-            let copy_app = app.clone();
-            let copied = body.clone();
-            wrap(
-                container()
-                    .layout(
-                        LayoutStyle::flex_row()
-                            .fill_width()
-                            .align_items(AlignItems::Start)
-                            .gap(8.0),
-                    )
-                    .child(
-                        container()
-                            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                            .child(markdown(signal(body))),
-                    )
-                    .child(
-                        icon_button("⧉", move || copy_app.copy.set(Some(copied.clone())))
-                            .ghost()
-                            .accessible("Copy reply"),
-                    ),
-            )
-        }
+        Entry::Assistant { text: body, .. } => assistant(body, app),
         Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
         Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
-        Entry::Tool {
-            name,
-            arg,
-            state,
-            output,
-        } => tool_card(&name, &arg, &state, &output, tools, layout, app),
-        Entry::Verify { command, passed } => wrap(
-            label(format!("{} {command}", if passed { "✓" } else { "✗" })).class(if passed {
-                classes!("text-xs text-success-11")
-            } else {
-                classes!("text-xs text-error-11")
-            }),
-        ),
+        Entry::Verify { command, passed } => verify(&command, passed),
         Entry::Mail { from, text: body } => {
             prose(&format!("{from}: {body}"), "text-sm text-info-11")
         }
@@ -89,32 +94,68 @@ pub(in crate::tui::sigil_view) fn row(
             source,
             bytes,
             label: name,
-        } => {
-            let (width, height) = (source.width() as f32, source.height() as f32);
-            let id = source.id();
-            let kind =
-                crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
-            container()
-                .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-                .pointer_up(move |event| {
-                    if event.button != Some(MouseButton::Left) {
-                        return;
-                    }
-                    let file = format!("summonr-image-{id}.{}", kind.unwrap_or("png"));
-                    let path = std::env::temp_dir().join(file);
-                    if crate::durable::store::write(&path, &bytes).is_ok() {
-                        drop(std::process::Command::new("open").arg(&path).spawn());
-                    }
-                })
-                .child(
-                    image(source)
-                        .alt(name.clone())
-                        .fit(ObjectFit::Contain)
-                        .layout(LayoutStyle::block().width(width).height(height)),
-                )
-                .child(label(name).class(classes!("text-xs text-gray-11")))
-        }
+        } => picture(source, bytes, name),
+        Entry::Tool { .. } | Entry::ToolGroup { .. } => container(),
     }
+}
+
+fn assistant(body: String, app: &App) -> NodeBuilder {
+    let copy_app = app.clone();
+    let copied = body.clone();
+    wrap(
+        container()
+            .layout(
+                LayoutStyle::flex_row()
+                    .fill_width()
+                    .align_items(AlignItems::Start)
+                    .gap(8.0),
+            )
+            .child(
+                container()
+                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                    .child(markdown(signal(body))),
+            )
+            .child(
+                icon_button("⧉", move || copy_app.copy.set(Some(copied.clone())))
+                    .ghost()
+                    .accessible("Copy reply"),
+            ),
+    )
+}
+
+fn verify(command: &str, passed: bool) -> NodeBuilder {
+    wrap(
+        label(format!("{} {command}", if passed { "✓" } else { "✗" })).class(if passed {
+            classes!("text-xs text-success-11")
+        } else {
+            classes!("text-xs text-error-11")
+        }),
+    )
+}
+
+fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeBuilder {
+    let (width, height) = (source.width() as f32, source.height() as f32);
+    let id = source.id();
+    let kind = crate::tools::image_type(&bytes).and_then(|media| media.strip_prefix("image/"));
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .pointer_up(move |event| {
+            if event.button != Some(MouseButton::Left) {
+                return;
+            }
+            let file = format!("summonr-image-{id}.{}", kind.unwrap_or("png"));
+            let path = std::env::temp_dir().join(file);
+            if crate::durable::store::write(&path, &bytes).is_ok() {
+                drop(std::process::Command::new("open").arg(&path).spawn());
+            }
+        })
+        .child(
+            image(source)
+                .alt(name.clone())
+                .fit(ObjectFit::Contain)
+                .layout(LayoutStyle::block().width(width).height(height)),
+        )
+        .child(label(name).class(classes!("text-xs text-gray-11")))
 }
 
 fn collapsible(
@@ -240,81 +281,6 @@ fn patch_path(output: &str) -> Option<String> {
         }
     }
     None
-}
-
-fn glyph(state: &ToolState) -> (&'static str, &'static str) {
-    match state {
-        ToolState::Running => ("○", "text-xs text-gray-11"),
-        ToolState::Ok => ("✓", "text-xs text-success-11"),
-        ToolState::Failed => ("✗", "text-xs text-error-11"),
-    }
-}
-
-fn tool_header(name: &str, arg: &str, state: &ToolState) -> NodeBuilder {
-    let (mark, tone) = glyph(state);
-    let (name, arg) = arg
-        .strip_prefix("search ")
-        .filter(|rest| rest.starts_with('"'))
-        .map_or((name, arg), |rest| ("search", rest));
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(8.0)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
-        .child(label(mark).class(tone))
-        .child(label(name.to_string()).class(classes!("text-xs text-gray-12")))
-        .child(
-            label(arg.to_string())
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                .class(classes!("text-xs font-mono text-gray-11")),
-        )
-}
-
-fn tool_card(
-    name: &str,
-    arg: &str,
-    state: &ToolState,
-    output: &str,
-    tools: ToolOutput,
-    layout: DiffLayout,
-    app: &App,
-) -> NodeBuilder {
-    let card = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(tool_header(name, arg, state));
-    let output = preview::plain(output);
-    let failed = matches!(state, ToolState::Failed);
-    let Some(patch) = patch_of(&output) else {
-        let shown = preview::text(tools, name, &output, failed);
-        if shown.is_empty() {
-            return card;
-        }
-        return card.child(output_block(shown));
-    };
-    let path = patch_path(&output).unwrap_or_else(|| arg.to_string());
-    let status = match state {
-        ToolState::Running => "editing",
-        ToolState::Ok => "✓ Applied",
-        ToolState::Failed => "✗ Failed",
-    };
-    let rows = if tools == ToolOutput::Compact {
-        COMPACT_ROWS
-    } else {
-        usize::MAX
-    };
-    let view = patch_view(app, patch, layout)
-        .bg("field")
-        .border_w(0)
-        .path(path)
-        .max_rows(rows);
-    if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
-        return card.child(view.status(status));
-    }
-    card.child(view)
 }
 
 pub(in crate::tui::sigil_view) fn patch_view(

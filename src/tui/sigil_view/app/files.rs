@@ -124,6 +124,10 @@ pub(in crate::tui::sigil_view) enum Action {
     Insert,
     Toggle,
     Hunks,
+    Accept,
+    Reject,
+    Note,
+    Kill,
     Diff,
     Merge,
     Discard,
@@ -137,11 +141,22 @@ pub(in crate::tui::sigil_view) struct Context {
     pub(in crate::tui::sigil_view) cursor: usize,
     pub(in crate::tui::sigil_view) target: FileRow,
     pub(in crate::tui::sigil_view) kind: Pane,
+    pub(in crate::tui::sigil_view) hunk: Option<String>,
 }
 
 impl Context {
     pub(in crate::tui::sigil_view) fn items(&self) -> Vec<(&'static str, Action)> {
-        if self.kind == Pane::Worktrees {
+        if self.kind == Pane::Diff && self.hunk.is_some() {
+            vec![
+                ("accept hunk", Action::Accept),
+                ("reject hunk", Action::Reject),
+                ("note hunk", Action::Note),
+            ]
+        } else if self.kind == Pane::Jobs {
+            vec![("kill job", Action::Kill), ("view log", Action::View)]
+        } else if self.kind == Pane::Peers {
+            vec![("mention @name", Action::Attach)]
+        } else if self.kind == Pane::Worktrees {
             vec![
                 ("show diff", Action::Diff),
                 ("merge (ff-only)", Action::Merge),

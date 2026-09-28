@@ -4,7 +4,11 @@ use sigil::prelude::{Cx, Dimension, request_focus, untrack};
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();
     let layout = app.layout.get();
-    let (chat_cols, side_cols) = layout.split(cols);
+    let (chat_cols, side_cols) = if app.inline {
+        (cols, 0)
+    } else {
+        layout.split(cols)
+    };
     let surface = chat_surface(app.clone(), chat_cols);
     match layout.secondary {
         Some(pane) if side_cols > 0 => container()
@@ -39,7 +43,9 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
         }
         id
     };
-    let surface = if app.view_edit.get() {
+    let surface = if app.inline {
+        chat::inline_layer(app, cols, editor)
+    } else if app.view_edit.get() {
         chat::layer(app, cols, container())
     } else {
         chat::layer(app, cols, editor)

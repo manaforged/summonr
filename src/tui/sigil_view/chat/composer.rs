@@ -65,6 +65,7 @@ pub(in crate::tui::sigil_view) fn composer_hint(
     } else {
         let copy = format!(" · {} copy reply", options);
         vec![
+            format!(" enter send · ⇧↵ newline · {options} options{copy} · ^t select text "),
             format!(" enter send · {options} options{copy} · ^t select text "),
             format!(
                 " ↵ send · {} options{} · ^t select ",

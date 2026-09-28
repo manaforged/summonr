@@ -1,7 +1,7 @@
 use sigil::prelude::{derived_eq, effect, interval};
 
 use super::*;
-use crate::limits::{ANIMATION, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
+use crate::limits::{ANIMATION, BEAT, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
 
 impl App {
     pub(in crate::tui::sigil_view) fn refresh(&self) {
@@ -52,6 +52,13 @@ impl App {
             if busy.get() {
                 let status = app.clone();
                 interval(STATUS_REFRESH, move || status.refresh_status());
+            }
+        });
+        let app = self.clone();
+        effect(move || {
+            if app.layout.get().secondary == Some(super::Pane::Jobs) {
+                let poll = app.clone();
+                interval(BEAT, move || drop(poll.cmd.send(Cmd::Jobs)));
             }
         });
     }

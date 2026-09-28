@@ -29,6 +29,7 @@ impl Model {
     }
 
     pub(in crate::tui::sigil_view) fn clear(&mut self) {
+        self.committed = 0;
         self.entries.clear();
         self.tools.clear();
         self.agents.clear();
@@ -187,71 +188,68 @@ impl Model {
             self.apply_todos(arguments, Some(&crate::child::tag(id)));
         }
         let tag = crate::child::tag(id);
-        if let Event::Spawned { assignment, access } = &event {
-            self.agents.push(Agent {
-                id: tag,
-                assignment: assignment.clone(),
-                access: *access,
-                started: Instant::now(),
-                secs: None,
-                last: String::new(),
-                done: false,
-                failed: false,
-                tokens: 0,
-                cost: 0.0,
-            });
-            self.agents_hidden = false;
-            return;
-        }
-        if let Event::Usage {
-            prompt_tokens,
-            completion_tokens,
-            reasoning_tokens,
-            cost,
-            ..
-        } = &event
-        {
-            let index = match self.agents.iter().position(|agent| agent.id == tag) {
-                Some(index) => index,
-                None => {
-                    self.agents_hidden = false;
-                    self.agents.push(Agent::placeholder(tag.clone()));
-                    self.agents.len() - 1
-                }
-            };
-            let agent = &mut self.agents[index];
-            agent.tokens += u64::from(*prompt_tokens)
-                + u64::from(*completion_tokens)
-                + u64::from(*reasoning_tokens);
-            agent.cost += cost.unwrap_or(0.0);
-            return;
-        }
-        let compact = ToolOutput::Compact;
-        let (last, done, failed) = match event {
-            Event::ToolCall {
-                name, arguments, ..
-            } => (
-                format!("{name} {}", tool_arg(&arguments))
-                    .trim()
-                    .to_string(),
-                false,
-                false,
-            ),
-            Event::ToolResult {
-                success: false,
-                output,
+        match &event {
+            Event::Spawned { assignment, access } => self.child_spawn(tag, assignment, *access),
+            Event::Usage {
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                cost,
                 ..
-            } => (format!("✗ {}", compact.text(&output)), false, true),
-            Event::Assistant { text } => (compact.text(&text).to_string(), true, false),
-            Event::Aborted { reason } => (reason, true, true),
-            Event::Note { text } => (text, false, false),
-            Event::Verify { command, passed } => (
-                format!("{} {command}", if passed { "✓" } else { "✗" }),
-                false,
-                !passed,
+            } => self.child_usage(
+                tag,
+                *prompt_tokens,
+                *completion_tokens,
+                *reasoning_tokens,
+                *cost,
             ),
-            _ => return,
+            other => {
+                let Some((last, done, failed)) = child_line(other) else {
+                    return;
+                };
+                self.child_status(tag, last, done, failed);
+            }
+        }
+    }
+
+    fn child_spawn(&mut self, tag: String, assignment: &str, access: crate::child::Access) {
+        self.agents.push(Agent {
+            id: tag,
+            assignment: assignment.to_string(),
+            access,
+            started: Instant::now(),
+            secs: None,
+            last: String::new(),
+            done: false,
+            failed: false,
+            tokens: 0,
+            cost: 0.0,
+        });
+        self.agents_hidden = false;
+    }
+
+    fn child_usage(
+        &mut self,
+        tag: String,
+        prompt: u32,
+        completion: u32,
+        reasoning: u32,
+        cost: Option<f64>,
+    ) {
+        let index = match self.agents.iter().position(|agent| agent.id == tag) {
+            Some(index) => index,
+            None => {
+                self.agents_hidden = false;
+                self.agents.push(Agent::placeholder(tag));
+                self.agents.len() - 1
+            }
         };
+        let agent = &mut self.agents[index];
+        agent.tokens += u64::from(prompt) + u64::from(completion) + u64::from(reasoning);
+        agent.cost += cost.unwrap_or(0.0);
+    }
+
+    fn child_status(&mut self, tag: String, last: String, done: bool, failed: bool) {
         if let Some(agent) = self.agents.iter_mut().find(|agent| agent.id == tag) {
             agent.last = last.clone();
             if done && !agent.done {
@@ -277,6 +275,7 @@ impl Model {
                 .find(|agent| agent.id == tag)
                 .is_some_and(|agent| agent.failed);
             self.entries.push(Entry::Tool {
+                id: String::new(),
                 name: "agent".to_string(),
                 arg: tag,
                 state: if failed {
@@ -285,6 +284,7 @@ impl Model {
                     ToolState::Ok
                 },
                 output: last,
+                expanded: false,
             });
         }
     }
@@ -313,4 +313,32 @@ impl Model {
         self.reasoning_tokens += u64::from(reasoning);
         self.cached_tokens += u64::from(cached);
     }
+}
+
+fn child_line(event: &Event) -> Option<(String, bool, bool)> {
+    let compact = ToolOutput::Compact;
+    let line = match event {
+        Event::ToolCall {
+            name, arguments, ..
+        } => (
+            format!("{name} {}", tool_arg(arguments)).trim().to_string(),
+            false,
+            false,
+        ),
+        Event::ToolResult {
+            success: false,
+            output,
+            ..
+        } => (format!("✗ {}", compact.text(output)), false, true),
+        Event::Assistant { text } => (compact.text(text).to_string(), true, false),
+        Event::Aborted { reason } => (reason.clone(), true, true),
+        Event::Note { text } => (text.clone(), false, false),
+        Event::Verify { command, passed } => (
+            format!("{} {command}", if *passed { "✓" } else { "✗" }),
+            false,
+            !passed,
+        ),
+        _ => return None,
+    };
+    Some(line)
 }

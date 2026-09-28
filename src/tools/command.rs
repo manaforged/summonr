@@ -30,6 +30,12 @@ pub(crate) fn exit_code(output: &str) -> Option<i32> {
         .and_then(|code| code.trim().parse().ok())
 }
 
+pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status> {
+    let record = crate::jobs::load(workspace, id)?;
+    stop_job(workspace, &record)?;
+    crate::jobs::status(workspace, id)
+}
+
 impl ToolRegistry {
     pub(super) async fn run_command(&self, arguments: &str) -> Result<ToolOutput> {
         let args: serde_json::Value = parse_args("run_command", arguments)?;

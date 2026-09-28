@@ -73,6 +73,10 @@ fn view(app: &App, cols: u16) -> Option<TodosView> {
     })
 }
 
+pub(in crate::tui::sigil_view) fn height(app: &App, cols: u16) -> u16 {
+    view(app, cols).map_or(0, |view| view.rows.len() as u16 + 2)
+}
+
 pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
     let update = app.clone();
     let shown = derived_eq(move || view(&update, cols));

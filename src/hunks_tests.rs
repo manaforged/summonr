@@ -1,0 +1,141 @@
+use super::*;
+
+const PATCH: &str = "diff --git a/src/app.rs b/src/app.rs\nindex 1111111..2222222 100644\n--- a/src/app.rs\n+++ b/src/app.rs\n@@ -10,3 +10,5 @@ fn main() {\n context\n-old\n+new\n+added\n tail\n@@ -40,2 +42,3 @@ fn other() {\n context\n-more\n+less\n";
+
+#[test]
+fn split_gives_each_hunk_a_self_contained_patch() {
+    let hunks = split("src/app.rs", PATCH);
+    assert_eq!(hunks.len(), 2);
+    assert_eq!(hunks[0].header, "@@ -10,3 +10,5 @@ fn main() {");
+    assert_eq!(hunks[1].header, "@@ -40,2 +42,3 @@ fn other() {");
+    for hunk in &hunks {
+        assert!(
+            hunk.patch.starts_with("diff --git a/src/app.rs"),
+            "{}",
+            hunk.patch
+        );
+        assert_eq!(
+            hunk.patch
+                .lines()
+                .filter(|line| line.starts_with("@@ "))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
+fn hunk_ids_track_content_not_position() {
+    let hunks = split("src/app.rs", PATCH);
+    let shifted = PATCH.replace("@@ -10,3 +10,5 @@", "@@ -90,3 +90,5 @@");
+    let moved = split("src/app.rs", &shifted);
+    assert_eq!(hunks[0].id, moved[0].id);
+    assert_ne!(hunks[0].id, hunks[1].id);
+}
+
+#[test]
+fn marks_round_trip_and_prune() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    assert!(load(root).is_empty());
+    let marks = apply(
+        root,
+        "src/app.rs",
+        "aaaa",
+        Op::Verdict(Some(Verdict::Accepted)),
+    )
+    .unwrap();
+    assert_eq!(marks["src/app.rs"]["aaaa"].verdict, Some(Verdict::Accepted));
+    let marks = apply(
+        root,
+        "src/app.rs",
+        "aaaa",
+        Op::Comment(Some("drop this".into())),
+    )
+    .unwrap();
+    assert_eq!(
+        marks["src/app.rs"]["aaaa"].comment.as_deref(),
+        Some("drop this")
+    );
+    let marks = apply(root, "src/app.rs", "aaaa", Op::Verdict(None)).unwrap();
+    assert_eq!(marks["src/app.rs"]["aaaa"].verdict, None);
+    let marks = apply(root, "src/app.rs", "aaaa", Op::Comment(None)).unwrap();
+    assert!(marks.is_empty(), "{marks:?}");
+}
+
+#[test]
+fn drain_hands_comments_to_the_prompt_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    assert!(drain(root).is_none());
+    apply(
+        root,
+        "src/app.rs",
+        "bbbbccccdddd",
+        Op::Comment(Some("this guard ignores empty input".into())),
+    )
+    .unwrap();
+    let notes = drain(root).unwrap();
+    assert!(notes.contains("src/app.rs"), "{notes}");
+    assert!(notes.contains("this guard ignores empty input"), "{notes}");
+    assert!(drain(root).is_none(), "comments deliver exactly once");
+}
+
+#[test]
+fn reject_reverts_one_hunk_in_a_real_repo() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{args:?}: {:?}", output.stderr);
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@t"]);
+    git(&["config", "user.name", "t"]);
+    std::fs::write(root.join("f.txt"), "one\ntwo\nthree\n").unwrap();
+    git(&["add", "f.txt"]);
+    git(&["commit", "-qm", "init"]);
+    std::fs::write(root.join("f.txt"), "one\nTWO\nthree\n").unwrap();
+    let patch = diff::patch(root, Some("f.txt")).unwrap();
+    let hunks = split("f.txt", &patch);
+    assert_eq!(hunks.len(), 1);
+    apply(root, "f.txt", &hunks[0].id, Op::Reject).unwrap();
+    assert_eq!(
+        std::fs::read_to_string(root.join("f.txt")).unwrap(),
+        "one\ntwo\nthree\n"
+    );
+    let marks = load(root);
+    assert_eq!(
+        marks["f.txt"][&hunks[0].id].verdict,
+        Some(Verdict::Rejected)
+    );
+}
+
+#[test]
+fn reject_reports_a_stale_hunk() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let git = |args: &[&str]| {
+        let output = std::process::Command::new("git")
+            .arg("-C")
+            .arg(root)
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(output.status.success(), "{args:?}: {:?}", output.stderr);
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "t@t"]);
+    git(&["config", "user.name", "t"]);
+    std::fs::write(root.join("f.txt"), "one\n").unwrap();
+    git(&["add", "f.txt"]);
+    git(&["commit", "-qm", "init"]);
+    std::fs::write(root.join("f.txt"), "one\ntwo\n").unwrap();
+    let error = apply(root, "f.txt", "deadbeef", Op::Reject).unwrap_err();
+    assert!(error.to_string().contains("the hunk is gone"), "{error}");
+}

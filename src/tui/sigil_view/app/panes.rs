@@ -36,6 +36,7 @@ impl App {
             Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
             Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
             Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
+            Some(Pane::Jobs) => drop(self.cmd.send(Cmd::Jobs)),
             _ => {}
         }
     }
@@ -89,8 +90,23 @@ impl App {
             self.tree_move(if end { last } else { -last });
             return;
         }
+        if self.layout.peek().secondary == Some(Pane::Jobs) {
+            let last = self.job_rows().len().saturating_sub(1) as isize;
+            self.job_move(if end { last } else { -last });
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Peers) {
+            let last = self.model.get().peers.len().saturating_sub(1) as isize;
+            self.peer_move(if end { last } else { -last });
+            return;
+        }
         if self.layout.peek().secondary == Some(Pane::Diff) {
-            let last = self.diff_rows().len().saturating_sub(1);
+            let last = if self.diff_view.peek().is_some() {
+                self.hunks().len()
+            } else {
+                self.diff_rows().len()
+            }
+            .saturating_sub(1);
             self.diff_move(if end { last as isize } else { -(last as isize) });
             return;
         }
@@ -106,7 +122,14 @@ impl App {
             self.pane_back();
             return;
         }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
+        if self.layout.peek().secondary == Some(Pane::Worktrees)
+            || self.layout.peek().secondary == Some(Pane::Peers)
+        {
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Jobs) {
+            self.job_open.set(None);
+            self.refresh();
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Diff) {
@@ -138,6 +161,14 @@ impl App {
             self.tree_enter();
             return;
         }
+        if self.layout.peek().secondary == Some(Pane::Jobs) {
+            self.job_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Peers) {
+            self.peer_enter();
+            return;
+        }
         if self.layout.peek().secondary == Some(Pane::Diff) {
             if self.diff_view.peek().is_none() {
                 self.diff_enter();
@@ -164,7 +195,10 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_active(&self) -> Option<Pane> {
-        if self.view_edit.peek() || self.layout.peek().split(self.viewport.peek().0).1 == 0 {
+        if self.view_edit.peek()
+            || self.note_target.peek().is_some()
+            || self.layout.peek().split(self.viewport.peek().0).1 == 0
+        {
             return None;
         }
         self.pane_focus
@@ -180,6 +214,14 @@ impl App {
         }
         if self.layout.peek().secondary == Some(Pane::Worktrees) {
             self.tree_move(delta);
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Jobs) {
+            self.job_move(delta);
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Peers) {
+            self.peer_move(delta);
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Diff) {
@@ -202,6 +244,14 @@ impl App {
         }
         if self.layout.peek().secondary == Some(Pane::Worktrees) {
             self.tree_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Jobs) {
+            self.job_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Peers) {
+            self.peer_enter();
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Diff) {
@@ -241,6 +291,8 @@ impl App {
             return false;
         }
         if self.diff_view.peek().is_some() {
+            self.note_target.set(None);
+            self.hunk_cursor.set(0);
             self.diff_view.set(None);
             self.refresh();
             return true;
@@ -289,7 +341,7 @@ impl App {
                 (_, Some(preset)) => self.set_layout(preset),
                 (Some(_) | None, None) => {
                     self.push_entry(Entry::Error(format!(
-                        "no pane or layout `{name}` — files, ledger, diff, worktrees, off, focus, run, review, or `chat | ledger 40%`"
+                        "no pane or layout `{name}` — files, ledger, diff, worktrees, jobs, peers, off, focus, run, review, or `chat | ledger 40%`"
                     )));
                     self.refresh();
                 }

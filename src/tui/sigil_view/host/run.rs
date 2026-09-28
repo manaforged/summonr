@@ -36,13 +36,19 @@ pub(crate) fn run(
         busy: None,
         select: false,
     };
+    let inline = info.inline;
     let config = sigil::AppConfig::new("summonr")
         .quit_on_ctrl_c(false)
-        .terminal();
+        .terminal()
+        .inline(inline);
     let ran = {
+        let region = mounted.clone();
         let mut hooks = Hooks {
             external_events: Some(Box::new(|events| pump.turn(events))),
             after_frame: None,
+            region_rows: Some(Box::new(move || {
+                region.borrow().as_ref().map_or(8, inline_rows)
+            })),
         };
         tokio::task::block_in_place(|| {
             sigil::terminal::run_with(
@@ -92,6 +98,39 @@ pub(crate) fn run(
     Ok(exit)
 }
 
+fn commit(app: &App) {
+    if !app.inline {
+        return;
+    }
+    let mut lines = String::new();
+    app.model_mut(|model| lines = model.commit_lines());
+    if !lines.is_empty() {
+        drop(sigil::terminal::print_above(&lines));
+    }
+}
+
+fn inline_rows(app: &App) -> u16 {
+    let (cols, rows) = app.viewport.peek();
+    let model = app.model.get();
+    if app.splash.peek() || app.select.peek() || app.overlay().is_some() {
+        return rows.max(1);
+    }
+    let mut height = 6u16;
+    if model.busy_since.is_some() {
+        height += 1;
+    }
+    let agents = if model.agents_expanded {
+        model.agents.len().min(8) as u16
+    } else {
+        0
+    };
+    if !model.agents.is_empty() {
+        height += 2 + agents;
+    }
+    height += crate::tui::sigil_view::chat::todos::height(app, cols);
+    height.clamp(1, rows.max(1))
+}
+
 struct Pump {
     app: Rc<RefCell<Option<App>>>,
     closed: Rc<Cell<bool>>,
@@ -135,8 +174,9 @@ impl Pump {
         let select = app.select.peek();
         if self.select != select {
             self.select = select;
-            drop(set_mouse_capture(!select));
+            drop(set_mouse_capture(!select && !app.inline));
         }
+        commit(&app);
         open_out(&app);
         copy_out(&app);
     }

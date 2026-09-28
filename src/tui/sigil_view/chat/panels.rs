@@ -4,8 +4,8 @@ use sigil::prelude::{
     label, list_row_with, notice_band, section_label, spacer, spinner_frame,
 };
 
+use super::busy_status;
 use super::{Agent, App, Model};
-use super::{busy_status, secret_row};
 
 #[derive(Clone, PartialEq)]
 struct AgentView {
@@ -199,7 +199,6 @@ fn agent_panel(app: App, view: AgentView) -> NodeBuilder {
 #[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) enum Band {
     Approval { detail: String, persist: bool },
-    Secret { prompt: String, typed: usize },
     Busy(String),
     Attached(usize),
 }
@@ -207,9 +206,6 @@ pub(in crate::tui::sigil_view) enum Band {
 pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
     if let Some((detail, persist)) = app.approval.get() {
         return Some(Band::Approval { detail, persist });
-    }
-    if let Some((prompt, typed)) = app.secret.get() {
-        return Some(Band::Secret { prompt, typed });
     }
     if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
         return Some(Band::Busy(status));
@@ -222,9 +218,6 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
     match band {
         Band::Approval { detail, persist } => {
             above(approval_band(app.clone(), width, detail, persist))
-        }
-        Band::Secret { prompt, typed } => {
-            above(notice_band(secret_row(&prompt, typed, width), Tone::Warn))
         }
         Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
         Band::Attached(attached) => {

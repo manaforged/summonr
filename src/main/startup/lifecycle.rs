@@ -246,6 +246,7 @@ async fn dispatch(
             pick: summonr::endpoint_chosen_by(args.endpoint.as_deref(), args.model.as_deref()),
             prefs,
             splash,
+            inline: args.inline,
             plan: args.plan,
             strict: args.strict,
             workspace: summonr::tilde(&workspace),

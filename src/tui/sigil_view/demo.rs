@@ -55,10 +55,12 @@ pub(super) fn entries() -> Vec<Entry> {
             done: true,
         },
         Entry::Tool {
+            id: "d1".to_string(),
             name: "edit".to_string(),
             arg: "src/demo.rs".to_string(),
             state: ToolState::Ok,
             output: DIFF.to_string(),
+            expanded: false,
         },
         Entry::Chart(vec![
             Round {

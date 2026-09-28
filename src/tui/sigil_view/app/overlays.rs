@@ -18,6 +18,7 @@ impl Overlay {
 
     pub(in crate::tui::sigil_view) fn open(self, app: &App) -> Signal<bool> {
         match self {
+            Self::Secret => app.secret_dialog,
             Self::Help => app.help.open,
             Self::Search => app.search.open,
             Self::Sessions => app.sessions.open,
@@ -41,7 +42,8 @@ impl Overlay {
             Self::Workflow => settings::workflow_keys(),
             Self::Hotkeys => settings::hotkeys_keys(),
             Self::Settings => settings::settings_keys(),
-            Self::Help
+            Self::Secret
+            | Self::Help
             | Self::Search
             | Self::Usage
             | Self::Effort
@@ -54,6 +56,7 @@ impl Overlay {
         let keys = self.keys();
         let owner = app.clone();
         let node = match self {
+            Self::Secret => super::super::secret::layer(app),
             Self::Help => super::super::help::layer(app),
             Self::Search => super::super::search::layer(app),
             Self::Sessions => super::super::sessions::layer(app),
@@ -72,6 +75,9 @@ impl Overlay {
 
 impl App {
     pub(in crate::tui::sigil_view) fn overlay(&self) -> Option<Overlay> {
+        if self.secret_dialog.get() {
+            return Some(Overlay::Secret);
+        }
         Overlay::STACK
             .into_iter()
             .find(|overlay| overlay.open(self).get())
@@ -92,7 +98,7 @@ impl App {
             Some(Overlay::Workflow) => self.move_workflow(delta),
             Some(Overlay::Hotkeys) => self.move_hotkey(delta),
             Some(Overlay::Settings) => self.move_setting(delta),
-            Some(Overlay::Context | Overlay::Cache | Overlay::Usage) => {}
+            Some(Overlay::Secret | Overlay::Context | Overlay::Cache | Overlay::Usage) => {}
             None => return false,
         }
         true
@@ -112,6 +118,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn overlay_enter(&self) -> bool {
         match self.overlay() {
+            Some(Overlay::Secret) => self.secret_finish(true),
             Some(Overlay::Help) => return true,
             Some(Overlay::Search) => self.jump(),
             Some(Overlay::Sessions) => self.resume_session(),
@@ -134,27 +141,15 @@ impl App {
     pub(in crate::tui::sigil_view) fn overlay_close(&self) -> bool {
         self.scroll.set(0);
         match self.overlay() {
+            Some(Overlay::Secret) => self.secret_finish(false),
             Some(Overlay::Help) => self.help.open.set(false),
             Some(Overlay::Search) => self.search.open.set(false),
             Some(Overlay::Sessions) => self.sessions.open.set(false),
-            Some(Overlay::Auth)
-                if matches!(self.auth.step.peek(), Login::List(_))
-                    && !self.auth.filter.peek().is_empty() =>
-            {
-                self.replace_auth_filter(String::new());
-            }
-            Some(Overlay::Auth) => self.cancel_auth(),
-            Some(Overlay::Model) if !self.picker.draft.peek().is_empty() => {
-                self.replace_model_draft(String::new());
-            }
-            Some(Overlay::Model) => self.cancel_model_edit(),
+            Some(Overlay::Auth) => self.close_auth(),
+            Some(Overlay::Model) => self.close_model(),
             Some(Overlay::Effort) => self.effort.open.set(false),
             Some(Overlay::Workflow) => self.close_workflow(),
-            Some(Overlay::Hotkeys) if self.hotkeys.recording.peek() => {
-                self.hotkeys.recording.set(false);
-                self.hotkeys.note.set(String::new());
-            }
-            Some(Overlay::Hotkeys) => self.close_hotkeys(),
+            Some(Overlay::Hotkeys) => self.close_hotkey(),
             Some(Overlay::Settings) => self.settings_open.set(false),
             Some(Overlay::Usage) => self.usage.open.set(false),
             Some(Overlay::Context | Overlay::Cache) => {
@@ -164,6 +159,31 @@ impl App {
             None => return false,
         }
         true
+    }
+
+    fn close_auth(&self) {
+        if matches!(self.auth.step.peek(), Login::List(_)) && !self.auth.filter.peek().is_empty() {
+            self.replace_auth_filter(String::new());
+        } else {
+            self.cancel_auth();
+        }
+    }
+
+    fn close_model(&self) {
+        if !self.picker.draft.peek().is_empty() {
+            self.replace_model_draft(String::new());
+        } else {
+            self.cancel_model_edit();
+        }
+    }
+
+    fn close_hotkey(&self) {
+        if self.hotkeys.recording.peek() {
+            self.hotkeys.recording.set(false);
+            self.hotkeys.note.set(String::new());
+        } else {
+            self.close_hotkeys();
+        }
     }
 
     pub(in crate::tui::sigil_view) fn toggle_meter(&self, target: super::chat::Target) {
@@ -227,6 +247,8 @@ impl App {
         let rows = match kind {
             Pane::Diff => self.diff_rows(),
             Pane::Worktrees => self.tree_rows(),
+            Pane::Jobs => self.job_rows(),
+            Pane::Peers => self.peer_rows(),
             Pane::View => return false,
             _ => self.file_rows(),
         };
@@ -236,6 +258,8 @@ impl App {
         match kind {
             Pane::Diff => self.diff_cursor.set(index),
             Pane::Worktrees => self.tree_cursor.set(index),
+            Pane::Jobs => self.job_cursor.set(index),
+            Pane::Peers => self.peer_cursor.set(index),
             _ => self.file_cursor.set(index),
         }
         self.pane_focus.set(true);
@@ -245,6 +269,7 @@ impl App {
             cursor: 0,
             target,
             kind,
+            hunk: None,
         }));
         self.refresh();
         true
@@ -270,36 +295,78 @@ impl App {
             return;
         };
         self.context.set(None);
-        match context
+        let Some(action) = context
             .items()
             .get(context.cursor)
             .map(|(_, action)| *action)
-        {
-            Some(Action::Toggle) => self.pane_enter(),
-            Some(Action::Attach) => self.mention(&context.target.path),
-            Some(Action::Hunks) => self.diff_open(context.target.path.clone()),
-            Some(Action::View) => self.view_open(context.target.path.clone()),
-            Some(Action::Diff) => {
-                self.tree_show(
-                    PathBuf::from(&context.target.path),
-                    context.target.name.clone(),
-                );
+        else {
+            self.refresh();
+            return;
+        };
+        match action {
+            Action::Toggle => self.pane_enter(),
+            Action::Hunks => self.diff_open(context.target.path.clone()),
+            action @ (Action::Accept | Action::Reject | Action::Note) => {
+                self.hunk_action(&context, action)
             }
-            Some(Action::Merge) => {
+            action @ (Action::Diff | Action::Merge | Action::Discard) => {
+                self.tree_action(&context, action)
+            }
+            Action::Attach | Action::View | Action::Kill | Action::Open | Action::Insert => {
+                self.row_action(&context, action)
+            }
+        }
+    }
+
+    fn hunk_action(&self, context: &Context, action: Action) {
+        let Some(hunk) = context.hunk.clone() else {
+            self.refresh();
+            return;
+        };
+        match action {
+            Action::Accept => self.hunk_toggle(&context.target.path, &hunk),
+            Action::Reject => self.hunk_mark(&context.target.path, &hunk, crate::hunks::Op::Reject),
+            Action::Note => self.note_start(context.target.path.clone(), hunk),
+            action => unreachable!("context_enter routes only hunk actions: {action:?}"),
+        }
+    }
+
+    fn tree_action(&self, context: &Context, action: Action) {
+        match action {
+            Action::Diff => self.tree_show(
+                PathBuf::from(&context.target.path),
+                context.target.name.clone(),
+            ),
+            Action::Merge => {
                 drop(
                     self.cmd
                         .send(Cmd::Merge(PathBuf::from(&context.target.path))),
                 );
                 self.refresh();
             }
-            Some(Action::Discard) => {
+            Action::Discard => {
                 drop(
                     self.cmd
                         .send(Cmd::Discard(PathBuf::from(&context.target.path))),
                 );
                 self.refresh();
             }
-            Some(Action::Open) => {
+            action => unreachable!("context_enter routes only tree actions: {action:?}"),
+        }
+    }
+
+    fn row_action(&self, context: &Context, action: Action) {
+        match action {
+            Action::Attach if context.kind == Pane::Peers => {
+                self.peer_mention(&context.target.path)
+            }
+            Action::Attach => self.mention(&context.target.path),
+            Action::View if context.kind == Pane::Jobs => {
+                self.view_open(format!(".summonr/jobs/{}.log", context.target.path));
+            }
+            Action::View => self.view_open(context.target.path.clone()),
+            Action::Kill => self.job_kill(&context.target.path),
+            Action::Open => {
                 self.open_file.set(Some(
                     self.root()
                         .unwrap_or_else(|| self.workspace.clone())
@@ -307,14 +374,14 @@ impl App {
                 ));
                 self.refresh();
             }
-            Some(Action::Insert) => {
+            Action::Insert => {
                 let mut draft = self.draft.peek();
                 draft.push_str(&context.target.path);
                 self.replace(draft);
                 self.pane_focus.set(false);
                 self.refresh();
             }
-            None => self.refresh(),
+            action => unreachable!("context_enter routes only row actions: {action:?}"),
         }
     }
 }

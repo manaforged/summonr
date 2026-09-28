@@ -207,11 +207,20 @@ pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
     if let Some((detail, persist)) = app.approval.get() {
         return Some(Band::Approval { detail, persist });
     }
-    if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
-        return Some(Band::Busy(status));
-    }
     let attached = app.attached.get();
+    if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
+        return Some(Band::Busy(if attached > 0 {
+            format!("{status} · {}", attached_text(attached))
+        } else {
+            status
+        }));
+    }
     (attached > 0).then_some(Band::Attached(attached))
+}
+
+pub(in crate::tui::sigil_view) fn attached_text(attached: usize) -> String {
+    let noun = if attached == 1 { "image" } else { "images" };
+    format!("{attached} {noun} attached")
 }
 
 pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
@@ -220,13 +229,10 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
             above(approval_band(app.clone(), width, detail, persist))
         }
         Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
-        Band::Attached(attached) => {
-            let noun = if attached == 1 { "image" } else { "images" };
-            above(notice_band(
-                format!("{attached} {noun} attached · enter sends with your prompt"),
-                Tone::Info,
-            ))
-        }
+        Band::Attached(attached) => above(notice_band(
+            format!("{} · enter sends with your prompt", attached_text(attached)),
+            Tone::Info,
+        )),
     }
 }
 

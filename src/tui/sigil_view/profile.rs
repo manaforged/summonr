@@ -95,11 +95,11 @@ impl Options {
         Ok(options)
     }
 
-    fn cause(&self) -> &'static str {
+    fn cause(&self) -> profile::Cause {
         match self.scenario {
-            Scenario::Idle => "tui.idle",
-            Scenario::Stream => "tui.stream",
-            Scenario::Resize => "tui.resize",
+            Scenario::Idle => profile::Cause::Idle,
+            Scenario::Stream => profile::Cause::Input,
+            Scenario::Resize => profile::Cause::Resize,
         }
     }
 }
@@ -135,14 +135,12 @@ async fn capture(options: &Options) -> Result<()> {
     profile::reset();
     let mut size = (options.cols, options.rows);
     for index in 0..options.frames {
-        profile::begin_frame();
+        profile::begin_frame(profile::BackendStatus::TERMINAL);
         profile::interact(options.cause());
-        let frame = profile::span("frame");
         size = update(&app, options, index);
         output.clear();
         paint(&mut screen, &mut host, &mut router, size, &mut output)?;
         counts(options, size, output.len());
-        drop(frame);
         profile::tick_frame();
         sleep(frame_budget(options.fps)).await;
     }
@@ -166,18 +164,18 @@ fn paint(
     output: &mut Vec<u8>,
 ) -> Result<()> {
     {
-        let _phase = profile::span("tui.frame");
+        let _phase = profile::span(profile::Phase::TuiPaint);
         screen
             .frame(host, router, [], size)
             .map_err(|error| Error::Tool(error.to_string()))?;
     }
-    let _phase = profile::span("tui.write");
+    let _phase = profile::span(profile::Phase::TuiWrite);
     screen.flush(output)?;
     Ok(())
 }
 
 fn update(app: &App, options: &Options, index: u16) -> (u16, u16) {
-    let _phase = profile::span("app.update");
+    let _phase = profile::span(profile::Phase::AppUpdate);
     let width = if options.scenario == Scenario::Resize && index.is_multiple_of(2) {
         options.cols - 16
     } else {
@@ -196,15 +194,18 @@ fn update(app: &App, options: &Options, index: u16) -> (u16, u16) {
 
 fn counts(options: &Options, size: (u16, u16), bytes: usize) {
     for (name, value) in [
-        ("tui.frames", 1),
-        ("tui.bytes", bytes as u64),
-        ("workload.cols", u64::from(size.0)),
-        ("workload.rows", u64::from(size.1)),
-        ("workload.items", u64::from(options.history)),
-        ("workload.headless", 1),
-        ("workload.fps", u64::from(options.fps)),
-        ("workload.scenario", options.scenario as u64),
-        ("build.profile", if cfg!(debug_assertions) { 1 } else { 2 }),
+        (profile::Counter::TuiFrames, 1),
+        (profile::Counter::TuiBytes, bytes as u64),
+        (profile::Counter::WorkloadCols, u64::from(size.0)),
+        (profile::Counter::WorkloadRows, u64::from(size.1)),
+        (profile::Counter::WorkloadItems, u64::from(options.history)),
+        (profile::Counter::WorkloadHeadless, 1),
+        (profile::Counter::WorkloadFps, u64::from(options.fps)),
+        (profile::Counter::WorkloadScenario, options.scenario as u64),
+        (
+            profile::Counter::BuildProfile,
+            if cfg!(debug_assertions) { 1 } else { 2 },
+        ),
     ] {
         profile::count_add(name, value);
     }
@@ -236,3 +237,7 @@ pub(super) fn info() -> Info {
 fn frame_budget(fps: u32) -> std::time::Duration {
     crate::limits::FRAME_WINDOW / fps.clamp(FPS_MIN, FPS_MAX)
 }
+
+#[cfg(test)]
+#[path = "profile_tests.rs"]
+mod tests;

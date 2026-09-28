@@ -28,69 +28,68 @@ pub(crate) fn run(
     let closed = Rc::new(Cell::new(false));
     let inbox = RefCell::new(Some(ui_rx));
     let ended = closed.clone();
-    let mut pump = Pump {
+    let pump = Rc::new(RefCell::new(Pump {
         app: slot,
         closed,
         exit: None,
         session: String::new(),
         busy: None,
         select: false,
-    };
+    }));
     let inline = info.inline;
+    let region = mounted.clone();
+    let turn = pump.clone();
+    let hooks = Hooks {
+        external_events: Some(Box::new(move |events| turn.borrow_mut().turn(events))),
+        after_frame: None,
+        region_rows: Some(Box::new(move || {
+            region.borrow().as_ref().map_or(8, inline_rows)
+        })),
+    };
     let config = sigil::AppConfig::new("summonr")
         .quit_on_ctrl_c(false)
         .terminal()
-        .inline(inline);
+        .inline(inline)
+        .terminal_hooks(hooks);
     let ran = {
-        let region = mounted.clone();
-        let mut hooks = Hooks {
-            external_events: Some(Box::new(|events| pump.turn(events))),
-            after_frame: None,
-            region_rows: Some(Box::new(move || {
-                region.borrow().as_ref().map_or(8, inline_rows)
-            })),
-        };
         tokio::task::block_in_place(|| {
-            sigil::terminal::run_with(
-                config,
-                move |cx: &mut Cx| {
-                    let app = App::new(info, workspace, commands);
-                    if let Err(error) = calibrate(&mut std::io::stdout()) {
-                        app.update(Msg::System(format!(
-                            "Could not measure terminal text widths: {error}"
-                        )));
-                    }
-                    if let Ok((cols, rows)) = crossterm::terminal::size() {
-                        app.resize(cols, rows);
-                    }
-                    app.load();
-                    app.refresh();
-                    app.animate();
-                    if let Some(ui_rx) = inbox.borrow_mut().take() {
-                        let receiver = app.clone();
-                        let ended = ended.clone();
-                        on_message_or_close(
-                            ui_rx,
-                            move |msg| {
-                                receiver.update(msg);
-                                let refresh = receiver.clone();
-                                defer(move || refresh.refresh());
-                            },
-                            move || ended.set(true),
-                        );
-                    }
-                    *mounted.borrow_mut() = Some(app.clone());
-                    cx.add(root(app))
-                },
-                &mut hooks,
-            )
+            sigil::run(config, move |cx: &mut Cx| {
+                let app = App::new(info, workspace, commands);
+                if let Err(error) = calibrate(&mut std::io::stdout()) {
+                    app.update(Msg::System(format!(
+                        "Could not measure terminal text widths: {error}"
+                    )));
+                }
+                if let Ok((cols, rows)) = crossterm::terminal::size() {
+                    app.resize(cols, rows);
+                }
+                app.load();
+                app.refresh();
+                app.animate();
+                if let Some(ui_rx) = inbox.borrow_mut().take() {
+                    let receiver = app.clone();
+                    let ended = ended.clone();
+                    on_message_or_close(
+                        ui_rx,
+                        move |msg| {
+                            receiver.update(msg);
+                            let refresh = receiver.clone();
+                            defer(move || refresh.refresh());
+                        },
+                        move || ended.set(true),
+                    );
+                }
+                *mounted.borrow_mut() = Some(app.clone());
+                cx.add(root(app))
+            })
         })
     };
     stop(worker, &cmd_tx, BEAT);
     ran.map_err(|error| Error::Tool(format!("the terminal failed: {error}")))?;
+    let mut pump = pump.borrow_mut();
     let exit = pump.exit.take().unwrap_or(Exit::Code(0));
     if matches!(exit, Exit::Code(_)) {
-        let session = pump.session;
+        let session = &pump.session;
         eprintln!(
             "\n  summonr {version} · session {session}\n  resume: summonr -c · by id: summonr --session {session} · branch: summonr --fork\n"
         );

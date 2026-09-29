@@ -281,7 +281,11 @@ impl Worker {
         self.loop_.set_context_window(endpoint.context_window);
         self.loop_.set_compact_tokens(endpoint.compact_tokens);
         self.loop_.set_env(endpoint.env);
-        self.loop_.set_effort(self.dial.or(endpoint.effort));
+        self.loop_.set_effort(
+            self.dial
+                .or(endpoint.effort)
+                .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model)),
+        );
         self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
@@ -290,7 +294,7 @@ impl Worker {
     pub(super) fn remember_seat(&self) {
         if let Some(home) = &self.home {
             let seat = crate::recent::Seat::new(self.endpoint.clone(), self.loop_.model());
-            drop(crate::recent::record(home, &seat));
+            drop(crate::recent::record(home, &seat, self.loop_.effort()));
         }
     }
 

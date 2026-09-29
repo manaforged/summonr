@@ -15,8 +15,8 @@ summonr kimi -p "What is in Cargo.toml?"
 
 Summonr starts on the first seat that applies: the endpoint and
 `--model` flags, then `SUMMONR_ENDPOINT` and `SUMMONR_MODEL`, then the
-default (`default` and `default_model` in `config.toml`), then the
-last seat you used. `alt+d` in the `/model` picker sets the selected row
+last seat you used, then the default (`default` and `default_model` in
+`config.toml`), which applies only when there is no last seat. `alt+d` in the `/model` picker sets the selected row
 as the default, and `alt+d` on the default row clears it. The header
 shows which rule chose the seat, for example `(default)` or
 `(last used)`, until you switch.
@@ -32,8 +32,10 @@ api_key = "local"
 
 Then `summonr local`. `effort = "low"` on a row (or `--effort LEVEL`,
 `/effort` in the interface) sets the reasoning effort for that
-seat. Set it only on a seat whose model reasons; a host that does not
-accept `reasoning_effort` rejects the request. `price = { input, output, cached }` in USD per million tokens
+seat. `/effort` and `shift+tab` are remembered per seat. A seat with no
+effort set, and none remembered, uses `high` when the model catalog says
+the model reasons, and sends no effort otherwise. Reasoning effort below
+lists the levels each model accepts. `price = { input, output, cached }` in USD per million tokens
 prices every round in the footer. A workflow seat keeps
 its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say.
@@ -157,29 +159,141 @@ removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
 `--here` is the default.
 
+### Reasoning effort
+
+The levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and
+`max`. Each model accepts some of them. Summonr sends the nearest level
+the model accepts, and the lower one when two are equally near. `max` on
+a model that stops at `high` sends `high`. `medium` on a model that
+accepts only `low` and `high` sends `low`.
+
+A model that takes no effort setting gets no effort field, so a level
+you pick cannot fail the request. With no effort set, Summonr also sends
+no effort field, and the model uses its own default.
+
+`none` turns thinking off where the model can turn it off. If the model
+cannot, Summonr sends the lowest level it accepts.
+
+Anthropic Messages (`anthropic`, `claude-pro`, or any row with
+`wire = "anthropic"`), by model id:
+
+| Model | Levels | `none` |
+| --- | --- | --- |
+| `claude-opus-5-5`, `claude-fable-5`, `claude-mythos-5` | `low`, `medium`, `high`, `xhigh`, `max` | sends `low` |
+| `claude-mythos-preview` | `low`, `medium`, `high`, `max` | sends `low` |
+| `claude-opus-5`, `claude-sonnet-5` | `low`, `medium`, `high`, `xhigh`, `max` | `thinking` type `disabled` |
+| `claude-sonnet-5-5` | `low`, `medium`, `high`, `xhigh`, `max` | `thinking` type `between_tools` |
+| `claude-opus-4-8`, `claude-opus-4-7` | `low`, `medium`, `high`, `xhigh`, `max` | no `thinking` field |
+| `claude-opus-4-6`, `claude-sonnet-4-6` | `low`, `medium`, `high`, `max` | no `thinking` field |
+| `claude-opus-4-5` | `low`, `medium`, `high` | no `thinking` field |
+| Earlier Claude models | `low`, `medium`, `high`, sent as a thinking budget | no `thinking` field |
+
+OpenAI (`openai`, on the chat or the Responses wire), by model id:
+
+| Model | Levels | `none` |
+| --- | --- | --- |
+| `gpt-6`, `gpt-5.6` | `low`, `medium`, `high`, `xhigh`, `max` | sends `none` |
+| `gpt-6-astra` | `low`, `medium`, `high`, `xhigh`, `max` | sends `low` |
+| `gpt-5.5`, `gpt-5.4`, `gpt-5.2` | `low`, `medium`, `high`, `xhigh` | sends `none` |
+| `gpt-5.1` | `low`, `medium`, `high` | sends `none` |
+| `gpt-5` | `minimal`, `low`, `medium`, `high` | sends `minimal` |
+| `gpt-5-pro` | `high` | sends `high` |
+| Other `gpt-5` models that contain `-pro` | `medium`, `high`, `xhigh` | sends `medium` |
+| `gpt-5.3-codex`, `gpt-5.2-codex` | `low`, `medium`, `high`, `xhigh` | sends `low` |
+| Other `codex` models | `low`, `medium`, `high` | sends `low` |
+| `gpt-5-chat`, `gpt-4`, `gpt-3` | no effort setting | sends nothing |
+| Any other model, such as `o3` | `low`, `medium`, `high` | sends `low` |
+
+Gemini (`gemini`), by model id. Levels for `gemini-2.5` models set the
+thinking budget:
+
+| Model | Levels | `none` |
+| --- | --- | --- |
+| `gemini-2.5-pro` | `low`, `medium`, `high` | sends the `low` budget |
+| Other `gemini-2.5` models | `low`, `medium`, `high` | sets the budget to 0 |
+| `gemini-3-pro` | `low`, `high` | sends `low` |
+| `gemini-3` models that contain `pro`, `3.7`, or `3.8` | `low`, `medium`, `high` | sends `low` |
+| Other `gemini-3` models | `minimal`, `low`, `medium`, `high` | sends `minimal` |
+
+Other built-in seats:
+
+| Seat | Levels | `none` |
+| --- | --- | --- |
+| `zai`, `zai-cn`, `glm`, `glm-intl` | `glm-5.3`: `low`, `high`, `max`. `glm-5.2`: `minimal` to `max`. Earlier models: no effort setting. | `glm-5.3`: sends `low`. `glm-5.2`: sends `none`. Earlier models: `thinking` type `disabled`. |
+| `deepseek` | `minimal` to `max` | `thinking` type `disabled` |
+| `kimi` | `k3`: `low`, `high`, `max`. `kimi-k2` models: no effort setting. | `k3`: sends `low`. `kimi-k2.6`: `thinking` type `disabled`. Other `kimi-k2` models: sends nothing. |
+| `grok` | `grok-4.7` and `grok-4.6`: `low` to `xhigh`. Others: `low`, `medium`, `high`. | sends the lowest level |
+| `muse` | `minimal` to `xhigh` | sends `minimal` |
+| `mistral` | `high` | sends `none` |
+| `cerebras`, `deepinfra`, `ollama` | `low`, `medium`, `high` | sends `none` |
+| `openrouter` | `minimal` to `xhigh`, sent as `reasoning` with an `effort` key | sends `none` |
+| `together`, `groq`, `copilot`, `zen`, `go`, `opencode`, `fireworks` | `low`, `medium`, `high` | sends nothing |
+| `minimax`, `minimax-cn` | no effort setting | `thinking` type `disabled` |
+
+Summonr matches the model id against these model rows on every seat
+except `copilot`, `openrouter`, and `ollama`, which pass any model
+through and use the seat's own levels. A model that matches no row uses
+the seat's levels. A row with no built-in host uses `low`, `medium`, and
+`high`, and sends nothing for `none`.
+
+Set the levels or the `none` style on a row to replace the built-in
+behavior. A `[endpoint.NAME.models.ID]` row replaces it for one model.
+
+```toml
+[endpoint.local]
+base_url = "http://127.0.0.1:8080/v1"
+model = "qwen3"
+reasoning_levels = ["low", "high", "max"]
+thinking_off = "disabled"
+
+[endpoint.local.models.qwen3-small]
+reasoning_levels = []
+```
+
+`reasoning_levels` lists the levels the seat accepts, from `minimal` to
+`max`. An empty list sends no effort. `thinking_off` sets what `none`
+sends:
+
+| `thinking_off` | `none` sends |
+| --- | --- |
+| `omit` | nothing |
+| `none` | the level `none` |
+| `disabled` | `thinking` with type `disabled` |
+| `between_tools` | `thinking` with type `between_tools` |
+| `chat_template_kwargs` | `chat_template_kwargs` with `enable_thinking` set to `false` |
+| `unsupported` | the lowest level in `reasoning_levels` |
+
+The `body` table of a row is merged last, so it can still set any field
+by hand.
+
 ### Modes
 
 | Mode | Enter | Leave | Job |
 | --- | --- | --- | --- |
-| Auto | default, `/auto`, shift+tab from plan | `/plan`, `/goal` | Follow the request this turn. |
-| Plan | `/plan`, `--plan`, shift+tab from auto | `/plan accept`, `/plan reject`, `/auto` | Read-only. Reply is saved as `.summonr/plan.md`. |
+| Auto | default, `/auto` | `/plan`, `/goal` | Follow the request this turn. |
+| Plan | `/plan` when `plan_mode = true`, `--plan` | `/plan accept`, `/plan reject`, `/auto` | Read-only. Reply is saved as `.summonr/plan.md`. |
 | Work | `/plan accept` only | job ends (auto), `/auto` | Execute the accepted plan, then `.summonr/check.toml`. |
 | Goal | `/goal TEXT`, `--goal` | judge `done` / stop, `/auto` | Loop on an objective with no written plan until checks pass and the judge says `done`. |
 
 Work is plan after accept. Without a selected plan, a request for work
 stays in plan mode. `/plan reject` discards the plan and returns to auto.
-`shift+tab` does not enter work or goal.
 
-Auto mode follows the request. Reviews, explanations, and diagnoses inspect
-the workspace without changing it. Change requests can edit and run checks.
+Plan mode is off by default. Turn it on with the `plan mode` row in
+`/settings` or `plan_mode = true` in `~/.summonr/config.toml`. While it is
+off, `/plan` is refused. `--plan` still works.
+Leaving plan mode removes the sandbox that plan mode turned on; a sandbox
+from `--sandbox` or `[sandbox] on` stays.
 
-Plan mode adds a read-only workspace boundary. The model inspects and
-returns a plan; it cannot edit source or run mutating commands. The
-harness writes that reply to `.summonr/plan.md`. Edit the file, then
-`/plan accept` to bind it and enter work: that turn executes the plan
-and runs the completion check. Destructive writes and network still pause
-for `[ allow ]`, `[ always ]`, or `[ deny ]`. `lsp` routes each file to
-its language module (diagnostics, definition, references, and rename).
+### Confirmation
+
+Everything runs without a prompt except the hard denials: `sudo`,
+`rm -rf` outside the workspace, force-push, and the rest of the built-in
+deny list. Those ask first with `[ allow ]` / `[ deny ]` (or `y` / `n`).
+`-p` has no one to ask, so a hard denial does not run there.
+
+`sudo` asks for your password in a dialog. The password goes to `sudo`
+through `SUDO_ASKPASS`; the model never sees it, and command output is
+scrubbed of it.
 
 ### Workflows
 
@@ -304,7 +418,7 @@ command output shows it as `[secret]`.
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
-| `shift+tab` | switch between auto and plan | takes effect when the turn ends |
+| `shift+tab` | cycle reasoning effort: none, minimal, low, medium, high, xhigh, max | takes effect when the turn ends |
 | `alt+←` `alt+→` `alt+b` `alt+f` | word left or right | |
 | `ctrl+w` `alt+backspace` | delete the word before the caret | |
 | `alt+d` | delete the word after the caret | |
@@ -346,7 +460,7 @@ command output shows it as `[secret]`.
 | `/view PATH` | read a file in a pane |
 | `/pane [NAME]` | files, ledger, diff, worktrees, jobs, peers, or a layout |
 | `/settings` | theme, tool output, reasoning, modules, keys |
-| `/permissions [net\|write\|approve]` | sandbox network, write paths, approval |
+| `/permissions [net\|write]` | sandbox network and write paths |
 | `/help` | list commands and keys |
 
 Typing `/` opens the command list above the composer. Each row shows
@@ -439,7 +553,9 @@ the reviewer before it completes; a rejection sends the findings back
 as the next instruction and counts as a failed check.
 ## Child sessions
 
-The `task` tool delegates work to fresh child sessions. A model can emit
+The `task` tool delegates work to fresh child sessions. Only an interactive
+session offers it: `-p`, `--steps`, `--goal`, and `summonr acp` runs have no
+steering channel, so the model does not get `task` there. A model can emit
 several `task` calls in one response. Summonr runs them concurrently.
 Each `implement` child edits the parent workspace. Implement children get
 the parent's file, shell, and language-server tools; background commands
@@ -476,9 +592,17 @@ or `include`, with `literal` and `caseSensitive`). Search hits are
 and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line
 replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a
 batch (`edits`), and a rename or move (`path`
-with `to`). `write` creates or overwrites one file, or several (`files`).
-`run_command` takes `workdir`; when the output is longer than the digest
-the full log is kept and its path named.
+with `to`). `write` creates or overwrites one file, or several (`files`); over an
+existing file it returns `wrote PATH (N lines, replaced M lines)`, not the
+diff. `read` pages by 50 KB by default; an explicit `limit` is capped at
+1000 lines. `run_command` takes `workdir`; its output keeps about 16 KB of
+head and tail, and the full log path is named only when that cut
+something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE`
+are answered by `read`; `ls`, `wc`, `tree`, `grep`, and `rg` run in the
+shell. A foreground command that reaches the wait limit keeps running as a
+background job and returns its id, unless `timeout_secs` was set, which
+stops it instead. A job poll waits until the job exits or the wait limit
+passes.
 
 | Name | When | Notes |
 | --- | --- | --- |
@@ -486,11 +610,11 @@ the full log is kept and its path named.
 | `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | not plan | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
-| `todo` | always | Replaces the Work todo list; status `pending`, `active`, or `done` |
+| `todo` | `/steps`, `/goal`, `--steps`, `--goal` | Replaces the Work todo list; status `pending`, `active`, or `done` |
 | `skill` | skills catalog exists | Loads one `SKILL.md` by name |
 | `lsp` | `lsp` on | Diagnostics for a `path`; definition, `references`, or `new_name` at `line` and `character` |
-| `web` | `search` on | `query` searches; `url` fetches as markdown, text, or html |
-| `task` | `task` module | Child session |
+| `web` | `search` on (off by default) | `query` searches; `url` fetches as markdown, text, or html |
+| `task` | `task` module, interactive session | Child session |
 | `agents` | `mail` module | List live agent sessions by name |
 | `send` | `mail` module | `to` (a name, an id, or `all`) and `text`: write to a peer's inbox |
 | `inbox` | `mail` module | Read mail that arrived since the last read |
@@ -501,14 +625,14 @@ The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`,
 `definition`, `web_search`, and `web_fetch`) still execute and are not
 advertised. Plan mode advertises
-`read`, `run_command`, and `todo`, plus `skill` and `web`. It does not advertise
-`edit` or `write`.
+`read` and `run_command`, plus `skill` and, with `search` on, `web`. It does not advertise
+`edit`, `write`, or `todo`.
 
 ## Modules
 
 Every optional capability is a **module** compiled into the binary: `search`,
 `lsp`, `jobs`, `task`, `skills`, `mcp`, `mail`, and `gui`. That list is the
-built-in module set: curated, switchable, and inside the harness process RSS. `mcp` and `mail`
+built-in module set: curated, switchable, and inside the harness process RSS. `search`, `mcp`, and `mail`
 are off by default so unused tool schemas stay out of the first `prefix_hash`;
 the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings`
 in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
@@ -522,7 +646,7 @@ input.
 
 `read` with `pattern` or `glob` honors `.gitignore`, and lists matching files
 when the pattern is empty.
-`web` with `query` reads Bing without a key, and `url` fetches one page.
+With the `search` module on, `web` with `query` reads Bing without a key, and `url` fetches one page.
 Both go through Leyline with a browser identity, so no search API key or
 self-hosted search service is needed. `[search]` takes `count`,
 `allowed_domains`, and `excluded_domains`. Language modules cover Rust,
@@ -632,22 +756,11 @@ host networking separately from shell commands.
 `/permissions net off` denies again.
 The interface also prompts when a sandboxed command fails with a network error:
 `[ allow ]` turns the session network on and retries the command; `[ deny ]`
-returns the failure to the model. `/permissions` alone reports the network, write, and approval state.
-
-`/permissions approve on` is manual mode: the harness asks before extra-root writes and
-before each shell command. A bar appears above the composer with
-`[ allow ]` and `[ deny ]` buttons; click one, or press `y` or `n`. An approved
-command runs uncontained with your account's access, so review it first.
-`/permissions approve off` returns to auto mode. A command
-the user denies is reported to the model as a failed tool.
+returns the failure to the model. `/permissions` alone reports the network and write state.
 
 Auto mode grants a write outside the writable roots for this session and
 retries the tool. It does not write `~/.summonr/config.toml`. Plan mode still
-refuses writes. `/permissions approve on` prompts with the same bar
-(`approve ~/.cargo/bin` plus `[ allow ]` / `[ always ]` / `[ deny ]`).
-`[ allow ]` or `y` grants the directory for this session and retries the tool.
-`[ always ]` or `Y` appends the path to `[sandbox] write`.
-`/permissions write PATH` persists to that list without a prompt.
+refuses writes. `/permissions write PATH` persists to that list without a prompt.
 `/permissions write --session PATH` grants for this session only.
 `/permissions write` alone lists
 the extra roots.
@@ -703,6 +816,13 @@ A loop guard watches tool results each turn. It steps in on three patterns:
   status such as `exit 1` does not count.
 - A cycle of 2 to 8 calls repeats 3 times with the same results: a steer.
 
+Successful job and child polls do not count toward any pattern. A headless
+run that answers a stuck or checkpoint control message with no tool call is
+asked once to continue; a second such reply ends the turn. The checkpoint
+message is sent only when the Work ledger has entries. The compaction
+summary request carries no tools, and a failed summary retries after 8
+rounds.
+
 A note asks the model to state the hypothesis that its next action tests. A
 steer adds a control message to the conversation. After the first steer, an
 interactive session asks you whether the turn continues. A headless run
@@ -752,7 +872,7 @@ name that package a plugin; Summonr does not load guest code.
 
 `summonr install PATH` copies `skills/`, `bin/` (to `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` / `hooks.toml` into `~/.summonr/config.toml`. Conflicts refuse. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints extras. There is no marketplace and no in-process loader.
 
-After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`.
+After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`, and a steps or goal run adds `todo`.
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
 
@@ -764,7 +884,7 @@ Intent permissions: a `pre_tool` hook that exits nonzero blocks the call. Keep a
 
 Remote TUI: `summonr acp`, or `ssh` and the terminal. There is no HTTP control plane.
 
-Browser: the `web` module fetches. A Playwright MCP is a child process, not Chromium inside summonr.
+Browser: `web` fetches when the `search` module is on. A Playwright MCP is a child process, not Chromium inside summonr.
 
 `summonr export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
 

@@ -1,6 +1,10 @@
 use super::preset::copilot_oauth;
 use super::*;
 use crate::endpoint::preset::{KIMI_CLI, Preset};
+use crate::provider::EffortField::{ReasoningEffort, ReasoningObject};
+use crate::provider::Off::{EffortNone, Omit, ThinkingDisabled, Unsupported};
+use crate::provider::Spec;
+use crate::provider::levels::{LOW_HIGH_MAX, MINIMAL_XHIGH, NO_EFFORT, STANDARD};
 
 pub(super) const HEAD: &[Preset] = &[
     Preset {
@@ -20,6 +24,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
         context_window: None,
     },
     Preset {
@@ -39,6 +44,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
         context_window: None,
     },
     Preset {
@@ -63,6 +69,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
         context_window: None,
     },
     Preset {
@@ -87,6 +94,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: true,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
         context_window: None,
     },
     Preset {
@@ -106,6 +114,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, EffortNone).host_only(),
         context_window: None,
     },
     Preset {
@@ -125,6 +134,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, LOW_HIGH_MAX, ThinkingDisabled).replayed(),
         context_window: None,
     },
     Preset {
@@ -150,6 +160,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, LOW_HIGH_MAX, Unsupported),
         context_window: None,
     },
     Preset {
@@ -173,6 +184,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Unsupported),
         context_window: None,
     },
     Preset {
@@ -196,6 +208,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit).host_only(),
         context_window: None,
     },
     Preset {
@@ -215,6 +228,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Unsupported),
         context_window: None,
     },
     Preset {
@@ -234,6 +248,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningObject, MINIMAL_XHIGH, EffortNone).host_only(),
         context_window: None,
     },
 ];

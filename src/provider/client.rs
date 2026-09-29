@@ -30,6 +30,8 @@ pub struct Client {
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
     pub(super) wire: Wire,
+    pub(super) reasoning: Reasoning,
+    pub(super) idle: Option<Duration>,
     pub(super) on_delta: Option<DeltaFn>,
     pub(super) on_reasoning: Option<DeltaFn>,
     pub(super) on_tool: Option<DeltaFn>,
@@ -87,6 +89,7 @@ impl Client {
         )?;
         client.keep_reasoning = endpoint.keep_reasoning;
         client.name.clone_from(&endpoint.name);
+        client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
     }
 
@@ -140,11 +143,15 @@ impl Client {
         Ok(value)
     }
 
-    pub(super) fn request_body(
+    pub(crate) fn request_body(
         &self,
         request: &CompletionRequest<'_>,
         stream: bool,
     ) -> Result<Value> {
+        let request = &CompletionRequest {
+            reasoning: self.reasoning.clone(),
+            ..request.clone()
+        };
         let mut body = match self.wire {
             Wire::Anthropic => <wire::anthropic::Wire as wire::Chat>::request(request, stream)?,
             Wire::Gemini => <wire::gemini::Wire as wire::Chat>::request(request, stream)?,

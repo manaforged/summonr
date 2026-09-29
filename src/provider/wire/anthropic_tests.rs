@@ -1,4 +1,5 @@
 use super::*;
+use crate::provider::Effort;
 
 use crate::provider::{FunctionDefinition, Image, ToolDefinition};
 
@@ -217,10 +218,11 @@ fn a_model_outside_both_lists_gets_no_thinking() {
 }
 
 #[test]
-fn effort_none_sends_no_thinking() {
+fn effort_none_disables_thinking_on_sonnet_5() {
     let messages = vec![message(Role::User, "hi")];
     let body = request(&asked("claude-sonnet-5", &messages, Effort::None), false).unwrap();
-    assert!(body.get("thinking").is_none());
+    assert_eq!(body["thinking"]["type"], "disabled");
+    assert!(body.get("output_config").is_none());
 }
 
 #[test]

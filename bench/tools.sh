@@ -22,7 +22,7 @@ docker run --rm -v "$out":/opt/bench \
   -w /opt/bench debian:bookworm bash -euo pipefail -c "
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 apt-get update -qq >/dev/null
-apt-get install -y -qq curl ca-certificates git openssh-client make g++ pkg-config libssl-dev >/dev/null
+apt-get install -y -qq curl ca-certificates git openssh-client make cmake clang libclang-dev g++ pkg-config libssl-dev >/dev/null
 if [ -d /src ]; then
   mkdir -p /root/ssh2
   cp /root/.ssh/id_ed25519 /root/.ssh/known_hosts /root/ssh2/

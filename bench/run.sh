@@ -8,8 +8,7 @@ shift 2
 harnesses=("${@:-summonr}")
 read -ra harnesses <<< "${harnesses[*]}"
 seed=${BENCH_SEED:-20260916}
-effort=${BENCH_EFFORT:-}
-concurrent=${BENCH_CONCURRENT:-2}
+effort=${BENCH_EFFORT:-high}
 repeats=${BENCH_REPEATS:-5}
 vendor=${BENCH_VENDOR:-deepseek}
 tmult=${BENCH_TIMEOUT_MULT:-1.0}
@@ -35,7 +34,7 @@ export BENCH_MODEL=$model
 
 case $vendor in
   zai) port=8095 ;;
-  *) port=8096 ;;
+  *) port=8094 ;;
 esac
 export BENCH_PROXY=${BENCH_PROXY:-http://host.docker.internal:$port}
 
@@ -64,7 +63,7 @@ fi
   echo "effort ${effort:-default}"
   echo "repeats $repeats"
   echo "timeout_mult $tmult"
-  echo "concurrent $concurrent"
+  echo "order lockstep"
   echo "harbor $(harbor --version)"
   echo "dataset_path $dataset"
   echo "dataset $got"
@@ -91,14 +90,13 @@ else
   mv "$root/jobs/$run/run.txt.new" "$root/jobs/$run/run.txt"
 fi
 cp "$root/tools/versions.txt" "$root/tools/manifest.sha256" "$root/harness.sh" "$tasks" "$root/jobs/$run/"
-python3 - "$tasks" "$seed" "$repeats" "${harnesses[@]}" > "$root/jobs/$run/order.txt" <<'EOF'
-import random, sys
-tasks = [line.strip() for line in open(sys.argv[1]) if line.strip()]
-pairs = [(task, harness, rep) for rep in range(1, int(sys.argv[3]) + 1) for task in tasks for harness in sys.argv[4:]]
-random.Random(int(sys.argv[2])).shuffle(pairs)
-for task, harness, rep in pairs:
-    print(task, harness, rep)
-EOF
+for rep in $(seq 1 "$repeats"); do
+  grep -v '^[[:space:]]*$' "$tasks" | while read -r task; do
+    for harness in "${harnesses[@]}"; do
+      echo "$task $harness $rep"
+    done
+  done
+done > "$root/jobs/$run/order.txt"
 
 mounts='[{"type":"bind","source":"'"$root"'/tools","target":"/opt/bench","read_only":true}]'
 trial() {
@@ -121,5 +119,12 @@ trial() {
 }
 export -f trial
 export root run effort mounts dataset model BENCH_PROVIDER BENCH_PROXY tmult
-xargs -P "$concurrent" -L 1 bash -c 'trial "$0" "$1" "$2"' < "$root/jobs/$run/order.txt"
+for rep in $(seq 1 "$repeats"); do
+  grep -v '^[[:space:]]*$' "$tasks" | while read -r task; do
+    for harness in "${harnesses[@]}"; do
+      trial "$task" "$harness" "$rep" &
+    done
+    wait
+  done
+done
 docker images --digests --format '{{.Repository}}:{{.Tag}} {{.Digest}}' | grep -F -f <(sed 's/^/\//; s/$/:/' "$tasks") | sort > "$root/jobs/$run/images.txt"

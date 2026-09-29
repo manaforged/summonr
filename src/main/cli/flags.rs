@@ -104,7 +104,7 @@ pub(super) const VALUES: [Valued; 11] = [
     Valued {
         option: "--effort",
         short: None,
-        expected: "none, low, medium, or high",
+        expected: "none, minimal, low, medium, high, xhigh, or max",
         set: |args, level| some(&mut args.effort, effort(&level)?),
     },
 ];
@@ -281,11 +281,8 @@ fn count<T: std::str::FromStr>(raw: &str, option: &str) -> Result<T> {
 }
 
 fn effort(level: &str) -> Result<summonr::Effort> {
-    summonr::Effort::parse(level).ok_or_else(|| {
-        Error::Config(format!(
-            "--effort takes none, low, medium, or high, not `{level}`"
-        ))
-    })
+    summonr::Effort::parse(level)
+        .ok_or_else(|| Error::Config(format!("--effort {}", summonr::Effort::rejects(level))))
 }
 
 fn resume(args: &mut Args, input: &mut Input) -> Result<()> {

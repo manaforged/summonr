@@ -13,7 +13,7 @@ pub(super) struct Slider {
     level: Signal<f32>,
 }
 
-#[expect(clippy::cast_precision_loss, reason = "four effort levels")]
+#[expect(clippy::cast_precision_loss, reason = "seven effort levels")]
 fn position(level: usize) -> f32 {
     level as f32
 }

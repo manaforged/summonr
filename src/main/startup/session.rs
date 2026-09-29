@@ -127,7 +127,11 @@ pub(super) fn build(
     }
     loop_.set_context_window(endpoint.context_window);
     loop_.set_compact_tokens(endpoint.compact_tokens);
-    loop_.set_effort(args.effort.or(endpoint.effort));
+    loop_.set_effort(
+        args.effort
+            .or(endpoint.effort)
+            .or_else(|| summonr::default_effort(&endpoint.name, &endpoint.model)),
+    );
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
     loop_.set_images(

@@ -2,6 +2,7 @@ mod head;
 mod tail;
 
 use super::*;
+use crate::provider::Spec;
 
 pub(super) struct Preset {
     pub(super) name: &'static str,
@@ -14,6 +15,7 @@ pub(super) struct Preset {
     pub(super) oauth: Option<fn() -> crate::config::OAuth>,
     pub(super) headers: &'static [(&'static str, &'static str)],
     pub(super) wire: Wire,
+    pub(super) reasoning: Spec,
     pub(super) context_window: Option<u32>,
     pub(super) opencode: bool,
     pub(super) prompt_cache_key: bool,

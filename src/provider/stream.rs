@@ -38,7 +38,7 @@ impl Client {
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        use super::wire::{Accumulate, Delta};
+        use super::wire::Accumulate;
 
         let body = self.request_body(request, true)?;
         let url = self.url_for::<W>(&request.model, true);
@@ -53,13 +53,7 @@ impl Client {
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let mut frames = super::wire::Frames::default();
         let mut state = W::Stream::new(&request.model);
-        let cut = |error: Error| match error {
-            Error::Provider(mut failure) => {
-                failure.partial_output = true;
-                Error::Provider(failure)
-            }
-            error => error,
-        };
+        let mut heard = std::time::Instant::now();
         while let Some(chunk) = bytes.next().await {
             let chunk = chunk.map_err(|error| {
                 cut(Error::provider(
@@ -70,41 +64,11 @@ impl Client {
             if let Some(sink) = &sink {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }
-            for frame in frames.push(&chunk, W::sentinel()).map_err(cut)? {
-                for delta in state.on(&frame).map_err(cut)? {
-                    match delta {
-                        Delta::Text(text) => {
-                            if request.emit_deltas
-                                && let Some(emit) = &self.on_delta
-                            {
-                                emit(&text);
-                            }
-                            partial.text.push_str(&text);
-                        }
-                        Delta::Thinking(text) => {
-                            if request.emit_deltas
-                                && let Some(emit) = &self.on_reasoning
-                            {
-                                emit(&text);
-                            }
-                            partial.reasoning.push_str(&text);
-                        }
-                        Delta::Call(name) => {
-                            if request.emit_deltas
-                                && let Some(emit) = &self.on_tool
-                            {
-                                emit(&name);
-                            }
-                        }
-                    }
-                    if partial.text.len() > PARTIAL_CAP || partial.reasoning.len() > PARTIAL_CAP {
-                        return Err(cut(Error::provider(
-                            ProviderFailureKind::Malformed,
-                            format!("streamed output exceeded {PARTIAL_CAP} bytes"),
-                        )));
-                    }
-                }
-            }
+            let parsed = frames.push(&chunk, W::sentinel()).map_err(cut)?;
+            let produced = self
+                .take(&mut state, &parsed, request, partial)
+                .map_err(cut)?;
+            self.heard(&mut heard, produced == 0).map_err(cut)?;
             if frames.ended() {
                 break;
             }
@@ -116,6 +80,83 @@ impl Client {
             )));
         }
         finish(state.finish()).map_err(cut)
+    }
+
+    fn take<S: super::wire::Accumulate>(
+        &self,
+        state: &mut S,
+        frames: &[String],
+        request: &CompletionRequest<'_>,
+        partial: &mut Partial,
+    ) -> Result<usize> {
+        let mut produced = 0;
+        for frame in frames {
+            for delta in state.on(frame)? {
+                self.apply(request, partial, delta)?;
+                produced += 1;
+            }
+        }
+        Ok(produced)
+    }
+
+    fn heard(&self, since: &mut std::time::Instant, silent: bool) -> Result<()> {
+        if !silent {
+            *since = std::time::Instant::now();
+            return Ok(());
+        }
+        let Some(idle) = self.idle.filter(|idle| since.elapsed() > *idle) else {
+            return Ok(());
+        };
+        Err(Error::provider(
+            ProviderFailureKind::Transport,
+            format!("stream produced no output for {} s", idle.as_secs()),
+        ))
+    }
+
+    fn apply(
+        &self,
+        request: &CompletionRequest<'_>,
+        partial: &mut Partial,
+        delta: super::wire::Delta,
+    ) -> Result<()> {
+        use super::wire::Delta;
+
+        let (emit, sink) = match delta {
+            Delta::Text(text) => (
+                self.on_delta.as_ref().map(|emit| (emit, text.clone())),
+                Some((&mut partial.text, text)),
+            ),
+            Delta::Thinking(text) => (
+                self.on_reasoning.as_ref().map(|emit| (emit, text.clone())),
+                Some((&mut partial.reasoning, text)),
+            ),
+            Delta::Call(name) => (self.on_tool.as_ref().map(|emit| (emit, name)), None),
+        };
+        if request.emit_deltas
+            && let Some((emit, text)) = emit
+        {
+            emit(&text);
+        }
+        if let Some((buffer, text)) = sink {
+            buffer.push_str(&text);
+        }
+        if partial.text.len() > PARTIAL_CAP || partial.reasoning.len() > PARTIAL_CAP {
+            return Err(Error::provider(
+                ProviderFailureKind::Malformed,
+                format!("streamed output exceeded {PARTIAL_CAP} bytes"),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn cut(error: Error) -> Error {
+    match error {
+        Error::Provider(mut failure) => {
+            failure.partial_output = true;
+            Error::Provider(failure)
+        }
+        error => error,
     }
 }
 

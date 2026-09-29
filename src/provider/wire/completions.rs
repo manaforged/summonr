@@ -3,10 +3,27 @@ use serde_json::{Value, json};
 
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
-    AssistantMessage, CompletionRequest, StopReason, ToolCall, Usage, stream::merge_call, think,
+    AssistantMessage, CompletionRequest, EffortField, Step, StopReason, ToolCall, Usage,
+    stream::merge_call, think,
 };
 
 pub(crate) struct Wire;
+
+fn reasoning(body: &mut Value, call: &CompletionRequest<'_>) {
+    let plan = call.reasoning.plan(&call.model);
+    match plan.step(call.effort) {
+        Step::Default => {}
+        Step::Level(level) => match plan.field {
+            EffortField::ReasoningEffort => body["reasoning_effort"] = json!(level.as_str()),
+            EffortField::ReasoningObject => body["reasoning"] = json!({"effort": level.as_str()}),
+        },
+        Step::Off(off) => {
+            if let Some((key, value)) = off.fragment() {
+                body[key] = value;
+            }
+        }
+    }
+}
 
 impl Chat for Wire {
     type Stream = Stream;
@@ -35,9 +52,7 @@ impl Chat for Wire {
         if stream {
             body["stream_options"] = json!({"include_usage": true});
         }
-        if let Some(effort) = call.effort {
-            body["reasoning_effort"] = json!(effort.as_str());
-        }
+        reasoning(&mut body, call);
         Ok(body)
     }
 

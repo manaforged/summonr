@@ -9,15 +9,19 @@ pub struct CompletionRequest<'a> {
     pub max_output_tokens: Option<u32>,
     pub emit_deltas: bool,
     pub effort: Option<Effort>,
+    pub(crate) reasoning: Reasoning,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
     None,
+    Minimal,
     Low,
     Medium,
     High,
+    XHigh,
+    Max,
 }
 
 impl<'de> Deserialize<'de> for Effort {
@@ -25,24 +29,39 @@ impl<'de> Deserialize<'de> for Effort {
         deserializer: D,
     ) -> std::result::Result<Self, D::Error> {
         let text = String::deserialize(deserializer)?;
-        Self::parse(&text).ok_or_else(|| {
-            serde::de::Error::custom(format!(
-                "effort takes none, low, medium, or high, not `{text}`"
-            ))
-        })
+        Self::parse(&text)
+            .ok_or_else(|| serde::de::Error::custom(format!("effort {}", Self::rejects(&text))))
     }
 }
 
 impl Effort {
-    pub const ALL: [Self; 4] = [Self::None, Self::Low, Self::Medium, Self::High];
+    pub const ALL: [Self; 7] = [
+        Self::None,
+        Self::Minimal,
+        Self::Low,
+        Self::Medium,
+        Self::High,
+        Self::XHigh,
+        Self::Max,
+    ];
+
+    #[must_use]
+    pub fn rejects(text: &str) -> String {
+        let names: Vec<&str> = Self::ALL.iter().map(|effort| effort.as_str()).collect();
+        let (last, rest) = names.split_last().unwrap_or((&"", &[]));
+        format!("takes {}, or {last}, not `{text}`", rest.join(", "))
+    }
 
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         match text.trim().to_ascii_lowercase().as_str() {
             "none" | "off" => Some(Self::None),
+            "minimal" => Some(Self::Minimal),
             "low" => Some(Self::Low),
             "medium" => Some(Self::Medium),
             "high" => Some(Self::High),
+            "xhigh" => Some(Self::XHigh),
+            "max" => Some(Self::Max),
             _ => None,
         }
     }
@@ -51,20 +70,35 @@ impl Effort {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
+            Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::XHigh => "xhigh",
+            Self::Max => "max",
         }
     }
 
     #[must_use]
     pub fn next(self) -> Self {
         match self {
-            Self::None => Self::Low,
+            Self::None => Self::Minimal,
+            Self::Minimal => Self::Low,
             Self::Low => Self::Medium,
             Self::Medium => Self::High,
-            Self::High => Self::None,
+            Self::High => Self::XHigh,
+            Self::XHigh => Self::Max,
+            Self::Max => Self::None,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn clamp(self, levels: &[Self]) -> Self {
+        levels
+            .iter()
+            .copied()
+            .min_by_key(|level| ((*level as u8).abs_diff(self as u8), *level))
+            .unwrap_or(self)
     }
 }
 
@@ -128,6 +162,7 @@ impl<'a> CompletionRequest<'a> {
             max_output_tokens,
             emit_deltas,
             effort,
+            reasoning: Reasoning::default(),
         }
     }
 

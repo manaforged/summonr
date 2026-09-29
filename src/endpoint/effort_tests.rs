@@ -1,0 +1,146 @@
+use serde_json::Value;
+
+use super::keys::builtin;
+use crate::provider::{Client, CompletionRequest, Effort, Message};
+
+fn body(name: &str, model: &str, effort: Option<Effort>) -> Value {
+    let mut endpoint = builtin(name).unwrap();
+    endpoint.model = model.to_string();
+    endpoint.api_key = Some("k".to_string());
+    let client = Client::connect(&endpoint).unwrap();
+    let messages = [Message::user("hi".to_string())];
+    let request = CompletionRequest::new(
+        "s".to_string(),
+        model.to_string(),
+        &messages,
+        &[],
+        Some(16_000),
+        false,
+        effort,
+    );
+    client.request_body(&request, false).unwrap()
+}
+
+#[test]
+fn deepseek_turns_thinking_off_with_its_switch_not_an_effort_value() {
+    let sent = body("deepseek", "deepseek-flash", Some(Effort::None));
+    assert_eq!(sent["thinking"]["type"], "disabled");
+    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+}
+
+#[test]
+fn deepseek_gets_only_a_level_it_documents() {
+    assert_eq!(
+        body("deepseek", "deepseek-flash", Some(Effort::Medium))["reasoning_effort"],
+        "low"
+    );
+    assert_eq!(
+        body("deepseek", "deepseek-flash", Some(Effort::Max))["reasoning_effort"],
+        "max"
+    );
+}
+
+#[test]
+fn glm_5_3_flash_clamps_to_its_three_levels_and_cannot_turn_thinking_off() {
+    assert_eq!(
+        body("zai", "glm-5.3-flash", Some(Effort::High))["reasoning_effort"],
+        "high"
+    );
+    let off = body("zai", "glm-5.3-flash", Some(Effort::None));
+    assert_eq!(off["reasoning_effort"], "low");
+    assert!(off.get("thinking").is_none(), "{off}");
+}
+
+#[test]
+fn openrouter_sends_effort_inside_a_reasoning_object() {
+    let sent = body("openrouter", "openai/gpt-5.5", Some(Effort::XHigh));
+    assert_eq!(sent["reasoning"]["effort"], "xhigh");
+    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+}
+
+#[test]
+fn grok_never_gets_none() {
+    assert_eq!(
+        body("grok", "grok-4.5", Some(Effort::None))["reasoning_effort"],
+        "low"
+    );
+}
+
+#[test]
+fn anthropic_levels_follow_the_model() {
+    let opus = body("anthropic", "claude-opus-4-8", Some(Effort::XHigh));
+    assert_eq!(opus["output_config"]["effort"], "xhigh");
+    let older = body("anthropic", "claude-opus-4-6", Some(Effort::XHigh));
+    assert_eq!(older["output_config"]["effort"], "high");
+}
+
+#[test]
+fn a_model_without_reasoning_gets_no_effort_field() {
+    let sent = body("openai", "gpt-4o", Some(Effort::High));
+    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+    assert!(sent.get("reasoning").is_none(), "{sent}");
+}
+
+#[test]
+fn gemini_3_pro_gets_one_of_its_two_levels() {
+    let sent = body("gemini", "gemini-3-pro-preview", Some(Effort::Medium));
+    assert_eq!(
+        sent["generationConfig"]["thinkingConfig"]["thinkingLevel"],
+        "low"
+    );
+}
+
+fn replayed_reasoning(name: &str, model: &str) -> Value {
+    let mut endpoint = builtin(name).unwrap();
+    endpoint.model = model.to_string();
+    endpoint.api_key = Some("k".to_string());
+    let client = Client::connect(&endpoint).unwrap();
+    let assistant = Message {
+        role: crate::provider::Role::Assistant,
+        content: "checking".to_string(),
+        reasoning: Some("my earlier chain of thought".to_string()),
+        ..Message::user(String::new())
+    };
+    let messages = [
+        Message::user("hi".to_string()),
+        assistant,
+        Message::user("go on".to_string()),
+    ];
+    let request = CompletionRequest::new(
+        "s".to_string(),
+        model.to_string(),
+        &messages,
+        &[],
+        Some(16_000),
+        false,
+        None,
+    );
+    let body = client.request_body(&request, false).unwrap();
+    body["messages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|message| message["role"] == "assistant")
+        .unwrap()["reasoning_content"]
+        .clone()
+}
+
+#[test]
+fn deepseek_and_glm_get_their_earlier_reasoning_back() {
+    assert_eq!(
+        replayed_reasoning("deepseek", "deepseek-flash"),
+        "my earlier chain of thought"
+    );
+    assert_eq!(
+        replayed_reasoning("zai", "glm-5.3-flash"),
+        "my earlier chain of thought"
+    );
+}
+
+#[test]
+fn a_vendor_that_does_not_ask_for_it_gets_no_replayed_reasoning() {
+    assert_eq!(
+        replayed_reasoning("groq", "openai/gpt-oss-120b"),
+        Value::Null
+    );
+}

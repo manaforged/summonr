@@ -28,6 +28,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
         api_key: Some("k".to_string()),
         source: None,
+        reasoning: crate::provider::Reasoning::default(),
         oauth: None,
         body: None,
         context_window: None,

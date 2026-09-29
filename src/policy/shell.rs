@@ -66,9 +66,8 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                     let name = bare
                         .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
                         .to_ascii_lowercase();
-                    shell(&name)
-                        || word.starts_with('`')
-                        || (interpreter(&name) && reads_stdin(&words[at + 1..]))
+                    word.starts_with('`')
+                        || ((shell(&name) || interpreter(&name)) && reads_stdin(&words[at + 1..]))
                 })
         })
 }
@@ -110,11 +109,38 @@ pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
         || runs_substitution(segments)
         || folded.contains("mkfs")
         || folded.contains(":(){ :|:& };:")
-        || folded.starts_with("sudo ")
-        || folded.contains(" sudo ")
+        || escalates(command)
         || powers_off(segments)
         || folded.contains("chmod -r 777 /")
         || (folded.contains("dd if=") && folded.contains("of=/dev/"))
+}
+
+fn escalates(command: &str) -> bool {
+    !running_as_root()
+        && unquoted(command, &["&&", "||", "|", ";", "\n", "&"])
+            .iter()
+            .any(|segment| {
+                segment
+                    .split_whitespace()
+                    .map(|word| word.rsplit('/').next().unwrap_or(word))
+                    .find(|word| {
+                        !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
+                            || matches!(*word, "sudo" | "doas")
+                    })
+                    .is_some_and(|word| matches!(word, "sudo" | "doas"))
+            })
+}
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no effective-uid query")]
+fn running_as_root() -> bool {
+    // SAFETY: geteuid has no preconditions and cannot fail.
+    unsafe { libc::geteuid() == 0 }
+}
+
+#[cfg(not(unix))]
+fn running_as_root() -> bool {
+    false
 }
 
 pub(super) fn powers_off(segments: &[String]) -> bool {

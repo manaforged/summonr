@@ -1,5 +1,5 @@
 use super::hazards::{
-    CLUSTER, DESTROY, FIND, FIND_READ, FIND_WRITE, GIT, GIT_READS, IN_PLACE, PRUNE, RM, SED, SHRED,
+    CLUSTER, DESTROY, FIND, FIND_READ, FIND_WRITE, GIT, GIT_READS, IN_PLACE, PRUNE, RM, SHRED,
 };
 use super::{Clip, Cwd, Hazard, Native, Read, Verb, Write};
 
@@ -166,7 +166,6 @@ pub(super) const VERBS: &[Verb] = &[
         read: Read::Unless(IN_PLACE),
         write: Write::When(IN_PLACE),
         native: Some(Native::Sed),
-        hazard: Hazard::Args(SED),
         ..BASE
     },
     Verb {

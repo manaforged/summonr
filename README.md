@@ -79,7 +79,7 @@ summonr anthropic --goal "make cargo test pass"
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
-- Child sessions are on by default (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
+- Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
 - The `mcp` module in `/settings`, then a `[mcp.NAME]` table in `~/.summonr/config.toml`, connects an MCP server.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
@@ -122,11 +122,11 @@ operator's global rules files, which `grade.sh` now keeps out.
 
 Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows. The graded 16-task suite with deterministic verifiers — its full scorecard and limits — lives in [`BENCHMARKS.md`](BENCHMARKS.md).
 
-Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `edit`, `write`, `run_command`, `todo`), plus the modules you turned on. `mcp` is off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
+Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. `mcp` is off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
 
 ## Limits
 
-- Under `--sandbox` or `--strict`, `policy.toml` rules are hard refusals: built-in denies cover force pushes, `sudo`, and `rm -rf /`. Without containment a reviewer model judges risky commands — allow, block, or ask you — and `-p` never asks, so the reviewer decides.
+- Under `--sandbox` or `--strict`, `policy.toml` rules are hard refusals: built-in denies cover force pushes, `sudo`, and `rm -rf /`. Without containment those commands ask you to confirm, and `-p` never runs them.
 - Six identical results from the same call end the turn. The terminal UI asks first.
 - The `mcp` module is off by default. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` waits for approval.
 - A project can turn a module off. A project can't turn a module on.
@@ -149,6 +149,39 @@ Where the savings come from: the first-round prefix is one short system paragrap
 | [Contributing](CONTRIBUTING.md) | Build, check, and test commands, and where each kind of change goes. |
 
 The [changelog](CHANGELOG.md) lists the changes in each release. Example configs: [`config.example.toml`](config.example.toml) and [`policy.example.toml`](policy.example.toml).
+
+## API
+
+<!-- truesight:surface summonr -->
+
+870 public items (78 types, 110 functions, 131 methods, 340 fields, 195 variants, 16 constants) at 870 paths; 0 are re-export aliases. 413 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
+
+| Module | Items | Types | Functions | Methods | Aliases |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `summonr` | 437 | 37 | 49 | 88 | 0 |
+| `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
+| `summonr::askpass` | 8 | 2 | 5 | 0 | 0 |
+| `summonr::catalog` | 39 | 3 | 7 | 11 | 0 |
+| `summonr::child` | 5 | 1 | 1 | 1 | 0 |
+| `summonr::classify` | 48 | 5 | 4 | 5 | 0 |
+| `summonr::classify::digest` | 1 | 0 | 1 | 0 | 0 |
+| `summonr::classify::eval` | 27 | 4 | 5 | 2 | 0 |
+| `summonr::classify::patch` | 6 | 1 | 3 | 0 | 0 |
+| `summonr::classify::sets` | 6 | 0 | 5 | 0 | 0 |
+| `summonr::classify::sweep` | 3 | 0 | 3 | 0 | 0 |
+| `summonr::diff` | 15 | 2 | 4 | 3 | 0 |
+| `summonr::limits` | 1 | 0 | 0 | 0 | 0 |
+| `summonr::mail` | 9 | 1 | 0 | 0 | 0 |
+| `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
+| `summonr::modules` | 11 | 2 | 2 | 3 | 0 |
+| `summonr::prefs` | 61 | 6 | 4 | 13 | 0 |
+| `summonr::secret` | 11 | 1 | 3 | 1 | 0 |
+| `summonr::splash` | 14 | 1 | 3 | 0 | 0 |
+| `summonr::steps` | 16 | 3 | 4 | 0 | 0 |
+| `summonr::tui` | 129 | 6 | 2 | 1 | 0 |
+| `summonr::workflow` | 21 | 3 | 3 | 3 | 0 |
+
+<!-- /truesight -->
 
 ## License
 

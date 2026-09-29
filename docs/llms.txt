@@ -1,0 +1,39 @@
+# summonr
+
+> Public API reference that truesight generates from the compiler's rustdoc output, except the task names and calls, which come from the task file.
+
+## summonr-auth 0.1.0-rc.1
+
+- [Every public item, one per line](reference/summonr-auth/api.txt): 111 lines
+- [API overview](reference/summonr-auth/index.html): tasks, modules, features, and examples
+- [API changes by release](reference/summonr-auth/changes.html)
+- [summonr_auth](reference/summonr-auth/summonr_auth.html): 66 items
+- [summonr_auth::open](reference/summonr-auth/summonr_auth-open.html): 2 items
+
+## summonr 0.1.0-rc.1
+
+- [Every public item, one per line](reference/summonr/api.txt): 1336 lines
+- [API overview](reference/summonr/index.html): tasks, modules, features, and examples
+- [API changes by release](reference/summonr/changes.html)
+- [summonr](reference/summonr/summonr.html): 437 items
+- [summonr::acp](reference/summonr/summonr-acp.html): 1 items
+- [summonr::askpass](reference/summonr/summonr-askpass.html): 8 items
+- [summonr::catalog](reference/summonr/summonr-catalog.html): 39 items
+- [summonr::child](reference/summonr/summonr-child.html): 5 items
+- [summonr::classify](reference/summonr/summonr-classify.html): 48 items
+- [summonr::classify::digest](reference/summonr/summonr-classify-digest.html): 1 items
+- [summonr::classify::eval](reference/summonr/summonr-classify-eval.html): 27 items
+- [summonr::classify::patch](reference/summonr/summonr-classify-patch.html): 6 items
+- [summonr::classify::sets](reference/summonr/summonr-classify-sets.html): 6 items
+- [summonr::classify::sweep](reference/summonr/summonr-classify-sweep.html): 3 items
+- [summonr::diff](reference/summonr/summonr-diff.html): 15 items
+- [summonr::limits](reference/summonr/summonr-limits.html): 1 items
+- [summonr::mail](reference/summonr/summonr-mail.html): 9 items
+- [summonr::mail::cli](reference/summonr/summonr-mail-cli.html): 1 items
+- [summonr::modules](reference/summonr/summonr-modules.html): 11 items
+- [summonr::prefs](reference/summonr/summonr-prefs.html): 61 items
+- [summonr::secret](reference/summonr/summonr-secret.html): 11 items
+- [summonr::splash](reference/summonr/summonr-splash.html): 14 items
+- [summonr::steps](reference/summonr/summonr-steps.html): 16 items
+- [summonr::tui](reference/summonr/summonr-tui.html): 129 items
+- [summonr::workflow](reference/summonr/summonr-workflow.html): 21 items

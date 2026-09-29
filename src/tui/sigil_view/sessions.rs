@@ -3,10 +3,10 @@ use std::path::Path;
 
 use crate::session::SessionInfo;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, label, signal,
-    text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
+    virtual_list,
 };
-use sigil::prelude::{NodeBuilder, Signal};
+use sigil::prelude::{NodeBuilder, NodeStyleExt, Signal};
 
 use super::app::App;
 use super::canvas;
@@ -293,7 +293,13 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
             let rows = picker.rows();
             let selected = picker.selected.get().min(rows.len().saturating_sub(1));
             if rows.is_empty() {
-                return vec![container().child(label(picker.empty()))];
+                return vec![
+                    container().child(
+                        sigil::kernel::text(picker.empty())
+                            .nowrap()
+                            .class(sigil::style::Token::OnSurface.text()),
+                    ),
+                ];
             }
             let source = paint.clone();
             let band = canvas::overlay_list_row();

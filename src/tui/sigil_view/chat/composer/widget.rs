@@ -4,11 +4,21 @@ use std::rc::Rc;
 use super::{App, Model, composer_hint, suggest};
 use crate::tui::sigil_view::canvas::GUTTER;
 use sigil::events::NodeEventsExt;
-use sigil::prelude::{
-    AlignItems, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Overflow,
-    Position, Tone, classes, container, derived_eq, divider_horizontal, label, node, notice_band,
-    request_focus,
-};
+use sigil::layout::Overflow;
+use sigil::layout::Position;
+use sigil::prelude::AlignItems;
+use sigil::prelude::Cx;
+use sigil::prelude::IntoNode;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Tone;
+use sigil::prelude::container;
+use sigil::prelude::divider_horizontal;
+use sigil::prelude::node;
+use sigil::prelude::notice_band;
+use sigil::prelude::request_focus;
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,
@@ -48,7 +58,12 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                         .align_items(AlignItems::Start)
                         .gap(8.0),
                 )
-                .child(label("❯").class(classes!("text-xs text-gray-12")))
+                .child(
+                    sigil::kernel::text("❯")
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs text-gray-12"),
+                )
                 .child(
                     container()
                         .layout(
@@ -87,7 +102,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                         .padding_x(8.0)
                         .gap(0.0),
                 )
-                .class(classes!("bg-surface"))
+                .class("bg-surface")
                 .child(header_row(app.clone()))
                 .child(editor_area)
                 .child(hint_row(app.clone(), inner_width)),
@@ -128,7 +143,7 @@ fn model_text(model: &Model) -> String {
 
 fn header_row(app: App) -> NodeBuilder {
     let update = app.clone();
-    let labels = derived_eq(move || {
+    let labels = sigil::reactive::derived(move || {
         let model = update.model.get();
         (mode_text(&model), model_text(&model))
     });
@@ -148,7 +163,7 @@ fn header_row(app: App) -> NodeBuilder {
 
 fn hint_row(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let hint = derived_eq(move || {
+    let hint = sigil::reactive::derived(move || {
         let select = update.select.get();
         let model = update.model.get();
         let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
@@ -177,7 +192,12 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
         .children_reactive(move || {
             vec![
                 node(rule()),
-                node(label(hint.get()).class(classes!("text-xs text-gray-11"))),
+                node(
+                    sigil::kernel::text(hint.get())
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs text-gray-11"),
+                ),
                 node(rule()),
             ]
         })
@@ -185,19 +205,26 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
 
 fn mode_label(mode: ModeText) -> NodeBuilder {
     let (text, class) = mode;
-    let title = label(text);
+    let title = sigil::kernel::text(text)
+        .nowrap()
+        .class(sigil::style::Token::OnSurface.text());
     let title = if class == 0 {
-        title.class(classes!("text-xs text-accent"))
+        title.class("text-xs text-accent")
     } else if class == 1 {
-        title.class(classes!("text-xs text-warn-11"))
+        title.class("text-xs text-warn-11")
     } else if class == 2 {
-        title.class(classes!("text-xs text-error-11"))
+        title.class("text-xs text-error-11")
     } else {
-        title.class(classes!("text-xs text-success-11"))
+        title.class("text-xs text-success-11")
     };
     container().child(title)
 }
 
 fn model_label(model: String) -> NodeBuilder {
-    container().child(label(model).class(classes!("text-xs text-gray-11")))
+    container().child(
+        sigil::kernel::text(model)
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class("text-xs text-gray-11"),
+    )
 }

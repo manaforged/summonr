@@ -1,7 +1,8 @@
 use std::cell::Cell;
 use std::time::Duration;
 
-use sigil::prelude::{defer, on_message_or_close};
+use sigil::reactive::defer;
+use sigil::tasks::on_message_or_close;
 
 use tokio::task::JoinHandle;
 

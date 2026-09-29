@@ -1,4 +1,4 @@
-use sigil::prelude::{derived_eq, effect, interval};
+use sigil::prelude::{effect, interval};
 
 use super::*;
 use crate::limits::{ANIMATION, BEAT, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
@@ -32,9 +32,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn animate(&self) {
         let app = self.clone();
-        let busy = derived_eq(move || app.model.with(|model| model.busy_since.is_some()));
+        let busy =
+            sigil::reactive::derived(move || app.model.with(|model| model.busy_since.is_some()));
         let app = self.clone();
-        let splash = derived_eq(move || {
+        let splash = sigil::reactive::derived(move || {
             (app.splash.get() && app.model.with(|model| model.prefs.animations))
                 || !app.splash_revealed.get()
         });

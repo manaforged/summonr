@@ -87,7 +87,8 @@ impl Client {
                 idle_timeout,
             },
         )?;
-        client.keep_reasoning = endpoint.keep_reasoning;
+        client.keep_reasoning =
+            endpoint.keep_reasoning || wire::traits::traits(&endpoint.model).replay;
         client.name.clone_from(&endpoint.name);
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)

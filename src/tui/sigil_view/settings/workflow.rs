@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    button, classes, container, label, text_edit, virtual_list,
+    button, container, text_edit, virtual_list,
 };
 
 use super::prelude::*;
@@ -65,8 +65,12 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
                 .submit(move |_| save.commit_workflow())
                 .height(canvas::overlay_field()),
         ),
-        container()
-            .child(label("enter saves · esc goes back").class(classes!("text-xs text-gray-11"))),
+        container().child(
+            sigil::kernel::text("enter saves · esc goes back")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        ),
     ]
 }
 
@@ -132,9 +136,19 @@ fn saved(app: &App) -> NodeBuilder {
                 .gap(canvas::overlay_gap())
                 .padding_x(8.0),
         )
-        .child(label("saved:").class(classes!("text-xs text-gray-11")));
+        .child(
+            sigil::kernel::text("saved:")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     if names.is_empty() {
-        row = row.child(label("none").class(classes!("text-xs text-gray-11")));
+        row = row.child(
+            sigil::kernel::text("none")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
         return row;
     }
     for name in names {

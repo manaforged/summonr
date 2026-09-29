@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    classes, container, label, virtual_list,
+    container, virtual_list,
 };
 
 use super::prelude::*;
@@ -52,7 +52,12 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                 let mut items: Vec<NodeBuilder> = Vec::new();
                 if !note.is_empty() {
                     items.push(
-                        container().child(label(note).class(classes!("text-xs text-error-11"))),
+                        container().child(
+                            sigil::kernel::text(note)
+                                .nowrap()
+                                .class(sigil::style::Token::OnSurface.text())
+                                .class("text-xs text-error-11"),
+                        ),
                     );
                 }
                 items.push(

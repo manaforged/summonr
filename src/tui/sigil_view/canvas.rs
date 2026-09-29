@@ -2,9 +2,13 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use sigil::app::cell_width;
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, ScrollDelta, Tone, container,
-};
+use sigil::events::ScrollDelta;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::Rgba8;
+use sigil::prelude::Tone;
+use sigil::prelude::container;
 use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {

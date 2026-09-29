@@ -1,9 +1,26 @@
-use sigil::prelude::{
-    AlignItems, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, ObjectFit, Overflow, Tone, WidgetLayoutExt, badge, button,
-    classes, container, icon_button, image, label, list_row, node, request_focus, spacer,
-    text_edit,
-};
+use sigil::kernel::ObjectFit;
+use sigil::layout::Overflow;
+use sigil::prelude::AlignItems;
+use sigil::prelude::Cx;
+use sigil::prelude::IntoNode;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::MouseButton;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Tone;
+use sigil::prelude::WidgetLayoutExt;
+use sigil::prelude::badge;
+use sigil::prelude::button;
+use sigil::prelude::container;
+use sigil::prelude::icon_button;
+use sigil::prelude::image;
+use sigil::prelude::list_row;
+use sigil::prelude::node;
+use sigil::prelude::request_focus;
+use sigil::prelude::spacer;
+use sigil::prelude::text_edit;
 
 use super::{App, FileRow, Pane, diff, jobs, peers, todos};
 
@@ -19,7 +36,7 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
                 .min_size(0.0, 0.0)
                 .overflow_y(Overflow::Scroll),
         )
-        .class(classes!("bg-gray-2 border-l border-gray-6"));
+        .class("bg-gray-2 border-l border-gray-6");
     column = match pane {
         Pane::Diff => diff::diff(app, column),
         Pane::Files => files(app, column),
@@ -41,9 +58,19 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 .align_items(AlignItems::Center)
                 .gap(8.0),
         )
-        .child(label(title).class(classes!("text-sm font-medium text-gray-12")))
+        .child(
+            sigil::kernel::text(title)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-sm font-medium text-gray-12"),
+        )
         .child(spacer())
-        .child(label(note).class(classes!("text-xs text-gray-11")))
+        .child(
+            sigil::kernel::text(note)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        )
         .child(close(app.clone()))
 }
 
@@ -65,8 +92,10 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let rows: Vec<FileRow> = app.file_rows();
     if rows.is_empty() {
         return column.child(
-            label("No files in this folder yet.".to_string())
-                .class(classes!("text-sm text-gray-11")),
+            sigil::kernel::text("No files in this folder yet.".to_string())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-sm text-gray-11"),
         );
     }
     for (index, row) in rows.into_iter().enumerate() {
@@ -115,8 +144,10 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     if trees.is_empty() {
         return column.child(
-            label("no worktrees — summonr --worktree, --goal, or --steps")
-                .class(classes!("text-xs text-gray-11")),
+            sigil::kernel::text("no worktrees — summonr --worktree, --goal, or --steps")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
         );
     }
     for (index, row) in trees.into_iter().enumerate() {
@@ -150,7 +181,12 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
 fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
     let Some(view) = model.view.as_ref() else {
-        return column.child(label("no file open").class(classes!("text-xs text-gray-11")));
+        return column.child(
+            sigil::kernel::text("no file open")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     };
     let editing = app.view_edit.peek();
     let edit = app.clone();
@@ -172,7 +208,10 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                         .overflow_x(Overflow::Hidden),
                 )
                 .child(
-                    label(view.path.clone()).class(classes!("text-sm font-medium text-gray-12")),
+                    sigil::kernel::text(view.path.clone())
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-sm font-medium text-gray-12"),
                 ),
         );
     if editing {
@@ -197,7 +236,7 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                             .grow(1.0)
                             .min_size(0.0, 0.0),
                     )
-                    .class(classes!("font-mono text-xs bg-gray-1")),
+                    .class("font-mono text-xs bg-gray-1"),
             );
             request_focus(id);
             id
@@ -211,7 +250,7 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     };
     let mut body = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-        .class(classes!("rounded-md bg-gray-1"));
+        .class("rounded-md bg-gray-1");
     for (index, line) in text.lines().enumerate() {
         let number = index + 1;
         let mut row = container().layout(
@@ -222,16 +261,23 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .gap(10.0),
         );
         if added(number) {
-            row = row.class(classes!("bg-success-3"));
+            row = row.class("bg-success-3");
         }
         body = body.child(
-            row.child(label(number.to_string()).class(classes!("text-xs text-gray-11")))
-                .child(
-                    label(line.replace('\t', "    "))
-                        .ellipsize()
-                        .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                        .class(classes!("text-xs font-mono text-gray-12")),
-                ),
+            row.child(
+                sigil::kernel::text(number.to_string())
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs text-gray-11"),
+            )
+            .child(
+                sigil::kernel::text(line.replace('\t', "    "))
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .ellipsize()
+                    .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
+                    .class("text-xs font-mono text-gray-12"),
+            ),
         );
     }
     column = column.child(body);

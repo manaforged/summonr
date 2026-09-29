@@ -229,7 +229,13 @@ pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
                         .height(metrics().h),
                 )
                 .style(surface)
-                .child(label(text).class(class).style(ink)),
+                .child(
+                    sigil::kernel::text(text)
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class(class)
+                        .style(ink),
+                ),
         );
         start = end;
     }

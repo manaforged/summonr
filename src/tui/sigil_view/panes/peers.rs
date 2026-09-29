@@ -1,5 +1,5 @@
 use sigil::prelude::{
-    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, classes, label, list_row,
+    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, list_row,
 };
 
 use super::App;
@@ -14,8 +14,12 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
         model.peers.len().to_string(),
     ));
     if model.peers.is_empty() {
-        return column
-            .child(label("no other live sessions").class(classes!("text-xs text-gray-11")));
+        return column.child(
+            sigil::kernel::text("no other live sessions")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     }
     for (index, agent) in model.peers.iter().enumerate() {
         let menu = app.clone();

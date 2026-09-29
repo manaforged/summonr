@@ -1,4 +1,7 @@
-use sigil::prelude::{ListColumn, ListRowSlots, NodeBuilder, RowTone};
+use sigil::prelude::ListRowSlots;
+use sigil::prelude::NodeBuilder;
+use sigil::widgets::ListColumn;
+use sigil::widgets::RowTone;
 
 use super::super::canvas;
 use super::super::prelude::*;

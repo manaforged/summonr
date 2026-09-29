@@ -53,7 +53,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .gap(12.0)
                         .min_size(0.0, 120.0),
                 )
-                .class(classes!("bg-gray-3"))
+                .class("bg-gray-3")
                 .child(move |cx: &mut Cx| {
                     let id = cx.add(
                         text_edit(value)
@@ -70,7 +70,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                             })
                             .submit(move |_| submit.submit())
                             .layout(LayoutStyle::flex_column().fill_width().height(96.0))
-                            .class(classes!("text-sm text-gray-12")),
+                            .class("text-sm text-gray-12"),
                     );
                     mount.set(Some(id));
                     id
@@ -84,11 +84,11 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                                 .gap(8.0),
                         )
                         .child(
-                            text_live(move || {
+                            sigil::kernel::text(move || {
                                 drop(model.header.get());
                                 model.model.get().snapshot.model.clone()
                             })
-                            .class(classes!("text-sm text-gray-12")),
+                            .class("text-sm text-gray-12"),
                         )
                         .child(spacer())
                         .child(button("Send").activate(move || send.submit())),

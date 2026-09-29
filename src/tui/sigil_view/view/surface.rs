@@ -1,5 +1,8 @@
 use super::*;
-use sigil::prelude::{Cx, Dimension, request_focus, untrack};
+use sigil::layout::Dimension;
+use sigil::prelude::Cx;
+use sigil::prelude::request_focus;
+use sigil::reactive::untrack;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let (cols, _rows) = app.viewport.get();

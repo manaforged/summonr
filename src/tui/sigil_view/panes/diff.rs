@@ -1,7 +1,7 @@
 use sigil::prelude::{
     AlignItems, Cx, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, Tone, WidgetLayoutExt, badge, button, classes, container, label, list_row, node,
-    request_focus, spacer, text_edit,
+    NodeStyleExt, Tone, WidgetLayoutExt, badge, button, container, list_row, node, request_focus,
+    spacer, text_edit,
 };
 
 use super::App;
@@ -21,12 +21,22 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 back.pane_back();
             }));
         let Some((_, result)) = model.patch.as_ref().filter(|(seen, _)| *seen == path) else {
-            return column.child(label("loading…").class(classes!("text-xs text-gray-11")));
+            return column.child(
+                sigil::kernel::text("loading…")
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs text-gray-11"),
+            );
         };
         let text = match result {
             Ok(text) => text,
             Err(error) => {
-                return column.child(label(error.clone()).class(classes!("text-xs text-error-11")));
+                return column.child(
+                    sigil::kernel::text(error.clone())
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs text-error-11"),
+                );
             }
         };
         let hunks = app.hunks();
@@ -42,7 +52,12 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             "{} hunks · enter accepts · r reverts · n notes",
             hunks.len()
         );
-        column = column.child(label(notes).class(classes!("text-xs text-gray-11")));
+        column = column.child(
+            sigil::kernel::text(notes)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
         drop(model);
         for (index, hunk) in hunks.iter().enumerate() {
             column = column.child(hunk_view(&app, &path, index, hunk, index == cursor));
@@ -53,7 +68,12 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
     drop(model);
     let stats = app.diff_stats();
     if stats.is_empty() {
-        return column.child(label("no changes").class(classes!("text-xs text-gray-11")));
+        return column.child(
+            sigil::kernel::text("no changes")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     }
     for (index, stat) in stats.into_iter().enumerate() {
         let open = app.clone();
@@ -136,19 +156,25 @@ fn hunk_view(
                     .caret_position(edit.note_caret)
                     .submit(move |text| commit.note_commit(text))
                     .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 20.0))
-                    .class(classes!("font-mono text-xs bg-gray-1 rounded-md")),
+                    .class("font-mono text-xs bg-gray-1 rounded-md"),
             );
             request_focus(id);
             id
         }));
         card = card.child(
-            label("ctrl+enter saves · esc cancels · sent with your next prompt".to_string())
-                .class(classes!("text-xs text-gray-11")),
+            sigil::kernel::text(
+                "ctrl+enter saves · esc cancels · sent with your next prompt".to_string(),
+            )
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class("text-xs text-gray-11"),
         );
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
-            label(format!("note: {comment}"))
-                .class(classes!("text-xs text-info-11"))
+            sigil::kernel::text(format!("note: {comment}"))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-info-11")
                 .layout(LayoutStyle::block().fill_width().padding_x(8.0)),
         );
     }

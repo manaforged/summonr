@@ -4,17 +4,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use summonr::{Client, Endpoint, Event, Loop, Result, finish_worktree, splash, workflow};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::commands::workspace;
 use super::session::{apply_workflow, build, isolate, route_checks, workflow_name};
 use crate::cli::Args;
 use crate::{diagnostics, modes};
 
-type Ui = (
-    Option<UnboundedSender<summonr::tui::Msg>>,
-    Option<UnboundedReceiver<summonr::tui::Msg>>,
-);
+type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
 enum Launch {
     Done(i32),
@@ -47,9 +43,17 @@ async fn launch_once(
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
     let endpoint = if use_tui(args) {
-        summonr::resolve_endpoint_unauthed(args.endpoint.as_deref(), args.model.as_deref())?
+        summonr::resolve_endpoint(
+            args.endpoint.as_deref(),
+            args.model.as_deref(),
+            summonr::Need::Model,
+        )?
     } else {
-        summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?
+        summonr::resolve_endpoint(
+            args.endpoint.as_deref(),
+            args.model.as_deref(),
+            summonr::Need::Seat,
+        )?
     };
     if let Some(name) = args.endpoint.as_deref() {
         summonr::prefs::set_last_endpoint(name);
@@ -89,7 +93,7 @@ async fn launch_once(
                     Ok(_) | Err(_) => return,
                 }
             };
-            drop(ui.send(summonr::tui::Msg::OpenLogin(note)));
+            ui.open_login(note);
         }));
     }
     let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
@@ -105,6 +109,9 @@ async fn launch_once(
         summonr::check_commands(&workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
+    if endpoint.images.is_none() {
+        drop(summonr::catalog::refresh_registry().await);
+    }
     let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(&endpoint, |fallback| {
         self::provider(fallback, ui.0.as_ref(), args.json)
@@ -258,7 +265,7 @@ async fn dispatch(
         if !args.gui {
             let secrets = ui_tx.clone();
             summonr::askpass::start(move |request| {
-                drop(secrets.send(summonr::tui::Msg::Secret(request)));
+                secrets.secret(request);
             })?;
         }
         summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
@@ -272,8 +279,8 @@ async fn dispatch(
 
 fn channels(tui: bool) -> Ui {
     if tui {
-        let (tx, rx) = unbounded_channel();
-        (Some(tx), Some(rx))
+        let (ui, inbox) = summonr::tui::channel();
+        (Some(ui), Some(inbox))
     } else {
         (None, None)
     }
@@ -281,22 +288,22 @@ fn channels(tui: bool) -> Ui {
 
 pub(super) fn provider(
     endpoint: &Endpoint,
-    ui: Option<&UnboundedSender<summonr::tui::Msg>>,
+    ui: Option<&summonr::tui::Ui>,
     json: bool,
 ) -> Result<Client> {
     let mut provider = Client::connect(endpoint)?;
     if let Some(ui) = ui {
         let text = ui.clone();
         provider = provider.on_delta(move |delta| {
-            drop(text.send(summonr::tui::Msg::Event(Event::Delta {
+            text.event(Event::Delta {
                 text: delta.to_string(),
-            })));
+            });
         });
         let reasoning = ui.clone();
         provider = provider.on_reasoning(move |delta| {
-            drop(reasoning.send(summonr::tui::Msg::Event(Event::Reasoning {
+            reasoning.event(Event::Reasoning {
                 text: delta.to_string(),
-            })));
+            });
         });
     } else if json {
         provider = provider.on_delta(|text| {

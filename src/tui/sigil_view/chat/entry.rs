@@ -1,9 +1,27 @@
-use sigil::prelude::{
-    AlignItems, DiffBuilder, DiffLayout as SigilDiffLayout, ImageSource, IntoNode,
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt,
-    ObjectFit, Overflow, PointerEvent, WidgetLayoutExt, chart, classes, container, diff,
-    icon_button, image, label, markdown, markdown_inline, signal, text,
-};
+use sigil::kernel::ObjectFit;
+use sigil::layout::Overflow;
+use sigil::prelude::AlignItems;
+use sigil::prelude::DiffLayout as SigilDiffLayout;
+use sigil::prelude::ImageSource;
+use sigil::prelude::IntoNode;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::MouseButton;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::PointerEvent;
+use sigil::prelude::WidgetLayoutExt;
+use sigil::prelude::chart;
+use sigil::prelude::container;
+use sigil::prelude::diff;
+use sigil::prelude::icon_button;
+use sigil::prelude::image;
+use sigil::prelude::markdown;
+use sigil::prelude::markdown_inline;
+use sigil::prelude::signal;
+use sigil::prelude::text;
+use sigil::widgets::DiffBuilder;
 
 use super::{App, Call, Entry};
 use crate::prefs::{DiffLayout, Prefs, Visibility};
@@ -72,8 +90,8 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
                     .padding_x(16.0)
                     .min_size(0.0, 0.0),
             )
-            .class(classes!("bg-gray-5"))
-            .child(text(format!("▌ {body}")).class(classes!("text-sm text-gray-12"))),
+            .class("bg-gray-5")
+            .child(text(format!("▌ {body}")).class("text-sm text-gray-12")),
         Entry::Assistant { text: body, .. } => assistant(body, app),
         Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
         Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
@@ -82,9 +100,9 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
             prose(&format!("{from}: {body}"), "text-sm text-info-11")
         }
         Entry::Aborted(reason) | Entry::Error(reason) => {
-            wrap(text(reason).class(classes!("text-xs text-error-11")))
+            wrap(text(reason).class("text-xs text-error-11"))
         }
-        Entry::System(body) => wrap(text(body).class(classes!("text-xs text-gray-11"))),
+        Entry::System(body) => wrap(text(body).class("text-xs text-gray-11")),
         Entry::Chart(rounds) => wrap(
             chart(rounds.iter().map(|round| round.total() as f32))
                 .height(72.0)
@@ -125,11 +143,14 @@ fn assistant(body: String, app: &App) -> NodeBuilder {
 
 fn verify(command: &str, passed: bool) -> NodeBuilder {
     wrap(
-        label(format!("{} {command}", if passed { "✓" } else { "✗" })).class(if passed {
-            classes!("text-xs text-success-11")
-        } else {
-            classes!("text-xs text-error-11")
-        }),
+        sigil::kernel::text(format!("{} {command}", if passed { "✓" } else { "✗" }))
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class(if passed {
+                "text-xs text-success-11"
+            } else {
+                "text-xs text-error-11"
+            }),
     )
 }
 
@@ -155,7 +176,12 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
                 .fit(ObjectFit::Contain)
                 .layout(LayoutStyle::block().width(width).height(height)),
         )
-        .child(label(name).class(classes!("text-xs text-gray-11")))
+        .child(
+            sigil::kernel::text(name)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        )
 }
 
 fn collapsible(
@@ -183,39 +209,51 @@ fn collapsible(
         }
     };
     match visibility {
-        Visibility::Off | Visibility::Collapsed if live => {
-            wrap(label("✻ Thinking…").class(classes!("text-xs italic text-gray-11")))
-                .pointer_down(press)
-        }
-        Visibility::Off => {
-            wrap(label(format!("⌄ {kind} · hidden")).class(classes!("text-xs italic text-gray-11")))
-                .pointer_down(press)
-        }
+        Visibility::Off | Visibility::Collapsed if live => wrap(
+            sigil::kernel::text("✻ Thinking…")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs italic text-gray-11"),
+        )
+        .pointer_down(press),
+        Visibility::Off => wrap(
+            sigil::kernel::text(format!("⌄ {kind} · hidden"))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs italic text-gray-11"),
+        )
+        .pointer_down(press),
         Visibility::Collapsed if reasoning => {
             let words = body.split_whitespace().count();
             wrap(
-                label(format!("⌄ {kind} · {words} words"))
-                    .class(classes!("text-xs italic text-gray-11")),
+                sigil::kernel::text(format!("⌄ {kind} · {words} words"))
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs italic text-gray-11"),
             )
             .pointer_down(press)
         }
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
             wrap(
-                label(format!("⌄ {kind} · {count} lines"))
-                    .class(classes!("text-xs italic text-gray-11")),
+                sigil::kernel::text(format!("⌄ {kind} · {count} lines"))
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs italic text-gray-11"),
             )
             .pointer_down(press)
         }
         Visibility::Expanded => container()
             .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
             .child(
-                label(if live {
+                sigil::kernel::text(if live {
                     "✻ Thinking…".to_string()
                 } else {
                     format!("✻ {kind}")
                 })
-                .class(classes!("text-xs italic text-gray-11")),
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs italic text-gray-11"),
             )
             .child(prose(body, "text-xs italic text-gray-10"))
             .pointer_down(press),
@@ -311,19 +349,21 @@ fn output_block(output: impl AsRef<str>) -> NodeBuilder {
                 .gap(0.0)
                 .overflow_y(Overflow::Scroll),
         )
-        .class(classes!("bg-gray-4"));
+        .class("bg-gray-4");
     for line in output.lines() {
         let class = if line.starts_with('+') {
-            classes!("text-xs font-mono text-success-11")
+            "text-xs font-mono text-success-11"
         } else if line.starts_with('-') {
-            classes!("text-xs font-mono text-error-11")
+            "text-xs font-mono text-error-11"
         } else if line.starts_with("@@") {
-            classes!("text-xs font-mono text-info-11")
+            "text-xs font-mono text-info-11"
         } else {
-            classes!("text-xs font-mono text-gray-11")
+            "text-xs font-mono text-gray-11"
         };
         column = column.child(
-            label(line.replace('\t', "    "))
+            sigil::kernel::text(line.replace('\t', "    "))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
                 .ellipsize()
                 .layout(
                     LayoutStyle::block()

@@ -23,7 +23,7 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
                 .gap(2.0)
                 .align_items(AlignItems::Center),
         )
-        .class(classes!("rounded-md bg-gray-3"));
+        .class("rounded-md bg-gray-3");
     let auto = app.clone();
     modes = modes.child(seg(
         crate::RunMode::Auto.name(),
@@ -48,17 +48,26 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
         .child(hairline())
         .child(kv_row(
             "context",
-            label(context).class(classes!("text-xs font-mono text-gray-12")),
+            sigil::kernel::text(context)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs font-mono text-gray-12"),
         ))
         .child(hairline())
         .child(kv_row(
             "session",
-            label(format!("{} tokens", crate::provider::compact(tokens)))
-                .class(classes!("text-xs font-mono text-gray-12")),
+            sigil::kernel::text(format!("{} tokens", crate::provider::compact(tokens)))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs font-mono text-gray-12"),
         ));
     if let Some(cached) = cached {
-        facts =
-            facts.child(label(format!("{cached}% cached")).class(classes!("text-xs text-gray-11")));
+        facts = facts.child(
+            sigil::kernel::text(format!("{cached}% cached"))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     }
     let git = container()
         .layout(
@@ -67,7 +76,12 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(icons::branch())
-        .child(label(branch).class(classes!("text-xs text-gray-11")));
+        .child(
+            sigil::kernel::text(branch)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     status_bar([facts, spacer(), git])
 }
 

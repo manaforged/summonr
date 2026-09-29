@@ -1,6 +1,5 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, PathNode, Rgba8, classes, container,
-    path,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, PathNode, Rgba8, container, path,
 };
 
 pub(super) fn folder() -> PathNode {
@@ -58,7 +57,7 @@ pub(super) fn peers() -> PathNode {
 pub(super) fn avatar() -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fixed_size(18.0, 18.0))
-        .class(classes!("rounded-full bg-gray-8"))
+        .class("rounded-full bg-gray-8")
 }
 
 fn mark(w: u32, h: u32) -> PathNode {

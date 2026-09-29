@@ -93,7 +93,6 @@ pub(crate) struct Spec {
     pub(crate) field: EffortField,
     pub(crate) scale: Scale,
     pub(crate) by_model: bool,
-    pub(crate) replay: bool,
 }
 
 impl Spec {
@@ -102,14 +101,6 @@ impl Spec {
             field,
             scale: Scale::new(levels, off),
             by_model: true,
-            replay: false,
-        }
-    }
-
-    pub(crate) const fn replayed(self) -> Self {
-        Self {
-            replay: true,
-            ..self
         }
     }
 

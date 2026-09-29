@@ -1,9 +1,21 @@
 use std::collections::BTreeMap;
 
-use sigil::prelude::{
-    ColorAtom, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Rgba8, Signal,
-    Style, Tone, chart, container, label as text, panel, request_focus, scroll_auto, signal,
-};
+use sigil::prelude::ColorAtom;
+use sigil::prelude::IntoNode;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Rgba8;
+use sigil::prelude::Signal;
+use sigil::prelude::Tone;
+use sigil::prelude::chart;
+use sigil::prelude::container;
+use sigil::prelude::panel;
+use sigil::prelude::request_focus;
+use sigil::prelude::scroll_auto;
+use sigil::prelude::signal;
+use sigil::style::Style;
 
 use super::app::App;
 use super::canvas::palette;
@@ -113,7 +125,10 @@ fn tone(index: usize) -> Tone {
 fn tinted(value: String, index: usize) -> impl IntoNode + 'static {
     let colors = colors();
     let ink = colors[index % colors.len()];
-    text(value).style(Style::new().text_color(ColorAtom::Rgba8(ink)))
+    sigil::kernel::text(value)
+        .nowrap()
+        .class(sigil::style::Token::OnSurface.text())
+        .style(Style::new().text_color(ColorAtom::Rgba8(ink)))
 }
 
 fn scroll_panel(title: String, content: NodeBuilder) -> NodeBuilder {
@@ -197,7 +212,9 @@ fn body(app: &App) -> NodeBuilder {
         return scroll_panel(
             title,
             content.child(
-                text(note.to_string())
+                sigil::kernel::text(note.to_string())
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
                     .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
             ),
         );
@@ -251,11 +268,13 @@ fn body(app: &App) -> NodeBuilder {
         format!("{}d", span / DAY)
     };
     content = content.child(
-        text(format!(
+        sigil::kernel::text(format!(
             "one column = {unit} · {}{suffix} · oldest {first} · peak {}",
             if cost { "cost" } else { "tokens" },
             label(peak, cost),
         ))
+        .nowrap()
+        .class(sigil::style::Token::OnSurface.text())
         .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
     );
     let cached = if total.input == 0 {
@@ -264,12 +283,14 @@ fn body(app: &App) -> NodeBuilder {
         total.cached as f64 * 100.0 / total.input as f64
     };
     content = content.child(
-        text(format!(
+        sigil::kernel::text(format!(
             "total   input {}   cached {cached:.1}%   output {}   cost {}",
             compact(total.input),
             compact(total.output),
             total.cost.map_or_else(|| "–".to_string(), dollars),
         ))
+        .nowrap()
+        .class(sigil::style::Token::OnSurface.text())
         .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
     );
     let whole = order

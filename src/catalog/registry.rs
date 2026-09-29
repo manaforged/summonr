@@ -9,7 +9,7 @@ use crate::prompt::summonr_home;
 use crate::provider::Price;
 
 const REGISTRY_URL: &str = "https://models.dev/api.json";
-const REGISTRY_FILE: &str = "models-dev.json";
+pub(super) const FILE: &str = "models-dev.json";
 const REGISTRY_STALE: u64 = 3600;
 const REGISTRY_SCHEMA: u32 = 2;
 
@@ -63,7 +63,7 @@ struct ProviderMeta {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-struct Registry {
+pub(super) struct Registry {
     #[serde(default)]
     schema: u32,
     #[serde(default)]
@@ -157,7 +157,7 @@ fn reduce(value: &Value) -> Registry {
 }
 
 pub async fn refresh_registry() -> Result<()> {
-    let cache = load::<Registry>(REGISTRY_FILE)
+    let cache = load::<Registry>(FILE)
         .ok()
         .filter(|cache| cache.schema == REGISTRY_SCHEMA)
         .unwrap_or_default();
@@ -169,7 +169,7 @@ pub async fn refresh_registry() -> Result<()> {
         ..cache
     });
     let home = summonr_home()?;
-    crate::durable::store::write(&home.join(REGISTRY_FILE), serde_json::to_string(&saved)?)?;
+    crate::durable::store::write(&home.join(FILE), serde_json::to_string(&saved)?)?;
     Ok(())
 }
 
@@ -216,8 +216,16 @@ fn authority(url: &str) -> Option<String> {
     ))
 }
 
-pub fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
-    let registry: Registry = load(REGISTRY_FILE).unwrap_or_default();
+pub(crate) fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
+    enrich_from(&load(FILE).unwrap_or_default(), endpoint, base_url, models);
+}
+
+pub(super) fn enrich_from(
+    registry: &Registry,
+    endpoint: &str,
+    base_url: Option<&str>,
+    models: &mut [Model],
+) {
     if registry.providers.is_empty() {
         return;
     }

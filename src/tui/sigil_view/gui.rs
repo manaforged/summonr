@@ -2,7 +2,11 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use sigil::prelude::{Cx, defer, effect, on_message, untrack};
+use sigil::prelude::Cx;
+use sigil::prelude::effect;
+use sigil::reactive::defer;
+use sigil::reactive::untrack;
+use sigil::tasks::on_message;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use super::app::App;

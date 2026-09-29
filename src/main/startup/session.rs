@@ -2,9 +2,8 @@ use std::path::{Path, PathBuf};
 
 use summonr::{
     Budget, Client, Endpoint, Loop, Result, add_worktree, in_git, last_for, list_sessions,
-    list_worktrees, resolve_endpoint, resolve_session, system_prompt_with, workflow,
+    list_worktrees, resolve_endpoint, resolve_session, system_prompt, workflow,
 };
-use tokio::sync::mpsc::UnboundedSender;
 
 use super::lifecycle::provider;
 use crate::cli::Args;
@@ -28,12 +27,16 @@ pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<
 pub(super) fn apply_workflow(
     loop_: &mut Loop<Client>,
     name: &str,
-    ui: Option<&UnboundedSender<summonr::tui::Msg>>,
+    ui: Option<&summonr::tui::Ui>,
     json: bool,
 ) -> Result<workflow::Workflow> {
     let workflow = workflow::load(name)?;
     loop_.apply_workflow(&workflow, |seat| {
-        let endpoint = resolve_endpoint(Some(&seat.endpoint), seat.model.as_deref())?;
+        let endpoint = resolve_endpoint(
+            Some(&seat.endpoint),
+            seat.model.as_deref(),
+            summonr::Need::Seat,
+        )?;
         let client = provider(&endpoint, ui, json)?;
         Ok((client, endpoint))
     })?;
@@ -99,11 +102,14 @@ pub(super) fn build(
     action: SessionAction,
 ) -> Result<Loop<Client>> {
     let switches = summonr::modules::Switches::load(workspace)?;
-    let prompt = system_prompt_with(
+    let images = summonr::catalog::accepts_images(endpoint);
+    let prompt = system_prompt(
         workspace,
-        args.trust,
-        switches.enabled("skills"),
-        endpoint.images,
+        summonr::Sources {
+            trust: args.trust,
+            skills: switches.enabled(summonr::modules::ModuleId::Skills),
+            images,
+        },
     );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
     let mut loop_ = match action {
@@ -135,8 +141,8 @@ pub(super) fn build(
     loop_.set_price(endpoint.price);
     loop_.set_env(endpoint.env.clone());
     loop_.set_images(
-        endpoint.images,
-        if endpoint.images {
+        images,
+        if images {
             None
         } else {
             summonr::vision_endpoint()?
@@ -178,7 +184,7 @@ fn configure(
 
 fn contain(loop_: Loop<Client>, args: &Args) -> Result<Loop<Client>> {
     if args.plan || args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
-        return loop_.with_sandbox(!args.network);
+        return loop_.with_sandbox(summonr::Network::allowed(args.network));
     }
     if !args.network {
         return Err(summonr::Error::Config(

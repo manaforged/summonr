@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    classes, container, label, text_field, virtual_list,
+    container, text_field, virtual_list,
 };
 
 use super::prelude::*;
@@ -60,7 +60,12 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 }
 
 fn line(text: impl Into<String>) -> NodeBuilder {
-    container().child(label(text.into()).class(classes!("text-sm")))
+    container().child(
+        sigil::kernel::text(text.into())
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class("text-sm"),
+    )
 }
 
 fn wrapped(text: &str, width: usize) -> Vec<String> {

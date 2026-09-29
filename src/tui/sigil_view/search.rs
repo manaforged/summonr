@@ -10,8 +10,8 @@ use super::model::{Entry, Model, entry_markdown};
 use super::prelude::*;
 use crate::session::Prompt;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, WidgetLayoutExt, classes,
-    container, label, signal, text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, WidgetLayoutExt, container, signal,
+    text_edit, virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
@@ -250,14 +250,25 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
             let mut items: Vec<NodeBuilder> = Vec::new();
             if !warning.is_empty() {
                 items.push(
-                    container().child(label(warning).class(classes!("text-xs text-error-11"))),
+                    container().child(
+                        sigil::kernel::text(warning)
+                            .nowrap()
+                            .class(sigil::style::Token::OnSurface.text())
+                            .class("text-xs text-error-11"),
+                    ),
                 );
             }
             match picker.rows(&paint.model.get()) {
                 Ok(rows) => {
                     let selected = picker.selected.get().min(rows.len().saturating_sub(1));
                     if rows.is_empty() {
-                        items.push(container().child(label("No matches. Edit the search.")));
+                        items.push(
+                            container().child(
+                                sigil::kernel::text("No matches. Edit the search.")
+                                    .nowrap()
+                                    .class(sigil::style::Token::OnSurface.text()),
+                            ),
+                        );
                     }
                     let count = format!("{} / {}", selected + 1, rows.len());
                     let height = if picker.is_history() {
@@ -279,7 +290,13 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     );
                     items.push(hint("↑↓ select · ↵ jump · esc close", count));
                 }
-                Err(error) => items.push(container().child(label(error))),
+                Err(error) => items.push(
+                    container().child(
+                        sigil::kernel::text(error)
+                            .nowrap()
+                            .class(sigil::style::Token::OnSurface.text()),
+                    ),
+                ),
             }
             items
         })

@@ -96,55 +96,7 @@ impl<P: Provider> Loop<P> {
             if self.asked.contains(&grant) {
                 break;
             }
-            if !self.manual
-                && !matches!(
-                    grant,
-                    Grant::Guarded(_) | Grant::Command(_) | Grant::Danger(_) | Grant::Edit(_)
-                )
-            {
-                self.apply_grant(&grant, false, events, emit)?;
-                output = self.tools.execute_outcome(call).await;
-                continue;
-            }
-            if let Grant::Danger(command) = &grant
-                && !self.manual
-            {
-                let reason = crate::policy::danger(command, &self.workspace)
-                    .unwrap_or("it looked destructive");
-                match self.review(command, reason).await {
-                    super::approval::Verdict::Allow => {
-                        self.push_event(
-                            events,
-                            emit,
-                            Event::Note {
-                                text: format!("reviewer allowed: {command}"),
-                            },
-                        )?;
-                        self.tools.approve_once();
-                        output = self.tools.execute_outcome(call).await;
-                        continue;
-                    }
-                    super::approval::Verdict::Block(why) => {
-                        output = Ok(blocked(command, &why));
-                        self.push_event(
-                            events,
-                            emit,
-                            Event::Note {
-                                text: format!("reviewer blocked {command}: {why}"),
-                            },
-                        )?;
-                        break;
-                    }
-                    super::approval::Verdict::Ask(why) if self.steer_shared.is_none() => {
-                        output = Ok(blocked(command, &why));
-                        break;
-                    }
-                    super::approval::Verdict::Ask(_) => {}
-                }
-            }
-            if let Grant::Edit(setting) = &grant
-                && self.edit_requested(setting).await
-            {
+            if !matches!(grant, Grant::Danger(_)) {
                 self.apply_grant(&grant, false, events, emit)?;
                 output = self.tools.execute_outcome(call).await;
                 continue;

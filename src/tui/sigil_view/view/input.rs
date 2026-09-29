@@ -56,7 +56,7 @@ pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .key(shift_tab, move |event| {
                     event.stop_propagation();
                     if !mode.overlay_tab(-1) {
-                        mode.toggle_mode();
+                        mode.cycle_effort();
                     }
                 }),
         )

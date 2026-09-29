@@ -112,7 +112,7 @@ fn mode_text(model: &Model) -> ModeText {
     } else {
         3
     };
-    let mode = ["plan", "work", "goal", "auto"][class];
+    let mode = model.snapshot.mode_name();
     let glyph = ["◇", "▣", "◎", "●"][class];
     (format!("{glyph} {mode}"), class as u8)
 }

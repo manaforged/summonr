@@ -46,21 +46,12 @@ pub(super) const VERBS: &[Verb] = &[
         native: Some(Native::Cat),
         ..READ
     },
-    Verb {
-        name: "ls",
-        native: Some(Native::Ls),
-        ..READ
-    },
+    Verb { name: "ls", ..READ },
     Verb {
         name: "tree",
-        native: Some(Native::Tree),
         ..READ
     },
-    Verb {
-        name: "wc",
-        native: Some(Native::Wc),
-        ..READ
-    },
+    Verb { name: "wc", ..READ },
     Verb {
         name: "head",
         native: Some(Native::Head),
@@ -75,13 +66,11 @@ pub(super) const VERBS: &[Verb] = &[
     Verb {
         name: "grep",
         search: true,
-        native: Some(Native::Search { basic: true }),
         ..READ
     },
     Verb {
         name: "rg",
         search: true,
-        native: Some(Native::Search { basic: false }),
         ..READ
     },
     Verb {

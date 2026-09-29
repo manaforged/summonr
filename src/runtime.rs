@@ -62,16 +62,6 @@ pub enum RunMode {
 
 impl RunMode {
     #[must_use]
-    pub fn next(self) -> Self {
-        match self {
-            Self::Auto => Self::Plan,
-            Self::Plan => Self::Auto,
-            Self::Work => Self::Auto,
-            Self::Goal => Self::Auto,
-        }
-    }
-
-    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -125,7 +115,7 @@ pub struct Loop<P> {
     effort: Option<Effort>,
     turn_started: u64,
     accepted: bool,
-    summary_failed: bool,
+    summary_wait: usize,
     workspace: PathBuf,
     mailbox: Option<Mailbox>,
     mail_module: bool,
@@ -142,15 +132,14 @@ pub struct Loop<P> {
     steer_shared: Option<Arc<Mutex<VecDeque<UserInput>>>>,
     depth: u8,
     tasks: bool,
-    manual: bool,
+    plan_sandbox: bool,
+    interactive: bool,
     asked: Vec<Grant>,
-    blocks: (usize, usize),
     spawned: BTreeMap<String, child::Spawned>,
     events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
     catalog_frozen: bool,
 }
 
-mod approval;
 mod aside;
 mod checkpoint;
 mod child;

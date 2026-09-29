@@ -130,3 +130,86 @@ fn a_content_search_lists_the_most_recently_modified_file_first() {
     );
     assert!(hits.contains("b.txt:1:1:hit"), "{hits}");
 }
+
+#[test]
+fn output_under_the_budget_comes_back_whole_with_no_log_note() {
+    let (_dir, tools) = workspace(&[]);
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "seq 1 300"}),
+    );
+    assert!(text.contains("\n150\n") && text.contains("300"), "{text}");
+    assert!(!text.contains("read the full output"), "{text}");
+}
+
+#[test]
+fn writing_over_a_file_reports_a_summary_not_the_whole_diff() {
+    let (_dir, tools) = workspace(&[("a.txt", "old one\nold two\nold three\n")]);
+    let text = run(
+        &tools,
+        "write",
+        serde_json::json!({"path": "a.txt", "content": "new\n"}),
+    );
+    assert!(text.contains("replaced"), "{text}");
+    assert!(!text.contains("-old one"), "{text}");
+}
+
+#[test]
+fn ls_runs_in_the_shell_instead_of_turning_into_a_read() {
+    let (_dir, tools) = workspace(&[("a.txt", "x\n")]);
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "ls -l a.txt"}),
+    );
+    assert!(text.contains("-rw"), "{text}");
+    assert!(!text.contains("answers this natively"), "{text}");
+}
+
+#[test]
+fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
+    let (_dir, mut tools) = workspace(&[]);
+    tools.set_modules(false, false, true, false);
+    tools.set_session("s1");
+    let started = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "sleep 2 && echo finished"}),
+    );
+    let id = started
+        .lines()
+        .find_map(|line| line.strip_prefix("started job "))
+        .unwrap_or_else(|| panic!("no job id in {started}"))
+        .to_string();
+    let polled = run(&tools, "run_command", serde_json::json!({"job": id}));
+    assert!(polled.contains("finished"), "{polled}");
+}
+
+#[test]
+fn todo_is_advertised_only_where_the_ledger_is_read() {
+    let (_dir, tools) = workspace(&[]);
+    let names = |work| {
+        tools
+            .definitions(work)
+            .into_iter()
+            .map(|tool| tool.function.name)
+            .collect::<Vec<_>>()
+    };
+    assert!(
+        !names(crate::durable::work::WorkKind::Single)
+            .iter()
+            .any(|name| name == "todo")
+    );
+    assert!(
+        names(crate::durable::work::WorkKind::Steps)
+            .iter()
+            .any(|name| name == "todo")
+    );
+}
+
+#[test]
+fn web_search_is_off_unless_turned_on() {
+    let empty = std::collections::BTreeMap::new();
+    assert!(!crate::modules::Switches::from_maps(&empty, &empty).enabled("search"));
+}

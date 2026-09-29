@@ -9,7 +9,7 @@ pub(super) fn header(model: &Model) -> String {
         .relay
         .as_deref()
         .map_or_else(String::new, |relay| format!(" · {relay}"));
-    let mode = if model.snapshot.plan { "plan" } else { "auto" };
+    let mode = model.snapshot.mode_name();
     format!(
         "summonr  {}{}   session {}   {mode}",
         model.snapshot.model,
@@ -62,7 +62,7 @@ fn cache_rate(model: &Model) -> u64 {
 pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
     format!(
         "mode      {}\nverify    {}\nendpoint  {}\nmodel     {}\ntheme     {}\nreasoning {}\ntools     {}\nmail      {}",
-        if snapshot.plan { "plan" } else { "auto" },
+        snapshot.mode_name(),
         snapshot.verify.as_deref().unwrap_or("off"),
         snapshot.endpoint,
         snapshot.model,

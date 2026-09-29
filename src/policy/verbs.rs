@@ -1,8 +1,6 @@
-mod grep;
 mod hazards;
 mod table;
 
-pub(crate) use grep::{GREP_LONG, GREP_SHORT};
 pub(crate) use hazards::TEXT_HAZARDS;
 
 #[derive(Clone, Copy)]
@@ -85,11 +83,7 @@ pub(crate) enum Cwd {
 pub(crate) enum Native {
     Cat,
     Head,
-    Ls,
-    Tree,
-    Wc,
     Sed,
-    Search { basic: bool },
 }
 
 #[derive(Clone, Copy)]
@@ -130,31 +124,6 @@ pub(crate) struct Verb {
     pub(crate) native: Option<Native>,
     pub(crate) clip: Option<Clip>,
     pub(crate) hazard: Hazard,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum SearchFlag {
-    Files,
-    Count,
-    IgnoreCase,
-    Literal,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum SearchValue {
-    Pattern,
-    After,
-    Before,
-    Context,
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum GrepOpt {
-    Set(SearchFlag),
-    Value(SearchValue),
-    Extended,
-    Skip,
-    Reject,
 }
 
 pub(crate) fn verb_row(name: &str) -> Option<&'static Verb> {

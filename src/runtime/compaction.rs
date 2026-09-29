@@ -70,6 +70,44 @@ fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
     estimated_tokens.saturating_mul(100) >= (window as usize).saturating_mul(COMPACT_PERCENT)
 }
 
+fn text_only(message: &Message) -> Message {
+    match message.role {
+        Role::Assistant if !message.tool_calls.is_empty() => {
+            let mut lines = Vec::with_capacity(message.tool_calls.len() + 1);
+            if !message.content.is_empty() {
+                lines.push(message.content.clone());
+            }
+            lines.extend(message.tool_calls.iter().map(|call| {
+                format!(
+                    "[called {} {}]",
+                    call.function.name, call.function.arguments
+                )
+            }));
+            Message {
+                content: lines.join("\n"),
+                tool_calls: Vec::new(),
+                continuation: None,
+                ..message.clone()
+            }
+        }
+        Role::Tool => {
+            let label = if message.failed {
+                "tool error"
+            } else {
+                "tool result"
+            };
+            Message {
+                role: Role::User,
+                content: format!("[{label}]\n{}", message.content),
+                tool_call_id: None,
+                failed: false,
+                ..message.clone()
+            }
+        }
+        Role::System | Role::User | Role::Assistant => message.clone(),
+    }
+}
+
 impl<P: Provider> Loop<P> {
     pub(super) fn rewrite(
         &mut self,
@@ -92,13 +130,12 @@ impl<P: Provider> Loop<P> {
         &mut self,
         system: &Message,
         slice: &[Message],
-        tools: &[ToolDefinition],
     ) -> Result<Option<AssistantMessage>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
         request_messages.push(system.clone());
-        request_messages.extend(slice.iter().cloned());
+        request_messages.extend(slice.iter().map(text_only));
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
-        let request = self.request(workflow::Role::Summary, &request_messages, tools, false);
+        let request = self.request(workflow::Role::Summary, &request_messages, &[], false);
         match self
             .complete_once(workflow::Role::Summary, &request)
             .await?
@@ -125,7 +162,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if self.summary_failed {
+        if self.summary_wait > 0 {
             return Ok(());
         }
         let keep = self.provider.keeps_reasoning();
@@ -156,16 +193,19 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         };
         let Some(summary) = self
-            .summarize(&messages[0], &messages[1..keep_from], tools)
+            .summarize(&messages[0], &messages[1..keep_from])
             .await?
         else {
-            self.summary_failed = true;
+            self.summary_wait = crate::limits::SUMMARY_RETRY_ROUNDS;
             self.push_event(
                 events,
                 emit,
                 Event::Note {
-                    text: "auto-compaction failed — keeping the live context until the next turn"
-                        .to_string(),
+                    text: format!(
+                        "auto-compaction failed — keeping the live context and retrying \
+                         after {} rounds",
+                        crate::limits::SUMMARY_RETRY_ROUNDS
+                    ),
                 },
             )?;
             return Ok(());
@@ -217,9 +257,8 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(false);
         };
-        let tools = self.tool_definitions();
         let Some(reply) = self
-            .summarize(&messages[0], &messages[1..keep_from], &tools)
+            .summarize(&messages[0], &messages[1..keep_from])
             .await?
         else {
             return Err(Error::Config(

@@ -71,6 +71,17 @@ pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
         ),
     )?;
     set_permissions(&helper, Permissions::from_mode(0o700))?;
+    if let Some(sudo) = on_path("sudo") {
+        let shim = dir.path().join("sudo");
+        crate::durable::store::scratch(
+            &shim,
+            format!(
+                "#!/bin/sh\nexec '{}' -A \"$@\"\n",
+                sudo.display().to_string().replace('\'', "'\\''")
+            ),
+        )?;
+        set_permissions(&shim, Permissions::from_mode(0o700))?;
+    }
     let listener = UnixListener::bind(&socket)?;
     set_permissions(&socket, Permissions::from_mode(0o600))?;
     drop(BROKER.set(Broker {
@@ -133,8 +144,30 @@ pub fn env() -> Vec<(String, String)> {
                 "SUMMONR_ASKPASS".to_string(),
                 broker.socket.display().to_string(),
             ),
+            ("PATH".to_string(), shim_path(&broker.helper)),
         ]
     })
+}
+
+#[cfg(unix)]
+fn on_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?)
+        .map(|dir| dir.join(name))
+        .find(|path| path.is_file())
+}
+
+#[cfg(unix)]
+fn shim_path(helper: &Path) -> String {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let dirs = helper
+        .parent()
+        .map(Path::to_path_buf)
+        .into_iter()
+        .chain(std::env::split_paths(&path));
+    std::env::join_paths(dirs).map_or_else(
+        |_| std::env::var("PATH").unwrap_or_default(),
+        |path| path.to_string_lossy().into_owned(),
+    )
 }
 
 #[cfg(not(unix))]
@@ -281,3 +314,7 @@ fn ask(_socket: &std::ffi::OsStr, _prompt: &str) -> i32 {
     eprintln!("summonr askpass: secret prompts need a Unix host");
     1
 }
+
+#[cfg(all(test, unix))]
+#[path = "askpass_tests.rs"]
+mod tests;

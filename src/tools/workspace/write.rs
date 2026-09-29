@@ -4,10 +4,25 @@ use super::ToolRegistry;
 use crate::durable::store::{self, Staged};
 use crate::error::{Error, Result};
 
+const HUNK_ROWS: usize = 400;
+
 pub(in crate::tools) struct Change {
     pub(in crate::tools) dest: PathBuf,
     pub(in crate::tools) display: String,
     pub(in crate::tools) content: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+pub(in crate::tools) enum View {
+    Hunk,
+    Tagged,
+    Overwrite,
+}
+
+impl From<bool> for View {
+    fn from(tags: bool) -> Self {
+        if tags { View::Tagged } else { View::Hunk }
+    }
 }
 
 impl ToolRegistry {
@@ -16,10 +31,10 @@ impl ToolRegistry {
         dest: &Path,
         display: &str,
         content: &str,
-        tags: bool,
+        view: impl Into<View>,
     ) -> Result<String> {
         let before = current(dest, display)?;
-        let preview = self.stage_write(dest, &before, content, tags)?;
+        let preview = self.stage_write(dest, &before, content, view)?;
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
@@ -31,7 +46,7 @@ impl ToolRegistry {
         dest: &Path,
         before: &str,
         content: &str,
-        tags: bool,
+        view: impl Into<View>,
     ) -> Result<String> {
         if let Some((option, detail)) =
             crate::prefs::banned_edit(dest, before, content, &self.allowed_edits)
@@ -41,7 +56,7 @@ impl ToolRegistry {
                 detail,
             });
         }
-        Ok(edit_view(before, content, tags))
+        Ok(edit_view(before, content, view.into()))
     }
 
     pub(crate) fn allow_edit(&mut self, setting: &'static str) {
@@ -99,12 +114,15 @@ pub(in crate::tools) fn apply_changes(changes: &[Change]) -> Result<()> {
     Ok(())
 }
 
-fn edit_view(before: &str, after: &str, tags: bool) -> String {
+fn edit_view(before: &str, after: &str, view: View) -> String {
+    if matches!(view, View::Overwrite) {
+        return overwritten(before, after);
+    }
     if before.is_empty() && !after.is_empty() {
         return format!("new file, {} lines", after.lines().count());
     }
     let hunk = unified_hunk(before, after);
-    if !tags {
+    if !matches!(view, View::Tagged) {
         return hunk;
     }
     let (first, last) = crate::hashline::dirty_span(before, after);
@@ -115,8 +133,18 @@ fn edit_view(before: &str, after: &str, tags: bool) -> String {
     )
 }
 
+fn overwritten(before: &str, after: &str) -> String {
+    if before == after {
+        "no change".to_string()
+    } else if before.is_empty() {
+        "new file".to_string()
+    } else {
+        format!("replaced {} lines", before.lines().count())
+    }
+}
+
 fn cap_rows(lines: Vec<String>) -> Vec<String> {
-    let limit = super::read::READ_DEFAULT_LIMIT;
+    let limit = HUNK_ROWS;
     let mut lines = lines
         .iter()
         .map(|line| crate::text::ellipsize(line, 160))
@@ -156,8 +184,7 @@ pub(super) fn unified_hunk(before: &str, after: &str) -> String {
             .map(|line| format!(" {line}")),
     );
     let body = cap_rows(body);
-    let limit = super::read::READ_DEFAULT_LIMIT;
-    let (kept, note) = body.split_at(body.len().min(limit));
+    let (kept, note) = body.split_at(body.len().min(HUNK_ROWS));
     let old_count = kept.iter().filter(|line| !line.starts_with('+')).count();
     let new_count = kept.iter().filter(|line| !line.starts_with('-')).count();
     let side = |count: usize| {

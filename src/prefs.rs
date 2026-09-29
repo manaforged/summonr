@@ -277,6 +277,7 @@ pub struct Prefs {
     pub mail: bool,
     pub ban_comments: bool,
     pub ban_tests: bool,
+    pub plan_mode: bool,
     pub layout: String,
     pub hotkeys: Hotkeys,
     pub last_endpoint: Option<String>,
@@ -296,6 +297,7 @@ impl Default for Prefs {
             mail: true,
             ban_comments: false,
             ban_tests: false,
+            plan_mode: false,
             hotkeys: Hotkeys::default(),
             last_endpoint: None,
             layout: "chat".to_string(),
@@ -355,6 +357,9 @@ pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
     }
     if let Some(ban) = file.ban_tests {
         prefs.ban_tests = ban;
+    }
+    if let Some(plan) = file.plan_mode {
+        prefs.plan_mode = plan;
     }
     if let Some(last) = file.last_endpoint {
         prefs.last_endpoint = Some(last);

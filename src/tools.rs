@@ -132,6 +132,8 @@ impl ToolRegistry {
     pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool, skills: bool) {
         if !search {
             self.search = None;
+        } else if self.search.is_none() {
+            self.search = crate::web::Search::discover().ok();
         }
         self.language = lsp;
         self.background = jobs;
@@ -174,6 +176,10 @@ impl ToolRegistry {
             &self.policy.write_roots(),
         )?);
         Ok(())
+    }
+
+    pub(crate) fn disable_sandbox(&mut self) {
+        self.sandbox = None;
     }
 
     pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
@@ -375,10 +381,6 @@ pub(crate) fn image_type(bytes: &[u8]) -> Option<&'static str> {
 }
 
 pub(crate) const IMAGES_MAX_BYTES: usize = workspace::IMAGES_MAX_BYTES;
-
-pub(crate) fn digest(command: &str, raw: &str) -> String {
-    command::digest::digest(command, raw)
-}
 
 #[cfg(test)]
 #[path = "tools_tests.rs"]

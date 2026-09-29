@@ -236,6 +236,21 @@ pub struct Snapshot {
     pub workflow: Option<String>,
 }
 
+impl Snapshot {
+    #[must_use]
+    pub fn mode_name(&self) -> &'static str {
+        if self.plan {
+            crate::RunMode::Plan.name()
+        } else if self.work {
+            crate::RunMode::Work.name()
+        } else if self.goal {
+            crate::RunMode::Goal.name()
+        } else {
+            crate::RunMode::Auto.name()
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Info {
     pub version: String,

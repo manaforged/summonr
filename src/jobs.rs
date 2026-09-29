@@ -9,6 +9,8 @@ use crate::error::{Error, Result};
 
 const ID_MAX: usize = 80;
 const KILLED: &str = "killed";
+const POLL_START_SECS: u64 = 1;
+const POLL_CAP_SECS: u64 = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Record {
@@ -22,6 +24,8 @@ pub struct Record {
     pub sandbox: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub session: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,
 }
 
 #[derive(Clone)]
@@ -124,12 +128,14 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
 
 pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
     let record = load(workspace, id)?;
-    let root = dir(workspace);
-    let log = root.join(format!("{}.log", record.id));
-    let exit = root.join(format!("{}.exit", record.id));
+    let log = log_path(workspace, &record);
+    let exit = exit_path(workspace, &record.id);
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
     let mut killed = false;
-    let (state, exit_code, running) = if exit.is_file() {
+    let alive = !exit.is_file() && alive_since(record.pid, record.started);
+    let (state, exit_code, running) = if alive {
+        ("running".to_string(), None, true)
+    } else if exit.is_file() {
         let text = crate::durable::store::read_or_empty(&exit)?;
         killed = text.trim() == KILLED;
         let code = text.trim().parse::<i32>().ok();
@@ -145,8 +151,6 @@ pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
             code,
             false,
         )
-    } else if alive_since(record.pid, record.started) {
-        ("running".to_string(), None, true)
     } else {
         ("dead".to_string(), None, false)
     };
@@ -215,6 +219,7 @@ pub(crate) fn stamp(
         background,
         sandbox: false,
         session,
+        log: None,
     })
 }
 
@@ -225,6 +230,37 @@ pub(crate) fn write_killed(path: &Path) -> Result<()> {
 
 pub(crate) fn exit_path(workspace: &Path, id: &str) -> PathBuf {
     dir(workspace).join(format!("{id}.exit"))
+}
+
+pub(crate) fn log_path(workspace: &Path, record: &Record) -> PathBuf {
+    record.log.as_ref().map_or_else(
+        || dir(workspace).join(format!("{}.log", record.id)),
+        PathBuf::from,
+    )
+}
+
+pub(crate) async fn wait(
+    workspace: &Path,
+    id: &str,
+    limit_secs: u64,
+    mut waiting: impl FnMut() -> Result<()>,
+) -> Result<Status> {
+    let started = std::time::Instant::now();
+    let mut pause = POLL_START_SECS;
+    let mut announced = false;
+    loop {
+        let current = status(workspace, id)?;
+        let elapsed = started.elapsed().as_secs();
+        if !current.running || elapsed >= limit_secs {
+            return Ok(current);
+        }
+        if !announced {
+            announced = true;
+            waiting()?;
+        }
+        tokio::time::sleep(crate::limits::seconds(pause.min(limit_secs - elapsed))).await;
+        pause = (pause * 2).min(POLL_CAP_SECS);
+    }
 }
 
 pub(crate) fn alive_since(pid: u32, started: u64) -> bool {

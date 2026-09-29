@@ -51,3 +51,17 @@ fn a_zero_signature_stop_turns_the_check_off() {
     );
     assert_eq!(guard.stuck(), None);
 }
+
+#[test]
+fn polling_a_running_job_never_trips_the_guard() {
+    let mut guard = Guard::configured(&crate::config::Guard::default());
+    for _ in 0..12 {
+        drop(guard.observe(
+            "run_command",
+            r#"{"job":"j1"}"#,
+            true,
+            "job j1\nstate: running (120 bytes)".to_string(),
+        ));
+    }
+    assert_eq!(guard.stuck(), None);
+}

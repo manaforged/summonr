@@ -1,52 +1,109 @@
-use super::TAIL_LINES;
-
-pub(super) fn digest_is_lossy(raw: &str) -> bool {
-    raw.lines().count() > TAIL_LINES
+pub(super) struct Digest {
+    pub(super) text: String,
+    pub(super) cut: bool,
 }
 
-pub(crate) fn digest(command: &str, raw: &str) -> String {
-    let lines: Vec<&str> = raw.lines().collect();
-    let out = if lines.len() <= TAIL_LINES {
-        clip_lines(&lines)
-    } else if crate::language::toolchain(command)
-        && let Some(output) = toolchain_output(&lines)
-    {
-        output
-    } else if searchish(command) {
-        search_output(&lines)
-    } else {
-        plain_output(&lines)
-    };
-    if out.len() > RESULT_BYTES {
-        let mut out = out[..out.floor_char_boundary(RESULT_BYTES)].to_string();
-        out.push_str(&format!(
-            "\n[output capped at {RESULT_BYTES} bytes — read the full output at the path above]"
-        ));
-        return out;
-    }
-    out
-}
-
-const RESULT_BYTES: usize = 50 * 1024;
+const OUTPUT_BUDGET: usize = 16 * 1024;
+const HEAD_SHARE: usize = 6;
 const LINE_MAX: usize = 500;
+const PER_FILE: usize = 20;
+const BLOCK_LINES: usize = 12;
+const DIGEST_ROWS: usize = 400;
+const BLOCK_STARTS: &[&str] = &[
+    "error",
+    "thread '",
+    "failures:",
+    "---- ",
+    "FAIL",
+    "not ok",
+    "✗",
+];
+const BLOCK_CONTAINS: &str = "panicked at";
+const SUMMARY_STARTS: &[&str] = &[
+    "test result:",
+    "warning: unused",
+    "warning: `",
+    "Finished",
+    "could not compile",
+    "Tests:",
+    "# tests",
+    "# pass",
+    "# fail",
+];
+const SUMMARY_ENDS: &str = " FAILED";
 
-fn clip_lines(lines: &[&str]) -> String {
-    lines
-        .iter()
+pub(super) fn digest(command: &str, raw: &str) -> Digest {
+    let (lines, clipped) = bound_lines(raw);
+    if size(&lines) <= OUTPUT_BUDGET {
+        return Digest {
+            text: lines.join("\n").trim_end().to_string(),
+            cut: clipped,
+        };
+    }
+    Digest {
+        text: fit(&select(command, lines)),
+        cut: true,
+    }
+}
+
+fn bound_lines(raw: &str) -> (Vec<String>, bool) {
+    let mut clipped = false;
+    let lines = raw
+        .lines()
         .map(|line| {
             if line.len() > LINE_MAX {
+                clipped = true;
                 format!(
                     "{} [line clipped]",
                     &line[..line.floor_char_boundary(LINE_MAX)]
                 )
             } else {
-                (*line).to_string()
+                line.to_string()
             }
         })
-        .collect::<Vec<_>>()
-        .join("\n")
-        .trim_end()
-        .to_string()
+        .collect();
+    (lines, clipped)
+}
+
+fn size(lines: &[String]) -> usize {
+    lines.iter().map(|line| line.len() + 1).sum()
+}
+
+fn select(command: &str, lines: Vec<String>) -> Vec<String> {
+    if crate::language::toolchain(command)
+        && let Some(picked) = toolchain_lines(&lines)
+    {
+        return picked;
+    }
+    if searchish(command) {
+        return search_lines(&lines);
+    }
+    lines
+}
+
+fn fit(lines: &[String]) -> String {
+    if size(lines) <= OUTPUT_BUDGET {
+        return lines.join("\n");
+    }
+    let head_room = OUTPUT_BUDGET / HEAD_SHARE;
+    let head = fits(lines.iter(), head_room);
+    let tail = fits(lines[head..].iter().rev(), OUTPUT_BUDGET - head_room);
+    format!(
+        "{}\n[{} middle lines omitted — read the full output at the path above]\n{}",
+        lines[..head].join("\n"),
+        lines.len() - head - tail,
+        lines[lines.len() - tail..].join("\n")
+    )
+}
+
+fn fits<'a>(lines: impl Iterator<Item = &'a String>, room: usize) -> usize {
+    let mut used = 0;
+    lines
+        .take_while(|line| {
+            used += line.len() + 1;
+            used <= room
+        })
+        .count()
 }
 
 pub(crate) fn searchish(command: &str) -> bool {
@@ -54,8 +111,7 @@ pub(crate) fn searchish(command: &str) -> bool {
         .any(|verb| crate::policy::verb_row(&verb).is_some_and(|row| row.search))
 }
 
-fn search_output(lines: &[&str]) -> String {
-    const PER_FILE: usize = 20;
+fn search_lines(lines: &[String]) -> Vec<String> {
     let mut counts = std::collections::HashMap::new();
     let mut kept: Vec<String> = Vec::new();
     let mut capped = 0_usize;
@@ -76,97 +132,64 @@ fn search_output(lines: &[&str]) -> String {
                 continue;
             }
         }
-        if line.len() > LINE_MAX {
-            kept.push(format!(
-                "{} [line clipped]",
-                &line[..line.floor_char_boundary(LINE_MAX)]
-            ));
-        } else {
-            kept.push((*line).to_string());
-        }
+        kept.push(line.clone());
     }
-    let mut out = if kept.len() > TAIL_LINES {
-        let refs: Vec<&str> = kept.iter().map(String::as_str).collect();
-        plain_output(&refs)
-    } else {
-        kept.join("\n")
-    };
     if capped > 0 {
-        out.push_str(&format!(
-            "\n[{capped} lines omitted — over the {PER_FILE}-per-file cap; narrow the pattern or use read op=search]"
+        kept.push(format!(
+            "[{capped} lines omitted — over the {PER_FILE}-per-file cap; narrow the pattern or use read op=search]"
         ));
     }
-    out
+    kept
 }
 
-fn toolchain_output(lines: &[&str]) -> Option<String> {
-    let picked = toolchain_digest(lines);
+fn toolchain_lines(lines: &[String]) -> Option<Vec<String>> {
+    let mut picked = toolchain_digest(lines);
     if picked.is_empty() {
         return None;
     }
-    let mut out = picked.join("\n");
-    out.push_str(&format!(
-        "\n[{} lines captured; {} shown — errors, failures, and summaries]",
+    picked.push(format!(
+        "[{} lines captured; {} shown — errors, failures, and summaries]",
         lines.len(),
         picked.len()
     ));
-    Some(out)
+    Some(picked)
 }
 
-fn plain_output(lines: &[&str]) -> String {
-    let head = &lines[..10];
-    let tail = &lines[lines.len() - (TAIL_LINES - 10)..];
-    format!(
-        "{}\n[{} middle lines omitted — read the full output at the path above]\n{}",
-        head.join("\n"),
-        lines.len() - TAIL_LINES,
-        tail.join("\n")
-    )
-}
-
-fn toolchain_digest(lines: &[&str]) -> Vec<String> {
+fn toolchain_digest(lines: &[String]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut carry = 0_usize;
     for (index, line) in lines.iter().enumerate() {
         let trimmed = line.trim_start();
-        let starts_block = trimmed.starts_with("error")
-            || trimmed.starts_with("thread '")
-            || trimmed.starts_with("failures:")
-            || trimmed.starts_with("---- ")
-            || trimmed.starts_with("FAIL")
-            || trimmed.starts_with("not ok")
-            || trimmed.starts_with("✗")
-            || trimmed.contains("panicked at");
-        let summary = trimmed.starts_with("test result:")
-            || trimmed.starts_with("warning: unused")
-            || trimmed.starts_with("warning: `")
-            || trimmed.starts_with("Finished")
-            || trimmed.starts_with("could not compile")
-            || trimmed.starts_with("Tests:")
-            || trimmed.starts_with("# tests")
-            || trimmed.starts_with("# pass")
-            || trimmed.starts_with("# fail")
-            || trimmed.ends_with(" FAILED")
-            || trimmed.ends_with(" ... FAILED");
-        if starts_block {
-            carry = 12;
+        if opens_block(trimmed) {
+            carry = BLOCK_LINES;
         }
         if carry > 0 {
-            out.push((*line).to_string());
+            out.push(line.clone());
             carry -= 1;
-            if trimmed.is_empty()
-                && index + 1 < lines.len()
-                && !lines[index + 1].trim_start().starts_with(' ')
-            {
+            if ends_block(lines, index) {
                 carry = 0;
             }
-        } else if summary {
-            out.push((*line).to_string());
+        } else if is_summary(trimmed) {
+            out.push(line.clone());
         }
-        if out.len() > 400 {
+        if out.len() > DIGEST_ROWS {
             out.push("[digest truncated]".to_string());
             break;
         }
     }
     out
+}
+
+fn opens_block(line: &str) -> bool {
+    BLOCK_STARTS.iter().any(|prefix| line.starts_with(prefix)) || line.contains(BLOCK_CONTAINS)
+}
+
+fn is_summary(line: &str) -> bool {
+    SUMMARY_STARTS.iter().any(|prefix| line.starts_with(prefix)) || line.ends_with(SUMMARY_ENDS)
+}
+
+fn ends_block(lines: &[String], index: usize) -> bool {
+    lines[index].trim_start().is_empty()
+        && index + 1 < lines.len()
+        && !lines[index + 1].trim_start().starts_with(' ')
 }

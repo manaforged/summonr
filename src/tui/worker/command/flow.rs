@@ -197,29 +197,6 @@ impl Worker {
         true
     }
 
-    pub(in crate::tui::worker) fn approve(&mut self, argument: Option<&str>) -> bool {
-        match argument.map(str::trim) {
-            Some("on") => {
-                self.loop_.set_manual(true);
-                self.system("manual approval on — extra-root writes and shell commands ask first");
-            }
-            Some("off") => {
-                self.loop_.set_manual(false);
-                self.system(
-                    "manual approval off — auto mode grants extra-root writes for this session",
-                );
-            }
-            None | Some("") => {
-                let state = if self.loop_.manual() { "on" } else { "off" };
-                self.system(&format!(
-                    "manual approval {state} — /permissions approve on|off"
-                ));
-            }
-            Some(_) => self.system("/permissions approve on | off"),
-        }
-        true
-    }
-
     pub(in crate::tui::worker) async fn retry(&mut self) -> bool {
         let lines = match log::read(self.loop_.session_path()) {
             Ok(lines) => lines,

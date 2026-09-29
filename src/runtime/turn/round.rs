@@ -11,20 +11,9 @@ impl<P: Provider> Loop<P> {
         reached: &mut usize,
     ) -> Result<Turn> {
         let abort_reason;
-        self.settle_mcp(events, &mut emit).await?;
-        let tools = self.advertised_tools().to_vec();
-        if std::mem::take(&mut self.accepted) {
-            self.push_event(
-                events,
-                &mut emit,
-                Event::Note {
-                    text: "plan accepted — starting implementation".to_string(),
-                },
-            )?;
-        }
-        self.plan_first(&mut messages, usage, events, &mut emit)
+        let tools = self
+            .open_turn(&mut messages, usage, events, &mut emit)
             .await?;
-        self.scout(&mut messages, usage, events, &mut emit).await?;
 
         loop {
             while self.budget.max_tokens.is_some() && self.child_budget_reserved() > 0 {
@@ -32,34 +21,11 @@ impl<P: Provider> Loop<P> {
             }
             *reached = reached.saturating_add(1);
             let round = *reached;
-            if let Some(reason) = self.guard.stuck()
-                && let Some(reason) = self
-                    .steer_stuck(reason, &mut messages, events, &mut emit)
-                    .await?
-            {
-                abort_reason = Some(reason);
-                break;
-            }
-            if self.checkpoint_rounds > 0 && round.is_multiple_of(self.checkpoint_rounds) {
-                self.steer_checkpoint(round, &mut messages, events, &mut emit)
-                    .await?;
-            }
-            if let Some(reason) = self.round_abort() {
-                abort_reason = Some(reason);
-                break;
-            }
             let round_tools = tools.as_slice();
-            if let Err(error) = self
-                .prepare_round(&mut messages, round_tools, usage, events, &mut emit)
-                .await
+            if let Some(reason) = self
+                .open_round(round, &mut messages, round_tools, usage, events, &mut emit)
+                .await?
             {
-                if let Some(reason) = self.round_abort() {
-                    abort_reason = Some(reason);
-                    break;
-                }
-                return Err(error);
-            }
-            if let Some(reason) = self.round_abort() {
                 abort_reason = Some(reason);
                 break;
             }
@@ -70,15 +36,8 @@ impl<P: Provider> Loop<P> {
                 abort_reason = self.round_abort();
                 break;
             };
-            if assistant.usage.prompt_tokens > 0 {
-                self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
-            }
-            let role = self.round_role();
-            let meta = self.record_usage(&assistant, prefix_hash, role, usage);
-            let stop_reason = assistant.stop_reason;
-            let meter = super::meter(&assistant.usage, live_millis);
-            let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
-            let message = assistant.into_message();
+            let (message, stop_reason, meter, reasoning, meta) =
+                self.take_reply(assistant, prefix_hash, request_chars, live_millis, usage);
             let calls = message.tool_calls.clone();
             messages.push(message.clone());
             if stop_reason == StopReason::Length && calls.is_empty() {
@@ -95,7 +54,7 @@ impl<P: Provider> Loop<P> {
                 .await?;
                 continue;
             }
-            if calls.is_empty() {
+            if calls.is_empty() && !self.reprompts(&message) {
                 return self
                     .finish_turn(
                         message,
@@ -111,24 +70,137 @@ impl<P: Provider> Loop<P> {
                     )
                     .await;
             }
-            let planned = self
-                .session
-                .finish_provider_with_tools(
-                    durable_attempt,
-                    &message.content,
-                    &reasoning,
-                    meter,
-                    &calls,
-                    meta,
-                )
-                .map_err(super::session_err)?;
-            self.emit_records(events, &mut emit)?;
-            self.settle(pre, events, &mut emit).await?;
-            self.execute_calls(planned, calls, &mut messages, events, &mut emit, usage)
-                .await?;
+            self.continue_with(
+                (message, reasoning, durable_attempt, meter, meta),
+                calls,
+                &mut messages,
+                pre,
+                events,
+                &mut emit,
+                usage,
+            )
+            .await?;
         }
         self.abort_turn(abort_reason, events, emit, usage, *reached, pre)
             .await
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one round's reply parts move through as a tuple"
+    )]
+    async fn continue_with(
+        &mut self,
+        reply: (Message, String, Attempt, Meter, UsageMeta),
+        calls: Vec<ToolCall>,
+        messages: &mut Vec<Message>,
+        pre: &mut Pretask,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<()> {
+        let (message, reasoning, durable_attempt, meter, meta) = reply;
+        let planned = self
+            .session
+            .finish_provider_with_tools(
+                durable_attempt,
+                &message.content,
+                &reasoning,
+                meter,
+                &calls,
+                meta,
+            )
+            .map_err(super::session_err)?;
+        self.emit_records(events, emit)?;
+        if calls.is_empty() {
+            return self.steer_continue(messages, events, emit);
+        }
+        self.settle(pre, events, emit).await?;
+        self.guard.worked();
+        self.execute_calls(planned, calls, messages, events, emit, usage)
+            .await
+    }
+
+    async fn open_turn(
+        &mut self,
+        messages: &mut Vec<Message>,
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Vec<ToolDefinition>> {
+        self.settle_mcp(events, emit).await?;
+        let tools = self.advertised_tools().to_vec();
+        self.accept_note(events, emit)?;
+        self.plan_first(messages, usage, events, emit).await?;
+        self.scout(messages, usage, events, emit).await?;
+        Ok(tools)
+    }
+
+    fn accept_note(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if !std::mem::take(&mut self.accepted) {
+            return Ok(());
+        }
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "plan accepted — starting implementation".to_string(),
+            },
+        )
+    }
+
+    async fn open_round(
+        &mut self,
+        round: usize,
+        messages: &mut Vec<Message>,
+        tools: &[ToolDefinition],
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Option<String>> {
+        if let Some(reason) = self.steer_round(round, messages, events, emit).await? {
+            return Ok(Some(reason));
+        }
+        if let Some(reason) = self.round_abort() {
+            return Ok(Some(reason));
+        }
+        if let Err(error) = self
+            .prepare_round(messages, tools, usage, events, emit)
+            .await
+        {
+            return self.round_abort().map(Some).ok_or(error);
+        }
+        Ok(self.round_abort())
+    }
+
+    fn take_reply(
+        &mut self,
+        assistant: AssistantMessage,
+        prefix_hash: String,
+        request_chars: usize,
+        live_millis: u64,
+        usage: &mut Usage,
+    ) -> (Message, StopReason, Meter, String, UsageMeta) {
+        self.summary_wait = self.summary_wait.saturating_sub(1);
+        if assistant.usage.prompt_tokens > 0 {
+            self.context_sample = Some((request_chars, assistant.usage.prompt_tokens));
+        }
+        let role = self.round_role();
+        let meta = self.record_usage(&assistant, prefix_hash, role, usage);
+        let stop_reason = assistant.stop_reason;
+        let meter = super::meter(&assistant.usage, live_millis);
+        let reasoning = assistant.reasoning_content.clone().unwrap_or_default();
+        (
+            assistant.into_message(),
+            stop_reason,
+            meter,
+            reasoning,
+            meta,
+        )
     }
 
     pub(super) async fn plan_first(
@@ -155,9 +227,7 @@ impl<P: Provider> Loop<P> {
                 self.session
                     .select_plan(&text, &commands)
                     .map_err(super::session_err)?;
-                let input = UserInput::from(plan::note(&text));
-                self.session.steer(&input).map_err(super::session_err)?;
-                messages.push(Message::user(input));
+                self.inject(plan::note(&text), messages)?;
                 self.push_event(
                     events,
                     emit,
@@ -215,9 +285,7 @@ impl<P: Provider> Loop<P> {
             }
         };
         self.session.set_brief(&brief).map_err(super::session_err)?;
-        let input = UserInput::from(scout::note(&brief));
-        self.session.steer(&input).map_err(super::session_err)?;
-        messages.push(Message::user(input));
+        self.inject(scout::note(&brief), messages)?;
         self.push_event(
             events,
             emit,
@@ -241,7 +309,7 @@ impl<P: Provider> Loop<P> {
             self.tools.reset_edits();
             self.asked.retain(|grant| !matches!(grant, Grant::Edit(_)));
         }
-        self.summary_failed = false;
+        self.summary_wait = 0;
         self.guard.reset();
         self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
@@ -287,72 +355,6 @@ impl<P: Provider> Loop<P> {
             self.accepted = accepted;
         }
         Ok(())
-    }
-
-    async fn steer_stuck(
-        &mut self,
-        reason: String,
-        messages: &mut Vec<Message>,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<Option<String>> {
-        let interactive = self.steer_shared.is_some();
-        if interactive && self.guard.steered() {
-            let question = format!("{reason}. Let the turn continue?");
-            if self.approve(question, false, events, emit).await? == GrantAnswer::Deny {
-                return Ok(Some(reason));
-            }
-            self.guard.forgive();
-            return Ok(None);
-        }
-        let input = UserInput::from(format!(
-            "[summon control: {reason}. Before the next tool call, state the \
-             hypothesis the next action tests and what result would falsify it. \
-             If the same outcome repeats, change the approach.]"
-        ));
-        self.session.steer(&input).map_err(super::session_err)?;
-        messages.push(Message::user(input));
-        self.guard.mark_steered();
-        if !interactive {
-            self.guard.forgive();
-        }
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("loop guard: {reason} — steering the model"),
-            },
-        )?;
-        Ok(None)
-    }
-
-    async fn steer_checkpoint(
-        &mut self,
-        round: usize,
-        messages: &mut Vec<Message>,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        let progress = self.work_progress()?;
-        let mut text = String::from(
-            "[summon control: checkpoint — update the ledger before continuing: what is \
-             proven, what is the current blocker, what is next. If the last actions did \
-             not move the work forward, change approach or ask.]",
-        );
-        if !progress.ledger.is_empty() {
-            text.push_str("\nCurrent ledger:\n");
-            text.push_str(&progress.ledger.join("\n"));
-        }
-        let input = UserInput::from(text);
-        self.session.steer(&input).map_err(super::session_err)?;
-        messages.push(Message::user(input));
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: format!("checkpoint at round {round}"),
-            },
-        )
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {

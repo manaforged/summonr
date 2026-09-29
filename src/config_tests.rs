@@ -57,3 +57,13 @@ fn a_config_with_both_mail_and_bus_keeps_mail() {
     let file = parse(&path).unwrap();
     assert_eq!(file.mail, Some(true));
 }
+
+#[test]
+fn plan_mode_survives_a_save() {
+    let (_dir, path) = written("theme = \"space\"\n");
+    let mut prefs = crate::prefs::load_from(&path).unwrap();
+    assert!(!prefs.plan_mode);
+    prefs.plan_mode = true;
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    assert!(crate::prefs::load_from(&path).unwrap().plan_mode);
+}

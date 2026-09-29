@@ -68,7 +68,7 @@ pub(crate) fn buckets(
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Spend {
+pub(crate) struct Spend {
     pub model: String,
     pub hour: u64,
     pub local: bool,

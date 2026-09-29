@@ -17,13 +17,13 @@ pub(crate) struct Hunk {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub enum Verdict {
+pub(crate) enum Verdict {
     Accepted,
     Rejected,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Note {
+pub(crate) struct Note {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict: Option<Verdict>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

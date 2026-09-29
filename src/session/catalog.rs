@@ -90,7 +90,7 @@ pub(crate) fn name_of(path: &Path) -> Option<String> {
         .filter(|name| !name.is_empty())
 }
 
-pub fn set_name(path: &Path, name: &str) -> Result<()> {
+pub(crate) fn set_name(path: &Path, name: &str) -> Result<()> {
     let name = name.trim();
     if name.is_empty() || name.contains('\n') {
         return Err(Error::Config(

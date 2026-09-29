@@ -3,7 +3,7 @@ use crate::error::{Error, Result};
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 
 #[must_use]
-pub fn line_hash(text: &str) -> String {
+pub(crate) fn line_hash(text: &str) -> String {
     let mut hash = 0x811c_9dc5_u32;
     for byte in text.as_bytes() {
         hash ^= u32::from(*byte);
@@ -17,11 +17,6 @@ pub fn line_hash(text: &str) -> String {
         rest >>= 5;
     }
     String::from_utf8_lossy(&out).into_owned()
-}
-
-#[must_use]
-pub fn tagged_text(content: &str) -> String {
-    tagged_span(content, 0, usize::MAX)
 }
 
 #[must_use]
@@ -190,28 +185,4 @@ pub(crate) fn resolve_span(
     end_tag: Option<&str>,
 ) -> Result<(usize, usize)> {
     span(content, tag, end_tag)
-}
-
-#[must_use]
-pub(crate) fn dirty_span(before: &str, after: &str) -> (usize, usize) {
-    let old: Vec<&str> = before.lines().collect();
-    let new: Vec<&str> = after.lines().collect();
-    if new.is_empty() {
-        return (0, 0);
-    }
-    let mut first = 0;
-    while first < old.len() && first < new.len() && old[first] == new[first] {
-        first += 1;
-    }
-    if first == new.len() {
-        return (new.len().saturating_sub(1), new.len().saturating_sub(1));
-    }
-    let mut old_back = old.len();
-    let mut new_back = new.len();
-    while old_back > first && new_back > first && old[old_back - 1] == new[new_back - 1] {
-        old_back -= 1;
-        new_back -= 1;
-    }
-    let last = new_back.saturating_sub(1).max(first);
-    (first, last)
 }

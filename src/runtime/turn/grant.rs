@@ -166,7 +166,7 @@ impl<P: Provider> Loop<P> {
                 )?;
             }
             Grant::Network => {
-                self.set_network(true)?;
+                self.set_network(crate::Network::Allowed)?;
                 self.push_event(
                     events,
                     emit,

@@ -61,6 +61,7 @@ pub(crate) struct ToolOutput {
     pub(crate) success: bool,
     pub(crate) mutated: bool,
     pub(crate) grant: Option<Grant>,
+    pub(crate) images: Vec<crate::provider::Image>,
 }
 
 impl ToolOutput {
@@ -70,6 +71,7 @@ impl ToolOutput {
             success: true,
             mutated: false,
             grant: None,
+            images: Vec::new(),
         }
     }
 }
@@ -129,15 +131,16 @@ impl ToolRegistry {
         self.vision = vision;
     }
 
-    pub(crate) fn set_modules(&mut self, search: bool, lsp: bool, jobs: bool, skills: bool) {
-        if !search {
+    pub(crate) fn set_modules(&mut self, switches: &crate::modules::Switches) {
+        use crate::modules::ModuleId;
+        if !switches.enabled(ModuleId::Search) {
             self.search = None;
         } else if self.search.is_none() {
             self.search = crate::web::Search::discover().ok();
         }
-        self.language = lsp;
-        self.background = jobs;
-        self.skills = skills;
+        self.language = switches.enabled(ModuleId::Lsp);
+        self.background = switches.enabled(ModuleId::Jobs);
+        self.skills = switches.enabled(ModuleId::Skills);
         self.probed = std::sync::OnceLock::new();
     }
 
@@ -169,10 +172,10 @@ impl ToolRegistry {
         Ok(self.lexical(path)?.exists())
     }
 
-    pub(crate) fn enable_sandbox(&mut self, deny_network: bool) -> Result<()> {
+    pub(crate) fn enable_sandbox(&mut self, network: sandbox::Network) -> Result<()> {
         self.sandbox = Some(sandbox::Sandbox::discover(
             &self.workspace,
-            deny_network,
+            network,
             &self.policy.write_roots(),
         )?);
         Ok(())
@@ -211,11 +214,8 @@ impl ToolRegistry {
         }
         self.policy.allow_path(resolved);
         if self.sandbox.is_some() {
-            let deny = self
-                .sandbox
-                .as_ref()
-                .is_some_and(sandbox::Sandbox::denies_network);
-            self.enable_sandbox(deny)?;
+            let network = sandbox::Network::allowed(!self.denies_network());
+            self.enable_sandbox(network)?;
         }
         Ok(())
     }
@@ -294,7 +294,6 @@ impl ToolRegistry {
         let arguments = &call.function.arguments;
         match kind {
             Builtin::Read => tokio::task::block_in_place(|| self.read(arguments))
-                .map(ToolOutput::ok)
                 .map(|out| self.dedup_read(arguments, out)),
             Builtin::Edit => self.edit_file(arguments).await,
             Builtin::Write => self.write_file(arguments).await,
@@ -320,8 +319,7 @@ pub async fn run_tool(
     workspace: impl AsRef<Path>,
     name: &str,
     arguments: &str,
-    sandbox: bool,
-    deny_network: bool,
+    sandbox: Option<sandbox::Network>,
 ) -> Result<ToolResult> {
     let workspace = workspace.as_ref();
     let mut tools = ToolRegistry::with_policy_and_search(
@@ -329,8 +327,8 @@ pub async fn run_tool(
         crate::policy::Policy::discover(workspace)?,
         crate::web::Search::discover().ok(),
     )?;
-    if sandbox {
-        tools.enable_sandbox(deny_network)?;
+    if let Some(network) = sandbox {
+        tools.enable_sandbox(network)?;
     }
     let call = ToolCall {
         id: "cli".to_string(),

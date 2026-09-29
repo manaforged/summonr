@@ -90,7 +90,7 @@ pub(super) struct Model {
     pub(super) agents_expanded: bool,
     pub(super) prefs: Prefs,
     pub(super) snapshot: Snapshot,
-    pub(super) pick: Option<&'static str>,
+    pub(super) pick: Option<crate::endpoint::Pick>,
     pub(super) peers: Vec<crate::mail::Agent>,
 }
 

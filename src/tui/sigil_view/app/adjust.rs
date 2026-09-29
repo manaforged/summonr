@@ -51,7 +51,7 @@ impl App {
             Setting::Mail => self.toggle_mail(),
             Setting::Module(index) => {
                 if let Some(module) = crate::modules::ALL.get(index) {
-                    self.toggle_module(module.name);
+                    self.toggle_module(module.id.name());
                 }
             }
             Setting::Theme => self.toggle_theme(),

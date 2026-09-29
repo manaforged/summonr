@@ -9,7 +9,7 @@ const PINNED: &str = "favorites.json";
 const CAP: usize = 8;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Seat {
+pub(crate) struct Seat {
     pub endpoint: String,
     pub model: String,
 }

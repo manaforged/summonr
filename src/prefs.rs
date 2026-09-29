@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 
 mod diff;
 mod edit;
-pub use diff::DiffLayout;
+pub(crate) use diff::DiffLayout;
 pub(crate) use edit::banned_edit;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub enum Hotkey {
 }
 
 impl Hotkey {
-    pub const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 12] = [
         Self::Options,
         Self::Newline,
         Self::Editor,
@@ -70,7 +70,7 @@ impl Hotkey {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Hotkeys {
+pub(crate) struct Hotkeys {
     keys: [char; Hotkey::ALL.len()],
 }
 
@@ -83,7 +83,7 @@ impl Default for Hotkeys {
 }
 
 impl Hotkeys {
-    pub fn configured(rows: &BTreeMap<String, String>) -> Result<Self> {
+    pub(crate) fn configured(rows: &BTreeMap<String, String>) -> Result<Self> {
         let mut hotkeys = Self::default();
         for (name, binding) in rows {
             let action = Hotkey::named(name)
@@ -133,17 +133,17 @@ impl Hotkeys {
     }
 
     #[must_use]
-    pub const fn key(&self, action: Hotkey) -> char {
+    pub(crate) const fn key(&self, action: Hotkey) -> char {
         self.keys[action.index()]
     }
 
     #[must_use]
-    pub fn label(&self, action: Hotkey) -> String {
+    pub(crate) fn label(&self, action: Hotkey) -> String {
         format!("ctrl+{}", self.key(action))
     }
 
     #[must_use]
-    pub fn action(&self, key: char) -> Option<Hotkey> {
+    pub(crate) fn action(&self, key: char) -> Option<Hotkey> {
         Hotkey::ALL
             .into_iter()
             .find(|action| self.key(*action) == key)
@@ -161,7 +161,7 @@ impl Hotkeys {
         true
     }
 
-    pub fn entries(&self) -> impl Iterator<Item = (Hotkey, String)> + '_ {
+    pub(crate) fn entries(&self) -> impl Iterator<Item = (Hotkey, String)> + '_ {
         Hotkey::ALL
             .into_iter()
             .map(|action| (action, self.label(action)))
@@ -169,7 +169,7 @@ impl Hotkeys {
 }
 
 #[must_use]
-pub const fn available(key: char) -> bool {
+pub(crate) const fn available(key: char) -> bool {
     key.is_ascii_lowercase()
         && !matches!(
             key,
@@ -184,7 +184,7 @@ fn parse(binding: &str) -> Option<char> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ToolOutput {
+pub(crate) enum ToolOutput {
     Compact,
     Full,
 }
@@ -207,7 +207,7 @@ impl ToolOutput {
     }
 
     #[must_use]
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Compact => "compact",
             Self::Full => "full",
@@ -215,7 +215,7 @@ impl ToolOutput {
     }
 
     #[must_use]
-    pub fn toggle(self) -> Self {
+    pub(crate) fn toggle(self) -> Self {
         match self {
             Self::Compact => Self::Full,
             Self::Full => Self::Compact,
@@ -224,7 +224,7 @@ impl ToolOutput {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Visibility {
+pub(crate) enum Visibility {
     Off,
     Collapsed,
     Expanded,
@@ -232,7 +232,7 @@ pub enum Visibility {
 
 impl Visibility {
     #[must_use]
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Off => "off",
             Self::Collapsed => "collapsed",
@@ -241,7 +241,7 @@ impl Visibility {
     }
 
     #[must_use]
-    pub fn toggle(self) -> Self {
+    pub(crate) fn toggle(self) -> Self {
         match self {
             Self::Off => Self::Collapsed,
             Self::Collapsed => Self::Expanded,
@@ -250,7 +250,7 @@ impl Visibility {
     }
 
     #[must_use]
-    pub fn parse(value: &str, fallback: Self) -> Self {
+    pub(crate) fn parse(value: &str, fallback: Self) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "off" | "false" | "hidden" => Self::Off,
             "collapsed" => Self::Collapsed,
@@ -260,27 +260,27 @@ impl Visibility {
     }
 }
 
-pub const FPS_DEFAULT: u32 = 25;
-pub const FPS_MIN: u32 = 1;
-pub const FPS_MAX: u32 = 240;
+pub(crate) const FPS_DEFAULT: u32 = 25;
+pub(crate) const FPS_MIN: u32 = 1;
+pub(crate) const FPS_MAX: u32 = 240;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
-    pub theme: String,
+    pub(crate) theme: String,
     pub splash: bool,
-    pub animations: bool,
-    pub fps: u32,
-    pub reasoning: Visibility,
-    pub receipts: Visibility,
-    pub tools: ToolOutput,
-    pub diff_layout: DiffLayout,
-    pub mail: bool,
-    pub ban_comments: bool,
-    pub ban_tests: bool,
-    pub plan_mode: bool,
-    pub layout: String,
-    pub hotkeys: Hotkeys,
-    pub last_endpoint: Option<String>,
+    pub(crate) animations: bool,
+    pub(crate) fps: u32,
+    pub(crate) reasoning: Visibility,
+    pub(crate) receipts: Visibility,
+    pub(crate) tools: ToolOutput,
+    pub(crate) diff_layout: DiffLayout,
+    pub(crate) mail: bool,
+    pub(crate) ban_comments: bool,
+    pub(crate) ban_tests: bool,
+    pub(crate) plan_mode: bool,
+    pub(crate) layout: String,
+    pub(crate) hotkeys: Hotkeys,
+    pub(crate) last_endpoint: Option<String>,
 }
 
 impl Default for Prefs {

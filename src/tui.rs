@@ -1,7 +1,5 @@
 use std::path::PathBuf;
 
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-
 use crate::error::Result;
 use crate::prefs::Prefs;
 use crate::provider::Client;
@@ -10,9 +8,11 @@ use crate::runtime::Loop;
 use crate::session::Prompt;
 use crate::tools::Event;
 
+mod channel;
 mod help;
 mod matching;
 mod sigil_view;
+pub use channel::{Inbox, Ui, channel};
 pub(crate) use help::help_text;
 pub(crate) use matching::matching_commands;
 pub use sigil_view::profile::run as profile;
@@ -20,7 +20,7 @@ mod worker;
 
 use worker::worker;
 
-pub enum Msg {
+pub(crate) enum Msg {
     Secret(crate::askpass::Request),
     User(String),
     Image(crate::provider::Image),
@@ -102,7 +102,6 @@ pub enum Msg {
     },
     Resume(String),
     LoginStep {
-        name: String,
         text: String,
         url: String,
         code: String,
@@ -116,7 +115,7 @@ pub enum Msg {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Activity {
+pub(crate) enum Activity {
     Turn,
     Login,
     Compact,
@@ -205,7 +204,7 @@ enum Cmd {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct Round {
+pub(crate) struct Round {
     pub prompt: u32,
     pub completion: u32,
     pub reasoning: u32,
@@ -221,7 +220,7 @@ impl Round {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Snapshot {
+pub(crate) struct Snapshot {
     pub model: String,
     pub relay: Option<String>,
     pub plan: bool,
@@ -238,7 +237,7 @@ pub struct Snapshot {
 
 impl Snapshot {
     #[must_use]
-    pub fn mode_name(&self) -> &'static str {
+    pub(crate) fn mode_name(&self) -> &'static str {
         if self.plan {
             crate::RunMode::Plan.name()
         } else if self.work {
@@ -258,7 +257,7 @@ pub struct Info {
     pub relay: Option<String>,
     pub session: String,
     pub endpoint: String,
-    pub pick: Option<&'static str>,
+    pub pick: Option<crate::endpoint::Pick>,
     pub prefs: Prefs,
     pub splash: bool,
     pub inline: bool,
@@ -273,10 +272,11 @@ pub fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
     info: Info,
-    ui_tx: UnboundedSender<Msg>,
-    ui_rx: UnboundedReceiver<Msg>,
+    ui: Ui,
+    inbox: Inbox,
     gui: bool,
 ) -> Result<Exit> {
+    let (ui_tx, ui_rx) = (ui.0, inbox.0);
     if gui {
         #[cfg(feature = "gui")]
         return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx);

@@ -53,8 +53,11 @@ fn the_last_seat_wins_over_the_config_default() {
     let (name, model, reason) = choose(&file, last, None, None);
     assert_eq!(
         (name.as_deref(), model.as_deref(), reason),
-        (Some("zai"), Some("glm"), Some("last used"))
+        (Some("zai"), Some("glm"), Some(super::Pick::LastUsed))
     );
     let (name, _, reason) = choose(&file, None, None, None);
-    assert_eq!((name.as_deref(), reason), (Some("qwen"), Some("default")));
+    assert_eq!(
+        (name.as_deref(), reason),
+        (Some("qwen"), Some(super::Pick::Default))
+    );
 }

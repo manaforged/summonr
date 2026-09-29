@@ -81,7 +81,7 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
             )
         })?,
     };
-    resolve_endpoint(Some(&name), args.model.as_deref())
+    resolve_endpoint(Some(&name), args.model.as_deref(), summonr::Need::Seat)
 }
 
 pub(super) async fn run_classify(args: &Args) -> Result<i32> {

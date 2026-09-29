@@ -46,7 +46,7 @@ pub struct Tally {
 }
 
 impl Tally {
-    pub fn accuracy(&self) -> f64 {
+    pub(crate) fn accuracy(&self) -> f64 {
         if self.asked == 0 {
             return 0.0;
         }
@@ -69,14 +69,14 @@ pub struct Miss {
     pub certainty: f64,
 }
 
-pub struct Verdict {
+pub(crate) struct Verdict {
     pub right: bool,
     pub wanted: String,
     pub got: String,
     pub certainty: f64,
 }
 
-pub fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdict> {
+pub(crate) fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdict> {
     let verdict = match answer {
         Answer::Choice {
             choice, confidence, ..

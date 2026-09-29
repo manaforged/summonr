@@ -39,7 +39,7 @@ where
         }
     });
     let mut server = Server {
-        endpoint: endpoint::resolve(name, model)?,
+        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)?,
         build,
         out,
         current: Arc::new(Mutex::new(String::new())),

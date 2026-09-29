@@ -12,9 +12,9 @@ use serde_json::Value;
 use crate::endpoint::{Endpoint, Wire};
 use crate::error::{Error, ProviderFailureKind, Result};
 
-pub const AT_ONCE: usize = 8;
+pub(crate) const AT_ONCE: usize = 8;
 
-pub async fn in_flight<T, F>(work: Vec<F>) -> Result<Vec<T>>
+pub(crate) async fn in_flight<T, F>(work: Vec<F>) -> Result<Vec<T>>
 where
     F: std::future::Future<Output = Result<T>>,
 {
@@ -27,9 +27,9 @@ where
     Ok(done)
 }
 
-pub const MOST_OPTIONS: usize = 255;
-pub const FEWEST_LEVELS: usize = 2;
-pub const MOST_LEVELS: usize = 10;
+pub(crate) const MOST_OPTIONS: usize = 255;
+pub(crate) const FEWEST_LEVELS: usize = 2;
+pub(crate) const MOST_LEVELS: usize = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Boundary {
@@ -65,7 +65,7 @@ impl Question {
         }
     }
 
-    pub fn bounded(
+    pub(crate) fn bounded(
         instructions: impl Into<Value>,
         yes: impl Into<Value>,
         no: impl Into<Value>,
@@ -79,7 +79,7 @@ impl Question {
         }
     }
 
-    pub fn choice<K, V>(
+    pub(crate) fn choice<K, V>(
         instructions: impl Into<Value>,
         options: impl IntoIterator<Item = (K, V)>,
     ) -> Self
@@ -228,8 +228,8 @@ fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result
     Ok(())
 }
 
-pub const CONTEXT_CHARS: usize = 84_000;
-pub const CHARS_PER_TOKEN: usize = 3;
+pub(crate) const CONTEXT_CHARS: usize = 84_000;
+pub(crate) const CHARS_PER_TOKEN: usize = 3;
 
 pub fn budget(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> usize {
     let room = endpoint

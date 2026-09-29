@@ -102,13 +102,19 @@ impl<P: Provider> Loop<P> {
                  message directly before resuming tool work.\n\n"
             ));
         }
-        note.push_str(&harness_section(
-            self.mode,
-            self.verify.as_deref().unwrap_or_default(),
-            !self.denies_network(),
-            self.tools.has_sandbox(),
-            self.task_available(),
-        ));
+        note.push_str(&harness_section(&Harness {
+            mode: self.mode,
+            checks: self.verify.as_deref().unwrap_or_default(),
+            sandbox: self
+                .tools
+                .has_sandbox()
+                .then_some(if self.denies_network() {
+                    Network::Denied
+                } else {
+                    Network::Allowed
+                }),
+            children: self.task_available(),
+        }));
         if progress.kind == WorkKind::Goal {
             note.push_str(&format!(
                 "\n\nHarness objective (verbatim, this is what must be met):\n{}",

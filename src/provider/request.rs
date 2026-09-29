@@ -35,7 +35,7 @@ impl<'de> Deserialize<'de> for Effort {
 }
 
 impl Effort {
-    pub const ALL: [Self; 7] = [
+    pub(crate) const ALL: [Self; 7] = [
         Self::None,
         Self::Minimal,
         Self::Low,
@@ -135,7 +135,7 @@ pub(crate) fn compact(count: u64) -> String {
 }
 
 #[must_use]
-pub fn dollars(amount: f64) -> String {
+pub(crate) fn dollars(amount: f64) -> String {
     if amount < 0.01 {
         format!("${amount:.4}")
     } else {

@@ -5,10 +5,10 @@ use std::str::FromStr;
 use crate::config::{self, File, SeatRow};
 use crate::error::{Error, Result};
 
-pub const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "save", "default"];
+pub(crate) const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "save", "default"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Role {
+pub(crate) enum Role {
     Scout,
     Plan,
     Implement,
@@ -18,7 +18,7 @@ pub enum Role {
 }
 
 impl Role {
-    pub const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 6] = [
         Self::Scout,
         Self::Plan,
         Self::Implement,
@@ -28,7 +28,7 @@ impl Role {
     ];
 
     #[must_use]
-    pub fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Scout => "scout",
             Self::Plan => "plan",
@@ -75,12 +75,12 @@ impl fmt::Display for Seat {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Workflow {
     pub name: String,
-    pub seats: BTreeMap<Role, Seat>,
+    pub(crate) seats: BTreeMap<Role, Seat>,
 }
 
 impl Workflow {
     #[must_use]
-    pub fn seat(&self, role: Role) -> Option<&Seat> {
+    pub(crate) fn seat(&self, role: Role) -> Option<&Seat> {
         self.seats.get(&role)
     }
 

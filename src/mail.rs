@@ -39,7 +39,7 @@ fn clean_id(id: &str) -> String {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Agent {
+pub(crate) struct Agent {
     pub id: String,
     #[serde(default)]
     pub name: String,

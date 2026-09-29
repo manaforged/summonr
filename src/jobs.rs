@@ -13,7 +13,7 @@ const POLL_START_SECS: u64 = 1;
 const POLL_CAP_SECS: u64 = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Record {
+pub(crate) struct Record {
     pub id: String,
     pub pid: u32,
     pub command: String,
@@ -29,7 +29,7 @@ pub struct Record {
 }
 
 #[derive(Clone)]
-pub struct Status {
+pub(crate) struct Status {
     pub text: String,
     pub exit_code: Option<i32>,
     pub running: bool,

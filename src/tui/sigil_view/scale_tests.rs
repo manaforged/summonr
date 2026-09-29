@@ -36,7 +36,7 @@ fn frame(cols: u16, rows: u16, state: State) -> Vec<String> {
 fn busy_info() -> Info {
     Info {
         model: "stub-model".to_owned(),
-        pick: Some("flag"),
+        pick: Some(crate::endpoint::Pick::Flag),
         relay: Some("127.0.0.1:18080".to_owned()),
         session: "0123456789abcdef".to_owned(),
         ..info()

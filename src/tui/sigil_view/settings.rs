@@ -125,8 +125,14 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         rows.push((
             "modules",
             Setting::Module(index),
-            module.name,
-            on_off(modules.get(module.name).copied().unwrap_or(module.default)).to_string(),
+            module.id.name(),
+            on_off(
+                modules
+                    .get(module.id.name())
+                    .copied()
+                    .unwrap_or(module.default),
+            )
+            .to_string(),
         ));
     }
     rows.extend([

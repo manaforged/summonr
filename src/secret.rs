@@ -346,6 +346,6 @@ pub fn set(name: &str, secret: &str) -> Result<Source> {
     Store::discover()?.set(name, secret)
 }
 
-pub fn forget(name: &str) -> Result<bool> {
+pub(crate) fn forget(name: &str) -> Result<bool> {
     Store::discover()?.forget(name)
 }

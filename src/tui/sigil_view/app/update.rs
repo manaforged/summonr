@@ -16,7 +16,6 @@ impl App {
                 url,
                 code,
                 asking,
-                ..
             } => {
                 self.auth_progress(text, url, code, asking);
                 return;

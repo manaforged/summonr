@@ -218,7 +218,7 @@ fn hunk_header(line: &str) -> Option<(usize, usize)> {
     (count > 0).then(|| (start.parse().ok().unwrap_or(1), count))
 }
 
-pub fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
+pub(crate) fn edited<'a>(calls: impl IntoIterator<Item = (&'a str, &'a str)>) -> Vec<String> {
     let mut paths: Vec<String> = Vec::new();
     for (name, arguments) in calls {
         if !editor(name) {

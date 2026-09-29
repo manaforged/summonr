@@ -17,8 +17,7 @@ pub(super) async fn run(args: &Args, tool: &[String]) -> Result<i32> {
         &workspace()?,
         name,
         &arguments,
-        args.sandbox == Some(true),
-        !args.network,
+        (args.sandbox == Some(true)).then_some(summonr::Network::allowed(args.network)),
     )
     .await?;
     println!("{}", outcome.text);

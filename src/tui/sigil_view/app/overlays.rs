@@ -362,7 +362,16 @@ impl App {
             }
             Action::Attach => self.mention(&context.target.path),
             Action::View if context.kind == Pane::Jobs => {
-                self.view_open(format!(".summonr/jobs/{}.log", context.target.path));
+                let id = &context.target.path;
+                let path = crate::jobs::load(&self.workspace, id).map_or_else(
+                    |_| format!(".summonr/jobs/{id}.log"),
+                    |record| {
+                        crate::jobs::log_path(&self.workspace, &record)
+                            .display()
+                            .to_string()
+                    },
+                );
+                self.view_open(path);
             }
             Action::View => self.view_open(context.target.path.clone()),
             Action::Kill => self.job_kill(&context.target.path),

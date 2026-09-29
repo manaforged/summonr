@@ -15,7 +15,7 @@ pub const ALL: [Module; 7] = [
     Module {
         name: "search",
         summary: "the web tool (search, fetch) through Leyline with a browser identity",
-        default: true,
+        default: false,
     },
     Module {
         name: "lsp",

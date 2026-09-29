@@ -125,14 +125,11 @@ impl Worker {
                 .map_or((text, None), |(topic, rest)| (topic, Some(rest.trim())))
         });
         match topic {
-            "" => self.network(None) && self.write(None) && self.approve(None),
+            "" => self.network(None) && self.write(None),
             "net" => self.network(rest),
             "write" => self.write(rest),
-            "approve" => self.approve(rest),
             other => {
-                self.fail(&format!(
-                    "/permissions takes net, write, or approve, not `{other}`"
-                ));
+                self.fail(&format!("/permissions takes net or write, not `{other}`"));
                 true
             }
         }

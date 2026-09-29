@@ -33,11 +33,11 @@ pub(super) struct CommandChild {
 
 #[cfg(windows)]
 impl CommandChild {
-    fn id(&self) -> Option<u32> {
+    pub(super) fn id(&self) -> Option<u32> {
         self.child.id()
     }
 
-    async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
+    pub(super) async fn wait(&mut self) -> std::io::Result<std::process::ExitStatus> {
         self.child.wait().await
     }
 
@@ -166,14 +166,18 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
     } = started;
     drop(child);
     ToolOutput {
-        text: format!(
-            "started job {id}\npid {pid}\nlog {}\nstate: running",
-            log_path.display()
-        ),
+        text: job_text(&id, pid, &log_path),
         success: true,
         mutated: false,
         grant: None,
     }
+}
+
+pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String {
+    format!(
+        "started job {id}\npid {pid}\nlog {}\nstate: running",
+        log_path.display()
+    )
 }
 
 fn command_env() -> Vec<(String, String)> {

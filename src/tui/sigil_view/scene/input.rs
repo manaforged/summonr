@@ -115,7 +115,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     } else if model.snapshot.goal {
         ("goal", '◎', palette().red)
     } else {
-        ("auto", '●', palette().green)
+        (model.snapshot.mode_name(), '●', palette().green)
     };
     let busy = model.busy_since.is_some();
     let accent = palette().accent;

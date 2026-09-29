@@ -133,13 +133,17 @@ impl<P: Provider> Loop<P> {
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
         self.session
             .prepare_external_work(markdown, WorkPolicy::Steps, commands)
-            .map_err(super::session_err)
+            .map_err(super::session_err)?;
+        self.schema = None;
+        Ok(())
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
         self.session
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
-            .map_err(super::session_err)
+            .map_err(super::session_err)?;
+        self.schema = None;
+        Ok(())
     }
 
     pub(crate) fn accept_plan(&mut self) -> Result<()> {

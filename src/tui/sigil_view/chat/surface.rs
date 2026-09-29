@@ -112,7 +112,7 @@ fn header_parts(app: &App, width: usize) -> HeaderParts {
     } else {
         3
     };
-    let mode = ["plan", "work", "goal", "auto"][mode_class as usize];
+    let mode = snapshot.mode_name();
     let mut parts = vec![
         (Part::Brand, "summonr".to_owned()),
         (Part::Model, snapshot.model.clone()),

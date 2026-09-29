@@ -54,12 +54,13 @@ the old names.
 | `edit` | Hash-anchored replace, insert, delete, or a batch |
 | `write` | Create or overwrite |
 | `run_command` | Sandboxed shell |
-| `todo` | The itemized step list the harness tracks |
+| `todo` | The itemized step list the harness tracks, in steps and goal runs |
 
-On when the module is on: `skill`, `lsp`, `web`, `task`, and the mail tools
-`agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is
-off by default; `/settings` switches either. Plan mode advertises `read`,
-`run_command`, and `todo` (plus `skill` and `web`).
+On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by
+default), `task` (interactive sessions only), and the mail tools `agents`,
+`send`, `inbox`, and `board`. `task` is on by default and `mail` is off by
+default; `/settings` switches either. Plan mode advertises `read` and
+`run_command` (plus `skill`, and `web` when `search` is on).
 
 ## What the harness holds between turns
 

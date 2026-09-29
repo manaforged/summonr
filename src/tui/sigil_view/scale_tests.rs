@@ -12,9 +12,11 @@ use super::view::root;
 use crate::tools::Event;
 use crate::tui::{Activity, Info, Msg};
 
+mod attach;
 mod effort;
 mod gutter;
 mod mention;
+mod mode;
 mod picker;
 mod secret;
 

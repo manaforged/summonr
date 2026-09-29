@@ -14,6 +14,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
         document.as_table_mut().remove("bus");
         document["ban_comments"] = value(prefs.ban_comments);
         document["ban_tests"] = value(prefs.ban_tests);
+        document["plan_mode"] = value(prefs.plan_mode);
         document["layout"] = value(&prefs.layout);
         let mut hotkeys = toml_edit::InlineTable::new();
         for (action, binding) in prefs.hotkeys.entries() {

@@ -2,21 +2,20 @@ use super::*;
 use sigil::prelude::{IntoNode, button, hairline, kv_row, spacer, status_bar};
 
 pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
-    let (plan, context, tokens, cached) = {
+    let (snapshot, plan_mode, context, tokens, cached) = {
         let model = app.model.get();
         let cached = (model.cached_tokens > 0 && model.prompt_tokens > 0)
             .then(|| model.cached_tokens.saturating_mul(100) / model.prompt_tokens);
         (
-            model.snapshot.plan,
+            model.snapshot.clone(),
+            model.prefs.plan_mode,
             context(model.usage.last(), model.snapshot.context_window, false),
             model.prompt_tokens.saturating_add(model.completion_tokens),
             cached,
         )
     };
     let branch = app.git_branch.clone().unwrap_or_default();
-    let auto = app.clone();
-    let planned = app.clone();
-    let modes = container()
+    let mut modes = container()
         .layout(
             LayoutStyle::flex_row()
                 .height(26.0)
@@ -24,17 +23,21 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
                 .gap(2.0)
                 .align_items(AlignItems::Center),
         )
-        .class(classes!("rounded-md bg-gray-3"))
-        .child(seg("Auto", !plan, move || {
-            if auto.model.get().snapshot.plan {
-                auto.toggle_mode();
-            }
-        }))
-        .child(seg("Plan", plan, move || {
-            if !planned.model.get().snapshot.plan {
-                planned.toggle_mode();
-            }
+        .class(classes!("rounded-md bg-gray-3"));
+    let auto = app.clone();
+    modes = modes.child(seg(
+        crate::RunMode::Auto.name(),
+        !snapshot.plan,
+        move || {
+            auto.leave_plan();
+        },
+    ));
+    if plan_mode || snapshot.plan {
+        let target = app.clone();
+        modes = modes.child(seg(crate::RunMode::Plan.name(), snapshot.plan, move || {
+            target.enter_plan()
         }));
+    }
     let mut facts = container()
         .layout(
             LayoutStyle::flex_row()

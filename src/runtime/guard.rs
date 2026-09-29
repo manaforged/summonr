@@ -3,6 +3,10 @@ use std::collections::VecDeque;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use serde::Deserialize;
+
+use crate::tools::Builtin;
+
 const WINDOW: usize = 24;
 const WARN: usize = 3;
 const STOP: usize = 6;
@@ -49,6 +53,8 @@ pub(super) struct Guard {
     strained: bool,
     rejected: bool,
     steered: bool,
+    controlled: bool,
+    reprompted: bool,
     signatures: HashMap<u64, usize>,
     settings: Settings,
 }
@@ -68,6 +74,10 @@ impl Guard {
         };
     }
 
+    fn watches(&self, name: &str, arguments: &str, success: bool) -> bool {
+        self.settings.enabled && !(success && polls(name, arguments))
+    }
+
     pub(super) fn observe(
         &mut self,
         name: &str,
@@ -75,7 +85,7 @@ impl Guard {
         success: bool,
         output: String,
     ) -> String {
-        if !self.settings.enabled {
+        if !self.watches(name, arguments, success) {
             return output;
         }
         self.failures = if success { 0 } else { self.failures + 1 };
@@ -152,6 +162,24 @@ impl Guard {
         }
     }
 
+    pub(super) fn round(&mut self) {
+        self.controlled = false;
+    }
+
+    pub(super) fn control(&mut self) {
+        self.controlled = true;
+    }
+
+    pub(super) fn reprompt(&mut self) -> bool {
+        let due = self.controlled && !self.reprompted;
+        self.reprompted |= due;
+        due
+    }
+
+    pub(super) fn worked(&mut self) {
+        self.reprompted = false;
+    }
+
     pub(super) fn steered(&self) -> bool {
         self.steered
     }
@@ -178,6 +206,35 @@ impl Guard {
 
     pub(super) fn stuck(&self) -> Option<String> {
         self.stuck.clone()
+    }
+}
+
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct Target {
+    job: Option<String>,
+    child: Option<String>,
+    kill: bool,
+}
+
+fn polls(name: &str, arguments: &str) -> bool {
+    let Some(builtin) = Builtin::of(name) else {
+        return false;
+    };
+    let target: Target = serde_json::from_str(arguments).unwrap_or_default();
+    if target.kill {
+        return false;
+    }
+    match builtin {
+        Builtin::RunCommand => target.job.is_some_and(|id| !id.is_empty()),
+        Builtin::Task => target.child.is_some(),
+        Builtin::Read
+        | Builtin::Edit
+        | Builtin::Write
+        | Builtin::Lsp
+        | Builtin::Skill
+        | Builtin::Todo
+        | Builtin::Web => false,
     }
 }
 

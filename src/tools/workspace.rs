@@ -21,31 +21,37 @@ use list::{format_directory, format_tree};
 impl ToolRegistry {
     pub(super) fn read(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("read", arguments)?;
+        let op = args.get("op").and_then(Value::as_str);
         if let Some(paths) = args
             .get("paths")
             .and_then(Value::as_array)
             .filter(|paths| !paths.is_empty())
         {
-            match args.get("op").and_then(Value::as_str) {
-                None | Some("file") => return self.read_files(&args, paths),
-                Some(operation) => {
-                    return Err(Error::Tool(format!(
-                        "paths does not apply to read op={operation}"
-                    )));
-                }
-            }
+            return match op {
+                None | Some("file") => self.read_files(&args, paths),
+                Some(operation) => Err(Error::Tool(format!(
+                    "paths does not apply to read op={operation}"
+                ))),
+            };
         }
-        match args.get("op").and_then(Value::as_str) {
-            Some("file") => return self.read_file(arguments),
-            Some("list") => return self.list_dir(arguments),
-            Some("search") => return self.grep(arguments),
-            Some("image") => return self.show_image(arguments),
-            Some("help") => return Ok(super::help::READ.to_string()),
-            Some(operation) => {
-                return Err(Error::Tool(format!("unknown read operation `{operation}`")));
-            }
-            None => {}
+        match op {
+            Some(operation) => self.read_op(operation, arguments),
+            None => self.read_default(&args, arguments),
         }
+    }
+
+    fn read_op(&self, operation: &str, arguments: &str) -> Result<String> {
+        match operation {
+            "file" => self.read_file(arguments),
+            "list" => self.list_dir(arguments),
+            "search" => self.grep(arguments),
+            "image" => self.show_image(arguments),
+            "help" => Ok(super::help::READ.to_string()),
+            unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
+        }
+    }
+
+    fn read_default(&self, args: &Value, arguments: &str) -> Result<String> {
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = args
             .get("glob")
@@ -102,9 +108,9 @@ impl ToolRegistry {
         if let Some(patch) = args.get("patch").and_then(Value::as_str) {
             return apply_patch::run(self, patch).await;
         }
+        let path = nonempty_path(args, name)?;
         if let Some(to) = edit::move_target(args) {
-            let path = nonempty_path(args, name)?.to_string();
-            let text = self.move_file(&path, to).await?;
+            let text = self.move_file(path, to).await?;
             return Ok(ToolOutput {
                 text,
                 success: true,
@@ -112,7 +118,6 @@ impl ToolRegistry {
                 grant: None,
             });
         }
-        let path = nonempty_path(args, name)?;
         let dest = self.resolve_existing(path)?;
         self.check_write(&dest)?;
         let raw = std::fs::read_to_string(&dest)
@@ -124,18 +129,7 @@ impl ToolRegistry {
         }
         let endings = edit::terminators(&raw);
         let original = raw.replace("\r\n", "\n");
-        let (edited, relaxed) = match args.get("edits").and_then(Value::as_array) {
-            Some(ops)
-                if !ops.is_empty()
-                    && args.get("op").and_then(Value::as_str) == Some("sequence") =>
-            {
-                edit::apply_sequence(&original, ops)?
-            }
-            Some(ops) if !ops.is_empty() => edit::apply_many(&original, ops)?,
-            Some(_) => return Err(Error::Tool("edits is empty".to_string())),
-            None => edit::apply_one(&original, args)
-                .map_err(|error| edit::edit_error_context(error, &original, args))?,
-        };
+        let (edited, relaxed) = edited_text(&original, args)?;
         let edited = edit::restore(&endings, &original, &edited);
         let preview = self.atomic_write(&dest, path, &edited, edit::uses_tags(args))?;
         let mut out = format!("edited {path}\n{preview}");
@@ -155,6 +149,7 @@ impl ToolRegistry {
             grant: None,
         })
     }
+
     pub(super) async fn write_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("write", arguments)?;
         if let Some(files) = args.get("files").and_then(Value::as_array) {
@@ -167,11 +162,8 @@ impl ToolRegistry {
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
         let dest = self.resolve_write(path)?;
         self.check_write(&dest)?;
-        let preview = self.atomic_write(&dest, path, content, false)?;
-        let mut out = format!(
-            "wrote {path} ({} lines)\n{preview}",
-            content.lines().count()
-        );
+        let note = self.atomic_write(&dest, path, content, write::View::Overwrite)?;
+        let mut out = format!("wrote {path} ({} lines, {note})", content.lines().count());
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -199,9 +191,9 @@ impl ToolRegistry {
             let dest = self.resolve_write(&path)?;
             self.check_write(&dest)?;
             let before = write::current(&dest, &path)?;
-            let preview = self.stage_write(&dest, &before, content, false)?;
+            let note = self.stage_write(&dest, &before, content, write::View::Overwrite)?;
             out.push_str(&format!(
-                "wrote {path} ({} lines)\n{preview}\n",
+                "wrote {path} ({} lines, {note})\n",
                 content.lines().count()
             ));
             planned.push(write::Change {
@@ -261,3 +253,14 @@ impl ToolRegistry {
 #[cfg(test)]
 #[path = "workspace_tests.rs"]
 mod tests;
+
+fn edited_text(original: &str, args: &Value) -> Result<(String, bool)> {
+    let sequence = args.get("op").and_then(Value::as_str) == Some("sequence");
+    match args.get("edits").and_then(Value::as_array) {
+        Some(ops) if ops.is_empty() => Err(Error::Tool("edits is empty".to_string())),
+        Some(ops) if sequence => edit::apply_sequence(original, ops),
+        Some(ops) => edit::apply_many(original, ops),
+        None => edit::apply_one(original, args)
+            .map_err(|error| edit::edit_error_context(error, original, args)),
+    }
+}

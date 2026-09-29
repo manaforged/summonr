@@ -66,7 +66,11 @@ mod finish;
 mod grant;
 mod retry;
 mod round;
+mod steer;
 mod usage;
+
+#[cfg(test)]
+mod permission_tests;
 
 impl<P: Provider> Loop<P> {
     fn completion_request<'a>(
@@ -323,16 +327,5 @@ fn verify_call(command: &str) -> ToolCall {
             })
             .to_string(),
         },
-    }
-}
-
-fn blocked(command: &str, why: &str) -> ToolOutput {
-    ToolOutput {
-        text: format!(
-            "summonr: blocked `{command}` — {why}. Take a safer approach, or ask the user to run it."
-        ),
-        success: false,
-        mutated: false,
-        grant: None,
     }
 }

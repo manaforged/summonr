@@ -107,6 +107,7 @@ impl<P: Provider> Loop<P> {
             self.verify.as_deref().unwrap_or_default(),
             !self.denies_network(),
             self.tools.has_sandbox(),
+            self.task_available(),
         ));
         if progress.kind == WorkKind::Goal {
             note.push_str(&format!(

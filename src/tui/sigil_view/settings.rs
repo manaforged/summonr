@@ -17,6 +17,7 @@ pub(super) use workflow::{keys as workflow_keys, layer as workflow_layer};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Setting {
     Mode,
+    PlanMode,
     Verify,
     Workflow,
     Endpoint,
@@ -56,6 +57,17 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     };
     let mut rows = vec![
         ("session", Setting::Mode, "mode", mode.to_string()),
+        (
+            "session",
+            Setting::PlanMode,
+            "plan mode",
+            if prefs.plan_mode {
+                "on · /plan enters plan"
+            } else {
+                "off"
+            }
+            .to_string(),
+        ),
         (
             "session",
             Setting::Verify,

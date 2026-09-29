@@ -130,7 +130,7 @@ impl<P: Provider> Loop<P> {
             effort: None,
             turn_started: 0,
             accepted: false,
-            summary_failed: false,
+            summary_wait: 0,
             workspace: workspace
                 .canonicalize()
                 .unwrap_or_else(|_| workspace.to_path_buf()),
@@ -152,9 +152,9 @@ impl<P: Provider> Loop<P> {
             steer_shared: None,
             depth,
             tasks: true,
-            manual: false,
+            plan_sandbox: false,
+            interactive: false,
             asked: Vec::new(),
-            blocks: (0, 0),
             spawned: BTreeMap::new(),
             events: tokio::sync::mpsc::unbounded_channel(),
             catalog_frozen: false,
@@ -166,6 +166,13 @@ impl<P: Provider> Loop<P> {
         source: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>,
     ) {
         self.steer_shared = Some(source);
+        self.interactive = true;
+    }
+
+    #[must_use]
+    pub fn with_interactive(mut self) -> Self {
+        self.interactive = true;
+        self
     }
 
     pub fn set_modules(&mut self, switches: &crate::modules::Switches) {
@@ -215,15 +222,6 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) fn allow_network_once(&self) {
         self.tools.allow_network_once();
-    }
-
-    pub(crate) fn set_manual(&mut self, on: bool) {
-        self.manual = on;
-    }
-
-    #[must_use]
-    pub(crate) fn manual(&self) -> bool {
-        self.manual
     }
 
     pub fn allow_path(&mut self, path: &str) -> Result<()> {
@@ -310,6 +308,10 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let sandbox = (plan && !self.tools.has_sandbox()).then(|| self.tools.enable_sandbox(false));
+        if !plan && std::mem::take(&mut self.plan_sandbox) {
+            self.tools.disable_sandbox();
+        }
+        self.plan_sandbox |= matches!(sandbox, Some(Ok(())));
         self.tools.set_read_only(plan);
         self.schema = None;
         if let Some(result) = sandbox {
@@ -382,7 +384,7 @@ fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {
     SessionDriver::resume(home, session, workspace).map_err(super::session_err)
 }
 
-fn open_driver(
+pub(super) fn open_driver(
     home: impl AsRef<Path>,
     workspace: &Path,
     model: &str,

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import re
 import threading
 import time
 import urllib.error
@@ -10,26 +11,43 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 DROP = {"host", "content-length", "accept-encoding", "connection", "transfer-encoding"}
 
 
-def shape(body):
-    messages = body.get("messages") or []
+STALL_SECONDS = 120
+NUDGE = "reasoned at length without acting"
+TAIL_BYTES = 4096
+
+
+def role_sizes(body, messages):
     roles = {}
     if body.get("system"):
         roles["system"] = {"count": 1, "bytes": len(json.dumps(body["system"], ensure_ascii=False))}
     for message in messages:
-        role = message.get("role", "unknown")
         size = len(json.dumps(message.get("content"), ensure_ascii=False))
         size += len(json.dumps(message.get("tool_calls") or [], ensure_ascii=False))
-        entry = roles.setdefault(role, {"count": 0, "bytes": 0})
+        entry = roles.setdefault(message.get("role", "unknown"), {"count": 0, "bytes": 0})
         entry["count"] += 1
         entry["bytes"] += size
+    return roles
+
+
+def last_round(messages):
     last = max((i for i, m in enumerate(messages) if m.get("role") == "assistant"), default=None)
-    calls, results = [], []
-    if last is not None:
-        for call in messages[last].get("tool_calls") or []:
-            function = call.get("function") or {}
-            calls.append({"name": function.get("name"), "args": (function.get("arguments") or "")[:240]})
-        for message in messages[last + 1:]:
-            results.append({"role": message.get("role"), "bytes": len(json.dumps(message.get("content"), ensure_ascii=False))})
+    if last is None:
+        return [], []
+    calls = [
+        {"name": (call.get("function") or {}).get("name"), "args": ((call.get("function") or {}).get("arguments") or "")[:240]}
+        for call in messages[last].get("tool_calls") or []
+    ]
+    results = [
+        {"role": message.get("role"), "bytes": len(json.dumps(message.get("content"), ensure_ascii=False))}
+        for message in messages[last + 1:]
+    ]
+    return calls, results
+
+
+def shape(body):
+    messages = body.get("messages") or []
+    calls, results = last_round(messages)
+    tools = body.get("tools") or []
     return {
         "round_calls": calls,
         "round_results": results,
@@ -42,9 +60,10 @@ def shape(body):
         "thinking": body.get("thinking"),
         "tool_stream": body.get("tool_stream"),
         "messages": len(messages),
-        "roles": roles,
-        "tools": len(body.get("tools") or []),
-        "tools_bytes": len(json.dumps(body.get("tools") or [], ensure_ascii=False)),
+        "nudged": NUDGE in json.dumps(messages[-1:], ensure_ascii=False),
+        "roles": role_sizes(body, messages),
+        "tools": len(tools),
+        "tools_bytes": len(json.dumps(tools, ensure_ascii=False)),
     }
 
 
@@ -61,28 +80,46 @@ def normalize(usage):
     }
 
 
-def usage_from_stream(raw):
-    usage, model, finish = None, None, None
+def stream_chunks(raw):
     for line in raw.decode("utf-8", "replace").splitlines():
-        if not line.startswith("data:"):
-            continue
-        data = line[5:].strip()
+        data = line[5:].strip() if line.startswith("data:") else ""
         if not data or data == "[DONE]":
             continue
         try:
-            chunk = json.loads(data)
+            yield json.loads(data)
         except json.JSONDecodeError:
             continue
-        message = chunk.get("message") or {}
-        model = chunk.get("model") or message.get("model") or model
-        if message.get("usage"):
-            usage = {**(usage or {}), **message["usage"]}
-        if chunk.get("usage"):
-            usage = {**usage, **chunk["usage"]} if usage and chunk.get("type") == "message_delta" else chunk["usage"]
-        finish = (chunk.get("delta") or {}).get("stop_reason") or finish
-        for choice in chunk.get("choices") or []:
-            finish = choice.get("finish_reason") or finish
+
+
+def merge_usage(usage, chunk):
+    message = chunk.get("message") or {}
+    if message.get("usage"):
+        usage = {**(usage or {}), **message["usage"]}
+    if chunk.get("usage"):
+        usage = {**usage, **chunk["usage"]} if usage and chunk.get("type") == "message_delta" else chunk["usage"]
+    return usage
+
+
+def finish_of(chunk, finish):
+    finish = (chunk.get("delta") or {}).get("stop_reason") or finish
+    for choice in chunk.get("choices") or []:
+        finish = choice.get("finish_reason") or finish
+    return finish
+
+
+def usage_from_stream(raw):
+    usage, model, finish = None, None, None
+    for chunk in stream_chunks(raw):
+        model = chunk.get("model") or (chunk.get("message") or {}).get("model") or model
+        usage = merge_usage(usage, chunk)
+        finish = finish_of(chunk, finish)
     return normalize(usage), model, finish
+
+
+def stall_tail(raw, latency, error):
+    if latency < STALL_SECONDS and not error:
+        return None
+    return {"bytes": len(raw), "last": raw[-TAIL_BYTES:].decode("utf-8", "replace")}
 
 
 def usage_from_body(raw):
@@ -119,40 +156,58 @@ class Proxy(BaseHTTPRequestHandler):
     def do_POST(self):
         self.relay("POST")
 
-    def relay(self, method):
+    def route(self):
         parts = self.path.split("/", 2)
         labeled = len(parts) > 2 and parts[1] != "v1"
         label = parts[1] if labeled else "unlabeled"
         path = "/" + parts[2] if labeled else self.path
-        for prefix in self.strip:
-            if path.startswith(prefix + "/"):
-                path = path[len(prefix):]
-                break
+        prefix = next((prefix for prefix in self.strip if path.startswith(prefix + "/")), "")
+        return label, path[len(prefix):]
+
+    def prepare(self, raw, label, path):
+        if not raw or not (path.endswith("/chat/completions") or path.endswith("/messages")):
+            return raw, None
+        body = json.loads(raw)
+        record = {"label": label, "request": shape(body), "usage_requested": False}
+        options = body.get("stream_options") or {}
+        if path.endswith("/chat/completions") and body.get("stream") and not options.get("include_usage"):
+            body["stream_options"] = {**options, "include_usage": True}
+            record["usage_requested"] = True
+            raw = json.dumps(body).encode()
+        return raw, record
+
+    def target(self, path):
+        if path.startswith("/anthropic") and self.anthropic:
+            return self.anthropic + path[len("/anthropic") :]
+        if re.search(r"/v\d+$", self.upstream) and path.startswith("/v1/"):
+            return self.upstream + path[len("/v1") :]
+        return self.upstream + path
+
+    def stream(self, response):
+        first, chunks = None, []
+        try:
+            while chunk := (response.read1(65536) if hasattr(response, "read1") else response.read(65536)):
+                first = first or time.time()
+                chunks.append(chunk)
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError) as error:
+            return first, chunks, f"cut off: {type(error).__name__}"
+        return first, chunks, None
+
+    def relay(self, method):
+        label, path = self.route()
         length = int(self.headers.get("Content-Length") or 0)
-        raw = self.rfile.read(length) if length else None
-        record = None
-        if raw and (path.endswith("/chat/completions") or path.endswith("/messages")):
-            try:
-                body = json.loads(raw)
-            except json.JSONDecodeError as error:
-                self.send_error(400, f"request body is not JSON: {error}")
-                return
-            record = {"label": label, "request": shape(body), "usage_requested": False}
-            if path.endswith("/chat/completions") and body.get("stream") and not (body.get("stream_options") or {}).get("include_usage"):
-                body["stream_options"] = {**(body.get("stream_options") or {}), "include_usage": True}
-                record["usage_requested"] = True
-                raw = json.dumps(body).encode()
+        try:
+            raw, record = self.prepare(self.rfile.read(length) if length else None, label, path)
+        except json.JSONDecodeError as error:
+            self.send_error(400, f"request body is not JSON: {error}")
+            return
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         if "opencode.ai" in self.upstream:
             headers["x-opencode-session"] = label
-        if path.startswith("/anthropic") and self.anthropic:
-            target = self.anthropic + path[len("/anthropic") :]
-        else:
-            target = self.upstream + path
-        request = urllib.request.Request(target, data=raw, method=method, headers=headers)
+        request = urllib.request.Request(self.target(path), data=raw, method=method, headers=headers)
         started = time.time()
-        first = None
-        chunks = []
         try:
             response = urllib.request.urlopen(request, timeout=900)
             status = response.status
@@ -168,19 +223,7 @@ class Proxy(BaseHTTPRequestHandler):
                 self.send_header(key, value)
         self.send_header("Connection", "close")
         self.end_headers()
-        cut = None
-        try:
-            while True:
-                chunk = response.read1(65536) if hasattr(response, "read1") else response.read(65536)
-                if not chunk:
-                    break
-                if first is None:
-                    first = time.time()
-                chunks.append(chunk)
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError, OSError) as error:
-            cut = f"cut off: {type(error).__name__}"
+        first, chunks, cut = self.stream(response)
         self.write(record, started, first, status, b"".join(chunks), cut)
 
     def write(self, record, started, first, status, raw, error):
@@ -205,6 +248,7 @@ class Proxy(BaseHTTPRequestHandler):
                 "reasoning_tokens": ((usage or {}).get("completion_tokens_details") or {}).get("reasoning_tokens"),
                 "cut_off": bool(error) and error.startswith("cut off"),
                 "error": error or (raw[:500].decode("utf-8", "replace") if status >= 400 else None),
+                "tail": stall_tail(raw, ended - started, error),
             }
         )
         with self.lock:

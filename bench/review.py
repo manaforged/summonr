@@ -4,6 +4,7 @@ import json
 from collections import defaultdict
 from pathlib import Path
 
+import deep
 from stats import requests
 from trial import trials
 
@@ -84,8 +85,16 @@ def main():
     parser.add_argument("run")
     parser.add_argument("--jobs", default=str(Path(__file__).parent / "jobs"))
     parser.add_argument("--proxy", nargs="+", required=True)
+    parser.add_argument("--task", help="print both harnesses' round timelines and the summonr profile for one task")
+    parser.add_argument("--tools", action="store_true", help="print the run's tool-failure census")
     args = parser.parse_args()
-    review(args.jobs, args.run, trials(args.jobs, args.run, requests(args.proxy), None))
+    by_label = requests(args.proxy)
+    if args.task:
+        deep.timeline(args.jobs, args.run, args.task, by_label)
+    elif args.tools:
+        deep.census(args.jobs, args.run)
+    else:
+        review(args.jobs, args.run, trials(args.jobs, args.run, by_label, None))
 
 
 if __name__ == "__main__":

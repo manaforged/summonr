@@ -24,7 +24,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
-        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
     Preset {
@@ -44,7 +44,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
-        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
     Preset {
@@ -69,7 +69,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
-        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
     Preset {
@@ -94,7 +94,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: true,
         plan: true,
         wire: Wire::Completions,
-        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled).replayed(),
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
     Preset {
@@ -134,7 +134,7 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
-        reasoning: Spec::new(ReasoningEffort, LOW_HIGH_MAX, ThinkingDisabled).replayed(),
+        reasoning: Spec::new(ReasoningEffort, LOW_HIGH_MAX, ThinkingDisabled),
         context_window: None,
     },
     Preset {

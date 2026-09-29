@@ -40,7 +40,7 @@ pub struct Endpoint {
     pub wire: Wire,
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
-    pub images: bool,
+    pub images: Option<bool>,
     pub keep_reasoning: bool,
     pub opencode: bool,
     pub prompt_cache_key: bool,
@@ -320,17 +320,24 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
 }
 
 mod auth;
+mod choice;
 mod keys;
 mod preset;
 mod reasoning;
 mod resolve;
 
-pub use auth::*;
+#[cfg(test)]
+pub(crate) use auth::catalog;
+pub use auth::{adopt_keys, auth_info, check_key, first_classify, logout};
+pub(crate) use auth::{ready, step};
+pub use choice::{Need, Pick};
 pub(crate) use keys::peer_token;
 use keys::*;
 pub(crate) use preset::provider_ids;
 use preset::{preset, presets};
-pub use resolve::*;
+pub(crate) use resolve::default_seat;
+pub use resolve::{chosen_by, closest, fallbacks, resolve, vision};
+use resolve::{hosted, seat};
 
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]

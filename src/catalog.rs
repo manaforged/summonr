@@ -8,11 +8,11 @@ use crate::error::Result;
 use crate::prompt::summonr_home;
 
 const FILE: &str = "models.json";
-const STALE: u64 = 6 * 3600;
 
 mod registry;
 
-pub use registry::{enrich, refresh_registry};
+pub(crate) use registry::enrich;
+pub use registry::refresh_registry;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -26,17 +26,7 @@ pub enum Cost {
 
 impl Cost {
     #[must_use]
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Unknown => "",
-            Self::Free => "free",
-            Self::Plan => "plan",
-            Self::Metered => "metered",
-        }
-    }
-
-    #[must_use]
-    pub fn rank(self) -> u8 {
+    pub(crate) fn rank(self) -> u8 {
         match self {
             Self::Free => 0,
             Self::Plan => 1,
@@ -76,8 +66,8 @@ pub struct Model {
 }
 
 impl Model {
-    #[must_use]
-    pub fn named(id: impl Into<String>) -> Self {
+    #[cfg(test)]
+    pub(crate) fn named(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
             ..Self::default()
@@ -90,7 +80,7 @@ impl Model {
     }
 
     #[must_use]
-    pub fn window(&self) -> String {
+    pub(crate) fn window(&self) -> String {
         match self.context {
             Some(tokens) if tokens >= 950_000 => {
                 let millions = f64::from(tokens) / 1_000_000.0;
@@ -107,30 +97,30 @@ impl Model {
     }
 
     #[must_use]
-    pub fn usable(&self) -> bool {
+    pub(crate) fn usable(&self) -> bool {
         !self.deprecated && self.tools != Some(false)
     }
 
     #[must_use]
-    pub fn aged(&self) -> bool {
+    pub(crate) fn aged(&self) -> bool {
         self.release
             .is_some_and(|day| now() / 86_400 > day.saturating_add(CURRENT_DAYS))
     }
 
     #[must_use]
-    pub fn released(&self) -> Option<String> {
+    pub(crate) fn released(&self) -> Option<String> {
         let (year, month, _) = civil(self.release?)?;
         Some(format!("{year}-{month:02}"))
     }
 
     #[must_use]
-    pub fn released_on(&self) -> Option<String> {
+    pub(crate) fn released_on(&self) -> Option<String> {
         let (year, month, day) = civil(self.release?)?;
         Some(format!("{year}-{month:02}-{day:02}"))
     }
 
     #[must_use]
-    pub fn fresh(&self) -> bool {
+    pub(crate) fn fresh(&self) -> bool {
         self.release
             .is_some_and(|day| now() / 86_400 <= day.saturating_add(14))
     }
@@ -175,18 +165,11 @@ pub fn current(models: &[(&str, &Model)]) -> Vec<bool> {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Listing {
+pub(crate) struct Listing {
     #[serde(default)]
     pub models: Vec<Model>,
     #[serde(default)]
     pub fetched: u64,
-}
-
-impl Listing {
-    #[must_use]
-    pub fn stale(&self) -> bool {
-        now().saturating_sub(self.fetched) > STALE
-    }
 }
 
 fn now() -> u64 {
@@ -268,7 +251,7 @@ pub(crate) fn window(item: &Value) -> Option<u32> {
     .find_map(tokens)
 }
 
-pub(crate) fn tokens(value: &Value) -> Option<u32> {
+pub fn tokens(value: &Value) -> Option<u32> {
     value
         .as_u64()
         .or_else(|| value.as_str()?.parse().ok())
@@ -310,12 +293,36 @@ fn priced(item: &Value) -> Option<Cost> {
     Some(if charged { Cost::Metered } else { Cost::Free })
 }
 
-pub fn cached() -> BTreeMap<String, Listing> {
+pub(crate) fn cached() -> BTreeMap<String, Listing> {
     load(FILE).unwrap_or_default()
 }
 
 #[must_use]
-pub fn known(endpoint: &str, id: &str) -> Option<Model> {
+pub fn accepts_images(endpoint: &crate::Endpoint) -> bool {
+    endpoint.images.unwrap_or_else(|| {
+        known(&endpoint.name, &endpoint.model).map_or_else(
+            || vision_of(endpoint, &load(registry::FILE).unwrap_or_default()),
+            |model| model.vision,
+        )
+    })
+}
+
+fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool {
+    let mut models = [Model {
+        id: endpoint.model.clone(),
+        ..Model::default()
+    }];
+    registry::enrich_from(
+        registry,
+        &endpoint.name,
+        endpoint.base_url.as_deref(),
+        &mut models,
+    );
+    models[0].vision
+}
+
+#[must_use]
+pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
     cached()
         .remove(endpoint)?
         .models
@@ -332,7 +339,7 @@ fn load<T: serde::de::DeserializeOwned + Default>(file: &str) -> Result<T> {
     }
 }
 
-pub fn remember(name: &str, models: Vec<Model>) -> Result<()> {
+pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
     let path = summonr_home()?.join(FILE);
     let held = crate::durable::store::lock(&path, true)?;
     let mut all: BTreeMap<String, Listing> = load(FILE)?;

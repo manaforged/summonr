@@ -8,7 +8,7 @@ pub fn fallbacks<P>(
     let mut ready = Vec::new();
     let mut skipped = Vec::new();
     for name in &endpoint.fallback {
-        match resolve(Some(name), None)
+        match resolve(Some(name), None, Need::Seat)
             .and_then(|fallback| Ok((connect(&fallback)?, fallback.model)))
         {
             Ok(pair) => ready.push(pair),
@@ -16,14 +16,6 @@ pub fn fallbacks<P>(
         }
     }
     (ready, skipped)
-}
-
-pub fn resolve(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, true, true)
-}
-
-pub fn resolve_unauthed(name: Option<&str>, model: Option<&str>) -> Result<Endpoint> {
-    resolve_inner(name, model, false, true)
 }
 
 pub fn vision() -> Result<Option<Endpoint>> {
@@ -37,13 +29,13 @@ pub fn vision() -> Result<Option<Endpoint>> {
     names.sort_unstable();
     Ok(names
         .into_iter()
-        .find_map(|name| resolve_inner(Some(name), None, true, true).ok()))
+        .find_map(|name| resolve(Some(name), None, Need::Seat).ok()))
 }
 
-pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<&'static str> {
+pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Pick> {
     let env = std::env::var("SUMMONR_BASE_URL").is_ok_and(|base| !base.trim().is_empty());
     if env && name.is_none() {
-        return Some("env");
+        return Some(Pick::Env);
     }
     let file = config::file().ok()?;
     choose(&file, last_used(), name, model).2
@@ -65,7 +57,7 @@ pub(crate) fn choose(
     last: Option<(String, String)>,
     name: Option<&str>,
     model: Option<&str>,
-) -> (Option<String>, Option<String>, Option<&'static str>) {
+) -> (Option<String>, Option<String>, Option<Pick>) {
     let given = |value: Option<&str>| {
         value
             .map(str::trim)
@@ -74,20 +66,20 @@ pub(crate) fn choose(
     };
     let env = |key: &str| given(std::env::var(key).ok().as_deref());
     let (chosen, remembered, reason) = if let Some(name) = given(name) {
-        (Some(name), None, Some("flag"))
+        (Some(name), None, Some(Pick::Flag))
     } else if let Some(name) = env("SUMMONR_ENDPOINT") {
-        (Some(name), None, Some("env"))
+        (Some(name), None, Some(Pick::Env))
     } else if let Some((name, model)) = last {
-        (Some(name), Some(model), Some("last used"))
+        (Some(name), Some(model), Some(Pick::LastUsed))
     } else if let Some(name) = file.default.clone() {
-        (Some(name), file.default_model.clone(), Some("default"))
+        (Some(name), file.default_model.clone(), Some(Pick::Default))
     } else {
-        (file.last_endpoint.clone(), None, Some("last used"))
+        (file.last_endpoint.clone(), None, Some(Pick::LastUsed))
     };
     let reason = if given(model).is_some() {
-        Some("--model")
+        Some(Pick::ModelFlag)
     } else if env("SUMMONR_MODEL").is_some() {
-        Some("env")
+        Some(Pick::Env)
     } else {
         reason.filter(|_| chosen.is_some())
     };
@@ -95,12 +87,7 @@ pub(crate) fn choose(
     (chosen, model, reason)
 }
 
-pub(crate) fn resolve_inner(
-    name: Option<&str>,
-    model: Option<&str>,
-    require_key: bool,
-    require_model: bool,
-) -> Result<Endpoint> {
+pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
         && !base.trim().is_empty()
         && matches!(name, None | Some("env"))
@@ -132,7 +119,7 @@ pub(crate) fn resolve_inner(
             wire: Wire::Completions,
             fallback: Vec::new(),
             compact_tokens: None,
-            images: false,
+            images: None,
             keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
             opencode: hosted(&base).is_some_and(|preset| preset.opencode),
             prompt_cache_key: hosted(&base).is_some_and(|preset| preset.prompt_cache_key),
@@ -147,7 +134,7 @@ pub(crate) fn resolve_inner(
         Some(chosen) => chosen,
         None => match first_ready(&file) {
             Some(name) => name,
-            None if require_key => return Err(Error::Config(no_seat())),
+            None if need.key() => return Err(Error::Config(no_seat())),
             None => presets()
                 .next()
                 .map_or_else(String::new, |row| row.name.to_string()),
@@ -164,7 +151,7 @@ pub(crate) fn resolve_inner(
 
     if let Some(model) = model_flag {
         endpoint.model = named_model(&endpoint.name, &model);
-    } else if require_model && endpoint.model.is_empty() {
+    } else if need.model() && endpoint.model.is_empty() {
         return Err(Error::Config(format!(
             "endpoint `{}` needs --model (or model in config.toml)",
             endpoint.name
@@ -181,12 +168,12 @@ pub(crate) fn resolve_inner(
         overlay_model(&mut endpoint, spec);
     }
 
-    fill_key(endpoint, require_key)
+    fill_key(endpoint, need.key())
 }
 
 fn first_ready(file: &File) -> Option<String> {
     names().ok()?.into_iter().find(|name| {
-        resolve_inner(Some(name), None, true, true).is_ok_and(|endpoint| {
+        resolve(Some(name), None, Need::Seat).is_ok_and(|endpoint| {
             endpoint.wire != Wire::Decisions
                 && (endpoint
                     .source
@@ -260,7 +247,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         headers: row.headers.clone(),
         fallback: row.fallback.clone(),
         compact_tokens: row.compact_tokens,
-        images: row.images.unwrap_or(false),
+        images: row.images,
         keep_reasoning: row.keep_reasoning.unwrap_or(false),
         opencode: preset.is_some_and(|preset| preset.opencode),
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
@@ -331,8 +318,8 @@ pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     if let Some(tokens) = row.compact_tokens {
         endpoint.compact_tokens = Some(tokens);
     }
-    if let Some(images) = row.images {
-        endpoint.images = images;
+    if row.images.is_some() {
+        endpoint.images = row.images;
     }
     if let Some(keep) = row.keep_reasoning {
         endpoint.keep_reasoning = keep;

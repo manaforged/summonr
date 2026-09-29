@@ -154,32 +154,32 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-870 public items (78 types, 110 functions, 131 methods, 340 fields, 195 variants, 16 constants) at 870 paths; 0 are re-export aliases. 413 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
+607 public items (59 types, 92 functions, 101 methods, 205 fields, 148 variants, 2 constants) at 607 paths; 0 are re-export aliases. 296 trait impl lines, 24 inherent impl lines. 22 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 437 | 37 | 49 | 88 | 0 |
+| `summonr` | 370 | 28 | 41 | 82 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::askpass` | 8 | 2 | 5 | 0 | 0 |
-| `summonr::catalog` | 39 | 3 | 7 | 11 | 0 |
+| `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
+| `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
 | `summonr::child` | 5 | 1 | 1 | 1 | 0 |
-| `summonr::classify` | 48 | 5 | 4 | 5 | 0 |
+| `summonr::classify` | 39 | 5 | 3 | 3 | 0 |
 | `summonr::classify::digest` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::classify::eval` | 27 | 4 | 5 | 2 | 0 |
+| `summonr::classify::eval` | 20 | 3 | 4 | 1 | 0 |
 | `summonr::classify::patch` | 6 | 1 | 3 | 0 | 0 |
-| `summonr::classify::sets` | 6 | 0 | 5 | 0 | 0 |
-| `summonr::classify::sweep` | 3 | 0 | 3 | 0 | 0 |
-| `summonr::diff` | 15 | 2 | 4 | 3 | 0 |
+| `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
+| `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
+| `summonr::diff` | 14 | 2 | 3 | 3 | 0 |
 | `summonr::limits` | 1 | 0 | 0 | 0 | 0 |
-| `summonr::mail` | 9 | 1 | 0 | 0 | 0 |
+| `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::modules` | 11 | 2 | 2 | 3 | 0 |
-| `summonr::prefs` | 61 | 6 | 4 | 13 | 0 |
-| `summonr::secret` | 11 | 1 | 3 | 1 | 0 |
+| `summonr::modules` | 19 | 3 | 2 | 4 | 0 |
+| `summonr::prefs` | 19 | 2 | 3 | 1 | 0 |
+| `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 3 | 0 | 0 |
 | `summonr::steps` | 16 | 3 | 4 | 0 | 0 |
-| `summonr::tui` | 129 | 6 | 2 | 1 | 0 |
-| `summonr::workflow` | 21 | 3 | 3 | 3 | 0 |
+| `summonr::tui` | 26 | 4 | 3 | 3 | 0 |
+| `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |
 
 <!-- /truesight -->
 

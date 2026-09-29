@@ -40,7 +40,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         wire,
         fallback: Vec::new(),
         compact_tokens: None,
-        images: false,
+        images: None,
         keep_reasoning: false,
         opencode: false,
         prompt_cache_key: false,
@@ -158,7 +158,8 @@ fn asking_nothing_is_refused() {
 #[test]
 fn each_decisions_provider_keeps_its_own_url() {
     let questions = BTreeMap::from([("q".to_string(), Question::noul("is it broken"))]);
-    let openrouter = crate::endpoint::resolve_unauthed(Some("openrouter"), None).unwrap();
+    let openrouter =
+        crate::endpoint::resolve(Some("openrouter"), None, crate::endpoint::Need::Model).unwrap();
     assert_eq!(
         openrouter.base_url.as_deref(),
         Some("https://openrouter.ai/api/v1")

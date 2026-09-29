@@ -4,6 +4,47 @@
 
 ### Added
 
+- `shift+tab` cycles the reasoning effort: none, minimal, low, medium,
+  high, xhigh, max.
+- Effort is correct on every built-in vendor and model: each preset and
+  model row declares the levels it accepts and how it turns thinking off,
+  and the nearest accepted level is sent. `reasoning_levels` and
+  `thinking_off` on an endpoint row override them.
+- A `plan mode` setting (`plan_mode = true`). It is off by default, and
+  `/plan` is refused while it is off.
+
+### Changed
+
+- DeepSeek and z.ai GLM seats send the model's earlier reasoning back
+  on every turn, as both vendors require during tool-calling loops.
+- The default system prompt says what done means: treat the request as
+  a contract, run the result the way the request says it will be used,
+  and finish only when every requirement is met and verified.
+- Fewer wasted rounds. Command output keeps about 16 KB and names the
+  full log only when it cut something; `write` over a file returns a
+  one-line summary; `read` pages by 50 KB; only exact `cat`, `head`, and
+  `sed -n` become reads, and `ls`, `wc`, and `grep` run in the shell.
+- A foreground command that reaches the wait limit keeps running as a
+  job instead of being killed, unless `timeout_secs` was set; a job poll
+  waits for the job.
+- `todo` is advertised only in steps and goal runs, `web` (the `search`
+  module) is off by default, and `task` is advertised only in
+  interactive sessions.
+- The compaction summary request carries no tools, and a failed summary
+  retries after 8 rounds instead of never in that turn. A headless reply
+  with no tool call to a harness control message is re-prompted once,
+  and job polls do not trip the loop guard.
+- The last seat you used wins over `default` in `config.toml`; the
+  default applies only when there is no last seat.
+- Effort is remembered per seat. A seat with no effort uses `high` when
+  the catalog says its model reasons, instead of sending nothing.
+- One mode: everything runs without a prompt except hard denials
+  (`sudo`, `rm -rf` outside the workspace, force-push, the deny list),
+  which ask for confirmation. The reviewer model and
+  `/permissions approve` are gone.
+- `sudo` in a command asks for the password in the password dialog,
+  through `SUDO_ASKPASS`. Before, `sudo` failed with no terminal.
+
 - `/pane jobs` lists this workspace's background commands with a live
   status badge, a log view, and a kill action shared with
   `run_command` job control.
@@ -14,8 +55,6 @@
   that rides to the model with the next prompt, and marks persist in
   `.summonr/review.json`.
 
-### Changed
-
 - A workspace `SYSTEM.md` loads only when the workspace is trusted
   (`--no-trust` skips it). `~/.summonr/SYSTEM.md` still applies
   everywhere.
@@ -24,6 +63,14 @@
 
 ### Fixed
 
+- A stream that produces no text, reasoning, or tool call (only
+  keep-alives or empty delta frames) now fails after the endpoint's
+  idle timeout and is retried. Before, a stalled GLM stream held a turn
+  until the work-time limit (858 s in one benchmark trial).
+- Leaving plan mode removes the sandbox plan mode turned on. Before, a
+  session that had visited plan mode kept the OS sandbox in auto mode, and
+  writes to `/tmp`, `~/.cargo`, and `~/.summonr` failed with
+  `Operation not permitted`.
 - A non-empty `policy.toml` with an uncontained session warns at startup
   that its rules are not enforced.
 - `Endpoint`'s debug form reports `api_key`, `oauth`, `env`, and

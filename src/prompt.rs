@@ -100,11 +100,12 @@ pub fn harness_section(
     checks: &[String],
     network: bool,
     sandboxed: bool,
+    children: bool,
 ) -> String {
     let mut parts = vec![
         match mode {
             crate::RunMode::Plan => "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer.",
-            crate::RunMode::Work => "Harness state: work mode. Execute the accepted plan. Keep the itemized list.",
+            crate::RunMode::Work => "Harness state: work mode. Execute the accepted plan.",
             crate::RunMode::Goal => "Harness state: goal mode. Keep going until the objective is met. A failed check continues the loop.",
             crate::RunMode::Auto => "Harness state: auto mode.",
         }
@@ -134,7 +135,7 @@ pub fn harness_section(
             "Harness: before Work can complete, Summonr runs {list} as the completion check."
         ));
     }
-    if matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
+    if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
         parts.push(
             "Spawn a child only for disjoint paths. The parent runs the completion check."
                 .to_string(),
@@ -247,9 +248,20 @@ Finish the authorized task; do not shrink scope or hand work back early. Summonr
 const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
 
 <rules>
-- Use read for files, directories, and content search (honors ignore rules); run_command covers the rest — builds, tests, git — and pure read/search commands redirect to read anyway
+- Use read for files, directories, and content search (honors ignore rules); run_command covers the rest — builds, tests, git, ls, grep
 - Unsure of a tool's options? call it with op=help for the full reference
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
-- Smallest change that does the job; answer with the fewest words that complete the task; show file paths
-</rules>";
+</rules>
+
+<work>
+- Treat the request as a contract: every name, signature, path, format, and stated behaviour must hold exactly
+- Make the smallest change that meets all of it; never drop a requirement to keep it simple
+- Before you finish, run it the way the request says it will be used (import it, call it, run its test or command) and fix what fails
+- You are done when every requirement is met and verified, not when your own check passes
+- Report in the fewest words: what changed, the file paths, and how you verified it
+</work>";
+
+#[cfg(test)]
+#[path = "prompt_tests.rs"]
+mod tests;

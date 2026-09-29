@@ -34,6 +34,7 @@ pub(crate) struct File {
     pub layout: Option<String>,
     pub ban_comments: Option<bool>,
     pub ban_tests: Option<bool>,
+    pub plan_mode: Option<bool>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,
@@ -134,6 +135,8 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
+    pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
+    pub thinking_off: Option<crate::provider::Off>,
     #[serde(default)]
     pub models: BTreeMap<String, Model>,
     #[serde(flatten)]
@@ -147,6 +150,8 @@ pub(crate) struct Model {
     pub effort: Option<crate::provider::Effort>,
     pub compact_tokens: Option<u32>,
     pub keep_reasoning: Option<bool>,
+    pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
+    pub thinking_off: Option<crate::provider::Off>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]

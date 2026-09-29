@@ -126,7 +126,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Value,
         Model,
     )
-    .usage("[none|low|medium|high]"),
+    .usage("[none|minimal|low|medium|high|xhigh|max]"),
     spec(
         "/workflow",
         "choose models for plan, work, and review",

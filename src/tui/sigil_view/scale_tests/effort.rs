@@ -31,6 +31,7 @@ fn enter_on_the_effort_slider_sets_the_chosen_level() {
         run(app, "/effort");
         app.overlay_adjust(1);
         app.overlay_adjust(1);
+        app.overlay_adjust(1);
         app.overlay_enter();
     });
     assert!(!screen.contains("reasoning effort for"), "{screen}");

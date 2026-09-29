@@ -128,9 +128,10 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         fallback: Vec::new(),
         compact_tokens: None,
         images: false,
-        keep_reasoning: false,
+        keep_reasoning: row.reasoning.replay,
         opencode: row.opencode,
         prompt_cache_key: row.prompt_cache_key,
+        reasoning: reasoning::from_preset(Some(row)),
     })
 }
 

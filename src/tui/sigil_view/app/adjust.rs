@@ -30,7 +30,14 @@ impl App {
             return;
         };
         match setting {
-            Setting::Mode => self.toggle_mode(),
+            Setting::Mode => {
+                if self.model.get().snapshot.plan {
+                    self.leave_plan();
+                } else if self.model.get().prefs.plan_mode {
+                    self.enter_plan();
+                }
+            }
+            Setting::PlanMode => self.flip(|prefs| prefs.plan_mode = !prefs.plan_mode),
             Setting::Verify => self.toggle_verify(),
             Setting::Workflow => self.open_workflow(),
             Setting::Endpoint => self.cycle_endpoint(),
@@ -228,7 +235,8 @@ impl App {
             Some(effort) => effort,
             None => {
                 self.push_entry(Entry::Error(format!(
-                    "effort takes none, low, medium, or high, not `{level}`"
+                    "effort {}",
+                    crate::provider::Effort::rejects(level)
                 )));
                 self.refresh();
                 return;

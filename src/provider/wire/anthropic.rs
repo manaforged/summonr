@@ -2,7 +2,7 @@ use serde_json::{Map, Value, json};
 
 use super::Chat;
 use super::traits::{Thinking, traits};
-use crate::provider::{CompletionRequest, Effort, Message, Role, StopReason, Usage};
+use crate::provider::{CompletionRequest, Message, Role, Step, StopReason, Usage};
 
 #[cfg(test)]
 use crate::provider::{AssistantMessage, ToolCall, ToolFunction, ToolKind};
@@ -94,28 +94,52 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
     if stream {
         body.insert("stream".to_string(), json!(true));
     }
-    if let Some(effort) = call
-        .effort
-        .filter(|effort| *effort != Effort::None && !unthought)
-    {
-        let thinking = traits(&call.model).thinking;
-        if thinking == Thinking::Adaptive {
-            body.insert(
-                "output_config".to_string(),
-                json!({"effort": effort_name(effort)}),
-            );
-            body.insert("thinking".to_string(), json!({"type": "adaptive"}));
-        } else if thinking == Thinking::Budgeted {
-            let budget = most / 4 * effort as u32;
-            if (1024..most).contains(&budget) {
+    reasoning(&mut body, call, most, unthought);
+    Ok(Value::Object(body))
+}
+
+fn reasoning(
+    body: &mut Map<String, Value>,
+    call: &CompletionRequest<'_>,
+    most: u32,
+    unthought: bool,
+) {
+    let plan = call.reasoning.plan(&call.model);
+    let thinking = traits(&call.model).thinking;
+    match plan.step(call.effort) {
+        Step::Default => {}
+        Step::Off(off) => {
+            if let Some((key, value)) = off.fragment() {
+                body.insert(key.to_string(), value);
+            }
+        }
+        Step::Level(level) => {
+            if matches!(thinking, Thinking::Adaptive | Thinking::EffortBudget) {
                 body.insert(
-                    "thinking".to_string(),
-                    json!({"type": "enabled", "budget_tokens": budget}),
+                    "output_config".to_string(),
+                    json!({"effort": level.as_str()}),
                 );
+            }
+            if unthought {
+                return;
+            }
+            match thinking {
+                Thinking::Adaptive => {
+                    body.insert("thinking".to_string(), json!({"type": "adaptive"}));
+                }
+                Thinking::Budgeted | Thinking::EffortBudget => {
+                    let budget = plan.budget(level, most);
+                    if (1024..most).contains(&budget) {
+                        body.insert(
+                            "thinking".to_string(),
+                            json!({"type": "enabled", "budget_tokens": budget}),
+                        );
+                    }
+                }
+                Thinking::Budget | Thinking::Level | Thinking::None => {}
             }
         }
     }
-    Ok(Value::Object(body))
 }
 
 fn breakpoint(part: &mut Value) {
@@ -339,14 +363,6 @@ pub(crate) fn stop_reason(raw: Option<&str>) -> StopReason {
         Some("tool_use") => StopReason::ToolCalls,
         Some("max_tokens" | "model_context_window_exceeded") => StopReason::Length,
         _ => StopReason::Stop,
-    }
-}
-
-fn effort_name(effort: Effort) -> &'static str {
-    match effort {
-        Effort::None | Effort::Low => "low",
-        Effort::Medium => "medium",
-        Effort::High => "high",
     }
 }
 

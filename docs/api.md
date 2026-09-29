@@ -59,7 +59,7 @@ echo $?
 
 | Job | Command or flag |
 | --- | --- |
-| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|low\|medium\|high` |
+| Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|minimal\|low\|medium\|high\|xhigh\|max` |
 | Set a budget | `--max-tokens N`, `--max-secs N` |
 | Read-only run | `--plan` |
 | Contain shell commands | `--sandbox`; `--no-net` denies sockets and needs `--sandbox`; `--add-dir DIR` adds a writable root |

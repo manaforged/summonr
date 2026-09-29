@@ -1,4 +1,4 @@
-use super::resolve::{closest, from_file, hosted};
+use super::resolve::{choose, closest, from_file, hosted};
 
 fn row(name: &str, base_url: &str) -> super::Endpoint {
     let file: crate::config::File = toml::from_str(&format!(
@@ -43,4 +43,18 @@ fn a_misspelled_endpoint_suggests_the_closest_name() {
     ];
     assert_eq!(closest("antropic", &names), Some("anthropic"));
     assert_eq!(closest("zzzzzzzz", &names), None);
+}
+
+#[test]
+fn the_last_seat_wins_over_the_config_default() {
+    let file: crate::config::File =
+        toml::from_str("default = \"qwen\"\ndefault_model = \"q\"\n").unwrap();
+    let last = Some(("zai".to_string(), "glm".to_string()));
+    let (name, model, reason) = choose(&file, last, None, None);
+    assert_eq!(
+        (name.as_deref(), model.as_deref(), reason),
+        (Some("zai"), Some("glm"), Some("last used"))
+    );
+    let (name, _, reason) = choose(&file, None, None, None);
+    assert_eq!((name.as_deref(), reason), (Some("qwen"), Some("default")));
 }

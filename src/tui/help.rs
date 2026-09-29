@@ -1,5 +1,6 @@
 use crate::command::Category;
 use crate::prefs::{Hotkey, Hotkeys};
+use crate::provider::Effort;
 
 pub(crate) fn help_text(keys: &Hotkeys) -> String {
     let specs: Vec<_> = crate::command_specs()
@@ -31,7 +32,10 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  enter        send, or steer the running turn".to_string(),
             "  tab          complete a /command or @path; queue while busy".to_string(),
             "  ↑            on an empty draft, pull queued input back".to_string(),
-            "  shift+tab    switch between auto and plan mode".to_string(),
+            format!(
+                "  shift+tab    cycle reasoning effort: {}",
+                Effort::ALL.map(Effort::as_str).join(", ")
+            ),
             "  esc          cancel; twice on an idle composer opens the session tree".to_string(),
             "  ctrl+c       clear the draft; twice on an empty draft quits".to_string(),
             "  ctrl+d       quit when the draft is empty".to_string(),

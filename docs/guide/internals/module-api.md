@@ -38,15 +38,15 @@ The tool schemas. Five core, six behind a module or a workspace file.
 | `edit` | `tools/catalog.rs::edit` | always |
 | `write` | `tools/catalog.rs::write` | always |
 | `run_command` | `tools/catalog.rs::run_command` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
-| `todo` | `tools/catalog.rs::todo` | always; owns the itemized Work step list |
+| `todo` | `tools/catalog.rs::todo` | steps and goal runs only; owns the itemized Work step list |
 | `skill` | `tools/catalog.rs::skill` | `.summonr/skills` present |
 | `lsp` | `tools/catalog.rs::lsp` | `lsp` module on |
-| `web` | `tools/catalog.rs::web` | `web` module on |
-| `task` | `runtime/child.rs::definition` | `task` module on by default; `/modules task off` disables |
+| `web` | `tools/catalog.rs::web` | `search` module on (off by default) |
+| `task` | `runtime/child.rs::definition` | interactive sessions (TUI, ACP) at depth 0 with the `task` module on; `/modules task off` disables |
 | `<server>__<tool>` | `mcp.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode keeps `readOnlyHint` tools |
 | `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in plan mode |
 
-Plan mode advertises `read`, `run_command`, `todo`, `skill`, and `web`, plus the
+Plan mode advertises `read`, `run_command`, `skill`, and `web` when `search` is on, plus the
 mail tools when mail is on; `send` and `board` set refuse in plan mode.
 
 Peer mail has no server. Other agent CLIs reach the same files through
@@ -61,10 +61,12 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | verify | `verify.rs`, `.summonr/check.toml` | the commands that decide pass or fail |
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
-| plan mode | `--plan`, `/plan`, `RunMode::Plan` | read-only workspace, reply saved to `.summonr/plan.md` |
+| plan mode | `--plan`, `/plan`, `RunMode::Plan`, `plan_mode` pref | read-only workspace, reply saved to `.summonr/plan.md`; owns the sandbox it turns on and drops it on exit |
+| confirmation | `turn/grant.rs::with_grant`, `policy::danger`, `askpass.rs` | hard denials ask the user; every other grant applies; `sudo` runs as `sudo -A` through the askpass shim |
+| reasoning effort | `Effort::clamp`, `Reasoning::plan`, `Plan::{step, budget}`, `Off::fragment`, `provider/reasoning.rs::levels`, `provider/wire/traits/{anthropic,gemini,openai,vendors}.rs`, `Preset.reasoning`, `[endpoint.NAME] reasoning_levels, thinking_off` | levels and the `none` style are data: one `Spec` per preset and one `Traits` row per model id; `Effort::clamp` sends the nearest level the model accepts, the lower one on a tie; `Plan::step` returns no field, a level, or a thinking-off fragment; each wire writes only that result |
 | session | `durable/{log,work,driver}.rs` | `session.jsonl`, `work.json`, crash resume; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw; a compaction `Line::Summary` carries the kept tail verbatim for the same reason; `Line` is the session record and `Line::events` projects `Event`; `SessionDriver::answer` is the one `Line::Assistant` writer; `--json` order per round is Usage, ToolCall…, ToolResult…, Work, Receipt, Assistant, and an abort is Aborted then Receipt; memory is `footprint_kb` (KiB; old journals read `rss_kb`) |
 | worktree | `worktree.rs`, `--worktree` | branch `summonr/<id>`, fast-forward on exit 0 |
-| jobs | `jobs.rs`, `.summonr/jobs/{ID}.{json,log,exit}`, `tools/command.rs`, `Msg::Jobs`, `Cmd::{Jobs,KillJob}`, `/pane jobs` | one `Record` per background command; `status` joins the record, its `.exit` marker, and PID liveness; `kill_job` is the one stop path for `run_command` job control and the pane |
+| jobs | `jobs.rs` (`wait` is the one job-wait owner; `Record.log` and `log_path` name a converted job's log), `.summonr/jobs/{ID}.{json,log,exit}`, `tools/command.rs`, `Msg::Jobs`, `Cmd::{Jobs,KillJob}`, `/pane jobs` | one `Record` per background command; `status` joins the record, its `.exit` marker, and PID liveness; `kill_job` is the one stop path for `run_command` job control and the pane |
 | workflow | `workflow.rs`, `[workflows.NAME]` | six seats: Scout, Plan, Implement, Review, Judge, Summary |
 | endpoint | `endpoint.rs`, `~/.summonr/config.toml` | 28 built-in rows, four wires |
 | model catalog | `Client::discover`, `Client::state`, `catalog.rs::{remember,cached,refresh_registry,enrich}`, `~/.summonr/models{,-dev}.json` | one discovery path for the picker and `summonr endpoints`: cached rows show first, only `GET /models` is timed, a fresh listing replaces the endpoint's rows, models unknown to models.dev show as `new`, failures read `key rejected`, `rate limited`, or `unreachable`; models.dev refreshes hourly in the background by ETag and matches the exact `api` URL before the host; `SUMMONR_MODELS_URL` overrides the source |
@@ -80,9 +82,8 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | mcp | `mcp.rs`, `[mcp.NAME]`; `import_mcp = true` for Claude and Codex configs | off by default; server discovery, approval, stdio and HTTP transport, OAuth through `provider::Auth`; aliases freeze after the first advertised tool list |
 | hooks | `hooks.rs`, `[hooks]` | `pre_tool` blocks a call, `post_tool` appends to the result, `compact` and `stop` notify |
 | checkpoint | `checkpoint.rs`, `runtime/checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index; `Loop::checkpoint` captures it in the background and `Loop::settle` joins it before any tool runs; restore and turn undo |
-| loop guard | `runtime/guard.rs`, `[guard]` | per turn: one call with one result warns at 3 and steers at 6; one failure text of three words or more, across calls, warns at 4 and steers at 8; a call cycle of 2 to 8 calls that repeats 3 times with the same results steers; the first steer is a control message, then an interactive session asks whether to continue and a headless run steers again, so only a user-set budget ends a turn; a checkpoint message every 40 rounds; raises `low` effort to `medium` |
+| loop guard | `runtime/guard.rs`, `[guard]` | per turn: one call with one result warns at 3 and steers at 6; one failure text of three words or more, across calls, warns at 4 and steers at 8; a call cycle of 2 to 8 calls that repeats 3 times with the same results steers; the first steer is a control message, then an interactive session asks whether to continue and a headless run steers again, so only a user-set budget ends a turn; a checkpoint message every 40 rounds; raises `low` effort to `medium`; successful job and child polls are not counted; a headless no-call reply to a stuck or checkpoint control is re-prompted once |
 | fallback | `endpoint.rs::fallbacks`, `[endpoint.NAME] fallback` | switch to the next endpoint after retries run out |
-| approval | `policy/danger.rs`, `runtime/approval.rs`, `Grant::Danger` | a static check flags destructive commands; the judge seat reviews each one against the user's messages, earlier tool calls, and `git status`, then allows or blocks with a rule; 3 blocks in a row or 20 in a session ask the user, or keep denying headless |
 | edit approval | `prefs::banned_edit`, `Grant::Edit`, `ToolRegistry::{allow_edit,reset_edits}` | tests and comments use saved defaults; an explicit user request or interactive approval allows the current task, and the next user turn resets the exception |
 | task progress | `chat::todos`, `panes::ledger::item`, `App::history_rows` | a compact strip reserves space above the composer; click or the ledger hotkey expands the list, wheel scrolls it, and completion removes it |
 | diff layout | `Prefs::diff_layout`, `DiffLayout`, `chat/entry.rs` diff row | split by default, unified selectable in edit headers or settings; the saved choice applies to inline edits, with unified rendering in narrow panes |

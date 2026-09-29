@@ -46,17 +46,7 @@ pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<&'static str
         return Some("env");
     }
     let file = config::file().ok()?;
-    let reason = choose(&file, name, model).2;
-    let seat = file.default.zip(file.default_model);
-    if reason == Some("default") && last_used().is_some_and(|last| Some(last) != seat) {
-        let marker = crate::prompt::summonr_home()
-            .ok()?
-            .join("notes/default-over-last");
-        if !marker.exists() && crate::durable::store::write(&marker, "").is_ok() {
-            return Some("default — it now wins over last used");
-        }
-    }
-    reason
+    choose(&file, last_used(), name, model).2
 }
 
 fn last_used() -> Option<(String, String)> {
@@ -70,8 +60,9 @@ pub(crate) fn default_seat() -> Option<crate::recent::Seat> {
     Some(crate::recent::Seat::new(file.default?, file.default_model?))
 }
 
-fn choose(
+pub(crate) fn choose(
     file: &File,
+    last: Option<(String, String)>,
     name: Option<&str>,
     model: Option<&str>,
 ) -> (Option<String>, Option<String>, Option<&'static str>) {
@@ -86,10 +77,10 @@ fn choose(
         (Some(name), None, Some("flag"))
     } else if let Some(name) = env("SUMMONR_ENDPOINT") {
         (Some(name), None, Some("env"))
+    } else if let Some((name, model)) = last {
+        (Some(name), Some(model), Some("last used"))
     } else if let Some(name) = file.default.clone() {
         (Some(name), file.default_model.clone(), Some("default"))
-    } else if let Some((name, model)) = last_used() {
-        (Some(name), Some(model), Some("last used"))
     } else {
         (file.last_endpoint.clone(), None, Some("last used"))
     };
@@ -145,11 +136,12 @@ pub(crate) fn resolve_inner(
             keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
             opencode: hosted(&base).is_some_and(|preset| preset.opencode),
             prompt_cache_key: hosted(&base).is_some_and(|preset| preset.prompt_cache_key),
+            reasoning: reasoning::from_preset(hosted(&base)),
         });
     }
 
     let file = config::file()?;
-    let (chosen, model_flag, _) = choose(&file, name, model);
+    let (chosen, model_flag, _) = choose(&file, last_used(), name, model);
 
     let chosen = match chosen {
         Some(chosen) => chosen,
@@ -272,6 +264,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         keep_reasoning: row.keep_reasoning.unwrap_or(false),
         opencode: preset.is_some_and(|preset| preset.opencode),
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
+        reasoning: reasoning::from_preset(preset),
         wire: row
             .wire
             .as_deref()
@@ -344,6 +337,11 @@ pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     if let Some(keep) = row.keep_reasoning {
         endpoint.keep_reasoning = keep;
     }
+    reasoning::overlay(
+        &mut endpoint.reasoning,
+        row.reasoning_levels.as_deref(),
+        row.thinking_off,
+    );
 }
 
 fn overlay_model(endpoint: &mut Endpoint, spec: &crate::config::Model) {
@@ -370,4 +368,9 @@ fn overlay_model(endpoint: &mut Endpoint, spec: &crate::config::Model) {
     if let Some(keep) = spec.keep_reasoning {
         endpoint.keep_reasoning = keep;
     }
+    reasoning::overlay(
+        &mut endpoint.reasoning,
+        spec.reasoning_levels.as_deref(),
+        spec.thinking_off,
+    );
 }

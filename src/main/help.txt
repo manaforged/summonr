@@ -32,7 +32,7 @@ Integrations:
 Options:
   -e, --endpoint NAME  endpoint: {endpoints}
       --model NAME     override the endpoint model
-      --effort LEVEL   none, low, medium, or high
+      --effort LEVEL   none, minimal, low, medium, high, xhigh, or max
   -w, --workflow NAME  seat each step from [workflows.NAME]
   -p, --print          run one prompt and exit
       --json           print JSON (with -p, diff, worktrees, classify)

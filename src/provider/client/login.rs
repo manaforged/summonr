@@ -63,6 +63,8 @@ impl Client {
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,
             wire: opts.wire,
+            reasoning: Reasoning::default(),
+            idle: opts.idle_timeout,
             on_delta: None,
             on_reasoning: None,
             on_tool: None,

@@ -81,6 +81,7 @@ pub use provider::{
     Client, Effort, Image, Message, Partial, Price, Provider, Usage, UserInput, dollars,
 };
 pub use recent::Seat;
+pub use recent::default_effort;
 pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
     Replay, SessionInfo, Spend, export as export_session, last_for, list as list_sessions,

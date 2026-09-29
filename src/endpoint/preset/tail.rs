@@ -1,6 +1,10 @@
 use super::preset::claude_oauth;
 use super::*;
 use crate::endpoint::preset::Preset;
+use crate::provider::EffortField::ReasoningEffort;
+use crate::provider::Off::{EffortNone, Omit, ThinkingDisabled, Unsupported};
+use crate::provider::Spec;
+use crate::provider::levels::{HIGH_ONLY, MINIMAL_XHIGH, NO_EFFORT, STANDARD};
 
 pub(super) const TAIL: &[Preset] = &[
     Preset {
@@ -20,6 +24,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -39,6 +44,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -58,6 +64,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, EffortNone),
         context_window: None,
     },
     Preset {
@@ -77,6 +84,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, HIGH_ONLY, EffortNone),
         context_window: None,
     },
     Preset {
@@ -96,6 +104,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Anthropic,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -118,6 +127,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Anthropic,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -137,6 +147,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Gemini,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -156,6 +167,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, MINIMAL_XHIGH, Unsupported),
         context_window: None,
     },
     Preset {
@@ -175,6 +187,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -194,6 +207,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -213,6 +227,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: true,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -232,6 +247,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Omit),
         context_window: None,
     },
     Preset {
@@ -251,6 +267,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, EffortNone),
         context_window: None,
     },
     Preset {
@@ -270,6 +287,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
     Preset {
@@ -289,6 +307,7 @@ pub(super) const TAIL: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, NO_EFFORT, ThinkingDisabled),
         context_window: None,
     },
 ];

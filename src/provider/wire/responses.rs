@@ -3,7 +3,7 @@ use serde_json::{Map, Value, json};
 use stream::Stream;
 
 use super::Chat;
-use crate::provider::{CompletionRequest, Continuation, Effort, Message, Role};
+use crate::provider::{CompletionRequest, Continuation, Effort, Message, Role, Step};
 
 #[cfg(test)]
 use super::Accumulate;
@@ -75,15 +75,21 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
     if stream {
         body.insert("stream".to_string(), json!(true));
     }
-    if let Some(effort) = call.effort.filter(|effort| *effort != Effort::None) {
-        body.insert(
-            "reasoning".to_string(),
-            json!({"effort": effort.as_str(), "summary": "auto"}),
-        );
-        body.insert(
-            "include".to_string(),
-            json!(["reasoning.encrypted_content"]),
-        );
+    match call.reasoning.plan(&call.model).step(call.effort) {
+        Step::Level(Effort::None) => {
+            body.insert("reasoning".to_string(), json!({"effort": "none"}));
+        }
+        Step::Level(level) => {
+            body.insert(
+                "reasoning".to_string(),
+                json!({"effort": level.as_str(), "summary": "auto"}),
+            );
+            body.insert(
+                "include".to_string(),
+                json!(["reasoning.encrypted_content"]),
+            );
+        }
+        Step::Default | Step::Off(_) => {}
     }
     body.insert("store".to_string(), json!(false));
     Ok(Value::Object(body))

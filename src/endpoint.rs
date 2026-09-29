@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::credentials::{flow, logged_in};
 use crate::error::{Error, Result};
-use crate::provider::{Effort, Price};
+use crate::provider::{Effort, Price, Reasoning};
 use crate::secret::{self, Source};
 
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
@@ -44,6 +44,7 @@ pub struct Endpoint {
     pub keep_reasoning: bool,
     pub opencode: bool,
     pub prompt_cache_key: bool,
+    pub(crate) reasoning: Reasoning,
 }
 
 impl std::fmt::Debug for Endpoint {
@@ -70,6 +71,7 @@ impl std::fmt::Debug for Endpoint {
             .field("keep_reasoning", &self.keep_reasoning)
             .field("opencode", &self.opencode)
             .field("prompt_cache_key", &self.prompt_cache_key)
+            .field("reasoning", &self.reasoning)
             .finish()
     }
 }
@@ -320,6 +322,7 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
 mod auth;
 mod keys;
 mod preset;
+mod reasoning;
 mod resolve;
 
 pub use auth::*;
@@ -332,3 +335,7 @@ pub use resolve::*;
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "endpoint/effort_tests.rs"]
+mod effort_tests;

@@ -1,6 +1,4 @@
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, classes, container, label,
-};
+use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, container};
 
 use super::app::App;
 use super::canvas;
@@ -39,8 +37,10 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                             container()
                                 .layout(LayoutStyle::block().padding_x(8.0))
                                 .child(
-                                    label(format!("{}▌", "•".repeat(typed.min(48))))
-                                        .class(classes!("text-sm")),
+                                    sigil::kernel::text(format!("{}▌", "•".repeat(typed.min(48))))
+                                        .nowrap()
+                                        .class(sigil::style::Token::OnSurface.text())
+                                        .class("text-sm"),
                                 ),
                         ]
                     }),

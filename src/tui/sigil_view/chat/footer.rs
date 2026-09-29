@@ -1,9 +1,14 @@
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, LengthPercentageAuto, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, Position, classes, container, label, spacer,
-};
-
-use sigil::prelude::derived_eq;
+use sigil::layout::LengthPercentageAuto;
+use sigil::layout::Position;
+use sigil::prelude::AlignItems;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::MouseButton;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::container;
+use sigil::prelude::spacer;
 
 use super::chrome;
 use super::{App, Speed, canvas, cell_width};
@@ -45,7 +50,7 @@ fn footer_view(app: &App) -> FooterView {
 
 pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let view = derived_eq(move || footer_view(&update));
+    let view = sigil::reactive::derived(move || footer_view(&update));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -72,7 +77,12 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
             .gap(12.0),
     );
     if !place.is_empty() {
-        row = row.child(label(place).class(classes!("text-xs text-gray-12")));
+        row = row.child(
+            sigil::kernel::text(place)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-12"),
+        );
     }
     if let Some(branch) = &app.git_branch {
         row = row.child(
@@ -83,13 +93,28 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
                         .shrink(0.0)
                         .gap(8.0),
                 )
-                .child(label("⎇").class(classes!("text-xs text-gray-11")))
-                .child(label(branch.clone()).class(classes!("text-xs text-warn-11"))),
+                .child(
+                    sigil::kernel::text("⎇")
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs text-gray-11"),
+                )
+                .child(
+                    sigil::kernel::text(branch.clone())
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs text-warn-11"),
+                ),
         );
     }
     row = row.child(spacer());
     if let Some(rate) = speed {
-        row = row.child(label(rate).class(classes!("text-xs text-gray-11")));
+        row = row.child(
+            sigil::kernel::text(rate)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     }
     let context_card = open
         .as_ref()
@@ -121,11 +146,16 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
                 .align_items(AlignItems::Center)
                 .gap(8.0),
         )
-        .child(label(caption).class(classes!("text-xs text-gray-11")))
+        .child(
+            sigil::kernel::text(caption)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        )
         .child(
             container()
                 .layout(LayoutStyle::flex_row().width(bar).height(8.0))
-                .class(classes!("bg-gray-1"))
+                .class("bg-gray-1")
                 .child(
                     container()
                         .layout(
@@ -136,7 +166,12 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
                         .class(fill),
                 ),
         )
-        .child(label(format!("{percent}%")).class(classes!("text-xs text-gray-12")))
+        .child(
+            sigil::kernel::text(format!("{percent}%"))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-12"),
+        )
 }
 
 fn meter_button(
@@ -195,13 +230,15 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
     let card_width = width.min(30);
     let mut card = container()
         .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
-        .class(classes!("bg-gray-1"));
+        .class("bg-gray-1");
     card = card.child(
-        label(format!(
+        sigil::kernel::text(format!(
             "╭{title}{}╮",
             "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
         ))
-        .class(classes!("text-xs font-mono text-gray-11")),
+        .nowrap()
+        .class(sigil::style::Token::OnSurface.text())
+        .class("text-xs font-mono text-gray-11"),
     );
     for (key, value) in rows {
         card = card.child(
@@ -212,15 +249,25 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                         .align_items(AlignItems::Center)
                         .gap(0.0),
                 )
-                .child(label(format!("│ {key}")).class(classes!("text-xs font-mono text-gray-11")))
+                .child(
+                    sigil::kernel::text(format!("│ {key}"))
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs font-mono text-gray-11"),
+                )
                 .child(spacer())
                 .child(
-                    label(format!("{value} │")).class(classes!("text-xs font-mono text-gray-12")),
+                    sigil::kernel::text(format!("{value} │"))
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
+                        .class("text-xs font-mono text-gray-12"),
                 ),
         );
     }
     card.child(
-        label(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
-            .class(classes!("text-xs font-mono text-gray-11")),
+        sigil::kernel::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class("text-xs font-mono text-gray-11"),
     )
 }

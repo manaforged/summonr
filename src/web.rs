@@ -1,6 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use leyline::http::Uri;
 use leyline::{Browser, Family, RedirectAction, RedirectPolicy, Session, TimeoutConfig};
 use url::Url;
 
@@ -166,12 +165,11 @@ fn client() -> Result<Session> {
     crate::credentials::session(builder)
 }
 
-fn safe_redirect(url: &Uri) -> bool {
-    let host = url.host().unwrap_or("");
-    url.scheme_str() == Some("https")
-        && url
-            .authority()
-            .is_none_or(|authority| !authority.as_str().contains('@'))
+fn safe_redirect(url: &Url) -> bool {
+    let host = url.host_str().unwrap_or("");
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
         && !host_blocked(host)
         && !resolves_blocked(host)
 }
@@ -202,3 +200,7 @@ fn freshness_filter(value: Option<&str>) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "web_tests.rs"]
+mod tests;

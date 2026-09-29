@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, classes, container, derived_eq, list_row_with,
+    NodeStyleExt, container, list_row_with,
 };
 
 use super::panes::ledger::item;
@@ -79,7 +79,7 @@ pub(in crate::tui::sigil_view) fn height(app: &App, cols: u16) -> u16 {
 
 pub(super) fn widget(app: App, cols: u16) -> NodeBuilder {
     let update = app.clone();
-    let shown = derived_eq(move || view(&update, cols));
+    let shown = sigil::reactive::derived(move || view(&update, cols));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -105,7 +105,7 @@ fn panel(app: App, view: TodosView) -> NodeBuilder {
                 .padding_top(canvas::cell().h)
                 .padding_x(canvas::GUTTER - 8.0),
         )
-        .class(classes!("rounded"))
+        .class("rounded")
         .child(
             list_row_with(
                 false,

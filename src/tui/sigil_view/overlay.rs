@@ -1,9 +1,26 @@
-use sigil::prelude::{
-    AlignItems, Geometry, IntoNode, KeyEvent, LayoutBuilderExt, LayoutStyle, ListRowSlots,
-    LogicalKey, ModifiersState, NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Signal, Style,
-    Tone, WidgetLayoutExt, classes, container, hint_bar, label, list_row_with, modal, notice_band,
-    section_label,
-};
+use sigil::prelude::AlignItems;
+use sigil::prelude::Geometry;
+use sigil::prelude::IntoNode;
+use sigil::prelude::KeyEvent;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::ListRowSlots;
+use sigil::prelude::LogicalKey;
+use sigil::prelude::ModifiersState;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Shortcut;
+use sigil::prelude::Signal;
+use sigil::prelude::Tone;
+use sigil::prelude::WidgetLayoutExt;
+use sigil::prelude::container;
+use sigil::prelude::hint_bar;
+use sigil::prelude::list_row_with;
+use sigil::prelude::modal;
+use sigil::prelude::notice_band;
+use sigil::prelude::section_label;
+use sigil::style::Style;
 
 use super::app::App;
 use super::canvas;
@@ -94,7 +111,7 @@ fn framed(
                             .padding_y(canvas::overlay_gap() * 4.0)
                             .gap(canvas::overlay_gap()),
                     )
-                    .class(classes!("rounded"))
+                    .class("rounded")
                     .child(body),
             ),
     )
@@ -149,7 +166,15 @@ pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
 pub(in crate::tui) fn heading(parts: Vec<(String, &'static str)>) -> NodeBuilder {
     parts.into_iter().fold(
         container().layout(row(8.0).align_items(AlignItems::Center)),
-        |line, (text, tone)| line.child(label(text).class("text-xs").class(tone)),
+        |line, (text, tone)| {
+            line.child(
+                sigil::kernel::text(text)
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs")
+                    .class(tone),
+            )
+        },
     )
 }
 

@@ -1,10 +1,24 @@
 use std::rc::Rc;
 
-use sigil::prelude::{
-    AlignItems, ColorAtom, Cx, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, Style, classes, container, defer, derived_eq, effect, empty_state, label, node,
-    signal, spacer, untrack, virtual_list,
-};
+use sigil::prelude::AlignItems;
+use sigil::prelude::ColorAtom;
+use sigil::prelude::Cx;
+use sigil::prelude::IntoNode;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::container;
+use sigil::prelude::effect;
+use sigil::prelude::empty_state;
+use sigil::prelude::node;
+use sigil::prelude::signal;
+use sigil::prelude::spacer;
+use sigil::prelude::virtual_list;
+use sigil::reactive::defer;
+use sigil::reactive::untrack;
+use sigil::style::Style;
 
 use super::composer;
 use super::entry;
@@ -134,7 +148,7 @@ fn header_parts(app: &App, width: usize) -> HeaderParts {
 
 fn header(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let parts = derived_eq(move || header_parts(&update, width));
+    let parts = sigil::reactive::derived(move || header_parts(&update, width));
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -146,10 +160,10 @@ fn header(app: App, width: usize) -> NodeBuilder {
         .children_reactive(move || {
             let (parts, mode_class) = parts.get();
             let mode_class = [
-                classes!("text-xs text-accent"),
-                classes!("text-xs text-warn-11"),
-                classes!("text-xs text-error-11"),
-                classes!("text-xs text-success-11"),
+                "text-xs text-accent",
+                "text-xs text-warn-11",
+                "text-xs text-error-11",
+                "text-xs text-success-11",
             ][mode_class as usize];
             let mut row = Vec::new();
             let mut spaced = false;
@@ -158,16 +172,16 @@ fn header(app: App, width: usize) -> NodeBuilder {
                     spaced = true;
                     row.push(spacer());
                 }
-                let shown = label(text);
+                let shown = sigil::kernel::text(text)
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text());
                 let shown = match part {
                     Part::Brand => shown
-                        .class(classes!("text-sm font-bold"))
+                        .class("text-sm font-bold")
                         .style(Style::new().text_color(ColorAtom::Rgba8(canvas::palette().accent))),
-                    Part::Model => shown.class(classes!("text-sm text-gray-12")),
+                    Part::Model => shown.class("text-sm text-gray-12"),
                     Part::Mode => shown.class(mode_class),
-                    Part::Pick | Part::Relay | Part::Session => {
-                        shown.class(classes!("text-xs text-gray-11"))
-                    }
+                    Part::Pick | Part::Relay | Part::Session => shown.class("text-xs text-gray-11"),
                 };
                 row.push(
                     container()
@@ -221,7 +235,7 @@ fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
 
 fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
     let model = app.model;
-    let version = derived_eq(move || {
+    let version = sigil::reactive::derived(move || {
         model.with(|model| {
             let live = model.busy_since.is_some() && index + 1 == model.entries.len();
             model
@@ -261,7 +275,7 @@ pub(in crate::tui::sigil_view) fn transcript(
     empty: fn() -> NodeBuilder,
 ) -> NodeBuilder {
     let model = app.model;
-    let keys = derived_eq(move || {
+    let keys = sigil::reactive::derived(move || {
         model.with(|model| {
             Rc::new(
                 (0..model.entries.len())
@@ -278,7 +292,7 @@ pub(in crate::tui::sigil_view) fn transcript(
             defer(move || target.set(None));
         }
     });
-    let empty_now = derived_eq(move || keys.get().is_empty());
+    let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
     container()
         .layout(
             LayoutStyle::flex_column()

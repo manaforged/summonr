@@ -1,4 +1,4 @@
-use sigil::prelude::{NodeBuilder, NodeStyleExt, classes, label};
+use sigil::prelude::{NodeBuilder, NodeStyleExt};
 
 use super::App;
 use super::body::header;
@@ -15,15 +15,25 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     drop(model);
     column = column.child(header(app, "Todos".to_string(), count));
     if lines.is_empty() {
-        return column.child(label("no todos yet").class(classes!("text-xs text-gray-11")));
+        return column.child(
+            sigil::kernel::text("no todos yet")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        );
     }
     for line in lines {
         let (shown, done) = plan_mark(&line);
-        column = column.child(label(shown).class(if done {
-            classes!("text-xs text-gray-11")
-        } else {
-            classes!("text-xs text-gray-12")
-        }));
+        column = column.child(
+            sigil::kernel::text(shown)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class(if done {
+                    "text-xs text-gray-11"
+                } else {
+                    "text-xs text-gray-12"
+                }),
+        );
     }
     column
 }

@@ -1,9 +1,8 @@
 use crate::tui::context;
 use sigil::prelude::{
     AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState,
-    NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt, button, classes,
-    container, derived_eq, empty_state, hairline, icon_button, label, node, notice_band, spacer,
-    text_edit, text_live,
+    NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt, button, container,
+    empty_state, hairline, icon_button, node, notice_band, spacer, text_edit,
 };
 
 use super::icons;
@@ -25,7 +24,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Stretch),
         )
-        .class(classes!("bg-gray-1"))
+        .class("bg-gray-1")
         .child(node(move |cx: &mut Cx| {
             cx.add(chat::transcript(transcript_app, (36.0, 16.0), empty_home))
         }))
@@ -53,7 +52,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .layout(LayoutStyle::block().fill_width().shrink(0.0))
                 .children_reactive({
                     let notice = input.clone();
-                    let active = derived_eq(move || chat::panels::band(&notice));
+                    let active = sigil::reactive::derived(move || chat::panels::band(&notice));
                     let notice = input.clone();
                     move || {
                         active
@@ -106,16 +105,20 @@ pub(super) fn title_bar(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(
-            label(if workspace.is_empty() {
+            sigil::kernel::text(if workspace.is_empty() {
                 "Summonr".to_string()
             } else {
                 workspace
             })
-            .class(classes!("text-sm font-medium text-gray-12")),
+            .nowrap()
+            .class(sigil::style::Token::OnSurface.text())
+            .class("text-sm font-medium text-gray-12"),
         )
         .child(
-            label(session::short(&app.model.get().session).to_string())
-                .class(classes!("text-xs text-gray-11")),
+            sigil::kernel::text(session::short(&app.model.get().session).to_string())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
         )
         .child(spacer())
         .child(icon_button("···", move || options.toggle_options()).accessible("Options"))
@@ -171,7 +174,11 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
                     .activate(move || stop.approval_answer("n")),
             );
             notice_band(format!("Needs approval: {detail}"), Tone::Warn)
-                .child(label("The agent is waiting. Allow, Always, or Deny."))
+                .child(
+                    sigil::kernel::text("The agent is waiting. Allow, Always, or Deny.")
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text()),
+                )
                 .child(actions)
         }
         chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),

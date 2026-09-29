@@ -1,6 +1,6 @@
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone,
-    badge, classes, container, label, list_row,
+    badge, container, list_row,
 };
 
 use super::App;
@@ -17,8 +17,10 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     if model.jobs.is_empty() {
         return column.child(
-            label("no background commands — run_command background:true starts one")
-                .class(classes!("text-xs text-gray-11")),
+            sigil::kernel::text("no background commands — run_command background:true starts one")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
         );
     }
     for (index, (record, status)) in model.jobs.iter().enumerate() {
@@ -51,10 +53,12 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
         if open.as_deref() == Some(record.id.as_str()) {
             let mut detail = container()
                 .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-                .class(classes!("rounded-md bg-gray-1"));
+                .class("rounded-md bg-gray-1");
             for line in status.text.lines() {
                 detail = detail.child(
-                    label(line.to_string())
+                    sigil::kernel::text(line.to_string())
+                        .nowrap()
+                        .class(sigil::style::Token::OnSurface.text())
                         .ellipsize()
                         .layout(
                             LayoutStyle::block()
@@ -62,7 +66,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
                                 .min_size(0.0, 14.0)
                                 .padding_x(8.0),
                         )
-                        .class(classes!("text-xs font-mono text-gray-11")),
+                        .class("text-xs font-mono text-gray-11"),
                 );
             }
             column = column.child(detail);

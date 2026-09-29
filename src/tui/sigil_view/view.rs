@@ -8,11 +8,25 @@ pub(super) use super::theme::Palette;
 
 use super::app::{App, Overlay};
 use super::scene;
-use sigil::prelude::{
-    Key, KeyEvent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, Position, Rgba8, Role, Shortcut, Style, Theme, ThemeValue,
-    WidgetLayoutExt, container, text_edit,
-};
+use sigil::layout::Position;
+use sigil::prelude::Key;
+use sigil::prelude::KeyEvent;
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::LogicalKey;
+use sigil::prelude::ModifiersState;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Rgba8;
+use sigil::prelude::Role;
+use sigil::prelude::Shortcut;
+use sigil::prelude::Theme;
+use sigil::prelude::WidgetLayoutExt;
+use sigil::prelude::container;
+use sigil::prelude::text_edit;
+use sigil::style::Style;
+use sigil::style::ThemeValue;
 
 mod input;
 mod keys;

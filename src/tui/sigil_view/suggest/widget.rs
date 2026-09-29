@@ -1,9 +1,13 @@
 use super::{App, LIMIT, MAX_WIDTH, canvas, mention, usage};
 use crate::tui::sigil_view::prelude::{group, hint, pick};
-use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Style,
-    classes, container, derived_eq,
-};
+use sigil::prelude::LayoutBuilderExt;
+use sigil::prelude::LayoutStyle;
+use sigil::prelude::MouseButton;
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::NodeEventsExt;
+use sigil::prelude::NodeStyleExt;
+use sigil::prelude::container;
+use sigil::style::Style;
 
 #[derive(Clone, PartialEq)]
 struct SuggestRow {
@@ -83,7 +87,7 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
 
 pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let popup = derived_eq(move || popup(&update, width));
+    let popup = sigil::reactive::derived(move || popup(&update, width));
     container()
         .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
         .children_reactive(move || {
@@ -115,7 +119,7 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
             vec![
                 container()
                     .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
-                    .class(classes!("border border-gray-6"))
+                    .class("border border-gray-6")
                     .style(
                         Style::new()
                             .bg(canvas::palette().tool_bg)

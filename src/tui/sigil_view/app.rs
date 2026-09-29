@@ -4,8 +4,11 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use sigil::app::cell_width;
-use sigil::prelude::{ImageSource, Signal, TextEditState, signal};
+use sigil::prelude::ImageSource;
+use sigil::prelude::Signal;
+use sigil::prelude::signal;
 use sigil::reactive::batch;
+use sigil::widgets::TextEditState;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::sync::oneshot;
 
@@ -229,8 +232,8 @@ impl App {
                     .map(|module| {
                         let on = switches
                             .as_ref()
-                            .is_none_or(|switches| switches.enabled(module.name));
-                        (module.name, on)
+                            .is_none_or(|switches| switches.enabled(module.id));
+                        (module.id.name(), on)
                     })
                     .collect()
             }),

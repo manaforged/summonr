@@ -1,7 +1,7 @@
 use sigil::prelude::{
     AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, Tone, button, card, classes, container, derived_eq, icon_button,
-    label, list_row_with, notice_band, section_label, spacer, spinner_frame,
+    NodeEventsExt, NodeStyleExt, Tone, button, card, container, icon_button, list_row_with,
+    notice_band, section_label, spacer, spinner_frame,
 };
 
 use super::busy_status;
@@ -84,7 +84,7 @@ fn agent_view(app: &App, model: &Model, width: usize) -> AgentView {
 
 pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let view = derived_eq(move || {
+    let view = sigil::reactive::derived(move || {
         let model = update.model.get();
         if model.agents_hidden || model.agents.is_empty() || width < 12 {
             None
@@ -187,8 +187,10 @@ fn agent_panel(app: App, view: AgentView) -> NodeBuilder {
         body = body.child(list_row_with(false, row.label, slots));
         if !row.last.is_empty() {
             body = body.child(
-                label(row.last)
-                    .class(classes!("text-xs text-gray-10"))
+                sigil::kernel::text(row.last)
+                    .nowrap()
+                    .class(sigil::style::Token::OnSurface.text())
+                    .class("text-xs text-gray-10")
                     .layout(LayoutStyle::block().padding_x(12.0)),
             );
         }
@@ -238,7 +240,7 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
 
 pub(super) fn bands(app: App, width: usize) -> NodeBuilder {
     let update = app.clone();
-    let active = derived_eq(move || band(&update));
+    let active = sigil::reactive::derived(move || band(&update));
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -263,8 +265,18 @@ fn busy_row(status: &str) -> NodeBuilder {
                 .shrink(0.0)
                 .min_size(0.0, 0.0),
         )
-        .child(label(spinner.to_owned()).class(classes!("text-xs text-accent")))
-        .child(label(rest.to_owned()).class(classes!("text-xs text-gray-11")))
+        .child(
+            sigil::kernel::text(spinner.to_owned())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-accent"),
+        )
+        .child(
+            sigil::kernel::text(rest.to_owned())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
+        )
 }
 
 fn above(child: NodeBuilder) -> NodeBuilder {
@@ -302,6 +314,10 @@ fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeB
                 .gap(8.0)
                 .padding_y(8.0),
         )
-        .child(label("The agent is waiting. Choose Allow or Deny."))
+        .child(
+            sigil::kernel::text("The agent is waiting. Choose Allow or Deny.")
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text()),
+        )
         .child(actions)
 }

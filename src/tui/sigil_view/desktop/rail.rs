@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, PathNode, classes,
-    container, label, list_row, section_label, sidebar_width, spacer,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, PathNode, container,
+    list_row, section_label, sidebar_width, spacer,
 };
 
 use super::{App, Pane};
@@ -74,8 +74,10 @@ fn sessions(app: &App) -> NodeBuilder {
     let mut list = container().layout(LayoutStyle::flex_column().fill_width().gap(2.0));
     if rows.is_empty() {
         list = list.child(
-            label(format!("session {}", session::short(&current)))
-                .class(classes!("text-xs text-gray-11")),
+            sigil::kernel::text(format!("session {}", session::short(&current)))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-11"),
         );
     }
     for info in rows {

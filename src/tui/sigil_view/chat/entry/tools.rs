@@ -1,6 +1,6 @@
 use sigil::prelude::{
     AlignItems, Fill, Geometry, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, PointerEvent, classes, container, label,
+    NodeEventsExt, NodeStyleExt, PointerEvent, container,
 };
 
 use super::super::{App, Call, Entry};
@@ -30,13 +30,25 @@ fn header(name: &str, arg: &str, state: &ToolState) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label(mark).class(tone))
-        .child(label(name.to_string()).class(classes!("text-xs text-gray-12")))
         .child(
-            label(arg.to_string())
+            sigil::kernel::text(mark)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class(tone),
+        )
+        .child(
+            sigil::kernel::text(name.to_string())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-12"),
+        )
+        .child(
+            sigil::kernel::text(arg.to_string())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
                 .ellipsize()
                 .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                .class(classes!("text-xs font-mono text-gray-11")),
+                .class("text-xs font-mono text-gray-11"),
         )
 }
 
@@ -144,8 +156,18 @@ fn group_header(name: &str, calls: &[Call]) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(label(mark).class(tone))
-        .child(label(format!("{name} ×{}", calls.len())).class(classes!("text-xs text-gray-12")))
+        .child(
+            sigil::kernel::text(mark)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class(tone),
+        )
+        .child(
+            sigil::kernel::text(format!("{name} ×{}", calls.len()))
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class("text-xs text-gray-12"),
+        )
 }
 
 fn group_row(
@@ -171,17 +193,26 @@ fn group_row(
                 .align_items(AlignItems::Center),
         )
         .pointer_up(flip(app, index, Some(at)))
-        .child(label(mark).class(tone))
         .child(
-            label(call.arg.clone())
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                .class(classes!("text-xs font-mono text-gray-11")),
+            sigil::kernel::text(mark)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .class(tone),
         )
         .child(
-            label(summary)
+            sigil::kernel::text(call.arg.clone())
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
                 .ellipsize()
-                .class(classes!("text-xs text-gray-10")),
+                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
+                .class("text-xs font-mono text-gray-11"),
+        )
+        .child(
+            sigil::kernel::text(summary)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .ellipsize()
+                .class("text-xs text-gray-10"),
         );
     let expanded = call.expanded || tools == ToolOutput::Full;
     let row = wrap(row);

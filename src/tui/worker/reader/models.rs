@@ -21,7 +21,7 @@ fn waiting(ready: &[endpoint::Endpoint], errors: &mut Vec<String>) -> Vec<(Strin
             let found = endpoint::auth_info(&name).and_then(|info| {
                 Ok((
                     info,
-                    endpoint::resolve_inner(Some(&name), None, false, false)?,
+                    endpoint::resolve(Some(&name), None, endpoint::Need::Config)?,
                 ))
             });
             let (info, endpoint) = match found {
@@ -86,7 +86,7 @@ fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
 
 impl Reader {
     pub(super) async fn models(&self, request: u64, only: Option<String>) {
-        let (endpoints, mut errors) = endpoint::ready(false);
+        let (endpoints, mut errors) = endpoint::ready(endpoint::Need::Key);
         let setup = waiting(&endpoints, &mut errors);
         let names: Vec<&str> = endpoints
             .iter()

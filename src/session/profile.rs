@@ -166,7 +166,20 @@ impl Scan {
     }
 }
 
-pub fn profile(path: &Path) -> Result<String> {
+#[derive(Clone, Copy)]
+pub enum Scope<'a> {
+    Session(&'a Path),
+    Recent(Option<usize>),
+}
+
+pub fn profile(scope: Scope<'_>) -> Result<String> {
+    match scope {
+        Scope::Session(path) => session(path),
+        Scope::Recent(last) => aggregate::profile_all(last),
+    }
+}
+
+fn session(path: &Path) -> Result<String> {
     let mut scan = Scan::default();
     for line in log::read(path)? {
         scan.line(line);
@@ -191,7 +204,3 @@ mod health;
 mod render;
 
 use render::{View, render};
-
-pub fn profile_all(last: Option<usize>) -> Result<String> {
-    aggregate::profile_all(last)
-}

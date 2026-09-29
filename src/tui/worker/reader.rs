@@ -102,7 +102,7 @@ impl Reader {
                 self.send(Msg::Sessions(rows));
             }
             Cmd::ListUsage => {
-                let prices = endpoint::ready(false)
+                let prices = endpoint::ready(endpoint::Need::Key)
                     .0
                     .into_iter()
                     .filter_map(|seat| Some((seat.model, seat.price?)))

@@ -8,7 +8,7 @@ use zeroize::Zeroizing;
 
 use crate::error::Result;
 
-pub type Secret = Zeroizing<String>;
+pub(crate) type Secret = Zeroizing<String>;
 
 pub struct Request {
     pub prompt: String,
@@ -176,7 +176,7 @@ pub fn env() -> Vec<(String, String)> {
 }
 
 #[cfg(unix)]
-pub fn scrub(text: &str) -> String {
+pub(crate) fn scrub(text: &str) -> String {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
         return text.to_string();
     };
@@ -186,12 +186,12 @@ pub fn scrub(text: &str) -> String {
 }
 
 #[cfg(not(unix))]
-pub fn scrub(text: &str) -> String {
+pub(crate) fn scrub(text: &str) -> String {
     text.to_string()
 }
 
 #[cfg(unix)]
-pub fn scrub_file(path: &Path) {
+pub(crate) fn scrub_file(path: &Path) {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
         return;
     };
@@ -207,7 +207,7 @@ pub fn scrub_file(path: &Path) {
 }
 
 #[cfg(not(unix))]
-pub fn scrub_file(_path: &Path) {}
+pub(crate) fn scrub_file(_path: &Path) {}
 
 #[cfg(unix)]
 fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<()> {

@@ -60,9 +60,17 @@ pub use client::Client;
 pub(crate) use client::input_cap;
 #[cfg(test)]
 pub(crate) use client::response_failure;
-pub use message::*;
+pub(crate) use message::{
+    AssistantMessage, Continuation, Role, Source, StopReason, ToolCall, ToolFunction, ToolKind,
+};
+pub(crate) use message::{Image, Message};
+pub use message::{Usage, UserInput};
 pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, levels};
-pub use request::*;
+pub use request::Effort;
+pub(crate) use request::compact;
+pub(crate) use request::dollars;
+pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition};
+pub(crate) use request::{Partial, Price};
 #[cfg(test)]
 pub(crate) use wire::decisions;
 

@@ -11,11 +11,14 @@ use crate::cli::Args;
 pub(super) async fn probe_endpoints() -> Result<()> {
     for name in summonr::endpoint_names()? {
         let info = summonr::auth_info(&name).ok();
-        let seat = summonr::resolve_endpoint_unauthed(Some(&name), None).ok();
+        let seat = summonr::resolve_endpoint(Some(&name), None, summonr::Need::Model).ok();
         let model = seat.as_ref().map_or("", |seat| seat.model.as_str());
         let base = seat.as_ref().and_then(|seat| seat.base_url.as_deref());
         let host = base.map_or("", |base| splash::host_of(Some(base)).unwrap_or(base));
-        let status = match (&info, summonr::resolve_endpoint(Some(&name), None)) {
+        let status = match (
+            &info,
+            summonr::resolve_endpoint(Some(&name), None, summonr::Need::Seat),
+        ) {
             (Some(info), _) if !info.configured && !info.keyless() => {
                 format!("{} · {}", info.state(), info.setup)
             }
@@ -369,7 +372,11 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
         );
         return Ok(());
     }
-    let endpoint = summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref())?;
+    let endpoint = summonr::resolve_endpoint(
+        args.endpoint.as_deref(),
+        args.model.as_deref(),
+        summonr::Need::Seat,
+    )?;
     let flow = summonr::auth_info(name)?.flow;
     match flow {
         summonr::LoginFlow::Browser => {

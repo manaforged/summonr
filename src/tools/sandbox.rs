@@ -42,12 +42,22 @@ enum Backend {
     Linux { executable: PathBuf },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Network {
+    Allowed,
+    Denied,
+}
+
+impl Network {
+    #[must_use]
+    pub const fn allowed(allow: bool) -> Self {
+        if allow { Self::Allowed } else { Self::Denied }
+    }
+}
+
 impl Sandbox {
-    pub(crate) fn discover(
-        workspace: &Path,
-        deny_network: bool,
-        write: &[PathBuf],
-    ) -> Result<Self> {
+    pub(crate) fn discover(workspace: &Path, network: Network, write: &[PathBuf]) -> Result<Self> {
+        let deny_network = network == Network::Denied;
         #[cfg(not(sandboxed))]
         {
             let _ = (workspace, deny_network, write);
@@ -144,19 +154,19 @@ impl Sandbox {
     pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {
         #[cfg(sandboxed)]
         {
-            Self::discover(workspace, self.deny_network, &self.write)
+            Self::discover(workspace, Network::allowed(!self.deny_network), &self.write)
         }
         #[cfg(not(sandboxed))]
         {
             let _ = self;
-            Self::discover(workspace, false, &[])
+            Self::discover(workspace, Network::Allowed, &[])
         }
     }
 
     pub(crate) fn allow_network(&self) -> Result<Self> {
         #[cfg(sandboxed)]
         {
-            Self::discover(&self.workspace, false, &self.write)
+            Self::discover(&self.workspace, Network::Allowed, &self.write)
         }
         #[cfg(not(sandboxed))]
         {

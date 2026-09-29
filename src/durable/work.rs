@@ -12,7 +12,9 @@ use super::tree::{Snapshot, changed};
 mod progress;
 mod stage;
 
-pub use progress::*;
+pub(crate) use progress::WorkPhase;
+pub use progress::{WorkKind, WorkProgress};
+pub(crate) use progress::{checks, roman};
 
 const LEDGER_WIDTH: usize = 72;
 const LEDGER_MAX: usize = 40;

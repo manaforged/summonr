@@ -127,7 +127,7 @@ pub fn errors() -> BTreeMap<String, Question> {
     ])
 }
 
-pub fn commit() -> BTreeMap<String, Question> {
+pub(crate) fn commit() -> BTreeMap<String, Question> {
     set([
         (
             "untested",

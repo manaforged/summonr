@@ -55,7 +55,7 @@ pub async fn sweep(
     Ok((merge(&seen)?, count))
 }
 
-pub fn merge(seen: &[Decision]) -> Result<Decision> {
+pub(crate) fn merge(seen: &[Decision]) -> Result<Decision> {
     let (first, rest) = seen
         .split_first()
         .ok_or_else(|| Error::Config("no windows to merge".to_string()))?;

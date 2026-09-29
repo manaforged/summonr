@@ -182,7 +182,12 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn unseated(&self) -> bool {
-        crate::endpoint::resolve(Some(&self.model.peek().snapshot.endpoint), None).is_err()
+        crate::endpoint::resolve(
+            Some(&self.model.peek().snapshot.endpoint),
+            None,
+            crate::endpoint::Need::Seat,
+        )
+        .is_err()
     }
 
     fn env_note(&self, choice: &crate::endpoint::AuthInfo) -> bool {

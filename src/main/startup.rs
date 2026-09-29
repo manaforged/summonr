@@ -146,9 +146,15 @@ fn listing(args: &Args) -> Option<Result<i32>> {
 
 fn profile(args: &Args) -> Result<()> {
     if args.all {
-        print!("{}", summonr::profile_sessions(args.last)?);
+        print!(
+            "{}",
+            summonr::profile(summonr::ProfileScope::Recent(args.last))?
+        );
     } else {
-        print!("{}", summonr::profile_session(&session_path(args)?)?);
+        print!(
+            "{}",
+            summonr::profile(summonr::ProfileScope::Session(&session_path(args)?))?
+        );
     }
     Ok(())
 }

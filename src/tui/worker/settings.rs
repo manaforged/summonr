@@ -27,17 +27,30 @@ impl Worker {
     }
 
     pub(super) async fn set_endpoint(&mut self, name: &str) {
-        self.drive(crate::endpoint::resolve(Some(name), None)).await;
+        self.drive(crate::endpoint::resolve(
+            Some(name),
+            None,
+            crate::endpoint::Need::Seat,
+        ))
+        .await;
     }
 
     pub(super) async fn set_seat(&mut self, endpoint: &str, model: &str) {
-        self.drive(crate::endpoint::resolve(Some(endpoint), Some(model)))
-            .await;
+        self.drive(crate::endpoint::resolve(
+            Some(endpoint),
+            Some(model),
+            crate::endpoint::Need::Seat,
+        ))
+        .await;
     }
 
     pub(super) async fn set_model(&mut self, model: &str) {
-        self.drive(crate::endpoint::resolve(Some(&self.endpoint), Some(model)))
-            .await;
+        self.drive(crate::endpoint::resolve(
+            Some(&self.endpoint),
+            Some(model),
+            crate::endpoint::Need::Seat,
+        ))
+        .await;
     }
 
     pub(super) async fn drive(&mut self, endpoint: crate::Result<Endpoint>) {
@@ -135,9 +148,10 @@ impl Worker {
     }
 
     pub(super) fn seat_role(&mut self, role: Role, endpoint: &str, model: Option<&str>) {
-        let resolved = crate::endpoint::resolve(Some(endpoint), model).and_then(|endpoint| {
-            Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
-        });
+        let resolved = crate::endpoint::resolve(Some(endpoint), model, crate::endpoint::Need::Seat)
+            .and_then(|endpoint| {
+                Self::client(&self.ui, &endpoint).map(|client| (endpoint, client))
+            });
         match resolved {
             Ok((endpoint, client)) => {
                 self.loop_.set_seat(
@@ -256,7 +270,11 @@ impl Worker {
         };
         let ui = &self.ui;
         let applied = self.loop_.apply_workflow(&workflow, |seat| {
-            let endpoint = crate::endpoint::resolve(Some(&seat.endpoint), seat.model.as_deref())?;
+            let endpoint = crate::endpoint::resolve(
+                Some(&seat.endpoint),
+                seat.model.as_deref(),
+                crate::endpoint::Need::Seat,
+            )?;
             let client = Self::client(ui, &endpoint)?;
             Ok((client, endpoint))
         });

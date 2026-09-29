@@ -2,7 +2,7 @@ use super::resolve::*;
 use super::*;
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
-    let endpoint = resolve_inner(Some(name), None, false, false)?;
+    let endpoint = resolve(Some(name), None, Need::Config)?;
     let mut info = AuthInfo {
         name: name.to_string(),
         flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
@@ -42,10 +42,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
 }
 
 pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
-    if resolve_inner(Some(name), None, false, false)?
-        .oauth
-        .is_some()
-    {
+    if resolve(Some(name), None, Need::Config)?.oauth.is_some() {
         return Err(Error::Config(format!(
             "{name} uses a login token, not an API key — run `summonr login {name}` without --key"
         )));
@@ -60,7 +57,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
 }
 
 pub async fn check_key(name: &str, key: &str) -> Result<Source> {
-    let mut endpoint = resolve_inner(Some(name), None, false, false)?;
+    let mut endpoint = resolve(Some(name), None, Need::Config)?;
     endpoint.api_key = Some(key.trim().to_string());
     endpoint.source = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await
@@ -118,12 +115,12 @@ pub(crate) fn adopt_from(path: &Path, store: &secret::Store) -> Result<Vec<Strin
     Ok(moved)
 }
 
-pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
+pub(crate) fn ready(need: Need) -> (Vec<Endpoint>, Vec<String>) {
     let mut names = match names() {
         Ok(names) => names,
         Err(error) => return (Vec::new(), vec![error.to_string()]),
     };
-    if let Ok(endpoint) = resolve_inner(None, None, true, require_model)
+    if let Ok(endpoint) = resolve(None, None, need)
         && !names.contains(&endpoint.name)
     {
         names.insert(0, endpoint.name);
@@ -131,11 +128,11 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
     let mut endpoints = Vec::new();
     let mut errors = Vec::new();
     for name in names {
-        let endpoint = match resolve_inner(Some(&name), None, true, require_model) {
+        let endpoint = match resolve(Some(&name), None, need) {
             Ok(endpoint) if endpoint.wire == Wire::Decisions => continue,
             Ok(endpoint) => endpoint,
             Err(_) => {
-                if let Err(error) = resolve_inner(Some(&name), None, false, require_model)
+                if let Err(error) = resolve(Some(&name), None, need.without_key())
                     && !errors.contains(&error.to_string())
                 {
                     errors.push(error.to_string());
@@ -158,13 +155,12 @@ pub(crate) fn ready(require_model: bool) -> (Vec<Endpoint>, Vec<String>) {
 
 pub fn first_classify() -> Option<String> {
     names().unwrap_or_default().into_iter().find(|name| {
-        resolve_inner(Some(name), None, true, false)
-            .is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
+        resolve(Some(name), None, Need::Key).is_ok_and(|endpoint| endpoint.wire == Wire::Decisions)
     })
 }
 
 pub(crate) fn step(current: &str, forward: bool) -> Option<String> {
-    let (endpoints, _) = ready(true);
+    let (endpoints, _) = ready(Need::Seat);
     if endpoints.is_empty() {
         return None;
     }

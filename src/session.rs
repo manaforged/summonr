@@ -7,11 +7,11 @@ mod catalog;
 mod profile;
 mod usage;
 
-pub(crate) use catalog::remove;
-pub use catalog::{export, last_for, list, resolve_id, set_name, short};
+pub use catalog::{export, last_for, list, resolve_id, short};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
-pub use profile::{profile, profile_all};
-pub use usage::Spend;
+pub(crate) use catalog::{remove, set_name};
+pub use profile::{Scope as ProfileScope, profile};
+pub(crate) use usage::Spend;
 pub(crate) use usage::{DAY, HOUR, Total, buckets, spend};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -27,7 +27,7 @@ pub struct SessionInfo {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Prompt {
+pub(crate) struct Prompt {
     pub session: Arc<SessionInfo>,
     pub turn: usize,
     pub text: String,
@@ -36,7 +36,7 @@ pub struct Prompt {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Replay {
+pub(crate) struct Replay {
     pub history: Vec<Message>,
     pub prompt: Option<String>,
     pub model: Option<String>,

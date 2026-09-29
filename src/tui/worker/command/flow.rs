@@ -94,7 +94,9 @@ impl Worker {
             Some(crate::SlashCommand::Status) => self.session(),
             Some(crate::SlashCommand::Usage) => {
                 match argument {
-                    Some("session") => match crate::profile_session(self.loop_.session_path()) {
+                    Some("session") => match crate::profile(crate::ProfileScope::Session(
+                        self.loop_.session_path(),
+                    )) {
                         Ok(report) => self.system(report.trim_end()),
                         Err(error) => self.fail(&error.to_string()),
                     },

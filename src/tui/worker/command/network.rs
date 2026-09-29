@@ -13,11 +13,11 @@ impl Worker {
                 };
                 self.system(state);
             }
-            Some("on") => match self.loop_.set_network(true) {
+            Some("on") => match self.loop_.set_network(crate::Network::Allowed) {
                 Ok(()) => self.system("network allowed for this session"),
                 Err(error) => self.fail(&error.to_string()),
             },
-            Some("off") => match self.loop_.set_network(false) {
+            Some("off") => match self.loop_.set_network(crate::Network::Denied) {
                 Ok(()) => self.system("network denied for this session"),
                 Err(error) => self.fail(&error.to_string()),
             },
@@ -31,7 +31,8 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let endpoint = match crate::endpoint::resolve(Some(name), None) {
+        let endpoint = match crate::endpoint::resolve(Some(name), None, crate::endpoint::Need::Seat)
+        {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.done(name, Err(error.to_string()));
@@ -40,16 +41,14 @@ impl Worker {
         };
         let notice = self.ui.clone();
         let asking = self.ui.clone();
-        let owner = name.to_string();
-        let asker = name.to_string();
         let (answers, typed) = tokio::sync::mpsc::unbounded_channel::<String>();
         let typed = std::sync::Arc::new(tokio::sync::Mutex::new(typed));
         let mut prompt = summonr_auth::Prompt::new(
-            move |line| drop(notice.send(step(&owner, line, false))),
+            move |line| drop(notice.send(step(line, false))),
             move |line| {
                 let asking = asking.clone();
                 let typed = typed.clone();
-                let step = step(&asker, &line, true);
+                let step = step(&line, true);
                 Box::pin(async move {
                     drop(asking.send(step));
                     typed.lock().await.recv().await
@@ -136,11 +135,10 @@ impl Worker {
     }
 }
 
-fn step(name: &str, line: &str, asking: bool) -> Msg {
+fn step(line: &str, asking: bool) -> Msg {
     let rest = line.strip_prefix("open ").unwrap_or_default();
     let (url, code) = rest.split_once(" and enter ").unwrap_or((rest, ""));
     Msg::LoginStep {
-        name: name.to_string(),
         text: if rest.is_empty() {
             line.to_string()
         } else {

@@ -95,9 +95,13 @@ pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
         let end = delete.get("end_tag").and_then(Value::as_str);
         return delete_patch(text, tag, end);
     }
-    Err(Error::Tool(
-        "edit requires old+new, tag+new, tag+text, op=delete, or edits".to_string(),
-    ))
+    let keys = op
+        .as_object()
+        .map(|object| object.keys().cloned().collect::<Vec<_>>().join(", "))
+        .unwrap_or_default();
+    Err(Error::Tool(format!(
+        "edit got keys [{keys}]; it takes old+new, tag+new, tag+text, op=delete, or edits"
+    )))
 }
 
 fn optional_tag(value: &Value) -> Result<Option<&str>> {

@@ -3,7 +3,7 @@ pub(crate) const READ: &str = "read op reference — every form honors ignore ru
 op=file (default with path): N:text lines, one page of up to 50 KB by default; offset starts at line N, limit caps lines (max 1000); paths[] reads several files and reports missing ones inline; tags true adds hash tags for tag-edits.
 op=list: directory listing; recursive true or depth N returns a tree; truncation notes say how to narrow.
 op=search (default when pattern or glob is set): pattern is regex (literal true skips it; caseSensitive defaults true); glob/include filters paths, type names a file type (rust, py, js…), exclude drops a glob; files returns matching paths; count returns per-file match counts; context or before/after add lines; multiline matches across lines; hits are path:N:col:line grouped per file, where col is the match's 1-based UTF-16 column that lsp takes as character; tags true prints path:N:hash|line instead, and N:hash is the tag an edit takes.
-op=image: shows an image to the user.";
+op=image: returns the image so you can see it; a model without image input gets a description or a note instead.";
 
 pub(crate) const EDIT: &str = "edit grammar — tags are N:hash strings that a read with tags true returns.
 
@@ -11,7 +11,7 @@ pub(crate) const EDIT: &str = "edit grammar — tags are N:hash strings that a r
 - tag+new: replace the tagged line(s), end_tag extends the range
 - tag+text: insert after the tagged line
 - op=delete: remove tagged lines
-- edits[]: apply several of the above atomically
+- edits[]: apply several of the above atomically; if two overlap they apply in order, each against the result of the one before
 - op=sequence: resolve edits in order
 - patch: a full *** Begin Patch / Update|Add|Delete File document with @@ context lines; multiple files per document; every file is staged first, so a failed stage changes nothing
 - path+to: rename or move the file

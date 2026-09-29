@@ -13,13 +13,14 @@ mod list;
 mod ops;
 mod read;
 mod search;
+mod spans;
 mod write;
 
 pub(crate) use image::{IMAGES_MAX_BYTES, attach, image_type};
 use list::{format_directory, format_tree};
 
 impl ToolRegistry {
-    pub(super) fn read(&self, arguments: &str) -> Result<String> {
+    pub(super) fn read(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("read", arguments)?;
         let op = args.get("op").and_then(Value::as_str);
         if let Some(paths) = args
@@ -40,18 +41,18 @@ impl ToolRegistry {
         }
     }
 
-    fn read_op(&self, operation: &str, arguments: &str) -> Result<String> {
+    fn read_op(&self, operation: &str, arguments: &str) -> Result<ToolOutput> {
         match operation {
             "file" => self.read_file(arguments),
-            "list" => self.list_dir(arguments),
-            "search" => self.grep(arguments),
+            "list" => self.list_dir(arguments).map(ToolOutput::ok),
+            "search" => self.grep(arguments).map(ToolOutput::ok),
             "image" => self.show_image(arguments),
-            "help" => Ok(super::help::READ.to_string()),
+            "help" => Ok(ToolOutput::ok(super::help::READ.to_string())),
             unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
         }
     }
 
-    fn read_default(&self, args: &Value, arguments: &str) -> Result<String> {
+    fn read_default(&self, args: &Value, arguments: &str) -> Result<ToolOutput> {
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = args
             .get("glob")
@@ -60,7 +61,7 @@ impl ToolRegistry {
             .map(str::trim)
             .filter(|glob| !glob.is_empty());
         if !pattern.is_empty() || glob.is_some() {
-            return self.grep(arguments);
+            return self.grep(arguments).map(ToolOutput::ok);
         }
         let path = args
             .get("path")
@@ -73,7 +74,7 @@ impl ToolRegistry {
             self.resolve_read(path)?
         };
         if opened.is_dir() {
-            return self.list_dir(arguments);
+            return self.list_dir(arguments).map(ToolOutput::ok);
         }
         self.read_file(arguments)
     }
@@ -116,6 +117,7 @@ impl ToolRegistry {
                 success: true,
                 mutated: true,
                 grant: None,
+                images: Vec::new(),
             });
         }
         let dest = self.resolve_existing(path)?;
@@ -147,6 +149,7 @@ impl ToolRegistry {
             success: true,
             mutated: true,
             grant: None,
+            images: Vec::new(),
         })
     }
 
@@ -173,6 +176,7 @@ impl ToolRegistry {
             success: true,
             mutated: true,
             grant: None,
+            images: Vec::new(),
         })
     }
 
@@ -214,6 +218,7 @@ impl ToolRegistry {
             success: true,
             mutated: true,
             grant: None,
+            images: Vec::new(),
         })
     }
 

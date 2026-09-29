@@ -175,12 +175,12 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
                 .child(actions)
         }
         chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
-        chat::panels::Band::Attached(count) => {
-            let noun = if count == 1 { "image" } else { "images" };
-            notice_band(
-                format!("{count} {noun} attached · enter sends with your prompt"),
-                Tone::Info,
-            )
-        }
+        chat::panels::Band::Attached(count) => notice_band(
+            format!(
+                "{} · enter sends with your prompt",
+                chat::panels::attached_text(count)
+            ),
+            Tone::Info,
+        ),
     }
 }

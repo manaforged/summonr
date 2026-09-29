@@ -53,7 +53,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn queue_if_busy(&self) -> bool {
-        if self.model.get().busy_since.is_none() || self.draft.peek().trim().is_empty() {
+        if self.model.get().busy_since.is_none()
+            || self.draft.peek().trim().is_empty() && self.attachments.borrow().is_empty()
+        {
             return false;
         }
         self.queue();

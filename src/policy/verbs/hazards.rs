@@ -8,37 +8,32 @@ pub(super) const RM: &[Rule] = &[Rule {
         Cond::Short('r'),
         Cond::Short('R'),
     ],
-    outside: true,
-    reason: "it deletes recursively outside the workspace",
+    broad: true,
+    reason: "it deletes a system, home, or project root recursively",
 }];
 pub(super) const FIND: &[Rule] = &[Rule {
     when: &[Cond::Any(&["-delete"])],
-    outside: false,
-    reason: "it deletes files",
-}];
-pub(super) const SED: &[Rule] = &[Rule {
-    when: IN_PLACE,
-    outside: true,
-    reason: "it edits files outside the workspace in place",
+    broad: true,
+    reason: "it deletes files across a system, home, or project root",
 }];
 pub(super) const SHRED: &[Rule] = &[Rule {
     when: &[Cond::Always],
-    outside: false,
+    broad: false,
     reason: "it destroys file contents",
 }];
 pub(super) const DESTROY: &[Rule] = &[Rule {
     when: &[Cond::Any(&["destroy"])],
-    outside: false,
+    broad: false,
     reason: "it destroys infrastructure",
 }];
 pub(super) const CLUSTER: &[Rule] = &[Rule {
     when: &[Cond::First("delete")],
-    outside: false,
+    broad: false,
     reason: "it deletes cluster resources",
 }];
 pub(super) const PRUNE: &[Rule] = &[Rule {
     when: &[Cond::Any(&["prune"])],
-    outside: false,
+    broad: false,
     reason: "it deletes container data",
 }];
 

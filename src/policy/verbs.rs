@@ -94,7 +94,7 @@ pub(crate) enum Clip {
 
 pub(crate) struct Rule {
     pub(crate) when: &'static [Cond],
-    pub(crate) outside: bool,
+    pub(crate) broad: bool,
     pub(crate) reason: &'static str,
 }
 

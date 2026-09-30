@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use sigil::prelude::Cx;
 use sigil::prelude::effect;
 use sigil::reactive::defer;
 use sigil::reactive::untrack;
@@ -36,10 +35,10 @@ pub(crate) fn run(
     let resume = Rc::new(RefCell::new(None));
     let requested = resume.clone();
     let opened = tokio::task::block_in_place(|| {
-        sigil::run(window(), move |cx: &mut Cx| {
+        sigil::run(window(), move || {
             super::canvas::window_cells();
-            let mut app = App::new(info, workspace, commands);
-            app.resume = requested;
+            let mut app = App::new(info.clone(), workspace.clone(), commands.clone());
+            app.resume = requested.clone();
             app.resize(160, 50);
             app.refresh();
             app.animate();
@@ -53,7 +52,7 @@ pub(crate) fn run(
                 });
             }
             watch_outputs(&app);
-            cx.add(root(app))
+            root(app)
         })
     });
     stop(worker, &cmd_tx, crate::limits::WORKER_STOP);
@@ -63,7 +62,9 @@ pub(crate) fn run(
 }
 
 fn window() -> sigil::AppConfig {
-    sigil::AppConfig::from((TITLE, SIZE.0, SIZE.1)).esc_exits(false)
+    sigil::AppConfig::new(TITLE)
+        .size(SIZE.0, SIZE.1)
+        .esc_exits(false)
 }
 
 fn watch_outputs(app: &App) {

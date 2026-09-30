@@ -1,13 +1,9 @@
-use std::cell::Cell;
-use std::rc::Rc;
-
 use super::{App, Model, composer_hint, suggest};
 use crate::tui::sigil_view::canvas::GUTTER;
 use sigil::events::NodeEventsExt;
 use sigil::layout::Overflow;
 use sigil::layout::Position;
 use sigil::prelude::AlignItems;
-use sigil::prelude::Cx;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
@@ -18,7 +14,6 @@ use sigil::prelude::container;
 use sigil::prelude::divider_horizontal;
 use sigil::prelude::node;
 use sigil::prelude::notice_band;
-use sigil::prelude::request_focus;
 
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,
@@ -26,13 +21,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     editor: E,
 ) -> NodeBuilder {
     let editing = app.view_edit.peek();
-    let editor_node = Rc::new(Cell::new(None));
-    let mount = editor_node.clone();
-    let editor = move |cx: &mut Cx| {
-        let id = cx.add(editor);
-        mount.set(Some(id));
-        id
-    };
+    let focus = app.editor_focus;
     let mut editor_area = container().layout(
         LayoutStyle::flex_column()
             .fill_width()
@@ -78,11 +67,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     }
     let inner_width = width.saturating_sub(8);
     container()
-        .pointer_down(move |_| {
-            if let Some(id) = editor_node.get() {
-                request_focus(id);
-            }
-        })
+        .pointer_down(move |_| focus.update(|n| *n += 1))
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()

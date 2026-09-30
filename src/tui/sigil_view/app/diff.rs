@@ -79,14 +79,18 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn copied(&self, text: &str, status: sigil::prelude::Delivery) {
+    pub(in crate::tui::sigil_view) fn copied(
+        &self,
+        text: &str,
+        status: sigil::clipboard::Delivery,
+    ) {
         let lines = text.lines().count();
         let plural = if lines == 1 { "" } else { "s" };
         let notice = match status {
-            sigil::prelude::Delivery::Confirmed => {
+            sigil::clipboard::Delivery::Confirmed => {
                 format!("copied {lines} line{plural} to the clipboard")
             }
-            sigil::prelude::Delivery::Requested => format!(
+            sigil::clipboard::Delivery::Requested => format!(
                 "copy requested for {lines} line{plural}; terminal acceptance is unconfirmed"
             ),
         };

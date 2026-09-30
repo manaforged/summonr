@@ -54,8 +54,8 @@ pub(crate) fn run(
         .terminal_hooks(hooks);
     let ran = {
         tokio::task::block_in_place(|| {
-            sigil::run(config, move |cx: &mut Cx| {
-                let app = App::new(info, workspace, commands);
+            sigil::run(config, move || {
+                let app = App::new(info.clone(), workspace.clone(), commands.clone());
                 if let Err(error) = calibrate(&mut std::io::stdout()) {
                     app.update(Msg::System(format!(
                         "Could not measure terminal text widths: {error}"
@@ -81,7 +81,7 @@ pub(crate) fn run(
                     );
                 }
                 *mounted.borrow_mut() = Some(app.clone());
-                cx.add(root(app))
+                root(app)
             })
         })
     };

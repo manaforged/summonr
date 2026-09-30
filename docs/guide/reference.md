@@ -405,7 +405,7 @@ command output shows it as `[secret]`.
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
 | `enter` | send | steer: delivered after the current tool calls |
-| `tab` | complete a `/command`, its argument, or `@path` | queue: delivered after the turn |
+| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri` | queue: delivered after the turn |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
@@ -443,6 +443,7 @@ command output shows it as `[secret]`.
 | `/search TEXT` | find text in this conversation |
 | `/history [TEXT]` | reuse an earlier prompt |
 | `/status` | session id, log path, and model |
+| `/mcp` | MCP servers: state, tools, schema size, last error |
 | `/usage [session]` | token spend; session profiles this session |
 | `/agents` | list agent sessions on this machine |
 | `/exit` | quit summonr |
@@ -600,9 +601,11 @@ head and tail, a single line up to 8 KB, and the full log path is named
 only when that cut something. Only exact `cat FILE`, single-file `head`,
 and `sed -n A,Bp FILE` without a `workdir` are answered by `read`; `ls`,
 `wc`, `tree`, `grep`, and `rg` run in the shell. A foreground command waits
-up to an hour; past that it keeps running as a background job and returns
+up to two minutes; past that it keeps running as a background job and returns
 its id and the call that waits for it, unless `timeout_secs` was set, which
-stops it instead. A job poll waits until the job exits or the wait limit
+stops it instead. Where a command cannot become a job (a child session, Plan
+mode, a restricted write policy, or the jobs module turned off), it is stopped
+after an hour. A job poll waits until the job exits or the wait limit
 passes.
 
 | Name | When | Notes |
@@ -620,6 +623,7 @@ passes.
 | `send` | `mail` module | `to` (a name, an id, or `all`) and `text`: write to a peer's inbox |
 | `inbox` | `mail` module | Read mail that arrived since the last read |
 | `board` | `mail` module | `action` get, set, or list; `key`, `value` |
+| `mcp` | an MCP server has over 8 KB of tool schemas | Lists those servers' tool names; `query` returns matching tools with schemas; `tool` and `arguments` call one |
 
 The old names (`read_file`, `list_dir`, `grep`, `show_image`,
 `write_file`, `replace_text`, `replace_lines`, `insert_after`,
@@ -633,8 +637,8 @@ advertised. Plan mode advertises
 
 Every optional capability is a **module** compiled into the binary: `search`,
 `lsp`, `jobs`, `task`, `skills`, `mcp`, `mail`, and `gui`. That list is the
-built-in module set: curated, switchable, and inside the harness process RSS. `search`, `mcp`, and `mail`
-are off by default so unused tool schemas stay out of the first `prefix_hash`;
+built-in module set: curated, switchable, and inside the harness process RSS. `search` and `mail`
+are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure;
 the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings`
 in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`.
 After the first `prefix_hash` in this process, that write is for the next
@@ -841,11 +845,12 @@ name that package a plugin; Summonr does not load guest code.
 | Layer | Where | What the model sees |
 | --- | --- | --- |
 | Skill | `~/.summonr/skills/<name>/SKILL.md` or `.summonr/skills/<name>/SKILL.md` | One `skill` tool. The body is a later tool result. |
-| MCP | the `mcp` row in `/settings`, then `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash` |
-| Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` | Not a tool. `pre_tool` may block a call (stdin is JSON). |
+| MCP | `[mcp.NAME]`; approved `.mcp.json`; `import_mcp = true` for Claude/Codex configs | `server__tool` aliases that connected before the first `prefix_hash`; a server over 8 KB of schemas is reached through one `mcp` tool. `/server:prompt` and `@server:uri` expand server prompts and resources into the user message. |
+| Hook | `[hooks]` `pre_tool`, `post_tool`, `compact`, `stop` (a command or a list) | Not a tool. `pre_tool` may block a call (stdin is JSON). |
+| Plugin | `summonr install PATH` (Claude Code layout) | Its skills, MCP tools (`<plugin>-<server>__tool`), hooks, and `bin/` |
 | CLI | `run_command` | A binary on `PATH` or under `~/.summonr/bin/<name>/`. Policy, danger prompt, and `--sandbox` apply. Copying files must not execute the binary. Workspace `.summonr/bin` is not put on `PATH` unless the user approved it the same way as `.mcp.json`. |
 
-`summonr install PATH` copies `skills/`, `bin/` (to `~/.summonr/bin/<bundle>/`), and merges `mcp.toml` / `hooks.toml` into `~/.summonr/config.toml`. Conflicts refuse. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints extras. There is no marketplace and no in-process loader.
+`summonr install PATH` copies a plugin directory to `~/.summonr/plugins/<name>/`. Copy does not execute. Restart so new MCP aliases join the next `prefix_hash`. `summonr install --list` prints installed plugins. There is no marketplace and no in-process loader.
 
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`, and a steps or goal run adds `todo`.
 
@@ -863,7 +868,7 @@ Browser: `web` fetches when the `search` module is on. A Playwright MCP is a chi
 
 `summonr export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
 
-Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP after you turn on the `mcp` module in `/settings`, not a second grep tool.
+Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP server, not a second grep tool.
 
 ## Theme
 

@@ -1,0 +1,106 @@
+[defaults]
+runs = 3
+tail_fraction = 0.25
+thresholds = "thresholds-{platform}.toml"
+
+[bands]
+footprint_kb = 0.10
+parent_peak_kb = 0.10
+tree_peak_kb = 0.10
+children_peak = 0.0
+children_tail = 0.0
+starts = 0.0
+
+[[scenario]]
+name = "a-off"
+mcp = false
+servers = 0
+script = [{ text = "ok", delay = 2 }]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "parent_peak_kb", rule = "threshold" },
+]
+
+[[scenario]]
+name = "a-on"
+mcp = true
+servers = 0
+script = [{ text = "ok", delay = 2 }]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "footprint_kb", rule = "match", ref = "a-off" },
+]
+
+[[scenario]]
+name = "b-warm"
+mcp = true
+servers = 3
+warm = true
+script = [{ text = "ok", delay = 2 }]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "children_peak", rule = "max", value = 0 },
+]
+
+[[scenario]]
+name = "b-cold"
+mcp = true
+servers = 3
+script = [{ text = "ok", delay = 2 }]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "children_tail", rule = "max", value = 0 },
+  { metric = "starts", rule = "record" },
+]
+
+[[scenario]]
+name = "c-idle"
+mcp = true
+servers = 1
+server_extra = { idle_secs = 2 }
+script = [
+  { call = { name = "fixture1__echo", arguments = { text = "x" } } },
+  { text = "ok", delay = 6 },
+]
+gates = [
+  { metric = "children_tail", rule = "max", value = 0 },
+  { metric = "children_peak", rule = "equal", value = 1 },
+]
+
+[[scenario]]
+name = "d-big"
+mcp = true
+servers = 1
+script = [
+  { call = { name = "fixture1__big", arguments = { bytes = 10485760 } } },
+  { text = "ok", delay = 2 },
+]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "footprint_kb", rule = "match", ref = "a-on", allow_kb = 8192 },
+]
+
+[[scenario]]
+name = "e-long"
+mcp = true
+servers = 1
+script = [
+  { repeat = 200, steps = [{ call = { name = "fixture1__echo", arguments = { text = "x" } } }] },
+  { text = "ok" },
+]
+gates = [
+  { metric = "footprint_kb", rule = "threshold" },
+  { metric = "parent_peak_kb", rule = "threshold" },
+]
+
+[[scenario]]
+name = "f-accept"
+mcp = true
+servers = 1
+script = [
+  { call = { name = "fixture1__big", arguments = { bytes = 3145728 } } },
+  { text = "ok", delay = 2 },
+]
+gates = [
+  { metric = "footprint_kb", rule = "match", ref = "a-on", allow_kb = 12288 },
+]

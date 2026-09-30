@@ -201,6 +201,7 @@ fn agent_panel(app: App, view: AgentView) -> NodeBuilder {
 #[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) enum Band {
     Approval { detail: String, persist: bool },
+    Form { lines: Vec<String>, review: bool },
     Busy(String),
     Attached(usize),
 }
@@ -208,6 +209,12 @@ pub(in crate::tui::sigil_view) enum Band {
 pub(in crate::tui::sigil_view) fn band(app: &App) -> Option<Band> {
     if let Some((detail, persist)) = app.approval.get() {
         return Some(Band::Approval { detail, persist });
+    }
+    if let Some(state) = app.form.get() {
+        return Some(Band::Form {
+            lines: state.lines(),
+            review: state.stage == crate::tui::sigil_view::app::Stage::Review,
+        });
     }
     let attached = app.attached.get();
     if let Some(status) = busy_status(&app.model.get(), app.ticks.get()) {
@@ -229,6 +236,9 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
     match band {
         Band::Approval { detail, persist } => {
             above(approval_band(app.clone(), width, detail, persist))
+        }
+        Band::Form { lines, review } => {
+            above(super::form::form_band(app.clone(), width, lines, review))
         }
         Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
         Band::Attached(attached) => above(notice_band(

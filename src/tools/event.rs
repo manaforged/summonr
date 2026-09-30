@@ -61,6 +61,17 @@ pub enum Event {
     Note {
         text: String,
     },
+    Progress {
+        id: String,
+        progress: f64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        total: Option<f64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+    },
+    Elicit {
+        form: Option<crate::mcp::Form>,
+    },
     Approval {
         detail: Option<String>,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -80,4 +91,13 @@ pub enum Event {
         id: String,
         event: Box<Event>,
     },
+}
+
+#[must_use]
+pub(crate) fn progress_text(progress: f64, total: Option<f64>, message: Option<&str>) -> String {
+    let amount = total.map_or_else(
+        || format!("{progress}"),
+        |total| format!("{progress}/{total}"),
+    );
+    message.map_or_else(|| amount.clone(), |message| format!("{amount} · {message}"))
 }

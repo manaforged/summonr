@@ -180,9 +180,7 @@ pub(crate) fn scrub(text: &str) -> String {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
         return text.to_string();
     };
-    secrets.iter().fold(text.to_string(), |text, secret| {
-        text.replace(secret.as_str(), "[secret]")
-    })
+    crate::text::redact(text, secrets.iter().map(|secret| secret.as_str()))
 }
 
 #[cfg(not(unix))]

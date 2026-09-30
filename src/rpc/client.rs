@@ -1,0 +1,381 @@
+use std::path::Path;
+use std::process::Stdio;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use tokio::time::Instant;
+
+use futures::FutureExt;
+use serde_json::{Value, json};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+
+use super::{
+    Ask, Frame, Notice, Reply, agreed, ask, failure, hello, notice, notification, outcome, parse,
+    request, response,
+};
+use crate::error::{Error, Result};
+use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_TAIL};
+use crate::tools::command::ProcessGroup;
+use crate::tools::sandbox::Sandbox;
+
+const SECRET_MIN: usize = 8;
+
+pub(crate) struct Client {
+    _group: Option<ProcessGroup>,
+    child: Child,
+    stdin: ChildStdin,
+    reader: BufReader<ChildStdout>,
+    pending: Vec<u8>,
+    over: bool,
+    abandoned: Vec<Value>,
+    inflight: Vec<Value>,
+    roots: Value,
+    broken: bool,
+    stderr: Arc<Mutex<Vec<u8>>>,
+    secrets: Vec<String>,
+    wait: Duration,
+    next: i64,
+}
+
+enum Read {
+    Line(String),
+    Oversize,
+    Closed,
+}
+
+pub(crate) struct Spawn<'a> {
+    pub(crate) program: &'a str,
+    pub(crate) args: &'a [&'a str],
+    pub(crate) env: &'a [(String, String)],
+    pub(crate) cwd: &'a Path,
+    pub(crate) sandbox: Option<&'a Sandbox>,
+    pub(crate) wait: Duration,
+}
+
+impl Client {
+    pub(crate) fn spawn(launch: &Spawn<'_>) -> Result<Self> {
+        let mut command = match launch.sandbox {
+            Some(sandbox) => sandbox.command(launch.program, launch.args, launch.cwd),
+            None => {
+                let mut command = Command::new(launch.program);
+                command.args(launch.args).current_dir(launch.cwd);
+                command
+            }
+        };
+        #[cfg(unix)]
+        command.process_group(0);
+        let mut child = command
+            .envs(launch.env.iter().map(|(key, value)| (key, value)))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .map_err(|error| Error::Tool(format!("cannot start `{}`: {error}", launch.program)))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| Error::Tool("child has no stdin".to_string()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| Error::Tool("child has no stdout".to_string()))?;
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+        if let Some(pipe) = child.stderr.take() {
+            drop(tokio::spawn(tail(pipe, Arc::clone(&stderr))));
+        }
+        let _group = child
+            .id()
+            .map(|pid| ProcessGroup::new(pid, launch.sandbox.is_some()));
+        Ok(Self {
+            _group,
+            child,
+            stdin,
+            reader: BufReader::new(stdout),
+            pending: Vec::new(),
+            over: false,
+            abandoned: Vec::new(),
+            inflight: Vec::new(),
+            roots: roots(launch.cwd),
+            broken: false,
+            stderr,
+            secrets: launch
+                .env
+                .iter()
+                .map(|(_, value)| value.clone())
+                .filter(|value| value.len() >= SECRET_MIN)
+                .collect(),
+            wait: launch.wait,
+            next: 1,
+        })
+    }
+
+    pub(crate) fn set_wait(&mut self, wait: Duration) {
+        self.wait = wait;
+    }
+
+    pub(crate) async fn initialize(&mut self, name: &str) -> Result<Value> {
+        let capabilities = json!({"roots": {"listChanged": false}, "elicitation": {"form": {}}});
+        let result = self
+            .call("initialize", hello(name, capabilities), |_| {})
+            .await?;
+        agreed(&result)?;
+        self.notify("notifications/initialized", json!({})).await?;
+        Ok(result)
+    }
+
+    pub(crate) async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
+        self.write(&notification(method, params)).await
+    }
+
+    pub(crate) fn cancel_inflight(&mut self) {
+        for id in std::mem::take(&mut self.inflight) {
+            let cancel = notification(
+                "notifications/cancelled",
+                json!({"requestId": id, "reason": "the user stopped the call"}),
+            );
+            drop(self.write(&cancel).now_or_never());
+            self.abandoned.push(id);
+        }
+    }
+
+    pub(crate) async fn call(
+        &mut self,
+        method: &str,
+        mut params: Value,
+        mut on_note: impl FnMut(Notice<'_>),
+    ) -> Result<Value> {
+        if self.broken {
+            return Err(Error::Tool(format!(
+                "`{method}` was not sent: an earlier request was cut off"
+            )));
+        }
+        self.cancel_inflight();
+        let id = json!(self.next);
+        self.next += 1;
+        if method == "tools/call"
+            && let Some(object) = params.as_object_mut()
+        {
+            object.insert("_meta".to_string(), json!({"progressToken": id}));
+        }
+        let line = frame_line(&request(&id, method, params))?;
+        let wait = self.wait;
+        let deadline = Instant::now() + wait;
+        self.inflight.push(id.clone());
+        let written = tokio::time::timeout_at(deadline, async {
+            self.stdin.write_all(line.as_bytes()).await?;
+            self.stdin.flush().await
+        })
+        .await;
+        let result = match written {
+            Ok(Ok(())) => self.reply(&id, method, deadline, &mut on_note).await,
+            Ok(Err(error)) => Err(error.into()),
+            Err(_elapsed) => {
+                self.broken = true;
+                Err(no_reply(method, wait))
+            }
+        };
+        self.inflight.retain(|pending| *pending != id);
+        result
+    }
+
+    async fn reply(
+        &mut self,
+        id: &Value,
+        method: &str,
+        mut deadline: Instant,
+        on_note: &mut impl FnMut(Notice<'_>),
+    ) -> Result<Value> {
+        let mut hard = Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH);
+        loop {
+            let Ok(read) = tokio::time::timeout_at(deadline, self.frame()).await else {
+                return Err(self.give_up(id, method));
+            };
+            let line = match read? {
+                Read::Line(line) => line,
+                Read::Oversize if !self.abandoned.is_empty() => {
+                    self.abandoned.remove(0);
+                    continue;
+                }
+                Read::Oversize => {
+                    return Err(Error::Tool(format!(
+                        "a reply to `{method}` was over {} MiB; summonr dropped it",
+                        MCP_FRAME_MAX / (1024 * 1024)
+                    )));
+                }
+                Read::Closed => {
+                    return Err(Error::Tool(format!(
+                        "the child exited during `{method}`{}",
+                        self.stderr_note()
+                    )));
+                }
+            };
+            if line.trim().is_empty() {
+                continue;
+            }
+            let parsed = parse(&line);
+            drop(line);
+            let Ok(frame) = parsed else {
+                continue;
+            };
+            match frame {
+                Frame::Response {
+                    id: got,
+                    result,
+                    error,
+                } if got == *id => return outcome(method, result, error),
+                Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
+                Frame::Notification { method, params } => {
+                    let notice = notice(&method, &params);
+                    if matches!(notice, Notice::Progress { token, .. } if token == id) {
+                        deadline = (Instant::now() + self.wait).min(hard);
+                    }
+                    on_note(notice);
+                }
+                Frame::Request {
+                    id: asked,
+                    method,
+                    params,
+                } => {
+                    let answer = match ask(&method) {
+                        Ask::Roots => response(&asked, json!({"roots": self.roots})),
+                        Ask::Ping => response(&asked, json!({})),
+                        Ask::Elicit => {
+                            let (sender, answered) = tokio::sync::oneshot::channel();
+                            on_note(Notice::Elicit {
+                                params: &params,
+                                answer: sender,
+                            });
+                            let reply = answered
+                                .await
+                                .unwrap_or_else(|_| Reply::Result(json!({"action": "cancel"})));
+                            deadline = Instant::now() + self.wait;
+                            hard = hard.max(deadline);
+                            match reply {
+                                Reply::Result(result) => response(&asked, result),
+                                Reply::Error(code, message) => failure(&asked, code, &message),
+                            }
+                        }
+                        Ask::Unsupported => {
+                            failure(&asked, -32601, &format!("{method} is not supported"))
+                        }
+                    };
+                    self.write(&answer).await?;
+                }
+            }
+        }
+    }
+
+    fn give_up(&mut self, id: &Value, method: &str) -> Error {
+        self.inflight.retain(|pending| pending != id);
+        self.abandoned.push(id.clone());
+        if method != "initialize" {
+            let cancel = notification(
+                "notifications/cancelled",
+                json!({"requestId": id, "reason": "no reply in time"}),
+            );
+            drop(self.write(&cancel).now_or_never());
+        }
+        no_reply(method, self.wait)
+    }
+
+    async fn frame(&mut self) -> Result<Read> {
+        loop {
+            let chunk = self.reader.fill_buf().await?;
+            if chunk.is_empty() {
+                return Ok(Read::Closed);
+            }
+            let (take, done) = chunk
+                .iter()
+                .position(|byte| *byte == b'\n')
+                .map_or((chunk.len(), false), |at| (at + 1, true));
+            if !self.over && self.pending.len() + take <= MCP_FRAME_MAX {
+                self.pending.extend_from_slice(&chunk[..take]);
+            } else if !self.over {
+                self.over = true;
+                self.pending = Vec::new();
+            }
+            self.reader.consume(take);
+            if done {
+                break;
+            }
+        }
+        let line = std::mem::take(&mut self.pending);
+        if std::mem::take(&mut self.over) {
+            return Ok(Read::Oversize);
+        }
+        Ok(Read::Line(String::from_utf8(line).unwrap_or_else(
+            |error| String::from_utf8_lossy(error.as_bytes()).into_owned(),
+        )))
+    }
+
+    async fn write(&mut self, value: &Value) -> Result<()> {
+        let line = frame_line(value)?;
+        self.stdin.write_all(line.as_bytes()).await?;
+        self.stdin.flush().await?;
+        Ok(())
+    }
+
+    pub(crate) fn alive(&mut self) -> bool {
+        !self.broken && matches!(self.child.try_wait(), Ok(None))
+    }
+
+    pub(crate) fn stderr_note(&self) -> String {
+        let bytes = self
+            .stderr
+            .lock()
+            .map(|bytes| bytes.clone())
+            .unwrap_or_default();
+        let text = String::from_utf8_lossy(&bytes);
+        text.lines()
+            .rev()
+            .find(|line| !line.trim().is_empty())
+            .map(|line| {
+                format!(
+                    "; stderr: {}",
+                    crate::text::redact(line.trim(), self.secrets.iter().map(String::as_str))
+                )
+            })
+            .unwrap_or_default()
+    }
+}
+
+fn no_reply(method: &str, wait: Duration) -> Error {
+    Error::Tool(format!(
+        "`{method}` got no reply in {}s; summonr cancelled it",
+        wait.as_secs()
+    ))
+}
+
+fn frame_line(value: &Value) -> Result<String> {
+    let mut line = serde_json::to_string(value)?;
+    line.push('\n');
+    Ok(line)
+}
+
+async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
+    let mut chunk = [0_u8; 1024];
+    while let Ok(read) = pipe.read(&mut chunk).await {
+        if read == 0 {
+            break;
+        }
+        let Ok(mut bytes) = keep.lock() else {
+            break;
+        };
+        bytes.extend_from_slice(&chunk[..read]);
+        let excess = bytes.len().saturating_sub(MCP_STDERR_TAIL);
+        bytes.drain(..excess);
+    }
+}
+
+fn roots(cwd: &Path) -> Value {
+    let uri = url::Url::from_directory_path(cwd)
+        .map(|uri| uri.to_string())
+        .unwrap_or_default();
+    let name = cwd
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    json!([{"uri": uri, "name": name}])
+}

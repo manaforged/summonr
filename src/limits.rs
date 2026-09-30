@@ -6,9 +6,13 @@ pub(crate) const JOB_WAIT_SECS: u64 = 120;
 pub(crate) const JOB_WAIT_SECS: u64 = 1;
 pub(crate) const JOB_WAIT: Duration = Duration::from_secs(JOB_WAIT_SECS);
 #[cfg(not(test))]
-pub(crate) const COMMAND_WAIT_SECS: u64 = 3600;
+pub(crate) const COMMAND_WAIT_SECS: u64 = 120;
 #[cfg(test)]
 pub(crate) const COMMAND_WAIT_SECS: u64 = 1;
+#[cfg(not(test))]
+pub(crate) const COMMAND_KILL_SECS: u64 = 3600;
+#[cfg(test)]
+pub(crate) const COMMAND_KILL_SECS: u64 = 4;
 pub(crate) const CHILD_POLL: Duration = Duration::from_secs(1);
 pub(crate) const GRANT_WAIT: Duration = Duration::from_secs(600);
 pub(crate) const GRANT_POLL: Duration = Duration::from_millis(60);
@@ -26,6 +30,15 @@ pub(crate) const KEYCHAIN: Duration = Duration::from_secs(5);
 #[cfg(test)]
 pub(crate) const KEYCHAIN: Duration = Duration::from_millis(600);
 pub(crate) const KEYCHAIN_POLL: Duration = Duration::from_millis(20);
+pub(crate) const MCP_OPEN: Duration = Duration::from_secs(60);
+pub(crate) const MCP_CALL: Duration = Duration::from_secs(300);
+pub(crate) const MCP_IDLE: Duration = Duration::from_secs(120);
+pub(crate) const MCP_PROGRESS_STRETCH: u32 = 4;
+pub(crate) const MCP_LOG_MAX: u64 = 1024 * 1024;
+pub(crate) const MCP_FRAME_MAX: usize = 4 * 1024 * 1024;
+pub(crate) const MCP_STDERR_TAIL: usize = 2 * 1024;
+pub(crate) const MCP_DEFER_BYTES: usize = 8 * 1024;
+pub(crate) const MCP_FOUND_MAX: usize = 8;
 pub(crate) const LSP_START: Duration = Duration::from_secs(30);
 pub(crate) const LSP_REQUEST: Duration = Duration::from_secs(30);
 pub(crate) const LSP_CHECK: Duration = Duration::from_secs(5);

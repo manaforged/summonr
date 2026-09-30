@@ -35,3 +35,21 @@ pub(crate) fn ellipsize_start(text: &str, width: usize) -> String {
         });
     format!("…{}", &text[start.unwrap_or(0)..])
 }
+
+pub(crate) fn fnv64(bytes: &[u8]) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {
+    secrets
+        .into_iter()
+        .filter(|secret| !secret.is_empty())
+        .fold(text.to_string(), |text, secret| {
+            text.replace(secret, "[secret]")
+        })
+}

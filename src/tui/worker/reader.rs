@@ -23,12 +23,21 @@ use crate::limits::READER_WINDOW as WINDOW;
 #[derive(Clone)]
 pub(super) struct Reader {
     workspace: PathBuf,
+    board: crate::mcp::Board,
     ui: UnboundedSender<Msg>,
 }
 
 impl Reader {
-    pub(super) fn new(workspace: PathBuf, ui: UnboundedSender<Msg>) -> Self {
-        Self { workspace, ui }
+    pub(super) fn new(
+        workspace: PathBuf,
+        board: crate::mcp::Board,
+        ui: UnboundedSender<Msg>,
+    ) -> Self {
+        Self {
+            workspace,
+            board,
+            ui,
+        }
     }
 
     pub(super) async fn run(&self, command: Cmd) {
@@ -65,12 +74,14 @@ impl Reader {
             | Cmd::DeleteSession(_)) => self.sessions(command),
             command @ (Cmd::ListFiles
             | Cmd::Jobs
+            | Cmd::Mcp
             | Cmd::KillJob(_)
             | Cmd::Clipboard
             | Cmd::Diff(_)
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees
+            | Cmd::Offers
             | Cmd::Save(..)
             | Cmd::View(..)) => self.panes(command),
             command @ (Cmd::Pin(..) | Cmd::SaveDefault(_)) => self.seats(command),
@@ -128,6 +139,7 @@ impl Reader {
         match command {
             Cmd::ListFiles => self.send(Msg::Files(files(&self.workspace))),
             Cmd::Jobs => self.jobs(),
+            Cmd::Mcp => self.mcp(),
             Cmd::KillJob(id) => self.kill(&id),
             Cmd::Clipboard => self.send(Msg::Clipboard(
                 clipboard().map_err(|error| error.to_string()),
@@ -141,6 +153,7 @@ impl Reader {
                 op,
             } => self.review(root, path, hunk, op),
             Cmd::Trees => self.trees(),
+            Cmd::Offers => self.offers(),
             Cmd::Save(file, text) => {
                 let result = crate::durable::store::stage(&file, text.as_bytes(), true)
                     .and_then(crate::durable::store::Staged::commit)
@@ -231,6 +244,18 @@ impl Reader {
             })
             .collect();
         self.send(Msg::Jobs(jobs));
+    }
+
+    fn mcp(&self) {
+        match crate::mcp::status(&self.workspace, Some(&self.board)) {
+            Ok(servers) => self.send(Msg::Mcp(servers)),
+            Err(error) => self.send(Msg::System(format!("mcp status: {error}"))),
+        }
+        self.offers();
+    }
+
+    fn offers(&self) {
+        self.send(Msg::Offers(crate::mcp::offers(&self.workspace)));
     }
 
     fn kill(&self, id: &str) {

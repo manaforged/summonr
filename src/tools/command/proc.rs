@@ -63,14 +63,14 @@ impl Drop for CommandChild {
     }
 }
 
-pub(super) struct ProcessGroup {
+pub(crate) struct ProcessGroup {
     pid: u32,
     armed: bool,
     sandbox: bool,
 }
 
 impl ProcessGroup {
-    pub(super) fn new(pid: u32, sandbox: bool) -> Self {
+    pub(crate) fn new(pid: u32, sandbox: bool) -> Self {
         Self {
             pid,
             armed: true,
@@ -214,7 +214,7 @@ fn command_env() -> Vec<(String, String)> {
                 .map(|value| ((*key).to_string(), value))
         })
         .collect();
-    if let Some(extra) = crate::bundle::bin_path_prefix() {
+    if let Some(extra) = crate::plugins::bin_path_prefix() {
         let sep = if cfg!(windows) { ';' } else { ':' };
         match env.iter_mut().find(|(key, _)| key == "PATH") {
             Some((_, path)) => {

@@ -168,13 +168,9 @@ impl<'a> CompletionRequest<'a> {
 
     pub(crate) fn prefix_hash(&self) -> String {
         let system = self.messages.first().map(|message| &message.content);
-        let bytes = serde_json::to_vec(&(&self.model, system, &self.tools)).unwrap_or_default();
-        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-        for byte in bytes {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-        }
-        format!("{hash:016x}")
+        crate::text::fnv64(
+            &serde_json::to_vec(&(&self.model, system, &self.tools)).unwrap_or_default(),
+        )
     }
 }
 

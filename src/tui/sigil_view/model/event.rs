@@ -43,6 +43,55 @@ impl Model {
 
     pub(in crate::tui::sigil_view) fn apply_event(&mut self, event: Event) {
         match event {
+            Event::Reasoning { .. } | Event::Delta { .. } => self.apply_stream(event),
+            Event::ToolCall { .. } | Event::ToolResult { .. } | Event::Progress { .. } => {
+                self.apply_tool(event);
+            }
+            Event::Assistant { .. }
+            | Event::Aborted { .. }
+            | Event::Merged { .. }
+            | Event::Mail { .. }
+            | Event::Note { .. }
+            | Event::Verify { .. }
+            | Event::Receipt { .. } => self.apply_entry(event),
+            Event::Work { progress } => {
+                self.ledger = progress
+                    .ledger
+                    .iter()
+                    .filter(|line| itemized(line))
+                    .cloned()
+                    .collect();
+                self.plan_current = progress.current;
+                self.plan_total = progress.total;
+                self.plan_objective = progress.objective.clone();
+                if progress.reason.is_some() {
+                    self.entries.push(Entry::System(progress.to_string()));
+                }
+            }
+            Event::Usage {
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                cached_tokens,
+                millis: _,
+                prefix_hash,
+                cost,
+            } => self.record_usage(
+                prompt_tokens,
+                completion_tokens,
+                reasoning_tokens,
+                cached_tokens,
+                prefix_hash,
+                cost,
+            ),
+            Event::Approval { .. } | Event::Elicit { .. } | Event::Spawned { .. } => {}
+            Event::Unreported { tokens } => self.unreported_tokens = tokens,
+            Event::Child { id, event } => self.apply_child(&id, *event),
+        }
+    }
+
+    fn apply_stream(&mut self, event: Event) {
+        match event {
             Event::Reasoning { text } => {
                 self.speed.delta(text.chars().count(), Instant::now());
                 self.live_tool = Some(("thinking".to_string(), String::new()));
@@ -62,6 +111,12 @@ impl Model {
                     _ => self.entries.push(Entry::Assistant { text, done: false }),
                 }
             }
+            _other => {}
+        }
+    }
+
+    fn apply_tool(&mut self, event: Event) {
+        match event {
             Event::ToolCall {
                 id,
                 name,
@@ -88,6 +143,22 @@ impl Model {
             } => {
                 self.finish_tool(&id, success, output);
             }
+            Event::Progress {
+                progress,
+                total,
+                message,
+                ..
+            } => {
+                if let Some((_, detail)) = self.live_tool.as_mut() {
+                    *detail = crate::tools::progress_text(progress, total, message.as_deref());
+                }
+            }
+            _other => {}
+        }
+    }
+
+    fn apply_entry(&mut self, event: Event) {
+        match event {
             Event::Assistant { text } => self.finish_assistant(text),
             Event::Aborted { reason } if reason == "cancelled by user" => self.entries.push(
                 Entry::Aborted("cancelled · F5 or /retry continues · Up edits the prompt".into()),
@@ -119,39 +190,7 @@ impl Model {
                 self.entries.push(Entry::Verify { command, passed });
             }
             Event::Receipt { receipt } => self.entries.push(Entry::Receipt(receipt.text)),
-            Event::Work { progress } => {
-                self.ledger = progress
-                    .ledger
-                    .iter()
-                    .filter(|line| itemized(line))
-                    .cloned()
-                    .collect();
-                self.plan_current = progress.current;
-                self.plan_total = progress.total;
-                self.plan_objective = progress.objective.clone();
-                if progress.reason.is_some() {
-                    self.entries.push(Entry::System(progress.to_string()));
-                }
-            }
-            Event::Usage {
-                prompt_tokens,
-                completion_tokens,
-                reasoning_tokens,
-                cached_tokens,
-                millis: _,
-                prefix_hash,
-                cost,
-            } => self.record_usage(
-                prompt_tokens,
-                completion_tokens,
-                reasoning_tokens,
-                cached_tokens,
-                prefix_hash,
-                cost,
-            ),
-            Event::Approval { .. } | Event::Spawned { .. } => {}
-            Event::Unreported { tokens } => self.unreported_tokens = tokens,
-            Event::Child { id, event } => self.apply_child(&id, *event),
+            _other => {}
         }
     }
 

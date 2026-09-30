@@ -1,6 +1,6 @@
 use crate::tui::context;
 use sigil::prelude::{
-    AlignItems, Cx, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState,
+    AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState,
     NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt, button, container,
     empty_state, hairline, icon_button, node, notice_band, spacer, text_edit,
 };
@@ -25,8 +25,8 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .align_items(AlignItems::Stretch),
         )
         .class("bg-gray-1")
-        .child(node(move |cx: &mut Cx| {
-            cx.add(chat::transcript(transcript_app, (36.0, 16.0), empty_home))
+        .child(node(move || {
+            chat::transcript(transcript_app, (36.0, 16.0), empty_home)
         }))
         .child(
             container()
@@ -180,6 +180,9 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
                         .class(sigil::style::Token::OnSurface.text()),
                 )
                 .child(actions)
+        }
+        chat::panels::Band::Form { lines, review } => {
+            chat::form::form_band(app, usize::MAX, lines, review)
         }
         chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
         chat::panels::Band::Attached(count) => notice_band(

@@ -40,10 +40,13 @@ pub(super) use auth::{Login, matching, section};
 mod commands;
 mod composer;
 mod diff;
+mod elicit;
+pub(super) use elicit::{FormState, Reply, Stage};
 mod files;
 mod frame;
 mod history;
 mod jobs;
+mod mcp;
 mod models;
 mod overlays;
 mod panes;
@@ -99,6 +102,7 @@ pub(super) struct App {
     pub(super) draft: Signal<String>,
     pub(super) caret: Signal<usize>,
     pub(super) editor: TextEditState,
+    pub(super) editor_focus: Signal<u64>,
     recalled: Signal<Option<(usize, String, usize)>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
@@ -133,6 +137,8 @@ pub(super) struct App {
     pub(super) tree_cursor: Signal<usize>,
     pub(super) job_cursor: Signal<usize>,
     pub(super) job_open: Signal<Option<String>>,
+    pub(super) mcp_cursor: Signal<usize>,
+    pub(super) mcp_open: Signal<Option<String>>,
     pub(super) peer_cursor: Signal<usize>,
     pub(super) view_scroll: Signal<usize>,
     pub(super) view_from: Signal<Option<Pane>>,
@@ -144,6 +150,7 @@ pub(super) struct App {
     discard_armed: Signal<bool>,
     pub(super) copy: Signal<Option<String>>,
     pub(super) approval: Signal<Option<(String, bool)>>,
+    pub(super) form: Signal<Option<FormState>>,
     pub(super) secret: Signal<Option<(String, usize)>>,
     pub(super) secret_dialog: Signal<bool>,
     pending: Rc<RefCell<Option<(crate::askpass::Request, crate::askpass::Secret)>>>,
@@ -214,6 +221,7 @@ impl App {
             draft,
             caret,
             editor: TextEditState::new(draft, caret),
+            editor_focus: signal(0),
             recalled: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
@@ -259,6 +267,8 @@ impl App {
             tree_cursor: signal(0),
             job_cursor: signal(0),
             job_open: signal(None),
+            mcp_cursor: signal(0),
+            mcp_open: signal(None),
             peer_cursor: signal(0),
             view_scroll: signal(0),
             view_from: signal(None),
@@ -270,6 +280,7 @@ impl App {
             discard_armed: signal(false),
             copy: signal(None),
             approval: signal(None),
+            form: signal(None),
             secret: signal(None),
             secret_dialog: signal(false),
             pending: Rc::new(RefCell::new(None)),
@@ -299,6 +310,7 @@ impl App {
             info,
         };
         app.cancel_secret_on_close();
+        drop(app.cmd.send(Cmd::Offers));
         app
     }
 

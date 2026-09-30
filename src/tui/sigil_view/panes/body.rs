@@ -1,7 +1,7 @@
 use sigil::kernel::ObjectFit;
+use sigil::layout::Dimension;
 use sigil::layout::Overflow;
 use sigil::prelude::AlignItems;
-use sigil::prelude::Cx;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
@@ -18,11 +18,10 @@ use sigil::prelude::icon_button;
 use sigil::prelude::image;
 use sigil::prelude::list_row;
 use sigil::prelude::node;
-use sigil::prelude::request_focus;
 use sigil::prelude::spacer;
 use sigil::prelude::text_edit;
 
-use super::{App, FileRow, Pane, diff, jobs, peers, todos};
+use super::{App, FileRow, Pane, diff, jobs, mcp, peers, todos};
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
     let mut column = container()
@@ -42,6 +41,7 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
         Pane::Files => files(app, column),
         Pane::Worktrees => trees(app, column),
         Pane::Jobs => jobs::jobs(app, column),
+        Pane::Mcp => mcp::mcp(app, column),
         Pane::Peers => peers::peers(app, column),
         Pane::View => view(app, column),
         Pane::Ledger => todos::ledger(&app, column),
@@ -72,6 +72,28 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 .class("text-xs text-gray-11"),
         )
         .child(close(app.clone()))
+}
+
+pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
+    let mut detail = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
+        .class("rounded-md bg-gray-1");
+    for line in lines {
+        detail = detail.child(
+            sigil::kernel::text(line)
+                .nowrap()
+                .class(sigil::style::Token::OnSurface.text())
+                .ellipsize()
+                .layout(
+                    LayoutStyle::block()
+                        .fill_width()
+                        .min_size(0.0, 14.0)
+                        .padding_x(8.0),
+                )
+                .class("text-xs font-mono text-gray-11"),
+        );
+    }
+    detail
 }
 
 fn close(app: App) -> impl IntoNode {
@@ -226,20 +248,18 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     bar = bar.child(close(app.clone()));
     column = column.child(bar);
     if editing {
-        return column.child(node(move |cx: &mut Cx| {
-            let id = cx.add(
-                text_edit(app.view_text)
-                    .caret_position(app.view_caret)
-                    .layout(
-                        LayoutStyle::flex_column()
-                            .fill_width()
-                            .grow(1.0)
-                            .min_size(0.0, 0.0),
-                    )
-                    .class("font-mono text-xs bg-gray-1"),
-            );
-            request_focus(id);
-            id
+        return column.child(node(move || {
+            text_edit(app.view_text)
+                .caret_position(app.view_caret)
+                .autofocus()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .height(Dimension::Auto)
+                        .grow(1.0)
+                        .min_size(0.0, 0.0),
+                )
+                .class("font-mono text-xs bg-gray-1")
         }));
     }
     let text = &view.text;

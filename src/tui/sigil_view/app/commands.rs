@@ -34,12 +34,9 @@ impl App {
                     .unwrap_or(draft.len() - caret)
         };
         let following = draft[end..].chars().next().filter(|ch| ch.is_whitespace());
-        let peer = self
-            .model
-            .get()
-            .peers
-            .iter()
-            .any(|agent| agent.answers_to(value));
+        let model = self.model.get();
+        let peer = model.peers.iter().any(|agent| agent.answers_to(value))
+            || super::suggest::offered(&model, value);
         let mut reference = if peer {
             format!("@{value}")
         } else {
@@ -55,7 +52,8 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn local(&self, line: &str, argument: Option<&str>) -> bool {
-        match crate::parse_command(line) {
+        let command = crate::parse_command(line);
+        match command {
             Some(crate::SlashCommand::Help) => self.help.show(),
             Some(crate::SlashCommand::Plan) if !self.model.get().prefs.plan_mode => {
                 self.push_entry(Entry::Error(
@@ -67,24 +65,35 @@ impl App {
             Some(crate::SlashCommand::Search) => self.search.start(argument.unwrap_or("")),
             Some(crate::SlashCommand::History) => self.prompt_history(argument.unwrap_or("")),
             Some(crate::SlashCommand::Fork) if argument.is_some() => {
-                if self.model.get().busy_since.is_some() {
-                    self.push_entry(Entry::Error(
-                        "Wait for the active operation or cancel it before forking.".to_string(),
-                    ));
-                    self.refresh();
-                } else {
-                    self.search.branch(argument.unwrap_or(""));
-                    drop(
-                        self.cmd
-                            .send(Cmd::ListPrompts(Some(self.model.get().session.clone()))),
-                    );
-                }
+                self.fork_command(argument.unwrap_or(""));
             }
             Some(crate::SlashCommand::Resume) if argument.is_none() => self.open_sessions(false),
             Some(crate::SlashCommand::Usage) if argument.is_none() => {
                 self.usage.start();
                 drop(self.cmd.send(Cmd::ListUsage));
             }
+            settings => return self.local_settings(settings, argument),
+        }
+        true
+    }
+
+    fn fork_command(&self, argument: &str) {
+        if self.model.get().busy_since.is_some() {
+            self.push_entry(Entry::Error(
+                "Wait for the active operation or cancel it before forking.".to_string(),
+            ));
+            self.refresh();
+        } else {
+            self.search.branch(argument);
+            drop(
+                self.cmd
+                    .send(Cmd::ListPrompts(Some(self.model.get().session.clone()))),
+            );
+        }
+    }
+
+    fn local_settings(&self, command: Option<crate::SlashCommand>, argument: Option<&str>) -> bool {
+        match command {
             Some(crate::SlashCommand::Settings) => {
                 self.hotkeys.open.set(false);
                 self.settings_open.set(true);
@@ -98,7 +107,15 @@ impl App {
             Some(crate::SlashCommand::Workflow) if argument.is_none() => {
                 self.open_workflow();
             }
+            files => return self.local_files(files, argument),
+        }
+        true
+    }
+
+    fn local_files(&self, command: Option<crate::SlashCommand>, argument: Option<&str>) -> bool {
+        match command {
             Some(crate::SlashCommand::Pane) => self.pane_command(argument),
+            Some(crate::SlashCommand::Mcp) => self.pane_command(Some(Pane::Mcp.name())),
             Some(crate::SlashCommand::Diff) => self.diff_command(argument),
             Some(crate::SlashCommand::Copy) => self.copy_chat(argument),
             Some(crate::SlashCommand::Export) => {

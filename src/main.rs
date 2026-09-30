@@ -33,10 +33,41 @@ fn main() {
         .enable_all()
         .build()
         .unwrap_or_else(|error| fail(&error));
-    match runtime.block_on(run(args)) {
+    let session = async {
+        tokio::select! {
+            result = run(args) => result,
+            code = interrupted() => Ok(code),
+        }
+    };
+    match runtime.block_on(session) {
         Ok(code) => std::process::exit(code),
         Err(error) => fail(&error),
     }
+}
+
+#[cfg(unix)]
+async fn interrupted() -> i32 {
+    use tokio::signal::unix::{SignalKind, signal};
+    let (Ok(mut interrupt), Ok(mut terminate), Ok(mut hangup)) = (
+        signal(SignalKind::interrupt()),
+        signal(SignalKind::terminate()),
+        signal(SignalKind::hangup()),
+    ) else {
+        return std::future::pending().await;
+    };
+    tokio::select! {
+        _ = interrupt.recv() => 130,
+        _ = terminate.recv() => 143,
+        _ = hangup.recv() => 129,
+    }
+}
+
+#[cfg(not(unix))]
+async fn interrupted() -> i32 {
+    if tokio::signal::ctrl_c().await.is_ok() {
+        return 130;
+    }
+    std::future::pending().await
 }
 
 async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {

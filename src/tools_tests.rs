@@ -373,3 +373,23 @@ fn a_file_read_with_search_context_says_how_to_page_instead_of_dumping_the_file(
         .unwrap_or_default();
     assert!(error.contains("offset and limit"), "{error}");
 }
+
+#[test]
+fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
+    let (_dir, mut tools) = workspace(&[]);
+    let user = [("jobs", false)]
+        .map(|(name, on)| (name.to_string(), on))
+        .into();
+    tools.set_modules(&crate::modules::Switches::from_maps(
+        &user,
+        &std::collections::BTreeMap::new(),
+    ));
+    tools.set_session("s1");
+    let output = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "sleep 2 && echo finished"}),
+    );
+    assert!(output.starts_with("exit 0"), "{output}");
+    assert!(output.contains("finished"), "{output}");
+}

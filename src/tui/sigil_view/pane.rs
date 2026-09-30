@@ -6,17 +6,19 @@ pub(super) enum Pane {
     Diff,
     Worktrees,
     Jobs,
+    Mcp,
     Peers,
     View,
 }
 
 impl Pane {
-    pub(super) const SECONDARY: [Pane; 6] = [
+    pub(super) const SECONDARY: [Pane; 7] = [
         Pane::Ledger,
         Pane::Files,
         Pane::Diff,
         Pane::Worktrees,
         Pane::Jobs,
+        Pane::Mcp,
         Pane::Peers,
     ];
 
@@ -28,6 +30,7 @@ impl Pane {
             "diff" | "changes" => Some(Self::Diff),
             "worktrees" | "trees" => Some(Self::Worktrees),
             "jobs" | "job" | "background" => Some(Self::Jobs),
+            "mcp" | "servers" => Some(Self::Mcp),
             "peers" | "agents" | "live" => Some(Self::Peers),
             "view" | "file" => Some(Self::View),
             _ => None,
@@ -42,6 +45,7 @@ impl Pane {
             Self::Diff => "diff",
             Self::Worktrees => "worktrees",
             Self::Jobs => "jobs",
+            Self::Mcp => "mcp",
             Self::Peers => "peers",
             Self::View => "view",
         }

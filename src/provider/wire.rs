@@ -124,7 +124,7 @@ pub(crate) fn parse<'a, T: serde::Deserialize<'a>>(data: &'a str) -> Result<T> {
     })
 }
 
-pub(super) fn boundary(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
+pub(crate) fn boundary(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
     let bytes = &bytes[from.min(bytes.len())..];
     let lf = bytes.windows(2).position(|window| window == b"\n\n");
     let crlf = bytes.windows(4).position(|window| window == b"\r\n\r\n");

@@ -13,6 +13,7 @@ mod run;
 
 pub(crate) use digest::searchish;
 pub(crate) use native::native_read_args;
+pub(crate) use proc::ProcessGroup;
 use proc::{background_result, stop_job};
 use run::Wait;
 

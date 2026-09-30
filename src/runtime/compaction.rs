@@ -230,7 +230,11 @@ impl<P: Provider> Loop<P> {
             },
         )?;
         let payload = serde_json::json!({"event": "compact", "summary": summary});
-        if let Some(note) = self.hook(self.hooks.compact.clone(), payload).await {
+        if let Some(note) = self
+            .hook(crate::hooks::HookEvent::Compact, None, payload)
+            .await
+            .note()
+        {
             self.push_event(
                 events,
                 emit,

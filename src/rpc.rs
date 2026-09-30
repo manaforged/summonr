@@ -1,13 +1,13 @@
-use std::path::Path;
-use std::process::Stdio;
-
 use serde_json::{Value, json};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 use crate::error::{Error, Result};
 
-pub(crate) const PROTOCOL: &str = "2025-03-26";
+mod client;
+
+pub(crate) use client::{Client, Spawn};
+
+pub(crate) const PROTOCOL: &str = "2025-11-25";
+const SUPPORTED: [&str; 4] = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Frame {
@@ -28,11 +28,12 @@ pub(crate) enum Frame {
 }
 
 pub(crate) fn parse(line: &str) -> Result<Frame> {
-    let value: Value = serde_json::from_str(line)?;
-    let method = value.get("method").and_then(Value::as_str);
-    let id = value.get("id").cloned();
-    let params = value.get("params").cloned().unwrap_or(Value::Null);
-    match (method, id) {
+    let mut value: Value = serde_json::from_str(line)?;
+    let mut take = |key: &str| value.get_mut(key).map(Value::take);
+    let method = take("method");
+    let id = take("id");
+    let params = take("params").unwrap_or(Value::Null);
+    match (method.as_ref().and_then(Value::as_str), id) {
         (Some(method), Some(id)) if !id.is_null() => Ok(Frame::Request {
             id,
             method: method.to_string(),
@@ -44,8 +45,8 @@ pub(crate) fn parse(line: &str) -> Result<Frame> {
         }),
         (None, Some(id)) => Ok(Frame::Response {
             id,
-            result: value.get("result").cloned(),
-            error: value.get("error").cloned(),
+            result: take("result"),
+            error: take("error"),
         }),
         (None, None) => Err(Error::Tool("frame has neither method nor id".to_string())),
     }
@@ -62,12 +63,100 @@ pub(crate) fn outcome(method: &str, result: Option<Value>, error: Option<Value>)
     Ok(result.unwrap_or(Value::Null))
 }
 
-pub(crate) fn hello(name: &str) -> Value {
+pub(crate) fn hello(name: &str, capabilities: Value) -> Value {
     json!({
         "protocolVersion": PROTOCOL,
-        "capabilities": {},
+        "capabilities": capabilities,
         "clientInfo": {"name": name, "version": env!("CARGO_PKG_VERSION")}
     })
+}
+
+pub(crate) fn agreed(result: &Value) -> Result<String> {
+    let version = result
+        .get("protocolVersion")
+        .and_then(Value::as_str)
+        .unwrap_or(PROTOCOL);
+    if SUPPORTED.contains(&version) {
+        return Ok(version.to_string());
+    }
+    Err(Error::Tool(format!(
+        "the server speaks MCP {version}; summonr speaks {}",
+        SUPPORTED.join(", ")
+    )))
+}
+
+pub(crate) enum Reply {
+    Result(Value),
+    Error(i64, String),
+}
+
+pub(crate) enum Notice<'a> {
+    ToolsChanged,
+    PromptsChanged,
+    ResourcesChanged,
+    Elicit {
+        params: &'a Value,
+        answer: tokio::sync::oneshot::Sender<Reply>,
+    },
+    Progress {
+        token: &'a Value,
+        progress: f64,
+        total: Option<f64>,
+        message: Option<&'a str>,
+    },
+    Message {
+        level: &'a str,
+        logger: Option<&'a str>,
+        data: &'a Value,
+    },
+    Unknown,
+}
+
+pub(crate) fn notice<'a>(method: &str, params: &'a Value) -> Notice<'a> {
+    match method {
+        "notifications/tools/list_changed" => Notice::ToolsChanged,
+        "notifications/prompts/list_changed" => Notice::PromptsChanged,
+        "notifications/resources/list_changed" => Notice::ResourcesChanged,
+        "notifications/progress" => {
+            match (
+                params.get("progressToken"),
+                params.get("progress").and_then(Value::as_f64),
+            ) {
+                (Some(token), Some(progress)) => Notice::Progress {
+                    token,
+                    progress,
+                    total: params.get("total").and_then(Value::as_f64),
+                    message: params.get("message").and_then(Value::as_str),
+                },
+                (Some(_) | None, Some(_) | None) => Notice::Unknown,
+            }
+        }
+        "notifications/message" => Notice::Message {
+            level: params
+                .get("level")
+                .and_then(Value::as_str)
+                .unwrap_or("info"),
+            logger: params.get("logger").and_then(Value::as_str),
+            data: params.get("data").unwrap_or(&Value::Null),
+        },
+        _unknown => Notice::Unknown,
+    }
+}
+
+pub(crate) enum Ask {
+    Roots,
+    Elicit,
+    Ping,
+    Unsupported,
+}
+
+pub(crate) fn ask(method: &str) -> Ask {
+    match method {
+        "roots/list" => Ask::Roots,
+        "elicitation/create" => Ask::Elicit,
+        "ping" => Ask::Ping,
+        _unsupported => Ask::Unsupported,
+    }
 }
 
 pub(crate) fn request(id: &Value, method: &str, params: Value) -> Value {
@@ -84,102 +173,4 @@ pub(crate) fn failure(id: &Value, code: i64, message: &str) -> Value {
 
 pub(crate) fn notification(method: &str, params: Value) -> Value {
     json!({"jsonrpc": "2.0", "method": method, "params": params})
-}
-
-pub(crate) struct Client {
-    child: Child,
-    stdin: ChildStdin,
-    lines: Lines<BufReader<ChildStdout>>,
-    next: i64,
-}
-
-impl Client {
-    pub(crate) fn spawn(
-        program: &str,
-        args: &[&str],
-        env: &[(String, String)],
-        cwd: &Path,
-    ) -> Result<Self> {
-        let mut child = Command::new(program)
-            .args(args)
-            .envs(env.iter().map(|(key, value)| (key, value)))
-            .current_dir(cwd)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| Error::Tool(format!("cannot start `{program}`: {error}")))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::Tool("child has no stdin".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::Tool("child has no stdout".to_string()))?;
-        Ok(Self {
-            child,
-            stdin,
-            lines: BufReader::new(stdout).lines(),
-            next: 1,
-        })
-    }
-
-    pub(crate) async fn initialize(&mut self, name: &str) -> Result<Value> {
-        let result = self.call("initialize", hello(name), |_, _| {}).await?;
-        self.notify("notifications/initialized", json!({})).await?;
-        Ok(result)
-    }
-
-    pub(crate) async fn notify(&mut self, method: &str, params: Value) -> Result<()> {
-        self.write(&notification(method, params)).await
-    }
-
-    pub(crate) async fn call(
-        &mut self,
-        method: &str,
-        params: Value,
-        mut on_note: impl FnMut(&str, &Value),
-    ) -> Result<Value> {
-        let id = json!(self.next);
-        self.next += 1;
-        self.write(&request(&id, method, params)).await?;
-        loop {
-            let Some(line) = self.lines.next_line().await? else {
-                return Err(Error::Tool(format!("the child exited during `{method}`")));
-            };
-            if line.trim().is_empty() {
-                continue;
-            }
-            let Ok(frame) = parse(&line) else {
-                continue;
-            };
-            match frame {
-                Frame::Response {
-                    id: got,
-                    result,
-                    error,
-                } if got == id => return outcome(method, result, error),
-                Frame::Response { .. } => {}
-                Frame::Notification { method, params } => on_note(&method, &params),
-                Frame::Request { id, method, .. } => {
-                    self.write(&failure(&id, -32601, &format!("{method} is not supported")))
-                        .await?;
-                }
-            }
-        }
-    }
-
-    async fn write(&mut self, value: &Value) -> Result<()> {
-        let mut line = serde_json::to_string(value)?;
-        line.push('\n');
-        self.stdin.write_all(line.as_bytes()).await?;
-        self.stdin.flush().await?;
-        Ok(())
-    }
-
-    pub(crate) fn alive(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
-    }
 }

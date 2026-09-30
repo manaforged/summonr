@@ -7,15 +7,13 @@ impl<P: Provider> Loop<P> {
         }
         if !on {
             self.mcp = None;
-            self.mcp_start = None;
+            self.mcp_wanted = false;
+            if let Ok(mut board) = self.mcp_board.lock() {
+                *board = std::sync::Weak::new();
+            }
             return;
         }
-        if self.depth > 0 || self.mcp.is_some() || self.mcp_start.is_some() {
-            return;
-        }
-        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
-            self.mcp_start = Some(runtime.spawn(crate::mcp::Hub::connect(self.workspace.clone())));
-        }
+        self.mcp_wanted = self.depth == 0 && self.mcp.is_none();
     }
 
     pub(super) async fn settle_mcp(
@@ -23,29 +21,40 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        let Some(start) = self.mcp_start.take() else {
-            return Ok(());
-        };
-        let hub = match start.await {
-            Ok(hub) => hub,
-            Err(error) => {
-                return self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: format!("MCP servers did not start: {error}"),
-                    },
-                );
-            }
-        };
-        if self.catalog_frozen {
+        if !std::mem::take(&mut self.mcp_wanted) || self.catalog_frozen {
             return Ok(());
         }
+        let hub = crate::mcp::Hub::connect(self.workspace.clone(), self.tools.sandbox()).await;
         for text in hub.notes.clone() {
             self.push_event(events, emit, Event::Note { text })?;
         }
-        self.mcp = Some(Arc::new(hub));
+        let hub = Arc::new(hub);
+        if let Ok(mut board) = self.mcp_board.lock() {
+            *board = Arc::downgrade(&hub);
+        }
+        self.mcp = Some(hub);
         self.schema = None;
         Ok(())
+    }
+
+    pub(super) async fn expand_mcp(
+        &mut self,
+        input: UserInput,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<UserInput> {
+        if !crate::mcp::wanted(&input.text) {
+            return Ok(input);
+        }
+        self.settle_mcp(events, emit).await?;
+        let Some(hub) = self.mcp.clone() else {
+            return Ok(input);
+        };
+        hub.expand(input, self.tools.sandbox().as_ref()).await
+    }
+
+    #[must_use]
+    pub fn mcp_board(&self) -> crate::mcp::Board {
+        Arc::clone(&self.mcp_board)
     }
 }

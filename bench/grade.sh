@@ -23,7 +23,8 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
 fi
 [ -n "$DEEPSEEK_API_KEY" ] || { echo "grade.sh: no DEEPSEEK_API_KEY and none in ~/.summonr/config.toml" >&2; exit 1; }
 
-python3 "$repo/bench/proxy.py" --bind 127.0.0.1 --port "$port" \
+export DEEPSEEK_API_KEY
+python3 "$repo/bench/proxy.py" --bind 127.0.0.1 --port "$port" --key-env DEEPSEEK_API_KEY \
     --log "$out/proxy.jsonl" --upstream https://api.deepseek.com/v1 &
 proxy_pid=$!
 disown
@@ -61,7 +62,7 @@ run_one() {
     git -C "$work" -c user.name=bench -c user.email=bench@localhost commit -qm baseline
     if [ "$label" = summonr ]; then
         (cd "$work" && exec env HOME="$home" SUMMONR_HOME="$home" \
-            "$summonr" -e deepseek --max-secs "$task_timeout" --effort "${BENCH_EFFORT:-high}" -p "$prompt") \
+            "$summonr" -e deepseek --effort "${BENCH_EFFORT:-high}" -p "$prompt") \
             >"$out/$label-$task-$repeat.stdout" 2>"$out/$label-$task-$repeat.time" &
     else
         (cd "$work" && exec env HOME="$home" PI_CODING_AGENT_DIR="$home/pi" \

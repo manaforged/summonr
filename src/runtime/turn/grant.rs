@@ -41,6 +41,7 @@ impl<P: Provider> Loop<P> {
             return Ok(GrantAnswer::Deny);
         };
         let detail: String = detail.chars().take(160).collect();
+        let _blocked = self.herdr.blocked(&detail);
         self.push_event(
             events,
             emit,
@@ -49,22 +50,15 @@ impl<P: Provider> Loop<P> {
                 persist,
             },
         )?;
-        let deadline = Instant::now() + crate::limits::GRANT_WAIT;
-        let decision = loop {
-            if Instant::now() >= deadline {
-                break GrantAnswer::Deny;
-            }
-            let answer = shared.lock().ok().and_then(|mut queue| queue.pop_front());
-            if let Some(input) = answer {
-                break match parse_decision(input.text.trim(), persist) {
-                    Some(decision) => decision,
-                    None => {
-                        self.steer.push_front(input);
-                        GrantAnswer::Deny
-                    }
-                };
-            }
-            tokio::time::sleep(crate::limits::GRANT_POLL).await;
+        let decision = match self.answer(&shared).await {
+            Some(input) => match parse_decision(input.text.trim(), persist) {
+                Some(decision) => decision,
+                None => {
+                    self.steer.push_front(input);
+                    GrantAnswer::Deny
+                }
+            },
+            None => GrantAnswer::Deny,
         };
         self.push_event(
             events,

@@ -20,6 +20,10 @@ Providers:
 Setup:
   workflows                   list saved workflows
   modules                     list the built-in modules
+  mcp list [--json]           list MCP servers, their state, and tool counts
+  mcp get NAME [--json]       show one MCP server and its tools
+  mcp add NAME -- CMD [ARGS]  add a stdio server (--env K=V), or --url URL (--header K=V)
+  mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
   install PATH                install a directory of extras (--list shows them)
   doctor [--logs]             report crashed runs; --logs lists run logs
 

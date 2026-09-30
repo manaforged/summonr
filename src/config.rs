@@ -53,6 +53,8 @@ pub(crate) struct File {
     pub import_mcp: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
+    #[serde(default)]
+    pub plugins: crate::plugins::Switches,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
 }
@@ -363,8 +365,8 @@ fn validate(path: &Path, file: &File) -> Result<()> {
 mod edit;
 pub use edit::tilde;
 pub(crate) use edit::{
-    remove_key, sandbox_entry, save_default_seat, save_default_workflow, save_module, save_prefs,
-    save_sandbox_write, save_workflow,
+    remove_key, remove_mcp_server, sandbox_entry, save_default_seat, save_default_workflow,
+    save_mcp_server, save_module, save_prefs, save_sandbox_write, save_workflow,
 };
 
 #[cfg(test)]

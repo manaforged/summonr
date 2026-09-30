@@ -63,6 +63,33 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     .map(drop)
 }
 
+pub(crate) fn save_mcp_server(path: &Path, name: &str, table: toml_edit::Item) -> Result<bool> {
+    update(path, |document| {
+        if document
+            .get("mcp")
+            .and_then(|mcp| mcp.get(name))
+            .is_some_and(|existing| !existing.is_none())
+        {
+            return Ok(false);
+        }
+        if !document.get("mcp").is_some_and(toml_edit::Item::is_table) {
+            let mut mcp = toml_edit::Table::new();
+            mcp.set_implicit(true);
+            document["mcp"] = toml_edit::Item::Table(mcp);
+        }
+        document["mcp"][name] = table;
+        Ok(true)
+    })
+}
+
+pub(crate) fn remove_mcp_server(path: &Path, name: &str) -> Result<bool> {
+    update(path, |document| {
+        Ok(document["mcp"]
+            .as_table_mut()
+            .is_some_and(|mcp| mcp.remove(name).is_some()))
+    })
+}
+
 pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
     update(path, |document| {
         document["modules"][name] = value(on);

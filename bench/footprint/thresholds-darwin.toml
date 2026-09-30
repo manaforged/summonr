@@ -1,0 +1,55 @@
+["a-off"]
+footprint_kb = 5488
+parent_peak_kb = 15696
+tree_peak_kb = 15696
+children_peak = 0
+children_tail = 0
+starts = 0
+
+["a-on"]
+footprint_kb = 5552
+parent_peak_kb = 16000
+tree_peak_kb = 16000
+children_peak = 0
+children_tail = 0
+starts = 0
+
+["b-cold"]
+footprint_kb = 6080
+parent_peak_kb = 16560
+tree_peak_kb = 22752
+children_peak = 3
+children_tail = 3
+starts = 3
+
+["b-warm"]
+footprint_kb = 5984
+parent_peak_kb = 16288
+tree_peak_kb = 22432
+children_peak = 3
+children_tail = 3
+starts = 3
+
+["c-idle"]
+footprint_kb = 5808
+parent_peak_kb = 16528
+tree_peak_kb = 18592
+children_peak = 1
+children_tail = 1
+starts = 1
+
+["d-big"]
+footprint_kb = 71632
+parent_peak_kb = 82336
+tree_peak_kb = 115152
+children_peak = 1
+children_tail = 1
+starts = 1
+
+["e-long"]
+footprint_kb = 7936
+parent_peak_kb = 17632
+tree_peak_kb = 19904
+children_peak = 1
+children_tail = 1
+starts = 1

@@ -248,6 +248,7 @@ impl App {
             Pane::Diff => self.diff_rows(),
             Pane::Worktrees => self.tree_rows(),
             Pane::Jobs => self.job_rows(),
+            Pane::Mcp => self.mcp_rows(),
             Pane::Peers => self.peer_rows(),
             Pane::View => return false,
             _ => self.file_rows(),
@@ -259,6 +260,7 @@ impl App {
             Pane::Diff => self.diff_cursor.set(index),
             Pane::Worktrees => self.tree_cursor.set(index),
             Pane::Jobs => self.job_cursor.set(index),
+            Pane::Mcp => self.mcp_cursor.set(index),
             Pane::Peers => self.peer_cursor.set(index),
             _ => self.file_cursor.set(index),
         }
@@ -361,6 +363,7 @@ impl App {
                 self.peer_mention(&context.target.path)
             }
             Action::Attach => self.mention(&context.target.path),
+            Action::View if context.kind == Pane::Mcp => self.mcp_enter(),
             Action::View if context.kind == Pane::Jobs => {
                 let id = &context.target.path;
                 let path = crate::jobs::load(&self.workspace, id).map_or_else(

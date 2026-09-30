@@ -5,6 +5,7 @@ use crate::ProviderFailureKind;
 use crate::durable::driver::{Purpose, TurnWork, Verdict};
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
+use crate::hooks::HookEvent;
 use crate::workflow;
 use std::future::Future;
 use std::time::Duration;
@@ -63,6 +64,7 @@ impl WaitError {
 
 mod calls;
 mod checks;
+mod elicit;
 mod finish;
 mod grant;
 mod retry;
@@ -70,6 +72,8 @@ mod round;
 mod steer;
 mod usage;
 
+#[cfg(test)]
+mod finish_tests;
 #[cfg(test)]
 mod permission_tests;
 
@@ -199,9 +203,12 @@ impl<P: Provider> Loop<P> {
         mut emit: impl FnMut(&Event),
     ) -> Result<Turn> {
         let _report = self.herdr.turn();
-        let messages = self.begin_turn(input.into())?;
-        let mut pre = self.checkpoint();
         let mut events = Vec::new();
+        let input = self
+            .expand_mcp(input.into(), &mut events, &mut emit)
+            .await?;
+        let messages = self.begin_turn(input)?;
+        let mut pre = self.checkpoint();
         let mut usage = Usage::default();
         let mut rounds = 0;
         let remaining = self.remaining_time();
@@ -244,7 +251,7 @@ impl<P: Provider> Loop<P> {
                 "text": turn.text,
                 "aborted": turn.aborted,
             });
-            if let Some(note) = self.hook(self.hooks.stop.clone(), payload).await {
+            if let Some(note) = self.hook(HookEvent::Stop, None, payload).await.note() {
                 emit(&Event::Note {
                     text: format!("stop hook: {note}"),
                 });

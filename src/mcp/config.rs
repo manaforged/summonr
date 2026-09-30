@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,6 +22,10 @@ pub(crate) struct Entry {
     pub bearer_token_env_var: Option<String>,
     pub enabled: Option<bool>,
     pub auth: Option<crate::config::OAuth>,
+    pub tools: Option<Vec<String>>,
+    pub idle_secs: Option<u64>,
+    pub keep_alive: Option<bool>,
+    pub timeout_secs: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,17 +46,58 @@ pub(crate) enum Launch {
 pub(crate) struct Server {
     pub name: String,
     pub launch: Launch,
+    pub key: String,
+    pub allow: Option<Vec<String>>,
+    pub idle: Option<Duration>,
+    pub wait: Duration,
 }
 
 impl Entry {
     fn overlay(&mut self, top: Self) {
         if top.command.is_none() && top.url.is_none() {
             self.enabled = top.enabled.or(self.enabled);
+            self.tools = top.tools.or(self.tools.take());
+            self.idle_secs = top.idle_secs.or(self.idle_secs);
+            self.keep_alive = top.keep_alive.or(self.keep_alive);
+            self.timeout_secs = top.timeout_secs.or(self.timeout_secs);
             return;
         }
         let enabled = top.enabled.or(self.enabled);
         *self = top;
         self.enabled = enabled;
+    }
+
+    fn server(self, name: String, workspace: &Path) -> Result<Option<Server>> {
+        for (key, value) in [
+            ("timeout_secs", self.timeout_secs),
+            ("idle_secs", self.idle_secs),
+        ] {
+            if value == Some(0) {
+                return Err(Error::Config(format!(
+                    "mcp {name} {key} must be at least 1"
+                )));
+            }
+        }
+        let key = crate::text::fnv64(
+            &serde_json::to_vec(&(workspace, &name, &self.command, &self.args, &self.url))
+                .unwrap_or_default(),
+        );
+        let allow = self.tools.clone();
+        let idle = (self.keep_alive != Some(true)).then(|| {
+            self.idle_secs
+                .map_or(crate::limits::MCP_IDLE, Duration::from_secs)
+        });
+        let wait = self
+            .timeout_secs
+            .map_or(crate::limits::MCP_CALL, Duration::from_secs);
+        Ok(self.launch().map(|launch| Server {
+            launch,
+            name,
+            key,
+            allow,
+            idle,
+            wait,
+        }))
     }
 
     fn launch(self) -> Option<Launch> {
@@ -90,9 +136,15 @@ impl Entry {
     }
 }
 
-pub(crate) fn servers(workspace: &Path) -> Result<Vec<Server>> {
+pub(crate) struct Found {
+    pub servers: Vec<Server>,
+    pub waiting: Vec<String>,
+}
+
+pub(crate) fn servers(workspace: &Path) -> Result<Found> {
+    let (layers, waiting) = layers(workspace)?;
     let mut entries: BTreeMap<String, Entry> = BTreeMap::new();
-    for layer in layers(workspace)? {
+    for layer in layers {
         for (name, entry) in layer {
             match entries.get_mut(&name) {
                 Some(base) => base.overlay(entry),
@@ -102,20 +154,23 @@ pub(crate) fn servers(workspace: &Path) -> Result<Vec<Server>> {
             }
         }
     }
-    Ok(entries
-        .into_iter()
-        .filter(|(_, entry)| entry.enabled != Some(false))
-        .filter_map(|(name, entry)| {
-            Some(Server {
-                launch: entry.launch()?,
-                name,
-            })
-        })
-        .filter(|server| !ours(server))
-        .collect())
+    let mut servers = Vec::new();
+    for (name, entry) in entries {
+        if entry.enabled == Some(false) {
+            continue;
+        }
+        if let Some(server) = entry.server(name, workspace)?
+            && !ours(&server)
+        {
+            servers.push(server);
+        }
+    }
+    Ok(Found { servers, waiting })
 }
 
-fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
+type Layers = (Vec<BTreeMap<String, Entry>>, Vec<String>);
+
+fn layers(workspace: &Path) -> Result<Layers> {
     let home = std::env::var_os("HOME").map(PathBuf::from);
     let mut layers = Vec::new();
     let mut approved = BTreeSet::new();
@@ -161,10 +216,50 @@ fn layers(workspace: &Path) -> Result<Vec<BTreeMap<String, Entry>>> {
     if path.is_file() {
         shared.extend(config::parse(&path)?.mcp);
     }
+    let waiting = shared
+        .keys()
+        .filter(|name| {
+            !all && !approved.contains(*name)
+                && !user
+                    .get(*name)
+                    .is_some_and(|entry| entry.command.is_some() || entry.url.is_some())
+        })
+        .cloned()
+        .collect();
     shared.retain(|name, _entry| all || approved.contains(name));
     layers.push(shared);
+    layers.push(plugin_layer(workspace));
     layers.push(user);
-    Ok(layers)
+    Ok((layers, waiting))
+}
+
+fn plugin_layer(workspace: &Path) -> BTreeMap<String, Entry> {
+    let mut layer = BTreeMap::new();
+    for plugin in crate::plugins::enabled() {
+        let mut entries = BTreeMap::new();
+        for map in plugin.mcp_json() {
+            entries.extend(json_map(Some(&map)));
+        }
+        entries.extend(toml_map(plugin.mcp_toml().as_ref()));
+        for (name, mut entry) in entries {
+            entry.command = entry
+                .command
+                .map(|command| plugin.expand(&command, workspace));
+            entry.args = entry
+                .args
+                .iter()
+                .map(|arg| plugin.expand(arg, workspace))
+                .collect();
+            entry.env = entry
+                .env
+                .into_iter()
+                .map(|(key, value)| (key, plugin.expand(&value, workspace)))
+                .collect();
+            entry.url = entry.url.map(|url| plugin.expand(&url, workspace));
+            layer.insert(format!("{}-{name}", plugin.name), entry);
+        }
+    }
+    layer
 }
 
 fn read_json(path: &Path) -> Result<Option<Value>> {

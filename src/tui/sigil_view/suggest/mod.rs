@@ -1,6 +1,7 @@
 use super::app::App;
 use super::canvas;
 use super::model::Model;
+use crate::mcp::OfferKind;
 use crate::tui::matching_commands;
 use crate::{SlashCommand, parse_command};
 use sigil::prelude::{Signal, signal};
@@ -79,6 +80,7 @@ impl Picker {
         }
         let rows = self.rows(draft, caret, model);
         let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
+        let command = command && !prompt_row(model, &row.0);
         (row.0 != draft).then(|| (row.0.clone(), command))
     }
 
@@ -146,6 +148,7 @@ impl Picker {
                         format!("{} · {} · {}", agent.kind, agent.model, agent.status),
                     )
                 })
+                .chain(resources(model, &query))
                 .chain(
                     matches
                         .into_iter()
@@ -188,8 +191,48 @@ impl Picker {
                 _ => true,
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))
+            .chain(prompts(model, draft))
             .collect()
     }
+}
+
+fn prompts(model: &Model, draft: &str) -> Rows {
+    if draft.contains(char::is_whitespace) {
+        return Vec::new();
+    }
+    model
+        .offers
+        .iter()
+        .filter(|offer| offer.kind == OfferKind::Prompt && offer.insert.starts_with(draft))
+        .map(|offer| (format!("{} ", offer.insert), offer.about.clone()))
+        .collect()
+}
+
+fn prompt_row(model: &Model, value: &str) -> bool {
+    model.offers.iter().any(|offer| {
+        offer.kind == OfferKind::Prompt && value.strip_suffix(' ') == Some(offer.insert.as_str())
+    })
+}
+
+fn resources(model: &Model, query: &str) -> Rows {
+    model
+        .offers
+        .iter()
+        .filter(|offer| matches!(offer.kind, OfferKind::Resource | OfferKind::Template))
+        .filter_map(|offer| {
+            let name = offer.insert.strip_prefix('@').unwrap_or(&offer.insert);
+            name.to_lowercase()
+                .contains(query)
+                .then(|| (name.to_string(), offer.about.clone()))
+        })
+        .collect()
+}
+
+pub(super) fn offered(model: &Model, value: &str) -> bool {
+    model.offers.iter().any(|offer| {
+        matches!(offer.kind, OfferKind::Resource | OfferKind::Template)
+            && offer.insert.strip_prefix('@') == Some(value)
+    })
 }
 
 fn usage(name: &str) -> &'static str {

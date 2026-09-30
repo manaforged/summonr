@@ -95,6 +95,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Bare,
         Session,
     ),
+    spec("/mcp", "Show MCP servers", SlashCommand::Mcp, Bare, Session),
     spec(
         "/usage",
         "token spend; session profiles this session",
@@ -205,7 +206,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
     .usage("PATH"),
     spec(
         "/pane",
-        "files, ledger, diff, worktrees, jobs, peers, or a layout",
+        "files, ledger, diff, worktrees, jobs, mcp, peers, or a layout",
         SlashCommand::Pane,
         Value,
         Files,

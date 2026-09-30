@@ -13,7 +13,7 @@ pub(crate) mod windows;
 #[cfg(target_os = "macos")]
 mod macos;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Sandbox {
     #[cfg(sandboxed)]
     backend: Backend,
@@ -28,7 +28,7 @@ pub(crate) struct Sandbox {
 }
 
 #[cfg(sandboxed)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Backend {
     #[cfg(all(windows, sandboxed))]
     Windows { executable: PathBuf },
@@ -290,7 +290,13 @@ impl Sandbox {
                         ]);
                     }
                 }
-                command.extend(["--new-session".into(), "--die-with-parent".into()]);
+                command.extend([
+                    "--new-session".into(),
+                    "--die-with-parent".into(),
+                    "--unshare-pid".into(),
+                    "--proc".into(),
+                    "/proc".into(),
+                ]);
                 if self.deny_network {
                     command.push("--unshare-net".into());
                 }

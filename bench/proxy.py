@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import json
 import re
 import threading
@@ -204,6 +205,11 @@ class Proxy(BaseHTTPRequestHandler):
             self.send_error(400, f"request body is not JSON: {error}")
             return
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
+        for name in headers:
+            if name.lower() == "authorization":
+                headers[name] = f"Bearer {self.key}"
+            elif name.lower() == "x-api-key":
+                headers[name] = self.key
         if "opencode.ai" in self.upstream:
             headers["x-opencode-session"] = label
         request = urllib.request.Request(self.target(path), data=raw, method=method, headers=headers)
@@ -264,7 +270,9 @@ def main():
     parser.add_argument("--anthropic", default="https://api.deepseek.com/anthropic")
     parser.add_argument("--log", required=True)
     parser.add_argument("--strip", action="append", default=[])
+    parser.add_argument("--key-env", required=True)
     args = parser.parse_args()
+    Proxy.key = os.environ.get(args.key_env) or parser.error(f"{args.key_env} is not set")
     Proxy.upstream = args.upstream.rstrip("/")
     Proxy.anthropic = args.anthropic.rstrip("/")
     Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]

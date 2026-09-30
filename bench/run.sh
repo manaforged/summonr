@@ -17,19 +17,14 @@ export PATH=$HOME/.local/bin:$PATH PYTHONPATH=$root
 if [ "$vendor" = zai ]; then
   [ -f "$root/glm.env" ] || { echo "missing $root/glm.env" >&2; exit 1; }
   set -a; . "$root/glm.env"; set +a
-  : "${ZAI_API_KEY:?}"
-  export BENCH_API_KEY=$ZAI_API_KEY
   export BENCH_PROVIDER=${BENCH_PROVIDER:-zai}
   model=${BENCH_MODEL:-glm-5.3-flash}
 else
   [ -f "$root/deepseek.env" ] || { echo "missing $root/deepseek.env" >&2; exit 1; }
   set -a; . "$root/deepseek.env"; set +a
-  : "${DEEPSEEK_API_KEY:?}"
-  export BENCH_API_KEY=$DEEPSEEK_API_KEY
   export BENCH_PROVIDER=${BENCH_PROVIDER:-deepseek}
   model=${BENCH_MODEL:-deepseek-flash}
 fi
-export DEEPSEEK_API_KEY=$BENCH_API_KEY
 export BENCH_MODEL=$model
 
 case $vendor in

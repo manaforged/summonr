@@ -91,7 +91,7 @@ pub(in crate::tools) fn summary(before: &str, after: &str, spans: &[Span]) -> St
     let net = match delta {
         0 => String::new(),
         1 | -1 => format!("{delta:+} line, "),
-        _ => format!("{delta:+} lines, "),
+        many => format!("{many:+} lines, "),
     };
     format!("changed {places} ({net}{total} lines now)")
 }

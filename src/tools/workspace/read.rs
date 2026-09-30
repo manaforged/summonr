@@ -18,7 +18,7 @@ const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 
 enum Opened {
     Text(BufReader<std::fs::File>),
-    Image(String),
+    Image(ToolOutput),
 }
 
 #[derive(Default)]
@@ -87,11 +87,12 @@ impl Page {
 }
 
 impl ToolRegistry {
-    pub(super) fn read_files(&self, args: &Value, paths: &[Value]) -> Result<String> {
+    pub(super) fn read_files(&self, args: &Value, paths: &[Value]) -> Result<ToolOutput> {
         if paths.is_empty() {
             return Err(Error::Tool("paths is empty".to_string()));
         }
         let mut out = String::new();
+        let mut images = Vec::new();
         for path in paths {
             let Some(path) = path.as_str() else {
                 continue;
@@ -104,36 +105,51 @@ impl ToolRegistry {
             }
             let call = call.to_string();
             match self.read_file(&call) {
-                Ok(text) if !out.is_empty() && out.len() + text.len() > READ_PAGE_BYTES => {
+                Ok(read) if !out.is_empty() && out.len() + read.text.len() > READ_PAGE_BYTES => {
                     out.push_str(&format!(
                         "{path}: not shown, the read passed {READ_PAGE_BYTES} bytes\n"
                     ));
                 }
-                Ok(text) => {
-                    out.push_str(&self.dedup_read(&call, ToolOutput::ok(text)).text);
+                Ok(read) => {
+                    let read = self.dedup_read(&call, read);
+                    out.push_str(&read.text);
                     out.push('\n');
+                    images.extend(read.images);
                 }
                 Err(error) => {
                     out.push_str(&format!("{path}: {error}\n"));
                 }
             }
         }
-        Ok(out.trim_end().to_string())
+        Ok(ToolOutput {
+            images,
+            ..ToolOutput::ok(out.trim_end().to_string())
+        })
     }
 
-    pub(super) fn read_file(&self, arguments: &str) -> Result<String> {
+    pub(super) fn read_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("read", arguments)?;
         let path = object_string(&args, "path")?;
+        if let Some(key) = ["before", "after", "context"]
+            .into_iter()
+            .find(|key| args.get(key).is_some())
+        {
+            return Err(Error::Tool(format!(
+                "`{key}` applies to a search with pattern; a file read pages with offset and limit"
+            )));
+        }
         let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
         let limit =
             object_usize(&args, "limit").map_or(usize::MAX, |limit| limit.clamp(1, READ_MAX_LIMIT));
         let tags = args.get("tags").and_then(Value::as_bool).unwrap_or(false);
         let mut reader = match self.open_text(path)? {
             Opened::Text(reader) => reader,
-            Opened::Image(text) => return Ok(text),
+            Opened::Image(image) => return Ok(image),
         };
         let first = offset.saturating_sub(1);
-        scan(&mut reader, path, first, limit)?.render(path, first, tags)
+        scan(&mut reader, path, first, limit)?
+            .render(path, first, tags)
+            .map(ToolOutput::ok)
     }
 
     fn open_text(&self, path: &str) -> Result<Opened> {
@@ -156,7 +172,7 @@ impl ToolRegistry {
         Ok(Opened::Text(reader))
     }
 
-    fn image_page(&self, path: &str, canonical: &Path) -> Result<String> {
+    fn image_page(&self, path: &str, canonical: &Path) -> Result<ToolOutput> {
         let bytes = std::fs::read(canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         let media = image_type(&bytes).unwrap_or("image");

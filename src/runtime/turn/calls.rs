@@ -148,9 +148,9 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         let (output, millis) = result;
-        let (success, mutated, text) = match output {
-            Ok(output) => (output.success, output.mutated, output.text),
-            Err(error) => (false, false, error.to_string()),
+        let (success, mutated, text, images) = match output {
+            Ok(output) => (output.success, output.mutated, output.text, output.images),
+            Err(error) => (false, false, error.to_string(), Vec::new()),
         };
         let text = self.tool_text(&call, success, text).await;
         self.session
@@ -161,6 +161,7 @@ impl<P: Provider> Loop<P> {
         let arguments = call.function.arguments.clone();
         messages.push(Message {
             failed: !success,
+            images,
             ..Message::tool(call.id, text)
         });
         if todo {

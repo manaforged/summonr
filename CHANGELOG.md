@@ -15,6 +15,9 @@
 
 ### Changed
 
+- Batch edits that touch the same line apply in order instead of failing
+  as "overlapping"; an edit with unrecognised keys names them; an edit's
+  diff is capped at 80 rows. The edit description leads with old+new.
 - DeepSeek and z.ai GLM seats send the model's earlier reasoning back
   on every turn, as both vendors require during tool-calling loops.
 - The default system prompt says what done means: treat the request as

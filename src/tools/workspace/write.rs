@@ -4,7 +4,7 @@ use super::ToolRegistry;
 use crate::durable::store::{self, Staged};
 use crate::error::{Error, Result};
 
-const HUNK_ROWS: usize = 400;
+const HUNK_ROWS: usize = crate::limits::EDIT_HUNK_ROWS;
 
 pub(in crate::tools) struct Change {
     pub(in crate::tools) dest: PathBuf,
@@ -121,16 +121,25 @@ fn edit_view(before: &str, after: &str, view: View) -> String {
     if before.is_empty() && !after.is_empty() {
         return format!("new file, {} lines", after.lines().count());
     }
-    let hunk = unified_hunk(before, after);
-    if !matches!(view, View::Tagged) {
-        return hunk;
+    let spans = super::spans::changed(before, after);
+    let summary = super::spans::summary(before, after, &spans);
+    if !matches!(view, View::Tagged) || spans.is_empty() {
+        return summary;
     }
-    let (first, last) = crate::hashline::dirty_span(before, after);
-    let span = crate::hashline::tagged_span(after, first.saturating_sub(1), last.saturating_add(1));
-    format!(
-        "{}\n{hunk}",
-        cap_rows(span.lines().map(str::to_string).collect()).join("\n")
-    )
+    let tagged = spans
+        .iter()
+        .flat_map(|span| {
+            crate::hashline::tagged_span(
+                after,
+                span.start.saturating_sub(1),
+                span.start + span.len.max(1),
+            )
+            .lines()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+        })
+        .collect();
+    format!("{}\n{summary}", cap_rows(tagged).join("\n"))
 }
 
 fn overwritten(before: &str, after: &str) -> String {
@@ -155,56 +164,6 @@ fn cap_rows(lines: Vec<String>) -> Vec<String> {
         lines.push(format!("[{skipped} lines clipped]"));
     }
     lines
-}
-
-pub(super) fn unified_hunk(before: &str, after: &str) -> String {
-    let old: Vec<&str> = before.lines().collect();
-    let new: Vec<&str> = after.lines().collect();
-    let mut first = 0;
-    while first < old.len() && first < new.len() && old[first] == new[first] {
-        first += 1;
-    }
-    if first == old.len() && first == new.len() {
-        return "no change".to_string();
-    }
-    let (mut old_end, mut new_end) = (old.len(), new.len());
-    while old_end > first && new_end > first && old[old_end - 1] == new[new_end - 1] {
-        old_end -= 1;
-        new_end -= 1;
-    }
-    let start = first.saturating_sub(1);
-    let after_end = (new_end + 1).min(new.len());
-    let mut body = Vec::new();
-    body.extend(old[start..first].iter().map(|line| format!(" {line}")));
-    body.extend(old[first..old_end].iter().map(|line| format!("-{line}")));
-    body.extend(new[first..new_end].iter().map(|line| format!("+{line}")));
-    body.extend(
-        new[new_end..after_end]
-            .iter()
-            .map(|line| format!(" {line}")),
-    );
-    let body = cap_rows(body);
-    let (kept, note) = body.split_at(body.len().min(HUNK_ROWS));
-    let old_count = kept.iter().filter(|line| !line.starts_with('+')).count();
-    let new_count = kept.iter().filter(|line| !line.starts_with('-')).count();
-    let side = |count: usize| {
-        if count == 0 {
-            format!("{start},0")
-        } else {
-            format!("{},{count}", start + 1)
-        }
-    };
-    let mut out = String::new();
-    if let Some(note) = note.first() {
-        out.push_str(note);
-        out.push('\n');
-    }
-    out.push_str(&format!("@@ -{} +{} @@", side(old_count), side(new_count)));
-    for line in kept {
-        out.push('\n');
-        out.push_str(line);
-    }
-    out
 }
 
 fn stage<'a>(dest: &'a Path, display: &str, content: &str) -> Result<Staged<'a>> {

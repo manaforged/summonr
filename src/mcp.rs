@@ -297,5 +297,6 @@ fn output(result: &Value, mutated: bool) -> ToolOutput {
             .unwrap_or(false),
         mutated,
         grant: None,
+        images: Vec::new(),
     }
 }

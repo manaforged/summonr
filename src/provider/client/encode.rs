@@ -3,7 +3,22 @@ use super::*;
 pub(super) fn wire_messages(messages: &[Message], keep_reasoning: bool) -> Result<Vec<Value>> {
     let mut prefix = String::new();
     let mut rest = Vec::new();
+    let mut attached = Vec::new();
     for message in messages {
+        if message.role != Role::Tool && !attached.is_empty() {
+            rest.push(attachments(std::mem::take(&mut attached), keep_reasoning)?);
+        }
+        if message.role == Role::Tool && !message.images.is_empty() {
+            attached.extend(message.images.iter().cloned());
+            rest.push(message_value(
+                &Message {
+                    images: Vec::new(),
+                    ..message.clone()
+                },
+                keep_reasoning,
+            )?);
+            continue;
+        }
         if message.role == Role::System && rest.is_empty() {
             if !prefix.is_empty() {
                 prefix.push_str("\n\n");
@@ -20,12 +35,26 @@ pub(super) fn wire_messages(messages: &[Message], keep_reasoning: bool) -> Resul
             rest.push(message_value(message, keep_reasoning)?);
         }
     }
+    if !attached.is_empty() {
+        rest.push(attachments(attached, keep_reasoning)?);
+    }
     let mut out = Vec::new();
     if !prefix.is_empty() {
         out.push(message_value(&Message::system(prefix), keep_reasoning)?);
     }
     out.extend(rest);
     Ok(out)
+}
+
+fn attachments(images: Vec<Image>, keep_reasoning: bool) -> Result<Value> {
+    message_value(
+        &Message::user(UserInput {
+            text: "Attached image(s) from tool result:".to_string(),
+            images,
+            source: None,
+        }),
+        keep_reasoning,
+    )
 }
 
 pub(super) fn message_value(message: &Message, keep_reasoning: bool) -> Result<Value> {

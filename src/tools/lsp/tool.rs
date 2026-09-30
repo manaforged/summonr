@@ -111,6 +111,7 @@ impl ToolRegistry {
             success: !text.starts_with("error "),
             mutated: false,
             grant: None,
+            images: Vec::new(),
         })
     }
 
@@ -180,6 +181,7 @@ impl ToolRegistry {
             success: true,
             mutated: true,
             grant: None,
+            images: Vec::new(),
         })
     }
 

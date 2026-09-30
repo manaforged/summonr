@@ -6,12 +6,12 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::provider::{CompletionRequest, Image, Message, Provider, Source, UserInput};
 
-use super::{ToolRegistry, object_string, parse_args};
+use super::{ToolOutput, ToolRegistry, object_string, parse_args};
 
 pub(crate) const IMAGES_MAX_BYTES: usize = 10 * 1024 * 1024;
 
 impl ToolRegistry {
-    pub(super) fn show_image(&self, arguments: &str) -> Result<String> {
+    pub(super) fn show_image(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("show_image", arguments)?;
         let path = object_string(&args, "path")?;
         let canonical = self.resolve_read(path)?;
@@ -32,27 +32,28 @@ impl ToolRegistry {
         bytes: &[u8],
         width: u32,
         height: u32,
-    ) -> Result<String> {
+    ) -> Result<ToolOutput> {
         if self.model_images {
-            return Ok(format!(
-                "{path} shown to the user ({media}, {width}x{height}); the model accepts image input — attach it with @{path}"
-            ));
+            return Ok(ToolOutput {
+                images: vec![Image::encode(media, bytes)],
+                ..ToolOutput::ok(format!("{path} ({media}, {width}x{height}) is attached"))
+            });
         }
         if let Some(endpoint) = &self.vision {
             return match self.describe_image(endpoint, media, bytes) {
-                Ok(text) => Ok(format!(
+                Ok(text) => Ok(ToolOutput::ok(format!(
                     "{path} ({media}, {width}x{height}) described by {}: {text}",
                     endpoint.name
-                )),
+                ))),
                 Err(error) => Err(Error::Tool(format!(
                     "vision endpoint `{}` failed on `{path}`: {error}",
                     endpoint.name
                 ))),
             };
         }
-        Ok(format!(
+        Ok(ToolOutput::ok(format!(
             "{path} shown to the user ({media}, {width}x{height}); the model does not receive it — attach it with @{path} if the model accepts image input"
-        ))
+        )))
     }
 
     fn describe_image(

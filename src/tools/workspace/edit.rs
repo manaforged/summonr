@@ -62,7 +62,17 @@ pub(super) fn apply_many(original: &str, ops: &[Value]) -> Result<(String, bool)
         })?;
         patches.push(patch);
     }
+    if overlaps(&mut patches) {
+        return apply_sequence(original, ops);
+    }
     apply_patches(original, patches)
+}
+
+fn overlaps(patches: &mut [Patch]) -> bool {
+    patches.sort_by_key(|patch| patch.anchor_start);
+    patches
+        .windows(2)
+        .any(|pair| pair[1].anchor_start < pair[0].anchor_end)
 }
 
 pub(super) fn apply_sequence(original: &str, ops: &[Value]) -> Result<(String, bool)> {
@@ -84,15 +94,10 @@ pub(super) fn apply_sequence(original: &str, ops: &[Value]) -> Result<(String, b
 
 pub(super) fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<(String, bool)> {
     let relaxed = patches.iter().any(|patch| patch.relaxed);
-    patches.sort_by_key(|patch| patch.anchor_start);
-    for pair in patches.windows(2) {
-        let left = &pair[0];
-        let right = &pair[1];
-        if right.anchor_start < left.anchor_end {
-            return Err(Error::Tool(
-                "edits overlap — merge them into one replace".to_string(),
-            ));
-        }
+    if overlaps(&mut patches) {
+        return Err(Error::Tool(
+            "edits overlap — merge them into one replace".to_string(),
+        ));
     }
     patches.sort_by_key(|patch| (patch.start, patch.start != patch.end));
     let mut lines = lines(original);

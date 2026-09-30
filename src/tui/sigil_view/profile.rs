@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use sigil::Host;
 use sigil::events::EventRouter;
-use sigil::prelude::Cx;
 use sigil::profile;
 use sigil::reactive::Runtime;
 use sigil::terminal::{ColorDepth, Grid, Screen, render};
@@ -127,7 +126,7 @@ async fn capture(options: &Options) -> Result<()> {
     app.refresh();
     let mut host = Host::cells();
     let tree = app.clone();
-    host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+    host.mount(move || root(tree));
     let mut screen = Screen::new(options.cols, options.rows);
     let mut router = EventRouter::new();
     let mut output = Vec::new();

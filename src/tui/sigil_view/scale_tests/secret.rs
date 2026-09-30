@@ -1,6 +1,5 @@
 use sigil::Host;
 use sigil::events::EventRouter;
-use sigil::prelude::Cx;
 use sigil::reactive::Runtime;
 use sigil::terminal::Screen;
 use tokio::sync::mpsc::unbounded_channel;
@@ -37,7 +36,7 @@ fn the_credential_dialog_shows_each_typed_character() {
         app.set_secret(Some(("Password for git:".to_string(), 0)));
         let mut host = Host::cells();
         let tree = app.clone();
-        host.mount(move |cx: &mut Cx| cx.add(root(tree)));
+        host.mount(move || root(tree));
         let mut screen = Screen::new(100, 30);
         let mut router = EventRouter::new();
         drop(render(&mut host, &mut screen, &mut router));

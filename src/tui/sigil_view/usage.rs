@@ -13,7 +13,7 @@ use sigil::prelude::chart;
 use sigil::prelude::container;
 use sigil::prelude::panel;
 use sigil::prelude::request_focus;
-use sigil::prelude::scroll_auto;
+use sigil::prelude::scroll;
 use sigil::prelude::signal;
 use sigil::style::Style;
 
@@ -138,7 +138,7 @@ fn scroll_panel(title: String, content: NodeBuilder) -> NodeBuilder {
         .child(panel().title(title).child(content));
     container()
         .layout(LayoutStyle::block().fill())
-        .child(scroll_auto(content).fill().auto_pin_to_bottom(false))
+        .child(scroll(content).fill().auto_pin_to_bottom(false))
 }
 
 const SHOWN: usize = 5;

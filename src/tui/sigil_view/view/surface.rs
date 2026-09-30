@@ -1,7 +1,5 @@
 use super::*;
 use sigil::layout::Dimension;
-use sigil::prelude::Cx;
-use sigil::prelude::request_focus;
 use sigil::reactive::untrack;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
@@ -37,14 +35,15 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
             changed.pane_focus.set(false);
             changed.change(draft);
         })
-        .submit(move |_| submit.submit());
+        .submit(move |_| submit.submit())
+        .focus_when(app.editor_focus);
     let focus = app.clone();
-    let editor = move |cx: &mut Cx| {
-        let id = cx.add(editor);
+    let editor = move || {
         if untrack(|| focus.overlay().is_none()) {
-            request_focus(id);
+            editor.autofocus()
+        } else {
+            editor
         }
-        id
     };
     let surface = if app.inline {
         chat::inline_layer(app, cols, editor)
@@ -70,6 +69,7 @@ fn editor_layout(rows: u16) -> LayoutStyle {
     let visible = (rows / 2).saturating_sub(2).max(1);
     LayoutStyle::flex_column()
         .fill_width()
+        .height(Dimension::Auto)
         .min_size(0.0, cell)
         .max_size(Dimension::Auto, f32::from(visible) * cell)
         .shrink(0.0)

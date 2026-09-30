@@ -1,7 +1,8 @@
+use sigil::layout::Dimension;
 use sigil::prelude::{
-    AlignItems, Cx, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, Tone, WidgetLayoutExt, badge, button, container, list_row, node, request_focus,
-    spacer, text_edit,
+    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
+    NodeStyleExt, Tone, WidgetLayoutExt, badge, button, container, list_row, node, spacer,
+    text_edit,
 };
 
 use super::App;
@@ -150,16 +151,18 @@ fn hunk_view(
     if editing {
         let commit = app.clone();
         let edit = app.clone();
-        card = card.child(node(move |cx: &mut Cx| {
-            let id = cx.add(
-                text_edit(edit.note_text)
-                    .caret_position(edit.note_caret)
-                    .submit(move |text| commit.note_commit(text))
-                    .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 20.0))
-                    .class("font-mono text-xs bg-gray-1 rounded-md"),
-            );
-            request_focus(id);
-            id
+        card = card.child(node(move || {
+            text_edit(edit.note_text)
+                .caret_position(edit.note_caret)
+                .submit(move |text| commit.note_commit(text))
+                .autofocus()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .height(Dimension::Auto)
+                        .min_size(0.0, 20.0),
+                )
+                .class("font-mono text-xs bg-gray-1 rounded-md")
         }));
         card = card.child(
             sigil::kernel::text(

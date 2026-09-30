@@ -2,7 +2,6 @@ use std::rc::Rc;
 
 use sigil::prelude::AlignItems;
 use sigil::prelude::ColorAtom;
-use sigil::prelude::Cx;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
@@ -45,13 +44,9 @@ pub(in crate::tui::sigil_view) fn layer(
                 .gap(0.0),
         )
         .child(canvas::gutter(header(app.clone(), width)))
-        .child(node(move |cx: &mut Cx| {
+        .child(node(move || {
             let empty = || empty_state("Summonr", "ask anything · /login · @file · !cmd · /help");
-            cx.add(transcript(
-                transcript_app.clone(),
-                (canvas::GUTTER, canvas::cell().h),
-                empty,
-            ))
+            transcript(transcript_app, (canvas::GUTTER, canvas::cell().h), empty)
         }))
         .child(canvas::gutter(panels::agents(app.clone(), width)))
         .child(todos::widget(app.clone(), cols))
@@ -253,7 +248,7 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
                 .padding_bottom(spacing.1),
         )
         .children_reactive(move || {
-            version.track();
+            version.with(|_| ());
             untrack(|| {
                 let (entry, live, prefs) = model.with(|model| {
                     (

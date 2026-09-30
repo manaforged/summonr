@@ -14,6 +14,9 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
         &mut rows,
     );
     collect(Some(workspace.join(".summonr/skills")), &mut rows);
+    for dir in plugin_dirs() {
+        collect(Some(dir), &mut rows);
+    }
     if rows.is_empty() {
         return None;
     }
@@ -52,6 +55,9 @@ pub(crate) fn load(workspace: &Path, name: &str) -> Result<String> {
             .join("SKILL.md"),
     );
     candidates.push(workspace.join(".summonr/skills").join(format!("{name}.md")));
+    for dir in plugin_dirs() {
+        candidates.push(dir.join(name).join("SKILL.md"));
+    }
     for path in candidates {
         if let Ok(text) = std::fs::read_to_string(&path)
             && !text.trim().is_empty()
@@ -90,7 +96,7 @@ fn collect(root: Option<PathBuf>, rows: &mut Vec<(String, String)>) {
             path
         };
         let body = std::fs::read_to_string(file).unwrap_or_default();
-        let summary = first_line(&body);
+        let summary = described(&body).unwrap_or_else(|| first_line(&body));
         rows.push((name, summary));
     }
 }
@@ -109,6 +115,16 @@ fn skill_name(path: &Path) -> Option<String> {
     None
 }
 
+fn described(body: &str) -> Option<String> {
+    let front = body.trim_start().strip_prefix("---")?;
+    let (front, _) = front.split_once("\n---")?;
+    front
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("description:"))
+        .map(|description| description.trim().trim_matches(['"', '\'']).to_string())
+        .filter(|description| !description.is_empty())
+}
+
 fn first_line(body: &str) -> String {
     body.lines()
         .map(str::trim)
@@ -118,5 +134,12 @@ fn first_line(body: &str) -> String {
         .trim()
         .chars()
         .take(80)
+        .collect()
+}
+
+fn plugin_dirs() -> Vec<PathBuf> {
+    crate::plugins::enabled()
+        .iter()
+        .flat_map(crate::plugins::Plugin::skill_dirs)
         .collect()
 }

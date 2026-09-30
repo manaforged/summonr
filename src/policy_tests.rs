@@ -69,3 +69,43 @@ fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
         assert!(super::danger(command, workspace).is_some(), "{command}");
     }
 }
+
+#[test]
+fn a_narrow_command_the_bench_saw_refused_now_runs() {
+    let workspace = Path::new("/app");
+    for command in [
+        "cd /app && rm -rf dist build *.egg-info && python3 -m build",
+        "cd /app/dclm && git filter-repo --version 2>/dev/null; git --version",
+        "ALT_DIR=/tmp/alt; rm -rf $ALT_DIR; mkdir -p $ALT_DIR/data",
+        "OUT=/app/out; rm -rf \"${OUT}\"",
+    ] {
+        assert_eq!(super::danger(command, workspace), None, "{command}");
+    }
+}
+
+#[test]
+fn a_variable_or_wildcard_that_reaches_a_root_still_asks() {
+    let workspace = Path::new("/app");
+    for command in [
+        "X=/; rm -rf $X",
+        "X=$HOME; rm -rf $X",
+        "X=/tmp/a; rm -rf $X_Y",
+        "git filter-repo --force --path secrets",
+        "rm -rf /usr/*",
+        "cd /app && rm -rf .*",
+    ] {
+        assert!(super::danger(command, workspace).is_some(), "{command}");
+    }
+}
+
+#[test]
+fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
+    let workspace = Path::new("/app");
+    let command = "H=.git/hooks; echo x > $H/pre-commit";
+    assert_eq!(
+        super::danger(command, workspace),
+        Some("it writes a protected path")
+    );
+    let error = Policy::builtin().command(command, workspace).unwrap_err();
+    assert!(error.to_string().contains("protected"), "{error}");
+}

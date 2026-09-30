@@ -100,7 +100,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
         match mode {
             crate::RunMode::Plan => "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer.",
             crate::RunMode::Work => "Harness state: work mode. Execute the accepted plan.",
-            crate::RunMode::Goal => "Harness state: goal mode. Keep going until the objective is met. A failed check continues the loop.",
+            crate::RunMode::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
             crate::RunMode::Auto => "Harness state: auto mode.",
         }
         .to_string(),

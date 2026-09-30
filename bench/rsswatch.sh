@@ -4,12 +4,12 @@ pid=${1:?usage: rsswatch.sh PID OUT [SECS]}
 out=${2:?usage: rsswatch.sh PID OUT [SECS]}
 limit=${3:-0}
 grace=10
-echo "rss_kb parent tree" > "$out"
+echo "rss_kb parent tree children" > "$out"
 end=$((SECONDS + limit))
 termed=0
 sample() {
-    ps -A -o pid=,ppid=,rss= 2>/dev/null | awk -v root="$pid" '
-        { parent[$1] = $2; rss[$1] = $3 }
+    ps -A -o pid=,ppid=,rss=,comm= 2>/dev/null | awk -v root="$pid" -v match_name="${RSSWATCH_COUNT:-}" '
+        { parent[$1] = $2; rss[$1] = $3; name[$1] = $4 }
         END {
             if (!(root in rss)) exit
             tree[root] = 1
@@ -20,19 +20,24 @@ sample() {
             }
             total = 0
             members = ""
-            for (p in tree) { total += rss[p]; members = members " " p }
-            print rss[root], total, members
+            count = 0
+            for (p in tree) {
+                total += rss[p]
+                members = members " " p
+                if (p != root && (match_name == "" || name[p] ~ match_name)) count++
+            }
+            print rss[root], total, count, members
         }'
 }
 while kill -0 "$pid" 2>/dev/null; do
     line=$(sample)
-    [ -n "$line" ] && echo "$line" | awk '{print $1, $2}' >> "$out"
+    [ -n "$line" ] && echo "$line" | awk '{print $1, $2, $3}' >> "$out"
     if [ "$limit" -gt 0 ] && [ "$SECONDS" -ge "$end" ]; then
         if [ "$termed" -eq 0 ]; then
             kill -TERM "$pid" 2>/dev/null
             termed=1
         elif [ "$SECONDS" -ge $((end + grace)) ]; then
-            kill -KILL $(echo "$line" | cut -d' ' -f3-) "$pid" 2>/dev/null
+            kill -KILL $(echo "$line" | cut -d' ' -f4-) "$pid" 2>/dev/null
         fi
     fi
     sleep 0.25

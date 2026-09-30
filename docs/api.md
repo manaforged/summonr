@@ -30,7 +30,8 @@ The first argument can be an endpoint name: `summonr grok` is
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and plan sign-ins |
 | `summonr modules` | List compiled modules and their state |
 | `summonr workflows` | List configured workflows |
-| `summonr install PATH`, `summonr install --list` | Install a directory of extras, or list the installed extras |
+| `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
+| `summonr install PATH`, `summonr install --list`, `summonr uninstall NAME` | Install a plugin directory, list plugins, or remove one |
 | `summonr acp` | Serve the Agent Client Protocol over stdio |
 | `summonr mail [agents\|send\|inbox\|board]` | Read and write peer mail between agent sessions on this machine |
 | `summonr classify ...` | Ask typed questions of a decisions endpoint |
@@ -106,7 +107,9 @@ summonr prints one JSON object per line on stdout. Each object has a
 | `mail` | `from`, `text` |
 | `aborted` | `reason` |
 | `merged` | `branch`, `base`, `files` |
+| `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
 | `approval` | `detail`, optional `persist` |
+| `elicit` | `form` (an MCP server's `server`, `message`, and `fields`), or null when the question ends |
 | `verify` | `command`, `passed` |
 | `receipt` | `receipt` |
 | `work` | `progress` |
@@ -162,12 +165,13 @@ notification. Source: `src/acp.rs`.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't
   widen it.
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn
-  a module on. `mcp` and `mail` are off by default.
+  a module on. `mail` and `search` are off by default.
 - The advertised tool list freezes after the first model round.
   A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a
-  shell command that reads JSON on stdin. A `pre_tool` hook that exits
-  nonzero blocks the call.
+  shell command, or a list run in order, that reads JSON on stdin. A
+  `pre_tool` hook that exits nonzero blocks the call. Plugin hooks follow
+  the Claude Code rules instead (see the extending guide).
 - A project `.mcp.json` loads only after approval. `import_mcp = true`
   also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default. `--plan` denies writes.

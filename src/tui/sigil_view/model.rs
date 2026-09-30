@@ -71,6 +71,8 @@ pub(super) struct Model {
     pub(super) marks: Option<(Option<PathBuf>, crate::hunks::Marks)>,
     pub(super) trees: Vec<crate::worktree::Status>,
     pub(super) jobs: Vec<(crate::jobs::Record, crate::jobs::Status)>,
+    pub(super) mcp: Vec<crate::mcp::ServerStatus>,
+    pub(super) offers: Vec<crate::mcp::Offer>,
     pub(super) view: Option<View>,
     pub(super) recent: Vec<String>,
     tools: HashMap<String, usize>,
@@ -151,6 +153,8 @@ impl Model {
             marks: None,
             trees: Vec::new(),
             jobs: Vec::new(),
+            mcp: Vec::new(),
+            offers: Vec::new(),
             view: None,
             recent: Vec::new(),
             tools: HashMap::new(),
@@ -195,7 +199,6 @@ impl Model {
             msg @ (Msg::Session(_)
             | Msg::Calling(_)
             | Msg::Busy(_)
-            | Msg::Restored(_)
             | Msg::Queued { .. }
             | Msg::Cleared
             | Msg::Reset
@@ -206,11 +209,12 @@ impl Model {
             | Msg::Diff(_)
             | Msg::DiffFailed(_)
             | Msg::Trees(_)
+            | Msg::Offers(_)
             | Msg::Jobs(_)
+            | Msg::Mcp(_)
             | Msg::Changed(_)
             | Msg::Edited(_)
             | Msg::View { .. }
-            | Msg::Saved { .. }
             | Msg::Patch { .. }
             | Msg::Review { .. }) => self.pane_data(msg),
             Msg::OpenLogin(_)
@@ -226,7 +230,9 @@ impl Model {
             | Msg::Workflow { .. }
             | Msg::Resume(_)
             | Msg::LoginStep { .. }
-            | Msg::LoginDone { .. } => {}
+            | Msg::LoginDone { .. }
+            | Msg::Restored(_)
+            | Msg::Saved { .. } => {}
         }
         if self
             .ledger
@@ -259,7 +265,6 @@ impl Model {
             Msg::Session(id) => self.session = id,
             Msg::Calling(name) => self.live_tool = Some((name, "…".to_string())),
             Msg::Busy(busy) => self.set_busy(busy),
-            Msg::Restored(_) => self.queued = (0, 0),
             Msg::Queued { steering, queued } => self.queued = (steering, queued),
             Msg::Cleared => self.clear(),
             Msg::Reset => self.reset(),
@@ -294,7 +299,9 @@ impl Model {
                 self.diff_error = Some(error);
             }
             Msg::Trees(trees) => self.trees = trees,
+            Msg::Offers(offers) => self.offers = offers,
             Msg::Jobs(jobs) => self.jobs = jobs,
+            Msg::Mcp(servers) => self.mcp = servers,
             Msg::Changed(_) => {}
             Msg::Edited(paths) => self.recent = paths,
             Msg::View {
@@ -312,7 +319,6 @@ impl Model {
                     image: image.and_then(|bytes| decode(&bytes, 1920, 1200).ok()),
                 })
             }
-            Msg::Saved { .. } => {}
             Msg::Patch { path, result, .. } => self.patch = Some((path, result)),
             Msg::Review { root, result } => self.review_marks(root, result),
             _msg => unreachable!("apply routes only pane data"),

@@ -1,5 +1,7 @@
 use super::{Cond, Rule, SubRule};
 
+pub(crate) const INQUIRY_FLAGS: &[&str] = &["--version", "--help"];
+
 pub(super) const IN_PLACE: &[Cond] = &[Cond::Prefix(&["-i", "--in-place"])];
 
 pub(super) const RM: &[Rule] = &[Rule {

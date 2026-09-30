@@ -4,6 +4,29 @@
 
 ### Added
 
+- `/mcp` shows MCP servers: state, tools, schema size, and the last
+  error. `summonr mcp list|get|add|remove` does the same from the shell.
+- MCP 2025-11-25: summonr answers `roots/list` with the workspace, shows
+  tool progress (and progress keeps a slow call alive), fetches a
+  changed tool list again, logs server messages to
+  `~/.summonr/logs/mcp.log`, and cancels the call when a turn stops.
+  Servers on an unknown protocol version are refused.
+- Plugins: `summonr install PATH` installs a plugin in the Claude Code
+  layout (skills, MCP servers, hooks, `bin/`) under
+  `~/.summonr/plugins/`; `summonr uninstall NAME` removes it and
+  `[plugins] off` disables it. `[hooks]` values can be lists. Skill
+  summaries come from the frontmatter `description`. Plugin data lives
+  in `~/.summonr/plugin-data/<name>/`; `userConfig` is reported, not
+  prompted.
+- A server with more than 8 KB of MCP tool schemas is listed by tool
+  name under one `mcp` tool; the model looks up schemas and calls tools
+  through it, so large servers no longer fill the prompt.
+- MCP prompts, resources, and forms: `/server:prompt ARGS` runs a
+  server prompt, `@server:uri` attaches a server resource, and the
+  composer suggests both. A server can ask the user to fill a form during
+  a call; each field is checked against its schema and the answer is
+  reviewed before it is sent. Without a user the form is declined.
+  Changed prompt and resource lists are fetched again.
 - `shift+tab` cycles the reasoning effort: none, minimal, low, medium,
   high, xhigh, max.
 - Effort is correct on every built-in vendor and model: each preset and
@@ -15,6 +38,27 @@
 
 ### Changed
 
+- The `mcp` module is on by default. A server starts on its first tool
+  call and stops after two idle minutes; its tool list comes from a
+  cache in `~/.summonr/mcp/`, so configured servers cost no memory
+  until used. `tools`, `idle_secs`, `keep_alive`, and `timeout_secs` on
+  `[mcp.NAME]` narrow and tune a server.
+- MCP calls follow `policy.toml` deny and allow lists and `--strict`,
+  and stdio servers run inside `--sandbox`. A call with no reply is
+  cancelled after five minutes. A reply over 4 MiB is dropped, and
+  output over 50 KB is cut with the full text saved to a file. Images
+  from MCP tools reach the model.
+- Project `.mcp.json` servers that wait for approval are named at
+  session start.
+- MCP fixes: images reach only models that take them; a server restarts
+  when the sandbox changes; starting a server waits at most 60 seconds;
+  a timed-out call no longer corrupts the next one; a request that
+  cannot be written times out; tool lists are cached per workspace and
+  an empty list is fetched again; error replies are cut to 50 KB;
+  Ctrl-C stops MCP servers and commands; remote servers reconnect after
+  their session expires; `idle_secs` and `timeout_secs` must be at
+  least 1; command allow lists no longer block MCP tools outside
+  `--strict`.
 - Batch edits that touch the same line apply in order instead of failing
   as "overlapping"; an edit with unrecognised keys names them; an edit's
   diff is capped at 80 rows. The edit description leads with old+new.
@@ -66,6 +110,8 @@
 
 ### Fixed
 
+- A hook that writes a lot to stderr, or more than 64 KB to either
+  stream, no longer stalls the tool call until the job limit.
 - A stream that produces no text, reasoning, or tool call (only
   keep-alives or empty delta frames) now fails after the endpoint's
   idle timeout and is retried. Before, a stalled GLM stream held a turn

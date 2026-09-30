@@ -15,7 +15,11 @@ impl Worker {
             .as_deref()
             .and_then(std::path::Path::parent)
             .map(std::path::Path::to_path_buf);
-        let reader = Reader::new(loop_.workspace().to_path_buf(), ui.clone());
+        let reader = Reader::new(
+            loop_.workspace().to_path_buf(),
+            loop_.mcp_board(),
+            ui.clone(),
+        );
         Self {
             home,
             reader,

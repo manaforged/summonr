@@ -37,7 +37,8 @@ impl App {
             Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
             Some(Pane::Worktrees) => drop(self.cmd.send(Cmd::Trees)),
             Some(Pane::Jobs) => drop(self.cmd.send(Cmd::Jobs)),
-            _ => {}
+            Some(Pane::Mcp) => drop(self.cmd.send(Cmd::Mcp)),
+            Some(Pane::Chat | Pane::Ledger | Pane::Peers | Pane::View) | None => {}
         }
     }
 
@@ -80,40 +81,20 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pane_edge(&self, end: bool) {
-        if self.layout.peek().secondary == Some(Pane::View) {
-            let last = self.view_lines().saturating_sub(1) as isize;
-            self.view_move(if end { last } else { -last });
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Worktrees) {
-            let last = self.tree_rows().len().saturating_sub(1) as isize;
-            self.tree_move(if end { last } else { -last });
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Jobs) {
-            let last = self.job_rows().len().saturating_sub(1) as isize;
-            self.job_move(if end { last } else { -last });
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Peers) {
-            let last = self.model.get().peers.len().saturating_sub(1) as isize;
-            self.peer_move(if end { last } else { -last });
-            return;
-        }
-        if self.layout.peek().secondary == Some(Pane::Diff) {
-            let last = if self.diff_view.peek().is_some() {
-                self.hunks().len()
-            } else {
-                self.diff_rows().len()
-            }
-            .saturating_sub(1);
-            self.diff_move(if end { last as isize } else { -(last as isize) });
-            return;
-        }
-        let count = self.file_rows().len();
-        if count > 0 {
-            self.file_cursor.set(if end { count - 1 } else { 0 });
-            self.refresh();
+        let last = self.pane_len().saturating_sub(1) as isize;
+        self.pane_move(if end { last } else { -last });
+    }
+
+    fn pane_len(&self) -> usize {
+        match self.layout.peek().secondary {
+            Some(Pane::View) => self.view_lines(),
+            Some(Pane::Worktrees) => self.tree_rows().len(),
+            Some(Pane::Jobs) => self.job_rows().len(),
+            Some(Pane::Mcp) => self.mcp_rows().len(),
+            Some(Pane::Peers) => self.model.get().peers.len(),
+            Some(Pane::Diff) if self.diff_view.peek().is_some() => self.hunks().len(),
+            Some(Pane::Diff) => self.diff_rows().len(),
+            Some(Pane::Chat | Pane::Ledger | Pane::Files) | None => self.file_rows().len(),
         }
     }
 
@@ -129,6 +110,11 @@ impl App {
         }
         if self.layout.peek().secondary == Some(Pane::Jobs) {
             self.job_open.set(None);
+            self.refresh();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Mcp) {
+            self.mcp_open.set(None);
             self.refresh();
             return;
         }
@@ -163,6 +149,10 @@ impl App {
         }
         if self.layout.peek().secondary == Some(Pane::Jobs) {
             self.job_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Mcp) {
+            self.mcp_enter();
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Peers) {
@@ -220,6 +210,10 @@ impl App {
             self.job_move(delta);
             return;
         }
+        if self.layout.peek().secondary == Some(Pane::Mcp) {
+            self.mcp_move(delta);
+            return;
+        }
         if self.layout.peek().secondary == Some(Pane::Peers) {
             self.peer_move(delta);
             return;
@@ -248,6 +242,10 @@ impl App {
         }
         if self.layout.peek().secondary == Some(Pane::Jobs) {
             self.job_enter();
+            return;
+        }
+        if self.layout.peek().secondary == Some(Pane::Mcp) {
+            self.mcp_enter();
             return;
         }
         if self.layout.peek().secondary == Some(Pane::Peers) {
@@ -341,7 +339,7 @@ impl App {
                 (_, Some(preset)) => self.set_layout(preset),
                 (Some(_) | None, None) => {
                     self.push_entry(Entry::Error(format!(
-                        "no pane or layout `{name}` — files, ledger, diff, worktrees, jobs, peers, off, focus, run, review, or `chat | ledger 40%`"
+                        "no pane or layout `{name}` — files, ledger, diff, worktrees, jobs, mcp, peers, off, focus, run, review, or `chat | ledger 40%`"
                     )));
                     self.refresh();
                 }

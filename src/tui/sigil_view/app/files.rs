@@ -154,6 +154,8 @@ impl Context {
             ]
         } else if self.kind == Pane::Jobs {
             vec![("kill job", Action::Kill), ("view log", Action::View)]
+        } else if self.kind == Pane::Mcp {
+            vec![("view server", Action::View)]
         } else if self.kind == Pane::Peers {
             vec![("mention @name", Action::Attach)]
         } else if self.kind == Pane::Worktrees {

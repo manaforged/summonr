@@ -41,12 +41,14 @@ impl Worker {
             | Cmd::ListPrompts(_)
             | Cmd::ListFiles
             | Cmd::Jobs
+            | Cmd::Mcp
             | Cmd::KillJob(_)
             | Cmd::Clipboard
             | Cmd::Diff(_)
             | Cmd::Patch(..)
             | Cmd::Review { .. }
             | Cmd::Trees
+            | Cmd::Offers
             | Cmd::View(..)
             | Cmd::Save(..)) => {
                 self.reader.run(command).await;

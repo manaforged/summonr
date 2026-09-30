@@ -55,11 +55,29 @@ impl App {
                 interval(STATUS_REFRESH, move || status.refresh_status());
             }
         });
+        self.poll();
+    }
+
+    fn poll(&self) {
         let app = self.clone();
         effect(move || {
-            if app.layout.get().secondary == Some(super::Pane::Jobs) {
+            let command: Option<fn() -> Cmd> = match app.layout.get().secondary {
+                Some(super::Pane::Jobs) => Some(|| Cmd::Jobs),
+                Some(super::Pane::Mcp) => Some(|| Cmd::Mcp),
+                Some(
+                    super::Pane::Chat
+                    | super::Pane::Ledger
+                    | super::Pane::Files
+                    | super::Pane::Diff
+                    | super::Pane::Worktrees
+                    | super::Pane::Peers
+                    | super::Pane::View,
+                )
+                | None => None,
+            };
+            if let Some(command) = command {
                 let poll = app.clone();
-                interval(BEAT, move || drop(poll.cmd.send(Cmd::Jobs)));
+                interval(BEAT, move || drop(poll.cmd.send(command())));
             }
         });
     }

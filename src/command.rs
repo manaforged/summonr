@@ -35,6 +35,7 @@ pub enum SlashCommand {
     Effort,
     Workflow,
     Status,
+    Mcp,
     Resume,
     Search,
     History,
@@ -105,7 +106,7 @@ pub const fn command_specs() -> &'static [CommandSpec] {
 #[must_use]
 pub fn parse_command(line: &str) -> Option<SlashCommand> {
     let tokens: Vec<&str> = line.split_whitespace().collect();
-    if !tokens.first().is_some_and(|head| head.starts_with('/')) {
+    if !tokens.first().is_some_and(|head| head.starts_with('/')) || server_prompt(line) {
         return None;
     }
     (1..=tokens.len().min(2))
@@ -123,6 +124,14 @@ pub fn parse_command(line: &str) -> Option<SlashCommand> {
                 .find(|(name, _)| *name == tokens[0])
                 .and_then(|(_, target)| parse_command(target))
         })
+}
+
+#[must_use]
+pub(crate) fn server_prompt(line: &str) -> bool {
+    line.split_whitespace()
+        .next()
+        .and_then(|head| head.strip_prefix('/'))
+        .is_some_and(|name| name.contains(':'))
 }
 
 pub(crate) fn renamed(line: &str) -> Option<(String, Option<String>)> {
@@ -148,7 +157,7 @@ pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
         if let Some(head) = line
             .split_whitespace()
             .next()
-            .filter(|head| head.starts_with('/'))
+            .filter(|head| head.starts_with('/') && !server_prompt(head))
         {
             return Err(format!(
                 "Unknown command `{head}`. Use /help or press Tab to complete."

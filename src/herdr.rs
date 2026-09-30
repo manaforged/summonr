@@ -16,8 +16,13 @@ pub(crate) struct Turn {
     target: Option<Arc<Target>>,
 }
 
+pub(crate) struct Blocked {
+    target: Option<Arc<Target>>,
+}
+
 struct Target {
     bin: OsString,
+    command: OsString,
     pane: OsString,
     socket: OsString,
     session: Mutex<String>,
@@ -54,6 +59,15 @@ impl Reporter {
         }
     }
 
+    pub(crate) fn blocked(&self, message: &str) -> Blocked {
+        if let Some(target) = &self.target {
+            target.report_with("blocked", Some(message));
+        }
+        Blocked {
+            target: self.target.clone(),
+        }
+    }
+
     pub(crate) fn set_model(&self, model: &str) {
         if let Some(target) = &self.target {
             store(&target.model, short_model(model));
@@ -78,6 +92,14 @@ impl Drop for Reporter {
     }
 }
 
+impl Drop for Blocked {
+    fn drop(&mut self) {
+        if let Some(target) = &self.target {
+            target.report("working");
+        }
+    }
+}
+
 impl Drop for Turn {
     fn drop(&mut self) {
         if let Some(target) = &self.target {
@@ -88,12 +110,23 @@ impl Drop for Turn {
 
 impl Target {
     fn report(&self, state: &str) {
-        let seq = self.life.fetch_add(1, Ordering::Relaxed) + 1;
-        self.run(report_args(&self.pane, state, &held(&self.session), seq));
+        self.report_with(state, None);
+    }
+
+    fn report_with(&self, state: &str, message: Option<&str>) {
+        let seq = next_seq(&self.life);
+        let report = Report {
+            state,
+            message,
+            session: &held(&self.session),
+            command: &self.command,
+            seq,
+        };
+        self.run(report_args(&self.pane, &report));
     }
 
     fn metadata(&self) {
-        let seq = self.meta.fetch_add(1, Ordering::Relaxed) + 1;
+        let seq = next_seq(&self.meta);
         let title = held(&self.title);
         let model = held(&self.model);
         self.run(metadata_args(&self.pane, &title, &model, seq));
@@ -104,7 +137,7 @@ impl Target {
     }
 
     fn release(&self) {
-        let seq = self.life.fetch_add(1, Ordering::Relaxed) + 1;
+        let seq = next_seq(&self.life);
         self.run(release_args(&self.pane, seq));
     }
 
@@ -137,6 +170,7 @@ fn target(
     let bin = present(env("HERDR_BIN_PATH")).unwrap_or_else(|| OsString::from("herdr"));
     Some(Target {
         bin,
+        command: executable?.to_os_string(),
         pane,
         socket,
         session: Mutex::new(session.to_string()),
@@ -175,23 +209,61 @@ fn present(value: Option<OsString>) -> Option<OsString> {
     value.filter(|value| !value.is_empty())
 }
 
-fn report_args(pane: &OsStr, state: &str, session: &str, seq: u64) -> Vec<OsString> {
-    [
-        OsString::from("pane"),
-        OsString::from("report-agent"),
-        pane.to_os_string(),
-        OsString::from("--source"),
-        OsString::from(SOURCE),
-        OsString::from("--agent"),
-        OsString::from(AGENT),
-        OsString::from("--state"),
-        OsString::from(state),
-        OsString::from("--agent-session-id"),
-        OsString::from(session),
+struct Report<'a> {
+    state: &'a str,
+    message: Option<&'a str>,
+    session: &'a str,
+    command: &'a OsStr,
+    seq: u64,
+}
+
+fn next_seq(counter: &AtomicU64) -> u64 {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| {
+            u64::try_from(since.as_millis()).unwrap_or(u64::MAX)
+        });
+    let mut last = counter.load(Ordering::Relaxed);
+    loop {
+        let next = now.max(last + 1);
+        match counter.compare_exchange(last, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => return next,
+            Err(seen) => last = seen,
+        }
+    }
+}
+
+fn report_args(pane: &OsStr, report: &Report<'_>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = ["pane", "report-agent"].map(OsString::from).into();
+    args.push(pane.to_os_string());
+    for (flag, value) in [
+        ("--source", SOURCE),
+        ("--agent", AGENT),
+        ("--state", report.state),
+    ] {
+        args.extend([OsString::from(flag), OsString::from(value)]);
+    }
+    if let Some(message) = report.message {
+        args.extend([
+            OsString::from("--message"),
+            OsString::from(crate::text::ellipsize(message.trim(), 160)),
+        ]);
+    }
+    args.extend([
         OsString::from("--seq"),
-        OsString::from(seq.to_string()),
-    ]
-    .into()
+        OsString::from(report.seq.to_string()),
+    ]);
+    if !report.session.is_empty() {
+        args.extend([
+            OsString::from("--agent-session-id"),
+            OsString::from(report.session),
+            OsString::from("--"),
+            report.command.to_os_string(),
+            OsString::from("resume"),
+            OsString::from(report.session),
+        ]);
+    }
+    args
 }
 
 fn metadata_args(pane: &OsStr, title: &str, model: &str, seq: u64) -> Vec<OsString> {
@@ -245,3 +317,7 @@ fn release_args(pane: &OsStr, seq: u64) -> Vec<OsString> {
     ]
     .into()
 }
+
+#[cfg(all(test, unix))]
+#[path = "herdr_tests.rs"]
+mod tests;

@@ -2,7 +2,6 @@
 
 pub mod acp;
 pub mod askpass;
-mod bundle;
 pub mod catalog;
 mod checkpoint;
 pub mod child;
@@ -32,8 +31,15 @@ mod jobs;
 mod language;
 pub mod limits;
 mod mcp;
+pub use mcp::{
+    Board as McpBoard, Choice as McpChoice, Field as McpField, FieldKind as McpFieldKind,
+    Form as McpForm, FormAction as McpFormAction, FormAnswer as McpFormAnswer, McpLaunch, McpState,
+    McpTransport, ServerStatus, TextFormat as McpTextFormat, add as mcp_add, remove as mcp_remove,
+    status as mcp_status,
+};
 pub mod modules;
 mod plan;
+mod plugins;
 mod policy;
 mod prompt;
 mod provider;
@@ -59,7 +65,6 @@ pub mod steps;
 pub mod tui;
 pub mod workflow;
 
-pub use bundle::{add as add_bundle, list as list_extras};
 pub use command::{SlashCommand, command_specs, parse_command};
 pub use config::tilde;
 pub use config::{check as check_config, sandbox_on};
@@ -74,6 +79,7 @@ pub use endpoint::{
 pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
 pub use jobs::live as live_jobs;
+pub use plugins::{install as install_plugin, list as list_plugins, uninstall as uninstall_plugin};
 pub use prompt::{Sources, summonr_home, system_prompt};
 pub(crate) use provider::dollars;
 pub use provider::{Client, Effort, Usage, UserInput};

@@ -23,7 +23,7 @@ impl<P: Provider> Loop<P> {
             definitions.extend(crate::mail::definitions());
         }
         if let Some(hub) = &self.mcp {
-            definitions.extend(hub.definitions(self.tools.is_read_only()));
+            definitions.extend(hub.definitions(self.tools.policy()));
         }
         if self.task_available() {
             definitions.push(super::child::definition());

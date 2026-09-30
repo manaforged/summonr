@@ -1,50 +1,364 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
 use serde::Deserialize;
-use serde_json::Value;
-use tokio::io::AsyncWriteExt;
+use serde_json::{Value, json};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
 use crate::runtime::JOB_WAIT;
 
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct Hooks {
-    pub pre_tool: Option<String>,
-    pub post_tool: Option<String>,
-    pub compact: Option<String>,
-    pub stop: Option<String>,
+const OUTPUT_MAX: u64 = 64 * 1024;
+const CLAUDE_NAMES: [(&str, &str); 8] = [
+    ("run_command", "Bash"),
+    ("read", "Read"),
+    ("edit", "Edit"),
+    ("write", "Write"),
+    ("todo", "TodoWrite"),
+    ("task", "Task"),
+    ("web", "WebFetch"),
+    ("skill", "Skill"),
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum HookEvent {
+    PreTool,
+    PostTool,
+    Compact,
+    Stop,
 }
 
-pub(crate) async fn run(command: &str, workspace: &Path, payload: &Value) -> Result<(), String> {
-    let program = crate::shell::program().map_err(|error| error.to_string())?;
-    let mut child = Command::new(program)
-        .args(crate::shell::arguments(command, workspace))
-        .current_dir(workspace)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .map_err(|error| format!("hook `{command}` did not start: {error}"))?;
-    let body = payload.to_string();
-    let work = async move {
-        if let Some(mut stdin) = child.stdin.take() {
-            drop(stdin.write_all(body.as_bytes()).await);
+impl HookEvent {
+    pub(crate) const ALL: [Self; 4] = [Self::PreTool, Self::PostTool, Self::Compact, Self::Stop];
+
+    #[must_use]
+    pub(crate) const fn key(self) -> &'static str {
+        match self {
+            Self::PreTool => "pre_tool",
+            Self::PostTool => "post_tool",
+            Self::Compact => "compact",
+            Self::Stop => "stop",
         }
-        child.wait_with_output().await
-    };
-    let output = tokio::time::timeout(JOB_WAIT, work)
-        .await
-        .map_err(|_elapsed| format!("hook `{command}` ran past {}s", JOB_WAIT.as_secs()))?
-        .map_err(|error| format!("hook `{command}` failed: {error}"))?;
-    if output.status.success() {
-        return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-    Err(if stderr.is_empty() {
-        format!("hook `{command}` exited with {}", output.status)
+
+    #[must_use]
+    pub(crate) const fn claude(self) -> &'static str {
+        match self {
+            Self::PreTool => "PreToolUse",
+            Self::PostTool => "PostToolUse",
+            Self::Compact => "PreCompact",
+            Self::Stop => "Stop",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) enum Dialect {
+    #[default]
+    Summonr,
+    Claude,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) enum Matcher {
+    Names(Vec<String>),
+    Pattern(regex::Regex),
+}
+
+impl Matcher {
+    pub(crate) fn parse(text: &str) -> Option<Self> {
+        let text = text.trim();
+        if text.is_empty() || text == "*" {
+            return None;
+        }
+        let plain = text
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ' ' | ',' | '|'));
+        if plain {
+            return Some(Self::Names(
+                text.split(['|', ','])
+                    .map(str::trim)
+                    .filter(|name| !name.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            ));
+        }
+        regex::Regex::new(text).ok().map(Self::Pattern)
+    }
+
+    fn matches(&self, tool: &str) -> bool {
+        match self {
+            Self::Names(names) => names.iter().any(|name| name == tool),
+            Self::Pattern(pattern) => pattern.is_match(tool),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct Hook {
+    pub(crate) command: String,
+    pub(crate) dialect: Dialect,
+    pub(crate) matcher: Option<Matcher>,
+    pub(crate) root: Option<PathBuf>,
+}
+
+impl Hook {
+    fn plain(command: String) -> Self {
+        Self {
+            command,
+            dialect: Dialect::Summonr,
+            matcher: None,
+            root: None,
+        }
+    }
+
+    pub(crate) fn applies(&self, tool: Option<&str>) -> bool {
+        let (Some(matcher), Some(tool)) = (&self.matcher, tool) else {
+            return true;
+        };
+        matcher.matches(&self.tool_name(tool))
+    }
+
+    pub(crate) fn tool_name(&self, tool: &str) -> String {
+        if self.dialect == Dialect::Summonr {
+            return tool.to_string();
+        }
+        CLAUDE_NAMES
+            .iter()
+            .find(|(ours, _)| *ours == tool)
+            .map_or_else(|| mcp_name(tool), |(_, theirs)| (*theirs).to_string())
+    }
+}
+
+fn mcp_name(tool: &str) -> String {
+    if tool.contains("__") {
+        format!("mcp__{tool}")
     } else {
-        stderr
+        tool.to_string()
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Hooks {
+    lists: [Vec<Hook>; 4],
+}
+
+impl Hooks {
+    #[must_use]
+    pub(crate) fn of(&self, event: HookEvent) -> &[Hook] {
+        &self.lists[index(event)]
+    }
+
+    pub(crate) fn push(&mut self, event: HookEvent, hook: Hook) {
+        self.lists[index(event)].push(hook);
+    }
+
+    #[must_use]
+    pub(crate) fn with_plugins(mut self, plugins: &[crate::plugins::Plugin]) -> Self {
+        for plugin in plugins {
+            let extra = plugin.hooks();
+            for event in HookEvent::ALL {
+                for hook in extra.of(event) {
+                    self.push(event, hook.clone());
+                }
+            }
+        }
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn names(&self) -> Vec<&'static str> {
+        HookEvent::ALL
+            .into_iter()
+            .filter(|event| !self.of(*event).is_empty())
+            .map(HookEvent::key)
+            .collect()
+    }
+}
+
+const fn index(event: HookEvent) -> usize {
+    match event {
+        HookEvent::PreTool => 0,
+        HookEvent::PostTool => 1,
+        HookEvent::Compact => 2,
+        HookEvent::Stop => 3,
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum Commands {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl<'de> Deserialize<'de> for Hooks {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Raw {
+            pre_tool: Option<Commands>,
+            post_tool: Option<Commands>,
+            compact: Option<Commands>,
+            stop: Option<Commands>,
+        }
+        let raw = Raw::deserialize(deserializer)?;
+        let mut hooks = Self::default();
+        for (event, commands) in [
+            (HookEvent::PreTool, raw.pre_tool),
+            (HookEvent::PostTool, raw.post_tool),
+            (HookEvent::Compact, raw.compact),
+            (HookEvent::Stop, raw.stop),
+        ] {
+            let list = match commands {
+                Some(Commands::One(command)) => vec![command],
+                Some(Commands::Many(commands)) => commands,
+                None => Vec::new(),
+            };
+            for command in list {
+                hooks.push(event, Hook::plain(command));
+            }
+        }
+        Ok(hooks)
+    }
+}
+
+pub(crate) enum Verdict {
+    Allow,
+    Block(String),
+    Note(String),
+}
+
+pub(crate) struct Call<'a> {
+    pub(crate) event: HookEvent,
+    pub(crate) workspace: &'a Path,
+    pub(crate) session: &'a str,
+    pub(crate) payload: &'a Value,
+}
+
+pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
+    let body = match hook.dialect {
+        Dialect::Summonr => call.payload.clone(),
+        Dialect::Claude => claude_payload(hook, call),
+    };
+    let outcome = match execute(hook, call.workspace, &body).await {
+        Ok(outcome) => outcome,
+        Err(error) => return Verdict::Note(error),
+    };
+    judge(hook.dialect, call.event, outcome)
+}
+
+fn claude_payload(hook: &Hook, call: &Call<'_>) -> Value {
+    let payload = call.payload;
+    let mut body = json!({
+        "session_id": call.session,
+        "cwd": call.workspace,
+        "hook_event_name": call.event.claude(),
+    });
+    if let Some(tool) = payload.get("tool").and_then(Value::as_str) {
+        body["tool_name"] = json!(hook.tool_name(tool));
+        body["tool_input"] = payload.get("arguments").cloned().unwrap_or(Value::Null);
+        body["tool_use_id"] = payload.get("id").cloned().unwrap_or(Value::Null);
+    }
+    if let Some(output) = payload.get("output") {
+        body["tool_response"] = json!({"output": output, "success": payload.get("success")});
+    }
+    body
+}
+
+struct Outcome {
+    code: Option<i32>,
+    stdout: String,
+    stderr: String,
+}
+
+async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome, String> {
+    let program = crate::shell::program().map_err(|error| error.to_string())?;
+    let mut command = Command::new(program);
+    command
+        .args(crate::shell::arguments(&hook.command, workspace))
+        .current_dir(workspace)
+        .env("CLAUDE_PROJECT_DIR", workspace)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    if let Some(root) = &hook.root {
+        command
+            .env("CLAUDE_PLUGIN_ROOT", root)
+            .env("SUMMONR_PLUGIN_ROOT", root);
+        if let Some(data) = root
+            .file_name()
+            .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok())
+        {
+            command
+                .env("CLAUDE_PLUGIN_DATA", &data)
+                .env("SUMMONR_PLUGIN_DATA", &data);
+        }
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| format!("hook `{}` did not start: {error}", hook.command))?;
+    let text = body.to_string();
+    let work = async move {
+        let stdin = child.stdin.take();
+        let feed = async move {
+            if let Some(mut stdin) = stdin {
+                drop(stdin.write_all(text.as_bytes()).await);
+            }
+        };
+        let ((), stdout, stderr) = tokio::join!(
+            feed,
+            read_capped(child.stdout.take()),
+            read_capped(child.stderr.take())
+        );
+        let status = child.wait().await?;
+        Ok::<_, std::io::Error>(Outcome {
+            code: status.code(),
+            stdout,
+            stderr,
+        })
+    };
+    tokio::time::timeout(JOB_WAIT, work)
+        .await
+        .map_err(|_elapsed| format!("hook `{}` ran past {}s", hook.command, JOB_WAIT.as_secs()))?
+        .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
+}
+
+async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> String {
+    let Some(mut pipe) = pipe else {
+        return String::new();
+    };
+    let mut bytes = Vec::new();
+    drop((&mut pipe).take(OUTPUT_MAX).read_to_end(&mut bytes).await);
+    drop(tokio::io::copy(&mut pipe, &mut tokio::io::sink()).await);
+    String::from_utf8_lossy(&bytes).trim().to_string()
+}
+
+fn judge(dialect: Dialect, event: HookEvent, outcome: Outcome) -> Verdict {
+    let reason = if outcome.stderr.is_empty() {
+        format!("exited with {:?}", outcome.code)
+    } else {
+        outcome.stderr.clone()
+    };
+    match (dialect, outcome.code) {
+        (Dialect::Summonr, Some(0)) => Verdict::Allow,
+        (Dialect::Summonr, Some(_) | None) => Verdict::Block(reason),
+        (Dialect::Claude, Some(2)) if event == HookEvent::PreTool => Verdict::Block(reason),
+        (Dialect::Claude, Some(0)) => {
+            denied(&outcome.stdout).map_or(Verdict::Allow, Verdict::Block)
+        }
+        (Dialect::Claude, Some(_) | None) => Verdict::Note(reason),
+    }
+}
+
+fn denied(stdout: &str) -> Option<String> {
+    let value: Value = serde_json::from_str(stdout).ok()?;
+    let output = value.get("hookSpecificOutput")?;
+    (output.get("permissionDecision")?.as_str()? == "deny").then(|| {
+        output
+            .get("permissionDecisionReason")
+            .and_then(Value::as_str)
+            .unwrap_or("denied by a plugin hook")
+            .to_string()
     })
 }

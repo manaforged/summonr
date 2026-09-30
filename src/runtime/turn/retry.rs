@@ -34,9 +34,7 @@ impl<P: Provider> Loop<P> {
             )?;
         }
         if overflow > 0 {
-            let note = format!(
-                "[summon mail: {overflow} more message(s) waiting — use the inbox tool to drain them]"
-            );
+            let note = format!("[summon mail: {overflow} more message(s) waiting in the inbox]");
             let input = UserInput::from(note);
             self.session.steer(&input).map_err(super::session_err)?;
             messages.push(Message::user(input));

@@ -4,6 +4,8 @@ mod classify;
 mod commands;
 #[path = "startup/lifecycle.rs"]
 mod lifecycle;
+#[path = "startup/login.rs"]
+mod login;
 #[path = "startup/session.rs"]
 mod session;
 #[path = "startup/tool.rs"]
@@ -15,10 +17,11 @@ use super::cli::Args;
 use super::diagnostics;
 use classify::run_classify;
 use commands::{
-    adopt, export_session_cmd, manage_worktrees, print_diff, print_sessions, print_workflows,
-    probe_endpoints, run_login, session_path, workspace,
+    adopt, export_session_cmd, manage_worktrees, mcp, print_diff, print_sessions, print_workflows,
+    probe_endpoints, session_path, workspace,
 };
 use lifecycle::launch;
+use login::run_login;
 use session::{SessionAction, build};
 
 pub(super) async fn run(args: Args) -> Result<i32> {
@@ -122,6 +125,9 @@ fn listing(args: &Args) -> Option<Result<i32>> {
     if args.profile {
         return done(profile(args));
     }
+    if let Some(command) = &args.mcp {
+        return done(mcp(command));
+    }
     if args.list_workflows {
         return done(print_workflows());
     }
@@ -131,6 +137,9 @@ fn listing(args: &Args) -> Option<Result<i32>> {
                 .and_then(|root| summonr::modules::Switches::load(&root))
                 .map(|switches| println!("{}", switches.table())),
         );
+    }
+    if args.uninstall {
+        return Some(uninstall(args));
     }
     if args.add {
         return Some(add(args));
@@ -161,14 +170,27 @@ fn profile(args: &Args) -> Result<()> {
 
 fn add(args: &Args) -> Result<i32> {
     if args.add_list {
-        println!("{}", summonr::list_extras()?);
+        println!("{}", summonr::list_plugins()?);
         return Ok(0);
     }
     let Some(path) = args.prompt.first() else {
         return Err(summonr::Error::Config(
-            "summonr add PATH  (or add --list)".to_string(),
+            "summonr install PATH  (or install --list)".to_string(),
         ));
     };
-    println!("{}", summonr::add_bundle(std::path::Path::new(path))?);
+    println!("{}", summonr::install_plugin(std::path::Path::new(path))?);
+    Ok(0)
+}
+
+fn uninstall(args: &Args) -> Result<i32> {
+    let Some(name) = args.prompt.first() else {
+        return Err(summonr::Error::Config("summonr uninstall NAME".to_string()));
+    };
+    if !summonr::uninstall_plugin(name)? {
+        return Err(summonr::Error::Config(format!(
+            "no plugin named {name} is installed"
+        )));
+    }
+    println!("removed plugin {name}; restart summonr to unload it");
     Ok(0)
 }

@@ -3,7 +3,7 @@ use std::vec::IntoIter;
 
 use summonr::{Error, Result};
 
-use super::{Args, exit_help, renamed, value};
+use super::{Args, exit_help, mcp, renamed, value};
 
 pub(super) type Input = Peekable<IntoIter<String>>;
 pub(super) type Run = fn(&mut Args, &mut Input) -> Result<()>;
@@ -109,7 +109,7 @@ pub(super) const VALUES: [Valued; 11] = [
     },
 ];
 
-pub(super) const COMMANDS: [(&str, Run); 22] = [
+pub(super) const COMMANDS: [(&str, Run); 24] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
     ("resume", resume),
@@ -124,6 +124,7 @@ pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("workflows", |args, _| on(&mut args.list_workflows)),
     ("modules", |args, _| on(&mut args.list_modules)),
     ("install", |args, _| on(&mut args.add)),
+    ("uninstall", |args, _| on(&mut args.uninstall)),
     ("add", |args, _| {
         renamed("add", "install");
         on(&mut args.add)
@@ -141,6 +142,7 @@ pub(super) const COMMANDS: [(&str, Run); 22] = [
     ("tool", |args, input| {
         some(&mut args.tool, input.by_ref().collect())
     }),
+    ("mcp", |args, input| some(&mut args.mcp, mcp::parse(input)?)),
     ("login", |args, _| on(&mut args.login)),
     ("auth", |args, _| {
         renamed("auth", "login");

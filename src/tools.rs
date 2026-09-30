@@ -9,9 +9,11 @@ use crate::provider::{ToolCall, ToolFunction, ToolKind, UserInput};
 use crate::web::Search;
 
 mod args;
+mod budget;
 mod event;
 mod help;
 pub use event::Event;
+pub(crate) use event::progress_text;
 mod catalog;
 mod dedup;
 pub(crate) use catalog::{Builtin, readonly, retired_op};
@@ -20,6 +22,7 @@ mod lsp;
 mod paths;
 pub(crate) mod sandbox;
 mod search;
+mod spill;
 mod todo;
 mod workspace;
 
@@ -263,6 +266,14 @@ impl ToolRegistry {
 
     pub(crate) fn is_read_only(&self) -> bool {
         self.policy.is_read_only()
+    }
+
+    pub(crate) fn policy(&self) -> &Policy {
+        &self.policy
+    }
+
+    pub(crate) fn sandbox(&self) -> Option<sandbox::Sandbox> {
+        self.sandbox.clone()
     }
 
     pub(crate) fn set_session(&self, id: &str) {

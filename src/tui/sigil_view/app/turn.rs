@@ -31,7 +31,7 @@ impl App {
             self.replace(String::new());
             return;
         }
-        if text.trim_start().starts_with('/') {
+        if text.trim_start().starts_with('/') && !crate::command::server_prompt(&text) {
             self.replace(String::new());
             self.scroll_y.set(self.max_scroll.peek());
             drop(self.cmd.send(Cmd::Command(text)));

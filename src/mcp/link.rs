@@ -1,0 +1,357 @@
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Weak};
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+use tokio::sync::Mutex;
+
+use crate::error::{Error, Result};
+use crate::policy::Policy;
+use crate::rpc::Notice;
+use crate::tools::sandbox::Sandbox;
+
+use super::catalog::{self, Listing};
+use super::config::Server;
+use super::conn::Conn;
+use super::form::Form;
+use super::journal;
+use super::status::McpState;
+use super::tool::Tool;
+use super::{Answer, McpProgress, McpUpdate};
+
+pub(super) struct Link {
+    server: Server,
+    workspace: PathBuf,
+    conn: Mutex<Option<Conn>>,
+    fresh: std::sync::Mutex<Option<HashMap<String, bool>>>,
+    started: AtomicBool,
+    detail: std::sync::Mutex<Option<String>>,
+    used: std::sync::Mutex<Instant>,
+    pub(super) tools: Vec<Tool>,
+}
+
+impl Link {
+    pub(super) async fn open(
+        server: Server,
+        workspace: PathBuf,
+        sandbox: Option<&Sandbox>,
+    ) -> Result<Arc<Self>> {
+        let (listing, conn) = match catalog::load(&server.key) {
+            Some(listing) => (listing, None),
+            None => {
+                let mut conn = Conn::open(&server, &workspace, sandbox).await?;
+                let listing = conn.listing().await?;
+                catalog::save(&server.key, &listing);
+                conn.ready(server.wait)?;
+                (listing, server.idle.is_none().then_some(conn))
+            }
+        };
+        let started = AtomicBool::new(conn.is_some());
+        let tools = listing
+            .tools
+            .iter()
+            .filter_map(|item| Tool::parse(&server.name, item))
+            .filter(|tool| {
+                server
+                    .allow
+                    .as_ref()
+                    .is_none_or(|allow| allow.contains(&tool.name))
+            })
+            .collect();
+        Ok(Arc::new(Self {
+            server,
+            workspace,
+            conn: Mutex::new(conn),
+            fresh: std::sync::Mutex::new(None),
+            started,
+            detail: std::sync::Mutex::new(None),
+            used: std::sync::Mutex::new(Instant::now()),
+            tools,
+        }))
+    }
+
+    pub(super) async fn call_tool(
+        self: &Arc<Self>,
+        tool: &Tool,
+        arguments: Value,
+        gate: &Gate<'_>,
+        report: &mut (dyn FnMut(McpUpdate) + Send),
+    ) -> Result<Called> {
+        gate.policy.tool(&tool.alias, tool.readonly)?;
+        let mut slot = self.conn.lock().await;
+        self.ensure(&mut slot, gate.sandbox).await?;
+        let readonly = self.readonly(tool)?;
+        if readonly != tool.readonly {
+            gate.policy.tool(&tool.alias, readonly)?;
+        }
+        let params = json!({"name": tool.name, "arguments": arguments});
+        let (value, changed) = self
+            .exchange(&mut slot, "tools/call", params, report)
+            .await?;
+        Ok(Called {
+            value,
+            readonly,
+            changed,
+        })
+    }
+
+    pub(super) async fn request(
+        self: &Arc<Self>,
+        method: &str,
+        params: Value,
+        sandbox: Option<&Sandbox>,
+        report: &mut (dyn FnMut(McpUpdate) + Send),
+    ) -> Result<Value> {
+        let mut slot = self.conn.lock().await;
+        self.ensure(&mut slot, sandbox).await?;
+        self.exchange(&mut slot, method, params, report)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    async fn exchange(
+        self: &Arc<Self>,
+        slot: &mut Option<Conn>,
+        method: &str,
+        params: Value,
+        report: &mut (dyn FnMut(McpUpdate) + Send),
+    ) -> Result<(Value, bool)> {
+        let conn = slot
+            .as_mut()
+            .ok_or_else(|| Error::Tool(format!("mcp {} is not connected", self.server.name)))?;
+        let mut changes = Changes::default();
+        let pending = Pending(Some(Arc::downgrade(self)));
+        let result = conn
+            .call(method, params, &mut |notice| {
+                self.hear(notice, &mut changes, report);
+            })
+            .await;
+        pending.settle();
+        self.after(slot, result.as_ref().err(), changes).await;
+        self.touch();
+        result.map(|value| (value, changes.tools))
+    }
+
+    pub(super) fn listing(&self) -> Listing {
+        catalog::load(&self.server.key).unwrap_or_default()
+    }
+
+    async fn ensure(
+        self: &Arc<Self>,
+        slot: &mut Option<Conn>,
+        sandbox: Option<&Sandbox>,
+    ) -> Result<()> {
+        if !slot
+            .as_mut()
+            .is_none_or(|conn| !conn.alive() || !conn.runs_in(sandbox))
+        {
+            return Ok(());
+        }
+        *slot = None;
+        let mut conn = Conn::open(&self.server, &self.workspace, sandbox)
+            .await
+            .inspect_err(|error| self.note(error))?;
+        self.started.store(true, Ordering::Relaxed);
+        if let Ok(listing) = conn.listing().await {
+            catalog::save(&self.server.key, &listing);
+            self.remember(&listing.tools);
+        }
+        conn.ready(self.server.wait)?;
+        *slot = Some(conn);
+        self.reap_later();
+        Ok(())
+    }
+
+    fn hear(
+        &self,
+        notice: Notice<'_>,
+        changes: &mut Changes,
+        report: &mut (dyn FnMut(McpUpdate) + Send),
+    ) {
+        match notice {
+            Notice::ToolsChanged => changes.tools = true,
+            Notice::PromptsChanged | Notice::ResourcesChanged => changes.other = true,
+            Notice::Progress {
+                progress,
+                total,
+                message,
+                ..
+            } => report(McpUpdate::Progress(McpProgress {
+                progress,
+                total,
+                message: message.map(str::to_string),
+            })),
+            Notice::Message {
+                level,
+                logger,
+                data,
+            } => journal::append(&self.server.name, level, logger, data),
+            Notice::Elicit { params, answer } => match Form::parse(&self.server.name, params) {
+                Some(form) => report(McpUpdate::Elicit {
+                    form,
+                    answer: Answer(answer),
+                }),
+                None => drop(answer.send(crate::rpc::Reply::Error(
+                    -32602,
+                    "summonr supports form elicitation with a flat schema".to_string(),
+                ))),
+            },
+            Notice::Unknown => {}
+        }
+    }
+
+    async fn after(&self, slot: &mut Option<Conn>, failed: Option<&Error>, changes: Changes) {
+        let Some(conn) = slot.as_mut() else {
+            return;
+        };
+        if let Some(error) = failed
+            && !conn.alive()
+        {
+            self.note(error);
+            *slot = None;
+        } else if (changes.tools || changes.other)
+            && let Ok(listing) = conn.listing().await
+        {
+            catalog::save(&self.server.key, &listing);
+            self.remember(&listing.tools);
+        }
+    }
+
+    pub(super) fn name(&self) -> &str {
+        &self.server.name
+    }
+
+    pub(super) fn state(&self) -> (McpState, Option<String>) {
+        let live = self.conn.try_lock().map_or(true, |slot| slot.is_some());
+        let state = if live {
+            McpState::Live
+        } else if self.started.load(Ordering::Relaxed) {
+            McpState::Stopped
+        } else {
+            McpState::Cached
+        };
+        (
+            state,
+            self.detail.lock().ok().and_then(|detail| detail.clone()),
+        )
+    }
+
+    fn note(&self, error: &Error) {
+        if let Ok(mut detail) = self.detail.lock() {
+            *detail = Some(error.to_string());
+        }
+    }
+
+    fn remember(&self, items: &[Value]) {
+        let flags = items
+            .iter()
+            .filter_map(|item| Tool::parse(&self.server.name, item))
+            .map(|tool| (tool.name, tool.readonly))
+            .collect();
+        if let Ok(mut fresh) = self.fresh.lock() {
+            *fresh = Some(flags);
+        }
+    }
+
+    fn readonly(&self, tool: &Tool) -> Result<bool> {
+        let fresh = self.fresh.lock().ok();
+        let Some(flags) = fresh.as_ref().and_then(|fresh| fresh.as_ref()) else {
+            return Ok(tool.readonly);
+        };
+        flags.get(&tool.name).copied().ok_or_else(|| {
+            Error::Tool(format!(
+                "`{}` is no longer offered by mcp {}",
+                tool.alias, self.server.name
+            ))
+        })
+    }
+
+    fn touch(&self) {
+        if let Ok(mut used) = self.used.lock() {
+            *used = Instant::now();
+        }
+    }
+
+    fn idle_for(&self) -> Duration {
+        self.used
+            .lock()
+            .map(|used| used.elapsed())
+            .unwrap_or_default()
+    }
+
+    fn reap_later(self: &Arc<Self>) {
+        let Some(idle) = self.server.idle else {
+            return;
+        };
+        drop(tokio::spawn(reap(Arc::downgrade(self), idle)));
+    }
+}
+
+pub(super) struct Gate<'a> {
+    pub(super) policy: &'a Policy,
+    pub(super) sandbox: Option<&'a Sandbox>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct Changes {
+    tools: bool,
+    other: bool,
+}
+
+pub(super) struct Called {
+    pub(super) value: Value,
+    pub(super) readonly: bool,
+    pub(super) changed: bool,
+}
+
+struct Pending(Option<Weak<Link>>);
+
+impl Pending {
+    fn settle(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for Pending {
+    fn drop(&mut self) {
+        let Some(link) = self.0.take() else {
+            return;
+        };
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        drop(runtime.spawn(async move {
+            let Some(link) = link.upgrade() else {
+                return;
+            };
+            if let Some(conn) = link.conn.lock().await.as_mut() {
+                conn.cancel_inflight();
+            }
+        }));
+    }
+}
+
+async fn reap(link: Weak<Link>, idle: Duration) {
+    loop {
+        let Some(wait) = link
+            .upgrade()
+            .map(|link| idle.saturating_sub(link.idle_for()))
+        else {
+            return;
+        };
+        tokio::time::sleep(wait).await;
+        let Some(link) = link.upgrade() else {
+            return;
+        };
+        let mut slot = link.conn.lock().await;
+        if slot.is_none() {
+            return;
+        }
+        if link.idle_for() >= idle {
+            *slot = None;
+            return;
+        }
+    }
+}

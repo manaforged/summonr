@@ -4,6 +4,10 @@ use flags::{COMMANDS, Input, SCOPED, SWITCHES, VALUES};
 
 #[path = "cli/flags.rs"]
 mod flags;
+#[path = "cli/mcp.rs"]
+mod mcp;
+
+pub(super) use mcp::McpCommand;
 
 #[derive(Debug, Default)]
 pub(super) struct Args {
@@ -23,6 +27,7 @@ pub(super) struct Args {
     pub(super) list_modules: bool,
     pub(super) mail: Option<Vec<String>>,
     pub(super) tool: Option<Vec<String>>,
+    pub(super) mcp: Option<McpCommand>,
     pub(super) acp: bool,
     pub(super) resume: bool,
     pub(super) fork: bool,
@@ -66,6 +71,7 @@ pub(super) struct Args {
     pub(super) digest: bool,
     pub(super) add: bool,
     pub(super) add_list: bool,
+    pub(super) uninstall: bool,
 }
 
 pub(super) fn parse() -> Result<Args> {

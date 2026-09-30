@@ -196,6 +196,17 @@ fn emit(out: &UnboundedSender<Value>, session: &str, event: &Event) {
             "status": if *success { "completed" } else { "failed" },
             "content": [{"type": "content", "content": {"type": "text", "text": output}}],
         }),
+        Event::Progress {
+            id,
+            progress,
+            total,
+            message,
+        } => json!({
+            "sessionUpdate": "tool_call_update",
+            "toolCallId": id,
+            "status": "in_progress",
+            "content": [{"type": "content", "content": {"type": "text", "text": crate::tools::progress_text(*progress, *total, message.as_deref())}}],
+        }),
         Event::Note { text } | Event::Aborted { reason: text } => json!({
             "sessionUpdate": "agent_thought_chunk",
             "content": {"type": "text", "text": text},
@@ -208,6 +219,7 @@ fn emit(out: &UnboundedSender<Value>, session: &str, event: &Event) {
         | Event::Delta { .. }
         | Event::Reasoning { .. }
         | Event::Approval { .. }
+        | Event::Elicit { .. }
         | Event::Verify { .. }
         | Event::Receipt { .. }
         | Event::Work { .. }

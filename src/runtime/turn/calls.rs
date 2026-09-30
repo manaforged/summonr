@@ -126,16 +126,58 @@ impl<P: Provider> Loop<P> {
             });
         }
         if let Some(hub) = self.mcp.clone().filter(|hub| hub.owns(name)) {
-            let output = hub
-                .call(name, &call.function.arguments, self.tools.is_read_only())
-                .await;
-            return Ok((output, None));
+            let resolved = hub.resolve(name, &call.function.arguments, self.tools.policy());
+            let (alias, arguments) = match resolved {
+                Ok(crate::mcp::Resolved::Call { alias, arguments }) => (alias, arguments),
+                Ok(crate::mcp::Resolved::Found(text)) => {
+                    return Ok((self.tools.fit_output(Ok(ToolOutput::ok(text))), None));
+                }
+                Err(error) => return Ok((Err(error), None)),
+            };
+            let sandbox = self.tools.sandbox();
+            let policy = self.tools.policy().clone();
+            let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
+            let mut report = move |update| drop(sender.send(update));
+            let running = hub.call(&alias, arguments, &policy, sandbox.as_ref(), &mut report);
+            tokio::pin!(running);
+            let output = loop {
+                tokio::select! {
+                    biased;
+                    Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
+                    output = &mut running => break output,
+                }
+            };
+            while let Ok(update) = updates.try_recv() {
+                self.heard(&call.id, update, events, emit).await?;
+            }
+            return Ok((self.tools.fit_output(output), None));
         }
         if is_mail_tool(name) {
             return Ok((self.mail_execute(call).map(ToolOutput::ok), None));
         }
         let output = self.tools.execute_outcome(call).await;
         Ok((self.with_grant(output, call, events, emit).await?, None))
+    }
+
+    async fn heard(
+        &mut self,
+        id: &str,
+        update: crate::mcp::McpUpdate,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        match update {
+            crate::mcp::McpUpdate::Progress(progress) => emit(&Event::Progress {
+                id: id.to_string(),
+                progress: progress.progress,
+                total: progress.total,
+                message: progress.message,
+            }),
+            crate::mcp::McpUpdate::Elicit { form, answer } => {
+                answer.give(&self.elicit(form, events, emit).await?);
+            }
+        }
+        Ok(())
     }
 
     pub(in crate::runtime) async fn finish_call(

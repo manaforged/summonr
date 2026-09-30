@@ -80,7 +80,7 @@ Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
 - Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
-- The `mcp` module in `/settings`, then a `[mcp.NAME]` table in `~/.summonr/config.toml`, connects an MCP server.
+- A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
@@ -94,7 +94,7 @@ model = "qwen3"
 api_key = "local"
 ```
 
-Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a directory of those files. See [Extending summonr](docs/guide/extending.md).
+Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a plugin in the Claude Code layout: its skills, MCP servers, hooks, and `bin/`. See [Extending summonr](docs/guide/extending.md).
 
 ## Benchmarks
 
@@ -122,13 +122,13 @@ operator's global rules files, which `grade.sh` now keeps out.
 
 Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows. The graded 16-task suite with deterministic verifiers — its full scorecard and limits — lives in [`BENCHMARKS.md`](BENCHMARKS.md).
 
-Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. `mcp` is off by default, so unused MCP schemas never sit in the prefix. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
+Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. MCP schemas join the prefix only for servers you configure, and `tools = [...]` on a server keeps only the tools you name. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
 
 ## Limits
 
 - Under `--sandbox` or `--strict`, `policy.toml` rules are hard refusals: built-in denies cover force pushes, `sudo`, and `rm -rf /`. Without containment those commands ask you to confirm, and `-p` never runs them.
 - Six identical results from the same call end the turn. The terminal UI asks first.
-- The `mcp` module is off by default. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` waits for approval.
+- The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
 - A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions; `--no-trust` ignores all three.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
@@ -154,11 +154,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-607 public items (59 types, 92 functions, 101 methods, 205 fields, 148 variants, 2 constants) at 607 paths; 0 are re-export aliases. 296 trait impl lines, 24 inherent impl lines. 22 modules, 0 re-export only.
+700 public items (71 types, 96 functions, 112 methods, 246 fields, 173 variants, 2 constants) at 700 paths; 0 are re-export aliases. 360 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 370 | 28 | 41 | 82 | 0 |
+| `summonr` | 463 | 40 | 45 | 93 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |

@@ -15,6 +15,7 @@ mod capture;
 pub(crate) mod stream;
 pub(crate) mod think;
 mod wire;
+pub(crate) use wire::boundary;
 
 use crate::endpoint::Wire;
 pub(crate) use summonr_auth::Auth;
@@ -78,6 +79,9 @@ pub(crate) use wire::decisions;
 #[path = "provider_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "provider/scripted.rs"]
+pub(crate) mod scripted;
 #[cfg(test)]
 #[path = "provider/stall_tests.rs"]
 mod stall_tests;

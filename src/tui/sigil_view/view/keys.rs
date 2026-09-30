@@ -6,6 +6,8 @@ fn escape(app: &App, event: &mut KeyEvent) {
     event.stop_propagation();
     if app.options_active() {
         super::input::escape(app);
+    } else if app.form_stage().is_some() {
+        app.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
     } else if app.edit_stop() || app.note_stop() {
     } else if app.context.peek().is_some() {
         app.context_close();
@@ -27,9 +29,14 @@ fn enter(app: &App, event: &mut KeyEvent) {
         app.context_enter();
     } else if app.pane_active().is_some() {
         app.pane_enter();
+    } else if app.form_enter() {
     } else if !app.accept() {
         app.submit();
     }
+}
+
+fn review(app: &App) -> bool {
+    !app.options_active() && app.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
 }
 
 fn respond() -> Vec<(Shortcut, Handler)> {
@@ -45,13 +52,19 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             },
         ),
         (LogicalKey::character("y").into(), |app, event| {
-            if !app.options_active() && app.approval.peek().is_some() {
+            if review(app) {
+                event.stop_propagation();
+                app.form_reply(crate::tui::sigil_view::app::Reply::Send);
+            } else if !app.options_active() && app.approval.peek().is_some() {
                 event.stop_propagation();
                 app.approval_answer("y");
             }
         }),
         (LogicalKey::character("n").into(), |app, event| {
-            if !app.options_active() && app.approval.peek().is_some() {
+            if review(app) {
+                event.stop_propagation();
+                app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
+            } else if !app.options_active() && app.approval.peek().is_some() {
                 event.stop_propagation();
                 app.approval_answer("n");
             }
@@ -86,7 +99,10 @@ fn respond() -> Vec<(Shortcut, Handler)> {
 fn panes() -> Vec<(Shortcut, Handler)> {
     vec![
         (LogicalKey::character("e").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::View) {
+            if review(app) {
+                event.stop_propagation();
+                app.form_reply(crate::tui::sigil_view::app::Reply::Edit);
+            } else if app.pane_active() == Some(super::Pane::View) {
                 event.stop_propagation();
                 app.edit_start();
             }

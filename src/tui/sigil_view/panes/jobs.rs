@@ -1,10 +1,9 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone,
-    badge, container, list_row,
+    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, list_row,
 };
 
 use super::App;
-use super::body::header;
+use super::body::{detail, header};
 
 pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -51,25 +50,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 }),
         );
         if open.as_deref() == Some(record.id.as_str()) {
-            let mut detail = container()
-                .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-                .class("rounded-md bg-gray-1");
-            for line in status.text.lines() {
-                detail = detail.child(
-                    sigil::kernel::text(line.to_string())
-                        .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .ellipsize()
-                        .layout(
-                            LayoutStyle::block()
-                                .fill_width()
-                                .min_size(0.0, 14.0)
-                                .padding_x(8.0),
-                        )
-                        .class("text-xs font-mono text-gray-11"),
-                );
-            }
-            column = column.child(detail);
+            column = column.child(detail(status.text.lines().map(str::to_string)));
         }
     }
     column

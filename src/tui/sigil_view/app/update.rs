@@ -2,37 +2,55 @@ use super::*;
 
 impl App {
     pub(in crate::tui::sigil_view) fn update(&self, msg: Msg) {
-        let msg = match msg {
-            Msg::Secret(request) => {
-                self.secret_open(request);
-                return;
-            }
-            Msg::Clipboard(read) => {
-                self.pasted(read);
-                return;
-            }
+        match msg {
+            Msg::Secret(request) => self.secret_open(request),
+            Msg::Clipboard(read) => self.pasted(read),
             Msg::LoginStep {
                 text,
                 url,
                 code,
                 asking,
-            } => {
-                self.auth_progress(text, url, code, asking);
-                return;
-            }
-            Msg::LoginDone { name, result } => {
-                self.auth_done(&name, result);
-                return;
-            }
-            msg => msg,
-        };
-        let reveal_plan = match &msg {
+            } => self.auth_progress(text, url, code, asking),
+            Msg::LoginDone { name, result } => self.auth_done(&name, result),
+            Msg::OpenHelp => self.help.show(),
+            Msg::OpenLogin(note) => self.login_opened(note),
+            Msg::Prompts { session, result } => self.prompts_loaded(session, result),
+            Msg::Restored(inputs) => self.restore(inputs),
+            Msg::Saved { file, text, result } => self.save_done(file, text, result),
+            Msg::Resume(id) => self.request_resume(id),
+            Msg::Sessions(rows) => self.sessions.update(rows),
+            Msg::Usage(rows) => self.usage.update(rows),
+            msg @ Msg::Models { .. } => self.models_loaded(msg),
+            Msg::ModelNote(note) => self.picker.note.set(note),
+            Msg::Defaulted(seat) => self.defaulted(seat),
+            Msg::Workflow { name, names, seats } => self.workflow_loaded(name, names, seats),
+            msg @ Msg::Patch { .. } => self.patch_loaded(msg),
+            msg => self.apply_msg(msg),
+        }
+    }
+
+    fn apply_msg(&self, msg: Msg) {
+        let reveal_plan = self.prepare(&msg);
+        let mut alive = true;
+        self.model_mut(|model| alive = model.apply(msg));
+        if !alive {
+            self.quit.set(true);
+        }
+        if reveal_plan {
+            self.reveal_plan();
+        }
+    }
+
+    fn prepare(&self, msg: &Msg) -> bool {
+        match msg {
             Msg::Event(crate::Event::Work { progress }) => {
-                self.model.get().ledger.is_empty()
+                let reveal = self.model.get().ledger.is_empty()
                     && progress
                         .ledger
                         .iter()
-                        .any(|line| crate::tui::sigil_view::model::itemized(line))
+                        .any(|line| crate::tui::sigil_view::model::itemized(line));
+                self.load();
+                reveal
             }
             Msg::Event(crate::Event::ToolCall {
                 name, arguments, ..
@@ -43,185 +61,195 @@ impl App {
                 event.as_ref(),
                 crate::Event::ToolCall { name, .. } if crate::tools::Builtin::is(name, crate::tools::Builtin::Todo)
             ),
+            Msg::Event(crate::Event::Approval { detail, persist }) => {
+                self.approval
+                    .set(detail.clone().map(|detail| (detail, *persist)));
+                false
+            }
+            Msg::Event(crate::Event::Elicit { form }) => {
+                self.form_open(form.clone());
+                false
+            }
+            Msg::Diff(_) => {
+                if let Some(path) = self.diff_view.peek() {
+                    self.model_mut(|model| model.patch = None);
+                    drop(self.cmd.send(Cmd::Patch(self.root(), path)));
+                }
+                false
+            }
+            Msg::Busy(None) => {
+                self.approval.set(None);
+                self.form.set(None);
+                self.secret_finish(false);
+                drop(self.cmd.send(Cmd::Offers));
+                false
+            }
+            Msg::Changed(paths) => {
+                self.changed_files(paths);
+                false
+            }
             _ => false,
+        }
+    }
+
+    fn changed_files(&self, paths: &[String]) {
+        let viewing = self.model.get().view.as_ref().map(|view| view.path.clone());
+        match self.layout.peek().secondary {
+            Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
+            Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
+            Some(Pane::View) => {
+                if let Some(path) = viewing.filter(|path| paths.contains(path)) {
+                    drop(self.cmd.send(Cmd::View(self.root(), path)));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn patch_loaded(&self, msg: Msg) {
+        let Msg::Patch { root, path, result } = &msg else {
+            return;
         };
-        if matches!(msg, Msg::Event(crate::Event::Work { .. })) {
-            self.load();
-        }
-        if matches!(msg, Msg::Diff(_))
-            && let Some(path) = self.diff_view.peek()
+        if self
+            .copy_pending
+            .peek()
+            .is_some_and(|(wanted, file)| &wanted == root && file == *path)
         {
-            self.model_mut(|model| model.patch = None);
-            drop(self.cmd.send(Cmd::Patch(self.root(), path)));
+            self.copy_pending.set(None);
+            self.patch_copy(result.clone());
         }
-        if let Msg::Event(crate::Event::Approval { detail, persist }) = &msg {
-            self.approval
-                .set(detail.clone().map(|detail| (detail, *persist)));
+        if *root != self.root() || self.diff_view.peek().as_ref() != Some(path) {
+            return;
         }
-        if matches!(msg, Msg::Busy(None)) {
-            self.approval.set(None);
-            self.secret_finish(false);
+        self.model_mut(|model| {
+            model.apply(msg);
+        });
+    }
+
+    fn models_loaded(&self, msg: Msg) {
+        let Msg::Models {
+            request,
+            mut rows,
+            facts,
+            groups,
+            causes,
+            pinned,
+            recent,
+            loading,
+            error,
+        } = msg
+        else {
+            return;
+        };
+        if request != self.picker.request.get() {
+            return;
         }
-        if let Msg::Patch { root, path, result } = &msg {
-            if self
-                .copy_pending
-                .peek()
-                .is_some_and(|(wanted, file)| &wanted == root && file == *path)
-            {
-                self.copy_pending.set(None);
-                self.patch_copy(result.clone());
-            }
-            if *root != self.root() || self.diff_view.peek().as_ref() != Some(path) {
-                return;
-            }
+        if !self.picker.open.peek() {
+            self.picker.groups.update(|held| held.extend(groups));
+            return;
         }
-        if let Msg::Changed(paths) = &msg {
-            let viewing = self.model.get().view.as_ref().map(|view| view.path.clone());
-            match self.layout.peek().secondary {
-                Some(Pane::Files) => drop(self.cmd.send(Cmd::ListFiles)),
-                Some(Pane::Diff) => drop(self.cmd.send(Cmd::Diff(self.root()))),
-                Some(Pane::View) => {
-                    if let Some(path) = viewing.filter(|path| paths.contains(path)) {
-                        drop(self.cmd.send(Cmd::View(self.root(), path)));
-                    }
-                }
-                _ => {}
-            }
+        let snapshot = self.model.peek().snapshot.clone();
+        let current = Seat::new(snapshot.endpoint, snapshot.model);
+        let seated = !current.model.is_empty();
+        let mut counts = [usize::from(seated), pinned, recent];
+        if let Some(at) = rows.iter().position(|row| *row == current) {
+            rows.remove(at);
+            let slot = if at < pinned { 1 } else { 2 };
+            counts[slot] = counts[slot].saturating_sub(usize::from(at < pinned + recent));
         }
-        match msg {
-            Msg::OpenHelp => self.help.show(),
-            Msg::OpenLogin(note) => {
-                self.begin_auth(None);
-                if self.unseated() {
-                    self.auth.sel.set(0);
-                }
-                self.auth.step.set(Login::List(note));
-            }
-            Msg::Prompts { session, result } => {
-                let current = match session {
-                    Some(id) => self.search.is_branch() && id == self.model.get().session,
-                    None => !self.search.is_branch(),
-                };
-                if self.search.open.peek() && self.search.is_history() && current {
-                    let result = result.map(|(prompts, errors)| {
-                        let skipped = errors.len();
-                        self.model_mut(|model| {
-                            model.entries.extend(errors.into_iter().map(Entry::Error))
-                        });
-                        (prompts, skipped)
-                    });
-                    self.search.update(result);
-                }
-            }
-            Msg::Restored(inputs) => self.restore(inputs),
-            Msg::Saved { file, text, result } => {
-                let editing = self.view_edit.peek();
-                let mut saved = false;
-                self.model_mut(|model| match result {
-                    Ok(()) => {
-                        let viewed = model
-                            .view
-                            .as_mut()
-                            .filter(|view| view.file == file)
-                            .map(|view| view.text = text.clone())
-                            .is_some();
-                        let lines = text.lines().count();
-                        model.entries.push(Entry::System(format!(
-                            "saved {} · {lines} line{}",
-                            file.display(),
-                            if lines == 1 { "" } else { "s" }
-                        )));
-                        saved = viewed && editing;
-                    }
-                    Err(error) => {
-                        model.entries.push(Entry::Error(format!(
-                            "cannot save {}: {error}",
-                            file.display()
-                        )));
-                    }
-                });
-                if saved {
-                    self.view_saved.set(text);
-                    self.discard_armed.set(false);
-                }
-            }
-            Msg::Resume(id) => self.request_resume(id),
-            Msg::Sessions(rows) => self.sessions.update(rows),
-            Msg::Usage(rows) => self.usage.update(rows),
-            Msg::Models {
-                request,
-                mut rows,
-                facts,
-                groups,
-                causes,
-                pinned,
-                recent,
-                loading,
-                error,
-            } => {
-                if request != self.picker.request.get() {
-                    return;
-                }
-                if !self.picker.open.peek() {
-                    self.picker.groups.update(|held| held.extend(groups));
-                    return;
-                }
-                let snapshot = self.model.peek().snapshot.clone();
-                let current = Seat::new(snapshot.endpoint, snapshot.model);
-                let seated = !current.model.is_empty();
-                let mut counts = [usize::from(seated), pinned, recent];
-                if let Some(at) = rows.iter().position(|row| *row == current) {
-                    rows.remove(at);
-                    let slot = if at < pinned { 1 } else { 2 };
-                    counts[slot] = counts[slot].saturating_sub(usize::from(at < pinned + recent));
-                }
-                if seated {
-                    rows.insert(0, current.clone());
-                }
-                let selected = self.picked_model();
-                self.picker.facts.set(Rc::new(facts));
-                self.picker.causes.update(|held| {
-                    held.retain(|name, _| !groups.contains_key(name));
-                    held.extend(causes);
-                });
-                self.picker.groups.update(|held| held.extend(groups));
-                self.picker.choices.set(Rc::new(rows));
-                self.picker.recent.set(counts);
-                self.rank();
-                let shown = self.picker.shown.peek();
-                let sel = [selected.unwrap_or_default(), current]
-                    .iter()
-                    .find_map(|wanted| shown.iter().position(|row| row == wanted))
-                    .unwrap_or(0);
-                self.picker.sel.set(sel);
-                self.picker.loading.set(loading);
-                self.picker.error.set(error);
-            }
-            Msg::ModelNote(note) => self.picker.note.set(note),
-            Msg::Defaulted(seat) => self.defaulted(seat),
-            Msg::Workflow { name, names, seats } => {
-                self.workflow.name.set(name.unwrap_or_default());
-                self.workflow.names.set(names);
-                let mut seats = seats;
-                seats.resize(Role::ALL.len(), None);
-                self.workflow.seats.set(seats);
-            }
-            msg @ Msg::Patch { .. } => {
-                self.model_mut(|model| {
-                    model.apply(msg);
-                });
-            }
-            msg => {
-                let mut alive = true;
-                self.model_mut(|model| alive = model.apply(msg));
-                if !alive {
-                    self.quit.set(true);
-                }
-            }
+        if seated {
+            rows.insert(0, current.clone());
         }
-        if reveal_plan {
-            self.reveal_plan();
+        let selected = self.picked_model();
+        self.picker.facts.set(Rc::new(facts));
+        self.picker.causes.update(|held| {
+            held.retain(|name, _| !groups.contains_key(name));
+            held.extend(causes);
+        });
+        self.picker.groups.update(|held| held.extend(groups));
+        self.picker.choices.set(Rc::new(rows));
+        self.picker.recent.set(counts);
+        self.rank();
+        let shown = self.picker.shown.peek();
+        let sel = [selected.unwrap_or_default(), current]
+            .iter()
+            .find_map(|wanted| shown.iter().position(|row| row == wanted))
+            .unwrap_or(0);
+        self.picker.sel.set(sel);
+        self.picker.loading.set(loading);
+        self.picker.error.set(error);
+    }
+
+    fn login_opened(&self, note: String) {
+        self.begin_auth(None);
+        if self.unseated() {
+            self.auth.sel.set(0);
         }
+        self.auth.step.set(Login::List(note));
+    }
+
+    fn prompts_loaded(
+        &self,
+        session: Option<String>,
+        result: std::result::Result<(Vec<crate::session::Prompt>, Vec<String>), String>,
+    ) {
+        let current = match session {
+            Some(id) => self.search.is_branch() && id == self.model.get().session,
+            None => !self.search.is_branch(),
+        };
+        if !(self.search.open.peek() && self.search.is_history() && current) {
+            return;
+        }
+        let result = result.map(|(prompts, errors)| {
+            let skipped = errors.len();
+            self.model_mut(|model| model.entries.extend(errors.into_iter().map(Entry::Error)));
+            (prompts, skipped)
+        });
+        self.search.update(result);
+    }
+
+    fn save_done(&self, file: PathBuf, text: String, result: std::result::Result<(), String>) {
+        let editing = self.view_edit.peek();
+        let mut saved = false;
+        self.model_mut(|model| match result {
+            Ok(()) => {
+                let viewed = model
+                    .view
+                    .as_mut()
+                    .filter(|view| view.file == file)
+                    .map(|view| view.text = text.clone())
+                    .is_some();
+                let lines = text.lines().count();
+                model.entries.push(Entry::System(format!(
+                    "saved {} · {lines} line{}",
+                    file.display(),
+                    if lines == 1 { "" } else { "s" }
+                )));
+                saved = viewed && editing;
+            }
+            Err(error) => {
+                model.entries.push(Entry::Error(format!(
+                    "cannot save {}: {error}",
+                    file.display()
+                )));
+            }
+        });
+        if saved {
+            self.view_saved.set(text);
+            self.discard_armed.set(false);
+        }
+    }
+
+    fn workflow_loaded(
+        &self,
+        name: Option<String>,
+        names: Vec<String>,
+        mut seats: Vec<Option<String>>,
+    ) {
+        self.workflow.name.set(name.unwrap_or_default());
+        self.workflow.names.set(names);
+        seats.resize(Role::ALL.len(), None);
+        self.workflow.seats.set(seats);
     }
 
     pub(in crate::tui::sigil_view) fn reveal_plan(&self) {
@@ -238,9 +266,10 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn approval_answer(&self, token: &str) {
         self.approval.set(None);
-        drop(
-            self.cmd
-                .send(Cmd::Steer(UserInput::from(token.to_string()))),
-        );
+        self.steer_answer(token.to_string());
+    }
+
+    pub(in crate::tui::sigil_view) fn steer_answer(&self, text: String) {
+        drop(self.cmd.send(Cmd::Steer(UserInput::from(text))));
     }
 }

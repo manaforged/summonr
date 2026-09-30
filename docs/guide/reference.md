@@ -595,12 +595,13 @@ batch (`edits`), and a rename or move (`path`
 with `to`). `write` creates or overwrites one file, or several (`files`); over an
 existing file it returns `wrote PATH (N lines, replaced M lines)`, not the
 diff. `read` pages by 50 KB by default; an explicit `limit` is capped at
-1000 lines. `run_command` takes `workdir`; its output keeps about 16 KB of
-head and tail, and the full log path is named only when that cut
-something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE`
-are answered by `read`; `ls`, `wc`, `tree`, `grep`, and `rg` run in the
-shell. A foreground command that reaches the wait limit keeps running as a
-background job and returns its id, unless `timeout_secs` was set, which
+1000 lines. `run_command` takes `workdir`; its output keeps about 50 KB of
+head and tail, a single line up to 8 KB, and the full log path is named
+only when that cut something. Only exact `cat FILE`, single-file `head`,
+and `sed -n A,Bp FILE` without a `workdir` are answered by `read`; `ls`,
+`wc`, `tree`, `grep`, and `rg` run in the shell. A foreground command waits
+up to an hour; past that it keeps running as a background job and returns
+its id and the call that waits for it, unless `timeout_secs` was set, which
 stops it instead. A job poll waits until the job exits or the wait limit
 passes.
 
@@ -808,37 +809,11 @@ diagnostics check after an edit waits 5 s and is skipped when the server is
 slower. A server that misses a deadline keeps running, so a slow first index
 can finish in the background.
 
-A loop guard watches tool results each turn. It steps in on three patterns:
-
-- The same call returns the same result: a note at 3 repeats, a steer at 6.
-- The same failure text, three words or more, comes back from different
-  calls: a note at `signature_warn`, a steer at `signature_stop`. A bare exit
-  status such as `exit 1` does not count.
-- A cycle of 2 to 8 calls repeats 3 times with the same results: a steer.
-
-Successful job and child polls do not count toward any pattern. A headless
-run that answers a stuck or checkpoint control message with no tool call is
-asked once to continue; a second such reply ends the turn. The checkpoint
-message is sent only when the Work ledger has entries. The compaction
-summary request carries no tools, and a failed summary retries after 8
-rounds.
-
-A note asks the model to state the hypothesis that its next action tests. A
-steer adds a control message to the conversation. After the first steer, an
-interactive session asks you whether the turn continues. A headless run
-steers again and keeps going, because only a token or wall-clock budget that
-you set ends a turn. Every `checkpoint_rounds` rounds, a control message
-asks the model to update the ledger. Guard state resets at every new user
-message. `[guard]` in `~/.summonr/config.toml` tunes it:
-
-```toml
-[guard]
-enabled = true            # false turns off every check
-signature_warn = 4        # repeated failure texts before the note; 0 turns it off
-signature_stop = 8        # repeated failure texts before the steer; 0 turns it off
-cycles = true             # detect short call cycles with identical results
-checkpoint_rounds = 40    # rounds between checkpoint messages; 0 turns them off
-```
+Summonr does not steer the model. Tool results reach it unchanged, and it
+decides when a turn is done; only a token or wall-clock budget that you set
+ends a turn early. A reply cut off at the output limit gets one note saying
+so. The compaction summary request carries no tools, and a failed summary
+retries after 8 rounds.
 
 User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`.
 A nonempty command allow list must match on every overlay (intersection).
@@ -876,7 +851,7 @@ After the first `prefix_hash`, advertised tools and skill catalog names stay fro
 
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
 
-`SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it; the persistence paragraph still runs.
+`SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it.
 
 Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
 

@@ -9,9 +9,10 @@ use crate::workflow;
 use std::future::Future;
 use std::time::Duration;
 
+use crate::Network;
 use crate::mail::{envelope, is_mail_tool};
 use crate::policy::Grant;
-use crate::prompt::harness_section;
+use crate::prompt::{Harness, harness_section};
 use crate::provider::StopReason;
 use crate::session::decorate;
 use crate::tools::{ToolOutput, needed_grant, readonly};
@@ -269,11 +270,8 @@ impl<P: Provider> Loop<P> {
         if self.inbox.is_empty() {
             return Err(Error::Config("there is no pending peer mail".to_string()));
         }
-        self.turn_with(
-            "[summon control: respond to the pending peer mail in this Work]",
-            emit,
-        )
-        .await
+        self.turn_with("[summon: peer mail is pending in this Work]", emit)
+            .await
     }
 
     pub(super) fn sync_usage(&mut self, emit: &mut impl FnMut(&Event)) {

@@ -1,5 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::time::Instant;
 
 use crate::error::{Error, Result};
 use crate::jobs;
@@ -10,9 +9,7 @@ use super::digest::digest;
 use super::proc::{
     CommandChild, ProcessGroup, StartedCommand, job_text, spawn_command, stop_command, wait_shell,
 };
-use super::rewrite::{
-    plan_write_note, readonly_verb, sandbox_grant, sandbox_note, slow_search_note,
-};
+use super::rewrite::{plan_write_note, readonly_verb, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 
@@ -26,8 +23,8 @@ impl Wait {
     pub(super) fn chosen(explicit: Option<u64>, detach: bool) -> Self {
         match explicit {
             Some(seconds) => Self::Kill(seconds),
-            None if detach => Self::Detach(crate::runtime::JOB_WAIT_SECS),
-            None => Self::Kill(crate::runtime::JOB_WAIT_SECS),
+            None if detach => Self::Detach(crate::limits::COMMAND_WAIT_SECS),
+            None => Self::Kill(crate::limits::COMMAND_WAIT_SECS),
         }
     }
 
@@ -140,7 +137,6 @@ impl ToolRegistry {
         contained: bool,
     ) -> Result<ToolOutput> {
         let mut group = ProcessGroup::new(started.pid, contained);
-        let began = Instant::now();
         let waited = tokio::time::timeout(
             crate::limits::seconds(wait.seconds()),
             wait_shell(&mut started.child),
@@ -150,7 +146,7 @@ impl ToolRegistry {
             Ok(Ok(status)) => {
                 group.disarm();
                 let code = status.code().unwrap_or(-1);
-                self.finished(started, command, code, began, read_only)
+                self.finished(started, command, code, read_only)
             }
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
             Err(_) => {
@@ -190,7 +186,6 @@ impl ToolRegistry {
         started: StartedCommand,
         command: &str,
         code: i32,
-        began: Instant,
         read_only: bool,
     ) -> Result<ToolOutput> {
         let StartedCommand {
@@ -207,10 +202,9 @@ impl ToolRegistry {
             .flatten();
         let shown = digest(command, &raw);
         let output = format!(
-            "exit {code}{}\n{}{}{}{}",
+            "exit {code}{}\n{}{}{}",
             full_output_note(&log_path, &raw, shown.cut),
             shown.text,
-            slow_search_note(command, began.elapsed().as_secs()),
             plan_write_note(read_only, &raw),
             sandbox_note(grant.as_ref(), self, &raw)
         );
@@ -220,6 +214,7 @@ impl ToolRegistry {
             success: code == 0,
             mutated: !read_only && code == 0 && !readonly_verb(command),
             grant,
+            images: Vec::new(),
         })
     }
 
@@ -289,6 +284,7 @@ impl ToolRegistry {
             success: false,
             mutated: !read_only,
             grant: None,
+            images: Vec::new(),
         })
     }
 
@@ -330,6 +326,7 @@ impl ToolRegistry {
             success: true,
             mutated: !readonly_verb(command),
             grant: None,
+            images: Vec::new(),
         })
     }
 }

@@ -50,7 +50,11 @@ impl ToolRegistry {
         let restricted = self.policy.restricts_writes();
         let read_only = plan || restricted;
         let command = object_string(args, "command")?;
-        if let Some(output) = self.read_natively(command)? {
+        let workdir = args
+            .get("workdir")
+            .and_then(serde_json::Value::as_str)
+            .is_some_and(|dir| !dir.trim().is_empty());
+        if !workdir && let Some(output) = self.read_natively(command)? {
             return Ok(output);
         }
         let approved = self.take_approval();
@@ -82,6 +86,7 @@ impl ToolRegistry {
                 success: false,
                 mutated: false,
                 grant: Some(Grant::Danger(command.to_string())),
+                images: Vec::new(),
             }));
         }
         if approved {
@@ -143,6 +148,7 @@ impl ToolRegistry {
             text: crate::askpass::scrub(&status.text),
             mutated: false,
             grant: None,
+            images: Vec::new(),
         })
     }
 
@@ -150,7 +156,7 @@ impl ToolRegistry {
         let Some((read_args, pipe)) = native_read_args(command) else {
             return Ok(None);
         };
-        let mut text = tokio::task::block_in_place(|| self.read(&read_args.to_json()))?;
+        let mut text = tokio::task::block_in_place(|| self.read(&read_args.to_json()))?.text;
         if let Some(pipe) = pipe {
             text = pipe.apply(&text);
         }

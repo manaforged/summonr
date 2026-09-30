@@ -5,11 +5,15 @@ pub(crate) const JOB_WAIT_SECS: u64 = 120;
 #[cfg(test)]
 pub(crate) const JOB_WAIT_SECS: u64 = 1;
 pub(crate) const JOB_WAIT: Duration = Duration::from_secs(JOB_WAIT_SECS);
+#[cfg(not(test))]
+pub(crate) const COMMAND_WAIT_SECS: u64 = 3600;
+#[cfg(test)]
+pub(crate) const COMMAND_WAIT_SECS: u64 = 1;
 pub(crate) const CHILD_POLL: Duration = Duration::from_secs(1);
 pub(crate) const GRANT_WAIT: Duration = Duration::from_secs(600);
 pub(crate) const GRANT_POLL: Duration = Duration::from_millis(60);
 pub(crate) const STREAM_TOTAL: Duration = Duration::from_secs(24 * 60 * 60);
-pub(crate) const STREAM_IDLE: Duration = JOB_WAIT.saturating_mul(2);
+pub(crate) const STREAM_IDLE: Duration = Duration::from_secs(240);
 pub(crate) const CONNECT: Duration = Duration::from_secs(20);
 pub(crate) const PROBE: Duration = Duration::from_secs(5);
 pub(crate) const AUTH: Duration = Duration::from_secs(30);
@@ -39,7 +43,7 @@ pub(crate) const WORKER_STOP: Duration = Duration::from_secs(2);
 pub(crate) const REPEAT_WINDOW: Duration = Duration::from_secs(2);
 pub(crate) const RETRY_LIMIT: usize = 3;
 pub(crate) const REPAIR_LIMIT: usize = 6;
-pub(crate) const CHECKPOINT_ROUNDS: usize = 40;
+pub(crate) const EDIT_HUNK_ROWS: usize = 80;
 pub(crate) const SUMMARY_RETRY_ROUNDS: usize = 8;
 pub(crate) const RETRY_BASE: Duration = Duration::from_secs(1);
 pub(crate) const RETRY_MAX: Duration = Duration::from_secs(8);

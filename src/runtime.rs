@@ -120,8 +120,6 @@ pub struct Loop<P> {
     mailbox: Option<Mailbox>,
     mail_module: bool,
     mcp: Option<Arc<crate::mcp::Hub>>,
-    guard: guard::Guard,
-    checkpoint_rounds: usize,
     checkpoints: Option<crate::checkpoint::Checkpoints>,
     fallbacks: VecDeque<(P, String)>,
     hooks: crate::hooks::Hooks,
@@ -145,7 +143,6 @@ mod checkpoint;
 mod child;
 mod compaction;
 mod configure;
-mod guard;
 mod hooks;
 mod mail;
 mod mcp;
@@ -174,11 +171,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn effort_for(&self, role: workflow::Role) -> Option<Effort> {
-        let effort = self.configured_effort(role);
-        if self.boosted(role) {
-            return Some(Effort::Medium);
-        }
-        effort
+        self.configured_effort(role)
     }
 
     fn configured_effort(&self, role: workflow::Role) -> Option<Effort> {
@@ -186,12 +179,6 @@ impl<P: Provider> Loop<P> {
             .get(&role)
             .and_then(|(effort, _)| *effort)
             .or(self.effort)
-    }
-
-    pub(crate) fn boosted(&self, role: workflow::Role) -> bool {
-        self.guard.strained()
-            && role != workflow::Role::Summary
-            && self.configured_effort(role) == Some(Effort::Low)
     }
 
     pub(crate) fn price_for(&self, role: workflow::Role) -> Option<Price> {

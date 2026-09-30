@@ -3,9 +3,9 @@ pub(super) struct Digest {
     pub(super) cut: bool,
 }
 
-const OUTPUT_BUDGET: usize = 16 * 1024;
+const OUTPUT_BUDGET: usize = 50 * 1024;
 const HEAD_SHARE: usize = 6;
-const LINE_MAX: usize = 500;
+const LINE_MAX: usize = 8 * 1024;
 const PER_FILE: usize = 20;
 const BLOCK_LINES: usize = 12;
 const DIGEST_ROWS: usize = 400;

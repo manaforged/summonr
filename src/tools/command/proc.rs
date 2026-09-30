@@ -170,12 +170,13 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
         success: true,
         mutated: false,
         grant: None,
+        images: Vec::new(),
     }
 }
 
 pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String {
     format!(
-        "started job {id}\npid {pid}\nlog {}\nstate: running",
+        "started job {id}\npid {pid}\nlog {}\nstate: running\nwait for it: run_command {{\"job\":\"{id}\"}}",
         log_path.display()
     )
 }

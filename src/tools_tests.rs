@@ -170,7 +170,18 @@ fn ls_runs_in_the_shell_instead_of_turning_into_a_read() {
 #[test]
 fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
     let (_dir, mut tools) = workspace(&[]);
-    tools.set_modules(false, false, true, false);
+    let user = [
+        ("search", false),
+        ("lsp", false),
+        ("jobs", true),
+        ("skills", false),
+    ]
+    .map(|(name, on)| (name.to_string(), on))
+    .into();
+    tools.set_modules(&crate::modules::Switches::from_maps(
+        &user,
+        &std::collections::BTreeMap::new(),
+    ));
     tools.set_session("s1");
     let started = run(
         &tools,
@@ -182,6 +193,10 @@ fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
         .find_map(|line| line.strip_prefix("started job "))
         .unwrap_or_else(|| panic!("no job id in {started}"))
         .to_string();
+    assert!(
+        started.contains(&format!("run_command {{\"job\":\"{id}\"}}")),
+        "{started}"
+    );
     let polled = run(&tools, "run_command", serde_json::json!({"job": id}));
     assert!(polled.contains("finished"), "{polled}");
 }
@@ -211,5 +226,150 @@ fn todo_is_advertised_only_where_the_ledger_is_read() {
 #[test]
 fn web_search_is_off_unless_turned_on() {
     let empty = std::collections::BTreeMap::new();
-    assert!(!crate::modules::Switches::from_maps(&empty, &empty).enabled("search"));
+    assert!(
+        !crate::modules::Switches::from_maps(&empty, &empty)
+            .enabled(crate::modules::ModuleId::Search)
+    );
+}
+
+#[test]
+fn two_edits_on_one_line_both_apply() {
+    let (dir, tools) = workspace(&[("a.py", "a = x.astype(n.int) + y.astype(n.bool)\n")]);
+    let text = run(
+        &tools,
+        "edit",
+        serde_json::json!({"path": "a.py", "edits": [
+            {"old": ".astype(n.int)", "new": ".astype(int)"},
+            {"old": ".astype(n.bool)", "new": ".astype(bool)"}
+        ]}),
+    );
+    assert!(!text.contains("overlap"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join("a.py")).unwrap(),
+        "a = x.astype(int) + y.astype(bool)\n"
+    );
+}
+
+#[test]
+fn an_edit_with_unknown_keys_names_them() {
+    let (_dir, tools) = workspace(&[("a.txt", "one\n")]);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "edit".to_string(),
+            arguments: serde_json::json!({"path": "a.txt", "old_tags": "1:ab", "new": "two"})
+                .to_string(),
+        },
+        continuation: None,
+    };
+    let outcome = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    let Err(Error::Tool(message)) = outcome else {
+        panic!("expected a tool error");
+    };
+    assert!(message.contains("old_tags"), "{message}");
+}
+
+#[test]
+fn a_large_edit_returns_a_short_diff() {
+    let before: String = (0..200).map(|n| format!("old {n}\n")).collect();
+    let after: String = (0..200).map(|n| format!("new {n}\n")).collect();
+    let (_dir, tools) = workspace(&[("a.txt", &before)]);
+    let text = run(
+        &tools,
+        "edit",
+        serde_json::json!({"path": "a.txt", "old": before, "new": after}),
+    );
+    assert!(text.len() < 200, "{text}");
+    assert!(text.contains("lines 1-200"), "{text}");
+}
+
+#[test]
+fn reading_an_image_hands_it_to_a_model_that_sees_images() {
+    let (dir, mut tools) = workspace(&[]);
+    let mut png = Vec::new();
+    ::image::RgbImage::new(2, 2)
+        .write_to(
+            &mut std::io::Cursor::new(&mut png),
+            ::image::ImageFormat::Png,
+        )
+        .unwrap();
+    std::fs::write(dir.path().join("board.png"), &png).unwrap();
+    tools.set_images(true, None);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "read".to_string(),
+            arguments: serde_json::json!({"path": "board.png"}).to_string(),
+        },
+        continuation: None,
+    };
+    let output = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap();
+    assert_eq!(output.images.len(), 1, "{}", output.text);
+    assert!(
+        !output.text.contains("shown to the user"),
+        "{}",
+        output.text
+    );
+}
+
+#[test]
+fn a_long_output_line_reaches_the_model_whole() {
+    let (_dir, tools) = workspace(&[]);
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "printf 'x%.0s' $(seq 1 2000); echo"}),
+    );
+    assert!(!text.contains("clipped"), "{text}");
+    assert!(!text.contains("full output"), "{text}");
+    assert!(text.contains(&"x".repeat(2000)), "{} bytes", text.len());
+}
+
+#[test]
+fn a_cat_with_a_workdir_reads_from_that_directory() {
+    let (dir, tools) = workspace(&[("note.txt", "top\n")]);
+    std::fs::create_dir(dir.path().join("sub")).unwrap();
+    std::fs::write(dir.path().join("sub/note.txt"), "inner\n").unwrap();
+    let text = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "cat note.txt", "workdir": "sub"}),
+    );
+    assert!(text.contains("inner"), "{text}");
+}
+
+#[test]
+fn a_file_read_with_search_context_says_how_to_page_instead_of_dumping_the_file() {
+    let body: String = (1..2000).map(|n| format!("line {n}\n")).collect();
+    let (_dir, tools) = workspace(&[("big.py", &body)]);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: "read".to_string(),
+            arguments: serde_json::json!({"op": "file", "path": "big.py", "before": 5, "after": 5})
+                .to_string(),
+        },
+        continuation: None,
+    };
+    let error = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(error.contains("offset and limit"), "{error}");
 }

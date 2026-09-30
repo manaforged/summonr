@@ -53,19 +53,8 @@ pub(crate) struct File {
     pub import_mcp: Option<bool>,
     #[serde(default)]
     pub hooks: crate::hooks::Hooks,
-    #[serde(default)]
-    pub guard: Guard,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize)]
-pub(crate) struct Guard {
-    pub enabled: Option<bool>,
-    pub signature_warn: Option<usize>,
-    pub signature_stop: Option<usize>,
-    pub cycles: Option<bool>,
-    pub checkpoint_rounds: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

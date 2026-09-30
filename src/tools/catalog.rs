@@ -144,7 +144,7 @@ pub(crate) fn readonly(name: &str) -> bool {
 fn read() -> ToolDefinition {
     tool(
         "read",
-        "Read files (N:text; offset/limit; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree honoring ignore rules, show an image (op=image), or search contents (pattern with glob/type/exclude/context; hits path:N:col:line; tags true prints path:N:hash|line for tag-edits). op=help returns the full reference.",
+        "Read files (N:text; offset/limit; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, view an image file, or search contents (pattern, glob, context; hits path:N:col:line). op=help returns the full reference.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -153,18 +153,10 @@ fn read() -> ToolDefinition {
                 "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
                 "pattern": {"type": "string"},
                 "glob": {"type": "string"},
-                "literal": {"type": "boolean"},
-                "caseSensitive": {"type": "boolean"},
                 "paths": {"type": "array", "items": {"type": "string"}},
-                "files": {"type": "boolean"},
-                "count": {"type": "boolean"},
-                "type": {"type": "string"},
-                "exclude": {"type": "string"},
                 "before": {"type": "integer", "minimum": 0, "maximum": 10},
                 "after": {"type": "integer", "minimum": 0, "maximum": 10},
                 "context": {"type": "integer", "minimum": 0, "maximum": 10},
-                "no_ignore": {"type": "boolean"},
-                "multiline": {"type": "boolean"},
                 "tags": {"type": "boolean"},
                 "recursive": {"type": "boolean"},
                 "depth": {"type": "integer", "minimum": 1},
@@ -178,19 +170,16 @@ fn read() -> ToolDefinition {
 fn edit() -> ToolDefinition {
     tool(
         "edit",
-        "Change an existing file (path+to moves it). old+new replaces a unique substring, tag+new replaces tagged lines (tags come from a read with tags true), tag+text inserts after, edits[] applies several atomically, patch takes a *** Begin Patch document. op=help returns the full grammar. New or empty files: write.",
+        "Change an existing file. Use old+new: copy old exactly from the file, including indentation; it must be unique. edits[] applies several at once, in order if they overlap. Tags (from read with tags true) are only for when old is not unique. op=help covers moves, ranges, and patches. New or empty files: write.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "to": {"type": "string"},
                 "old": {"type": "string"},
                 "new": {"type": "string"},
                 "tag": {"type": "string"},
-                "end_tag": {"type": "string"},
                 "text": {"type": "string"},
                 "replace_all": {"type": "boolean"},
-                "patch": {"type": "string"},
                 "op": {"type": "string", "enum": ["delete", "sequence", "help"]},
                 "edits": {
                     "type": "array",
@@ -201,7 +190,6 @@ fn edit() -> ToolDefinition {
                             "old": {"type": "string"},
                             "new": {"type": "string"},
                             "tag": {"type": "string"},
-                            "end_tag": {"type": "string"},
                             "text": {"type": "string"},
                             "replace_all": {"type": "boolean"},
                             "op": {"type": "string", "enum": ["delete"]}
@@ -313,7 +301,7 @@ fn run_command() -> ToolDefinition {
         "run_command",
         &format!(
             "Run a shell command in the workspace sandbox. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
-            wait = crate::runtime::JOB_WAIT_SECS
+            wait = crate::limits::COMMAND_WAIT_SECS
         ),
         serde_json::json!({
             "type": "object",

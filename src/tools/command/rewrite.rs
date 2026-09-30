@@ -100,15 +100,6 @@ pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: 
     }
 }
 
-pub(super) fn slow_search_note(command: &str, secs: u64) -> String {
-    if secs < 30 || !super::digest::searchish(command) {
-        return String::new();
-    }
-    format!(
-        "\nnote: this search ran {secs}s; the grep tool skips ignored directories such as target/ and node_modules/"
-    )
-}
-
 pub(super) fn readonly_verb(command: &str) -> bool {
     crate::policy::split_segments(command)
         .iter()

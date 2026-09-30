@@ -1,123 +1,60 @@
 use std::path::{Component, Path, PathBuf};
 
+use super::walk::{Step, resolve, walk, without_heredocs};
 use super::{
-    Block, Cwd, Hazard, TEXT_HAZARDS, any_hit, builtin_deny, split_segments, subcommand, unquoted,
-    verb_row, write_block_segments,
+    Block, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, subcommand, verb_row,
+    write_block,
 };
 
 pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
-    let command = &without_heredocs(command);
-    let segments = split_segments(command.trim());
-    if builtin_deny(command, &segments) {
+    let steps = walk(command, workspace, &[]);
+    let texts: Vec<String> = steps.iter().map(|step| step.text.clone()).collect();
+    if builtin_deny(&without_heredocs(command), &texts) {
         return Some("it can damage the system");
     }
     if matches!(
-        write_block_segments(&segments, workspace, &[]),
+        write_block(&steps, workspace, &[]),
         Some(Block::Protected(_))
     ) {
         return Some("it writes a protected path");
     }
-    let mut cwd = Some(workspace.to_path_buf());
-    segments.iter().find_map(|segment| {
-        let reason = risky(segment, workspace, cwd.as_deref());
-        cwd = next_cwd(segment, cwd.take());
-        reason
-    })
+    steps.iter().find_map(|step| risky(step, workspace))
 }
 
-fn without_heredocs(command: &str) -> String {
-    let mut kept = Vec::new();
-    let mut ending: Option<String> = None;
-    for line in command.lines() {
-        if let Some(end) = &ending {
-            if line.trim() == end {
-                ending = None;
-            }
-            continue;
-        }
-        kept.push(line);
-        ending = heredoc_end(line);
-    }
-    kept.join("\n")
-}
-
-fn heredoc_end(line: &str) -> Option<String> {
-    let (_, rest) = line.split_once("<<")?;
-    let rest = rest.trim_start_matches(['-', '~']).trim_start();
-    if rest.starts_with('<') {
-        return None;
-    }
-    let word: String = rest
-        .trim_start_matches(['\'', '"'])
-        .chars()
-        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+fn inquiry(args: &[String]) -> bool {
+    let asked: Vec<&String> = args
+        .iter()
+        .filter(|arg| {
+            !arg.trim_start_matches(|c: char| c.is_ascii_digit())
+                .starts_with(['>', '<'])
+        })
         .collect();
-    (!word.is_empty()).then_some(word)
+    !asked.is_empty()
+        && asked
+            .iter()
+            .all(|arg| INQUIRY_FLAGS.contains(&arg.as_str()))
 }
 
-fn next_cwd(segment: &str, cwd: Option<PathBuf>) -> Option<PathBuf> {
-    let words = argv(segment);
-    let row = verb(&words).and_then(|verb| verb_row(&verb));
-    match row.map(|row| row.cwd) {
-        Some(Cwd::Tracked) => {
-            let target = words.iter().skip(1).find(|word| !word.starts_with('-'))?;
-            resolve(target, cwd.as_deref()?)
-        }
-        Some(Cwd::Changes) => None,
-        Some(Cwd::Stays) | None => cwd,
-    }
-}
-
-fn resolve(target: &str, cwd: &Path) -> Option<PathBuf> {
-    if target.contains(['$', '`']) || target.starts_with('~') {
-        return None;
-    }
-    let mut path = if Path::new(target).is_absolute() {
-        PathBuf::new()
-    } else {
-        cwd.to_path_buf()
-    };
-    for part in Path::new(target).components() {
-        match part {
-            Component::ParentDir => {
-                path.pop();
-            }
-            Component::CurDir => {}
-            other => path.push(other),
-        }
-    }
-    Some(path)
-}
-
-pub(crate) fn argv(segment: &str) -> Vec<String> {
-    unquoted(segment, &[" ", "\t"])
-        .into_iter()
-        .map(|word| word.trim_matches(|c| c == '"' || c == '\'').to_string())
-        .filter(|word| !word.is_empty())
-        .skip_while(|word| word.contains('=') && !word.starts_with('-'))
-        .collect()
-}
-
-pub(crate) fn verb(words: &[String]) -> Option<String> {
-    Some(words.first()?.rsplit('/').next()?.to_ascii_lowercase())
-}
-
-fn risky(segment: &str, workspace: &Path, cwd: Option<&Path>) -> Option<&'static str> {
-    let words = argv(segment);
-    let verb = verb(&words)?;
-    let args = &words[1..];
-    let lower = segment.to_ascii_lowercase();
+fn risky(step: &Step, workspace: &Path) -> Option<&'static str> {
+    let verb = step.verb()?;
+    let args = &step.argv()[1..];
+    let cwd = step.cwd.as_deref();
+    let lower = step.text.to_ascii_lowercase();
     if let Some((_, reason)) = TEXT_HAZARDS.iter().find(|(text, _)| lower.contains(text)) {
         return Some(reason);
     }
     match verb_row(&verb)?.hazard {
         Hazard::None => None,
+        Hazard::Args(_) if inquiry(args) => None,
         Hazard::Args(rules) => rules
             .iter()
             .find(|rule| any_hit(rule.when, args) && !(rule.broad && narrow(args, workspace, cwd)))
             .map(|rule| rule.reason),
         Hazard::Sub { skip, rules } => {
             let (sub, rest) = subcommand(args, skip)?;
+            if inquiry(rest) {
+                return None;
+            }
             rules
                 .iter()
                 .find(|rule| rule.names.contains(&sub) && any_hit(rule.when, rest))
@@ -165,10 +102,11 @@ fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
 }
 
 fn broad(path: &Path, workspace: &Path, home: Option<&Path>) -> bool {
-    let path = if path
-        .file_name()
-        .is_some_and(|name| name.to_string_lossy().contains('*'))
-    {
+    let path = if path.file_name().is_some_and(|name| {
+        name.to_string_lossy()
+            .chars()
+            .all(|c| matches!(c, '*' | '?' | '.'))
+    }) {
         path.parent().unwrap_or(path)
     } else {
         path
@@ -177,7 +115,10 @@ fn broad(path: &Path, workspace: &Path, home: Option<&Path>) -> bool {
         .components()
         .filter_map(|part| match part {
             Component::Normal(name) => Some(name.to_string_lossy().into_owned()),
-            _ => None,
+            Component::Prefix(_)
+            | Component::RootDir
+            | Component::CurDir
+            | Component::ParentDir => None,
         })
         .collect();
     let shallow = match parts.as_slice() {
@@ -187,7 +128,7 @@ fn broad(path: &Path, workspace: &Path, home: Option<&Path>) -> bool {
             first.as_str(),
             "usr" | "etc" | "var" | "opt" | "System" | "Library" | "private"
         ),
-        _ => false,
+        [_, _, _, ..] => false,
     };
     let guarded = |root: &Path| root.starts_with(path);
     shallow || guarded(workspace) || home.is_some_and(guarded)

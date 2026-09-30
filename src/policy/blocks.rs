@@ -1,3 +1,4 @@
+use super::walk::Step;
 use super::*;
 
 pub(super) enum Block {
@@ -31,92 +32,100 @@ pub(super) fn block_target(
     None
 }
 
-pub(super) fn write_block_segments(
-    segments: &[String],
-    workspace: &Path,
-    roots: &[PathBuf],
-) -> Option<Block> {
-    let mut outside_cwd = false;
-    for segment in segments {
-        let segment = if outside_cwd || !workspace.join(".git").exists() {
-            segment.clone()
-        } else {
-            segment.replace("$(git rev-parse --show-toplevel)", ".")
-        };
-        let words: Vec<String> = unquoted(&segment, &[" ", "\t"])
-            .into_iter()
-            .map(|word| word.trim_matches(|c| c == '"' || c == '\'').to_string())
-            .filter(|word| !word.is_empty())
-            .collect();
-        let Some(verb) = words.iter().find(|word| !word.contains('=')) else {
-            continue;
-        };
-        let verb = verb.rsplit('/').next().unwrap_or(verb).to_string();
-        let args = words
-            .iter()
-            .skip_while(|word| {
-                word.contains('=') || **word != verb && !word.ends_with(&format!("/{verb}"))
-            })
-            .skip(1);
-        let row = verb_row(&verb);
-        let write = row.map_or(Write::None, |row| row.write);
-        let creates = matches!(write, Write::Creates);
-        let destructive = write.destroys(&words);
-        for word in &words {
-            if let Some((_, target)) = word.split_once('>') {
-                let target = target.trim_start_matches(['>', '&', '|']);
-                let target = if target.is_empty() { continue } else { target };
-                if let Some(block) = block_target(target, workspace, outside_cwd, roots) {
-                    return Some(block);
-                }
-            }
-        }
-        let mut redirect_next = false;
-        let mut targets: Vec<String> = Vec::new();
-        for word in args.clone() {
-            if redirect_next {
-                redirect_next = false;
-                if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
-                    return Some(block);
-                }
-                continue;
-            }
-            if word == ">" || word == ">>" || word == "1>" || word == "2>" || word == "&>" {
-                redirect_next = true;
-                continue;
-            }
-            if word.starts_with('-') {
-                continue;
-            }
-            if row.is_some_and(|row| row.cwd == Cwd::Tracked) {
-                if is_outside(word, workspace, outside_cwd, roots) {
-                    outside_cwd = true;
-                }
-                break;
-            }
-            if creates {
-                if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
-                    return Some(block);
-                }
-                continue;
-            }
-            if destructive {
-                if in_temp(word) {
-                    return Some(Block::Outside(word.clone()));
-                }
-                targets.push(word.clone());
-            }
-        }
-        let checked: Vec<&String> = if matches!(write, Write::Last) {
-            targets.last().into_iter().collect()
-        } else {
-            targets.iter().collect()
-        };
-        for word in checked {
-            if let Some(block) = block_target(word, workspace, outside_cwd, roots) {
-                return Some(block);
-            }
-        }
+pub(super) fn write_block(steps: &[Step], workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
+    steps
+        .iter()
+        .find_map(|step| step_block(step, workspace, roots))
+}
+
+fn step_block(step: &Step, workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
+    let check = |target: &str| block_target(target, workspace, step.outside, roots);
+    if let Some(block) = step.redirects().into_iter().find_map(check) {
+        return Some(block);
     }
-    None
+    let row = verb_row(&step.verb()?)?;
+    if row.cwd == Cwd::Tracked {
+        return None;
+    }
+    let operands = step.operands();
+    if matches!(row.write, Write::Creates) {
+        return operands.into_iter().find_map(check);
+    }
+    if !row.write.destroys(&step.words) {
+        return None;
+    }
+    if let Some(temp) = operands.iter().find(|word| in_temp(word)) {
+        return Some(Block::Outside((*temp).to_string()));
+    }
+    let checked = if matches!(row.write, Write::Last) {
+        &operands[operands.len().saturating_sub(1)..]
+    } else {
+        &operands[..]
+    };
+    checked.iter().copied().find_map(check)
+}
+
+fn write_directory(path: &str) -> PathBuf {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    let directory =
+        trimmed.rsplit_once(['/', '\\']).map_or(
+            trimmed,
+            |(head, _)| {
+                if head.is_empty() { "/" } else { head }
+            },
+        );
+    expand_path(directory)
+}
+
+#[must_use]
+pub(crate) fn write_denied(path: &str) -> String {
+    let dir = write_directory(path);
+    format!(
+        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
+        dir.display(),
+        dir.display()
+    )
+}
+
+#[must_use]
+pub(crate) fn outside_hint(path: &str) -> String {
+    write_denied(path)
+}
+
+pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
+    match error {
+        Error::EditApproval { setting, .. } => Some(Grant::Edit(setting)),
+        Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
+        _ => None,
+    }
+}
+
+fn grant_from_message(message: &str) -> Option<Grant> {
+    let rest = message.split_once("/permissions write ")?.1;
+    let dir = rest.split([',', '\n']).next()?.trim();
+    if dir.is_empty() || dir == "PATH" {
+        return None;
+    }
+    write_grant(expand_path(dir))
+}
+
+pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
+    match write_block(&walk::walk(command, workspace, roots), workspace, roots) {
+        Some(Block::Outside(path)) => write_grant(write_directory(&path)),
+        Some(Block::Protected(path)) => {
+            write_grant(write_directory(&locate(&path, workspace).to_string_lossy()))
+        }
+        None => None,
+    }
+}
+
+fn write_grant(path: PathBuf) -> Option<Grant> {
+    if !(path.is_absolute() || path.has_root()) {
+        return None;
+    }
+    Some(if protected_write(&path) {
+        Grant::Guarded(path)
+    } else {
+        Grant::Write(path)
+    })
 }

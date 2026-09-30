@@ -1,5 +1,5 @@
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use super::*;
@@ -14,8 +14,8 @@ fn stalled_server(filler: &'static str) -> String {
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     std::thread::spawn(move || {
         let (mut socket, _) = listener.accept().unwrap();
+        read_request(&mut socket);
         let mut request = [0u8; 65536];
-        drop(socket.read(&mut request));
         let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
         let first = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
         if socket
@@ -81,4 +81,30 @@ async fn a_stream_of_empty_deltas_fails_as_a_retryable_cut() {
         "{failure:?}"
     );
     assert_eq!(partial.text, "hi");
+}
+
+fn read_request(socket: &mut TcpStream) {
+    let mut request = Vec::new();
+    let mut buf = [0u8; 65536];
+    loop {
+        let Ok(read) = socket.read(&mut buf) else {
+            return;
+        };
+        if read == 0 {
+            return;
+        }
+        request.extend_from_slice(&buf[..read]);
+        let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") else {
+            continue;
+        };
+        let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+        let length = head
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length:"))
+            .and_then(|value| value.trim().parse::<usize>().ok())
+            .unwrap_or(0);
+        if request.len() >= end + 4 + length {
+            return;
+        }
+    }
 }

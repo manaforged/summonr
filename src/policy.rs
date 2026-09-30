@@ -5,7 +5,13 @@ use serde::Deserialize;
 use crate::error::{Error, Result};
 
 mod danger;
-pub(crate) use danger::{argv, danger, verb};
+mod walk;
+
+pub(crate) use walk::shell_words;
+pub(crate) use {
+    danger::danger,
+    walk::{argv, verb},
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Policy {
@@ -148,7 +154,11 @@ impl Policy {
         if self.unrestricted {
             return Ok(());
         }
-        match write_block_segments(&segments, workspace, &self.roots) {
+        match write_block(
+            &walk::walk(command, workspace, &self.roots),
+            workspace,
+            &self.roots,
+        ) {
             Some(Block::Protected(path)) => {
                 return Err(Error::Denied(format!("`{path}` is a protected path")));
             }
@@ -200,6 +210,37 @@ impl Policy {
         Ok(())
     }
 
+    pub(crate) fn tool(&self, alias: &str, readonly: bool) -> Result<()> {
+        if self.read_only && !readonly {
+            return Err(Error::Denied(format!(
+                "`{alias}` can change state and is unavailable in plan mode"
+            )));
+        }
+        if self.unrestricted {
+            return Ok(());
+        }
+        if let Some(pattern) = self
+            .deny
+            .iter()
+            .find(|pattern| tool_matches(alias, pattern))
+        {
+            return Err(Error::Denied(format!("denied by policy `{pattern}`")));
+        }
+        if readonly
+            || !self.strict
+            || !self.allow.is_empty()
+                && self
+                    .allow
+                    .iter()
+                    .all(|list| list.iter().any(|pattern| tool_matches(alias, pattern)))
+        {
+            return Ok(());
+        }
+        Err(Error::Denied(format!(
+            "`{alias}` can change state and is not on every configured allow list"
+        )))
+    }
+
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
@@ -236,71 +277,6 @@ impl Policy {
 }
 
 #[must_use]
-pub(crate) fn write_directory(path: &str) -> PathBuf {
-    let trimmed = path.trim_end_matches(['/', '\\']);
-    let directory =
-        trimmed.rsplit_once(['/', '\\']).map_or(
-            trimmed,
-            |(head, _)| {
-                if head.is_empty() { "/" } else { head }
-            },
-        );
-    expand_path(directory)
-}
-
-#[must_use]
-pub(crate) fn write_denied(path: &str) -> String {
-    let dir = write_directory(path);
-    format!(
-        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
-        dir.display(),
-        dir.display()
-    )
-}
-
-#[must_use]
-pub(crate) fn outside_hint(path: &str) -> String {
-    write_denied(path)
-}
-
-pub(crate) fn grant_from_error(error: &Error) -> Option<Grant> {
-    match error {
-        Error::EditApproval { setting, .. } => Some(Grant::Edit(setting)),
-        Error::Denied(message) | Error::Tool(message) => grant_from_message(message),
-        _ => None,
-    }
-}
-
-pub(crate) fn grant_from_message(message: &str) -> Option<Grant> {
-    let rest = message.split_once("/permissions write ")?.1;
-    let dir = rest.split([',', '\n']).next()?.trim();
-    if dir.is_empty() || dir == "PATH" {
-        return None;
-    }
-    write_grant(expand_path(dir))
-}
-
-pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
-    match write_block_segments(&split_segments(command.trim()), workspace, roots) {
-        Some(Block::Outside(path)) => write_grant(write_directory(&path)),
-        Some(Block::Protected(path)) => {
-            write_grant(write_directory(&locate(&path, workspace).to_string_lossy()))
-        }
-        None => None,
-    }
-}
-
-fn write_grant(path: PathBuf) -> Option<Grant> {
-    if !(path.is_absolute() || path.has_root()) {
-        return None;
-    }
-    Some(if protected_write(&path) {
-        Grant::Guarded(path)
-    } else {
-        Grant::Write(path)
-    })
-}
-
 pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
     let verb = first_verb(command)?;
     let home = std::env::var_os("HOME")
@@ -386,6 +362,7 @@ mod shell;
 mod verbs;
 
 use blocks::*;
+pub(crate) use blocks::{grant_from_error, outside_hint, outside_write, write_denied};
 use paths::*;
 use shell::*;
 
@@ -395,3 +372,10 @@ pub(crate) use verbs::*;
 #[cfg(test)]
 #[path = "policy_tests.rs"]
 mod tests;
+
+fn tool_matches(alias: &str, pattern: &str) -> bool {
+    pattern
+        .trim()
+        .strip_suffix('*')
+        .map_or(alias == pattern.trim(), |prefix| alias.starts_with(prefix))
+}

@@ -1,8 +1,9 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::error::{Error, Result};
 use crate::jobs;
 use crate::tools::sandbox::Sandbox;
+use crate::tools::spill::full_output_note;
 use crate::tools::{ToolOutput, ToolRegistry};
 
 use super::digest::digest;
@@ -24,7 +25,7 @@ impl Wait {
         match explicit {
             Some(seconds) => Self::Kill(seconds),
             None if detach => Self::Detach(crate::limits::COMMAND_WAIT_SECS),
-            None => Self::Kill(crate::limits::COMMAND_WAIT_SECS),
+            None => Self::Kill(crate::limits::COMMAND_KILL_SECS),
         }
     }
 
@@ -174,10 +175,8 @@ impl ToolRegistry {
         if !keep {
             return;
         }
-        if let Some(temp) = temp
-            && let Ok(mut logs) = self.logs.lock()
-        {
-            logs.push(temp);
+        if let Some(temp) = temp {
+            self.keep_dir(temp);
         }
     }
 
@@ -234,9 +233,7 @@ impl ToolRegistry {
                 Err(error) => detail = format!(" ({error} — could not continue it as a job)"),
             }
         }
-        let headline = format!(
-            "command timed out after {seconds}s{detail} — retry with a larger timeout_secs or run it with background true"
-        );
+        let headline = format!("command timed out after {seconds}s{detail}");
         self.killed(started, command, headline, group, read_only)
             .await
     }
@@ -329,17 +326,6 @@ impl ToolRegistry {
             images: Vec::new(),
         })
     }
-}
-
-fn full_output_note(log_path: &Path, raw: &str, cut: bool) -> String {
-    if !cut {
-        return String::new();
-    }
-    format!(
-        "\n[full output: {} — {} lines]",
-        log_path.display(),
-        raw.lines().count()
-    )
 }
 
 fn adopt(mut child: CommandChild, mut group: ProcessGroup, exit_path: PathBuf, log_path: PathBuf) {

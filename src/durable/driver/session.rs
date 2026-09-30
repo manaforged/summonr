@@ -119,7 +119,7 @@ impl SessionDriver {
                 && !work.terminal()
             {
                 work.pending.push(
-                    "[summon: the previous attempt at this turn was interrupted; the workspace is as it left it — continue from there]"
+                    "[summon: the previous attempt at this turn was interrupted; the workspace is as it left it]"
                         .to_string(),
                 );
                 self.checkpoint()?;

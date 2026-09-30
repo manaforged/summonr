@@ -1,7 +1,7 @@
 mod hazards;
 mod table;
 
-pub(crate) use hazards::TEXT_HAZARDS;
+pub(crate) use hazards::{INQUIRY_FLAGS, TEXT_HAZARDS};
 
 #[derive(Clone, Copy)]
 pub(crate) enum Cond {

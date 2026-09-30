@@ -39,7 +39,7 @@ summonr)
   fi
   HOME=$home SUMMONR_HOME=$logs/summonr SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$key \
     SUMMONR_MAX_TOKENS=$max_tokens \
-    "$tools/summonr/bin/summonr" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} ${BENCH_MAX_SECS:+--max-secs "$BENCH_MAX_SECS"} -p -- "$prompt"
+    "$tools/summonr/bin/summonr" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -p -- "$prompt"
   ;;
 pi)
   mkdir -p "$home/pi"

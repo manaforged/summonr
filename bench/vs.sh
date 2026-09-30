@@ -32,7 +32,8 @@ if [ -z "${DEEPSEEK_API_KEY:-}" ]; then
 fi
 [ -n "$DEEPSEEK_API_KEY" ] || { echo "vs.sh: no DEEPSEEK_API_KEY and none found in config backups" >&2; exit 1; }
 
-python3 "$repo/bench/proxy.py" --bind 127.0.0.1 --port "$port" \
+export DEEPSEEK_API_KEY
+python3 "$repo/bench/proxy.py" --bind 127.0.0.1 --port "$port" --key-env DEEPSEEK_API_KEY \
     --log "$out/proxy.jsonl" --upstream https://api.deepseek.com/v1 &
 proxy_pid=$!
 disown

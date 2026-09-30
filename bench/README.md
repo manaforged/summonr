@@ -21,11 +21,11 @@ Every arm runs at effort `high` (`BENCH_EFFORT`, default `high`): summonr gets `
 printf 'DEEPSEEK_API_KEY=...\n' > deepseek.env
 chmod 600 deepseek.env
 ./tools.sh ./tools /path/to/summonr
-python3 proxy.py --bind 0.0.0.0 --port 8094 --log logs/deepseek.jsonl \
-  --upstream https://api.deepseek.com --anthropic https://api.deepseek.com/anthropic
+(set -a; . ./deepseek.env; set +a; python3 proxy.py --bind 0.0.0.0 --port 8094 --key-env DEEPSEEK_API_KEY --log logs/deepseek.jsonl \
+  --upstream https://api.deepseek.com --anthropic https://api.deepseek.com/anthropic)
 BENCH_REPEATS=1 ./run.sh tune-10 tasks-tune.txt
 # GLM-5.3-Flash (glm.env with ZAI_API_KEY):
-# python3 proxy.py --bind 0.0.0.0 --port 8095 --log logs/glm.jsonl --upstream https://api.z.ai/api/coding/paas/v4 --anthropic https://api.z.ai/api/anthropic
+# (set -a; . ./glm.env; set +a; python3 proxy.py --bind 0.0.0.0 --port 8095 --key-env ZAI_API_KEY --log logs/glm.jsonl --upstream https://api.z.ai/api/coding/paas/v4 --anthropic https://api.z.ai/api/anthropic)
 # BENCH_VENDOR=zai BENCH_REPEATS=1 ./run.sh tune-10-glm tasks-tune.txt
 python3 table.py tune-10 --subject summonr --proxy logs/deepseek.jsonl --tasks tasks-tune.txt
 # after summonr is not failing the 10:

@@ -23,7 +23,7 @@ impl<P: Provider> Loop<P> {
             let round = *reached;
             let round_tools = tools.as_slice();
             if let Some(reason) = self
-                .open_round(round, &mut messages, round_tools, usage, events, &mut emit)
+                .open_round(&mut messages, round_tools, usage, events, &mut emit)
                 .await?
             {
                 abort_reason = Some(reason);
@@ -54,7 +54,7 @@ impl<P: Provider> Loop<P> {
                 .await?;
                 continue;
             }
-            if calls.is_empty() && !self.reprompts(&message) {
+            if calls.is_empty() {
                 return self
                     .finish_turn(
                         message,
@@ -112,11 +112,7 @@ impl<P: Provider> Loop<P> {
             )
             .map_err(super::session_err)?;
         self.emit_records(events, emit)?;
-        if calls.is_empty() {
-            return self.steer_continue(messages, events, emit);
-        }
         self.settle(pre, events, emit).await?;
-        self.guard.worked();
         self.execute_calls(planned, calls, messages, events, emit, usage)
             .await
     }
@@ -155,16 +151,12 @@ impl<P: Provider> Loop<P> {
 
     async fn open_round(
         &mut self,
-        round: usize,
         messages: &mut Vec<Message>,
         tools: &[ToolDefinition],
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<String>> {
-        if let Some(reason) = self.steer_round(round, messages, events, emit).await? {
-            return Ok(Some(reason));
-        }
         if let Some(reason) = self.round_abort() {
             return Ok(Some(reason));
         }
@@ -310,7 +302,6 @@ impl<P: Provider> Loop<P> {
             self.asked.retain(|grant| !matches!(grant, Grant::Edit(_)));
         }
         self.summary_wait = 0;
-        self.guard.reset();
         self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
         self.prepare_work(&input.text, &commands)?;

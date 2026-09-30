@@ -11,7 +11,11 @@ pub(crate) struct Wire;
 
 fn reasoning(body: &mut Value, call: &CompletionRequest<'_>) {
     let plan = call.reasoning.plan(&call.model);
-    match plan.step(call.effort) {
+    let step = plan.step(call.effort);
+    if super::traits::traits(&call.model).preserved && !matches!(step, Step::Off(_)) {
+        body["thinking"] = json!({"type": "enabled", "clear_thinking": false});
+    }
+    match step {
         Step::Default => {}
         Step::Level(level) => match plan.field {
             EffortField::ReasoningEffort => body["reasoning_effort"] = json!(level.as_str()),
@@ -51,6 +55,9 @@ impl Chat for Wire {
         }
         if stream {
             body["stream_options"] = json!({"include_usage": true});
+            if !call.tools.is_empty() && super::traits::traits(&call.model).tool_stream {
+                body["tool_stream"] = json!(true);
+            }
         }
         reasoning(&mut body, call);
         Ok(body)

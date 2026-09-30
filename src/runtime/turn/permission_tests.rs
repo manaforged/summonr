@@ -22,9 +22,7 @@ fn command(text: &str) -> ToolCall {
 async fn delete_outside(answer: Option<&str>) -> (bool, String, Vec<Event>) {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
-    let outside = tempfile::tempdir().unwrap();
-    let target = outside.path().join("victim");
-    std::fs::create_dir(&target).unwrap();
+    let target = workspace.path().to_path_buf();
     let mut loop_ = session(workspace.path(), home.path()).with_unrestricted_commands();
     if let Some(answer) = answer {
         let queue = VecDeque::from([UserInput::from(answer.to_string())]);
@@ -82,9 +80,27 @@ fn leaving_plan_keeps_a_sandbox_the_user_asked_for() {
     let workspace = tempfile::tempdir().unwrap();
     let home = tempfile::tempdir().unwrap();
     let mut loop_ = session(workspace.path(), home.path())
-        .with_sandbox(false)
+        .with_sandbox(crate::Network::Allowed)
         .unwrap()
         .with_plan();
     loop_.set_mode(crate::RunMode::Auto).unwrap();
     assert!(loop_.has_sandbox());
+}
+
+#[tokio::test]
+async fn a_repeated_failure_reaches_the_model_unchanged() {
+    let workspace = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let mut loop_ = session(workspace.path(), home.path());
+    let call = command("make test");
+    for _ in 0..8 {
+        let text = loop_
+            .tool_text(
+                &call,
+                false,
+                "exit 2 make: *** No rule to make target".to_string(),
+            )
+            .await;
+        assert_eq!(text, "exit 2 make: *** No rule to make target");
+    }
 }

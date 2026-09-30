@@ -90,7 +90,7 @@ impl<P: Provider> Loop<P> {
             }
             if !running.is_empty() {
                 let note = format!(
-                    "[summon: background work still running — {} — wait for it with the job or child id, or kill it, before you report done]",
+                    "[summon: background work still running — {}]",
                     running.join("; ")
                 );
                 if self
@@ -268,17 +268,9 @@ impl<P: Provider> Loop<P> {
             .finish_provider(durable_attempt, &message.content, reasoning, meter, meta)
             .map_err(super::session_err)?;
         self.emit_records(events, emit)?;
-        let control = if message.content.trim().is_empty() && !reasoning.is_empty() {
-            UserInput::from(
-                "/no_think [summon control: the previous round used its output on \
-                 reasoning. Stop reasoning and give the concise final answer now.]",
-            )
-        } else {
-            UserInput::from(
-                "[summon control: the previous round reached its output limit. Continue \
-                 briefly from the partial answer.]",
-            )
-        };
+        let control = UserInput::from(
+            "[summon control: the previous reply reached the output limit and was cut off.]",
+        );
         self.session.steer(&control).map_err(super::session_err)?;
         messages.push(Message::user(control));
         self.push_event(

@@ -31,37 +31,27 @@ pub fn summonr_home() -> Result<PathBuf> {
     Ok(dir)
 }
 
-pub fn system_prompt(workspace: &Path) -> String {
-    compose(
-        workspace,
-        summonr_home().ok().as_deref(),
-        false,
-        true,
-        false,
-    )
+#[derive(Clone, Copy, Default)]
+pub struct Sources {
+    pub trust: bool,
+    pub skills: bool,
+    pub images: bool,
 }
 
-pub fn system_prompt_with(workspace: &Path, trust: bool, skills: bool, images: bool) -> String {
-    compose(
-        workspace,
-        summonr_home().ok().as_deref(),
+pub fn system_prompt(workspace: &Path, sources: Sources) -> String {
+    compose(workspace, summonr_home().ok().as_deref(), sources)
+}
+
+pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -> String {
+    let Sources {
         trust,
         skills,
         images,
-    )
-}
-
-pub(crate) fn compose(
-    workspace: &Path,
-    home: Option<&Path>,
-    trust: bool,
-    skills: bool,
-    images: bool,
-) -> String {
+    } = sources;
     if let Ok(prompt) = std::env::var("SUMMONR_SYSTEM_PROMPT")
         && !prompt.trim().is_empty()
     {
-        return format!("{prompt}\n\n{PERSISTENCE}");
+        return prompt;
     }
     let mut preamble = Vec::new();
     if let Some(home) = home {
@@ -75,18 +65,15 @@ pub(crate) fn compose(
     } else {
         preamble
     };
-    parts.push(PERSISTENCE.to_string());
     if trust {
         instructions(&mut parts, workspace);
     }
-    parts.push(
-        if images {
-            "The model accepts image input: `read` op=image shows an image to the user, and @{path} attaches an image to your reply."
-        } else {
+    if !images {
+        parts.push(
             "The model does not accept image input. Do not attach images; describe them or ask the user for text instead."
-        }
-        .to_string(),
-    );
+                .to_string(),
+        );
+    }
     if skills && let Some(catalog) = crate::skills::catalog(workspace) {
         parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
@@ -94,14 +81,21 @@ pub(crate) fn compose(
     parts.join("\n\n")
 }
 
+pub(crate) struct Harness<'a> {
+    pub(crate) mode: crate::RunMode,
+    pub(crate) checks: &'a [String],
+    pub(crate) sandbox: Option<crate::Network>,
+    pub(crate) children: bool,
+}
+
 #[must_use]
-pub fn harness_section(
-    mode: crate::RunMode,
-    checks: &[String],
-    network: bool,
-    sandboxed: bool,
-    children: bool,
-) -> String {
+pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
+    let &Harness {
+        mode,
+        checks,
+        sandbox,
+        children,
+    } = harness;
     let mut parts = vec![
         match mode {
             crate::RunMode::Plan => "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer.",
@@ -112,8 +106,8 @@ pub fn harness_section(
         .to_string(),
     ];
     let auto = mode == crate::RunMode::Auto;
-    if sandboxed {
-        parts.push(if network {
+    if let Some(network) = sandbox {
+        parts.push(if network == crate::Network::Allowed {
             "Shell commands run in the OS sandbox with network allowed. Writes stay under the workspace and [sandbox] write roots."
         } else {
             "Shell commands run in the OS sandbox with network denied. Writes stay under the workspace and [sandbox] write roots."
@@ -241,10 +235,6 @@ fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Opti
     (!kept.is_empty()).then(|| kept.join("\n\n"))
 }
 
-const PERSISTENCE: &str = "<persistence>
-Finish the authorized task; do not shrink scope or hand work back early. Summonr compacts context automatically — keep progress clear and resume after it. Respect cancellation and permission boundaries.
-</persistence>";
-
 const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
 
 <rules>
@@ -252,15 +242,8 @@ const DEFAULT: &str = "You are a coding assistant running inside summonr, a term
 - Unsure of a tool's options? call it with op=help for the full reference
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
-</rules>
-
-<work>
-- Treat the request as a contract: every name, signature, path, format, and stated behaviour must hold exactly
-- Make the smallest change that meets all of it; never drop a requirement to keep it simple
-- Before you finish, run it the way the request says it will be used (import it, call it, run its test or command) and fix what fails
-- You are done when every requirement is met and verified, not when your own check passes
-- Report in the fewest words: what changed, the file paths, and how you verified it
-</work>";
+- Be concise in your responses
+</rules>";
 
 #[cfg(test)]
 #[path = "prompt_tests.rs"]

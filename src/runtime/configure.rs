@@ -137,11 +137,6 @@ impl<P: Provider> Loop<P> {
             mailbox: None,
             mail_module: false,
             mcp: None,
-            guard: super::guard::Guard::configured(&config.guard),
-            checkpoint_rounds: config
-                .guard
-                .checkpoint_rounds
-                .unwrap_or(crate::limits::CHECKPOINT_ROUNDS),
             checkpoints: None,
             fallbacks: VecDeque::new(),
             compact_tokens: None,
@@ -176,18 +171,14 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn set_modules(&mut self, switches: &crate::modules::Switches) {
+        use crate::modules::ModuleId;
         if self.catalog_frozen {
             return;
         }
-        self.tools.set_modules(
-            switches.enabled("search"),
-            switches.enabled("lsp"),
-            switches.enabled("jobs"),
-            switches.enabled("skills"),
-        );
-        self.tasks = switches.enabled("task");
-        self.mail_module = switches.enabled("mail");
-        self.switch_mcp(switches.enabled("mcp"));
+        self.tools.set_modules(switches);
+        self.tasks = switches.enabled(ModuleId::Task);
+        self.mail_module = switches.enabled(ModuleId::Mail);
+        self.switch_mcp(switches.enabled(ModuleId::Mcp));
         self.schema = None;
     }
 
@@ -208,14 +199,14 @@ impl<P: Provider> Loop<P> {
         self.tools.set_images(model_images, vision);
     }
 
-    pub fn with_sandbox(mut self, deny_network: bool) -> Result<Self> {
-        self.tools.enable_sandbox(deny_network)?;
+    pub fn with_sandbox(mut self, network: crate::Network) -> Result<Self> {
+        self.tools.enable_sandbox(network)?;
         Ok(self)
     }
 
-    pub(crate) fn set_network(&mut self, allow: bool) -> Result<()> {
+    pub(crate) fn set_network(&mut self, network: crate::Network) -> Result<()> {
         if self.tools.has_sandbox() {
-            self.tools.enable_sandbox(!allow)?;
+            self.tools.enable_sandbox(network)?;
         }
         Ok(())
     }
@@ -307,7 +298,8 @@ impl<P: Provider> Loop<P> {
         if std::mem::replace(&mut self.mode, mode) == mode {
             return Ok(());
         }
-        let sandbox = (plan && !self.tools.has_sandbox()).then(|| self.tools.enable_sandbox(false));
+        let sandbox = (plan && !self.tools.has_sandbox())
+            .then(|| self.tools.enable_sandbox(crate::Network::Allowed));
         if !plan && std::mem::take(&mut self.plan_sandbox) {
             self.tools.disable_sandbox();
         }

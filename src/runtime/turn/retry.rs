@@ -134,8 +134,7 @@ impl<P: Provider> Loop<P> {
                         self.rewrite(messages, edits)?;
                         let input = UserInput::from(
                             "[summon control: the provider rejected the previous tool call because \
-                             its arguments were invalid JSON. Retry that action with one valid tool \
-                             call. Split a large file write into smaller edits if needed.]",
+                             its arguments were invalid JSON.]",
                         );
                         self.session.steer(&input).map_err(super::session_err)?;
                         messages.push(Message::user(input));
@@ -169,22 +168,6 @@ impl<P: Provider> Loop<P> {
                             emit,
                             Event::Note {
                                 text: "context overflow — compacted old tool results, retrying"
-                                    .to_string(),
-                            },
-                        )?;
-                        continue;
-                    }
-                    if self.boosted(role)
-                        && failure.is_some_and(|failure| {
-                            failure.kind == ProviderFailureKind::Http && failure.status == Some(400)
-                        })
-                    {
-                        self.guard.reject();
-                        self.push_event(
-                            events,
-                            emit,
-                            Event::Note {
-                                text: "the endpoint rejected the raised effort; continuing at the configured effort"
                                     .to_string(),
                             },
                         )?;

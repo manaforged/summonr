@@ -48,7 +48,7 @@ fn glm_5_3_flash_clamps_to_its_three_levels_and_cannot_turn_thinking_off() {
     );
     let off = body("zai", "glm-5.3-flash", Some(Effort::None));
     assert_eq!(off["reasoning_effort"], "low");
-    assert!(off.get("thinking").is_none(), "{off}");
+    assert_eq!(off["thinking"]["type"], "enabled", "{off}");
 }
 
 #[test]
@@ -91,7 +91,16 @@ fn gemini_3_pro_gets_one_of_its_two_levels() {
 }
 
 fn replayed_reasoning(name: &str, model: &str) -> Value {
+    replayed_through(name, model, None)
+}
+
+fn replayed_through(name: &str, model: &str, proxy: Option<&str>) -> Value {
     let mut endpoint = builtin(name).unwrap();
+    if let Some(proxy) = proxy {
+        endpoint.name = "env".to_string();
+        endpoint.base_url = Some(proxy.to_string());
+        endpoint.keep_reasoning = false;
+    }
     endpoint.model = model.to_string();
     endpoint.api_key = Some("k".to_string());
     let client = Client::connect(&endpoint).unwrap();
@@ -138,9 +147,99 @@ fn deepseek_and_glm_get_their_earlier_reasoning_back() {
 }
 
 #[test]
+fn deepseek_and_glm_get_their_reasoning_back_behind_a_proxy() {
+    let proxy = Some("http://172.17.0.1:8095/label/v1");
+    assert_eq!(
+        replayed_through("deepseek", "deepseek-flash", proxy),
+        "my earlier chain of thought"
+    );
+    assert_eq!(
+        replayed_through("zai", "glm-5.3-flash", proxy),
+        "my earlier chain of thought"
+    );
+}
+
+#[test]
 fn a_vendor_that_does_not_ask_for_it_gets_no_replayed_reasoning() {
     assert_eq!(
         replayed_reasoning("groq", "openai/gpt-oss-120b"),
         Value::Null
     );
+}
+
+#[test]
+fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
+    let mut endpoint = builtin("zai").unwrap();
+    endpoint.model = "glm-5.3-flash".to_string();
+    endpoint.api_key = Some("k".to_string());
+    let client = Client::connect(&endpoint).unwrap();
+    let assistant = Message {
+        role: crate::provider::Role::Assistant,
+        tool_calls: vec![crate::provider::ToolCall {
+            id: "t1".to_string(),
+            kind: crate::provider::ToolKind::Function,
+            function: crate::provider::ToolFunction {
+                name: "read".to_string(),
+                arguments: "{}".to_string(),
+            },
+            continuation: None,
+        }],
+        ..Message::user(String::new())
+    };
+    let result = Message {
+        images: vec![crate::provider::Image::encode("image/png", &[1, 2, 3])],
+        ..Message::tool("t1", "board.png is attached")
+    };
+    let messages = [Message::user("look".to_string()), assistant, result];
+    let request = CompletionRequest::new(
+        "s".to_string(),
+        endpoint.model.clone(),
+        &messages,
+        &[],
+        Some(16_000),
+        false,
+        None,
+    );
+    let body = client.request_body(&request, false).unwrap();
+    let sent = body["messages"].as_array().unwrap();
+    let tool = sent.iter().find(|m| m["role"] == "tool").unwrap();
+    assert_eq!(tool["content"], "board.png is attached");
+    let last = sent.last().unwrap();
+    assert_eq!(last["role"], "user");
+    assert_eq!(last["content"][1]["type"], "image_url", "{body}");
+}
+
+#[test]
+fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
+    let mut endpoint = builtin("zai").unwrap();
+    endpoint.name = "env".to_string();
+    endpoint.base_url = Some("http://172.17.0.1:8095/label/v1".to_string());
+    endpoint.model = "glm-5.3-flash".to_string();
+    endpoint.api_key = Some("k".to_string());
+    let client = Client::connect(&endpoint).unwrap();
+    let messages = [Message::user("hi".to_string())];
+    let tools = [crate::provider::ToolDefinition {
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::FunctionDefinition {
+            name: "read".to_string(),
+            description: "Read".to_string(),
+            parameters: serde_json::json!({"type": "object"}),
+        },
+    }];
+    let request = CompletionRequest::new(
+        "s".to_string(),
+        endpoint.model.clone(),
+        &messages,
+        &tools,
+        Some(16_000),
+        false,
+        Some(Effort::High),
+    );
+    let sent = client.request_body(&request, true).unwrap();
+    assert_eq!(
+        sent["thinking"],
+        serde_json::json!({"type": "enabled", "clear_thinking": false}),
+        "{sent}"
+    );
+    assert_eq!(sent["tool_stream"], true, "{sent}");
 }

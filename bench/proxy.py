@@ -15,6 +15,7 @@ DROP = {"host", "content-length", "accept-encoding", "connection", "transfer-enc
 STALL_SECONDS = 120
 NUDGE = "reasoned at length without acting"
 TAIL_BYTES = 4096
+ACTIVE_SECONDS = 1800
 
 
 def role_sizes(body, messages):
@@ -160,16 +161,29 @@ class Proxy(BaseHTTPRequestHandler):
     def route(self):
         parts = self.path.split("/", 2)
         labeled = len(parts) > 2 and parts[1] != "v1"
-        label = parts[1] if labeled else "unlabeled"
+        group, _, label = (parts[1] if labeled else "unlabeled").rpartition("~")
         path = "/" + parts[2] if labeled else self.path
         prefix = next((prefix for prefix in self.strip if path.startswith(prefix + "/")), "")
-        return label, path[len(prefix):]
+        return group or label, label, path[len(prefix):]
 
-    def prepare(self, raw, label, path):
+    def key_for(self, group):
+        now = time.time()
+        with self.lock:
+            index = self.groups.get(group, (None, 0))[0]
+            if index is None:
+                load = [0] * len(self.keys)
+                for slot, seen in self.groups.values():
+                    if now - seen < ACTIVE_SECONDS:
+                        load[slot] += 1
+                index = load.index(min(load))
+            self.groups[group] = (index, now)
+        return index
+
+    def prepare(self, raw, label, path, index):
         if not raw or not (path.endswith("/chat/completions") or path.endswith("/messages")):
             return raw, None
         body = json.loads(raw)
-        record = {"label": label, "request": shape(body), "usage_requested": False}
+        record = {"label": label, "key": index, "request": shape(body), "usage_requested": False}
         options = body.get("stream_options") or {}
         if path.endswith("/chat/completions") and body.get("stream") and not options.get("include_usage"):
             body["stream_options"] = {**options, "include_usage": True}
@@ -197,19 +211,26 @@ class Proxy(BaseHTTPRequestHandler):
         return first, chunks, None
 
     def relay(self, method):
-        label, path = self.route()
+        group, label, path = self.route()
+        index = self.key_for(group)
+        key = self.keys[index]
         length = int(self.headers.get("Content-Length") or 0)
         try:
-            raw, record = self.prepare(self.rfile.read(length) if length else None, label, path)
+            raw, record = self.prepare(self.rfile.read(length) if length else None, label, path, index)
         except json.JSONDecodeError as error:
             self.send_error(400, f"request body is not JSON: {error}")
             return
+        if self.dump and record is not None:
+            folder = os.path.join(self.dump, label)
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, f"{time.time_ns()}.json"), "wb") as out:
+                out.write(raw)
         headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
         for name in headers:
             if name.lower() == "authorization":
-                headers[name] = f"Bearer {self.key}"
+                headers[name] = f"Bearer {key}"
             elif name.lower() == "x-api-key":
-                headers[name] = self.key
+                headers[name] = key
         if "opencode.ai" in self.upstream:
             headers["x-opencode-session"] = label
         request = urllib.request.Request(self.target(path), data=raw, method=method, headers=headers)
@@ -270,9 +291,12 @@ def main():
     parser.add_argument("--anthropic", default="https://api.deepseek.com/anthropic")
     parser.add_argument("--log", required=True)
     parser.add_argument("--strip", action="append", default=[])
-    parser.add_argument("--key-env", required=True)
+    parser.add_argument("--key-env", action="append", required=True)
+    parser.add_argument("--dump")
     args = parser.parse_args()
-    Proxy.key = os.environ.get(args.key_env) or parser.error(f"{args.key_env} is not set")
+    Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name in args.key_env]
+    Proxy.groups = {}
+    Proxy.dump = args.dump
     Proxy.upstream = args.upstream.rstrip("/")
     Proxy.anthropic = args.anthropic.rstrip("/")
     Proxy.strip = [prefix.rstrip("/") for prefix in args.strip]

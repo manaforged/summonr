@@ -112,13 +112,14 @@ def summary(rows, scope="all"):
 
 def memory(rows):
     lines = [
-        "| Harness | Peak agent RSS (MB) | Max agent RSS (MB) | Peak tree RSS (MB) | Max tree RSS (MB) | Trials sampled |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Harness | Mean agent RSS (MB) | Peak agent RSS (MB) | Max agent RSS (MB) | Mean tree RSS (MB) | Peak tree RSS (MB) | Max tree RSS (MB) | Trials sampled |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for harness in order(rows):
         agent = [row["agent_mb"] for row in rows if row["harness"] == harness and row["agent_mb"]]
         tree = [row["tree_mb"] for row in rows if row["harness"] == harness and row["tree_mb"]]
-        lines.append(table_row([harness, cell(agent), fmt(max(agent, default=None)), cell(tree), fmt(max(tree, default=None)), len(agent)]))
+        mean = {key: [row[f"{key}_mb"] for row in rows if row["harness"] == harness and row[f"{key}_mb"]] for key in ("agent_avg", "tree_avg")}
+        lines.append(table_row([harness, cell(mean["agent_avg"]), cell(agent), fmt(max(agent, default=None)), cell(mean["tree_avg"]), cell(tree), fmt(max(tree, default=None)), len(agent)]))
     return "\n".join(lines)
 
 
@@ -172,7 +173,7 @@ def failure(row):
 def honored(mine, want):
     if want in UNSET:
         return "n/a"
-    hits = [want in {effort.split("/", 1)[0] for effort in row["effort"]} for row in mine]
+    hits = [want in {effort.split("/", 1)[0] for effort in row["effort"]} for row in mine if row["effort"]]
     if all(hits):
         return "yes"
     return "mixed" if any(hits) else "no"
@@ -199,6 +200,7 @@ def breakdown_line(harness, mine, want):
         f"{cold_hit(mine):.1%}",
         fmt(max(row["max_prompt"] for row in mine)),
         total(mine, "errors"),
+        total(mine, "cut"),
         total(mine, "rate_limited"),
         ", ".join(sorted({effort for row in mine for effort in row["effort"]})),
         honored(mine, want),
@@ -211,8 +213,8 @@ def breakdown_line(harness, mine, want):
 
 def breakdown(rows, want_effort=None):
     lines = [
-        "| Harness | Model time share | Tool and harness time share | Reasoning share of output | Cold first-request cache hit | Max prompt tokens | Errors | 429s | Effort sent | Effort honored | Sampling controls seen | Failures | Voided | Warn |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Harness | Model time share | Tool and harness time share | Reasoning share of output | Cold first-request cache hit | Max prompt tokens | Errors | Cut streams | 429s | Effort sent | Effort honored | Sampling controls seen | Failures | Voided | Warn |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for harness in order(rows):
         mine = [row for row in rows if row["harness"] == harness]
@@ -277,7 +279,7 @@ def arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("run")
     parser.add_argument("--jobs", default=str(Path(__file__).parent / "jobs"))
-    parser.add_argument("--proxy", nargs="+", default=[str(Path(__file__).parent / "logs" / "deepseek.jsonl")])
+    parser.add_argument("--proxy", nargs="+")
     parser.add_argument("--csv")
     parser.add_argument("--subject", required=True)
     parser.add_argument("--tasks")
@@ -285,18 +287,21 @@ def arguments():
 
 
 def load(args, rates):
-    rows = trials(args.jobs, args.run, requests(args.proxy), rates)
-    if not args.tasks:
-        return rows
-    keep = {line.strip() for line in open(args.tasks) if line.strip()}
-    return [row for row in rows if row["task"] in keep]
+    rows = trials(args.jobs, args.run, requests(args.proxy or [Path(args.jobs).parent / "logs" / f"{args.run}.jsonl"]), rates)
+    if args.tasks:
+        keep = {line.strip() for line in open(args.tasks) if line.strip()}
+        rows = [row for row in rows if row["task"] in keep]
+    broken = sorted({row["task"] for row in rows if row["grader"]})
+    if broken:
+        print(f"Dropped for both harnesses, verifier could not install its tools: {', '.join(broken)}\n")
+    return [row for row in rows if row["task"] not in broken]
 
 
 def refuse(rows, pin):
     checks = [
         (f"response model is not the pinned {pin}", {f'{row["harness"]}: {model}' for row in rows for model in row["models"] if model != pin}),
         ("solved with no request in the proxy log (proxy bypassed or wrong --proxy file)", {row["harness"] for row in rows if row["requests"] == 0 and row["reward"] == 1.0}),
-        ("requests succeeded but the proxy log holds no token usage for", {row["harness"] for row in rows if row["requests"] > row["errors"] and row["prompt"] == 0}),
+        ("requests succeeded but the proxy log holds no token usage for", {row["harness"] for row in rows if row["requests"] > row["errors"] + row["cut"] and row["prompt"] == 0}),
     ]
     for message, found in checks:
         if found:
@@ -313,7 +318,7 @@ def flagged(rows):
     marked = [row for row in rows if row["void"] or row["warn"]]
     if not marked:
         return
-    print("\nFlagged trials (void = solve removed; warn = path mention only)\n")
+    print("\nFlagged trials (void = solve removed; warn = path or source-name mention only)\n")
     for row in marked:
         kind = "void" if row["void"] else "warn"
         print(f"- {kind} {row['harness']} {row['task']} reward={row['reward']}: {', '.join(row['void'] + row['warn'])}")
@@ -331,13 +336,13 @@ def report(args, info, rows, vendor, rates):
     models = sorted({model for row in rows for model in row["models"]})
     checksums = len({row["checksum"] for row in rows})
     print(f"Run `{args.run}`: vendor {vendor}, effort {info.get('effort', 'default')}, {len(rows)} trials, response models {models}, {checksums} task checksums.")
-    print(cost_note(vendor, rates) + " Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere. A dataset-identity leak hit voids the solve; a verifier-path hit is a warn.")
+    print(cost_note(vendor, rates) + " Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere. A URL to a dataset source voids the solve; a source name or verifier path is a warn.")
     sections = [
         ("Reliability (task-level; pass@k = any of k, pass^k = all k)\n", lambda: reliability(rows)),
         ("\nAll trials\n", lambda: summary(rows)),
         ("\nSolved trials only\n", lambda: summary(rows, scope="solved")),
         ("\nFailed trials only\n", lambda: summary(rows, scope="failed")),
-        ("\nMemory (peak RSS per trial, sampled every 0.5 s; agent = the harness process, tree = it and every tool it ran)\n", lambda: memory(rows)),
+        ("\nMemory (mean and peak RSS per trial, sampled every 0.5 s; agent = the harness process, tree = it and every tool it ran)\n", lambda: memory(rows)),
         ("\nWhere the time and tokens go\n", lambda: breakdown(rows, info.get("effort"))),
         (f"\nPaired against {args.subject}\n", lambda: paired(rows, args.subject)),
     ]

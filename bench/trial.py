@@ -5,16 +5,21 @@ from pathlib import Path
 
 from stats import covered, hit_tokens, miss_tokens, seconds
 
-VOID = re.compile(rb"terminal-bench|harbor-framework|laude-institute|tbench\.ai|marginlab\.ai", re.I)
-WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test", re.I)
-MEMORY = ("agent", "tree")
+SOURCES = rb"terminal-bench|tbench|marginlab|laude-institute|harbor-framework"
+VOID = re.compile(rb"https?:(?:\\?/){2}[^\s\"'<>]*(?:" + SOURCES + rb")|github\.com[:/](?:laude-institute|harbor-framework)", re.I)
+WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test|terminal-bench(?!-canary)|tbench\.ai|marginlab\.ai|laude-institute|harbor-framework", re.I)
+GRADER = re.compile(rb"uvx: command not found|/root/\.local/bin/env: No such file")
+MEMORY = ("agent", "tree", "agent_avg", "tree_avg")
 
 
 def suspect(agent):
     void, warn = set(), set()
     for path in agent.rglob("*"):
         if path.is_file() and path.name != "instruction.txt":
-            raw = path.read_bytes()
+            try:
+                raw = path.read_bytes()
+            except OSError:
+                continue
             void.update(match.group().decode().lower() for match in VOID.finditer(raw))
             warn.update(match.group().decode().lower() for match in WARN.finditer(raw))
     return sorted(void), sorted(warn)
@@ -69,6 +74,7 @@ def request_fields(calls):
     return {
         "requests": len(calls),
         "errors": sum(row["status"] >= 400 for row in calls),
+        "cut": sum(1 for row in calls if row.get("cut_off") and not row.get("usage")),
         "rate_limited": sum(row["status"] == 429 for row in calls),
         "effort": sorted({effort_of(row["request"]) for row in calls}),
         "controls": sorted({controls_of(row["request"]) for row in calls}),
@@ -107,6 +113,7 @@ def trial_row(result, run, by_label, rates):
     agent = result.parent / "agent"
     exit_file = agent / "exit"
     void, warn = suspect(agent)
+    verifier = result.parent / "verifier" / "test-stdout.txt"
     return {
         "harness": harness,
         "task": data["task_name"].split("/")[-1],
@@ -121,6 +128,7 @@ def trial_row(result, run, by_label, rates):
         **token_fields(calls, rates),
         "void": void,
         "warn": warn,
+        "grader": verifier.is_file() and bool(GRADER.search(verifier.read_bytes())),
     }
 
 

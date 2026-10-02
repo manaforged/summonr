@@ -47,6 +47,13 @@ EOF
 if [ -n "$src" ] && git -C "$src" rev-parse HEAD >/dev/null 2>&1; then
   echo "summonr_commit $(git -C "$src" rev-parse HEAD)" >> "$out/versions.txt"
 fi
-install -m 755 "$(cd "$(dirname "$0")" && pwd)/harness.sh" "$out/harness.sh"
+here=$(cd "$(dirname "$0")" && pwd)
+pi=$(awk '$1=="pi"{print $2}' "$here/tools.lock")
+if [ -x "$out/node/bin/node" ] && [ -n "$pi" ]; then
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/pi" "@earendil-works/pi-coding-agent@$pi"
+  echo "node $("$out/node/bin/node" --version | tr -d v)" >> "$out/versions.txt"
+  echo "pi $("$out/node/bin/node" -p "require('$out/pi/lib/node_modules/@earendil-works/pi-coding-agent/package.json').version")" >> "$out/versions.txt"
+fi
+install -m 755 "$here/harness.sh" "$out/harness.sh"
 (cd "$out" && find . -type f \( -perm -u+x -path './*/bin/*' -o -name cacert.pem -o -name harness.sh \) -print0 | sort -z | xargs -0 sha256sum) > "$out/manifest.sha256"
 echo "tools ready in $out"

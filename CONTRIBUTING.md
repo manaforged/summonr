@@ -27,6 +27,17 @@ The tests need no network and no keys. The census must print
 `api-census deny: clean`. It also counts wildcard `_ =>` match arms and
 files over 400 lines, so avoid both.
 
+## Model catalog snapshot
+
+`src/catalog/models-dev.json` is the models.dev data summonr uses before
+it has a cache of its own. Regenerate it before a release:
+
+```sh
+home=$(mktemp -d)
+SUMMONR_HOME=$home cargo run --locked -- endpoints
+cp "$home/models-dev.json" src/catalog/models-dev.json
+```
+
 ## Shared API
 
 [`docs/guide/internals/module-api.md`](docs/guide/internals/module-api.md)

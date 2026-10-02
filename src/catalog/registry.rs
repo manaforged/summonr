@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
-use serde::{Deserialize, Serialize};
+use serde::de::{IgnoredAny, MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use super::{Cost, Model, load, now};
@@ -11,7 +12,8 @@ use crate::provider::Price;
 const REGISTRY_URL: &str = "https://models.dev/api.json";
 pub(super) const FILE: &str = "models-dev.json";
 const REGISTRY_STALE: u64 = 3600;
-const REGISTRY_SCHEMA: u32 = 2;
+const REGISTRY_SCHEMA: u32 = 3;
+const SNAPSHOT: &str = include_str!("models-dev.json");
 
 pub(super) fn epoch_day(date: &str) -> Option<u64> {
     let mut parts = date.splitn(3, '-').map(str::parse::<i64>);
@@ -74,78 +76,151 @@ pub(super) struct Registry {
     providers: Vec<ProviderMeta>,
 }
 
-fn reduce(value: &Value) -> Registry {
-    let providers = value
-        .as_object()
+#[derive(Deserialize)]
+struct Upstream {
+    #[serde(default)]
+    name: Option<Value>,
+    #[serde(default)]
+    api: Option<Value>,
+    #[serde(default)]
+    models: BTreeMap<String, UpstreamModel>,
+}
+
+#[derive(Deserialize)]
+struct UpstreamModel {
+    #[serde(default)]
+    name: Option<Value>,
+    #[serde(default)]
+    limit: Option<Value>,
+    #[serde(default)]
+    cost: Option<Value>,
+    #[serde(default)]
+    release_date: Option<Value>,
+    #[serde(default)]
+    reasoning: Option<Value>,
+    #[serde(default)]
+    modalities: Option<Value>,
+    #[serde(default)]
+    family: Option<Value>,
+    #[serde(default)]
+    status: Option<Value>,
+    #[serde(default)]
+    tool_call: Option<Value>,
+}
+
+fn meta(model_id: &str, model: &UpstreamModel) -> Meta {
+    let text = |value: &Option<Value>| value.as_ref().and_then(Value::as_str).map(str::to_string);
+    let cost = model.cost.as_ref();
+    Meta {
+        display: text(&model.name).filter(|name| name != model_id),
+        context: model
+            .limit
+            .as_ref()
+            .and_then(|limit| limit.get("context"))
+            .and_then(Value::as_u64)
+            .and_then(|tokens| u32::try_from(tokens).ok()),
+        metered: cost.map(|cost| {
+            ["input", "output", "cache_read", "cache_write"]
+                .into_iter()
+                .filter_map(|field| cost.get(field).and_then(Value::as_f64))
+                .any(|rate| rate > 0.0)
+        }),
+        release: model
+            .release_date
+            .as_ref()
+            .and_then(Value::as_str)
+            .and_then(epoch_day),
+        reasoning: model.reasoning.as_ref().and_then(Value::as_bool) == Some(true),
+        vision: model
+            .modalities
+            .as_ref()
+            .and_then(|modalities| modalities.get("input"))
+            .and_then(Value::as_array)
+            .is_some_and(|kinds| kinds.iter().any(|kind| kind == "image")),
+        family: text(&model.family),
+        deprecated: model.status.as_ref().and_then(Value::as_str) == Some("deprecated"),
+        tools: model.tool_call.as_ref().and_then(Value::as_bool),
+        price: cost.and_then(|cost| {
+            let rate = |field: &str| cost.get(field).and_then(Value::as_f64);
+            Some(Price {
+                input: rate("input")?,
+                output: rate("output")?,
+                cached: rate("cache_read").unwrap_or_default(),
+            })
+        }),
+    }
+}
+
+struct Reachable(BTreeMap<String, Upstream>);
+
+impl<'de> Deserialize<'de> for Reachable {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        struct Keep;
+        impl<'de> Visitor<'de> for Keep {
+            type Value = BTreeMap<String, Upstream>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a models.dev provider map")
+            }
+
+            fn visit_map<A: MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> std::result::Result<Self::Value, A::Error> {
+                let mut kept = BTreeMap::new();
+                while let Some(id) = map.next_key::<String>()? {
+                    if crate::endpoint::catalog_providers().any(|known| known == id) {
+                        kept.insert(id, map.next_value::<Upstream>()?);
+                    } else {
+                        map.next_value::<IgnoredAny>()?;
+                    }
+                }
+                Ok(kept)
+            }
+        }
+        deserializer.deserialize_map(Keep).map(Reachable)
+    }
+}
+
+pub(super) fn decode(text: &str) -> Result<Registry> {
+    let Reachable(upstream) = serde_json::from_str(text)?;
+    Ok(reduce(upstream))
+}
+
+pub(super) fn snapshot() -> Registry {
+    serde_json::from_str(SNAPSHOT).unwrap_or_default()
+}
+
+pub(super) fn current() -> Registry {
+    load::<Registry>(FILE)
+        .ok()
+        .filter(|cache| cache.schema == REGISTRY_SCHEMA && !cache.providers.is_empty())
+        .unwrap_or_else(snapshot)
+}
+
+fn reduce(upstream: BTreeMap<String, Upstream>) -> Registry {
+    let providers = upstream
         .into_iter()
-        .flatten()
-        .map(|(id, provider)| {
-            let api = provider
-                .get("api")
+        .map(|(id, provider)| ProviderMeta {
+            name: provider
+                .name
+                .as_ref()
+                .and_then(Value::as_str)
+                .unwrap_or(&id)
+                .to_string(),
+            api: provider
+                .api
+                .as_ref()
                 .and_then(Value::as_str)
                 .unwrap_or_default()
-                .trim_end_matches('/');
-            let models = provider
-                .get("models")
-                .and_then(Value::as_object)
-                .into_iter()
-                .flatten()
-                .map(|(model_id, model)| {
-                    let meta = Meta {
-                        display: model
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .filter(|name| *name != *model_id)
-                            .map(str::to_string),
-                        context: model
-                            .get("limit")
-                            .and_then(|limit| limit.get("context"))
-                            .and_then(Value::as_u64)
-                            .and_then(|tokens| u32::try_from(tokens).ok()),
-                        metered: model.get("cost").map(|cost| {
-                            ["input", "output", "cache_read", "cache_write"]
-                                .into_iter()
-                                .filter_map(|field| cost.get(field).and_then(Value::as_f64))
-                                .any(|rate| rate > 0.0)
-                        }),
-                        release: model
-                            .get("release_date")
-                            .and_then(Value::as_str)
-                            .and_then(epoch_day),
-                        reasoning: model.get("reasoning").and_then(Value::as_bool) == Some(true),
-                        vision: model
-                            .pointer("/modalities/input")
-                            .and_then(Value::as_array)
-                            .is_some_and(|kinds| kinds.iter().any(|kind| kind == "image")),
-                        family: model
-                            .get("family")
-                            .and_then(Value::as_str)
-                            .map(str::to_string),
-                        deprecated: model.get("status").and_then(Value::as_str)
-                            == Some("deprecated"),
-                        tools: model.get("tool_call").and_then(Value::as_bool),
-                        price: model.get("cost").and_then(|cost| {
-                            let rate = |field: &str| cost.get(field).and_then(Value::as_f64);
-                            Some(Price {
-                                input: rate("input")?,
-                                output: rate("output")?,
-                                cached: rate("cache_read").unwrap_or_default(),
-                            })
-                        }),
-                    };
-                    (model_id.clone(), meta)
-                })
-                .collect();
-            ProviderMeta {
-                id: id.clone(),
-                name: provider
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or(id)
-                    .to_string(),
-                api: api.to_string(),
-                models,
-            }
+                .trim_end_matches('/')
+                .to_string(),
+            models: provider
+                .models
+                .iter()
+                .map(|(model_id, model)| (model_id.clone(), meta(model_id, model)))
+                .collect(),
+            id,
         })
         .collect();
     Registry {
@@ -197,13 +272,13 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
         }
     }
     let etag = response.header("etag").unwrap_or_default().to_string();
-    let value: Value = response
-        .json()
+    let text = response
+        .text()
         .await
         .map_err(|error| crate::error::Error::Config(error.to_string()))?;
     Ok(Some(Registry {
         etag,
-        ..reduce(&value)
+        ..decode(&text)?
     }))
 }
 
@@ -217,7 +292,7 @@ fn authority(url: &str) -> Option<String> {
 }
 
 pub(crate) fn enrich(endpoint: &str, base_url: Option<&str>, models: &mut [Model]) {
-    enrich_from(&load(FILE).unwrap_or_default(), endpoint, base_url, models);
+    enrich_from(&current(), endpoint, base_url, models);
 }
 
 pub(super) fn enrich_from(

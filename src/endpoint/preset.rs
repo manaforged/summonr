@@ -114,6 +114,10 @@ const PROVIDER_IDS: &[(&str, &[&str])] = &[
     ("copilot", &["github-copilot"]),
 ];
 
+pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
+    PROVIDER_IDS.iter().flat_map(|(_, ids)| ids.iter().copied())
+}
+
 #[must_use]
 pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
     PROVIDER_IDS

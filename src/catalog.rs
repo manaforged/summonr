@@ -226,10 +226,10 @@ fn row(item: &Value, fallback: Cost) -> Option<Model> {
         reasoning: supports("reasoning") == Some(true)
             || item.get("thinking").and_then(Value::as_bool) == Some(true),
         vision: capability("vision") == Some(true)
-            || item
-                .pointer("/architecture/input_modalities")
-                .and_then(Value::as_array)
-                .is_some_and(|kinds| kinds.iter().any(|kind| kind == "image")),
+            || ["/architecture/input_modalities", "/input_modalities"]
+                .into_iter()
+                .filter_map(|pointer| item.pointer(pointer).and_then(Value::as_array))
+                .any(|kinds| kinds.iter().any(|kind| kind == "image")),
         tools: supports("tools").or_else(|| capability("function_calling")),
         price: price(item),
         ..Model::default()
@@ -301,7 +301,7 @@ pub(crate) fn cached() -> BTreeMap<String, Listing> {
 pub fn accepts_images(endpoint: &crate::Endpoint) -> bool {
     endpoint.images.unwrap_or_else(|| {
         known(&endpoint.name, &endpoint.model).map_or_else(
-            || vision_of(endpoint, &load(registry::FILE).unwrap_or_default()),
+            || vision_of(endpoint, &registry::current()),
             |model| model.vision,
         )
     })

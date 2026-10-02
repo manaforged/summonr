@@ -13,7 +13,12 @@ if [ -n "$sigil" ]; then
   sigil=$(cd "$sigil" && pwd)
 fi
 
+here=$(cd "$(dirname "$0")" && pwd)
+pin() { awk -v k="$1" '$1==k{print $2}' "$here/tools.lock"; }
+hermes=$(pin hermes) uv=$(pin uv)
+
 docker run --rm -v "$out":/opt/bench \
+  -e HERMES="$hermes" -e UV="$uv" -e OWNER="$(id -u):$(id -g)" \
   ${src:+-v "$src":/src:ro} \
   ${sigil:+-v "$sigil":/sigil:ro} \
   -v "$HOME/.cargo/git:/root/.cargo/git" \
@@ -35,6 +40,13 @@ if [ -d /src ]; then
   install -D -m 755 /tmp/summonr-target/release/summonr /opt/bench/summonr/bin/summonr
 fi
 install -m 644 /etc/ssl/certs/ca-certificates.crt cacert.pem
+if [ -n \"\$HERMES\" ] && [ -n \"\$UV\" ]; then
+  rm -rf hermes hermes-python uv && mkdir -p uv
+  curl -fsSL https://github.com/astral-sh/uv/releases/download/\$UV/uv-x86_64-unknown-linux-gnu.tar.gz | tar -xz --strip-components=1 -C uv
+  git clone --quiet --depth 1 --branch \$HERMES https://github.com/NousResearch/hermes-agent hermes
+  (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/bench/hermes-python ../uv/uv sync --quiet --frozen --python 3.12)
+fi
+chown -R \"\$OWNER\" /opt/bench
 "
 
 if [ -n "$src" ] && [ ! -x "$out/summonr/bin/summonr" ]; then
@@ -47,12 +59,23 @@ EOF
 if [ -n "$src" ] && git -C "$src" rev-parse HEAD >/dev/null 2>&1; then
   echo "summonr_commit $(git -C "$src" rev-parse HEAD)" >> "$out/versions.txt"
 fi
-here=$(cd "$(dirname "$0")" && pwd)
-pi=$(awk '$1=="pi"{print $2}' "$here/tools.lock")
+if [ -x "$out/summonr/bin/summonr" ]; then
+  echo "summonr_version $("$out/summonr/bin/summonr" --version | awk '{print $2}')" >> "$out/versions.txt"
+fi
+pi=$(pin pi) opencode2=$(pin opencode2)
 if [ -x "$out/node/bin/node" ] && [ -n "$pi" ]; then
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/pi" "@earendil-works/pi-coding-agent@$pi"
   echo "node $("$out/node/bin/node" --version | tr -d v)" >> "$out/versions.txt"
   echo "pi $("$out/node/bin/node" -p "require('$out/pi/lib/node_modules/@earendil-works/pi-coding-agent/package.json').version")" >> "$out/versions.txt"
+fi
+if [ -x "$out/node/bin/node" ] && [ -n "$opencode2" ]; then
+  rm -rf "$out/opencode"
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/opencode" "@opencode/cli@$opencode2"
+  echo "opencode2 $("$out/node/bin/node" -p "require('$out/opencode/lib/node_modules/@opencode/cli/package.json').version")" >> "$out/versions.txt"
+fi
+if [ -n "$hermes" ]; then
+  [ -x "$out/hermes/.venv/bin/hermes" ] || { echo "missing tool entrypoint: hermes/.venv/bin/hermes" >&2; exit 1; }
+  echo "hermes $(git -C "$out/hermes" describe --tags --exact-match 2>/dev/null || echo "$hermes")" >> "$out/versions.txt"
 fi
 install -m 755 "$here/harness.sh" "$out/harness.sh"
 (cd "$out" && find . -type f \( -perm -u+x -path './*/bin/*' -o -name cacert.pem -o -name harness.sh \) -print0 | sort -z | xargs -0 sha256sum) > "$out/manifest.sha256"

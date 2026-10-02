@@ -8,7 +8,6 @@ proxy=${BENCH_PROXY:-http://172.17.0.1:8095}
 log=${BENCH_PROXY_LOG:-$root/logs/glm.jsonl}
 prompt=${BENCH_PROMPT:-Run git log --oneline -3 and reply with the subject of the newest commit.}
 run=${BENCH_RUN:-smoke}
-set -a; . "$root/glm.env"; set +a
 
 printf '%s\n' "$prompt" > "$root/logs/prompt.txt"
 for name in "${@:-summonr}"; do
@@ -17,7 +16,7 @@ for name in "${@:-summonr}"; do
     before=$(grep -c "\"label\": \"$label\"" "$log" 2>/dev/null || true)
     start=$(date +%s)
     docker run --rm \
-      -e BENCH_BASE="$proxy/$label/v1" -e BENCH_MODEL=glm-5.3-flash -e BENCH_PROVIDER=zai -e BENCH_API_KEY="$ZAI_API_KEY" ${BENCH_EFFORT:+-e BENCH_EFFORT} \
+      -e BENCH_BASE="$proxy/$label/v1" -e BENCH_MODEL=glm-5.3-flash -e BENCH_PROVIDER=zai -e BENCH_API_KEY=bench-proxy ${BENCH_EFFORT:+-e BENCH_EFFORT} \
       -e BENCH_LOGS=/tmp/logs \
       -v "$root/tools":/opt/bench:ro -v "$root/logs/prompt.txt":/opt/prompt.txt:ro \
       -w "$workdir" "$image" timeout 300 bash /opt/bench/harness.sh "$harness" /opt/prompt.txt \

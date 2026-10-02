@@ -15,10 +15,12 @@ tmult=${BENCH_TIMEOUT_MULT:-1.0}
 parallel=${BENCH_PARALLEL:-1}
 dataset=${BENCH_DATASET:-$root/datasets/tb2/terminal-bench-2}
 export PATH=$HOME/.local/bin:$PATH PYTHONPATH=$root
+routes=() drops=()
 case $vendor in
   zai)
     envfile=glm.env keyenv=ZAI_API_KEY port=8095 model=${BENCH_MODEL:-glm-5.3-flash}
-    upstream=https://api.z.ai/api/coding/paas/v4 anthropic=https://api.z.ai/api/anthropic ;;
+    upstream=https://api.z.ai/api/coding/paas/v4 anthropic=https://api.z.ai/api/anthropic
+    routes=(OPENCODE_GO_API_KEY=https://opencode.ai/zen/go/v1) drops=(opencode.ai=thinking,tool_stream) ;;
   *)
     envfile=deepseek.env keyenv=DEEPSEEK_API_KEY port=8094 model=${BENCH_MODEL:-deepseek-flash}
     upstream=https://api.deepseek.com anthropic=https://api.deepseek.com/anthropic ;;
@@ -32,8 +34,13 @@ pkill -f "proxy.py .*--port $port " || true
 for _ in $(seq 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || break; sleep 0.2; done
 keys=()
 for name in $(grep -oE "^${keyenv}(_[0-9]+)?=" "$root/$envfile" | tr -d =); do keys+=(--key-env "$name"); done
+for route in "${routes[@]}"; do
+  grep -q "^${route%%=*}=" "$root/$envfile" && keys+=(--key-env "$route")
+done
+dropargs=()
+for drop in "${drops[@]}"; do dropargs+=(--drop "$drop"); done
 (set -a; . "$root/$envfile"; set +a
-  exec setsid nohup python3 "$root/proxy.py" --bind 0.0.0.0 --port "$port" "${keys[@]}" --log "$root/logs/$run.jsonl" ${BENCH_DUMP:+--dump "$root/logs/$run.bodies"} \
+  exec setsid nohup python3 "$root/proxy.py" --bind 0.0.0.0 --port "$port" "${keys[@]}" "${dropargs[@]}" --log "$root/logs/$run.jsonl" ${BENCH_DUMP:+--dump "$root/logs/$run.bodies"} \
     --upstream "$upstream" --anthropic "$anthropic" >> "$root/logs/proxy-$run.out" 2>&1 < /dev/null) &
 for _ in $(seq 50); do (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null && break; sleep 0.2; done
 (exec 3<>"/dev/tcp/127.0.0.1/$port") 2>/dev/null || { echo "proxy did not start on $port: see logs/proxy-$run.out" >&2; exit 1; }
@@ -66,6 +73,7 @@ fi
   echo "order lockstep"
   echo "parallel $parallel"
   echo "keys $(( ${#keys[@]} / 2 ))"
+  echo "routes $(printf "%s\n" "$upstream" "${keys[@]}" | grep -oE "https?://[^/ ]+" | sort -u | tr "\n" " ")"
   echo "harbor $(harbor --version)"
   echo "dataset_path $dataset"
   echo "dataset $got"
@@ -73,13 +81,13 @@ fi
   echo "harness.sh $(sha256sum "$root/harness.sh" | cut -d' ' -f1)"
   echo "summonr $(awk '$1=="summonr"{print $2}' "$root/tools/versions.txt")"
   echo "summonr_commit $(awk '$1=="summonr_commit"{print $2}' "$root/tools/versions.txt")"
-  echo "pi $(awk '$1=="pi"{print $2}' "$root/tools/versions.txt")"
+  awk '$1 ~ /^(summonr_version|pi|opencode2|hermes|node)$/ {print $1, $2}' "$root/tools/versions.txt"
   echo "manifest $(sha256sum "$root/tools/manifest.sha256" | cut -d' ' -f1)"
 } > "$root/jobs/$run/run.txt.new"
 if [ -f "$root/jobs/$run/run.txt" ]; then
   while read -r key value; do
     case $key in
-      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|pi|manifest)
+      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|summonr_version|pi|opencode2|hermes|node|manifest)
         old=$(awk -v k="$key" '$1==k{print $2}' "$root/jobs/$run/run.txt")
         if [ -n "$old" ] && [ "$old" != "$value" ]; then
           rm -f "$root/jobs/$run/run.txt.new"

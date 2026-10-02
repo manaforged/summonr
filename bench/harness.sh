@@ -62,6 +62,29 @@ EOF
     "$tools/node/bin/node" "$tools/pi/lib/node_modules/@earendil-works/pi-coding-agent/dist/bundle/cli.js" \
     --print --mode json --provider "$piprovider" --model "$BENCH_MODEL" ${BENCH_EFFORT:+--thinking "$BENCH_EFFORT"} -- "$prompt" </dev/null
   ;;
+opencode2)
+  case "$provider" in
+  zai*) ocprovider=zai-coding-plan ;;
+  *) ocprovider=$provider ;;
+  esac
+  mkdir -p "$home/.config/opencode"
+  printf '{"$schema": "https://opencode.ai/config.json", "provider": {"%s": {"options": {"baseURL": "%s", "apiKey": "{env:BENCH_API_KEY}"}}}}\n' \
+    "$ocprovider" "$BENCH_BASE" > "$home/.config/opencode/opencode.json"
+  HOME=$home XDG_CONFIG_HOME=$home/.config XDG_DATA_HOME=$home/.local/share XDG_STATE_HOME=$home/.local/state XDG_CACHE_HOME=$home/.cache \
+    BENCH_API_KEY=$key \
+    "$tools/opencode/bin/opencode2" run --standalone --auto --format json \
+    --model "$ocprovider/$BENCH_MODEL${BENCH_EFFORT:+#$BENCH_EFFORT}" -- "$prompt" </dev/null
+  ;;
+hermes)
+  case "$provider" in
+  zai*) hprovider=zai baseenv=GLM_BASE_URL ;;
+  *) hprovider=$provider baseenv=DEEPSEEK_BASE_URL ;;
+  esac
+  mkdir -p "$home/hermes"
+  printf 'model:\n  provider: %s\n  default: %s\n' "$hprovider" "$BENCH_MODEL" > "$home/hermes/config.yaml"
+  env HOME="$home" HERMES_HOME="$home/hermes" "$baseenv=$BENCH_BASE" \
+    "$tools/hermes/.venv/bin/hermes" --yolo chat -q "$prompt" -Q ${BENCH_EFFORT:+--reasoning "$BENCH_EFFORT"} </dev/null
+  ;;
 *)
   echo "unknown harness: $name" >&2
   exit 2
@@ -71,21 +94,23 @@ esac
 
 memory() {
   awk -v root="$1" '
-    function keep() { if (pid != "") { parent[pid] = ppid; rss[pid] = kb } }
-    FNR == 1 { keep(); pid = ""; ppid = ""; kb = 0 }
+    function keep() { if (pid != "") { parent[pid] = ppid; rss[pid] = kb; shell[pid] = nm ~ /^(ba|da|z|k|a)?sh$/ } }
+    FNR == 1 { keep(); pid = ""; ppid = ""; kb = 0; nm = "" }
+    $1 == "Name:" { nm = $2 }
     $1 == "Pid:" { pid = $2 }
     $1 == "PPid:" { ppid = $2 }
     $1 == "VmRSS:" { kb = $2 }
     END {
       keep()
       for (p in parent) {
-        q = p; n = 0
-        while (q != root && q in parent && n++ < 64) q = parent[q]
+        q = p; n = 0; viashell = 0
+        while (q != root && q in parent && n++ < 64) { if (shell[q]) viashell = 1; q = parent[q] }
         if (q != root || p == root) continue
         tree += rss[p]
         if (parent[p] == root) own += rss[p]
+        if (!viashell) helpers += rss[p]
       }
-      print own + 0, tree + 0
+      print own + 0, tree + 0, helpers + 0
     }' /proc/[0-9]*/status 2>/dev/null
 }
 
@@ -93,16 +118,20 @@ agent &
 pid=$!
 peak_own=0
 peak_tree=0
+peak_harness=0
 sum_own=0
 sum_tree=0
+sum_harness=0
 samples=0
 while kill -0 "$pid" 2>/dev/null; do
-  read -r own tree < <(memory "$pid") || true
+  read -r own tree harness < <(memory "$pid") || true
   [ "${own:-0}" -gt "$peak_own" ] && peak_own=$own
   [ "${tree:-0}" -gt "$peak_tree" ] && peak_tree=$tree
+  [ "${harness:-0}" -gt "$peak_harness" ] && peak_harness=$harness
   if [ "${own:-0}" -gt 0 ]; then
-    sum_own=$((sum_own + own)) sum_tree=$((sum_tree + tree)) samples=$((samples + 1))
-    printf 'agent_kb %s\ntree_kb %s\nagent_avg_kb %s\ntree_avg_kb %s\n' "$peak_own" "$peak_tree" "$((sum_own / samples))" "$((sum_tree / samples))" > "$logs/memory.txt"
+    sum_own=$((sum_own + own)) sum_tree=$((sum_tree + tree)) sum_harness=$((sum_harness + ${harness:-0})) samples=$((samples + 1))
+    printf 'agent_kb %s\ntree_kb %s\nharness_kb %s\nagent_avg_kb %s\ntree_avg_kb %s\nharness_avg_kb %s\n' "$peak_own" "$peak_tree" "$peak_harness" \
+      "$((sum_own / samples))" "$((sum_tree / samples))" "$((sum_harness / samples))" > "$logs/memory.txt"
   fi
   sleep 0.5
 done

@@ -144,7 +144,7 @@ pub(crate) fn readonly(name: &str) -> bool {
 fn read() -> ToolDefinition {
     tool(
         "read",
-        "Read files (N:text; offset/limit; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, view an image file, or search contents (pattern, glob, context; hits path:N:col:line). op=help returns the full reference.",
+        "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, view an image file, or search contents (pattern, glob, context; hits path:N:col:line). op=help returns the full reference.",
         serde_json::json!({
             "type": "object",
             "properties": {

@@ -114,7 +114,7 @@ pub(super) struct App {
     pub(super) meter_hover: Signal<Option<super::chat::Target>>,
     pub(super) scroll: Signal<usize>,
     pub(super) settings_sel: Signal<usize>,
-    pub(super) modules: Signal<std::collections::BTreeMap<&'static str, bool>>,
+    pub(super) modules: Signal<std::collections::BTreeMap<crate::modules::ModuleId, bool>>,
     pub(super) ticks: Signal<u64>,
     pub(super) splash_revealed: Signal<bool>,
     pub(super) splash_since: Rc<Cell<std::time::Instant>>,
@@ -241,7 +241,7 @@ impl App {
                         let on = switches
                             .as_ref()
                             .is_none_or(|switches| switches.enabled(module.id));
-                        (module.id.name(), on)
+                        (module.id, on)
                     })
                     .collect()
             }),

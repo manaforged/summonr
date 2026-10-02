@@ -87,7 +87,7 @@ pub use recent::default_effort;
 pub use runtime::{Budget, Loop, RunMode, StepRun, Turn};
 pub use session::{
     ProfileScope, export as export_session, last_for, list as list_sessions, profile,
-    resolve_id as resolve_session, short,
+    prune as prune_sessions, resolve_id as resolve_session, short,
 };
 pub use tools::sandbox::Network;
 #[cfg(all(windows, feature = "windows-sandbox"))]

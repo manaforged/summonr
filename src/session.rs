@@ -4,13 +4,17 @@ use std::sync::Arc;
 use crate::provider::Message;
 
 mod catalog;
+mod export;
 mod profile;
+mod prune;
 mod usage;
 
-pub use catalog::{export, last_for, list, resolve_id, short};
+pub use catalog::{last_for, list, resolve_id, short};
 pub(crate) use catalog::{name_of as catalog_name, previous_for, prompts, roots};
 pub(crate) use catalog::{remove, set_name};
+pub use export::export;
 pub use profile::{Scope as ProfileScope, profile};
+pub use prune::prune;
 pub(crate) use usage::Spend;
 pub(crate) use usage::{DAY, HOUR, Total, buckets, spend};
 

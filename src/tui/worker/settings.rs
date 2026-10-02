@@ -180,8 +180,8 @@ impl Worker {
         self.send_workflow();
     }
 
-    pub(super) fn set_module(&mut self, name: &str, on: bool) {
-        if let Err(error) = crate::modules::set(name, on) {
+    pub(super) fn set_module(&mut self, id: crate::modules::ModuleId, on: bool) {
+        if let Err(error) = crate::modules::set(id, on) {
             self.fail(&error.to_string());
             return;
         }

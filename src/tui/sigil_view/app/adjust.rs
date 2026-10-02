@@ -30,13 +30,7 @@ impl App {
             return;
         };
         match setting {
-            Setting::Mode => {
-                if self.model.get().snapshot.plan {
-                    self.leave_plan();
-                } else if self.model.get().prefs.plan_mode {
-                    self.enter_plan();
-                }
-            }
+            Setting::Mode => self.toggle_mode(),
             Setting::PlanMode => self.flip(|prefs| prefs.plan_mode = !prefs.plan_mode),
             Setting::Verify => self.toggle_verify(),
             Setting::Workflow => self.open_workflow(),
@@ -45,25 +39,30 @@ impl App {
             Setting::Reasoning => self.reasoning_command(None),
             Setting::Tools => self.toggle_tools(),
             Setting::DiffLayout => {
-                let layout = self.model.get().prefs.diff_layout.toggle();
-                self.set_diff_layout(layout);
+                self.set_diff_layout(self.model.get().prefs.diff_layout.toggle());
             }
             Setting::Mail => self.toggle_mail(),
-            Setting::Module(index) => {
-                if let Some(module) = crate::modules::ALL.get(index) {
-                    self.toggle_module(module.id.name());
-                }
-            }
+            Setting::Module(id) => self.toggle_module(id),
             Setting::Theme => self.toggle_theme(),
             Setting::Receipts => self.receipts_command(None),
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
-            Setting::Motion => {
-                self.flip(|prefs| prefs.animations = !prefs.animations);
-                self.splash_since.set(std::time::Instant::now());
-                self.splash_revealed.set(!self.model.get().prefs.animations);
-            }
+            Setting::Motion => self.toggle_motion(),
         }
+    }
+
+    fn toggle_mode(&self) {
+        if self.model.get().snapshot.plan {
+            self.leave_plan();
+        } else if self.model.get().prefs.plan_mode {
+            self.enter_plan();
+        }
+    }
+
+    fn toggle_motion(&self) {
+        self.flip(|prefs| prefs.animations = !prefs.animations);
+        self.splash_since.set(std::time::Instant::now());
+        self.splash_revealed.set(!self.model.get().prefs.animations);
     }
 
     pub(in crate::tui::sigil_view) fn flip(&self, change: impl FnOnce(&mut crate::prefs::Prefs)) {
@@ -215,12 +214,12 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn toggle_module(&self, name: &'static str) {
+    pub(in crate::tui::sigil_view) fn toggle_module(&self, id: crate::modules::ModuleId) {
         let mut modules = self.modules.peek();
-        let on = !modules.get(name).copied().unwrap_or(false);
-        modules.insert(name, on);
+        let on = !modules.get(&id).copied().unwrap_or(false);
+        modules.insert(id, on);
         self.modules.set(modules);
-        drop(self.cmd.send(Cmd::SetModule(name.to_string(), on)));
+        drop(self.cmd.send(Cmd::SetModule(id, on)));
         self.refresh();
     }
 

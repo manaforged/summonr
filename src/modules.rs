@@ -4,7 +4,7 @@ use std::path::Path;
 use crate::config;
 use crate::error::{Error, Result};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ModuleId {
     Search,
     Lsp,
@@ -28,6 +28,26 @@ impl ModuleId {
             Self::Mail => "mail",
         }
     }
+
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        ALL.iter()
+            .map(|module| module.id)
+            .find(|id| id.name() == name)
+    }
+}
+
+pub(crate) fn switch_map<'de, D>(
+    deserializer: D,
+) -> std::result::Result<BTreeMap<ModuleId, bool>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw: BTreeMap<String, bool> = serde::Deserialize::deserialize(deserializer)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|(name, on)| ModuleId::from_name(&name).map(|id| (id, on)))
+        .collect())
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,13 +97,13 @@ pub(crate) const ALL: [Module; 7] = [
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Switches {
-    off: BTreeSet<String>,
-    denied: BTreeSet<String>,
+    off: BTreeSet<ModuleId>,
+    denied: BTreeSet<ModuleId>,
 }
 
 impl Switches {
     pub fn load(workspace: &Path) -> Result<Self> {
-        let user = config::file()?.modules;
+        let user = config::file()?.modules.clone();
         let path = workspace.join(".summonr/config.toml");
         let project = if path.is_file() {
             config::parse(&path)?.modules
@@ -95,39 +115,35 @@ impl Switches {
 
     #[must_use]
     pub(crate) fn from_maps(
-        user: &BTreeMap<String, bool>,
-        project: &BTreeMap<String, bool>,
+        user: &BTreeMap<ModuleId, bool>,
+        project: &BTreeMap<ModuleId, bool>,
     ) -> Self {
         let mut off = BTreeSet::new();
         for module in ALL {
-            let on = user
-                .get(module.id.name())
-                .copied()
-                .unwrap_or(module.default);
-            if !on {
-                off.insert(module.id.name().to_string());
+            if !user.get(&module.id).copied().unwrap_or(module.default) {
+                off.insert(module.id);
             }
         }
         let denied = project
             .iter()
             .filter(|(_, on)| !**on)
-            .map(|(name, _)| name.clone())
+            .map(|(id, _)| *id)
             .collect();
         Self { off, denied }
     }
 
     #[must_use]
     pub fn enabled(&self, id: ModuleId) -> bool {
-        !self.off.contains(id.name()) && !self.denied.contains(id.name())
+        !self.off.contains(&id) && !self.denied.contains(&id)
     }
 
     #[must_use]
     pub fn table(&self) -> String {
         ALL.iter()
             .map(|module| {
-                let state = if self.denied.contains(module.id.name()) {
+                let state = if self.denied.contains(&module.id) {
                     "off (project)"
-                } else if self.off.contains(module.id.name()) {
+                } else if self.off.contains(&module.id) {
                     "off"
                 } else {
                     "on"
@@ -142,7 +158,7 @@ impl Switches {
 pub fn named(name: &str) -> Result<Module> {
     ALL.iter()
         .copied()
-        .find(|module| module.id.name() == name)
+        .find(|module| ModuleId::from_name(name) == Some(module.id))
         .ok_or_else(|| {
             Error::Config(format!(
                 "unknown module `{name}`; `summonr modules` lists them"
@@ -150,7 +166,6 @@ pub fn named(name: &str) -> Result<Module> {
         })
 }
 
-pub fn set(name: &str, on: bool) -> Result<()> {
-    named(name)?;
-    config::save_module(&config::path()?, name, on)
+pub fn set(id: ModuleId, on: bool) -> Result<()> {
+    config::save_module(&config::path()?, id, on)
 }

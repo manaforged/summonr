@@ -7,49 +7,130 @@ use std::os::unix::ffi::OsStrExt;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::time::UNIX_EPOCH;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Hash, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u64);
 
 const WALK_LIMIT: usize = 20_000;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub(crate) struct Snapshot(BTreeMap<String, Entry>);
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(transparent)]
+pub(crate) struct Snapshot {
+    files: BTreeMap<String, Entry>,
+    #[serde(skip)]
+    taken: u64,
+    #[serde(skip)]
+    stamps: BTreeMap<String, Stamp>,
+}
 
-pub(crate) fn snapshot(root: &Path, exclude: Option<&Path>) -> io::Result<Snapshot> {
+impl PartialEq for Snapshot {
+    fn eq(&self, other: &Self) -> bool {
+        self.files == other.files
+    }
+}
+
+impl Eq for Snapshot {}
+
+impl Hash for Snapshot {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.files.hash(state);
+    }
+}
+
+pub(crate) fn snapshot(
+    root: &Path,
+    exclude: Option<&Path>,
+    previous: Option<&Snapshot>,
+) -> io::Result<Snapshot> {
+    let taken = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
     let mut files = BTreeMap::new();
+    let mut stamps = BTreeMap::new();
     for relative in listing(root)? {
         let path = root.join(&relative);
         if exclude.is_some_and(|exclude| path.starts_with(exclude)) {
             continue;
         }
-        let metadata = match path.symlink_metadata() {
-            Ok(metadata) => metadata,
-            Err(error) if skippable(&error) => continue,
-            Err(error) => return Err(at(&path, error)),
-        };
-        if !metadata.is_file() && !metadata.is_symlink() {
-            continue;
+        let name = relative.to_string_lossy().replace('\\', "/");
+        if let Some((entry, stamp)) = mark(&path, &name, previous)? {
+            stamps.insert(name.clone(), stamp);
+            files.insert(name, entry);
         }
-        let modified = metadata
-            .modified()
-            .ok()
-            .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
-            .unwrap_or_default();
-        let mark = match fingerprint(&path, &metadata) {
-            Ok(mark) => mark,
-            Err(error) if skippable(&error) => continue,
-            Err(error) => return Err(at(&path, error)),
-        };
-        files.insert(
-            relative.to_string_lossy().replace('\\', "/"),
-            Entry(metadata.len(), modified.as_secs(), mark),
-        );
     }
-    Ok(Snapshot(files))
+    Ok(Snapshot {
+        files,
+        taken,
+        stamps,
+    })
+}
+
+fn mark(
+    path: &Path,
+    name: &str,
+    previous: Option<&Snapshot>,
+) -> io::Result<Option<(Entry, Stamp)>> {
+    let metadata = match path.symlink_metadata() {
+        Ok(metadata) => metadata,
+        Err(error) if skippable(&error) => return Ok(None),
+        Err(error) => return Err(at(path, error)),
+    };
+    if !metadata.is_file() && !metadata.is_symlink() {
+        return Ok(None);
+    }
+    let modified = metadata
+        .modified()
+        .ok()
+        .and_then(|time| time.duration_since(UNIX_EPOCH).ok())
+        .unwrap_or_default()
+        .as_secs();
+    let stamp = Stamp {
+        mode: mode(&metadata),
+        changed: changed_at(&metadata),
+    };
+    let reused = previous
+        .filter(|_| metadata.is_file())
+        .and_then(|previous| previous.unchanged(name, metadata.len(), modified, stamp));
+    let mark = match reused {
+        Some(mark) => mark,
+        None => match fingerprint(path, &metadata) {
+            Ok(mark) => mark,
+            Err(error) if skippable(&error) => return Ok(None),
+            Err(error) => return Err(at(path, error)),
+        },
+    };
+    Ok(Some((Entry(metadata.len(), modified, mark), stamp)))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    mode: u32,
+    changed: (i64, i64),
+}
+
+#[cfg(unix)]
+fn changed_at(metadata: &Metadata) -> (i64, i64) {
+    use std::os::unix::fs::MetadataExt;
+    (metadata.ctime(), metadata.ctime_nsec())
+}
+
+#[cfg(not(unix))]
+fn changed_at(metadata: &Metadata) -> (i64, i64) {
+    (0, 0)
+}
+
+#[cfg(unix)]
+fn mode(metadata: &Metadata) -> u32 {
+    metadata.permissions().mode()
+}
+
+#[cfg(not(unix))]
+fn mode(metadata: &Metadata) -> u32 {
+    u32::from(metadata.permissions().readonly())
 }
 
 fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
@@ -74,19 +155,28 @@ fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
     }
 }
 
-impl Snapshot {}
+impl Snapshot {
+    fn unchanged(&self, name: &str, len: u64, modified: u64, stamp: Stamp) -> Option<u64> {
+        let Entry(was_len, was_modified, mark) = *self.files.get(name)?;
+        (was_len == len
+            && was_modified == modified
+            && modified < self.taken
+            && self.stamps.get(name) == Some(&stamp))
+        .then_some(mark)
+    }
+}
 
 pub(crate) fn changed(base: &Snapshot, capture: &Snapshot) -> Vec<String> {
     let mut paths: Vec<String> = capture
-        .0
+        .files
         .iter()
-        .filter(|(path, entry)| base.0.get(*path) != Some(*entry))
+        .filter(|(path, entry)| base.files.get(*path) != Some(*entry))
         .map(|(path, _)| path.clone())
         .collect();
     paths.extend(
-        base.0
+        base.files
             .keys()
-            .filter(|path| !capture.0.contains_key(*path))
+            .filter(|path| !capture.files.contains_key(*path))
             .cloned(),
     );
     paths.sort();
@@ -113,7 +203,8 @@ pub(crate) fn listing(root: &Path) -> io::Result<Vec<PathBuf>> {
             .collect());
     }
     let mut found = Vec::new();
-    walk(root, root, &mut found)?;
+    let device = std::fs::metadata(root).ok().as_ref().and_then(device_of);
+    walk(root, root, device, &mut found)?;
     Ok(found)
 }
 
@@ -138,29 +229,24 @@ fn at(path: &Path, error: io::Error) -> io::Error {
     io::Error::new(error.kind(), format!("{}: {error}", path.display()))
 }
 
-fn walk(root: &Path, dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
+fn walk(root: &Path, dir: &Path, device: Option<u64>, found: &mut Vec<PathBuf>) -> io::Result<()> {
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
-        Err(error) if dir != root && skippable(&error) => return Ok(()),
+        Err(_) if dir != root => return Ok(()),
         Err(error) => return Err(at(dir, error)),
     };
-    for entry in entries {
+    for entry in entries.flatten() {
         if found.len() >= WALK_LIMIT {
             return Ok(());
         }
-        let entry = entry.map_err(|error| at(dir, error))?;
         let path = entry.path();
-        let kind = match entry.file_type() {
-            Ok(kind) => kind,
-            Err(error) if skippable(&error) => continue,
-            Err(error) => return Err(at(&path, error)),
+        let Ok(kind) = entry.file_type() else {
+            continue;
         };
         if kind.is_dir() {
-            let name = entry.file_name();
-            if crate::SKIP_DIRS.iter().any(|skip| name == *skip) {
-                continue;
+            if descend(&entry, device) {
+                walk(root, &path, device, found)?;
             }
-            walk(root, &path, found)?;
         } else if (kind.is_file() || kind.is_symlink())
             && let Ok(relative) = path.strip_prefix(root)
         {
@@ -169,3 +255,27 @@ fn walk(root: &Path, dir: &Path, found: &mut Vec<PathBuf>) -> io::Result<()> {
     }
     Ok(())
 }
+
+fn descend(entry: &std::fs::DirEntry, device: Option<u64>) -> bool {
+    let name = entry.file_name();
+    !crate::SKIP_DIRS.iter().any(|skip| name == *skip)
+        && device.is_none_or(|device| {
+            entry
+                .metadata()
+                .is_ok_and(|metadata| device_of(&metadata) == Some(device))
+        })
+}
+
+#[cfg(unix)]
+fn device_of(metadata: &Metadata) -> Option<u64> {
+    Some(std::os::unix::fs::MetadataExt::dev(metadata))
+}
+
+#[cfg(not(unix))]
+fn device_of(_: &Metadata) -> Option<u64> {
+    None
+}
+
+#[cfg(test)]
+#[path = "tree_tests.rs"]
+mod tests;

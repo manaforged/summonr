@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use serde::Deserialize;
 use toml_edit::{DocumentMut, value};
@@ -26,7 +26,7 @@ pub(crate) struct File {
     pub animations: Option<bool>,
     pub fps: Option<u32>,
     pub reasoning: Option<ReasoningSetting>,
-    pub tools: Option<String>,
+    pub tools: Option<crate::prefs::ToolOutput>,
     pub diff_layout: Option<crate::prefs::DiffLayout>,
     pub receipts: Option<String>,
     #[serde(alias = "bus")]
@@ -46,7 +46,10 @@ pub(crate) struct File {
     #[serde(default)]
     pub workflows: BTreeMap<String, BTreeMap<String, SeatRow>>,
     #[serde(default)]
-    pub modules: BTreeMap<String, bool>,
+    #[serde(deserialize_with = "crate::modules::switch_map")]
+    pub modules: BTreeMap<crate::modules::ModuleId, bool>,
+    #[serde(default)]
+    pub sessions: Sessions,
     #[serde(default)]
     pub mcp: BTreeMap<String, crate::mcp::Entry>,
     #[serde(default)]
@@ -100,6 +103,20 @@ impl Sandbox {
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct Sessions {
+    pub retain_days: Option<std::num::NonZeroU32>,
+}
+
+impl Sessions {
+    pub(crate) fn retain(&self) -> std::time::Duration {
+        self.retain_days
+            .map_or(crate::limits::SESSION_RETAIN, |days| {
+                std::time::Duration::from_secs(crate::session::DAY * u64::from(days.get()))
+            })
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Lsp {
     pub module: Option<String>,
     pub command: Option<Vec<String>>,
@@ -120,7 +137,8 @@ pub(crate) struct Endpoint {
     pub env: BTreeMap<String, String>,
     #[serde(default)]
     pub headers: BTreeMap<String, String>,
-    pub wire: Option<String>,
+    #[serde(default, deserialize_with = "decode::wire")]
+    pub wire: Option<crate::endpoint::Wire>,
     #[serde(default)]
     pub fallback: Vec<String>,
     pub compact_tokens: Option<u32>,
@@ -187,18 +205,17 @@ pub(crate) fn path() -> Result<PathBuf> {
     Ok(summonr_home()?.join("config.toml"))
 }
 
-static PARSED: RwLock<Option<File>> = RwLock::new(None);
-static WARNED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static PARSED: RwLock<Option<Arc<File>>> = RwLock::new(None);
 
-pub(crate) fn file() -> Result<File> {
+pub(crate) fn file() -> Result<Arc<File>> {
     if let Some(file) = PARSED.read().ok().and_then(|cached| cached.clone()) {
         return Ok(file);
     }
-    let file = parse(&path()?)?;
+    let file = Arc::new(parse(&path()?)?);
     drop(
         PARSED
             .write()
-            .map(|mut cached| *cached = Some(file.clone())),
+            .map(|mut cached| *cached = Some(Arc::clone(&file))),
     );
     Ok(file)
 }
@@ -262,108 +279,24 @@ pub(crate) fn parse(path: &Path) -> Result<File> {
     Ok(file)
 }
 
-fn bad(path: &Path, message: &str) -> Error {
-    Error::Config(format!("{}: {message}", tilde(path)))
-}
-
-fn decode(path: &Path, text: &str) -> Result<File> {
-    let mut table: toml::Table = toml::from_str(text).map_err(|error| {
-        let line = error.span().map_or(1, |span| {
-            text.get(..span.start)
-                .map_or(1, |head| head.matches('\n').count() + 1)
-        });
-        bad(
-            path,
-            &format!(
-                "line {line}: {} — fix that line, or move the file aside to start fresh",
-                error.message().trim().replace('\n', "; ")
-            ),
-        )
-    })?;
-    if table.contains_key("mail") {
-        table.remove("bus");
-    }
-    table
-        .try_into()
-        .map_err(|error: toml::de::Error| bad(path, &error.message().trim().replace('\n', "; ")))
-}
-
-fn warn_unknown(path: &Path, file: &File) {
-    let unknown: Vec<String> = file
-        .other
-        .keys()
-        .cloned()
-        .chain(file.endpoint.iter().flat_map(|(name, row)| {
-            row.other
-                .keys()
-                .map(move |key| format!("endpoint.{name}.{key}"))
-        }))
-        .collect();
-    if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-        eprintln!(
-            "summonr: {} has unknown key{} {} — check the spelling; summonr ignores {}",
-            tilde(path),
-            if unknown.len() == 1 { "" } else { "s" },
-            unknown.join(", "),
-            if unknown.len() == 1 { "it" } else { "them" }
-        );
-    }
-}
-
-fn validate(path: &Path, file: &File) -> Result<()> {
-    if file
-        .tools
-        .as_deref()
-        .is_some_and(|tools| !matches!(tools, "compact" | "full"))
-    {
-        return Err(bad(path, "`tools` must be `compact` or `full`"));
-    }
-    const THEMES: &[&str] = &["space", "fantasy", "nord", "gruvbox", "solarized", "light"];
-    if file
-        .theme
-        .as_deref()
-        .is_some_and(|theme| !THEMES.contains(&theme))
-    {
-        return Err(bad(
-            path,
-            "`theme` must be space, fantasy, nord, gruvbox, solarized, or light",
-        ));
-    }
-    if file
-        .fps
-        .is_some_and(|fps| !(crate::prefs::FPS_MIN..=crate::prefs::FPS_MAX).contains(&fps))
-    {
-        return Err(bad(
-            path,
-            &format!(
-                "`fps` must be a whole number from {} to {}",
-                crate::prefs::FPS_MIN,
-                crate::prefs::FPS_MAX
-            ),
-        ));
-    }
-    if let Some(other) = file.secrets.as_deref().map(str::trim)
-        && !matches!(other, "" | "file" | "keychain")
-    {
-        return Err(bad(
-            path,
-            &format!("secrets must be \"file\" or \"keychain\", not `{other}`"),
-        ));
-    }
-    if file.lsp.module.is_some() && file.lsp.command.is_some() {
-        return Err(bad(path, "[lsp] accepts `module` or `command`, not both"));
-    }
-    if let Some(module) = file.lsp.module.as_deref() {
-        crate::language::named(module)?;
-    }
-    if file.lsp.command.as_ref().is_some_and(Vec::is_empty) {
-        return Err(bad(path, "[lsp] command must not be empty"));
-    }
-    Ok(())
-}
-
+mod decode;
 mod edit;
+use decode::{decode, validate, warn_unknown};
 pub use edit::tilde;
+pub(crate) fn save_last_endpoint(path: &Path, name: &str) -> Result<bool> {
+    update(path, |document| {
+        if document
+            .get("last_endpoint")
+            .and_then(toml_edit::Item::as_str)
+            == Some(name)
+        {
+            return Ok(false);
+        }
+        document["last_endpoint"] = value(name);
+        Ok(true)
+    })
+}
+
 pub(crate) use edit::{
     remove_key, remove_mcp_server, sandbox_entry, save_default_seat, save_default_workflow,
     save_mcp_server, save_module, save_prefs, save_sandbox_write, save_workflow,

@@ -136,6 +136,14 @@ takes a name or an id prefix, `summonr sessions` lists both, and
 `summonr doctor --logs` lists the last 20 per-run diagnostic logs. `summonr doctor`
 prints the running binary path and reports crashed or incomplete runs.
 Logs older than 14 days are removed unless their process is still active.
+Session directories under `~/.summonr/sessions/` with no file change for 30
+days are removed once per start, except the session that run opens. Set
+another period in days, 1 or more, in `~/.summonr/config.toml`:
+
+```toml
+[sessions]
+retain_days = 90
+```
 
 `--goal` keeps one objective until `.summonr/check.toml` is green and a
 judge says stop. The judge answers `done`, `continue`, `stalled`, or

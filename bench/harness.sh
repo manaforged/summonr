@@ -32,14 +32,14 @@ mkdir -p "$logs"
 
 agent() {
 case "$name" in
-summonr)
-  mkdir -p "$logs/summonr"
+summonr | summonr-*)
+  mkdir -p "$logs/$name"
   if [ -n "${BENCH_KEEP_REASONING:-}" ]; then
     export SUMMONR_KEEP_REASONING=1
   fi
-  HOME=$home SUMMONR_HOME=$logs/summonr SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$key \
+  HOME=$home SUMMONR_HOME=$logs/$name SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$key \
     SUMMONR_MAX_TOKENS=$max_tokens \
-    "$tools/summonr/bin/summonr" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -p -- "$prompt"
+    "$tools/$name/bin/summonr" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -p -- "$prompt"
   ;;
 pi)
   mkdir -p "$home/pi"
@@ -93,11 +93,17 @@ agent &
 pid=$!
 peak_own=0
 peak_tree=0
+sum_own=0
+sum_tree=0
+samples=0
 while kill -0 "$pid" 2>/dev/null; do
   read -r own tree < <(memory "$pid") || true
   [ "${own:-0}" -gt "$peak_own" ] && peak_own=$own
   [ "${tree:-0}" -gt "$peak_tree" ] && peak_tree=$tree
-  printf 'agent_kb %s\ntree_kb %s\n' "$peak_own" "$peak_tree" > "$logs/memory.txt"
+  if [ "${own:-0}" -gt 0 ]; then
+    sum_own=$((sum_own + own)) sum_tree=$((sum_tree + tree)) samples=$((samples + 1))
+    printf 'agent_kb %s\ntree_kb %s\nagent_avg_kb %s\ntree_avg_kb %s\n' "$peak_own" "$peak_tree" "$((sum_own / samples))" "$((sum_tree / samples))" > "$logs/memory.txt"
+  fi
   sleep 0.5
 done
 wait "$pid"

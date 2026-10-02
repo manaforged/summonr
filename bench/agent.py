@@ -40,10 +40,12 @@ class Bench(BaseAgent):
         env = self._extra_env
         harness = env["BENCH_HARNESS"]
         label = hashlib.sha256(f"{harness}.{env['BENCH_RUN']}.{self.logs_dir.parent.name}".encode()).hexdigest()[:16]
+        task = self.logs_dir.parent.name.split("__", 1)[0]
+        group = hashlib.sha256(f"{env['BENCH_RUN']}.{task}".encode()).hexdigest()[:12]
         prompt = "/logs/agent/instruction.txt"
         await environment.exec(f"cat > {prompt} <<'BENCH_EOF'\n{instruction}\nBENCH_EOF")
         variables = {
-            "BENCH_BASE": f"{env['BENCH_PROXY']}/{label}/v1",
+            "BENCH_BASE": f"{env['BENCH_PROXY']}/{group}~{label}/v1",
             "BENCH_MODEL": env.get("BENCH_MODEL", "deepseek-flash"),
             "BENCH_PROVIDER": env.get("BENCH_PROVIDER", "deepseek"),
             "BENCH_API_KEY": PROXY_KEY,

@@ -91,7 +91,7 @@ const ROOTS: &[&str] = &[
 ];
 
 fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
-    let targets: Vec<&String> = args.iter().filter(|arg| !arg.starts_with('-')).collect();
+    let targets = found_roots(args);
     let home = std::env::var_os("HOME").map(PathBuf::from);
     !targets.is_empty()
         && targets.iter().all(|target| {
@@ -99,6 +99,30 @@ fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
                 .map(|path| std::fs::canonicalize(&path).unwrap_or(path))
                 .is_some_and(|path| !broad(&path, workspace, home.as_deref()))
         })
+}
+
+fn found_roots(args: &[String]) -> Vec<&String> {
+    let mut targets = Vec::new();
+    let mut words = args.iter();
+    while let Some(word) = words.next() {
+        if word == "$(find" {
+            let inner: Vec<&String> = words
+                .by_ref()
+                .take_while(|word| !word.ends_with(')'))
+                .collect();
+            let roots: Vec<&String> = inner
+                .into_iter()
+                .take_while(|word| !word.starts_with('-'))
+                .collect();
+            if roots.is_empty() {
+                targets.push(word);
+            }
+            targets.extend(roots);
+        } else if !word.starts_with('-') {
+            targets.push(word);
+        }
+    }
+    targets
 }
 
 fn broad(path: &Path, workspace: &Path, home: Option<&Path>) -> bool {

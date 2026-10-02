@@ -130,23 +130,22 @@ impl ToolRegistry {
     pub(super) fn read_file(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("read", arguments)?;
         let path = object_string(&args, "path")?;
-        if let Some(key) = ["before", "after", "context"]
-            .into_iter()
-            .find(|key| args.get(key).is_some())
-        {
-            return Err(Error::Tool(format!(
-                "`{key}` applies to a search with pattern; a file read pages with offset and limit"
-            )));
-        }
+        let context = object_usize(&args, "context");
+        let before = object_usize(&args, "before").or(context).unwrap_or(0);
+        let after = object_usize(&args, "after").or(context).unwrap_or(0);
         let offset = object_usize(&args, "offset").unwrap_or(1).max(1);
-        let limit =
-            object_usize(&args, "limit").map_or(usize::MAX, |limit| limit.clamp(1, READ_MAX_LIMIT));
+        let limit = object_usize(&args, "limit").map_or(usize::MAX, |limit| {
+            limit
+                .saturating_add(before.min(offset - 1))
+                .saturating_add(after)
+                .clamp(1, READ_MAX_LIMIT)
+        });
         let tags = args.get("tags").and_then(Value::as_bool).unwrap_or(false);
         let mut reader = match self.open_text(path)? {
             Opened::Text(reader) => reader,
             Opened::Image(image) => return Ok(image),
         };
-        let first = offset.saturating_sub(1);
+        let first = offset.saturating_sub(1).saturating_sub(before);
         scan(&mut reader, path, first, limit)?
             .render(path, first, tags)
             .map(ToolOutput::ok)

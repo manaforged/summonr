@@ -1,17 +1,25 @@
 use serde_json::{Value, json};
 
-use super::{stop_reason, usage};
+use super::event::{Change, Counted, Event, EventKind, Opened, Shape};
+use super::stop_reason;
+use crate::provider::message::Checked;
 use crate::provider::wire::{Accumulate, Delta};
-use crate::provider::{AssistantMessage, StopReason, ToolCall, ToolFunction, ToolKind, Usage};
+use crate::provider::{
+    AssistantMessage, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
+};
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 enum Block {
     #[default]
     Other,
     Raw(Value),
-    Text(String),
+    Text {
+        lead: String,
+        start: usize,
+    },
     Thinking {
-        text: String,
+        lead: String,
+        start: usize,
         signature: String,
     },
     Call {
@@ -21,16 +29,62 @@ enum Block {
     },
 }
 
+enum Kept {
+    Raw(Value),
+    Text {
+        lead: String,
+        range: std::ops::Range<usize>,
+    },
+    Thinking {
+        lead: String,
+        range: std::ops::Range<usize>,
+        signature: String,
+    },
+    ToolUse(String),
+}
+
+impl Kept {
+    fn thought(&self) -> bool {
+        match self {
+            Self::Thinking { .. } => true,
+            Self::Raw(block) => matches!(
+                block.get("type").and_then(Value::as_str),
+                Some("thinking" | "redacted_thinking")
+            ),
+            Self::Text { .. } | Self::ToolUse(_) => false,
+        }
+    }
+
+    fn value(self, text: &str, thinking: &str) -> Value {
+        match self {
+            Self::Raw(block) => block,
+            Self::Text { lead, range } => {
+                json!({"type": "text", "text": lead + &text[range]})
+            }
+            Self::Thinking {
+                lead,
+                range,
+                signature,
+            } => json!({
+                "type": "thinking",
+                "thinking": lead + &thinking[range],
+                "signature": signature,
+            }),
+            Self::ToolUse(id) => json!({"type": "tool_use", "id": id}),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct Stream {
     pub(crate) model: String,
-    blocks: Vec<Value>,
+    blocks: Vec<Kept>,
     block: Block,
     text: String,
     thinking: String,
     calls: Vec<ToolCall>,
     usage: Usage,
-    counted: Value,
+    counted: Counted,
     broken: Option<crate::error::Error>,
     stop: StopReason,
     done: bool,
@@ -40,13 +94,14 @@ impl Accumulate for Stream {
     fn new(model: &str) -> Self {
         Self {
             model: model.to_string(),
-            counted: json!({}),
             ..Self::default()
         }
     }
 
     fn on(&mut self, event: &str) -> crate::error::Result<Vec<Delta>> {
-        let event = crate::provider::wire::parse::<Value>(event)?;
+        let Some(event) = crate::provider::wire::parse::<Option<Event<'_>>>(event)? else {
+            return Ok(Vec::new());
+        };
         Ok(self.event(&event)?.into_iter().collect())
     }
 
@@ -57,26 +112,24 @@ impl Accumulate for Stream {
     fn finish(self) -> AssistantMessage {
         self.done()
     }
+
+    fn spill(&mut self, partial: &mut Partial) {
+        partial.text.push_str(&self.text);
+        partial.reasoning.push_str(&self.thinking);
+    }
 }
 
 impl Stream {
-    fn event(&mut self, event: &Value) -> crate::error::Result<Option<Delta>> {
-        let Some(kind) = event.get("type").and_then(Value::as_str) else {
-            return Ok(None);
-        };
-        Ok(match kind {
-            "message_start" => {
-                self.counted = event
-                    .pointer("/message/usage")
-                    .filter(|counted| counted.is_object())
-                    .cloned()
-                    .unwrap_or_else(|| json!({}));
-                self.usage = usage(Some(&self.counted));
+    fn event(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+        Ok(match event.kind {
+            EventKind::MessageStart => {
+                self.counted = event.message.usage.unwrap_or_default();
+                self.usage = self.counted.usage();
                 None
             }
-            "content_block_start" => {
-                if let Some(block) = event.pointer("/content_block") {
-                    self.block = opened(block);
+            EventKind::ContentBlockStart => {
+                if let Some(block) = event.content_block {
+                    self.block = opened(block, self.text.len(), self.thinking.len())?;
                 }
                 if let Block::Call { name, .. } = &self.block {
                     Some(Delta::Call(name.clone()))
@@ -84,64 +137,67 @@ impl Stream {
                     None
                 }
             }
-            "content_block_delta" => self.delta(event),
-            "content_block_stop" => {
+            EventKind::ContentBlockDelta => self.delta(&event.delta),
+            EventKind::ContentBlockStop => {
                 self.close();
                 None
             }
-            "message_delta" => {
-                if let (Some(Value::Object(fields)), Value::Object(counted)) =
-                    (event.get("usage"), &mut self.counted)
-                {
-                    counted.extend(fields.clone());
-                }
-                self.usage = usage(Some(&self.counted));
-                let raw = event.pointer("/delta/stop_reason").and_then(Value::as_str);
-                if let Some(reason @ ("refusal" | "pause_turn")) = raw {
-                    let explanation = text_at(event, "/delta/stop_details/explanation");
-                    return Err(crate::provider::wire::blocked(&if explanation.is_empty() {
-                        reason.to_string()
-                    } else {
-                        format!("{reason}: {explanation}")
-                    }));
-                }
-                self.stop = stop_reason(raw);
-                if let Some(error) = self.broken.take()
-                    && self.stop != StopReason::Length
-                {
-                    return Err(error);
-                }
-                None
-            }
-            "message_stop" => {
+            EventKind::MessageDelta => self.message_delta(event)?,
+            EventKind::MessageStop => {
                 self.done = true;
                 None
             }
-            "error" => {
+            EventKind::Error => {
                 return Err(crate::provider::wire::failed(
                     None,
-                    text_at(event, "/error/type"),
-                    text_at(event, "/error/message"),
+                    &event.error.kind,
+                    &event.error.message,
                 ));
             }
-            _ => None,
+            EventKind::Other => None,
         })
+    }
+
+    fn message_delta(&mut self, event: &Event<'_>) -> crate::error::Result<Option<Delta>> {
+        if let Some(fields) = event.usage {
+            self.counted.merge(fields);
+        }
+        self.usage = self.counted.usage();
+        let raw = event.delta.stop_reason.as_deref();
+        if let Some(reason @ ("refusal" | "pause_turn")) = raw {
+            let explanation = event
+                .delta
+                .stop_details
+                .as_ref()
+                .map_or("", |details| &details.explanation);
+            return Err(crate::provider::wire::blocked(&if explanation.is_empty() {
+                reason.to_string()
+            } else {
+                format!("{reason}: {explanation}")
+            }));
+        }
+        self.stop = stop_reason(raw);
+        if let Some(error) = self.broken.take()
+            && self.stop != StopReason::Length
+        {
+            return Err(error);
+        }
+        Ok(None)
     }
 
     fn done(mut self) -> AssistantMessage {
         let mut calls = std::mem::take(&mut self.calls);
         if !calls.is_empty()
-            && self.blocks.iter().any(|block| {
-                matches!(
-                    block.get("type").and_then(Value::as_str),
-                    Some("thinking" | "redacted_thinking")
-                )
-            })
+            && self.blocks.iter().any(Kept::thought)
             && let Some(call) = calls.first_mut()
         {
+            let blocks = std::mem::take(&mut self.blocks)
+                .into_iter()
+                .map(|block| block.value(&self.text, &self.thinking))
+                .collect();
             call.continuation = Some(crate::provider::Continuation::Anthropic {
                 model: self.model.clone(),
-                blocks: std::mem::take(&mut self.blocks),
+                blocks,
             });
         }
         AssistantMessage {
@@ -156,26 +212,24 @@ impl Stream {
 }
 
 impl Stream {
-    fn delta(&mut self, event: &Value) -> Option<Delta> {
+    fn delta(&mut self, change: &Change<'_>) -> Option<Delta> {
         match &mut self.block {
-            Block::Text(text) => {
-                let chunk = text_at(event, "/delta/text").to_string();
-                text.push_str(&chunk);
+            Block::Text { .. } => {
+                let chunk = change.text.to_string();
                 self.text.push_str(&chunk);
                 Some(Delta::Text(chunk))
             }
-            Block::Thinking { text, signature } => {
-                signature.push_str(text_at(event, "/delta/signature"));
-                let chunk = text_at(event, "/delta/thinking").to_string();
-                if chunk.is_empty() {
+            Block::Thinking { signature, .. } => {
+                signature.push_str(&change.signature);
+                if change.thinking.is_empty() {
                     return None;
                 }
-                text.push_str(&chunk);
+                let chunk = change.thinking.to_string();
                 self.thinking.push_str(&chunk);
                 Some(Delta::Thinking(chunk))
             }
             Block::Call { input, .. } => {
-                input.push_str(text_at(event, "/delta/partial_json"));
+                input.push_str(&change.partial_json);
                 None
             }
             Block::Raw(_) | Block::Other => None,
@@ -184,17 +238,24 @@ impl Stream {
 
     fn close(&mut self) {
         match std::mem::take(&mut self.block) {
-            Block::Thinking { text, signature } => self.blocks.push(json!({
-                "type": "thinking",
-                "thinking": text,
-                "signature": signature,
-            })),
-            Block::Text(text) if !text.is_empty() => {
-                self.blocks.push(json!({"type": "text", "text": text}));
+            Block::Thinking {
+                lead,
+                start,
+                signature,
+            } => self.blocks.push(Kept::Thinking {
+                lead,
+                range: start..self.thinking.len(),
+                signature,
+            }),
+            Block::Text { lead, start } if !lead.is_empty() || self.text.len() > start => {
+                self.blocks.push(Kept::Text {
+                    lead,
+                    range: start..self.text.len(),
+                });
             }
-            Block::Raw(block) => self.blocks.push(block),
+            Block::Raw(block) => self.blocks.push(Kept::Raw(block)),
             Block::Call { id, name, input } => self.call(id, name, input),
-            Block::Text(_) | Block::Other => {}
+            Block::Text { .. } | Block::Other => {}
         }
     }
 
@@ -208,11 +269,15 @@ impl Stream {
             self.broken = Some(error);
             return;
         }
-        self.blocks.push(json!({"type": "tool_use", "id": id}));
+        self.blocks.push(Kept::ToolUse(id.clone()));
         self.calls.push(ToolCall {
             id,
             kind: ToolKind::Function,
-            function: ToolFunction { name, arguments },
+            function: ToolFunction {
+                name,
+                arguments,
+                checked: Checked::Valid,
+            },
             continuation: None,
         });
     }
@@ -222,37 +287,38 @@ impl Stream {
         self.blocks
             .iter()
             .rev()
-            .find_map(|block| block.get("signature").and_then(Value::as_str))
+            .find_map(|block| match block {
+                Kept::Thinking { signature, .. } => Some(signature.as_str()),
+                Kept::Raw(block) => block.get("signature").and_then(Value::as_str),
+                Kept::Text { .. } | Kept::ToolUse(_) => None,
+            })
             .unwrap_or("")
     }
 }
 
-fn opened(block: &Value) -> Block {
-    match block.get("type").and_then(Value::as_str) {
-        Some("text") => Block::Text(text_at(block, "/text").to_string()),
-        Some("thinking") => Block::Thinking {
-            text: text_at(block, "/thinking").to_string(),
-            signature: text_at(block, "/signature").to_string(),
+fn opened(
+    block: &serde_json::value::RawValue,
+    text: usize,
+    thinking: usize,
+) -> crate::error::Result<Block> {
+    let opened = crate::provider::wire::parse::<Opened<'_>>(block.get())?;
+    Ok(match opened.shape {
+        Shape::Text => Block::Text {
+            lead: opened.text.into_owned(),
+            start: text,
         },
-        Some("tool_use") => Block::Call {
-            id: block
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            name: block
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
+        Shape::Thinking => Block::Thinking {
+            lead: opened.thinking.into_owned(),
+            start: thinking,
+            signature: opened.signature.into_owned(),
+        },
+        Shape::ToolUse => Block::Call {
+            id: opened.id.into_owned(),
+            name: opened.name.into_owned(),
             input: String::new(),
         },
-        _ => Block::Raw(block.clone()),
-    }
-}
-
-fn text_at<'a>(value: &'a Value, path: &str) -> &'a str {
-    value.pointer(path).and_then(Value::as_str).unwrap_or("")
+        Shape::Other => Block::Raw(crate::provider::wire::parse::<Value>(block.get())?),
+    })
 }
 
 #[cfg(test)]

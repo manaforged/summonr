@@ -66,12 +66,12 @@ impl<P: Provider> Loop<P> {
         let workspace = tree
             .as_ref()
             .map_or_else(|| self.workspace.clone(), |tree| tree.path.clone());
-        let driver = SessionDriver::open_child(
+        let driver = SessionDriver::open(
             home,
             &workspace,
             &model,
             &self.system_prompt,
-            self.session.id(),
+            Some(self.session.id()),
         )
         .map_err(super::session_err)?;
         let instruction = match args.access {

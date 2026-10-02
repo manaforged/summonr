@@ -13,6 +13,7 @@ use super::proc::{
 use super::rewrite::{plan_write_note, readonly_verb, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
+const COMMAND_LOG_PREFIX: &str = "command-";
 
 #[derive(Clone, Copy)]
 pub(super) enum Wait {
@@ -41,12 +42,15 @@ struct Parked {
     exit_path: PathBuf,
 }
 
-struct CommandFiles {
-    temp: Option<tempfile::TempDir>,
-    id: String,
+struct JobFiles {
     rec_path: PathBuf,
-    log_path: PathBuf,
     exit_path: PathBuf,
+}
+
+struct CommandFiles {
+    id: String,
+    log_path: PathBuf,
+    job: Option<JobFiles>,
 }
 
 impl ToolRegistry {
@@ -59,10 +63,9 @@ impl ToolRegistry {
         cwd: PathBuf,
     ) -> Result<StartedCommand> {
         let files = self.command_files(background)?;
-        let script = if background {
-            crate::shell::wrap(command, &files.exit_path, &cwd)
-        } else {
-            command.to_string()
+        let script = match &files.job {
+            Some(job) => crate::shell::wrap(command, &job.exit_path, &cwd),
+            None => command.to_string(),
         };
         let sandbox = self.command_sandbox(approved)?;
         let child = spawn_command(
@@ -77,15 +80,14 @@ impl ToolRegistry {
         let pid = child
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
-        if background {
-            jobs::write(&files.rec_path, &self.job_record(&files.id, pid, command)?)?;
+        if let Some(job) = &files.job {
+            jobs::write(&job.rec_path, &self.job_record(&files.id, pid, command)?)?;
         }
         Ok(StartedCommand {
             id: files.id,
             pid,
             log_path: files.log_path,
             child,
-            temp: files.temp,
         })
     }
 
@@ -93,20 +95,18 @@ impl ToolRegistry {
         if background {
             let (id, rec_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
             return Ok(CommandFiles {
-                temp: None,
                 id,
-                rec_path,
                 log_path,
-                exit_path,
+                job: Some(JobFiles {
+                    rec_path,
+                    exit_path,
+                }),
             });
         }
-        let dir = tempfile::tempdir()?;
         Ok(CommandFiles {
             id: String::new(),
-            rec_path: dir.path().join("record.json"),
-            log_path: dir.path().join("output.log"),
-            exit_path: dir.path().join("exit"),
-            temp: Some(dir),
+            log_path: self.spill_file(COMMAND_LOG_PREFIX, &[])?,
+            job: None,
         })
     }
 
@@ -170,15 +170,6 @@ impl ToolRegistry {
         Ok(record)
     }
 
-    fn keep_log(&self, temp: Option<tempfile::TempDir>, keep: bool) {
-        if !keep {
-            return;
-        }
-        if let Some(temp) = temp {
-            self.keep_dir(temp);
-        }
-    }
-
     fn finished(
         &self,
         started: StartedCommand,
@@ -186,21 +177,20 @@ impl ToolRegistry {
         code: i32,
         read_only: bool,
     ) -> Result<ToolOutput> {
-        let StartedCommand { log_path, temp, .. } = started;
-        crate::askpass::scrub_file(&log_path);
-        let raw = crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES)?);
+        let StartedCommand { log_path, .. } = started;
+        let raw = scrubbed_preview(&log_path)?;
         let grant = (code != 0)
             .then(|| sandbox_grant(self, command, &raw))
             .flatten();
         let shown = digest(command, &raw);
         let output = format!(
             "exit {code}{}\n{}{}{}",
-            full_output_note(&log_path, &raw, shown.cut),
+            full_output_note(&log_path, shown.cut),
             shown.text,
             plan_write_note(read_only, &raw),
             sandbox_note(grant.as_ref(), self, &raw)
         );
-        self.keep_log(temp, shown.cut);
+        keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
             text: output.trim_end().to_string(),
             success: code == 0,
@@ -247,24 +237,20 @@ impl ToolRegistry {
             .await
             .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
         group.disarm();
-        let StartedCommand { log_path, temp, .. } = started;
-        crate::askpass::scrub_file(&log_path);
-        let raw = crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES)?);
+        let StartedCommand { log_path, .. } = started;
+        let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
         let warning = if read_only {
             "workspace writes were restricted by the command sandbox"
         } else {
             "the command may have changed workspace files before timeout"
         };
-        self.keep_log(temp, shown.cut);
+        let note = full_output_note(&log_path, shown.cut);
+        keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
-            text: format!(
-                "{headline}\n{warning}{}\n{}",
-                full_output_note(&log_path, &raw, shown.cut),
-                shown.text
-            )
-            .trim_end()
-            .to_string(),
+            text: format!("{headline}\n{warning}{note}\n{}", shown.text)
+                .trim_end()
+                .to_string(),
             success: false,
             mutated: !read_only,
             grant: None,
@@ -292,7 +278,6 @@ impl ToolRegistry {
             pid,
             log_path,
             child,
-            temp,
             ..
         } = started;
         let raw =
@@ -304,7 +289,6 @@ impl ToolRegistry {
             shown.text
         );
         adopt(child, group, job.exit_path, log_path);
-        self.keep_log(temp, true);
         Ok(ToolOutput {
             text: text.trim_end().to_string(),
             success: true,
@@ -313,6 +297,22 @@ impl ToolRegistry {
             images: Vec::new(),
         })
     }
+}
+
+fn keep_log(log_path: &std::path::Path, keep: bool) {
+    if !keep {
+        drop(std::fs::remove_file(log_path));
+    }
+}
+
+fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
+    let scrubbed = crate::askpass::scrub_file(log_path);
+    let preview = jobs::preview(log_path, LOG_READ_BYTES)?;
+    Ok(if scrubbed {
+        crate::askpass::scrub(&preview)
+    } else {
+        preview
+    })
 }
 
 fn adopt(mut child: CommandChild, mut group: ProcessGroup, exit_path: PathBuf, log_path: PathBuf) {

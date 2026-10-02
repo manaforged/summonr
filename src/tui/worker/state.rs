@@ -8,7 +8,7 @@ impl Worker {
         ui: UnboundedSender<Msg>,
         info: Info,
     ) -> Self {
-        let steering = Arc::new(Mutex::new(VecDeque::new()));
+        let steering = Arc::new(crate::runtime::Steering::default());
         loop_.steer_with(steering.clone());
         let home = info
             .config

@@ -1,5 +1,13 @@
 use super::record::*;
 use super::*;
+use tokio::task::JoinError;
+
+const WAITING_CHARS: usize = 60;
+
+enum Wake {
+    Event(Event),
+    Joined(String, Box<std::result::Result<Done, JoinError>>),
+}
 
 impl<P: Provider> Loop<P> {
     pub(super) async fn task_poll(
@@ -71,12 +79,14 @@ impl<P: Provider> Loop<P> {
         self.task_settle(done)
     }
 
-    pub(super) async fn finished(&self, spawned: Spawned) -> Done {
+    pub(super) async fn finished(&self, mut spawned: Spawned) -> Done {
+        let joined = (&mut spawned.handle).await;
+        self.joined(spawned, joined)
+    }
+
+    fn joined(&self, spawned: Spawned, joined: std::result::Result<Done, JoinError>) -> Done {
         let access = spawned.record.access;
-        let done = match spawned.handle.await {
-            Ok(done) => Ok(done),
-            Err(error) => Err(Error::Tool(format!("child task failed: {error}"))),
-        };
+        let done = joined.map_err(|error| Error::Tool(format!("child task failed: {error}")));
         let mut pair = [(access, done)];
         self.task_reconcile(&mut pair);
         let [(_, done)] = pair;
@@ -104,36 +114,12 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<String>> {
-        let started = Instant::now();
+        let deadline = tokio::time::Instant::now() + JOB_WAIT;
         let mut announced = false;
         loop {
             self.drain(events, emit);
-            let finished: Vec<String> = self
-                .spawned
-                .iter()
-                .filter(|(_, spawned)| spawned.handle.is_finished())
-                .map(|(id, _)| id.clone())
-                .collect();
-            for id in finished {
-                let Some(spawned) = self.spawned.remove(&id) else {
-                    continue;
-                };
-                let done = self.finished(spawned).await;
-                let execution = self.task_settle(done)?;
-                usage.add(&execution.usage);
-                self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: format!(
-                            "child {} finished: {}",
-                            crate::child::tag(&id),
-                            execution.output.text
-                        ),
-                    },
-                )?;
-            }
-            if self.spawned.is_empty() || started.elapsed().as_secs() >= JOB_WAIT_SECS {
+            self.settle_ready(events, emit, usage).await?;
+            if self.spawned.is_empty() {
                 break;
             }
             if !announced {
@@ -146,7 +132,17 @@ impl<P: Provider> Loop<P> {
                     },
                 )?;
             }
-            tokio::time::sleep(crate::limits::CHILD_POLL).await;
+            match tokio::time::timeout_at(deadline, self.next_wake()).await {
+                Ok(Wake::Event(event)) => {
+                    self.saw(&event);
+                    emit(&event);
+                    events.push(event);
+                }
+                Ok(Wake::Joined(id, joined)) => {
+                    self.announce_finished(&id, *joined, events, emit, usage)?;
+                }
+                Err(_) => break,
+            }
         }
         Ok(self
             .spawned
@@ -155,10 +151,71 @@ impl<P: Provider> Loop<P> {
                 format!(
                     "child {} `{}`",
                     spawned.record.id,
-                    ellipsize(&spawned.record.assignment, 60)
+                    ellipsize(&spawned.record.assignment, WAITING_CHARS)
                 )
             })
             .collect())
+    }
+
+    async fn next_wake(&mut self) -> Wake {
+        let ids: Vec<String> = self.spawned.keys().cloned().collect();
+        let handles = self.spawned.values_mut().map(|spawned| &mut spawned.handle);
+        let receiver = &mut self.events.1;
+        tokio::select! {
+            Some(event) = receiver.recv() => Wake::Event(event),
+            (joined, index, _) = futures::future::select_all(handles) => {
+                Wake::Joined(ids[index].clone(), Box::new(joined))
+            }
+        }
+    }
+
+    async fn settle_ready(
+        &mut self,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<()> {
+        let ready: Vec<String> = self
+            .spawned
+            .iter()
+            .filter(|(_, spawned)| spawned.handle.is_finished())
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ready {
+            let Some(spawned) = self.spawned.get_mut(&id) else {
+                continue;
+            };
+            let joined = (&mut spawned.handle).await;
+            self.announce_finished(&id, joined, events, emit, usage)?;
+        }
+        Ok(())
+    }
+
+    fn announce_finished(
+        &mut self,
+        id: &str,
+        joined: std::result::Result<Done, JoinError>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<()> {
+        let Some(spawned) = self.spawned.remove(id) else {
+            return Ok(());
+        };
+        let done = self.joined(spawned, joined);
+        let execution = self.task_settle(done)?;
+        usage.add(&execution.usage);
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!(
+                    "child {} finished: {}",
+                    crate::child::tag(id),
+                    execution.output.text
+                ),
+            },
+        )
     }
 
     pub(in crate::runtime) async fn kill_spawned(

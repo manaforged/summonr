@@ -12,6 +12,7 @@ fn command(text: &str) -> ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "run_command".to_string(),
             arguments: serde_json::json!({ "command": text }).to_string(),
         },
@@ -26,7 +27,7 @@ async fn delete_outside(answer: Option<&str>) -> (bool, String, Vec<Event>) {
     let mut loop_ = session(workspace.path(), home.path()).with_unrestricted_commands();
     if let Some(answer) = answer {
         let queue = VecDeque::from([UserInput::from(answer.to_string())]);
-        loop_.steer_with(Arc::new(Mutex::new(queue)));
+        loop_.steer_with(Arc::new(Steering::from(queue)));
     }
     let call = command(&format!("rm -rf {}", target.display()));
     let output = loop_.tools.execute_outcome(&call).await;

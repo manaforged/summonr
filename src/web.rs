@@ -40,7 +40,7 @@ impl Format {
 
 #[derive(Clone)]
 pub(crate) struct Search {
-    http: Session,
+    session: Arc<Mutex<Option<Session>>>,
     count: usize,
     allowed: Vec<String>,
     excluded: Vec<String>,
@@ -50,18 +50,32 @@ pub(crate) struct Search {
 
 impl Search {
     pub(crate) fn discover() -> Result<Self> {
-        let file = config::file()?.search;
+        let settings = config::file()?;
+        let file = &settings.search;
         let count = file.count.unwrap_or(HITS_DEFAULT).clamp(1, HITS_MAX);
-        let allowed = normalize_domains(file.allowed_domains.unwrap_or_default());
-        let excluded = normalize_domains(file.excluded_domains.unwrap_or_default());
+        let allowed = normalize_domains(file.allowed_domains.clone().unwrap_or_default());
+        let excluded = normalize_domains(file.excluded_domains.clone().unwrap_or_default());
         Ok(Self {
-            http: client()?,
+            session: Arc::new(Mutex::new(None)),
             count,
             allowed,
             excluded,
             origin: None,
             logs: Arc::new(Mutex::new(Vec::new())),
         })
+    }
+
+    fn http(&self) -> Result<Session> {
+        let mut held = self
+            .session
+            .lock()
+            .map_err(|error| Error::Tool(error.to_string()))?;
+        if let Some(session) = held.as_ref() {
+            return Ok(session.clone());
+        }
+        let session = client()?;
+        *held = Some(session.clone());
+        Ok(session)
     }
 
     pub(crate) async fn search(
@@ -103,7 +117,7 @@ impl Search {
             }
         }
         let response = self
-            .http
+            .http()?
             .get(url.as_str())
             .header("accept", "application/rss+xml, application/xml")
             .send()

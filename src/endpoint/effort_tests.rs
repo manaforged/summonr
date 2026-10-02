@@ -179,6 +179,7 @@ fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
             id: "t1".to_string(),
             kind: crate::provider::ToolKind::Function,
             function: crate::provider::ToolFunction {
+                checked: Default::default(),
                 name: "read".to_string(),
                 arguments: "{}".to_string(),
             },

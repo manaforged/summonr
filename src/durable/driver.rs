@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 
@@ -79,6 +80,7 @@ pub(crate) struct SessionDriver {
     turn: Option<Turn>,
     next: u64,
     pending: Vec<Line>,
+    saved: AtomicU64,
 }
 
 mod children;
@@ -241,7 +243,13 @@ impl SessionDriver {
     }
 
     fn execute(&mut self) -> Result<(), DriverError> {
-        let base = self.snapshot()?;
+        let previous = self.work.as_ref().and_then(|work| {
+            work.candidate
+                .as_ref()
+                .map(|candidate| &candidate.snapshot)
+                .or(work.base.as_ref())
+        });
+        let base = self.snapshot(previous)?;
         self.work
             .as_mut()
             .ok_or(DriverError::NoWork)?
@@ -249,19 +257,29 @@ impl SessionDriver {
         self.checkpoint()
     }
 
-    fn snapshot(&self) -> Result<Snapshot, DriverError> {
+    fn snapshot(&self, previous: Option<&Snapshot>) -> Result<Snapshot, DriverError> {
         let sessions = self
             .log
             .path()
             .parent()
             .and_then(Path::parent)
             .map(canonical);
-        Ok(tree::snapshot(&self.workspace, sessions.as_deref())?)
+        let capture = || tree::snapshot(&self.workspace, sessions.as_deref(), previous);
+        let threaded = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
+            handle.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread
+        });
+        Ok(if threaded {
+            tokio::task::block_in_place(capture)
+        } else {
+            capture()
+        }?)
     }
 
     fn checkpoint(&self) -> Result<(), DriverError> {
         if let Some(work) = &self.work {
-            work.save(&log::work_path(self.log.path()))?;
+            let mark = work.trees_mark();
+            let trees = self.saved.swap(mark, Ordering::Relaxed) != mark;
+            work.save(&log::work_path(self.log.path()), trees)?;
         }
         Ok(())
     }

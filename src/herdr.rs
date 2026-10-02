@@ -2,11 +2,30 @@ use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 
 const AGENT: &str = "summonr";
 const SOURCE: &str = "summonr:lifecycle";
 const DISPLAY: &str = "summonr:display";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    Idle,
+    Working,
+    Blocked,
+}
+
+impl State {
+    const fn wire(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Working => "working",
+            Self::Blocked => "blocked",
+        }
+    }
+}
 
 pub(crate) struct Reporter {
     target: Option<Arc<Target>>,
@@ -30,6 +49,8 @@ struct Target {
     model: Mutex<String>,
     life: AtomicU64,
     meta: AtomicU64,
+    queue: Mutex<Option<Sender<Vec<OsString>>>>,
+    worker: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Reporter {
@@ -44,7 +65,7 @@ impl Reporter {
                 .map(Arc::new)
             });
         if let Some(target) = &target {
-            target.report("idle");
+            target.report(State::Idle);
             target.metadata();
         }
         Self { target }
@@ -52,7 +73,7 @@ impl Reporter {
 
     pub(crate) fn turn(&self) -> Turn {
         if let Some(target) = &self.target {
-            target.report("working");
+            target.report(State::Working);
         }
         Turn {
             target: self.target.clone(),
@@ -61,7 +82,7 @@ impl Reporter {
 
     pub(crate) fn blocked(&self, message: &str) -> Blocked {
         if let Some(target) = &self.target {
-            target.report_with("blocked", Some(message));
+            target.report_with(State::Blocked, Some(message));
         }
         Blocked {
             target: self.target.clone(),
@@ -78,7 +99,7 @@ impl Reporter {
     pub(crate) fn retarget(&self, session: &str) {
         if let Some(target) = &self.target {
             target.set_session(session);
-            target.report("idle");
+            target.report(State::Idle);
             target.metadata();
         }
     }
@@ -95,7 +116,7 @@ impl Drop for Reporter {
 impl Drop for Blocked {
     fn drop(&mut self) {
         if let Some(target) = &self.target {
-            target.report("working");
+            target.report(State::Working);
         }
     }
 }
@@ -103,17 +124,17 @@ impl Drop for Blocked {
 impl Drop for Turn {
     fn drop(&mut self) {
         if let Some(target) = &self.target {
-            target.report("idle");
+            target.report(State::Idle);
         }
     }
 }
 
 impl Target {
-    fn report(&self, state: &str) {
+    fn report(&self, state: State) {
         self.report_with(state, None);
     }
 
-    fn report_with(&self, state: &str, message: Option<&str>) {
+    fn report_with(&self, state: State, message: Option<&str>) {
         let seq = next_seq(&self.life);
         let report = Report {
             state,
@@ -139,17 +160,54 @@ impl Target {
     fn release(&self) {
         let seq = next_seq(&self.life);
         self.run(release_args(&self.pane, seq));
+        drop(
+            self.queue
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .take(),
+        );
+        let worker = self
+            .worker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(worker) = worker {
+            drop(worker.join());
+        }
     }
 
     fn run(&self, args: Vec<OsString>) {
-        let mut command = Command::new(&self.bin);
-        command
-            .args(args)
-            .env("HERDR_SOCKET_PATH", &self.socket)
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
-        drop(command.status());
+        let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
+        if queue.is_none() {
+            *queue = self.spawn();
+        }
+        if let Some(queue) = queue.as_ref() {
+            drop(queue.send(args));
+        }
+    }
+
+    fn spawn(&self) -> Option<Sender<Vec<OsString>>> {
+        let (send, receive) = std::sync::mpsc::channel::<Vec<OsString>>();
+        let bin = self.bin.clone();
+        let socket = self.socket.clone();
+        let worker = std::thread::Builder::new()
+            .name("herdr".to_string())
+            .spawn(move || {
+                for args in receive {
+                    drop(
+                        Command::new(&bin)
+                            .args(args)
+                            .env("HERDR_SOCKET_PATH", &socket)
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .status(),
+                    );
+                }
+            })
+            .ok()?;
+        *self.worker.lock().unwrap_or_else(PoisonError::into_inner) = Some(worker);
+        Some(send)
     }
 }
 
@@ -178,20 +236,17 @@ fn target(
         model: Mutex::new(short_model(model)),
         life: AtomicU64::new(0),
         meta: AtomicU64::new(0),
+        queue: Mutex::new(None),
+        worker: Mutex::new(None),
     })
 }
 
 fn held(value: &Mutex<String>) -> String {
-    value
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+    value.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
 fn store(value: &Mutex<String>, next: String) {
-    let mut slot = value
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut slot = value.lock().unwrap_or_else(PoisonError::into_inner);
     slot.clear();
     slot.push_str(&next);
 }
@@ -210,7 +265,7 @@ fn present(value: Option<OsString>) -> Option<OsString> {
 }
 
 struct Report<'a> {
-    state: &'a str,
+    state: State,
     message: Option<&'a str>,
     session: &'a str,
     command: &'a OsStr,
@@ -239,7 +294,7 @@ fn report_args(pane: &OsStr, report: &Report<'_>) -> Vec<OsString> {
     for (flag, value) in [
         ("--source", SOURCE),
         ("--agent", AGENT),
-        ("--state", report.state),
+        ("--state", report.state.wire()),
     ] {
         args.extend([OsString::from(flag), OsString::from(value)]);
     }

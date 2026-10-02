@@ -1,5 +1,7 @@
 use super::*;
 
+const MAIL_PER_ROUND: usize = 5;
+
 impl<P: Provider> Loop<P> {
     pub(super) fn take_mail(
         &mut self,
@@ -19,7 +21,7 @@ impl<P: Provider> Loop<P> {
                 messages.push(Message::user(input));
             }
         }
-        let (mail, overflow) = self.take_peer_mail(5)?;
+        let (mail, overflow) = self.take_peer_mail(MAIL_PER_ROUND)?;
         for mail in mail {
             let input = UserInput::from(envelope(&mail));
             self.session.steer(&input).map_err(super::session_err)?;
@@ -45,7 +47,7 @@ impl<P: Provider> Loop<P> {
     pub(super) async fn complete_retry(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[ToolDefinition],
+        tools: &super::super::mail::Advertised,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, String, usize, Attempt, u64)>> {
@@ -55,10 +57,11 @@ impl<P: Provider> Loop<P> {
         let mut overflows = 0_usize;
         let mut usage = Usage::default();
         loop {
-            let request = self.completion_request(role, messages, tools);
+            let request = self.request_with(role, messages, tools);
             let prefix_hash = request.prefix_hash();
             self.freeze_catalog();
-            let request_chars = request_chars(messages, tools, self.provider.keeps_reasoning());
+            let request_chars =
+                request_chars(messages, tools.json.len(), self.provider.keeps_reasoning());
             let durable_attempt = self
                 .session
                 .start_provider(&request.model, super::exposure(&request, request_chars))
@@ -156,7 +159,7 @@ impl<P: Provider> Loop<P> {
                         if let Some(cap) = crate::provider::input_cap(&text) {
                             self.set_context_window(Some(cap));
                         }
-                        self.auto_compact(messages, tools, &mut usage, events, emit)
+                        self.auto_compact(messages, tools.json.len(), &mut usage, events, emit)
                             .await?;
                         let edits = force_compact(&messages[1..]);
                         self.rewrite(messages, edits)?;

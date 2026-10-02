@@ -74,10 +74,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         for line in self.session.take_pending() {
-            for event in line.events() {
-                if matches!(event, Event::Reasoning { .. } | Event::Assistant { .. }) {
-                    continue;
-                }
+            for event in line.into_events(crate::durable::projection::Speech::Skip) {
                 self.push_event(events, emit, event)?;
             }
         }

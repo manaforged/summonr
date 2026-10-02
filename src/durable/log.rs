@@ -222,8 +222,11 @@ impl Log {
             line,
         })?;
         bytes.push(b'\n');
-        self.file.write_all(&bytes)?;
-        self.file.flush()
+        let file = &mut self.file;
+        crate::tools::blocking(|| {
+            file.write_all(&bytes)?;
+            file.flush()
+        })
     }
 
     pub(crate) fn path(&self) -> &Path {

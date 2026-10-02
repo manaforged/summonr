@@ -33,18 +33,80 @@ impl<P: Provider> Loop<P> {
         Ok(answer)
     }
 
-    pub(super) async fn answer(
-        &self,
-        shared: &Arc<Mutex<VecDeque<UserInput>>>,
-    ) -> Option<UserInput> {
-        let deadline = Instant::now() + crate::limits::GRANT_WAIT;
-        while Instant::now() < deadline {
-            if let Some(input) = shared.lock().ok().and_then(|mut queue| queue.pop_front()) {
-                return Some(input);
-            }
-            tokio::time::sleep(crate::limits::GRANT_POLL).await;
+    pub(super) async fn answer(&self, shared: &Steering) -> Option<UserInput> {
+        tokio::time::timeout(crate::limits::GRANT_WAIT, shared.next())
+            .await
+            .ok()
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct Steering {
+    queue: Mutex<VecDeque<UserInput>>,
+    wake: tokio::sync::Notify,
+}
+
+pub(crate) struct SteerGuard<'a> {
+    queue: std::sync::MutexGuard<'a, VecDeque<UserInput>>,
+    wake: &'a tokio::sync::Notify,
+}
+
+impl From<VecDeque<UserInput>> for Steering {
+    fn from(queue: VecDeque<UserInput>) -> Self {
+        Self {
+            queue: Mutex::new(queue),
+            wake: tokio::sync::Notify::new(),
         }
-        None
+    }
+}
+
+impl Steering {
+    pub(crate) fn lock(&self) -> std::sync::LockResult<SteerGuard<'_>> {
+        let wake = &self.wake;
+        match self.queue.lock() {
+            Ok(queue) => Ok(SteerGuard { queue, wake }),
+            Err(poisoned) => Err(std::sync::PoisonError::new(SteerGuard {
+                queue: poisoned.into_inner(),
+                wake,
+            })),
+        }
+    }
+
+    async fn next(&self) -> UserInput {
+        loop {
+            let notified = self.wake.notified();
+            let popped = self
+                .queue
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .pop_front();
+            if let Some(input) = popped {
+                return input;
+            }
+            notified.await;
+        }
+    }
+}
+
+impl std::ops::Deref for SteerGuard<'_> {
+    type Target = VecDeque<UserInput>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.queue
+    }
+}
+
+impl std::ops::DerefMut for SteerGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.queue
+    }
+}
+
+impl Drop for SteerGuard<'_> {
+    fn drop(&mut self) {
+        if !self.queue.is_empty() {
+            self.wake.notify_one();
+        }
     }
 }
 

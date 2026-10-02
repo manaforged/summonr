@@ -17,7 +17,6 @@ pub(super) struct StartedCommand {
     pub(super) pid: u32,
     pub(super) log_path: PathBuf,
     pub(super) child: CommandChild,
-    pub(super) temp: Option<tempfile::TempDir>,
 }
 
 #[cfg(unix)]
@@ -175,8 +174,9 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
 
 pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String {
     format!(
-        "started job {id}\npid {pid}\nlog {}\nstate: running\nwait for it: run_command {{\"job\":\"{id}\"}}",
-        log_path.display()
+        "started job {id}\npid {pid}\nlog {}\nstate: {}\nwait for it: run_command {{\"job\":\"{id}\"}}",
+        log_path.display(),
+        crate::jobs::JobState::Running
     )
 }
 

@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, PoisonError};
 
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -26,7 +26,7 @@ enum Outcome {
 struct MidTurn<'a> {
     deferred: &'a mut VecDeque<Cmd>,
     followups: &'a mut VecDeque<UserInput>,
-    steering: &'a Arc<Mutex<VecDeque<UserInput>>>,
+    steering: &'a Arc<crate::runtime::Steering>,
     auto_reply: &'a mut bool,
     ui: &'a UnboundedSender<Msg>,
     reader: &'a super::reader::Reader,

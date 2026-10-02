@@ -36,6 +36,17 @@ pub(crate) fn scratch(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
         .write_all(bytes.as_ref())
 }
 
+pub(crate) fn keep(dir: &Path, prefix: &str, suffix: &str, bytes: &[u8]) -> io::Result<PathBuf> {
+    let mut file = tempfile::Builder::new()
+        .prefix(prefix)
+        .suffix(suffix)
+        .tempfile_in(dir)?;
+    file.write_all(bytes)?;
+    file.keep()
+        .map(|(_, path)| path)
+        .map_err(|error| error.error)
+}
+
 pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
     let mut name = path.as_os_str().to_os_string();
     name.push(".lock");

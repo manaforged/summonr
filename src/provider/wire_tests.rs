@@ -231,6 +231,7 @@ fn a_request_never_loses_a_turn() {
                 id: "c1".to_string(),
                 kind: ToolKind::Function,
                 function: ToolFunction {
+                    checked: Default::default(),
                     name: "read".to_string(),
                     arguments: "{}".to_string(),
                 },

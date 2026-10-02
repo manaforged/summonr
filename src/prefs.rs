@@ -1,189 +1,18 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::config;
-use crate::error::{Error, Result};
+use crate::error::Result;
 
 mod diff;
 mod edit;
+mod hotkeys;
 pub(crate) use diff::DiffLayout;
 pub(crate) use edit::banned_edit;
+pub use hotkeys::Hotkey;
+pub(crate) use hotkeys::{Hotkeys, available};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(usize)]
-pub enum Hotkey {
-    Options,
-    Newline,
-    Editor,
-    Files,
-    Ledger,
-    Agents,
-    Diff,
-    Copy,
-    Select,
-    Pane,
-    Search,
-    History,
-}
-
-impl Hotkey {
-    pub(crate) const ALL: [Self; 12] = [
-        Self::Options,
-        Self::Newline,
-        Self::Editor,
-        Self::Files,
-        Self::Ledger,
-        Self::Agents,
-        Self::Diff,
-        Self::Copy,
-        Self::Select,
-        Self::Pane,
-        Self::Search,
-        Self::History,
-    ];
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Options => "options",
-            Self::Newline => "newline",
-            Self::Editor => "editor",
-            Self::Files => "files",
-            Self::Ledger => "ledger",
-            Self::Agents => "agents",
-            Self::Diff => "diff",
-            Self::Copy => "copy",
-            Self::Select => "select",
-            Self::Pane => "pane",
-            Self::Search => "search",
-            Self::History => "history",
-        }
-    }
-
-    const fn index(self) -> usize {
-        self as usize
-    }
-
-    fn named(name: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|action| action.name() == name)
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Hotkeys {
-    keys: [char; Hotkey::ALL.len()],
-}
-
-impl Default for Hotkeys {
-    fn default() -> Self {
-        Self {
-            keys: ['o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r'],
-        }
-    }
-}
-
-impl Hotkeys {
-    pub(crate) fn configured(rows: &BTreeMap<String, String>) -> Result<Self> {
-        let mut hotkeys = Self::default();
-        for (name, binding) in rows {
-            let action = Hotkey::named(name)
-                .ok_or_else(|| Error::Config(format!("config.toml: unknown hotkey `{name}`")))?;
-            let key = parse(binding).ok_or_else(|| {
-                Error::Config(format!(
-                    "config.toml: hotkey `{name}` must be an available ctrl+letter"
-                ))
-            })?;
-            hotkeys.keys[action.index()] = key;
-        }
-        if hotkeys.keys.iter().filter(|key| **key == 'y').count() > 1 {
-            return Err(Error::Config(
-                "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
-            ));
-        }
-        for action in Hotkey::ALL {
-            let index = action.index();
-            let inherited = matches!(action, Hotkey::Copy | Hotkey::Search | Hotkey::History)
-                && !rows.contains_key(action.name());
-            if hotkeys.keys[index] == 'y'
-                || inherited
-                    && hotkeys
-                        .keys
-                        .iter()
-                        .enumerate()
-                        .any(|(other, key)| other != index && *key == hotkeys.keys[index])
-            {
-                hotkeys.keys[index] = Self::default()
-                    .keys
-                    .into_iter()
-                    .chain('a'..='z')
-                    .find(|key| available(*key) && !hotkeys.keys.contains(key))
-                    .ok_or_else(|| {
-                        Error::Config(format!("no available {} hotkey", action.name()))
-                    })?;
-            }
-        }
-        for (index, key) in hotkeys.keys.iter().enumerate() {
-            if hotkeys.keys[..index].contains(key) {
-                return Err(Error::Config(format!(
-                    "config.toml: hotkey ctrl+{key} is assigned more than once"
-                )));
-            }
-        }
-        Ok(hotkeys)
-    }
-
-    #[must_use]
-    pub(crate) const fn key(&self, action: Hotkey) -> char {
-        self.keys[action.index()]
-    }
-
-    #[must_use]
-    pub(crate) fn label(&self, action: Hotkey) -> String {
-        format!("ctrl+{}", self.key(action))
-    }
-
-    #[must_use]
-    pub(crate) fn action(&self, key: char) -> Option<Hotkey> {
-        Hotkey::ALL
-            .into_iter()
-            .find(|action| self.key(*action) == key)
-    }
-
-    pub(crate) fn assign(&mut self, action: Hotkey, key: char) -> bool {
-        if !available(key) {
-            return false;
-        }
-        let old = self.key(action);
-        if let Some(other) = self.action(key) {
-            self.keys[other.index()] = old;
-        }
-        self.keys[action.index()] = key;
-        true
-    }
-
-    pub(crate) fn entries(&self) -> impl Iterator<Item = (Hotkey, String)> + '_ {
-        Hotkey::ALL
-            .into_iter()
-            .map(|action| (action, self.label(action)))
-    }
-}
-
-#[must_use]
-pub(crate) const fn available(key: char) -> bool {
-    key.is_ascii_lowercase()
-        && !matches!(
-            key,
-            'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'v' | 'y' | 'z'
-        )
-}
-
-fn parse(binding: &str) -> Option<char> {
-    let mut chars = binding.strip_prefix("ctrl+")?.chars();
-    let key = chars.next()?;
-    (chars.next().is_none() && (available(key) || key == 'y')).then_some(key)
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum ToolOutput {
     Compact,
     Full,
@@ -305,66 +134,40 @@ impl Default for Prefs {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn load_from(path: &Path) -> Result<Prefs> {
-    let file = config::parse(path)?;
-    let mut prefs = Prefs {
+    from_file(&config::parse(path)?)
+}
+
+fn from_file(file: &config::File) -> Result<Prefs> {
+    let base = Prefs::default();
+    Ok(Prefs {
         hotkeys: Hotkeys::configured(&file.hotkeys)?,
-        ..Prefs::default()
-    };
-    if let Some(name) = file.theme {
-        prefs.theme = name;
+        theme: file.theme.clone().unwrap_or(base.theme),
+        splash: file.splash.unwrap_or(base.splash),
+        animations: file.animations.unwrap_or(base.animations),
+        fps: file.fps.unwrap_or(base.fps),
+        reasoning: file.reasoning.as_ref().map_or(base.reasoning, reasoning),
+        receipts: file.receipts.as_deref().map_or(base.receipts, |text| {
+            Visibility::parse(text, Visibility::Off)
+        }),
+        tools: file.tools.unwrap_or(base.tools),
+        diff_layout: file.diff_layout.unwrap_or(base.diff_layout),
+        layout: file.layout.clone().unwrap_or(base.layout),
+        mail: file.mail.unwrap_or(base.mail),
+        ban_comments: file.ban_comments.unwrap_or(base.ban_comments),
+        ban_tests: file.ban_tests.unwrap_or(base.ban_tests),
+        plan_mode: file.plan_mode.unwrap_or(base.plan_mode),
+        last_endpoint: file.last_endpoint.clone().or(base.last_endpoint),
+    })
+}
+
+fn reasoning(setting: &config::ReasoningSetting) -> Visibility {
+    match setting {
+        config::ReasoningSetting::Flag(true) => Visibility::Expanded,
+        config::ReasoningSetting::Flag(false) => Visibility::Off,
+        config::ReasoningSetting::Text(text) => Visibility::parse(text, Visibility::Collapsed),
     }
-    if let Some(splash) = file.splash {
-        prefs.splash = splash;
-    }
-    if let Some(animations) = file.animations {
-        prefs.animations = animations;
-    }
-    if let Some(fps) = file.fps {
-        prefs.fps = fps;
-    }
-    match file.reasoning {
-        Some(crate::config::ReasoningSetting::Flag(true)) => {
-            prefs.reasoning = Visibility::Expanded;
-        }
-        Some(crate::config::ReasoningSetting::Flag(false)) => prefs.reasoning = Visibility::Off,
-        Some(crate::config::ReasoningSetting::Text(text)) => {
-            prefs.reasoning = Visibility::parse(&text, Visibility::Collapsed);
-        }
-        None => {}
-    }
-    if let Some(receipts) = file.receipts.as_deref() {
-        prefs.receipts = Visibility::parse(receipts, Visibility::Off);
-    }
-    if let Some(tools) = file.tools {
-        prefs.tools = if tools == "full" {
-            ToolOutput::Full
-        } else {
-            ToolOutput::Compact
-        };
-    }
-    if let Some(layout) = file.diff_layout {
-        prefs.diff_layout = layout;
-    }
-    if let Some(layout) = file.layout {
-        prefs.layout = layout;
-    }
-    if let Some(mail) = file.mail {
-        prefs.mail = mail;
-    }
-    if let Some(ban) = file.ban_comments {
-        prefs.ban_comments = ban;
-    }
-    if let Some(ban) = file.ban_tests {
-        prefs.ban_tests = ban;
-    }
-    if let Some(plan) = file.plan_mode {
-        prefs.plan_mode = plan;
-    }
-    if let Some(last) = file.last_endpoint {
-        prefs.last_endpoint = Some(last);
-    }
-    Ok(prefs)
 }
 
 pub(crate) fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
@@ -372,9 +175,8 @@ pub(crate) fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
 }
 
 pub fn set_last_endpoint(name: &str) {
-    if let (Ok(mut prefs), Some(path)) = (load(), path()) {
-        prefs.last_endpoint = Some(name.to_string());
-        drop(save_in(&path, &prefs));
+    if let Some(path) = path() {
+        drop(config::save_last_endpoint(&path, name));
     }
 }
 
@@ -384,5 +186,5 @@ pub fn path() -> Option<std::path::PathBuf> {
 }
 
 pub fn load() -> Result<Prefs> {
-    load_from(&config::path()?)
+    from_file(&*config::file()?)
 }

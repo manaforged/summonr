@@ -5,6 +5,7 @@ use crate::durable::store::{self, Staged};
 use crate::error::{Error, Result};
 
 const HUNK_ROWS: usize = crate::limits::EDIT_HUNK_ROWS;
+const HUNK_LINE_CHARS: usize = 160;
 
 pub(in crate::tools) struct Change {
     pub(in crate::tools) dest: PathBuf,
@@ -30,11 +31,11 @@ impl ToolRegistry {
         &self,
         dest: &Path,
         display: &str,
+        before: &str,
         content: &str,
         view: impl Into<View>,
     ) -> Result<String> {
-        let before = current(dest, display)?;
-        let preview = self.stage_write(dest, &before, content, view)?;
+        let preview = self.stage_write(dest, before, content, view)?;
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
@@ -121,8 +122,10 @@ fn edit_view(before: &str, after: &str, view: View) -> String {
     if before.is_empty() && !after.is_empty() {
         return format!("new file, {} lines", after.lines().count());
     }
-    let spans = super::spans::changed(before, after);
-    let summary = super::spans::summary(before, after, &spans);
+    let old: Vec<&str> = before.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    let spans = super::spans::changed(&old, &new);
+    let summary = super::spans::summary(old.len(), new.len(), &spans);
     if !matches!(view, View::Tagged) || spans.is_empty() {
         return summary;
     }
@@ -130,7 +133,7 @@ fn edit_view(before: &str, after: &str, view: View) -> String {
         .iter()
         .flat_map(|span| {
             crate::hashline::tagged_span(
-                after,
+                &new,
                 span.start.saturating_sub(1),
                 span.start + span.len.max(1),
             )
@@ -156,7 +159,7 @@ fn cap_rows(lines: Vec<String>) -> Vec<String> {
     let limit = HUNK_ROWS;
     let mut lines = lines
         .iter()
-        .map(|line| crate::text::ellipsize(line, 160))
+        .map(|line| crate::text::ellipsize(line, HUNK_LINE_CHARS))
         .collect::<Vec<_>>();
     if lines.len() > limit {
         let skipped = lines.len() - limit;

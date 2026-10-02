@@ -140,7 +140,10 @@ impl<P: Provider> Loop<P> {
             checkpoints: None,
             fallbacks: VecDeque::new(),
             compact_tokens: None,
-            hooks: config.hooks.with_plugins(&crate::plugins::enabled()),
+            hooks: config
+                .hooks
+                .clone()
+                .with_plugins(&crate::plugins::enabled()),
             mcp_wanted: false,
             mcp_board: crate::mcp::Board::default(),
             inbox: std::collections::VecDeque::new(),
@@ -157,10 +160,7 @@ impl<P: Provider> Loop<P> {
         })
     }
 
-    pub(crate) fn steer_with(
-        &mut self,
-        source: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<UserInput>>>,
-    ) {
+    pub(crate) fn steer_with(&mut self, source: std::sync::Arc<super::turn::Steering>) {
         self.steer_shared = Some(source);
         self.interactive = true;
     }
@@ -383,5 +383,5 @@ pub(super) fn open_driver(
     model: &str,
     system: &str,
 ) -> Result<SessionDriver> {
-    SessionDriver::open(home.as_ref(), workspace, model, system).map_err(super::session_err)
+    SessionDriver::open(home.as_ref(), workspace, model, system, None).map_err(super::session_err)
 }

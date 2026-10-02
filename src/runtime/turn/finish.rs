@@ -126,22 +126,27 @@ impl<P: Provider> Loop<P> {
         checks.extend(self.run_verify(events, emit).await?);
         let mut verdict = self.verdict(&mut checks, events, emit)?;
         let mut rejected = None;
+        let mut reviewed = false;
         if verdict.passed && self.seat_model(workflow::Role::Review).is_some() {
             rejected = self
                 .review_turn(reply, &paths, &mut checks, events, emit, usage)
                 .await?;
             verdict.passed = rejected.is_none();
+            reviewed = true;
         }
         let receipt = Receipt::new(paths, checks.clone(), snapshot, events);
-        let decision = if verdict.passed {
-            let decision = self
-                .goal_decision(reply, &receipt.text, events, emit, usage)
-                .await?;
-            verdict = self.verdict(&mut checks, events, emit)?;
-            decision
-        } else {
-            Decision::Automatic
-        };
+        let decision = self
+            .decide(
+                reply,
+                &receipt.text,
+                &mut verdict,
+                reviewed,
+                &mut checks,
+                events,
+                emit,
+                usage,
+            )
+            .await?;
         let receipt = Receipt::new(receipt.changes, checks.clone(), receipt.snapshot, events);
         match rejected {
             Some(findings) => self.session.commit_review(&findings, Some(&receipt)),
@@ -151,6 +156,33 @@ impl<P: Provider> Loop<P> {
         }
         .map_err(super::session_err)?;
         Ok(checks)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the verdict's inputs move through as one call"
+    )]
+    async fn decide(
+        &mut self,
+        reply: &str,
+        receipt: &str,
+        verdict: &mut Verdict,
+        reviewed: bool,
+        checks: &mut Vec<Outcome>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+        usage: &mut Usage,
+    ) -> Result<Decision> {
+        if !verdict.passed {
+            return Ok(Decision::Automatic);
+        }
+        let decision = self
+            .goal_decision(reply, receipt, events, emit, usage)
+            .await?;
+        if reviewed || !matches!(decision, Decision::Automatic) {
+            *verdict = self.verdict(checks, events, emit)?;
+        }
+        Ok(decision)
     }
 
     async fn review_turn(

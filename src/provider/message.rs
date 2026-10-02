@@ -175,10 +175,50 @@ pub enum Continuation {
     },
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Checked {
+    #[default]
+    Unchecked,
+    Valid,
+    Invalid,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ToolFunction {
     pub name: String,
     pub arguments: String,
+    #[serde(skip)]
+    pub checked: Checked,
+}
+
+impl PartialEq for ToolFunction {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && self.arguments == other.arguments
+    }
+}
+
+impl Eq for ToolFunction {}
+
+impl ToolFunction {
+    pub(crate) fn check(&mut self) {
+        self.checked = if parses(&self.arguments) {
+            Checked::Valid
+        } else {
+            Checked::Invalid
+        };
+    }
+
+    pub(crate) fn valid(&self) -> bool {
+        match self.checked {
+            Checked::Valid => true,
+            Checked::Invalid => false,
+            Checked::Unchecked => parses(&self.arguments),
+        }
+    }
+}
+
+fn parses(arguments: &str) -> bool {
+    serde_json::from_str::<Value>(arguments).is_ok()
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]

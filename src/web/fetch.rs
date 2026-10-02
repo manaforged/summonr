@@ -10,6 +10,8 @@ use crate::error::{Error, Result};
 
 use crate::limits::WEB_FETCH as TIMEOUT;
 const OUT_MAX: usize = 32 * 1024;
+const PAGE_PREFIX: &str = "page-";
+const PAGE_SUFFIX: &str = ".md";
 
 impl Search {
     pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
@@ -58,18 +60,24 @@ impl Search {
     }
 
     fn keep(&self, body: &str) -> Result<PathBuf> {
-        let dir = tempfile::tempdir()?;
-        let path = dir.path().join("page.md");
-        crate::durable::store::write(&path, body)?;
-        self.logs
-            .lock()
-            .map_err(|e| Error::Tool(e.to_string()))?
-            .push(dir);
-        Ok(path)
+        let mut dirs = self.logs.lock().map_err(|e| Error::Tool(e.to_string()))?;
+        if dirs.is_empty() {
+            dirs.push(tempfile::tempdir()?);
+        }
+        let dir = dirs
+            .first()
+            .map(tempfile::TempDir::path)
+            .ok_or_else(|| Error::Tool("web_fetch: page directory is unavailable".to_string()))?;
+        Ok(crate::durable::store::keep(
+            dir,
+            PAGE_PREFIX,
+            PAGE_SUFFIX,
+            body.as_bytes(),
+        )?)
     }
 
     async fn request(&self, url: &Url) -> Result<Response> {
-        self.http
+        self.http()?
             .get(url.as_str())
             .timeout(TIMEOUT)
             .header(

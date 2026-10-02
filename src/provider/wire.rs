@@ -1,7 +1,8 @@
 use serde_json::Value;
+use serde_json::value::RawValue;
 
 use crate::error::{Error, ProviderFailureKind, Result};
-use crate::provider::{AssistantMessage, CompletionRequest};
+use crate::provider::{AssistantMessage, CompletionRequest, Partial, Reasoning};
 
 pub(crate) mod anthropic;
 pub(crate) mod completions;
@@ -20,13 +21,20 @@ pub(crate) fn headers(wire: crate::endpoint::Wire) -> &'static [(&'static str, &
     }
 }
 
-pub(crate) fn arguments(name: &str, raw: &str) -> Result<Value> {
+pub(crate) fn arguments<'a>(name: &str, raw: &'a str) -> Result<&'a RawValue> {
     serde_json::from_str(raw).map_err(|error| {
         Error::provider(
             ProviderFailureKind::MalformedToolCall,
             format!("{name}: invalid tool arguments: {error}"),
         )
     })
+}
+
+pub(crate) fn checked(function: &crate::provider::ToolFunction) -> Result<()> {
+    if function.valid() {
+        return Ok(());
+    }
+    arguments(&function.name, &function.arguments).map(drop)
 }
 
 pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
@@ -68,12 +76,18 @@ pub(crate) const MOST_PENDING: usize = 64 * 1024 * 1024;
 #[derive(Default)]
 pub(crate) struct Frames {
     buffer: Vec<u8>,
+    offset: usize,
     scanned: usize,
     ended: bool,
 }
 
 impl Frames {
-    pub(crate) fn push(&mut self, bytes: &[u8], sentinel: Option<&str>) -> Result<Vec<String>> {
+    pub(crate) fn push(&mut self, bytes: &[u8], sentinel: Option<&str>) -> Result<Vec<&str>> {
+        if self.offset > 0 {
+            self.buffer.drain(..self.offset);
+            self.scanned = self.scanned.saturating_sub(self.offset);
+            self.offset = 0;
+        }
         self.buffer.extend_from_slice(bytes);
         if self.buffer.len() > MOST_PENDING {
             return Err(Error::provider(
@@ -81,12 +95,19 @@ impl Frames {
                 format!("{MOST_PENDING} bytes arrived with no frame boundary"),
             ));
         }
+        let Self {
+            buffer,
+            offset,
+            scanned,
+            ended,
+        } = self;
+        let buffer: &[u8] = buffer;
         let mut frames = Vec::new();
-        while let Some((end, width)) = boundary(&self.buffer, self.scanned) {
-            let event: Vec<u8> = self.buffer.drain(..end).collect();
-            self.buffer.drain(..width);
-            self.scanned = 0;
-            let text = std::str::from_utf8(&event).map_err(|error| {
+        while let Some((end, width)) = boundary(buffer, (*scanned).max(*offset)) {
+            let event = &buffer[*offset..end];
+            *offset = end + width;
+            *scanned = *offset;
+            let text = std::str::from_utf8(event).map_err(|error| {
                 Error::provider(
                     ProviderFailureKind::Malformed,
                     format!("invalid SSE bytes: {error}"),
@@ -100,13 +121,13 @@ impl Frames {
                     continue;
                 }
                 if sentinel.is_some_and(|mark| data == mark) {
-                    self.ended = true;
+                    *ended = true;
                     return Ok(frames);
                 }
-                frames.push(data.to_string());
+                frames.push(data);
             }
         }
-        self.scanned = self.buffer.len().saturating_sub(3);
+        *scanned = buffer.len().saturating_sub(3).max(*offset);
         Ok(frames)
     }
 
@@ -125,14 +146,62 @@ pub(crate) fn parse<'a, T: serde::Deserialize<'a>>(data: &'a str) -> Result<T> {
 }
 
 pub(crate) fn boundary(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
-    let bytes = &bytes[from.min(bytes.len())..];
-    let lf = bytes.windows(2).position(|window| window == b"\n\n");
-    let crlf = bytes.windows(4).position(|window| window == b"\r\n\r\n");
-    match (lf, crlf) {
-        (Some(left), Some(right)) if left <= right => Some((from + left, 2)),
-        (Some(_), Some(right)) | (None, Some(right)) => Some((from + right, 4)),
-        (Some(left), None) => Some((from + left, 2)),
-        (None, None) => None,
+    let mut at = from.min(bytes.len());
+    while let Some(found) = bytes[at..].iter().position(|byte| *byte == b'\n') {
+        let newline = at + found;
+        let next = bytes.get(newline + 1).copied();
+        if next == Some(b'\n') {
+            return Some((newline, 2));
+        }
+        if newline > from
+            && bytes[newline - 1] == b'\r'
+            && next == Some(b'\r')
+            && bytes.get(newline + 2) == Some(&b'\n')
+        {
+            return Some((newline - 1, 4));
+        }
+        at = newline + 1;
+    }
+    None
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Slot {
+    Messages,
+    Contents,
+}
+
+impl Slot {
+    pub(crate) fn key(self) -> &'static str {
+        match self {
+            Self::Messages => "messages",
+            Self::Contents => "contents",
+        }
+    }
+}
+
+pub(crate) struct Wired {
+    pub(crate) head: Value,
+    pub(crate) messages: Option<Vec<u8>>,
+    pub(crate) slot: Slot,
+}
+
+impl Wired {
+    pub(crate) fn head(head: Value) -> Self {
+        Self {
+            head,
+            messages: None,
+            slot: Slot::Messages,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn value(self) -> Result<Value> {
+        let mut head = self.head;
+        if let Some(messages) = self.messages {
+            head[self.slot.key()] = serde_json::from_slice(&messages)?;
+        }
+        Ok(head)
     }
 }
 
@@ -140,6 +209,7 @@ pub(crate) trait Accumulate {
     fn new(model: &str) -> Self;
     fn on(&mut self, frame: &str) -> Result<Vec<Delta>>;
     fn finish(self) -> AssistantMessage;
+    fn spill(&mut self, partial: &mut Partial);
     fn finished(&self) -> bool {
         false
     }
@@ -158,7 +228,12 @@ pub(crate) trait Chat {
         None
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value>;
+    fn body(call: &CompletionRequest<'_>, reasoning: &Reasoning, stream: bool) -> Result<Wired>;
+
+    #[cfg(test)]
+    fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value> {
+        Self::body(call, &call.reasoning, stream)?.value()
+    }
 
     #[cfg(test)]
     fn parse(model: &str, body: &Value) -> AssistantMessage;

@@ -23,6 +23,7 @@ pub(super) fn call(id: &str, name: &str, arguments: &str) -> ToolCall {
         function: ToolFunction {
             name: name.to_string(),
             arguments: arguments.to_string(),
+            checked: Default::default(),
         },
         continuation: None,
     }
@@ -182,8 +183,7 @@ fn every_stop_reason_maps_to_one_of_ours() {
 }
 
 fn asked<'a>(model: &str, messages: &'a [Message], effort: Effort) -> CompletionRequest<'a> {
-    let mut call = ask(messages);
-    call.model = model.to_string();
+    let mut call = ask(messages).with_model(model.to_string());
     call.effort = Some(effort);
     call.max_output_tokens = Some(16_000);
     call
@@ -286,4 +286,21 @@ fn a_note_between_a_call_and_its_result_comes_after_the_result() {
     let parts = body["messages"][2]["content"].as_array().unwrap();
     assert_eq!(parts[0]["type"], "tool_result");
     assert_eq!(parts[1]["text"], "plan note");
+}
+
+#[test]
+fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
+    let mut assistant = message(Role::Assistant, "");
+    assistant.tool_calls = vec![call("toolu_1", "lookup", r#"{"zeta": 1.50, "alpha":"x"}"#)];
+    let wired = <Wire as crate::provider::wire::Chat>::body(
+        &ask(&[message(Role::User, "go"), assistant]),
+        &Reasoning::default(),
+        false,
+    )
+    .unwrap();
+    let raw = String::from_utf8(wired.messages.expect("the history is written raw")).unwrap();
+    assert!(
+        raw.contains(r#""input":{"zeta": 1.50, "alpha":"x"}"#),
+        "arguments are embedded verbatim, not re-serialized: {raw}"
+    );
 }

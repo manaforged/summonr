@@ -5,7 +5,7 @@ mod gemini;
 mod openai;
 mod vendors;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Thinking {
     Adaptive,
     Budgeted,
@@ -15,7 +15,7 @@ pub(crate) enum Thinking {
     None,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct Traits {
     pub(crate) thinking: Thinking,
     pub(crate) skip_signature: bool,

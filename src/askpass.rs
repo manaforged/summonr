@@ -48,6 +48,12 @@ static BROKER: OnceLock<Broker> = OnceLock::new();
 const SHORTEST: usize = 4;
 
 #[cfg(unix)]
+const SCRUB_CHUNK: usize = 64 * 1024;
+
+#[cfg(unix)]
+const PROMPT_BYTES: u64 = 512;
+
+#[cfg(unix)]
 pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
     use std::fs::{Permissions, set_permissions};
     use std::os::unix::fs::PermissionsExt;
@@ -108,7 +114,7 @@ fn serve(mut stream: std::os::unix::net::UnixStream, send: &impl Fn(Request)) {
     use std::io::{BufRead, BufReader, Read, Write};
 
     let mut prompt = String::new();
-    if BufReader::new(Read::by_ref(&mut stream).take(512))
+    if BufReader::new(Read::by_ref(&mut stream).take(PROMPT_BYTES))
         .read_line(&mut prompt)
         .is_err()
     {
@@ -149,11 +155,15 @@ pub fn env() -> Vec<(String, String)> {
     })
 }
 
-#[cfg(unix)]
-fn on_path(name: &str) -> Option<std::path::PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?)
-        .map(|dir| dir.join(name))
-        .find(|path| path.is_file())
+pub(crate) fn on_path(name: &str) -> Option<std::path::PathBuf> {
+    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|dir| {
+        let path = dir.join(name);
+        if path.is_file() {
+            return Some(path);
+        }
+        let exe = dir.join(format!("{name}.exe"));
+        (cfg!(windows) && Path::new(name).extension().is_none() && exe.is_file()).then_some(exe)
+    })
 }
 
 #[cfg(unix)]
@@ -189,9 +199,9 @@ pub(crate) fn scrub(text: &str) -> String {
 }
 
 #[cfg(unix)]
-pub(crate) fn scrub_file(path: &Path) {
+pub(crate) fn scrub_file(path: &Path) -> bool {
     let Some(secrets) = BROKER.get().and_then(|broker| broker.secrets.lock().ok()) else {
-        return;
+        return false;
     };
     let needles: Vec<&[u8]> = secrets
         .iter()
@@ -199,29 +209,26 @@ pub(crate) fn scrub_file(path: &Path) {
         .filter(|needle| !needle.is_empty())
         .collect();
     if needles.is_empty() {
-        return;
+        return false;
     }
-    drop(rewrite(path, &needles));
+    rewrite(path, &needles).unwrap_or(false)
 }
 
 #[cfg(not(unix))]
-pub(crate) fn scrub_file(_path: &Path) {}
+pub(crate) fn scrub_file(_path: &Path) -> bool {
+    false
+}
 
 #[cfg(unix)]
-fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<()> {
+fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<bool> {
     use std::io::{Read, Write};
 
-    const CHUNK: usize = 64 * 1024;
     let keep = needles.iter().map(|needle| needle.len()).max().unwrap_or(1) - 1;
     let mut file = std::fs::File::open(path)?;
-    let parent = path
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
-    let mut buf = Vec::with_capacity(CHUNK + keep);
-    let mut chunk = vec![0_u8; CHUNK];
-    let mut changed = false;
+    let mut temp: Option<tempfile::NamedTempFile> = None;
+    let mut buf = Vec::with_capacity(SCRUB_CHUNK + keep);
+    let mut chunk = vec![0_u8; SCRUB_CHUNK];
+    let mut offset: u64 = 0;
     loop {
         let read = file.read(&mut chunk)?;
         buf.extend_from_slice(&chunk[..read]);
@@ -234,27 +241,48 @@ fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<()> {
         while pos < limit {
             match earliest(&buf[pos..], needles) {
                 Some((at, len)) if pos + at < limit => {
-                    temp.write_all(&buf[pos..pos + at])?;
-                    temp.write_all(b"[secret]")?;
+                    if temp.is_none() {
+                        temp = Some(copied_prefix(path, offset + pos as u64)?);
+                    }
+                    if let Some(out) = temp.as_mut() {
+                        out.write_all(&buf[pos..pos + at])?;
+                        out.write_all(b"[secret]")?;
+                    }
                     pos += at + len;
-                    changed = true;
                 }
                 Some(_) | None => {
-                    temp.write_all(&buf[pos..limit])?;
+                    if let Some(out) = temp.as_mut() {
+                        out.write_all(&buf[pos..limit])?;
+                    }
                     pos = limit;
                 }
             }
         }
         buf.drain(..pos);
+        offset += pos as u64;
         if read == 0 {
             break;
         }
     }
-    if changed {
-        temp.as_file().sync_all()?;
-        temp.persist(path).map_err(|error| error.error)?;
-    }
-    Ok(())
+    let Some(temp) = temp else {
+        return Ok(false);
+    };
+    temp.as_file().sync_all()?;
+    temp.persist(path).map_err(|error| error.error)?;
+    Ok(true)
+}
+
+#[cfg(unix)]
+fn copied_prefix(path: &Path, len: u64) -> std::io::Result<tempfile::NamedTempFile> {
+    use std::io::Read;
+
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::copy(&mut std::fs::File::open(path)?.take(len), &mut temp)?;
+    Ok(temp)
 }
 
 #[cfg(unix)]

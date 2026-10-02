@@ -25,16 +25,12 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     for (index, (record, status)) in model.jobs.iter().enumerate() {
         let menu = app.clone();
         let toggle = app.clone();
-        let tone = if status.running {
-            Tone::Info
-        } else if status.killed {
-            Tone::Warn
-        } else {
-            match status.exit_code {
-                Some(0) => Tone::Success,
-                Some(_) => Tone::Error,
-                None => Tone::Neutral,
-            }
+        let tone = match status.state {
+            crate::jobs::JobState::Running => Tone::Info,
+            crate::jobs::JobState::Killed => Tone::Warn,
+            crate::jobs::JobState::Exited(0) => Tone::Success,
+            crate::jobs::JobState::Exited(_) => Tone::Error,
+            crate::jobs::JobState::Dead => Tone::Neutral,
         };
         column = column.child(
             list_row(index == cursor, record.command.clone(), status.label())

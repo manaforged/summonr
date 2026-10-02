@@ -65,6 +65,7 @@ impl WaitError {
 mod calls;
 mod checks;
 mod elicit;
+pub(crate) use elicit::Steering;
 mod finish;
 mod grant;
 mod retry;
@@ -78,15 +79,6 @@ mod finish_tests;
 mod permission_tests;
 
 impl<P: Provider> Loop<P> {
-    fn completion_request<'a>(
-        &self,
-        role: workflow::Role,
-        messages: &'a [Message],
-        tools: &'a [ToolDefinition],
-    ) -> CompletionRequest<'a> {
-        self.request(role, messages, tools, true)
-    }
-
     pub(super) fn remaining_time(&self) -> Option<Duration> {
         let limit = crate::limits::seconds(self.budget.max_secs?);
         Some(limit.saturating_sub(crate::limits::seconds(
@@ -102,9 +94,13 @@ impl<P: Provider> Loop<P> {
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
         }
+        let tool_bytes = request.tools_json.map_or_else(
+            || crate::provider::ToolsJson::encode(request.tools).len(),
+            crate::provider::ToolsJson::len,
+        );
         let chars = request_chars(
             request.messages,
-            request.tools,
+            tool_bytes,
             self.seat(role).0.keeps_reasoning(),
         );
         let attempt = self
@@ -184,13 +180,8 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(super) fn estimated_prompt_tokens(
-        &self,
-        messages: &[Message],
-        tools: &[ToolDefinition],
-    ) -> usize {
-        let chars = request_chars(messages, tools, self.provider.keeps_reasoning());
-        super::compaction::estimate(chars, self.context_sample)
+    pub(super) fn estimated_prompt_tokens(&self, message_chars: usize, tool_bytes: usize) -> usize {
+        super::compaction::estimate(message_chars + tool_bytes, self.context_sample)
     }
 
     pub async fn turn(&mut self, prompt: &str) -> Result<Turn> {
@@ -310,12 +301,12 @@ fn purpose_of(role: workflow::Role) -> Purpose {
     }
 }
 
-fn request_chars(messages: &[Message], tools: &[ToolDefinition], reasoning_on_wire: bool) -> usize {
+fn request_chars(messages: &[Message], tool_bytes: usize, reasoning_on_wire: bool) -> usize {
     messages
         .iter()
         .map(|message| super::compaction::message_chars(message, reasoning_on_wire))
         .sum::<usize>()
-        + serde_json::to_string(tools).map_or(0, |schema| schema.len())
+        + tool_bytes
 }
 
 fn verify_call(command: &str) -> ToolCall {
@@ -324,10 +315,11 @@ fn verify_call(command: &str) -> ToolCall {
         id: "completion-check".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "run_command".to_string(),
             arguments: serde_json::json!({
                 "command": command,
-                "timeout_secs": 600,
+                "timeout_secs": crate::limits::VERIFY_TIMEOUT_SECS,
                 "fresh": true
             })
             .to_string(),

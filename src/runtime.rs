@@ -20,6 +20,7 @@ use crate::verify::Outcome;
 use crate::workflow;
 
 pub(crate) use crate::limits::{JOB_WAIT, JOB_WAIT_SECS};
+pub(crate) use turn::Steering;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
     pub max_tokens: Option<u64>,
@@ -102,7 +103,7 @@ pub struct Loop<P> {
     mode: RunMode,
     plan_first: bool,
     tools: ToolRegistry,
-    schema: Option<Vec<ToolDefinition>>,
+    schema: Option<Arc<mail::Advertised>>,
 
     herdr: Reporter,
     session: SessionDriver,
@@ -128,7 +129,7 @@ pub struct Loop<P> {
     mcp_board: crate::mcp::Board,
     inbox: VecDeque<Mail>,
     steer: VecDeque<UserInput>,
-    steer_shared: Option<Arc<Mutex<VecDeque<UserInput>>>>,
+    steer_shared: Option<Arc<turn::Steering>>,
     depth: u8,
     tasks: bool,
     plan_sandbox: bool,
@@ -156,6 +157,7 @@ impl<P: Provider> Loop<P> {
             id: format!("shell-{}", self.session_id()),
             kind: ToolKind::Function,
             function: ToolFunction {
+                checked: Default::default(),
                 name: "run_command".to_string(),
                 arguments: serde_json::json!({ "command": command }).to_string(),
             },
@@ -205,6 +207,16 @@ impl<P: Provider> Loop<P> {
             emit_deltas,
             self.effort_for(role),
         )
+    }
+
+    pub(crate) fn request_with<'a>(
+        &self,
+        role: workflow::Role,
+        messages: &'a [Message],
+        advertised: &'a mail::Advertised,
+    ) -> CompletionRequest<'a> {
+        self.request(role, messages, &advertised.tools, true)
+            .with_tools_json(&advertised.json)
     }
 
     fn round_role(&self) -> workflow::Role {

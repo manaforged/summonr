@@ -40,6 +40,7 @@ fn background(command: &str) -> Reply {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "run_command".to_string(),
             arguments: serde_json::json!({ "command": command, "background": true }).to_string(),
         },
@@ -176,4 +177,23 @@ async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
         "{text}"
     );
     assert_eq!(reply, "started it");
+}
+
+#[tokio::test]
+async fn an_unchanged_harness_note_is_sent_once() {
+    let mut run = session([Reply::Text("one"), Reply::Text("two")]);
+    run.loop_ = run.loop_.with_plan();
+    run.loop_.turn("first").await.unwrap();
+    run.loop_.turn("second").await.unwrap();
+    let sent = run.sent.lock().unwrap();
+    let last_user = |messages: &[Message]| {
+        messages
+            .iter()
+            .rev()
+            .find(|message| message.role == crate::provider::Role::User)
+            .map(|message| message.content.clone())
+            .unwrap_or_default()
+    };
+    assert_ne!(last_user(&sent[0]), "first");
+    assert_eq!(last_user(&sent[1]), "second");
 }

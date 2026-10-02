@@ -49,7 +49,10 @@ fn last_used() -> Option<(String, String)> {
 
 pub(crate) fn default_seat() -> Option<crate::recent::Seat> {
     let file = config::file().ok()?;
-    Some(crate::recent::Seat::new(file.default?, file.default_model?))
+    Some(crate::recent::Seat::new(
+        file.default.clone()?,
+        file.default_model.clone()?,
+    ))
 }
 
 pub(crate) fn choose(
@@ -252,11 +255,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         opencode: preset.is_some_and(|preset| preset.opencode),
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
         reasoning: reasoning::from_preset(preset),
-        wire: row
-            .wire
-            .as_deref()
-            .map(Wire::parse)
-            .unwrap_or(Wire::Completions),
+        wire: row.wire.unwrap_or(Wire::Completions),
     })
 }
 
@@ -277,11 +276,21 @@ pub(super) fn hosted(base: &str) -> Option<&'static super::preset::Preset> {
 }
 
 pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
+    overlay_connection(endpoint, row);
+    overlay_tuning(endpoint, row);
+    reasoning::overlay(
+        &mut endpoint.reasoning,
+        row.reasoning_levels.as_deref(),
+        row.thinking_off,
+    );
+}
+
+fn overlay_connection(endpoint: &mut Endpoint, row: &FileEndpoint) {
     if let Some(base) = &row.base_url {
         endpoint.base_url = Some(trim_slash(base));
     }
     if let Some(model) = &row.model {
-        endpoint.model = model.clone();
+        endpoint.model.clone_from(model);
     }
     if let Some(key) = &row.api_key
         && !key.trim().is_empty()
@@ -294,41 +303,25 @@ pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
     if let Some(body) = &row.body {
         endpoint.body = Some(json(body));
     }
-    if let Some(window) = row.context_window {
-        endpoint.context_window = Some(window);
-    }
-    if let Some(effort) = row.effort {
-        endpoint.effort = Some(effort);
-    }
-    if let Some(price) = row.price {
-        endpoint.price = Some(price);
-    }
     for (key, value) in &row.env {
         endpoint.env.insert(key.clone(), value.clone());
     }
     for (key, value) in &row.headers {
         endpoint.headers.insert(key.clone(), value.clone());
     }
-    if let Some(wire) = &row.wire {
-        endpoint.wire = Wire::parse(wire);
-    }
     if !row.fallback.is_empty() {
         endpoint.fallback.clone_from(&row.fallback);
     }
-    if let Some(tokens) = row.compact_tokens {
-        endpoint.compact_tokens = Some(tokens);
-    }
-    if row.images.is_some() {
-        endpoint.images = row.images;
-    }
-    if let Some(keep) = row.keep_reasoning {
-        endpoint.keep_reasoning = keep;
-    }
-    reasoning::overlay(
-        &mut endpoint.reasoning,
-        row.reasoning_levels.as_deref(),
-        row.thinking_off,
-    );
+}
+
+fn overlay_tuning(endpoint: &mut Endpoint, row: &FileEndpoint) {
+    endpoint.context_window = row.context_window.or(endpoint.context_window);
+    endpoint.effort = row.effort.or(endpoint.effort);
+    endpoint.price = row.price.or(endpoint.price);
+    endpoint.wire = row.wire.unwrap_or(endpoint.wire);
+    endpoint.compact_tokens = row.compact_tokens.or(endpoint.compact_tokens);
+    endpoint.images = row.images.or(endpoint.images);
+    endpoint.keep_reasoning = row.keep_reasoning.unwrap_or(endpoint.keep_reasoning);
 }
 
 fn overlay_model(endpoint: &mut Endpoint, spec: &crate::config::Model) {

@@ -1,12 +1,24 @@
-use serde_json::{Map, Value, json};
+#[cfg(test)]
+use serde_json::Value;
 
 use super::{Accumulate, Chat, Delta};
+use crate::provider::message::Checked;
 use crate::provider::{
-    AssistantMessage, CompletionRequest, Continuation, Message, Role, StopReason, ToolCall,
+    AssistantMessage, CompletionRequest, Continuation, Partial, Reasoning, StopReason, ToolCall,
     ToolFunction, ToolKind, Usage,
 };
+#[cfg(test)]
+use frame::Counted;
+use frame::{Call, Chunk};
 
+#[cfg(test)]
+use crate::provider::{Message, Role};
+#[cfg(test)]
+use serde_json::json;
+
+mod body;
 mod config;
+mod frame;
 
 const SYNTHETIC: &str = "call-";
 
@@ -23,153 +35,25 @@ impl Chat for Wire {
         }
     }
 
-    fn request(call: &CompletionRequest<'_>, _stream: bool) -> crate::error::Result<Value> {
-        request(call)
+    fn body(
+        call: &CompletionRequest<'_>,
+        reasoning: &Reasoning,
+        _stream: bool,
+    ) -> crate::error::Result<super::Wired> {
+        body::body(call, reasoning)
     }
 
     #[cfg(test)]
     fn parse(model: &str, body: &Value) -> AssistantMessage {
         let mut reply = <Reply as Accumulate>::new(model);
-        drop(reply.value(body));
+        drop(reply.take(body));
         reply.finish()
     }
 }
 
+#[cfg(test)]
 pub(crate) fn request(call: &CompletionRequest<'_>) -> crate::error::Result<Value> {
-    let mut system = String::new();
-    let mut contents: Vec<Value> = Vec::new();
-    for message in call.messages {
-        match message.role {
-            Role::System if !contents.is_empty() => {
-                push(
-                    &mut contents,
-                    "user",
-                    vec![json!({"text": message.content})],
-                );
-            }
-            Role::System => {
-                if !system.is_empty() {
-                    system.push('\n');
-                }
-                system.push_str(&message.content);
-            }
-            Role::User => push(&mut contents, "user", user_parts(message)),
-            Role::Assistant => push(&mut contents, "model", model_parts(message, &call.model)?),
-            Role::Tool => push(
-                &mut contents,
-                "user",
-                vec![response_part(message, call.messages)],
-            ),
-        }
-    }
-    let mut body = Map::new();
-    body.insert("contents".to_string(), Value::Array(contents));
-    if !system.is_empty() {
-        body.insert(
-            "systemInstruction".to_string(),
-            json!({"parts": [{"text": system}]}),
-        );
-    }
-    if !call.tools.is_empty() {
-        body.insert(
-            "tools".to_string(),
-            json!([{"functionDeclarations": declarations(call)}]),
-        );
-    }
-    body.insert("generationConfig".to_string(), config::generation(call));
-    Ok(Value::Object(body))
-}
-
-fn declarations(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "parametersJsonSchema": tool.function.parameters,
-            })
-        })
-        .collect()
-}
-
-fn push(contents: &mut Vec<Value>, role: &str, parts: Vec<Value>) {
-    if parts.is_empty() {
-        return;
-    }
-    if let Some(Value::Object(last)) = contents.last_mut()
-        && last.get("role").and_then(Value::as_str) == Some(role)
-        && let Some(Value::Array(kept)) = last.get_mut("parts")
-    {
-        kept.extend(parts);
-        return;
-    }
-    contents.push(json!({"role": role, "parts": parts}));
-}
-
-fn user_parts(message: &Message) -> Vec<Value> {
-    let mut parts: Vec<Value> = message
-        .images
-        .iter()
-        .map(|image| {
-            json!({"inlineData": {"mimeType": image.media_type, "data": image.data.clone()}})
-        })
-        .collect();
-    if !message.content.is_empty() {
-        parts.push(json!({"text": message.content}));
-    }
-    parts
-}
-
-fn model_parts(message: &Message, model: &str) -> crate::error::Result<Vec<Value>> {
-    let first = message.tool_calls.first();
-    let signatures: &[String] = if let Some(Continuation::Gemini {
-        model: made,
-        signatures,
-    }) = first
-        .and_then(|call| call.continuation.as_ref())
-        .or(message.continuation.as_ref())
-        && made == model
-    {
-        signatures
-    } else {
-        &[]
-    };
-    let foreign = signatures.is_empty() && super::traits::traits(model).skip_signature;
-    let signed = |mut part: Value, slot: usize| {
-        if let Some(signature) = signatures.get(slot).filter(|found| !found.is_empty()) {
-            part["thoughtSignature"] = json!(signature);
-        } else if foreign && slot == 0 && part.get("functionCall").is_some() {
-            part["thoughtSignature"] = json!("skip_thought_signature_validator");
-        }
-        part
-    };
-    let mut parts = Vec::new();
-    if !message.content.is_empty() {
-        let text = json!({"text": message.content});
-        parts.push(signed(text, message.tool_calls.len()));
-    }
-    for (slot, call) in message.tool_calls.iter().enumerate() {
-        let args = super::arguments(&call.function.name, &call.function.arguments)?;
-        let part = json!({"functionCall": {"name": call.function.name, "args": args}});
-        parts.push(signed(part, slot));
-    }
-    Ok(parts)
-}
-
-fn response_part(message: &Message, history: &[Message]) -> Value {
-    let id = message.tool_call_id.as_deref().unwrap_or_default();
-    let name = history
-        .iter()
-        .flat_map(|turn| &turn.tool_calls)
-        .find(|call| call.id == id)
-        .map_or(id, |call| call.function.name.as_str());
-    let mut response =
-        json!({"name": name, "response": {"name": name, "content": message.content}});
-    if !id.starts_with(SYNTHETIC) {
-        response["id"] = json!(id);
-    }
-    json!({"functionResponse": response})
+    body::body(call, &call.reasoning)?.value()
 }
 
 #[derive(Default)]
@@ -194,51 +78,37 @@ impl Accumulate for Reply {
     }
 
     fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
-        let frame = crate::provider::wire::parse::<Value>(frame)?;
-        if let Some(error) = frame.get("error") {
+        let Some(frame) = crate::provider::wire::parse::<Option<Chunk<'_>>>(frame)? else {
+            return Ok(Vec::new());
+        };
+        if let Some(error) = &frame.error {
             return Err(super::failed(
-                error
-                    .get("code")
-                    .and_then(Value::as_u64)
-                    .and_then(|code| u16::try_from(code).ok()),
-                error.get("status").and_then(Value::as_str).unwrap_or(""),
-                error.get("message").and_then(Value::as_str).unwrap_or(""),
+                error.code.and_then(|code| u16::try_from(code).ok()),
+                error.status.as_deref().unwrap_or(""),
+                error.message.as_deref().unwrap_or(""),
             ));
         }
         if let Some(reason) = frame
-            .pointer("/promptFeedback/blockReason")
-            .and_then(Value::as_str)
+            .prompt_feedback
+            .as_ref()
+            .and_then(|feedback| feedback.block_reason.as_deref())
         {
             return Err(super::blocked(reason));
         }
-        if let Some(reason) = frame
-            .pointer("/candidates/0/finishReason")
-            .and_then(Value::as_str)
-        {
+        if let Some(reason) = frame.finish_reason() {
             self.done = true;
-            if matches!(
-                reason,
-                "SAFETY"
-                    | "RECITATION"
-                    | "BLOCKLIST"
-                    | "PROHIBITED_CONTENT"
-                    | "SPII"
-                    | "IMAGE_SAFETY"
-            ) {
-                return Err(super::blocked(reason));
-            }
-            if reason == "MALFORMED_FUNCTION_CALL" {
-                return Err(crate::error::Error::provider(
-                    crate::error::ProviderFailureKind::MalformedToolCall,
-                    format!("native response ended with {reason}"),
-                ));
-            }
+            ended(reason)?;
         }
         Ok(self.value(&frame))
     }
 
     fn finished(&self) -> bool {
         self.done
+    }
+
+    fn spill(&mut self, partial: &mut Partial) {
+        partial.text.push_str(&self.text);
+        partial.reasoning.push_str(&self.thinking);
     }
 
     fn finish(mut self) -> AssistantMessage {
@@ -274,10 +144,10 @@ impl Accumulate for Reply {
 }
 
 impl Reply {
-    fn value(&mut self, frame: &Value) -> Vec<Delta> {
+    fn value(&mut self, frame: &Chunk<'_>) -> Vec<Delta> {
         let thought = self.thinking.len();
         let named = self.calls.len();
-        let text = self.take(frame);
+        let text = self.absorb(frame);
         let mut deltas = Vec::new();
         if self.thinking.len() > thought {
             deltas.push(Delta::Thinking(self.thinking[thought..].to_string()));
@@ -291,33 +161,32 @@ impl Reply {
         deltas
     }
 
+    #[cfg(test)]
     pub(crate) fn take(&mut self, body: &Value) -> Option<String> {
-        if let Some(counted) = body.get("usageMetadata") {
-            self.usage = usage(counted);
+        let text = body.to_string();
+        let chunk = crate::provider::wire::parse::<Chunk<'_>>(&text).unwrap_or_default();
+        self.absorb(&chunk)
+    }
+
+    fn absorb(&mut self, body: &Chunk<'_>) -> Option<String> {
+        if let Some(counted) = &body.usage_metadata {
+            self.usage = counted.usage();
         }
-        if let Some(reason) = body
-            .pointer("/candidates/0/finishReason")
-            .and_then(Value::as_str)
-        {
+        if let Some(reason) = body.finish_reason() {
             self.stop = stop_reason(reason);
         }
         let mut chunk = String::new();
-        for part in body
-            .pointer("/candidates/0/content/parts")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let signature = part.get("thoughtSignature").and_then(Value::as_str);
-            if let Some(call) = part.get("functionCall") {
+        for part in body.parts() {
+            let signature = part.thought_signature.as_deref();
+            if let Some(call) = &part.function_call {
                 self.calls.push(self.called(call));
                 self.signatures
                     .push(signature.unwrap_or_default().to_string());
             } else if let Some(signature) = signature {
                 self.said = signature.to_string();
             }
-            if let Some(text) = part.get("text").and_then(Value::as_str) {
-                if part.get("thought").and_then(Value::as_bool) == Some(true) {
+            if let Some(text) = part.text.as_deref() {
+                if part.thought == Some(true) {
                     self.thinking.push_str(text);
                 } else {
                     self.text.push_str(text);
@@ -328,13 +197,9 @@ impl Reply {
         (!chunk.is_empty()).then_some(chunk)
     }
 
-    fn called(&self, call: &Value) -> ToolCall {
-        let name = call
-            .get("name")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        let id = call.get("id").and_then(Value::as_str).map_or_else(
+    fn called(&self, call: &Call<'_>) -> ToolCall {
+        let name = call.name.as_deref().unwrap_or_default().to_string();
+        let id = call.id.as_deref().map_or_else(
             || format!("{SYNTHETIC}{name}-{}", self.calls.len()),
             str::to_string,
         );
@@ -344,29 +209,36 @@ impl Reply {
             function: ToolFunction {
                 name,
                 arguments: call
-                    .get("args")
-                    .filter(|args| !args.is_null())
-                    .map_or_else(|| "{}".to_string(), ToString::to_string),
+                    .args
+                    .map_or_else(|| "{}".to_string(), |args| args.get().to_string()),
+                checked: Checked::Valid,
             },
             continuation: None,
         }
     }
 }
 
-pub(crate) fn usage(counted: &Value) -> Usage {
-    let field = |name: &str| {
-        counted
-            .get(name)
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32
-    };
-    Usage {
-        prompt_tokens: field("promptTokenCount"),
-        completion_tokens: field("candidatesTokenCount") + field("thoughtsTokenCount"),
-        reasoning_tokens: field("thoughtsTokenCount"),
-        cached_tokens: field("cachedContentTokenCount"),
+fn ended(reason: &str) -> crate::error::Result<()> {
+    if matches!(
+        reason,
+        "SAFETY" | "RECITATION" | "BLOCKLIST" | "PROHIBITED_CONTENT" | "SPII" | "IMAGE_SAFETY"
+    ) {
+        return Err(super::blocked(reason));
     }
+    if reason == "MALFORMED_FUNCTION_CALL" {
+        return Err(crate::error::Error::provider(
+            crate::error::ProviderFailureKind::MalformedToolCall,
+            format!("native response ended with {reason}"),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+pub(crate) fn usage(counted: &Value) -> Usage {
+    serde_json::from_value::<Counted>(counted.clone())
+        .unwrap_or_default()
+        .usage()
 }
 
 pub(crate) fn stop_reason(raw: &str) -> StopReason {

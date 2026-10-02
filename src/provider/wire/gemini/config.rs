@@ -1,23 +1,23 @@
 use serde_json::{Map, Value, json};
 
-use crate::provider::wire::traits::{Thinking, traits};
-use crate::provider::{CompletionRequest, Effort, Step};
+use crate::provider::wire::traits::Thinking;
+use crate::provider::{CompletionRequest, Effort, Reasoning, Step};
 
-pub(super) fn generation(call: &CompletionRequest<'_>) -> Value {
+pub(super) fn generation(call: &CompletionRequest<'_>, reasoning: &Reasoning) -> Value {
     let mut config = Map::new();
     if let Some(limit) = call.max_output_tokens {
         config.insert("maxOutputTokens".to_string(), json!(limit));
     }
-    if let Some(thinking) = thinking(call) {
+    if let Some(thinking) = thinking(call, reasoning) {
         config.insert("thinkingConfig".to_string(), thinking);
     }
     Value::Object(config)
 }
 
-fn thinking(call: &CompletionRequest<'_>) -> Option<Value> {
+fn thinking(call: &CompletionRequest<'_>, reasoning: &Reasoning) -> Option<Value> {
     let thoughts = call.effort != Some(Effort::None);
-    let step = call.reasoning.plan(&call.model).step(call.effort);
-    match (traits(&call.model).thinking, step) {
+    let step = reasoning.plan(call.traits).step(call.effort);
+    match (call.traits.thinking, step) {
         (Thinking::Budget, Step::Level(level)) => {
             Some(json!({"thinkingBudget": budget(level), "includeThoughts": thoughts}))
         }

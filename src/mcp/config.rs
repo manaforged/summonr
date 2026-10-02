@@ -176,7 +176,7 @@ fn layers(workspace: &Path) -> Result<Layers> {
     let mut approved = BTreeSet::new();
     let mut all = false;
     let file = config::file()?;
-    let user = file.mcp;
+    let user = file.mcp.clone();
     let import_peers = file.import_mcp == Some(true);
     approved.extend(
         user.iter()

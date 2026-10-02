@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, OnceLock};
 
+use serde::Serialize;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines, Stdin};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -19,8 +20,7 @@ type Reply = std::result::Result<Value, (i64, String)>;
 struct Server<F> {
     endpoint: Endpoint,
     build: F,
-    out: UnboundedSender<Value>,
-    current: Arc<Mutex<String>>,
+    out: UnboundedSender<String>,
     sessions: BTreeMap<String, Loop<Client>>,
 }
 
@@ -28,11 +28,10 @@ pub async fn serve<F>(name: Option<&str>, model: Option<&str>, build: F) -> Resu
 where
     F: FnMut(&Endpoint, Client, &Path) -> Result<Loop<Client>>,
 {
-    let (out, mut queue) = unbounded_channel::<Value>();
+    let (out, mut queue) = unbounded_channel::<String>();
     let writer = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
-        while let Some(frame) = queue.recv().await {
-            let line = format!("{frame}\n");
+        while let Some(line) = queue.recv().await {
             if stdout.write_all(line.as_bytes()).await.is_err() || stdout.flush().await.is_err() {
                 break;
             }
@@ -42,7 +41,6 @@ where
         endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)?,
         build,
         out,
-        current: Arc::new(Mutex::new(String::new())),
         sessions: BTreeMap::new(),
     };
     let mut input = BufReader::new(tokio::io::stdin()).lines();
@@ -73,13 +71,13 @@ where
             "session/prompt" => self.prompt(&params, input).await,
             other => Err((-32601, format!("{other} is not supported"))),
         };
-        drop(self.out.send(answer(&id, reply)));
+        drop(self.out.send(frame_line(&answer(&id, reply))));
     }
 
-    fn connect(&self, endpoint: &Endpoint) -> Result<Client> {
+    fn connect(&self, endpoint: &Endpoint, tag: &Arc<OnceLock<String>>) -> Result<Client> {
         Ok(Client::connect(endpoint)?
-            .on_delta(self.stream("agent_message_chunk"))
-            .on_reasoning(self.stream("agent_thought_chunk")))
+            .on_delta(self.stream("agent_message_chunk", tag))
+            .on_reasoning(self.stream("agent_thought_chunk", tag)))
     }
 
     fn open(&mut self, params: &Value) -> Reply {
@@ -88,26 +86,44 @@ where
             .and_then(Value::as_str)
             .map(PathBuf::from)
             .ok_or_else(|| (-32602, "session/new needs cwd".to_string()))?;
-        let client = self.connect(&self.endpoint).map_err(failure)?;
+        let tag = Arc::new(OnceLock::new());
+        let client = self.connect(&self.endpoint, &tag).map_err(failure)?;
         let mut session = (self.build)(&self.endpoint, client, &cwd).map_err(failure)?;
         let (fallbacks, skipped) =
-            endpoint::fallbacks(&self.endpoint, |fallback| self.connect(fallback));
+            endpoint::fallbacks(&self.endpoint, |fallback| self.connect(fallback, &tag));
         for note in skipped {
             eprintln!("summonr: {note}");
         }
         session.set_fallbacks(fallbacks);
         let id = session.session_id();
+        drop(tag.set(id.clone()));
         self.sessions.insert(id.clone(), session);
         Ok(json!({"sessionId": id}))
     }
 
-    fn stream(&self, kind: &'static str) -> impl Fn(&str) + Send + Sync + 'static {
+    fn stream(
+        &self,
+        kind: &'static str,
+        tag: &Arc<OnceLock<String>>,
+    ) -> impl Fn(&str) + Send + Sync + 'static {
         let out = self.out.clone();
-        let current = self.current.clone();
+        let tag = tag.clone();
         move |text: &str| {
-            let session = current.lock().map(|id| id.clone()).unwrap_or_default();
-            let content = json!({"sessionUpdate": kind, "content": {"type": "text", "text": text}});
-            drop(out.send(update(&session, content)));
+            let chunk = Chunk {
+                jsonrpc: "2.0",
+                method: "session/update",
+                params: ChunkParams {
+                    session_id: tag.get().map_or("", String::as_str),
+                    update: ChunkUpdate {
+                        content: ChunkText { text, kind: "text" },
+                        session_update: kind,
+                    },
+                },
+            };
+            if let Ok(mut line) = serde_json::to_string(&chunk) {
+                line.push('\n');
+                drop(out.send(line));
+            }
         }
     }
 
@@ -125,9 +141,6 @@ where
             .filter_map(block)
             .collect::<Vec<_>>()
             .join("\n");
-        if let Ok(mut current) = self.current.lock() {
-            current.clone_from(&session);
-        }
         let out = self.out.clone();
         let Some(agent) = self.sessions.get_mut(&session) else {
             return Err((-32602, format!("unknown session {session}")));
@@ -140,15 +153,15 @@ where
             loop {
                 tokio::select! {
                     done = &mut turn => break Some(done),
-                    line = input.next_line() => {
-                        let Ok(Some(line)) = line else {
+                    read = input.next_line() => {
+                        let Ok(Some(line)) = read else {
                             break None;
                         };
                         match rpc::parse(&line) {
                             Ok(Frame::Notification { method, .. }) if method == "session/cancel" => break None,
                             Ok(Frame::Request { id, .. }) => {
                                 let busy = Err((-32000, "a prompt is already running".to_string()));
-                                drop(out.send(answer(&id, busy)));
+                                drop(out.send(frame_line(&answer(&id, busy))));
                             }
                             Ok(Frame::Notification { .. } | Frame::Response { .. }) | Err(_) => {}
                         }
@@ -171,7 +184,7 @@ where
     }
 }
 
-fn emit(out: &UnboundedSender<Value>, session: &str, event: &Event) {
+fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
     let content = match event {
         Event::ToolCall {
             id,
@@ -226,7 +239,39 @@ fn emit(out: &UnboundedSender<Value>, session: &str, event: &Event) {
         | Event::Spawned { .. }
         | Event::Child { .. } => return,
     };
-    drop(out.send(update(session, content)));
+    drop(out.send(frame_line(&update(session, content))));
+}
+
+fn frame_line(frame: &Value) -> String {
+    format!("{frame}\n")
+}
+
+#[derive(Serialize)]
+struct Chunk<'a> {
+    jsonrpc: &'static str,
+    method: &'static str,
+    params: ChunkParams<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChunkParams<'a> {
+    session_id: &'a str,
+    update: ChunkUpdate<'a>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ChunkUpdate<'a> {
+    content: ChunkText<'a>,
+    session_update: &'static str,
+}
+
+#[derive(Serialize)]
+struct ChunkText<'a> {
+    text: &'a str,
+    #[serde(rename = "type")]
+    kind: &'static str,
 }
 
 fn update(session: &str, content: Value) -> Value {

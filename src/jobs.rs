@@ -9,8 +9,6 @@ use crate::error::{Error, Result};
 
 const ID_MAX: usize = 80;
 const KILLED: &str = "killed";
-const POLL_START_SECS: u64 = 1;
-const POLL_CAP_SECS: u64 = 10;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub(crate) struct Record {
@@ -28,26 +26,34 @@ pub(crate) struct Record {
     pub log: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum JobState {
+    Running,
+    Killed,
+    Exited(i32),
+    Dead,
+}
+
+impl std::fmt::Display for JobState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Running => f.write_str("running"),
+            Self::Killed => f.write_str(KILLED),
+            Self::Exited(code) => write!(f, "exit {code}"),
+            Self::Dead => f.write_str("dead"),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct Status {
     pub text: String,
-    pub exit_code: Option<i32>,
-    pub running: bool,
-    pub killed: bool,
+    pub state: JobState,
 }
 
 impl Status {
     pub(crate) fn label(&self) -> String {
-        if self.running {
-            return "running".to_string();
-        }
-        if self.killed {
-            return "killed".to_string();
-        }
-        match self.exit_code {
-            Some(code) => format!("exit {code}"),
-            None => "dead".to_string(),
-        }
+        self.state.to_string()
     }
 }
 
@@ -151,28 +157,18 @@ pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
     let log = log_path(workspace, record);
     let exit = exit_path(workspace, &record.id);
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
-    let mut killed = false;
-    let alive = !exit.is_file() && alive_since(record.pid, record.started);
-    let (state, exit_code, running) = if alive {
-        ("running".to_string(), None, true)
+    let state = if !exit.is_file() && alive_since(record.pid, record.started) {
+        JobState::Running
     } else if exit.is_file() {
         let text = crate::durable::store::read_or_empty(&exit)?;
-        killed = text.trim() == KILLED;
-        let code = text.trim().parse::<i32>().ok();
-        (
-            if killed {
-                "killed".to_string()
-            } else {
-                format!(
-                    "exit {}",
-                    code.map_or_else(|| "?".to_string(), |code| code.to_string())
-                )
-            },
-            code,
-            false,
-        )
+        let text = text.trim();
+        if text == KILLED {
+            JobState::Killed
+        } else {
+            text.parse::<i32>().map_or(JobState::Dead, JobState::Exited)
+        }
     } else {
-        ("dead".to_string(), None, false)
+        JobState::Dead
     };
     let preview = if log.is_file() {
         preview(&log, 8 * 1024)?
@@ -188,9 +184,7 @@ pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
             pid = record.pid,
             log = log.display(),
         ),
-        exit_code,
-        running,
-        killed,
+        state,
     })
 }
 
@@ -266,12 +260,12 @@ pub(crate) async fn wait(
     mut waiting: impl FnMut() -> Result<()>,
 ) -> Result<Status> {
     let started = std::time::Instant::now();
-    let mut pause = POLL_START_SECS;
+    let mut pause = crate::limits::JOB_POLL_START_SECS;
     let mut announced = false;
     loop {
         let current = status(workspace, &load(workspace, id)?)?;
         let elapsed = started.elapsed().as_secs();
-        if !current.running || elapsed >= limit_secs {
+        if current.state != JobState::Running || elapsed >= limit_secs {
             return Ok(current);
         }
         if !announced {
@@ -279,7 +273,7 @@ pub(crate) async fn wait(
             waiting()?;
         }
         tokio::time::sleep(crate::limits::seconds(pause.min(limit_secs - elapsed))).await;
-        pause = (pause * 2).min(POLL_CAP_SECS);
+        pause = (pause * 2).min(crate::limits::JOB_POLL_CAP_SECS);
     }
 }
 

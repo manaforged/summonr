@@ -20,13 +20,19 @@ pub(crate) fn line_hash(text: &str) -> String {
 }
 
 #[must_use]
-pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize, tags: bool) -> String {
+pub(crate) fn tagged_lines<S: AsRef<str>>(
+    lines: &[S],
+    first: usize,
+    total: usize,
+    tags: bool,
+) -> String {
     if total == 0 || lines.is_empty() {
         return format!("lines 0-0/{total}");
     }
     let last = first + lines.len() - 1;
     let mut out = format!("lines {}-{}/{}", first + 1, last + 1, total);
     for (offset, line) in lines.iter().enumerate() {
+        let line = line.as_ref();
         out.push('\n');
         out.push_str(&(first + offset + 1).to_string());
         out.push(':');
@@ -40,29 +46,14 @@ pub(crate) fn tagged_lines(lines: &[String], first: usize, total: usize, tags: b
 }
 
 #[must_use]
-pub(crate) fn tagged_span(content: &str, first: usize, last: usize) -> String {
-    let total = content.lines().count();
+pub(crate) fn tagged_span(lines: &[&str], first: usize, last: usize) -> String {
+    let total = lines.len();
     if total == 0 {
         return "lines 0-0/0".to_string();
     }
-    let first = first.min(total.saturating_sub(1));
-    let last = last.min(total.saturating_sub(1)).max(first);
-    let mut out = format!("lines {}-{}/{}", first + 1, last + 1, total);
-    for (index, line) in content.lines().enumerate() {
-        if index < first {
-            continue;
-        }
-        if index > last {
-            break;
-        }
-        out.push('\n');
-        out.push_str(&(index + 1).to_string());
-        out.push(':');
-        out.push_str(&line_hash(line));
-        out.push('|');
-        out.push_str(line);
-    }
-    out
+    let first = first.min(total - 1);
+    let last = last.min(total - 1).max(first);
+    tagged_lines(&lines[first..=last], first, total, true)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -127,7 +118,7 @@ fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
             let first = number.saturating_sub(4).saturating_sub(1);
             Error::Tool(format!(
                 "stale tag `{tag}` — that line changed. Current lines there:\n{}",
-                tagged_span(content, first, number + 3)
+                tagged_span(&content.lines().collect::<Vec<_>>(), first, number + 3)
             ))
         }
         _ => Error::Tool(format!(

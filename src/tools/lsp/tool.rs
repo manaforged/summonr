@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use super::detect::detect;
 use super::*;
 use crate::limits::{LSP_CHECK, LSP_REQUEST, LSP_START};
 
@@ -34,7 +33,7 @@ impl ToolRegistry {
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let text = self
-            .with_lsp(&file, LSP_REQUEST, move |conn| {
+            .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
             .await?;
@@ -69,7 +68,7 @@ impl ToolRegistry {
             let name = new_name.to_string();
             let request_path = file.clone();
             let edit = self
-                .with_lsp(&file, LSP_REQUEST, move |conn| {
+                .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
                     Box::pin(
                         async move { conn.rename(&request_path, line, character, &name).await },
                     )
@@ -80,7 +79,7 @@ impl ToolRegistry {
         let refs = object_bool(&args, "references");
         let request_path = file.clone();
         let text = self
-            .with_lsp(&file, LSP_REQUEST, move |conn| {
+            .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
                 Box::pin(async move {
                     if refs {
                         conn.references(&request_path, line, character).await
@@ -94,14 +93,20 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) async fn check_after_edit(&self, dest: &Path) -> Option<ToolOutput> {
-        let key = detect(&self.workspace, dest).ok()?.key;
-        let slot = self.lsp.lock().ok()?.get(&key).cloned()?;
+        if self.lsp.lock().ok()?.is_empty() {
+            return None;
+        }
+        let launch = self
+            .launches
+            .launch(&self.workspace, dest, Scope::Edit)
+            .ok()?;
+        let slot = self.lsp.lock().ok()?.get(&launch.key).cloned()?;
         if slot.lock().await.is_none() {
             return None;
         }
         let request_path = dest.to_path_buf();
         let text = self
-            .with_lsp(dest, LSP_CHECK, move |conn| {
+            .with_lsp(dest, Scope::Edit, LSP_CHECK, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
             .await
@@ -127,55 +132,15 @@ impl ToolRegistry {
                 "language server has no rename for this symbol".to_string(),
             ));
         }
-        let mut names = Vec::new();
-        for op in ops {
-            match op {
-                Change::Text { uri, edits } => {
-                    let dest = self.uri_path(&uri)?;
-                    self.check_write(&dest)?;
-                    let original = std::fs::read_to_string(&dest).map_err(|error| {
-                        Error::Tool(format!("cannot read {}: {error}", dest.display()))
-                    })?;
-                    let edited = apply_text_edits(&original, &edits)?;
-                    drop(self.atomic_write(&dest, &self.relative(&dest)?, &edited, false)?);
-                    names.push(self.relative(&dest)?);
-                }
-                Change::Create { uri } => {
-                    let dest = self.uri_path(&uri)?;
-                    self.check_write(&dest)?;
-                    if !dest.exists() {
-                        drop(self.atomic_write(&dest, &self.relative(&dest)?, "", false)?);
-                    }
-                    names.push(self.relative(&dest)?);
-                }
-                Change::Rename { from, to } => {
-                    let src = self.uri_path(&from)?;
-                    let dest = self.uri_path(&to)?;
-                    self.check_write(&src)?;
-                    self.check_write(&dest)?;
-                    crate::durable::store::rename(&src, &dest).map_err(|error| {
-                        Error::Tool(format!(
-                            "cannot rename {} → {}: {error}",
-                            src.display(),
-                            dest.display()
-                        ))
-                    })?;
-                    names.push(format!(
-                        "{} → {}",
-                        self.relative(&src)?,
-                        self.relative(&dest)?
-                    ));
-                }
-                Change::Delete { uri } => {
-                    let dest = self.uri_path(&uri)?;
-                    self.check_write(&dest)?;
-                    std::fs::remove_file(&dest).map_err(|error| {
-                        Error::Tool(format!("cannot delete {}: {error}", dest.display()))
-                    })?;
-                    names.push(self.relative(&dest)?);
-                }
-            }
-        }
+        let names = ops
+            .into_iter()
+            .map(|op| match op {
+                Change::Text { uri, edits } => self.edit_text(&uri, &edits),
+                Change::Create { uri } => self.create_file(&uri),
+                Change::Rename { from, to } => self.rename_file(&from, &to),
+                Change::Delete { uri } => self.delete_file(&uri),
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(ToolOutput {
             text: format!("renamed {}", names.join(", ")),
             success: true,
@@ -183,6 +148,54 @@ impl ToolRegistry {
             grant: None,
             images: Vec::new(),
         })
+    }
+
+    fn edit_text(&self, uri: &str, edits: &[TextEdit]) -> Result<String> {
+        let dest = self.uri_path(uri)?;
+        self.check_write(&dest)?;
+        let original = std::fs::read_to_string(&dest)
+            .map_err(|error| Error::Tool(format!("cannot read {}: {error}", dest.display())))?;
+        let edited = apply_text_edits(&original, edits)?;
+        let name = self.relative(&dest)?;
+        drop(self.atomic_write(&dest, &name, &original, &edited, false)?);
+        Ok(name)
+    }
+
+    fn create_file(&self, uri: &str) -> Result<String> {
+        let dest = self.uri_path(uri)?;
+        self.check_write(&dest)?;
+        let name = self.relative(&dest)?;
+        if !dest.exists() {
+            drop(self.atomic_write(&dest, &name, "", "", false)?);
+        }
+        Ok(name)
+    }
+
+    fn rename_file(&self, from: &str, to: &str) -> Result<String> {
+        let src = self.uri_path(from)?;
+        let dest = self.uri_path(to)?;
+        self.check_write(&src)?;
+        self.check_write(&dest)?;
+        crate::durable::store::rename(&src, &dest).map_err(|error| {
+            Error::Tool(format!(
+                "cannot rename {} → {}: {error}",
+                src.display(),
+                dest.display()
+            ))
+        })?;
+        Ok(format!(
+            "{} → {}",
+            self.relative(&src)?,
+            self.relative(&dest)?
+        ))
+    }
+
+    fn delete_file(&self, uri: &str) -> Result<String> {
+        let dest = self.uri_path(uri)?;
+        self.check_write(&dest)?;
+        std::fs::remove_file(&dest)
+            .map_err(|error| Error::Tool(format!("cannot delete {}: {error}", dest.display())))?;
+        self.relative(&dest)
     }
 
     fn uri_path(&self, uri: &str) -> Result<PathBuf> {
@@ -212,10 +225,11 @@ impl ToolRegistry {
     async fn with_lsp<T>(
         &self,
         path: &Path,
+        scope: Scope,
         deadline: Duration,
         f: impl for<'a> FnOnce(&'a mut Conn) -> Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>,
     ) -> Result<T> {
-        let launch = detect(&self.workspace, path)?;
+        let launch = self.launches.launch(&self.workspace, path, scope)?;
         let key = launch.key.clone();
         let slot = {
             let mut slots = self

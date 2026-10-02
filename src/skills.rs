@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 use crate::error::{Error, Result};
 use crate::prompt::summonr_home;
 
+const SKILL: &str = "SKILL.md";
+const FENCE: &str = "---";
+
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     let mut rows = Vec::new();
@@ -79,58 +82,68 @@ fn collect(root: Option<PathBuf>, rows: &mut Vec<(String, String)>) {
     let Some(root) = root else {
         return;
     };
-    if !root.is_dir() {
-        return;
-    }
     let Ok(entries) = std::fs::read_dir(root) else {
         return;
     };
     for entry in entries.filter_map(std::result::Result::ok) {
         let path = entry.path();
-        let Some(name) = skill_name(&path) else {
+        let dir = std::fs::metadata(&path).is_ok_and(|meta| meta.is_dir());
+        let Some((name, file)) = skill_file(path, dir) else {
             continue;
         };
-        let file = if path.is_dir() {
-            path.join("SKILL.md")
-        } else {
-            path
+        let Ok(handle) = std::fs::File::open(&file) else {
+            if !dir {
+                rows.push((name, String::new()));
+            }
+            continue;
         };
-        let body = std::fs::read_to_string(file).unwrap_or_default();
-        let summary = described(&body).unwrap_or_else(|| first_line(&body));
-        rows.push((name, summary));
+        rows.push((name, summary(std::io::BufReader::new(handle))));
     }
 }
 
-fn skill_name(path: &Path) -> Option<String> {
-    if path.is_dir() {
-        let skill = path.join("SKILL.md");
-        if skill.is_file() {
-            return path.file_name()?.to_str().map(str::to_string);
-        }
-        return None;
+fn skill_file(path: PathBuf, dir: bool) -> Option<(String, PathBuf)> {
+    if dir {
+        let name = path.file_name()?.to_str()?.to_string();
+        return Some((name, path.join(SKILL)));
     }
     if path.extension().is_some_and(|ext| ext == "md") {
-        return path.file_stem()?.to_str().map(str::to_string);
+        let name = path.file_stem()?.to_str()?.to_string();
+        return Some((name, path));
     }
     None
 }
 
-fn described(body: &str) -> Option<String> {
-    let front = body.trim_start().strip_prefix("---")?;
-    let (front, _) = front.split_once("\n---")?;
-    front
-        .lines()
-        .find_map(|line| line.trim().strip_prefix("description:"))
-        .map(|description| description.trim().trim_matches(['"', '\'']).to_string())
-        .filter(|description| !description.is_empty())
+fn summary(reader: impl std::io::BufRead) -> String {
+    let mut lines = reader.lines().map_while(std::result::Result::ok);
+    let Some(first) = lines
+        .by_ref()
+        .map(|line| line.trim().to_string())
+        .find(|line| !line.is_empty())
+    else {
+        return String::new();
+    };
+    if first != FENCE {
+        return heading(&first);
+    }
+    let mut description = None;
+    for line in lines.by_ref() {
+        let line = line.trim();
+        if line == FENCE {
+            return description
+                .filter(|text: &String| !text.is_empty())
+                .unwrap_or_else(|| heading(FENCE));
+        }
+        if description.is_none()
+            && let Some(text) = line.strip_prefix("description:")
+        {
+            description = Some(text.trim().trim_matches(['"', '\'']).to_string());
+        }
+    }
+    heading(FENCE)
 }
 
-fn first_line(body: &str) -> String {
-    body.lines()
-        .map(str::trim)
-        .find(|line| !line.is_empty())
-        .unwrap_or("")
-        .trim_start_matches('#')
+fn heading(line: &str) -> String {
+    line.trim_start_matches('#')
         .trim()
         .chars()
         .take(80)

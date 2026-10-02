@@ -168,6 +168,7 @@ fn a_call_with_an_empty_id_is_refused_before_sending() {
         function: ToolFunction {
             name: "read".to_string(),
             arguments: "{}".to_string(),
+            checked: Default::default(),
         },
         continuation: None,
     }];

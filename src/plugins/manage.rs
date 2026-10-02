@@ -35,7 +35,7 @@ pub fn install(src: &Path) -> Result<String> {
         )));
     }
     copy_tree(&src, &dest)?;
-    let plugin = Plugin { name, dir: dest };
+    let plugin = Plugin::at(name, dest);
     let mut lines = vec![format!(
         "plugin\t{}\t{}",
         plugin.name,
@@ -71,7 +71,7 @@ pub fn uninstall(name: &str) -> Result<bool> {
 }
 
 pub fn list() -> Result<String> {
-    let off = crate::config::file()?.plugins.off;
+    let off = crate::config::file()?.plugins.off.clone();
     let lines: Vec<String> = installed()
         .iter()
         .map(|plugin| {

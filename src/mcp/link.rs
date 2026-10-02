@@ -16,7 +16,7 @@ use super::catalog::{self, Listing};
 use super::config::Server;
 use super::conn::Conn;
 use super::form::Form;
-use super::journal;
+use super::journal::Journal;
 use super::status::McpState;
 use super::tool::Tool;
 use super::{Answer, McpProgress, McpUpdate};
@@ -29,6 +29,7 @@ pub(super) struct Link {
     started: AtomicBool,
     detail: std::sync::Mutex<Option<String>>,
     used: std::sync::Mutex<Instant>,
+    journal: Journal,
     pub(super) tools: Vec<Tool>,
 }
 
@@ -68,6 +69,7 @@ impl Link {
             started,
             detail: std::sync::Mutex::new(None),
             used: std::sync::Mutex::new(Instant::now()),
+            journal: Journal::default(),
             tools,
         }))
     }
@@ -187,7 +189,7 @@ impl Link {
                 level,
                 logger,
                 data,
-            } => journal::append(&self.server.name, level, logger, data),
+            } => self.journal.append(&self.server.name, level, logger, data),
             Notice::Elicit { params, answer } => match Form::parse(&self.server.name, params) {
                 Some(form) => report(McpUpdate::Elicit {
                     form,

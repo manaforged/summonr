@@ -3,7 +3,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::error::{Error, Result};
 
-use super::ToolRegistry;
+use super::{ToolRegistry, sandbox};
 
 pub(super) fn volume_unmounted(path: &Path) -> bool {
     let mut parts = path.components();
@@ -20,7 +20,97 @@ pub(super) fn volume_unmounted(path: &Path) -> bool {
     !Path::new("/Volumes").join(name).is_dir()
 }
 
+pub(super) struct Root {
+    path: PathBuf,
+    canonical: Option<PathBuf>,
+}
+
+impl Root {
+    fn resolved(&self) -> Cow<'_, Path> {
+        match &self.canonical {
+            Some(canonical) => Cow::Borrowed(canonical.as_path()),
+            None => Cow::Owned(
+                self.path
+                    .canonicalize()
+                    .unwrap_or_else(|_| self.path.clone()),
+            ),
+        }
+    }
+}
+
+pub(super) fn roots(policy: &crate::policy::Policy) -> Vec<Root> {
+    policy
+        .write_roots()
+        .into_iter()
+        .map(|path| Root {
+            canonical: path.canonicalize().ok(),
+            path,
+        })
+        .collect()
+}
+
 impl ToolRegistry {
+    pub(crate) fn exists(&self, path: &str) -> Result<bool> {
+        Ok(self.lexical(path)?.exists())
+    }
+
+    pub(crate) fn enable_sandbox(&mut self, network: sandbox::Network) -> Result<()> {
+        self.sandbox = Some(sandbox::Sandbox::discover(
+            &self.workspace,
+            network,
+            &self.policy.write_roots(),
+        )?);
+        Ok(())
+    }
+
+    pub(crate) fn disable_sandbox(&mut self) {
+        self.sandbox = None;
+    }
+
+    pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
+        if !path.exists() {
+            if volume_unmounted(&path) {
+                return Err(Error::Config(format!(
+                    "write path {}: volume is not mounted",
+                    path.display()
+                )));
+            }
+            std::fs::create_dir_all(&path).map_err(|error| {
+                Error::Config(format!(
+                    "cannot create write path {}: {error}",
+                    path.display()
+                ))
+            })?;
+        }
+        let resolved = path.canonicalize().map_err(|error| {
+            Error::Config(format!(
+                "write path {} is unusable: {error}",
+                path.display()
+            ))
+        })?;
+        if !resolved.is_dir() {
+            return Err(Error::Config(format!(
+                "write path {} is not a directory",
+                resolved.display()
+            )));
+        }
+        self.policy.allow_path(resolved);
+        self.roots = roots(&self.policy);
+        if self.sandbox.is_some() {
+            let network = sandbox::Network::allowed(!self.denies_network());
+            self.enable_sandbox(network)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn write_roots(&self) -> Vec<String> {
+        self.policy
+            .write_roots()
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect()
+    }
+
     pub(in crate::tools) fn resolve_read(&self, path: &str) -> Result<PathBuf> {
         let cleaned = clean_path(path);
         let candidate = Path::new(cleaned.as_ref());
@@ -120,8 +210,7 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) fn approved(&self, path: &Path) -> bool {
-        let roots = self.policy.write_roots();
-        if roots.is_empty() {
+        if self.roots.is_empty() {
             return false;
         }
         let resolved = path.canonicalize().unwrap_or_else(|_| {
@@ -132,8 +221,8 @@ impl ToolRegistry {
                     |parent| parent.join(path.file_name().unwrap_or_default()),
                 )
         });
-        roots.iter().any(|root| {
-            let root = root.canonicalize().unwrap_or_else(|_| root.clone());
+        self.roots.iter().any(|root| {
+            let root = root.resolved();
             resolved.starts_with(&root) || path.starts_with(&root)
         })
     }

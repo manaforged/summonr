@@ -195,6 +195,7 @@ fn a_kept_thinking_block_is_replayed_whole_on_the_next_turn() {
         function: ToolFunction {
             name: "read".to_string(),
             arguments: r#"{"path":"a.rs"}"#.to_string(),
+            checked: Default::default(),
         },
         continuation: Some(crate::provider::Continuation::Anthropic {
             model: "claude-opus-5".to_string(),

@@ -31,14 +31,16 @@ impl<P: Provider> Loop<P> {
         definitions
     }
 
-    pub(super) fn advertised_tools(&mut self) -> &[crate::provider::ToolDefinition] {
-        if self.schema.is_none() {
-            let definitions = self.tool_definitions();
-            let bytes = serde_json::to_vec(&definitions).map_or(0, |encoded| encoded.len() as u64);
-            drop(self.session.note_schema(bytes));
-            self.schema = Some(definitions);
+    pub(super) fn advertised_tools(&mut self) -> Arc<Advertised> {
+        if let Some(advertised) = &self.schema {
+            return Arc::clone(advertised);
         }
-        self.schema.as_ref().map_or(&[], Vec::as_slice)
+        let tools = self.tool_definitions();
+        let json = crate::provider::ToolsJson::encode(&tools);
+        drop(self.session.note_schema(json.len() as u64));
+        let advertised = Arc::new(Advertised { tools, json });
+        self.schema = Some(Arc::clone(&advertised));
+        advertised
     }
 
     pub(super) fn mail_execute(&mut self, call: &ToolCall) -> Result<String> {
@@ -202,4 +204,9 @@ fn board_get(
 
 fn board_list(mailbox: &crate::mail::Mailbox, workspace: &Path) -> Result<String> {
     Ok(crate::mail::board_text(&mailbox.board(workspace)?))
+}
+
+pub(crate) struct Advertised {
+    pub(crate) tools: Vec<crate::provider::ToolDefinition>,
+    pub(crate) json: crate::provider::ToolsJson,
 }

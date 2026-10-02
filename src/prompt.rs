@@ -235,7 +235,7 @@ fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Opti
     (!kept.is_empty()).then(|| kept.join("\n\n"))
 }
 
-const DEFAULT: &str = "You are a coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
+const DEFAULT: &str = "You are an expert coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
 
 <rules>
 - Use read for files, directories, and content search (honors ignore rules); run_command covers the rest — builds, tests, git, ls, grep

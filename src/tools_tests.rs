@@ -350,28 +350,19 @@ fn a_cat_with_a_workdir_reads_from_that_directory() {
 }
 
 #[test]
-fn a_file_read_with_search_context_says_how_to_page_instead_of_dumping_the_file() {
-    let body: String = (1..2000).map(|n| format!("line {n}\n")).collect();
+fn a_file_read_with_context_widens_the_page_around_the_offset() {
+    let body: String = (1..2000).map(|n| format!("row{n}\n")).collect();
     let (_dir, tools) = workspace(&[("big.py", &body)]);
-    let call = ToolCall {
-        id: "t1".to_string(),
-        kind: ToolKind::Function,
-        function: ToolFunction {
-            name: "read".to_string(),
-            arguments: serde_json::json!({"op": "file", "path": "big.py", "before": 5, "after": 5})
-                .to_string(),
-        },
-        continuation: None,
-    };
-    let error = tokio::runtime::Builder::new_multi_thread()
-        .worker_threads(1)
-        .build()
-        .unwrap()
-        .block_on(tools.execute_outcome(&call))
-        .err()
-        .map(|error| error.to_string())
-        .unwrap_or_default();
-    assert!(error.contains("offset and limit"), "{error}");
+    let text = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "file", "path": "big.py", "offset": 100, "limit": 2, "before": 2, "after": 3}),
+    );
+    assert!(text.contains("row98") && text.contains("row104"), "{text}");
+    assert!(
+        !text.contains("row97") && !text.contains("row105"),
+        "{text}"
+    );
 }
 
 #[test]

@@ -109,9 +109,6 @@ async fn launch_once(
         summonr::check_commands(&workspace)?
     };
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
-    if endpoint.images.is_none() {
-        drop(summonr::catalog::refresh_registry().await);
-    }
     let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(&endpoint, |fallback| {
         self::provider(fallback, ui.0.as_ref(), args.json)

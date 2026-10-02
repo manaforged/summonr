@@ -111,36 +111,29 @@ impl Store {
 
     pub(crate) fn get(&self, name: &str) -> Result<Option<(String, Source)>> {
         match &self.backend {
-            Backend::File => self.locked(|| {
-                Ok(lookup(&self.read_file()?, name).map(|secret| (secret, Source::File)))
-            }),
+            Backend::File => self.file_get(name),
             #[cfg(any(target_os = "macos", all(test, unix)))]
-            Backend::Security(tool) => {
-                if let Some(secret) = lookup(&self.read_blob(tool)?, name) {
-                    return Ok(Some((secret, Source::Keychain)));
-                }
-                let Some(secret) = find(tool, name)? else {
-                    return Ok(None);
-                };
-                self.locked(|| {
-                    let mut blob = self.read_blob(tool)?;
-                    blob[name] = value(&secret);
-                    self.write_blob(tool, &blob)?;
-                    security(
-                        tool,
-                        &["delete-generic-password", "-s", SERVICE, "-a", name],
-                        None,
-                    )
-                    .map(drop)
-                })?;
-                Ok(Some((secret, Source::Keychain)))
-            }
+            Backend::Security(tool) => self.security_get(tool, name),
             #[cfg(not(target_os = "macos"))]
             Backend::Native => Ok(native_get(name)?.map(|secret| (secret, Source::Keychain))),
         }
     }
 
     pub(crate) fn set(&self, name: &str, secret: &str) -> Result<Source> {
+        cache::clear();
+        let outcome = self.write_secret(name, secret);
+        cache::clear();
+        outcome
+    }
+
+    pub(crate) fn forget(&self, name: &str) -> Result<bool> {
+        cache::clear();
+        let outcome = self.remove_secret(name);
+        cache::clear();
+        outcome
+    }
+
+    fn write_secret(&self, name: &str, secret: &str) -> Result<Source> {
         match &self.backend {
             Backend::File => self.locked(|| {
                 let mut document = self.read_file()?;
@@ -165,31 +158,13 @@ impl Store {
         }
     }
 
-    pub(crate) fn forget(&self, name: &str) -> Result<bool> {
+    fn remove_secret(&self, name: &str) -> Result<bool> {
         match &self.backend {
-            Backend::File => self.locked(|| {
-                let mut document = self.read_file()?;
-                if document.remove(name).is_none() {
-                    return Ok(false);
-                }
-                self.write_file(&document)?;
-                Ok(true)
-            }),
+            Backend::File => self.locked(|| self.file_remove(name)),
             #[cfg(any(target_os = "macos", all(test, unix)))]
-            Backend::Security(tool) => self.locked(|| {
-                let mut blob = self.read_blob(tool)?;
-                if blob.remove(name).is_none() {
-                    return Ok(false);
-                }
-                self.write_blob(tool, &blob)?;
-                Ok(true)
-            }),
+            Backend::Security(tool) => self.locked(|| self.blob_remove(tool, name)),
             #[cfg(not(target_os = "macos"))]
-            Backend::Native => match native_entry(name)?.delete_credential() {
-                Ok(()) => Ok(true),
-                Err(keyring::Error::NoEntry) => Ok(false),
-                Err(error) => Err(Error::Config(format!("credential store: {error}"))),
-            },
+            Backend::Native => native_forget(name),
         }
     }
 
@@ -335,8 +310,12 @@ fn platform() -> Backend {
     }
 }
 
+mod backends;
+mod cache;
 mod seal;
 
+#[cfg(not(target_os = "macos"))]
+use backends::native_forget;
 use seal::*;
 pub fn get(name: &str) -> Result<Option<(String, Source)>> {
     Store::discover()?.get(name)

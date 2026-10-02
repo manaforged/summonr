@@ -22,7 +22,12 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
         endpoint.source = Some(Source::Env);
         return Ok(endpoint);
     }
-    let found = match own.map_or_else(|| secret::get(&endpoint.name), |own| Ok(Some(own)))? {
+    let stored = if custom {
+        own
+    } else {
+        secret::get(&endpoint.name)?
+    };
+    let found = match stored {
         Some(stored) => Some(stored),
         None => peer_key(&endpoint, row),
     };
@@ -31,6 +36,10 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
         endpoint.source = Some(source);
         return Ok(endpoint);
     }
+    fallback_key(endpoint, require_key)
+}
+
+fn fallback_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     if endpoint.api_key.is_some() {
         endpoint.source = Some(Source::Config);
         return Ok(endpoint);

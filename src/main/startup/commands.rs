@@ -8,6 +8,9 @@ use summonr::{
 use crate::cli::{Args, McpCommand};
 
 pub(super) async fn probe_endpoints() -> Result<()> {
+    if let Err(error) = summonr::catalog::refresh_registry().await {
+        eprintln!("summonr: models.dev catalog not refreshed: {error}");
+    }
     for name in summonr::endpoint_names()? {
         let info = summonr::auth_info(&name).ok();
         let seat = summonr::resolve_endpoint(Some(&name), None, summonr::Need::Model).ok();

@@ -43,6 +43,7 @@ pub(crate) const LSP_START: Duration = Duration::from_secs(30);
 pub(crate) const LSP_REQUEST: Duration = Duration::from_secs(30);
 pub(crate) const LSP_CHECK: Duration = Duration::from_secs(5);
 pub const LOG_RETAIN: Duration = Duration::from_secs(14 * 24 * 60 * 60);
+pub const JOB_RETAIN: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 pub(crate) const SPEED_WINDOW: Duration = Duration::from_secs(3);
 pub(crate) const READER_WINDOW: Duration = Duration::from_millis(400);
 pub(crate) const FRAME_WINDOW: Duration = Duration::from_secs(1);

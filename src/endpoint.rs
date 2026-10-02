@@ -333,7 +333,7 @@ pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub(crate) use keys::peer_token;
 use keys::*;
-pub(crate) use preset::provider_ids;
+pub(crate) use preset::{catalog_providers, provider_ids};
 use preset::{preset, presets};
 pub(crate) use resolve::default_seat;
 pub use resolve::{chosen_by, closest, fallbacks, resolve, vision};

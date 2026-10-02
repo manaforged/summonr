@@ -79,3 +79,23 @@ fn sglang_input_length_400_is_overflow() {
     );
     assert_eq!(input_cap(text), Some(106_234));
 }
+
+#[test]
+fn a_hosted_model_window_comes_from_local_data_without_a_request() {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let mut endpoint =
+        crate::endpoint::resolve(Some("zai"), Some("glm-5.3-flash"), crate::Need::Config).unwrap();
+    endpoint.base_url = Some(format!("http://{}/v1", listener.local_addr().unwrap()));
+    let client = Client::connect(&endpoint).unwrap();
+    let window = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(client.context(&endpoint.name, &endpoint.model));
+    assert!(window.is_some_and(|tokens| tokens > 0), "{window:?}");
+    assert!(
+        listener.accept().is_err(),
+        "the window lookup reached the network"
+    );
+}

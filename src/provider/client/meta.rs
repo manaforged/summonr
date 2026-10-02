@@ -227,11 +227,27 @@ impl Client {
     }
 
     pub async fn context(&self, endpoint: &str, model: &str) -> Option<u32> {
+        let local = crate::endpoint::auth_info(endpoint).is_ok_and(|info| info.keyless());
+        if !local && let Some(limit) = self.recorded(endpoint, model) {
+            return Some(limit);
+        }
         tokio::time::timeout(PROBE, self.probe(model))
             .await
             .ok()
             .flatten()
-            .or_else(|| crate::catalog::known(endpoint, model)?.context)
+            .or_else(|| self.recorded(endpoint, model))
+    }
+
+    fn recorded(&self, endpoint: &str, model: &str) -> Option<u32> {
+        if let Some(limit) = crate::catalog::known(endpoint, model).and_then(|row| row.context) {
+            return Some(limit);
+        }
+        let mut rows = [Model {
+            id: model.to_string(),
+            ..Model::default()
+        }];
+        crate::catalog::enrich(endpoint, Some(&self.base), &mut rows);
+        rows[0].context
     }
 
     pub(super) async fn probe(&self, model: &str) -> Option<u32> {

@@ -238,7 +238,7 @@ impl Reader {
         let jobs = crate::jobs::since(&self.workspace, 0, None)
             .into_iter()
             .filter_map(|record| {
-                crate::jobs::status(&self.workspace, &record.id)
+                crate::jobs::status(&self.workspace, &record)
                     .ok()
                     .map(|status| (record, status))
             })

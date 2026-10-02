@@ -84,7 +84,6 @@ impl ToolRegistry {
             id: files.id,
             pid,
             log_path: files.log_path,
-            exit_path: files.exit_path,
             child,
             temp: files.temp,
         })
@@ -187,13 +186,7 @@ impl ToolRegistry {
         code: i32,
         read_only: bool,
     ) -> Result<ToolOutput> {
-        let StartedCommand {
-            log_path,
-            exit_path,
-            temp,
-            ..
-        } = started;
-        jobs::write_exit(&exit_path, code)?;
+        let StartedCommand { log_path, temp, .. } = started;
         crate::askpass::scrub_file(&log_path);
         let raw = crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES)?);
         let grant = (code != 0)
@@ -248,19 +241,13 @@ impl ToolRegistry {
     ) -> Result<ToolOutput> {
         stop_command(&mut started.child, started.pid)
             .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
-        let status = started
+        started
             .child
             .wait()
             .await
             .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
         group.disarm();
-        let StartedCommand {
-            log_path,
-            exit_path,
-            temp,
-            ..
-        } = started;
-        jobs::write_exit(&exit_path, status.code().unwrap_or(-1))?;
+        let StartedCommand { log_path, temp, .. } = started;
         crate::askpass::scrub_file(&log_path);
         let raw = crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES)?);
         let shown = digest(command, &raw);

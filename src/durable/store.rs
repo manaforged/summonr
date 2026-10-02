@@ -7,10 +7,17 @@ use tempfile::NamedTempFile;
 pub(crate) struct Staged<'a> {
     temp: NamedTempFile,
     path: &'a Path,
+    durability: Durability,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Durability {
+    Synced,
+    Renamed,
 }
 
 pub(crate) fn write(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
-    stage(path, bytes.as_ref(), false)?.commit()
+    prepare(path, bytes.as_ref(), false, Durability::Synced)?.commit()
 }
 
 pub(crate) fn read_or_empty(path: &Path) -> io::Result<String> {
@@ -52,6 +59,15 @@ pub fn lock(path: &Path, wait: bool) -> io::Result<Option<File>> {
 }
 
 pub(crate) fn stage<'a>(path: &'a Path, bytes: &[u8], keep_mode: bool) -> io::Result<Staged<'a>> {
+    prepare(path, bytes, keep_mode, Durability::Renamed)
+}
+
+fn prepare<'a>(
+    path: &'a Path,
+    bytes: &[u8],
+    keep_mode: bool,
+    durability: Durability,
+) -> io::Result<Staged<'a>> {
     let parent = parent(path);
     std::fs::create_dir_all(parent)?;
     let mut temp = NamedTempFile::new_in(parent)?;
@@ -59,8 +75,14 @@ pub(crate) fn stage<'a>(path: &'a Path, bytes: &[u8], keep_mode: bool) -> io::Re
     if keep_mode && let Some(permissions) = mode(path)? {
         temp.as_file().set_permissions(permissions)?;
     }
-    temp.as_file().sync_all()?;
-    Ok(Staged { temp, path })
+    if durability == Durability::Synced {
+        temp.as_file().sync_all()?;
+    }
+    Ok(Staged {
+        temp,
+        path,
+        durability,
+    })
 }
 
 pub(crate) fn rename(from: &Path, to: &Path) -> io::Result<()> {
@@ -72,7 +94,10 @@ pub(crate) fn rename(from: &Path, to: &Path) -> io::Result<()> {
 impl Staged<'_> {
     pub(crate) fn commit(self) -> io::Result<()> {
         self.temp.persist(self.path).map_err(|error| error.error)?;
-        sync_dir(self.path)
+        match self.durability {
+            Durability::Synced => sync_dir(self.path),
+            Durability::Renamed => Ok(()),
+        }
     }
 }
 

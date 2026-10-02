@@ -113,6 +113,7 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
             let text = std::fs::read_to_string(entry.path()).ok()?;
             serde_json::from_str::<Record>(&text).ok()
         })
+        .filter(|record| !prune(workspace, record))
         .filter(|record| {
             record.background
                 && record.started >= started
@@ -126,9 +127,28 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
     jobs
 }
 
-pub(crate) fn status(workspace: &Path, id: &str) -> Result<Status> {
-    let record = load(workspace, id)?;
-    let log = log_path(workspace, &record);
+fn prune(workspace: &Path, record: &Record) -> bool {
+    let cutoff = crate::mail::now().saturating_sub(crate::limits::JOB_RETAIN.as_secs());
+    let exit = exit_path(workspace, &record.id);
+    if check_id(&record.id).is_err()
+        || record.started >= cutoff
+        || (!exit.is_file() && alive_since(record.pid, record.started))
+    {
+        return false;
+    }
+    let root = dir(workspace);
+    for path in [
+        root.join(format!("{}.json", record.id)),
+        root.join(format!("{}.log", record.id)),
+        exit,
+    ] {
+        drop(std::fs::remove_file(path));
+    }
+    true
+}
+
+pub(crate) fn status(workspace: &Path, record: &Record) -> Result<Status> {
+    let log = log_path(workspace, record);
     let exit = exit_path(workspace, &record.id);
     let bytes = std::fs::metadata(&log).map(|meta| meta.len()).unwrap_or(0);
     let mut killed = false;
@@ -249,7 +269,7 @@ pub(crate) async fn wait(
     let mut pause = POLL_START_SECS;
     let mut announced = false;
     loop {
-        let current = status(workspace, id)?;
+        let current = status(workspace, &load(workspace, id)?)?;
         let elapsed = started.elapsed().as_secs();
         if !current.running || elapsed >= limit_secs {
             return Ok(current);
@@ -270,32 +290,8 @@ pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
     }
     #[cfg(unix)]
     {
-        if !alive(pid) {
-            return false;
-        }
-        let elapsed = std::process::Command::new("ps")
-            .args(["-o", "etime=", "-p", &pid.to_string()])
-            .output()
-            .ok()
-            .and_then(|output| elapsed_secs(String::from_utf8_lossy(&output.stdout).trim()));
-        let Some(elapsed) = elapsed else {
-            return true;
-        };
-        crate::mail::now().saturating_sub(elapsed) <= started.saturating_add(5)
+        alive(pid) && start_secs(pid).is_none_or(|created| created <= started.saturating_add(5))
     }
-}
-
-#[cfg(any(unix, test))]
-pub(crate) fn elapsed_secs(etime: &str) -> Option<u64> {
-    let (days, clock) = match etime.split_once('-') {
-        Some((days, clock)) => (days.parse::<u64>().ok()?, clock),
-        None => (0, etime),
-    };
-    let mut total = 0_u64;
-    for part in clock.split(':') {
-        total = total * 60 + part.trim().parse::<u64>().ok()?;
-    }
-    Some(days * 86_400 + total)
 }
 
 pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
@@ -304,15 +300,62 @@ pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
 }
 
 #[cfg(unix)]
+#[expect(unsafe_code, reason = "std has no signal-zero liveness probe")]
 pub(crate) fn alive(pid: u32) -> bool {
-    std::process::Command::new("kill")
-        .arg("-0")
-        .arg(pid.to_string())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: kill with signal 0 reads two integers, sends nothing, and touches no memory.
+    let sent = unsafe { libc::kill(pid, 0) } == 0;
+    sent || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(target_os = "macos")]
+#[expect(unsafe_code, reason = "std has no process start-time query")]
+fn start_secs(pid: u32) -> Option<u64> {
+    let pid = libc::c_int::try_from(pid).ok()?;
+    // SAFETY: proc_bsdinfo is plain integers and byte arrays; all-zero is a valid value.
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).ok()?;
+    // SAFETY: the buffer pointer and size describe one owned proc_bsdinfo for the call.
+    let written = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            std::ptr::from_mut(&mut info).cast(),
+            size,
+        )
+    };
+    (written == size).then_some(info.pbi_start_tvsec)
+}
+
+#[cfg(target_os = "linux")]
+#[expect(unsafe_code, reason = "std has no clock-tick query")]
+fn start_secs(pid: u32) -> Option<u64> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let ticks = stat
+        .rsplit_once(')')?
+        .1
+        .split_whitespace()
+        .nth(19)?
+        .parse::<u64>()
+        .ok()?;
+    let boot = std::fs::read_to_string("/proc/stat")
+        .ok()?
+        .lines()
+        .find_map(|line| line.strip_prefix("btime "))?
+        .trim()
+        .parse::<u64>()
+        .ok()?;
+    // SAFETY: sysconf reads one integer and touches no memory.
+    let hertz = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).ok()?;
+    (hertz > 0).then(|| boot + ticks / hertz)
+}
+
+#[cfg(all(unix, not(any(target_os = "macos", target_os = "linux"))))]
+fn start_secs(_pid: u32) -> Option<u64> {
+    None
 }
 
 #[cfg(windows)]
@@ -339,3 +382,7 @@ fn new_id() -> Result<String> {
         .as_nanos();
     Ok(format!("{nanos}-{}", std::process::id()))
 }
+
+#[cfg(test)]
+#[path = "jobs_tests.rs"]
+mod tests;

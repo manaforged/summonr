@@ -99,7 +99,7 @@ pub(crate) struct Mailbox {
     name: String,
     kind: String,
     dir: PathBuf,
-    cursor: usize,
+    cursor: u64,
     last_beat: u64,
     status: String,
 }
@@ -204,9 +204,7 @@ impl Mailbox {
         let id = clean_id(id);
         let name = unique_name(&live(dir), &id, name, cwd);
         let inbox = dir.join("inbox").join(format!("{id}.jsonl"));
-        let cursor = std::fs::read_to_string(&inbox)
-            .map(|text| text.lines().count())
-            .unwrap_or(0);
+        let cursor = std::fs::metadata(&inbox).map_or(0, |meta| meta.len());
         let mut mailbox = Self {
             id,
             name,
@@ -279,32 +277,49 @@ impl Mailbox {
     }
 
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
+        use std::io::{Read as _, Seek as _, SeekFrom};
         let path = inbox_path(&self.dir, &self.id);
-        let text = {
+        let bytes = {
             let _lock = store::lock(&path, true)?;
-            store::read_or_empty(&path)?
+            let mut file = match std::fs::File::open(&path) {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    self.cursor = 0;
+                    return Ok(Vec::new());
+                }
+                Err(error) => return Err(error.into()),
+            };
+            if file.metadata()?.len() < self.cursor {
+                self.cursor = 0;
+            }
+            file.seek(SeekFrom::Start(self.cursor))?;
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes)?;
+            bytes
         };
-        let lines: Vec<&str> = text.lines().collect();
-        if lines.len() < self.cursor {
-            self.cursor = 0;
-        }
+        let complete = bytes
+            .iter()
+            .rposition(|byte| *byte == b'\n')
+            .map_or(0, |end| end + 1);
         let mut mail = Vec::new();
-        while let Some(line) = lines.get(self.cursor) {
-            match serde_json::from_str::<Mail>(line) {
+        for line in bytes[..complete].split_inclusive(|byte| *byte == b'\n') {
+            let width = line.len() as u64;
+            let body = line.strip_suffix(b"\n").unwrap_or(line);
+            let body = body.strip_suffix(b"\r").unwrap_or(body);
+            match serde_json::from_slice::<Mail>(body) {
                 Ok(item) => mail.push(item),
                 Err(_) if !mail.is_empty() => return Ok(mail),
                 Err(error) => {
-                    self.cursor += 1;
+                    self.cursor += width;
                     return Err(Error::Config(format!(
-                        "{} line {}: {error}",
+                        "{} byte {}: {error}",
                         path.display(),
                         self.cursor
                     )));
                 }
             }
-            self.cursor += 1;
+            self.cursor += width;
         }
-        self.cursor = lines.len();
         Ok(mail)
     }
 

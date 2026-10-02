@@ -5,6 +5,7 @@ use std::io::{self, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use serde::Deserialize;
 use serde_json::json;
 
 use summonr::limits::LOG_RETAIN as RETAIN;
@@ -56,15 +57,10 @@ impl Log {
             eprintln!("summonr: cannot create the diagnostic log: {error}");
             return None;
         }
-        sweep(&dir);
         let seen = dir.join("crash-seen");
         let noted = fs::read_to_string(&seen).unwrap_or_default();
-        if let Some(latest) = runs(&dir, None).ok().and_then(|runs| {
-            runs.into_iter()
-                .filter(|run| matches!(run.status, RunStatus::Incomplete | RunStatus::Panic))
-                .filter_map(|run| Some(run.path.file_name()?.to_string_lossy().into_owned()))
-                .max()
-        }) && !noted.contains(&latest)
+        if let Some(latest) = sweep(&dir)
+            && !noted.contains(&latest)
         {
             eprintln!(
                 "summonr: a previous run ended without an exit record — `summonr doctor --logs` shows it"
@@ -219,7 +215,7 @@ fn append(path: &Path, value: &serde_json::Value, durable: bool) -> io::Result<(
     if durable { file.sync_data() } else { Ok(()) }
 }
 
-fn runs(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<RunInfo>> {
+fn paths(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<PathBuf>> {
     let mut paths = match fs::read_dir(dir) {
         Ok(entries) => entries
             .filter_map(std::result::Result::ok)
@@ -234,16 +230,38 @@ fn runs(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<RunInfo>> {
         Err(error) => return Err(error),
     };
     paths.sort();
-    paths
+    Ok(paths)
+}
+
+fn runs(dir: &Path, exclude: Option<&Path>) -> io::Result<Vec<RunInfo>> {
+    paths(dir, exclude)?
         .into_iter()
         .map(|path| {
-            let bytes = fs::read(&path)?;
             Ok(RunInfo {
-                status: status(&path, &bytes),
+                status: read_status(&path)?,
                 path,
             })
         })
         .collect()
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum Event {
+    Panic,
+    Exit,
+    #[serde(other)]
+    Other,
+}
+
+#[derive(Deserialize)]
+struct Record {
+    event: Option<Event>,
+    code: Option<i64>,
+}
+
+fn read_status(path: &Path) -> io::Result<RunStatus> {
+    Ok(status(path, &fs::read(path)?))
 }
 
 fn status(path: &Path, bytes: &[u8]) -> RunStatus {
@@ -253,13 +271,13 @@ fn status(path: &Path, bytes: &[u8]) -> RunStatus {
     let mut panic = false;
     let mut exit = None;
     for line in text.lines().filter(|line| !line.trim().is_empty()) {
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        let Ok(record) = serde_json::from_str::<Record>(line) else {
             return RunStatus::Incomplete;
         };
-        match value.get("event").and_then(serde_json::Value::as_str) {
-            Some("panic") => panic = true,
-            Some("exit") => exit = value.get("code").and_then(serde_json::Value::as_i64),
-            _ => {}
+        match record.event {
+            Some(Event::Panic) => panic = true,
+            Some(Event::Exit) => exit = record.code,
+            Some(Event::Other) | None => {}
         }
     }
     if panic {
@@ -296,29 +314,72 @@ fn lock_path(path: &Path) -> PathBuf {
     PathBuf::from(path)
 }
 
-fn sweep(dir: &Path) {
-    let Ok(now) = SystemTime::now().duration_since(UNIX_EPOCH) else {
-        return;
-    };
-    let Ok(runs) = runs(dir, None) else {
-        return;
-    };
-    for run in runs {
-        let Ok(age) = fs::metadata(&run.path)
+fn sweep(dir: &Path) -> Option<String> {
+    let paths = paths(dir, None).ok()?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok();
+    let mut kept = Vec::with_capacity(paths.len());
+    for path in paths {
+        let age = fs::metadata(&path)
             .and_then(|metadata| metadata.modified())
             .and_then(|modified| {
                 modified
                     .duration_since(UNIX_EPOCH)
                     .map_err(io::Error::other)
-            })
+            });
+        let expired = match (now, age) {
+            (Some(now), Ok(age)) => now.saturating_sub(age) > RETAIN,
+            _ => false,
+        };
+        if !expired {
+            kept.push((path, None));
+            continue;
+        }
+        match read_status(&path) {
+            Ok(RunStatus::Active) => kept.push((path, Some(RunStatus::Active))),
+            Ok(_) => {
+                drop(fs::remove_file(&path));
+                drop(fs::remove_file(lock_path(&path)));
+            }
+            Err(_) => kept.push((path, None)),
+        }
+    }
+    scan(dir, kept)
+}
+
+fn scan(dir: &Path, kept: Vec<(PathBuf, Option<RunStatus>)>) -> Option<String> {
+    let marker = dir.join("crash-scanned");
+    let scanned = fs::read_to_string(&marker).unwrap_or_default();
+    let scanned = scanned.trim();
+    let mut latest = None;
+    let mut advance = None;
+    let mut blocked = false;
+    for (path, known) in kept {
+        let Some(name) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
         else {
             continue;
         };
-        if now.saturating_sub(age) > RETAIN && run.status != RunStatus::Active {
-            drop(fs::remove_file(&run.path));
-            drop(fs::remove_file(lock_path(&run.path)));
+        if name.as_str() <= scanned {
+            continue;
+        }
+        let status = match known {
+            Some(status) => Some(status),
+            None => read_status(&path).ok(),
+        };
+        match status {
+            Some(RunStatus::Incomplete | RunStatus::Panic) => latest = Some(name.clone()),
+            Some(RunStatus::Active) | None => blocked = true,
+            Some(RunStatus::Complete | RunStatus::Failed) => {}
+        }
+        if !blocked {
+            advance = Some(name);
         }
     }
+    if let Some(name) = advance {
+        drop(fs::write(&marker, name));
+    }
+    latest
 }
 
 fn millis() -> u128 {

@@ -27,7 +27,7 @@ pub(crate) fn exit_code(output: &str) -> Option<i32> {
 pub(crate) fn kill_job(workspace: &Path, id: &str) -> Result<crate::jobs::Status> {
     let record = crate::jobs::load(workspace, id)?;
     stop_job(workspace, &record)?;
-    crate::jobs::status(workspace, id)
+    crate::jobs::status(workspace, &record)
 }
 
 impl ToolRegistry {
@@ -172,11 +172,11 @@ impl ToolRegistry {
         let Some(session) = session.clone() else {
             return Ok(());
         };
-        for record in crate::jobs::since(&self.workspace, 0, None)
+        for record in crate::jobs::since(&self.workspace, 0, Some(&session))
             .into_iter()
             .filter(|record| record.session.as_deref() == Some(&session))
         {
-            if crate::jobs::status(&self.workspace, &record.id)?.running {
+            if crate::jobs::status(&self.workspace, &record)?.running {
                 stop_job(&self.workspace, &record)?;
             }
         }

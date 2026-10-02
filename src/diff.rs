@@ -49,11 +49,18 @@ impl Diff {
     }
 }
 
-fn base(root: &Path) -> Result<Option<String>> {
-    let base = worktree::list(root)?
+fn named(root: &Path) -> Result<String> {
+    Ok(worktree::list(root)?
         .into_iter()
         .find(|tree| tree.path == root)
-        .map_or_else(|| "HEAD".to_string(), |tree| tree.base);
+        .map_or_else(|| "HEAD".to_string(), |tree| tree.base))
+}
+
+fn base(root: &Path) -> Result<Option<String>> {
+    resolve(root, named(root)?)
+}
+
+fn resolve(root: &Path, base: String) -> Result<Option<String>> {
     match git(root, &["rev-parse", "--verify", &base]) {
         Ok(_) => Ok(Some(base)),
         Err(error) => {
@@ -92,19 +99,52 @@ pub(crate) fn snapshot(root: &Path) -> String {
     if !root.ancestors().any(|path| path.join(".git").exists()) {
         return "non-Git workspace".to_string();
     }
-    let Ok(diff) = stats(root) else {
+    let Ok((head, base, count)) = dirty(root) else {
         return "Git state unavailable".to_string();
     };
-    let head = git(root, &["rev-parse", "--short=12", "HEAD"])
-        .unwrap_or_else(|_| "no commits".to_string());
-    match diff.files.len() {
-        0 => format!("{head} ({}), worktree clean", short(&diff.base)),
+    match count {
+        0 => format!("{head} ({}), worktree clean", short(&base)),
         count => format!(
             "{head} ({}), {count} file{} dirty",
-            short(&diff.base),
+            short(&base),
             if count == 1 { "" } else { "s" }
         ),
     }
+}
+
+fn dirty(root: &Path) -> Result<(String, String, usize)> {
+    let named = named(root)?;
+    if named != "HEAD" {
+        let base = resolve(root, named)?;
+        let diff = changes(root, base, false)?;
+        let head = git(root, &["rev-parse", "--short=12", "HEAD"])
+            .unwrap_or_else(|_| "no commits".to_string());
+        return Ok((head, diff.base, diff.files.len()));
+    }
+    let status = git(
+        root,
+        &[
+            "status",
+            "--porcelain=v2",
+            "-z",
+            "--branch",
+            "--no-renames",
+            "--untracked-files=all",
+        ],
+    )?;
+    let mut head = None;
+    let mut count = 0;
+    for record in status.split('\0').filter(|record| !record.is_empty()) {
+        match record.strip_prefix("# branch.oid ") {
+            Some(oid) => head = Some(oid.to_string()),
+            None if record.starts_with('#') => {}
+            None => count += 1,
+        }
+    }
+    Ok(match head.filter(|oid| oid != "(initial)") {
+        Some(oid) => (short(&oid).to_string(), named, count),
+        None => ("no commits".to_string(), "empty tree".to_string(), count),
+    })
 }
 
 fn short(value: &str) -> &str {
@@ -112,7 +152,10 @@ fn short(value: &str) -> &str {
 }
 
 pub fn stats(root: &Path) -> Result<Diff> {
-    let base = base(root)?;
+    changes(root, base(root)?, true)
+}
+
+fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
     let reference = reference(root, base.as_deref())?;
     let numstat = git(
         root,
@@ -123,7 +166,7 @@ pub fn stats(root: &Path) -> Result<Diff> {
     for path in untracked.split('\0').filter(|path| !path.is_empty()) {
         files.push(Stat {
             path: path.to_string(),
-            added: added(root, path)?,
+            added: if lines { added(root, path)? } else { 0 },
             removed: 0,
             new: true,
         });

@@ -88,17 +88,19 @@ pub fn in_git(path: &Path) -> bool {
 }
 
 pub(crate) fn primary(path: &Path) -> Result<PathBuf> {
+    listing(path).map(|(primary, _)| primary)
+}
+
+fn listing(path: &Path) -> Result<(PathBuf, String)> {
+    let missing = || Error::Config(format!("{} is not a git repository", path.display()));
     let text = crate::diff::git_env(path, &[], &["worktree", "list", "--porcelain"])
-        .map_err(|_error| Error::Config(format!("{} is not a git repository", path.display())))?;
-    for line in text.lines() {
-        if let Some(rest) = line.strip_prefix("worktree ") {
-            return Ok(PathBuf::from(rest));
-        }
-    }
-    Err(Error::Config(format!(
-        "{} is not a git repository",
-        path.display()
-    )))
+        .map_err(|_error| missing())?;
+    let primary = text
+        .lines()
+        .find_map(|line| line.strip_prefix("worktree "))
+        .map(PathBuf::from)
+        .ok_or_else(missing)?;
+    Ok((primary, text))
 }
 
 pub fn add(cwd: &Path) -> Result<Tree> {
@@ -196,10 +198,9 @@ pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
 }
 
 pub fn list(cwd: &Path) -> Result<Vec<Tree>> {
-    let primary = primary(cwd)?;
+    let (primary, text) = listing(cwd)?;
     let base = crate::diff::git_env(&primary, &[], &["rev-parse", "--abbrev-ref", "HEAD"])
         .unwrap_or_default();
-    let text = crate::diff::git_env(&primary, &[], &["worktree", "list", "--porcelain"])?;
     Ok(parse_list(&primary, &base, &text)
         .into_iter()
         .filter(|tree| worktree_id(&tree.branch).is_some())

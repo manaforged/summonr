@@ -17,9 +17,13 @@ impl Checkpoints {
         let dir = git_env(workspace, &[], &["rev-parse", "--absolute-git-dir"]).ok()?;
         let dir = PathBuf::from(dir.trim()).join("summonr");
         std::fs::create_dir_all(&dir).ok()?;
+        let index = dir.join(format!("{session}.index"));
+        if !index.exists() {
+            seed(workspace, &index);
+        }
         Some(Self {
             root: workspace.to_path_buf(),
-            index: dir.join(format!("{session}.index")),
+            index,
             log: dir.join(format!("{session}.checkpoints")),
         })
     }
@@ -98,3 +102,27 @@ impl Checkpoints {
         [("GIT_INDEX_FILE", self.index.as_os_str())]
     }
 }
+
+fn seed(workspace: &Path, index: &Path) {
+    let Ok(text) = git_env(
+        workspace,
+        &[],
+        &["rev-parse", "--git-path", "index", "--show-prefix"],
+    ) else {
+        return;
+    };
+    let mut lines = text.lines();
+    let Some(source) = lines.next() else {
+        return;
+    };
+    if lines.next().is_some_and(|prefix| !prefix.trim().is_empty()) {
+        return;
+    }
+    if std::fs::copy(workspace.join(source.trim()), index).is_err() {
+        drop(std::fs::remove_file(index));
+    }
+}
+
+#[cfg(test)]
+#[path = "checkpoint_tests.rs"]
+mod tests;

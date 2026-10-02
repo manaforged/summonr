@@ -16,7 +16,6 @@ pub(super) struct StartedCommand {
     pub(super) id: String,
     pub(super) pid: u32,
     pub(super) log_path: PathBuf,
-    pub(super) exit_path: PathBuf,
     pub(super) child: CommandChild,
     pub(super) temp: Option<tempfile::TempDir>,
 }

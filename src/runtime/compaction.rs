@@ -157,7 +157,7 @@ impl<P: Provider> Loop<P> {
     pub(super) async fn auto_compact(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[ToolDefinition],
+        tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -167,7 +167,7 @@ impl<P: Provider> Loop<P> {
         }
         let keep = self.provider.keeps_reasoning();
         let chars: usize = messages.iter().map(|m| message_chars(m, keep)).sum();
-        let estimated_tokens = self.estimated_prompt_tokens(messages, tools);
+        let estimated_tokens = self.estimated_prompt_tokens(chars, tool_bytes);
         let window = match (self.context_window, self.compact_tokens) {
             (Some(window), Some(cap)) => Some(window.min(cap)),
             (window, cap) => window.or(cap),

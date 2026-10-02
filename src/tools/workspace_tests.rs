@@ -24,9 +24,11 @@ fn an_edit_names_each_changed_region_and_nothing_it_did_not_touch() {
     let after = before
         .replace("line 100\n", "alpha\nalpha extra\n")
         .replace("line 250\n", "beta\n");
-    let spans = super::spans::changed(&before, &after);
+    let old: Vec<&str> = before.lines().collect();
+    let new: Vec<&str> = after.lines().collect();
+    let spans = super::spans::changed(&old, &new);
     assert_eq!(
-        super::spans::summary(&before, &after, &spans),
+        super::spans::summary(old.len(), new.len(), &spans),
         "changed lines 100-101, line 251 (+1 line, 400 lines now)"
     );
 }

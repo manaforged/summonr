@@ -241,7 +241,8 @@ impl SessionDriver {
         if self.turn.is_none() {
             return Err(DriverError::NoTurn);
         }
-        let capture = self.snapshot()?;
+        let previous = self.work.as_ref().and_then(|work| work.base.as_ref());
+        let capture = self.snapshot(previous)?;
         let paths = self
             .work
             .as_mut()
@@ -252,12 +253,13 @@ impl SessionDriver {
     }
 
     pub(crate) fn prepare_verdict(&self, passed: bool) -> Result<Verdict, DriverError> {
-        let now = self.snapshot()?;
-        let stable = self
+        let candidate = self
             .work
             .as_ref()
             .and_then(|work| work.candidate.as_ref())
-            .is_some_and(|candidate| candidate.snapshot == now);
+            .map(|candidate| &candidate.snapshot);
+        let now = self.snapshot(candidate)?;
+        let stable = candidate.is_some_and(|candidate| *candidate == now);
         if stable {
             return Ok(Verdict {
                 passed,

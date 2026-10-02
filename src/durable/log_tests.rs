@@ -1,5 +1,5 @@
 use super::*;
-use crate::provider::{ToolFunction, ToolKind};
+use crate::provider::{Checked, ToolFunction, ToolKind};
 use crate::tools::Event;
 
 fn answer(tool_calls: Vec<ToolCall>, continuation: Option<Continuation>) -> Line {
@@ -25,6 +25,7 @@ fn a_tool_round_reports_usage_before_its_calls() {
         id: "c1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "read".to_string(),
             arguments: "{}".to_string(),
         },
@@ -70,4 +71,27 @@ fn clear_forgets_why_the_last_turn_stopped() {
     state.apply(serde_json::from_str(r#"{"kind":"close","reason":"cancelled by user"}"#).unwrap());
     state.apply(Line::Clear);
     assert_eq!(state.last_close_reason, None);
+}
+
+#[test]
+fn a_replayed_tool_call_is_checked_once_on_apply() {
+    let call = |arguments: &str| ToolCall {
+        id: "c1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "read".to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    };
+    let mut state = State::default();
+    state.apply(answer(vec![call("{\"path\":\"a\"}"), call("{nope")], None));
+    let calls = &state.history.last().unwrap().tool_calls;
+    assert_eq!(calls[0].function.checked, Checked::Valid);
+    assert_eq!(calls[1].function.checked, Checked::Invalid);
+    assert_eq!(
+        calls[1].function.arguments, "{nope",
+        "the raw text stays for repair"
+    );
 }

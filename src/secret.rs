@@ -81,7 +81,7 @@ impl Store {
         let file = crate::prompt::summonr_home()?.join(FILE);
         let choice = match std::env::var("SUMMONR_SECRETS") {
             Ok(choice) => choice,
-            Err(_) => crate::config::file()?.secrets.unwrap_or_default(),
+            Err(_) => crate::config::file()?.secrets.clone().unwrap_or_default(),
         };
         Ok(Self {
             file,

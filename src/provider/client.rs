@@ -7,6 +7,22 @@ mod meta;
 use encode::*;
 pub(crate) use meta::{input_cap, response_failure};
 
+fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
+    let mut headers: Vec<(String, String)> = Vec::new();
+    for (key, value) in raw {
+        let key = key.to_ascii_lowercase();
+        headers.retain(|(kept, _)| *kept != key);
+        headers.push((key, value.clone()));
+    }
+    if !headers.iter().any(|(key, _)| key == "user-agent") {
+        headers.push((
+            "user-agent".to_string(),
+            concat!("summonr/", env!("CARGO_PKG_VERSION")).to_string(),
+        ));
+    }
+    headers
+}
+
 fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
     match seconds {
         Some(0) => Err(Error::Config(
@@ -55,7 +71,7 @@ impl Client {
             &base_url.into(),
             crate::credentials::bearer(key),
             None,
-            Vec::new(),
+            fixed_headers(std::iter::empty()),
             Opts::default(),
         )
     }
@@ -69,11 +85,7 @@ impl Client {
             .ok_or_else(|| {
                 Error::Config(format!("endpoint `{}` needs a base_url", endpoint.name))
             })?;
-        let headers = endpoint
-            .headers
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect();
+        let headers = fixed_headers(endpoint.headers.iter());
         let idle_timeout = request_timeout(endpoint.idle_timeout_secs)?;
         let mut client = Self::build(
             base,
@@ -144,24 +156,22 @@ impl Client {
         Ok(value)
     }
 
-    pub(crate) fn request_body(
+    pub(crate) fn request<'a>(
         &self,
-        request: &CompletionRequest<'_>,
+        request: &'a CompletionRequest<'a>,
         stream: bool,
-    ) -> Result<Value> {
-        let request = &CompletionRequest {
-            reasoning: self.reasoning.clone(),
-            ..request.clone()
-        };
-        let mut body = match self.wire {
-            Wire::Anthropic => <wire::anthropic::Wire as wire::Chat>::request(request, stream)?,
-            Wire::Gemini => <wire::gemini::Wire as wire::Chat>::request(request, stream)?,
-            Wire::Responses => <wire::responses::Wire as wire::Chat>::request(request, stream)?,
+    ) -> Result<Body<'a>> {
+        let reasoning = &self.reasoning;
+        let wired = match self.wire {
+            Wire::Anthropic => {
+                <wire::anthropic::Wire as wire::Chat>::body(request, reasoning, stream)?
+            }
+            Wire::Gemini => <wire::gemini::Wire as wire::Chat>::body(request, reasoning, stream)?,
+            Wire::Responses => {
+                <wire::responses::Wire as wire::Chat>::body(request, reasoning, stream)?
+            }
             Wire::Completions => {
-                let mut body = <wire::completions::Wire as wire::Chat>::request(request, stream)?;
-                body["messages"] =
-                    serde_json::to_value(wire_messages(request.messages, self.keeps_reasoning())?)?;
-                body
+                <wire::completions::Wire as wire::Chat>::body(request, reasoning, stream)?
             }
             Wire::Decisions => {
                 return Err(Error::Config(
@@ -169,34 +179,64 @@ impl Client {
                 ));
             }
         };
+        let completions = self.wire == Wire::Completions;
+        let messages = if completions {
+            Some(serde_json::to_vec(&Messages {
+                list: request.messages,
+                keep_reasoning: self.keeps_reasoning(),
+            })?)
+        } else {
+            wired.messages
+        };
+        let tools = request
+            .tools_json
+            .filter(|_| completions)
+            .map(|encoded| encoded.sorted.as_slice());
+        let mut body = Body::new(wired.head, wired.slot, messages, tools);
         if self.prompt_cache_key {
-            body["prompt_cache_key"] = json!(request.prefix_hash());
+            body.set("prompt_cache_key", json!(request.prefix_hash()));
         }
-        if let (Some(Value::Object(extra)), Value::Object(map)) = (&self.body, &mut body) {
+        if let Some(Value::Object(extra)) = &self.body {
             for (key, value) in extra {
-                map.insert(key.clone(), value.clone());
+                body.set(key, value.clone());
             }
         }
         Ok(body)
     }
 
-    pub(super) fn headers(&self, session: Option<&str>) -> HashMap<String, String> {
-        let mut headers: HashMap<_, _> = self
+    #[cfg(test)]
+    pub(crate) fn request_body(
+        &self,
+        request: &CompletionRequest<'_>,
+        stream: bool,
+    ) -> Result<Value> {
+        let bytes = self.request(request, stream)?.to_bytes()?;
+        Ok(serde_json::from_slice(&bytes)?)
+    }
+
+    pub(super) fn headers(&self, session: Option<&str>) -> Vec<(&str, std::borrow::Cow<'_, str>)> {
+        let mut headers: Vec<_> = self
             .headers
             .iter()
-            .map(|(key, value)| (key.to_ascii_lowercase(), value.clone()))
+            .filter(|(key, _)| {
+                let posted = session.is_some();
+                !(posted && key == "content-type"
+                    || self.opencode
+                        && (key == "x-opencode-request" || posted && key == "x-opencode-session"))
+            })
+            .map(|(key, value)| (key.as_str(), std::borrow::Cow::Borrowed(value.as_str())))
             .collect();
-        headers
-            .entry("user-agent".to_string())
-            .or_insert_with(|| concat!("summonr/", env!("CARGO_PKG_VERSION")).to_string());
         if self.opencode {
             if let Some(session) = session {
-                headers.insert("x-opencode-session".to_string(), session.to_string());
+                headers.push((
+                    "x-opencode-session",
+                    std::borrow::Cow::Owned(session.to_string()),
+                ));
             }
-            headers.insert(
-                "x-opencode-request".to_string(),
-                uuid::Uuid::now_v7().to_string(),
-            );
+            headers.push((
+                "x-opencode-request",
+                std::borrow::Cow::Owned(uuid::Uuid::now_v7().to_string()),
+            ));
         }
         headers
     }
@@ -223,7 +263,7 @@ impl Client {
             request = request.header(key.as_str(), value.as_str());
         }
         for (key, value) in self.headers(session) {
-            request = request.header(key.as_str(), value.as_str());
+            request = request.header(key, &*value);
         }
         request
     }
@@ -231,7 +271,8 @@ impl Client {
     pub(super) async fn send(
         &self,
         url: &str,
-        body: &Value,
+        body: Vec<u8>,
+        model: Option<&str>,
         session: &str,
         stream: bool,
     ) -> Result<leyline::Response> {
@@ -243,22 +284,21 @@ impl Client {
         if status.as_u16() == 401 || status.as_u16() == 403 {
             self.auth.forget_live();
         }
-        Err(self
-            .rejected(response, body.get("model").and_then(Value::as_str))
-            .await)
+        Err(self.rejected(response, model).await)
     }
 
     pub(super) async fn post_json(
         &self,
         url: &str,
-        body: &Value,
+        body: Vec<u8>,
         session: &str,
         stream: bool,
     ) -> Result<leyline::Response> {
         let token = self.token().await?;
         let request = self
             .attach(self.http.post(url), &token, Some(session))
-            .json(body);
+            .header("content-type", "application/json")
+            .body(body);
         let request = if stream { request.stream() } else { request };
         request
             .send()
@@ -283,7 +323,13 @@ impl Client {
             sink.write("request", &body.to_string());
         }
         let text = self
-            .send(&self.base, &body, "classify", false)
+            .send(
+                &self.base,
+                serde_json::to_vec(&body)?,
+                Some(model),
+                "classify",
+                false,
+            )
             .await?
             .text()
             .await

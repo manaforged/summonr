@@ -28,9 +28,17 @@ mod workspace;
 
 pub(crate) use args::tool;
 use args::{nonempty_path, object_bool, object_string, object_usize, parse_args};
-use paths::volume_unmounted;
 use todo::parse_todo;
 pub(crate) use todo::{TodoStatus, todos_from_args};
+
+pub(crate) fn blocking<T>(work: impl FnOnce() -> T) -> T {
+    let flavor = tokio::runtime::Handle::try_current().map(|handle| handle.runtime_flavor());
+    if matches!(flavor, Ok(tokio::runtime::RuntimeFlavor::MultiThread)) {
+        tokio::task::block_in_place(work)
+    } else {
+        work()
+    }
+}
 
 pub(crate) fn command_exit_code(output: &str) -> Option<i32> {
     command::exit_code(output)
@@ -51,7 +59,9 @@ pub(crate) struct ToolRegistry {
     >,
     session: std::sync::Mutex<Option<String>>,
     read_ranges: std::sync::Mutex<dedup::Ranges>,
-    logs: std::sync::Mutex<Vec<tempfile::TempDir>>,
+    spill_dir: std::sync::OnceLock<tempfile::TempDir>,
+    launches: lsp::Launches,
+    roots: Vec<paths::Root>,
     network_once: std::sync::atomic::AtomicBool,
     approved_once: std::sync::atomic::AtomicBool,
     allowed_edits: Vec<&'static str>,
@@ -104,6 +114,7 @@ impl ToolRegistry {
             return Err(Error::Tool("workspace is not a directory".to_string()));
         }
         Ok(Self {
+            roots: paths::roots(&policy),
             workspace,
             policy,
             search,
@@ -116,7 +127,8 @@ impl ToolRegistry {
             lsp: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             session: std::sync::Mutex::new(None),
             read_ranges: std::sync::Mutex::new(std::collections::HashMap::new()),
-            logs: std::sync::Mutex::new(Vec::new()),
+            spill_dir: std::sync::OnceLock::new(),
+            launches: lsp::Launches::default(),
             network_once: std::sync::atomic::AtomicBool::new(false),
             approved_once: std::sync::atomic::AtomicBool::new(false),
             allowed_edits: Vec::new(),
@@ -169,66 +181,6 @@ impl ToolRegistry {
         child.skills = self.skills;
         child.set_session(session);
         Ok(child)
-    }
-
-    pub(crate) fn exists(&self, path: &str) -> Result<bool> {
-        Ok(self.lexical(path)?.exists())
-    }
-
-    pub(crate) fn enable_sandbox(&mut self, network: sandbox::Network) -> Result<()> {
-        self.sandbox = Some(sandbox::Sandbox::discover(
-            &self.workspace,
-            network,
-            &self.policy.write_roots(),
-        )?);
-        Ok(())
-    }
-
-    pub(crate) fn disable_sandbox(&mut self) {
-        self.sandbox = None;
-    }
-
-    pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
-        if !path.exists() {
-            if volume_unmounted(&path) {
-                return Err(Error::Config(format!(
-                    "write path {}: volume is not mounted",
-                    path.display()
-                )));
-            }
-            std::fs::create_dir_all(&path).map_err(|error| {
-                Error::Config(format!(
-                    "cannot create write path {}: {error}",
-                    path.display()
-                ))
-            })?;
-        }
-        let resolved = path.canonicalize().map_err(|error| {
-            Error::Config(format!(
-                "write path {} is unusable: {error}",
-                path.display()
-            ))
-        })?;
-        if !resolved.is_dir() {
-            return Err(Error::Config(format!(
-                "write path {} is not a directory",
-                resolved.display()
-            )));
-        }
-        self.policy.allow_path(resolved);
-        if self.sandbox.is_some() {
-            let network = sandbox::Network::allowed(!self.denies_network());
-            self.enable_sandbox(network)?;
-        }
-        Ok(())
-    }
-
-    pub(crate) fn write_roots(&self) -> Vec<String> {
-        self.policy
-            .write_roots()
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect()
     }
 
     pub(crate) fn allow_network_once(&self) {
@@ -304,8 +256,9 @@ impl ToolRegistry {
     async fn dispatch(&self, kind: Builtin, call: &ToolCall) -> Result<ToolOutput> {
         let arguments = &call.function.arguments;
         match kind {
-            Builtin::Read => tokio::task::block_in_place(|| self.read(arguments))
-                .map(|out| self.dedup_read(arguments, out)),
+            Builtin::Read => {
+                blocking(|| self.read(arguments)).map(|out| self.dedup_read(arguments, out))
+            }
             Builtin::Edit => self.edit_file(arguments).await,
             Builtin::Write => self.write_file(arguments).await,
             Builtin::Skill => self.skill(arguments).map(ToolOutput::ok),
@@ -345,6 +298,7 @@ pub async fn run_tool(
         id: "cli".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: name.to_string(),
             arguments: arguments.to_string(),
         },

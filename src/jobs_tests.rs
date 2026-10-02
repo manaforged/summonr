@@ -19,3 +19,16 @@ fn a_finished_job_past_retention_is_pruned_and_a_recent_one_is_kept() {
     assert!(!old.exists());
     assert!(recent.exists());
 }
+
+#[test]
+fn an_exit_marker_without_a_code_reads_as_a_dead_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let (id, record_path, _log, exit) = prepare(dir.path()).unwrap();
+    let record = stamp(&id, 999_999, "true", dir.path(), true, None).unwrap();
+    write(&record_path, &record).unwrap();
+    std::fs::write(&exit, "?\n").unwrap();
+    let status = status(dir.path(), &record).unwrap();
+    assert_eq!(status.state, JobState::Dead);
+    assert_eq!(status.state.to_string(), "dead");
+    assert!(status.text.contains("state: dead"), "{}", status.text);
+}

@@ -145,7 +145,10 @@ impl ToolRegistry {
             )
             .await?;
         Ok(ToolOutput {
-            success: status.running || status.exit_code == Some(0),
+            success: matches!(
+                status.state,
+                crate::jobs::JobState::Running | crate::jobs::JobState::Exited(0)
+            ),
             text: crate::askpass::scrub(&status.text),
             mutated: false,
             grant: None,
@@ -157,7 +160,7 @@ impl ToolRegistry {
         let Some((read_args, pipe)) = native_read_args(command) else {
             return Ok(None);
         };
-        let mut text = tokio::task::block_in_place(|| self.read(&read_args.to_json()))?.text;
+        let mut text = crate::tools::blocking(|| self.read(&read_args.to_json()))?.text;
         if let Some(pipe) = pipe {
             text = pipe.apply(&text);
         }
@@ -176,7 +179,9 @@ impl ToolRegistry {
             .into_iter()
             .filter(|record| record.session.as_deref() == Some(&session))
         {
-            if crate::jobs::status(&self.workspace, &record)?.running {
+            if crate::jobs::status(&self.workspace, &record)?.state
+                == crate::jobs::JobState::Running
+            {
                 stop_job(&self.workspace, &record)?;
             }
         }

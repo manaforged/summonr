@@ -4,7 +4,7 @@ use crate::provider::{ToolFunction, ToolKind};
 #[test]
 fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
     let dir = tempfile::tempdir().unwrap();
-    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system").unwrap();
+    let mut driver = SessionDriver::open(dir.path(), dir.path(), "model", "system", None).unwrap();
     let exposure = || Exposure {
         max_input_tokens: 0,
         max_output_tokens: 0,
@@ -13,6 +13,7 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
         id: "c1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "read".to_string(),
             arguments: "{}".to_string(),
         },

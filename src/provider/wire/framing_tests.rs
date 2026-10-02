@@ -3,7 +3,8 @@ use super::*;
 #[test]
 fn framing_reads_each_dialect_off_the_wire() {
     let anthropic = b"event: message_start\ndata: {\"type\":\"message_start\"}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\"}\n\n";
-    let frames = Frames::default()
+    let mut framing = Frames::default();
+    let frames = framing
         .push(anthropic, anthropic::Wire::sentinel())
         .unwrap();
     assert_eq!(
@@ -12,14 +13,13 @@ fn framing_reads_each_dialect_off_the_wire() {
         "the event: lines are not frames of their own"
     );
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&frames[0]).unwrap()["type"],
+        serde_json::from_str::<serde_json::Value>(frames[0]).unwrap()["type"],
         "message_start"
     );
 
     let gemini = b"data: {\"candidates\":[]}\r\n\r\n";
-    let frames = Frames::default()
-        .push(gemini, gemini::Wire::sentinel())
-        .unwrap();
+    let mut framing = Frames::default();
+    let frames = framing.push(gemini, gemini::Wire::sentinel()).unwrap();
     assert_eq!(frames.len(), 1, "a CRLF boundary must frame like an LF one");
 }
 
@@ -36,7 +36,7 @@ fn a_frame_split_across_chunks_is_not_lost() {
     let rest = frames.push(b"sage_start\"}\n\n", None).unwrap();
     assert_eq!(rest.len(), 1, "the halves must join");
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&rest[0]).unwrap()["type"],
+        serde_json::from_str::<serde_json::Value>(rest[0]).unwrap()["type"],
         "message_start"
     );
 }
@@ -63,14 +63,15 @@ fn a_sentinel_ends_the_stream_only_where_a_wire_declares_one() {
 #[test]
 fn a_malformed_frame_is_an_error_at_parse() {
     let mixed = b"data: not json\n\ndata: {\"good\":true}\n\n";
-    let frames = Frames::default().push(mixed, None).unwrap();
+    let mut framing = Frames::default();
+    let frames = framing.push(mixed, None).unwrap();
     assert_eq!(frames.len(), 2, "framing yields each data payload");
     assert!(
-        serde_json::from_str::<serde_json::Value>(&frames[0]).is_err(),
+        serde_json::from_str::<serde_json::Value>(frames[0]).is_err(),
         "the bad payload fails typed parse instead of being dropped"
     );
     assert_eq!(
-        serde_json::from_str::<serde_json::Value>(&frames[1]).unwrap()["good"],
+        serde_json::from_str::<serde_json::Value>(frames[1]).unwrap()["good"],
         true
     );
 }
@@ -78,7 +79,8 @@ fn a_malformed_frame_is_an_error_at_parse() {
 #[test]
 fn a_comment_or_a_blank_keepalive_is_ignored() {
     let noise = b": keepalive\n\ndata:\n\ndata: {\"real\":1}\n\n";
-    let frames = Frames::default().push(noise, None).unwrap();
+    let mut framing = Frames::default();
+    let frames = framing.push(noise, None).unwrap();
     assert_eq!(frames.len(), 1, "got {frames:?}");
 }
 
@@ -88,7 +90,7 @@ fn bytes_reach_an_answer_through_the_contract_alone() {
         let mut frames = Frames::default();
         let mut stream = W::Stream::new(model);
         for frame in frames.push(bytes, W::sentinel()).unwrap() {
-            drop(stream.on(&frame).unwrap());
+            drop(stream.on(frame).unwrap());
         }
         stream.finish()
     }

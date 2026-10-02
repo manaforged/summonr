@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use crate::error::{Error, Result};
 
+static READY: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
 pub fn summonr_home() -> Result<PathBuf> {
     if let Some(path) = std::env::var_os("SUMMONR_HOME") {
         if path.is_empty() {
@@ -13,6 +15,14 @@ pub fn summonr_home() -> Result<PathBuf> {
         Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
     })?;
     let dir = home.join(".summonr");
+    if READY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        == Some(&dir)
+    {
+        return Ok(dir);
+    }
     let legacy = dir.with_file_name(".mage");
     if !dir.exists() && legacy.is_dir() {
         drop(std::fs::rename(&legacy, &dir));
@@ -28,6 +38,9 @@ pub fn summonr_home() -> Result<PathBuf> {
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
         }
     }
+    *READY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(dir.clone());
     Ok(dir)
 }
 

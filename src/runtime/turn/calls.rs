@@ -266,17 +266,18 @@ impl<P: Provider> Loop<P> {
                 )
             })
             .await?;
-            if status.killed {
+            if status.state == jobs::JobState::Killed {
                 continue;
             }
-            if status.running {
+            let running_now = status.state == jobs::JobState::Running;
+            if running_now {
                 running.push(label.clone());
                 unsettled.push(record.id.clone());
             }
             let outcome = Outcome {
                 command: label,
-                passed: status.exit_code == Some(0),
-                output: if status.running {
+                passed: status.state == jobs::JobState::Exited(0),
+                output: if running_now {
                     format!(
                         "still running after {JOB_WAIT_SECS}s — wait for it or kill it\n{}",
                         status.text

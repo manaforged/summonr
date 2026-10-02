@@ -44,6 +44,7 @@ fn empty_tool_arguments_leave_as_a_json_object() {
         id: "call_1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "run_command".to_string(),
             arguments: String::new(),
         },

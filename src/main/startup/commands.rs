@@ -48,9 +48,11 @@ pub(super) async fn probe_endpoints() -> Result<()> {
 pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
     match args.prompt.first() {
         Some(id) => resolve_session(id),
-        None => last_for(&workspace()?)?.ok_or_else(|| {
-            summonr::Error::Config("no prior session for this directory".to_string())
-        }),
+        None => last_for(&workspace()?)?
+            .map(|info| info.path)
+            .ok_or_else(|| {
+                summonr::Error::Config("no prior session for this directory".to_string())
+            }),
     }
 }
 
@@ -155,6 +157,7 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
 
 fn turn_paths(cwd: &Path, turn: &str) -> Result<Vec<String>> {
     let journal = summonr::last_for(cwd)?
+        .map(|info| info.path)
         .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
     let turns = summonr::diff::turns(&journal)?;
     let index = if turn == "last" {

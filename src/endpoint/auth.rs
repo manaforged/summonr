@@ -91,11 +91,9 @@ pub fn logout(name: &str) -> Result<String> {
 }
 
 pub fn adopt_keys() -> Result<Vec<String>> {
-    adopt_from(&config::path()?, &secret::Store::discover()?)
-}
-
-pub(crate) fn adopt_from(path: &Path, store: &secret::Store) -> Result<Vec<String>> {
-    let file = config::parse(path)?;
+    let path = config::path()?;
+    let store = secret::Store::discover()?;
+    let file = config::file()?;
     let mut moved = Vec::new();
     for (name, row) in &file.endpoint {
         let Some(key) = row
@@ -109,7 +107,7 @@ pub(crate) fn adopt_from(path: &Path, store: &secret::Store) -> Result<Vec<Strin
         if store.get(name)?.is_none() {
             store.set(name, key)?;
         }
-        config::remove_key(path, name)?;
+        config::remove_key(&path, name)?;
         moved.push(name.clone());
     }
     Ok(moved)

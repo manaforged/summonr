@@ -1,15 +1,20 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::error::Result;
 use crate::prompt::summonr_home;
 
 const FILE: &str = "models.json";
 
+mod listing;
 mod registry;
+mod shelf;
+
+pub(crate) use listing::window;
+pub use listing::{parse, tokens};
 
 pub(crate) use registry::enrich;
 pub use registry::refresh_registry;
@@ -37,6 +42,7 @@ impl Cost {
 }
 
 const CURRENT_DAYS: u64 = 183;
+const FRESH_DAYS: u64 = 14;
 
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct Model {
@@ -122,7 +128,7 @@ impl Model {
     #[must_use]
     pub(crate) fn fresh(&self) -> bool {
         self.release
-            .is_some_and(|day| now() / 86_400 <= day.saturating_add(14))
+            .is_some_and(|day| now() / 86_400 <= day.saturating_add(FRESH_DAYS))
     }
 }
 
@@ -179,122 +185,12 @@ fn now() -> u64 {
         .unwrap_or_default()
 }
 
-pub fn parse(value: &Value, fallback: Cost) -> Vec<Model> {
-    value
-        .get("data")
-        .or_else(|| value.get("models"))
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(|item| row(item, fallback))
-        .collect()
-}
-
-fn row(item: &Value, fallback: Cost) -> Option<Model> {
-    let raw = item
-        .get("id")
-        .or_else(|| item.get("name"))
-        .and_then(Value::as_str)?;
-    let id = raw.strip_prefix("models/").unwrap_or(raw);
-    let parameters = item.get("supported_parameters").and_then(Value::as_array);
-    let supports = |name: &str| parameters.map(|list| list.iter().any(|param| param == name));
-    let capability = |name: &str| {
-        item.get("capabilities")
-            .and_then(|capabilities| capabilities.get(name))
-            .and_then(Value::as_bool)
-    };
-    Some(Model {
-        id: id.to_string(),
-        display: item
-            .get("display_name")
-            .or_else(|| item.get("displayName"))
-            .or_else(|| item.get("name"))
-            .and_then(Value::as_str)
-            .filter(|name| *name != raw)
-            .map(str::to_string),
-        context: window(item),
-        about: item
-            .get("description")
-            .and_then(Value::as_str)
-            .map(|text| text.split(". ").next().unwrap_or(text).trim().to_string())
-            .filter(|text| !text.is_empty()),
-        cost: priced(item).unwrap_or(fallback),
-        release: item
-            .get("created_at")
-            .and_then(Value::as_str)
-            .and_then(|date| registry::epoch_day(date.get(..10)?)),
-        reasoning: supports("reasoning") == Some(true)
-            || item.get("thinking").and_then(Value::as_bool) == Some(true),
-        vision: capability("vision") == Some(true)
-            || ["/architecture/input_modalities", "/input_modalities"]
-                .into_iter()
-                .filter_map(|pointer| item.pointer(pointer).and_then(Value::as_array))
-                .any(|kinds| kinds.iter().any(|kind| kind == "image")),
-        tools: supports("tools").or_else(|| capability("function_calling")),
-        price: price(item),
-        ..Model::default()
-    })
-}
-
-pub(crate) fn window(item: &Value) -> Option<u32> {
-    [
-        "context_length",
-        "context_window",
-        "max_model_len",
-        "max_context_length",
-        "max_input_tokens",
-        "inputTokenLimit",
-    ]
-    .into_iter()
-    .filter_map(|field| item.get(field))
-    .chain(item.pointer("/top_provider/context_length"))
-    .find_map(tokens)
-}
-
-pub fn tokens(value: &Value) -> Option<u32> {
-    value
-        .as_u64()
-        .or_else(|| value.as_str()?.parse().ok())
-        .and_then(|value| u32::try_from(value).ok())
-        .filter(|value| *value > 0)
-}
-
-fn price(item: &Value) -> Option<crate::provider::Price> {
-    let pricing = item.get("pricing")?;
-    let rate = |field: &str| {
-        let value = pricing.get(field)?;
-        value
-            .as_f64()
-            .or_else(|| value.as_str()?.parse().ok())
-            .filter(|rate| *rate >= 0.0)
-    };
-    let (input, output, cached, scale) = if pricing.get("prompt").is_some() {
-        ("prompt", "completion", "input_cache_read", 1_000_000.0)
-    } else {
-        ("input", "output", "cached_input", 1.0)
-    };
-    Some(crate::provider::Price {
-        input: rate(input)? * scale,
-        output: rate(output)? * scale,
-        cached: rate(cached).unwrap_or_default() * scale,
-    })
-}
-
-fn priced(item: &Value) -> Option<Cost> {
-    let pricing = item.get("pricing")?;
-    let charged = ["prompt", "completion", "input", "output"]
-        .into_iter()
-        .filter_map(|field| pricing.get(field))
-        .any(|value| match value {
-            Value::String(text) => text.parse::<f64>().is_ok_and(|rate| rate > 0.0),
-            Value::Number(number) => number.as_f64().is_some_and(|rate| rate > 0.0),
-            Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_) => false,
-        });
-    Some(if charged { Cost::Metered } else { Cost::Free })
-}
-
 pub(crate) fn cached() -> BTreeMap<String, Listing> {
-    load(FILE).unwrap_or_default()
+    (*listings()).clone()
+}
+
+fn listings() -> Arc<BTreeMap<String, Listing>> {
+    shelf::load(FILE).unwrap_or_default()
 }
 
 #[must_use]
@@ -323,26 +219,19 @@ fn vision_of(endpoint: &crate::Endpoint, registry: &registry::Registry) -> bool 
 
 #[must_use]
 pub(crate) fn known(endpoint: &str, id: &str) -> Option<Model> {
-    cached()
-        .remove(endpoint)?
+    listings()
+        .get(endpoint)?
         .models
-        .into_iter()
+        .iter()
         .find(|model| model.id == id)
-}
-
-fn load<T: serde::de::DeserializeOwned + Default>(file: &str) -> Result<T> {
-    match std::fs::read_to_string(summonr_home()?.join(file)) {
-        Ok(raw) => serde_json::from_str(&raw)
-            .map_err(|error| crate::error::Error::Config(format!("{file} is corrupt: {error}"))),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
-        Err(error) => Err(error.into()),
-    }
+        .cloned()
 }
 
 pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
     let path = summonr_home()?.join(FILE);
     let held = crate::durable::store::lock(&path, true)?;
-    let mut all: BTreeMap<String, Listing> = load(FILE)?;
+    let mut all: BTreeMap<String, Listing> =
+        (*shelf::load::<BTreeMap<String, Listing>>(FILE)?).clone();
     all.insert(
         name.to_string(),
         Listing {
@@ -351,6 +240,7 @@ pub(crate) fn remember(name: &str, models: Vec<Model>) -> Result<()> {
         },
     );
     crate::durable::store::write(&path, serde_json::to_string(&all)?)?;
+    shelf::store(&path, all);
     drop(held);
     Ok(())
 }

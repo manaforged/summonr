@@ -43,7 +43,7 @@ pub(in crate::tui) fn export_session(
 
 pub(in crate::tui) fn announce(
     ui: &UnboundedSender<Msg>,
-    steering: &Arc<Mutex<VecDeque<UserInput>>>,
+    steering: &Arc<crate::runtime::Steering>,
     followups: &VecDeque<UserInput>,
 ) {
     let steering = steering.lock().map_or(0, |queue| queue.len());

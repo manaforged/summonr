@@ -369,5 +369,6 @@ mod detect;
 mod proto;
 mod tool;
 
-pub(in crate::tools) use detect::available;
+use detect::Scope;
+pub(in crate::tools) use detect::{Launches, available};
 use proto::*;

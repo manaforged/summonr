@@ -36,7 +36,7 @@ async fn answered(reply: Option<&str>) -> (FormAnswer, Vec<Event>) {
     let mut loop_ = session(workspace.path(), home.path());
     if let Some(reply) = reply {
         let queue = VecDeque::from([UserInput::from(reply.to_string())]);
-        loop_.steer_with(Arc::new(Mutex::new(queue)));
+        loop_.steer_with(Arc::new(Steering::from(queue)));
     }
     let mut events = Vec::new();
     let answer = loop_
@@ -71,4 +71,17 @@ async fn a_form_without_a_user_is_declined() {
     let (answer, events) = answered(None).await;
     assert_eq!(answer.action, FormAction::Decline);
     assert!(events.is_empty());
+}
+
+#[tokio::test]
+async fn a_pushed_steer_wakes_the_waiting_answer() {
+    let steering = Arc::new(Steering::default());
+    let waiting = Arc::clone(&steering);
+    let answer = tokio::spawn(async move {
+        tokio::time::timeout(std::time::Duration::from_secs(5), waiting.next()).await
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    steering.lock().unwrap().push_back(UserInput::from("go on"));
+    let input = answer.await.unwrap().expect("the push wakes the waiter");
+    assert_eq!(input.text, "go on");
 }

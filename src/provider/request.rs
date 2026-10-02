@@ -9,7 +9,10 @@ pub struct CompletionRequest<'a> {
     pub max_output_tokens: Option<u32>,
     pub emit_deltas: bool,
     pub effort: Option<Effort>,
+    #[cfg(test)]
     pub(crate) reasoning: Reasoning,
+    pub(crate) traits: super::wire::traits::Traits,
+    pub(crate) tools_json: Option<&'a ToolsJson>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -156,21 +159,82 @@ impl<'a> CompletionRequest<'a> {
     ) -> Self {
         Self {
             session,
-            model,
             messages,
             tools,
             max_output_tokens,
             emit_deltas,
             effort,
+            #[cfg(test)]
             reasoning: Reasoning::default(),
+            traits: super::wire::traits::traits(&model),
+            tools_json: None,
+            model,
         }
+    }
+
+    #[must_use]
+    pub fn with_model(mut self, model: String) -> Self {
+        self.traits = super::wire::traits::traits(&model);
+        self.model = model;
+        self
+    }
+
+    #[must_use]
+    pub fn with_tools_json(mut self, tools_json: &'a ToolsJson) -> Self {
+        self.tools_json = Some(tools_json);
+        self
+    }
+
+    fn tools_bytes(&self) -> std::borrow::Cow<'a, [u8]> {
+        self.tools_json.map_or_else(
+            || std::borrow::Cow::Owned(serde_json::to_vec(self.tools).unwrap_or_default()),
+            |encoded| std::borrow::Cow::Borrowed(encoded.declared.as_slice()),
+        )
     }
 
     pub(crate) fn prefix_hash(&self) -> String {
         let system = self.messages.first().map(|message| &message.content);
-        crate::text::fnv64(
-            &serde_json::to_vec(&(&self.model, system, &self.tools)).unwrap_or_default(),
-        )
+        let tools = self.tools_bytes();
+        let mut bytes = Vec::with_capacity(tools.len() + self.model.len() + 64);
+        bytes.push(b'[');
+        let written = serde_json::to_writer(&mut bytes, &self.model).is_ok() && {
+            bytes.push(b',');
+            serde_json::to_writer(&mut bytes, &system).is_ok()
+        };
+        if !written {
+            return crate::text::fnv64(&[]);
+        }
+        bytes.push(b',');
+        bytes.extend_from_slice(&tools);
+        bytes.push(b']');
+        crate::text::fnv64(&bytes)
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ToolsJson {
+    declared: Vec<u8>,
+    pub(crate) sorted: Vec<u8>,
+}
+
+impl ToolsJson {
+    #[must_use]
+    pub fn encode(tools: &[ToolDefinition]) -> Self {
+        let declared = serde_json::to_vec(tools).unwrap_or_default();
+        let sorted = serde_json::to_value(tools)
+            .and_then(|value| serde_json::to_vec(&value))
+            .unwrap_or_default();
+        Self { declared, sorted }
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.declared.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.declared.is_empty()
     }
 }
 

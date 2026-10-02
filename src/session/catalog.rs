@@ -8,47 +8,28 @@ use crate::durable::store;
 use crate::error::{Error, Result};
 use crate::prompt::summonr_home;
 
-pub fn last_for(workspace: &Path) -> Result<Option<PathBuf>> {
-    last_in(&crate::prompt::summonr_home()?, workspace)
+pub fn last_for(workspace: &Path) -> Result<Option<SessionInfo>> {
+    latest_in(&summonr_home()?, workspace, None)
 }
 
 pub(crate) fn previous_for(workspace: &Path, current: &str) -> Result<Option<SessionInfo>> {
-    previous_in(&crate::prompt::summonr_home()?, workspace, current)
+    latest_in(&summonr_home()?, workspace, Some(current))
 }
 
-pub(crate) fn previous_in(
+pub(crate) fn latest_in(
     home: &Path,
     workspace: &Path,
-    current: &str,
+    skip: Option<&str>,
 ) -> Result<Option<SessionInfo>> {
     let want = roots(workspace);
-    let mut matches: Vec<SessionInfo> = list_in(home)?
-        .into_iter()
-        .filter(|info| {
-            info.id != current
-                && info.depth == 0
-                && info
-                    .cwd
-                    .as_deref()
-                    .is_some_and(|cwd| want.iter().any(|root| root == cwd))
-        })
-        .collect();
-    Ok(matches.pop())
-}
-
-pub(crate) fn last_in(home: &Path, workspace: &Path) -> Result<Option<PathBuf>> {
-    let want = roots(workspace);
-    let mut matches: Vec<SessionInfo> = list_in(home)?
-        .into_iter()
-        .filter(|info| {
-            info.depth == 0
-                && info
-                    .cwd
-                    .as_deref()
-                    .is_some_and(|cwd| want.iter().any(|root| root == cwd))
-        })
-        .collect();
-    Ok(matches.pop().map(|info| info.path))
+    Ok(list_in(home)?.into_iter().rev().find(|info| {
+        skip != Some(info.id.as_str())
+            && info.depth == 0
+            && info
+                .cwd
+                .as_deref()
+                .is_some_and(|cwd| want.iter().any(|root| root == cwd))
+    }))
 }
 
 pub(crate) fn roots(workspace: &Path) -> Vec<String> {
@@ -101,88 +82,6 @@ pub(crate) fn set_name(path: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn export(path: &Path) -> Result<String> {
-    let mut out = String::new();
-    for line in log::read(path)? {
-        match line {
-            Line::Session {
-                id,
-                model,
-                workspace,
-                ..
-            } => {
-                out.push_str(&format!(
-                    "# session {} · {model} · {}\n",
-                    short(&id.to_string()),
-                    workspace.display()
-                ));
-                if let Some(name) = name_of(path) {
-                    out.push_str(&format!("name: {name}\n"));
-                }
-                out.push('\n');
-            }
-            Line::User {
-                text,
-                source,
-                start,
-                ..
-            } => {
-                if start {
-                    let text = source.as_deref().unwrap_or_else(|| user_text(&text));
-                    out.push_str(&format!("## You\n\n{text}\n\n"));
-                } else {
-                    out.push_str(&format!("> {}\n\n", text.lines().next().unwrap_or("")));
-                }
-            }
-            Line::Assistant {
-                text, tool_calls, ..
-            } => {
-                if !text.trim().is_empty() {
-                    out.push_str(&format!("## Assistant\n\n{text}\n\n"));
-                }
-                for call in &tool_calls {
-                    let args: String = call.function.arguments.chars().take(100).collect();
-                    out.push_str(&format!("- `{}` {args}\n", call.function.name));
-                }
-                if !tool_calls.is_empty() {
-                    out.push('\n');
-                }
-            }
-            Line::Interrupted { text, .. } => {
-                out.push_str(&format!("## Assistant (interrupted)\n\n{text}\n\n"));
-            }
-            Line::Tool { text, success, .. } => {
-                let shown: Vec<&str> = text.lines().take(12).collect();
-                out.push_str(&format!(
-                    "```\n{}{}\n```\n{}\n",
-                    shown.join("\n"),
-                    if text.lines().count() > 12 {
-                        "\n…"
-                    } else {
-                        ""
-                    },
-                    if success { "" } else { "(failed)\n" }
-                ));
-            }
-            Line::Receipt { text, .. } => {
-                out.push_str(&format!("> {}\n\n", text.replace('\n', "\n> ")));
-            }
-            Line::Summary { text, .. } => {
-                out.push_str(&format!("## Compacted\n\n{text}\n\n"));
-            }
-            Line::Clear => out.push_str("---\n\n"),
-            Line::Tools { .. }
-            | Line::Budget { .. }
-            | Line::Workflow { .. }
-            | Line::Child { .. }
-            | Line::Charge { .. }
-            | Line::Rewrite { .. }
-            | Line::Close { .. } => {}
-        }
-    }
-    Ok(out)
-}
-
 pub fn resolve_id(id: &str) -> Result<PathBuf> {
     resolve_in(&summonr_home()?, id)
 }
@@ -192,12 +91,13 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
     if id.is_empty() {
         return Err(Error::Config("session id is empty".to_string()));
     }
-    if let Some(named) = list_in(home)?.into_iter().rev().find(|info| {
+    let sessions = list_in(home)?;
+    if let Some(named) = sessions.iter().rev().find(|info| {
         info.name
             .as_deref()
             .is_some_and(|name| name.eq_ignore_ascii_case(id))
     }) {
-        return Ok(named.path);
+        return Ok(named.path.clone());
     }
     if let Ok(session) = id.parse() {
         let exact = log::session_path(home, session);
@@ -205,7 +105,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
             return Ok(exact);
         }
     }
-    let hits: Vec<PathBuf> = list_in(home)?
+    let hits: Vec<PathBuf> = sessions
         .into_iter()
         .filter(|info| prefix(&info.id, id) || (id.len() >= 5 && info.id.ends_with(id)))
         .map(|info| info.path)
@@ -220,7 +120,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn remove(id: &str) -> Result<String> {
-    remove_in(&crate::prompt::summonr_home()?, id)
+    remove_in(&summonr_home()?, id)
 }
 
 pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
@@ -256,7 +156,7 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
 }
 
 pub fn list() -> Result<Vec<SessionInfo>> {
-    list_in(&crate::prompt::summonr_home()?)
+    list_in(&summonr_home()?)
 }
 
 const PROMPT_SESSIONS: usize = 64;

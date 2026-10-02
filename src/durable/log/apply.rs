@@ -87,11 +87,14 @@ impl State {
         &mut self,
         text: String,
         reasoning: String,
-        tool_calls: Vec<ToolCall>,
+        mut tool_calls: Vec<ToolCall>,
         usage: Usage,
         continuation: Option<Continuation>,
     ) {
         self.charge(usage);
+        for call in &mut tool_calls {
+            call.function.check();
+        }
         self.unanswered = tool_calls.iter().map(|call| call.id.clone()).collect();
         self.history.push(Message {
             role: Role::Assistant,

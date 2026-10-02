@@ -8,10 +8,12 @@ impl<P: Provider> Loop<P> {
         system: &str,
         user: &str,
     ) -> Result<(String, Usage)> {
-        let tools = self.advertised_tools().to_vec();
+        let advertised = self.advertised_tools();
         let plan = self.is_plan();
         self.tools.set_read_only(true);
-        let result = self.aside_rounds(role, system, user, &tools).await;
+        let result = self
+            .aside_rounds(role, system, user, &advertised.tools)
+            .await;
         self.tools.set_read_only(plan);
         result
     }

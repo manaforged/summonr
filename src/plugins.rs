@@ -37,11 +37,17 @@ pub(crate) struct Switches {
 pub(crate) struct Plugin {
     pub(crate) name: String,
     pub(crate) dir: PathBuf,
+    manifest: Value,
 }
 
 impl Plugin {
-    fn manifest(&self) -> Value {
-        read_json(&self.dir.join(MANIFEST))
+    pub(crate) fn at(name: String, dir: PathBuf) -> Self {
+        let manifest = read_json(&dir.join(MANIFEST));
+        Self {
+            name,
+            dir,
+            manifest,
+        }
     }
 
     fn inside(&self, relative: &str) -> Option<PathBuf> {
@@ -51,7 +57,7 @@ impl Plugin {
     }
 
     fn paths(&self, key: &str) -> Vec<PathBuf> {
-        match self.manifest().get(key) {
+        match self.manifest.get(key) {
             Some(Value::String(one)) => self.inside(one).into_iter().collect(),
             Some(Value::Array(many)) => many
                 .iter()
@@ -91,7 +97,7 @@ impl Plugin {
 
     pub(crate) fn mcp_json(&self) -> Vec<Value> {
         let mut maps = vec![read_json(&self.dir.join(".mcp.json"))["mcpServers"].clone()];
-        match self.manifest().get("mcpServers") {
+        match self.manifest.get("mcpServers") {
             Some(Value::String(path)) => maps.extend(self.inside(path).map(|path| {
                 let file = read_json(&path);
                 file.get("mcpServers").cloned().unwrap_or(file)
@@ -117,11 +123,7 @@ impl Plugin {
         for file in files {
             self.claude_hooks(&read_json(&file), &mut hooks);
         }
-        if let Some(inline) = self
-            .manifest()
-            .get("hooks")
-            .filter(|value| value.is_object())
-        {
+        if let Some(inline) = self.manifest.get("hooks").filter(|value| value.is_object()) {
             self.claude_hooks(&serde_json::json!({ "hooks": inline }), &mut hooks);
         }
         if let Ok(text) = std::fs::read_to_string(self.dir.join("hooks.toml"))
@@ -201,7 +203,7 @@ pub(super) fn installed() -> Vec<Plugin> {
         .filter(|path| path.is_dir())
         .filter_map(|dir| {
             let name = dir.file_name()?.to_str()?.to_string();
-            skills::valid(&name).then_some(Plugin { name, dir })
+            skills::valid(&name).then(|| Plugin::at(name, dir))
         })
         .collect();
     plugins.sort_by(|left, right| left.name.cmp(&right.name));
@@ -209,9 +211,10 @@ pub(super) fn installed() -> Vec<Plugin> {
 }
 
 pub(crate) fn enabled() -> Vec<Plugin> {
-    let off = crate::config::file()
-        .map(|file| file.plugins.off)
-        .unwrap_or_default();
+    let file = crate::config::file().ok();
+    let off = file
+        .as_ref()
+        .map_or(&[][..], |file| file.plugins.off.as_slice());
     installed()
         .into_iter()
         .filter(|plugin| !off.contains(&plugin.name))

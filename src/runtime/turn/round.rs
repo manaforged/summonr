@@ -21,16 +21,15 @@ impl<P: Provider> Loop<P> {
             }
             *reached = reached.saturating_add(1);
             let round = *reached;
-            let round_tools = tools.as_slice();
             if let Some(reason) = self
-                .open_round(&mut messages, round_tools, usage, events, &mut emit)
+                .open_round(&mut messages, tools.json.len(), usage, events, &mut emit)
                 .await?
             {
                 abort_reason = Some(reason);
                 break;
             }
             let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
-                .complete_retry(&mut messages, round_tools, events, &mut emit)
+                .complete_retry(&mut messages, &tools, events, &mut emit)
                 .await?
             else {
                 abort_reason = self.round_abort();
@@ -38,23 +37,24 @@ impl<P: Provider> Loop<P> {
             };
             let (message, stop_reason, meter, reasoning, meta) =
                 self.take_reply(assistant, prefix_hash, request_chars, live_millis, usage);
-            let calls = message.tool_calls.clone();
-            messages.push(message.clone());
-            if stop_reason == StopReason::Length && calls.is_empty() {
+            if stop_reason == StopReason::Length && message.tool_calls.is_empty() {
+                let mut steered = Vec::new();
                 self.steer_length(
                     &message,
                     &reasoning,
                     durable_attempt,
                     meter,
                     meta,
-                    &mut messages,
+                    &mut steered,
                     events,
                     &mut emit,
                 )
                 .await?;
+                messages.push(message);
+                messages.append(&mut steered);
                 continue;
             }
-            if calls.is_empty() {
+            if message.tool_calls.is_empty() {
                 return self
                     .finish_turn(
                         message,
@@ -72,7 +72,6 @@ impl<P: Provider> Loop<P> {
             }
             self.continue_with(
                 (message, reasoning, durable_attempt, meter, meta),
-                calls,
                 &mut messages,
                 pre,
                 events,
@@ -85,14 +84,9 @@ impl<P: Provider> Loop<P> {
             .await
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one round's reply parts move through as a tuple"
-    )]
     async fn continue_with(
         &mut self,
         reply: (Message, String, Attempt, Meter, UsageMeta),
-        calls: Vec<ToolCall>,
         messages: &mut Vec<Message>,
         pre: &mut Pretask,
         events: &mut Vec<Event>,
@@ -100,6 +94,7 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
     ) -> Result<()> {
         let (message, reasoning, durable_attempt, meter, meta) = reply;
+        let calls = message.tool_calls.clone();
         let planned = self
             .session
             .finish_provider_with_tools(
@@ -111,6 +106,7 @@ impl<P: Provider> Loop<P> {
                 meta,
             )
             .map_err(super::session_err)?;
+        messages.push(message);
         self.emit_records(events, emit)?;
         self.settle(pre, events, emit).await?;
         self.execute_calls(planned, calls, messages, events, emit, usage)
@@ -123,9 +119,9 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<Vec<ToolDefinition>> {
+    ) -> Result<Arc<super::mail::Advertised>> {
         self.settle_mcp(events, emit).await?;
-        let tools = self.advertised_tools().to_vec();
+        let tools = self.advertised_tools();
         self.accept_note(events, emit)?;
         self.plan_first(messages, usage, events, emit).await?;
         self.scout(messages, usage, events, emit).await?;
@@ -152,7 +148,7 @@ impl<P: Provider> Loop<P> {
     async fn open_round(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[ToolDefinition],
+        tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -161,7 +157,7 @@ impl<P: Provider> Loop<P> {
             return Ok(Some(reason));
         }
         if let Err(error) = self
-            .prepare_round(messages, tools, usage, events, emit)
+            .prepare_round(messages, tool_bytes, usage, events, emit)
             .await
         {
             return self.round_abort().map(Some).ok_or(error);
@@ -311,7 +307,9 @@ impl<P: Provider> Loop<P> {
                 "\n\nHarness: the selected plan is now accepted; /plan reject discards it.",
             );
         }
-        input.text = decorate(&harness, &input.text);
+        if !self.note_sent(&harness) {
+            input.text = decorate(&harness, &input.text);
+        }
         self.session
             .start_input(&input)
             .map_err(super::session_err)?;
@@ -355,7 +353,7 @@ impl<P: Provider> Loop<P> {
     pub(super) async fn prepare_round(
         &mut self,
         messages: &mut Vec<Message>,
-        tools: &[ToolDefinition],
+        tool_bytes: usize,
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
@@ -364,7 +362,7 @@ impl<P: Provider> Loop<P> {
         self.settle_probe().await;
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
-        self.auto_compact(messages, tools, usage, events, emit)
+        self.auto_compact(messages, tool_bytes, usage, events, emit)
             .await
     }
 }

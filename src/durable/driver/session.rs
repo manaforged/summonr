@@ -6,6 +6,7 @@ impl SessionDriver {
         workspace: &Path,
         model: &str,
         system: &str,
+        parent: Option<SessionId>,
     ) -> Result<Self, DriverError> {
         let id = SessionId::new();
         let path = log::session_path(home, id);
@@ -18,44 +19,15 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
+            saved: AtomicU64::new(0),
         };
         driver.append(Line::Session {
             id,
             model: model.to_string(),
             system: system.to_string(),
             workspace: driver.workspace.clone(),
-            parent: None,
-            depth: 0,
-        })?;
-        Ok(driver)
-    }
-
-    pub(crate) fn open_child(
-        home: &Path,
-        workspace: &Path,
-        model: &str,
-        system: &str,
-        parent: SessionId,
-    ) -> Result<Self, DriverError> {
-        let id = SessionId::new();
-        let path = log::session_path(home, id);
-        let mut driver = Self {
-            partial: Partial::default(),
-            log: Log::create(&path)?,
-            state: State::default(),
-            work: None,
-            workspace: canonical(workspace),
-            turn: None,
-            next: 1,
-            pending: Vec::new(),
-        };
-        driver.append(Line::Session {
-            id,
-            model: model.to_string(),
-            system: system.to_string(),
-            workspace: driver.workspace.clone(),
-            parent: Some(parent),
-            depth: 1,
+            parent,
+            depth: u8::from(parent.is_some()),
         })?;
         Ok(driver)
     }
@@ -102,6 +74,7 @@ impl SessionDriver {
             turn: None,
             next: 1,
             pending: Vec::new(),
+            saved: AtomicU64::new(0),
         };
         driver.recover()?;
         Ok(driver)

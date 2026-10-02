@@ -134,4 +134,13 @@ impl<P: Provider> Loop<P> {
         }
         note
     }
+
+    pub(super) fn note_sent(&self, harness: &str) -> bool {
+        self.session
+            .history()
+            .iter()
+            .rev()
+            .find(|message| message.role == crate::provider::Role::User)
+            .is_some_and(|message| message.content.ends_with(harness))
+    }
 }

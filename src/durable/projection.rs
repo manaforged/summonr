@@ -16,23 +16,32 @@ fn usage_event(usage: &Usage, prefix_hash: String, cost: Option<f64>) -> Option<
     })
 }
 
-fn said(text: &str, reasoning: &str) -> Vec<Event> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Speech {
+    Include,
+    Skip,
+}
+
+fn said(text: String, reasoning: String, speech: Speech) -> Vec<Event> {
     let mut events = Vec::new();
+    if speech == Speech::Skip {
+        return events;
+    }
     if !reasoning.is_empty() {
-        events.push(Event::Reasoning {
-            text: reasoning.to_string(),
-        });
+        events.push(Event::Reasoning { text: reasoning });
     }
     if !text.is_empty() {
-        events.push(Event::Assistant {
-            text: text.to_string(),
-        });
+        events.push(Event::Assistant { text });
     }
     events
 }
 
 impl Line {
     pub(crate) fn events(&self) -> Vec<Event> {
+        self.clone().into_events(Speech::Include)
+    }
+
+    pub(crate) fn into_events(self, speech: Speech) -> Vec<Event> {
         match self {
             Line::Assistant {
                 text,
@@ -43,18 +52,16 @@ impl Line {
                 cost,
                 ..
             } => {
-                let mut events = said(text, reasoning);
-                if let Some(event) = usage_event(usage, prefix_hash.clone(), *cost) {
-                    events.push(event);
-                }
-                events.extend(tool_calls.iter().map(|call| Event::ToolCall {
-                    id: call.id.clone(),
-                    name: call.function.name.clone(),
-                    arguments: call.function.arguments.clone(),
+                let mut events = said(text, reasoning, speech);
+                events.extend(usage_event(&usage, prefix_hash, cost));
+                events.extend(tool_calls.into_iter().map(|call| Event::ToolCall {
+                    id: call.id,
+                    name: call.function.name,
+                    arguments: call.function.arguments,
                 }));
                 events
             }
-            Line::Interrupted { text, reasoning } => said(text, reasoning),
+            Line::Interrupted { text, reasoning } => said(text, reasoning, speech),
             Line::Tool {
                 call,
                 text,
@@ -62,11 +69,11 @@ impl Line {
                 mutated,
                 millis,
             } => vec![Event::ToolResult {
-                id: call.clone(),
-                success: *success,
-                mutated: *mutated,
-                output: text.clone(),
-                millis: Some(*millis),
+                id: call,
+                success,
+                mutated,
+                output: text,
+                millis: Some(millis),
             }],
             Line::Charge {
                 usage,
@@ -74,21 +81,15 @@ impl Line {
                 prefix_hash,
                 cost,
                 ..
-            } => usage_event(usage, prefix_hash.clone(), *cost)
-                .into_iter()
-                .collect(),
+            } => usage_event(&usage, prefix_hash, cost).into_iter().collect(),
             Line::Receipt {
                 receipt: Some(receipt),
                 ..
-            } => vec![Event::Receipt {
-                receipt: receipt.clone(),
-            }],
+            } => vec![Event::Receipt { receipt }],
             Line::Close {
                 reason: Some(reason),
                 ..
-            } => vec![Event::Aborted {
-                reason: reason.clone(),
-            }],
+            } => vec![Event::Aborted { reason }],
             _ => Vec::new(),
         }
     }

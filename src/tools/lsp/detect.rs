@@ -1,17 +1,95 @@
-use super::*;
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 
-pub(in crate::tools) fn detect(workspace: &Path, path: &Path) -> Result<Launch> {
+use super::*;
+use crate::askpass::on_path;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::tools) enum Scope {
+    Request,
+    Edit,
+}
+
+#[derive(Clone)]
+enum Source {
+    Pinned(&'static language::Module),
+    Custom(Arc<Launch>),
+    Tree,
+}
+
+#[derive(Default)]
+pub(in crate::tools) struct Launches {
+    source: Mutex<Option<Source>>,
+    built: Mutex<BTreeMap<&'static str, Arc<Launch>>>,
+}
+
+impl Launches {
+    pub(in crate::tools) fn launch(
+        &self,
+        workspace: &Path,
+        path: &Path,
+        scope: Scope,
+    ) -> Result<Arc<Launch>> {
+        match self.source(workspace)? {
+            Source::Custom(launch) => Ok(launch),
+            Source::Pinned(module) => {
+                if scope == Scope::Edit && !handles(module, path) {
+                    return Err(Error::Tool(format!(
+                        "the {} module does not check `{}`",
+                        module.id,
+                        path.display()
+                    )));
+                }
+                self.built(module)
+            }
+            Source::Tree => self.built(language::detect(workspace, path)?),
+        }
+    }
+
+    fn source(&self, workspace: &Path) -> Result<Source> {
+        let mut source = lock(&self.source)?;
+        if let Some(known) = source.as_ref() {
+            return Ok(known.clone());
+        }
+        let found = resolve(workspace)?;
+        *source = Some(found.clone());
+        Ok(found)
+    }
+
+    fn built(&self, module: &'static language::Module) -> Result<Arc<Launch>> {
+        if let Some(launch) = lock(&self.built)?.get(module.id) {
+            return Ok(launch.clone());
+        }
+        let launch = Arc::new(built(module)?);
+        lock(&self.built)?.insert(module.id, launch.clone());
+        Ok(launch)
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> Result<std::sync::MutexGuard<'_, T>> {
+    mutex
+        .lock()
+        .map_err(|_poison| Error::Tool("lsp lock poisoned".to_string()))
+}
+
+fn resolve(workspace: &Path) -> Result<Source> {
     if let Some(module) = workspace_module(workspace)? {
-        return built(language::named(&module)?);
+        return Ok(Source::Pinned(language::named(&module)?));
     }
     let config = crate::config::file()?;
-    if let Some(command) = config.lsp.command {
-        return custom(&command);
+    if let Some(command) = &config.lsp.command {
+        return Ok(Source::Custom(Arc::new(custom(command)?)));
     }
-    if let Some(module) = config.lsp.module {
-        return built(language::named(&module)?);
+    if let Some(module) = &config.lsp.module {
+        return Ok(Source::Pinned(language::named(module)?));
     }
-    from_tree(workspace, path)
+    Ok(Source::Tree)
+}
+
+fn handles(module: &language::Module, path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| module.extensions.contains(&extension))
 }
 
 pub(in crate::tools) fn available(workspace: &Path) -> bool {
@@ -22,17 +100,13 @@ pub(in crate::tools) fn available(workspace: &Path) -> bool {
         if config.lsp.command.is_some() {
             return true;
         }
-        if let Some(module) = config.lsp.module {
-            return language::named(&module).is_ok_and(|module| built(module).is_ok());
+        if let Some(module) = &config.lsp.module {
+            return language::named(module).is_ok_and(|module| built(module).is_ok());
         }
     }
     language::present(workspace)
         .into_iter()
         .any(|module| built(module).is_ok())
-}
-
-pub(super) fn from_tree(workspace: &Path, path: &Path) -> Result<Launch> {
-    built(language::detect(workspace, path)?)
 }
 
 pub(super) fn workspace_module(workspace: &Path) -> Result<Option<String>> {
@@ -54,7 +128,7 @@ pub(super) fn built(module: &language::Module) -> Result<Launch> {
     let mut names = Vec::new();
     for server in module.servers {
         names.push(server.name);
-        if on_path(server.name) {
+        if on_path(server.name).is_some() {
             let mut command = vec![server.name.to_string()];
             command.extend(server.args.iter().map(|arg| (*arg).to_string()));
             return Ok(Launch {
@@ -85,22 +159,10 @@ pub(super) fn argv(command: &[String]) -> Result<Vec<String>> {
         .map(String::as_str)
         .filter(|name| !name.is_empty())
         .ok_or_else(|| Error::Tool("[lsp] command is empty".to_string()))?;
-    if !on_path(name) {
+    if on_path(name).is_none() {
         return Err(Error::Tool(format!(
             "{name} is not on PATH; fix [lsp] command in ~/.summonr/config.toml"
         )));
     }
     Ok(command.to_vec())
-}
-
-pub(super) fn on_path(name: &str) -> bool {
-    let Ok(path) = std::env::var("PATH") else {
-        return false;
-    };
-    std::env::split_paths(&path).any(|dir| {
-        dir.join(name).is_file()
-            || (cfg!(windows)
-                && Path::new(name).extension().is_none()
-                && dir.join(format!("{name}.exe")).is_file())
-    })
 }

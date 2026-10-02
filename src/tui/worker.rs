@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fs::OpenOptions;
 use std::io::{ErrorKind, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -45,7 +45,7 @@ struct Worker {
     auto_reply: bool,
     pending_mail: bool,
     last_auto: Instant,
-    steering: Arc<Mutex<VecDeque<UserInput>>>,
+    steering: Arc<crate::runtime::Steering>,
     deferred: VecDeque<Cmd>,
     followups: VecDeque<UserInput>,
     last_turn: Option<crate::Turn>,

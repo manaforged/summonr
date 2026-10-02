@@ -77,3 +77,27 @@ fn mail_to_a_name_arrives_under_the_senders_name() {
     );
     drop(sender);
 }
+
+#[test]
+fn a_poll_against_a_held_inbox_lock_yields_nothing_and_keeps_the_mail() {
+    let dir = tempfile::tempdir().unwrap();
+    let cwd = Path::new("/work/summonr");
+    let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
+    let mut receiver = Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
+    deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "hold on").unwrap();
+    let held = crate::durable::store::lock(&inbox_path(dir.path(), "s2"), true).unwrap();
+    assert!(
+        receiver.poll().unwrap().is_empty(),
+        "a busy inbox is no mail this round"
+    );
+    drop(held);
+    assert_eq!(
+        receiver.poll().unwrap().len(),
+        1,
+        "the mail is still there next round"
+    );
+    assert!(
+        receiver.poll().unwrap().is_empty(),
+        "an unchanged inbox is not reread"
+    );
+}

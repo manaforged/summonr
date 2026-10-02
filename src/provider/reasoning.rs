@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::Effort;
-use super::wire::traits::traits;
+use super::wire::traits::Traits;
 
 pub(crate) mod levels {
     use crate::provider::Effort;
@@ -140,8 +140,8 @@ pub(crate) struct Plan<'a> {
 }
 
 impl Reasoning {
-    pub(crate) fn plan(&self, model: &str) -> Plan<'_> {
-        let row = traits(model).scale.filter(|_| self.spec.by_model);
+    pub(crate) fn plan(&self, traits: Traits) -> Plan<'_> {
+        let row = traits.scale.filter(|_| self.spec.by_model);
         Plan {
             field: self.spec.field,
             levels: self

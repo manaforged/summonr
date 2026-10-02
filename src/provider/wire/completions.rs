@@ -3,16 +3,16 @@ use serde_json::{Value, json};
 
 use super::{Accumulate, Chat, Delta};
 use crate::provider::{
-    AssistantMessage, CompletionRequest, EffortField, Step, StopReason, ToolCall, Usage,
-    stream::merge_call, think,
+    AssistantMessage, CompletionRequest, EffortField, Partial, Reasoning, Step, StopReason,
+    ToolCall, Usage, stream::merge_call, think,
 };
 
 pub(crate) struct Wire;
 
-fn reasoning(body: &mut Value, call: &CompletionRequest<'_>) {
-    let plan = call.reasoning.plan(&call.model);
+fn effort(body: &mut Value, call: &CompletionRequest<'_>, reasoning: &Reasoning) {
+    let plan = reasoning.plan(call.traits);
     let step = plan.step(call.effort);
-    if super::traits::traits(&call.model).preserved && !matches!(step, Step::Off(_)) {
+    if call.traits.preserved && !matches!(step, Step::Off(_)) {
         body["thinking"] = json!({"type": "enabled", "clear_thinking": false});
     }
     match step {
@@ -40,7 +40,11 @@ impl Chat for Wire {
         Some("[DONE]")
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
+    fn body(
+        call: &CompletionRequest<'_>,
+        reasoning: &Reasoning,
+        stream: bool,
+    ) -> crate::error::Result<super::Wired> {
         let mut body = json!({
             "model": call.model,
             "stream": stream,
@@ -48,19 +52,21 @@ impl Chat for Wire {
         if let Some(max) = call.max_output_tokens {
             body["max_tokens"] = json!(max);
         }
-        if !call.tools.is_empty()
-            && let Ok(tools) = serde_json::to_value(call.tools)
-        {
-            body["tools"] = tools;
+        if !call.tools.is_empty() {
+            if call.tools_json.is_some() {
+                body["tools"] = Value::Null;
+            } else if let Ok(tools) = serde_json::to_value(call.tools) {
+                body["tools"] = tools;
+            }
         }
         if stream {
             body["stream_options"] = json!({"include_usage": true});
-            if !call.tools.is_empty() && super::traits::traits(&call.model).tool_stream {
+            if !call.tools.is_empty() && call.traits.tool_stream {
                 body["tool_stream"] = json!(true);
             }
         }
-        reasoning(&mut body, call);
-        Ok(body)
+        effort(&mut body, call, reasoning);
+        Ok(super::Wired::head(body))
     }
 
     #[cfg(test)]
@@ -218,6 +224,11 @@ impl Accumulate for Stream {
         self.finished
     }
 
+    fn spill(&mut self, partial: &mut Partial) {
+        partial.text.push_str(&self.text);
+        partial.reasoning.push_str(&self.reasoning);
+    }
+
     fn finish(mut self) -> AssistantMessage {
         self.think.finish(
             |chunk| self.text.push_str(chunk),
@@ -227,6 +238,7 @@ impl Accumulate for Stream {
             if call.id.is_empty() {
                 call.id = format!("call_{index}");
             }
+            call.function.check();
         }
         AssistantMessage {
             content: (!self.text.is_empty()).then_some(self.text),

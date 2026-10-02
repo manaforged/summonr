@@ -3,7 +3,7 @@ use serde_json::{Map, Value, json};
 use stream::Stream;
 
 use super::Chat;
-use crate::provider::{CompletionRequest, Continuation, Effort, Message, Role, Step};
+use crate::provider::{CompletionRequest, Continuation, Effort, Message, Reasoning, Role, Step};
 
 #[cfg(test)]
 use super::Accumulate;
@@ -19,19 +19,54 @@ impl Chat for Wire {
         "/responses".to_string()
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
-        request(call, stream)
+    fn body(
+        call: &CompletionRequest<'_>,
+        reasoning: &Reasoning,
+        stream: bool,
+    ) -> crate::error::Result<super::Wired> {
+        body(call, reasoning, stream).map(super::Wired::head)
     }
 
     #[cfg(test)]
     fn parse(model: &str, body: &Value) -> AssistantMessage {
         let mut reply = Stream::new(model);
-        drop(reply.value(body));
+        drop(reply.whole(body));
         reply.finish()
     }
 }
 
+#[cfg(test)]
 pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
+    body(call, &call.reasoning, stream)
+}
+
+pub(crate) fn body(
+    call: &CompletionRequest<'_>,
+    reasoning: &Reasoning,
+    stream: bool,
+) -> crate::error::Result<Value> {
+    let (instructions, input) = input(call)?;
+    let mut body = Map::new();
+    body.insert("model".to_string(), json!(call.model));
+    body.insert("input".to_string(), Value::Array(input));
+    if !instructions.is_empty() {
+        body.insert("instructions".to_string(), json!(instructions));
+    }
+    if !call.tools.is_empty() {
+        body.insert("tools".to_string(), Value::Array(tools(call)));
+    }
+    if let Some(max) = call.max_output_tokens {
+        body.insert("max_output_tokens".to_string(), json!(max));
+    }
+    if stream {
+        body.insert("stream".to_string(), json!(true));
+    }
+    effort(&mut body, call, reasoning);
+    body.insert("store".to_string(), json!(false));
+    Ok(Value::Object(body))
+}
+
+fn input(call: &CompletionRequest<'_>) -> crate::error::Result<(String, Vec<Value>)> {
     let mut instructions = String::new();
     let mut input: Vec<Value> = Vec::new();
     for message in call.messages {
@@ -60,22 +95,11 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
             })),
         }
     }
-    let mut body = Map::new();
-    body.insert("model".to_string(), json!(call.model));
-    body.insert("input".to_string(), Value::Array(input));
-    if !instructions.is_empty() {
-        body.insert("instructions".to_string(), json!(instructions));
-    }
-    if !call.tools.is_empty() {
-        body.insert("tools".to_string(), Value::Array(tools(call)));
-    }
-    if let Some(max) = call.max_output_tokens {
-        body.insert("max_output_tokens".to_string(), json!(max));
-    }
-    if stream {
-        body.insert("stream".to_string(), json!(true));
-    }
-    match call.reasoning.plan(&call.model).step(call.effort) {
+    Ok((instructions, input))
+}
+
+fn effort(body: &mut Map<String, Value>, call: &CompletionRequest<'_>, reasoning: &Reasoning) {
+    match reasoning.plan(call.traits).step(call.effort) {
         Step::Level(Effort::None) => {
             body.insert("reasoning".to_string(), json!({"effort": "none"}));
         }
@@ -91,8 +115,6 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
         }
         Step::Default | Step::Off(_) => {}
     }
-    body.insert("store".to_string(), json!(false));
-    Ok(Value::Object(body))
 }
 
 fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
@@ -176,7 +198,7 @@ fn assistant_items(message: &Message, model: &str) -> crate::error::Result<Vec<V
         items.push(item);
     }
     for call in &message.tool_calls {
-        super::arguments(&call.function.name, &call.function.arguments)?;
+        super::checked(&call.function)?;
         items.push(json!({
             "type": "function_call",
             "call_id": call_id(&call.id)?,
@@ -197,6 +219,7 @@ fn call_id(id: &str) -> crate::error::Result<&str> {
     Ok(id)
 }
 
+mod frame;
 mod stream;
 
 #[cfg(test)]

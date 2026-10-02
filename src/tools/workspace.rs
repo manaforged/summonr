@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use serde_json::Value;
 
 use crate::error::{Error, Result};
@@ -120,26 +122,7 @@ impl ToolRegistry {
                 images: Vec::new(),
             });
         }
-        let dest = self.resolve_existing(path)?;
-        self.check_write(&dest)?;
-        let raw = std::fs::read_to_string(&dest)
-            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
-        if raw.is_empty() {
-            return Err(Error::Tool(format!(
-                "`{path}` is empty — there is no line to anchor an edit; use write"
-            )));
-        }
-        let endings = edit::terminators(&raw);
-        let original = raw.replace("\r\n", "\n");
-        let (edited, relaxed) = edited_text(&original, args)?;
-        let edited = edit::restore(&endings, &original, &edited);
-        let preview = self.atomic_write(&dest, path, &edited, edit::uses_tags(args))?;
-        let mut out = format!("edited {path}\n{preview}");
-        if relaxed {
-            out.push_str(
-                "\nnote: old matched only with whitespace normalized — check the edit above",
-            );
-        }
+        let (dest, mut out) = super::blocking(|| self.edit_in_place(path, args))?;
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -163,10 +146,7 @@ impl ToolRegistry {
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
-        let dest = self.resolve_write(path)?;
-        self.check_write(&dest)?;
-        let note = self.atomic_write(&dest, path, content, write::View::Overwrite)?;
-        let mut out = format!("wrote {path} ({} lines, {note})", content.lines().count());
+        let (dest, mut out) = super::blocking(|| self.write_one(path, content))?;
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -184,6 +164,56 @@ impl ToolRegistry {
         if files.is_empty() {
             return Err(Error::Tool("files is empty".to_string()));
         }
+        let (planned, mut out) = super::blocking(|| self.stage_files(files))?;
+        for item in &planned {
+            if let Some(check) = self.check_after_edit(&item.dest).await {
+                out.push_str(&check.text);
+                out.push('\n');
+            }
+        }
+        Ok(ToolOutput {
+            text: out.trim_end().to_string(),
+            success: true,
+            mutated: true,
+            grant: None,
+            images: Vec::new(),
+        })
+    }
+
+    fn edit_in_place(&self, path: &str, args: &Value) -> Result<(PathBuf, String)> {
+        let dest = self.resolve_existing(path)?;
+        self.check_write(&dest)?;
+        let raw = std::fs::read_to_string(&dest)
+            .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
+        if raw.is_empty() {
+            return Err(Error::Tool(format!(
+                "`{path}` is empty — there is no line to anchor an edit; use write"
+            )));
+        }
+        let endings = edit::terminators(&raw);
+        let original = raw.replace("\r\n", "\n");
+        let (edited, relaxed) = edited_text(&original, args)?;
+        let edited = edit::restore(&endings, &original, &edited);
+        let preview = self.atomic_write(&dest, path, &raw, &edited, edit::uses_tags(args))?;
+        let mut out = format!("edited {path}\n{preview}");
+        if relaxed {
+            out.push_str(
+                "\nnote: old matched only with whitespace normalized — check the edit above",
+            );
+        }
+        Ok((dest, out))
+    }
+
+    fn write_one(&self, path: &str, content: &str) -> Result<(PathBuf, String)> {
+        let dest = self.resolve_write(path)?;
+        self.check_write(&dest)?;
+        let before = write::current(&dest, path)?;
+        let note = self.atomic_write(&dest, path, &before, content, write::View::Overwrite)?;
+        let out = format!("wrote {path} ({} lines, {note})", content.lines().count());
+        Ok((dest, out))
+    }
+
+    fn stage_files(&self, files: &[Value]) -> Result<(Vec<write::Change>, String)> {
         let mut planned = Vec::with_capacity(files.len());
         let mut out = String::new();
         for file in files {
@@ -207,19 +237,7 @@ impl ToolRegistry {
             });
         }
         write::apply_changes(&planned)?;
-        for item in &planned {
-            if let Some(check) = self.check_after_edit(&item.dest).await {
-                out.push_str(&check.text);
-                out.push('\n');
-            }
-        }
-        Ok(ToolOutput {
-            text: out.trim_end().to_string(),
-            success: true,
-            mutated: true,
-            grant: None,
-            images: Vec::new(),
-        })
+        Ok((planned, out))
     }
 
     pub(super) fn list_dir(&self, arguments: &str) -> Result<String> {

@@ -1,6 +1,8 @@
 use futures::StreamExt;
 use serde::Deserialize;
 
+use super::wire::Accumulate;
+
 use super::{
     AssistantMessage, Client, CompletionRequest, Partial, StopReason, ToolCall, ToolFunction,
     ToolKind, think,
@@ -38,21 +40,26 @@ impl Client {
         request: &CompletionRequest<'_>,
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
-        use super::wire::Accumulate;
-
-        let body = self.request_body(request, true)?;
+        let body = self.request(request, true)?;
+        let model = body.model().map(str::to_string);
+        let bytes = body.to_bytes()?;
+        drop(body);
         let url = self.url_for::<W>(&request.model, true);
         let sink = super::capture::Sink::open(self.wire, "stream");
         if let Some(sink) = &sink {
-            sink.write("request", &body.to_string());
+            sink.write("request", &String::from_utf8_lossy(&bytes));
         }
         let mut bytes = self
-            .send(&url, &body, &request.session, true)
+            .send(&url, bytes, model.as_deref(), &request.session, true)
             .await?
             .into_stream()
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
         let mut frames = super::wire::Frames::default();
-        let mut state = W::Stream::new(&request.model);
+        let mut state = Spill {
+            state: Some(W::Stream::new(&request.model)),
+            sizes: (partial.text.len(), partial.reasoning.len()),
+            partial,
+        };
         let mut heard = std::time::Instant::now();
         while let Some(chunk) = bytes.next().await {
             let chunk = chunk.map_err(|error| {
@@ -65,34 +72,37 @@ impl Client {
                 sink.write("chunk", &String::from_utf8_lossy(&chunk));
             }
             let parsed = frames.push(&chunk, W::sentinel()).map_err(cut)?;
-            let produced = self
-                .take(&mut state, &parsed, request, partial)
-                .map_err(cut)?;
+            let produced = self.take(&mut state, &parsed, request).map_err(cut)?;
             self.heard(&mut heard, produced == 0).map_err(cut)?;
             if frames.ended() {
                 break;
             }
         }
-        if !frames.ended() && !state.finished() {
+        let Some(stream) = state
+            .state
+            .take_if(|stream| frames.ended() || stream.finished())
+        else {
             return Err(cut(Error::provider(
                 ProviderFailureKind::Transport,
                 "stream ended before the provider finished the reply",
             )));
-        }
-        finish(state.finish()).map_err(cut)
+        };
+        finish(stream.finish()).map_err(cut)
     }
 
     fn take<S: super::wire::Accumulate>(
         &self,
-        state: &mut S,
-        frames: &[String],
+        spill: &mut Spill<'_, S>,
+        frames: &[&str],
         request: &CompletionRequest<'_>,
-        partial: &mut Partial,
     ) -> Result<usize> {
         let mut produced = 0;
         for frame in frames {
+            let Some(state) = spill.state.as_mut() else {
+                break;
+            };
             for delta in state.on(frame)? {
-                self.apply(request, partial, delta)?;
+                self.apply(request, &mut spill.sizes, delta)?;
                 produced += 1;
             }
         }
@@ -116,37 +126,48 @@ impl Client {
     fn apply(
         &self,
         request: &CompletionRequest<'_>,
-        partial: &mut Partial,
+        sizes: &mut (usize, usize),
         delta: super::wire::Delta,
     ) -> Result<()> {
         use super::wire::Delta;
 
-        let (emit, sink) = match delta {
-            Delta::Text(text) => (
-                self.on_delta.as_ref().map(|emit| (emit, text.clone())),
-                Some((&mut partial.text, text)),
-            ),
-            Delta::Thinking(text) => (
-                self.on_reasoning.as_ref().map(|emit| (emit, text.clone())),
-                Some((&mut partial.reasoning, text)),
-            ),
-            Delta::Call(name) => (self.on_tool.as_ref().map(|emit| (emit, name)), None),
+        let (emit, text) = match &delta {
+            Delta::Text(text) => {
+                sizes.0 += text.len();
+                (self.on_delta.as_ref(), text)
+            }
+            Delta::Thinking(text) => {
+                sizes.1 += text.len();
+                (self.on_reasoning.as_ref(), text)
+            }
+            Delta::Call(name) => (self.on_tool.as_ref(), name),
         };
         if request.emit_deltas
-            && let Some((emit, text)) = emit
+            && let Some(emit) = emit
         {
-            emit(&text);
+            emit(text);
         }
-        if let Some((buffer, text)) = sink {
-            buffer.push_str(&text);
-        }
-        if partial.text.len() > PARTIAL_CAP || partial.reasoning.len() > PARTIAL_CAP {
+        if sizes.0 > PARTIAL_CAP || sizes.1 > PARTIAL_CAP {
             return Err(Error::provider(
                 ProviderFailureKind::Malformed,
                 format!("streamed output exceeded {PARTIAL_CAP} bytes"),
             ));
         }
         Ok(())
+    }
+}
+
+struct Spill<'p, S: super::wire::Accumulate> {
+    state: Option<S>,
+    sizes: (usize, usize),
+    partial: &'p mut Partial,
+}
+
+impl<S: super::wire::Accumulate> Drop for Spill<'_, S> {
+    fn drop(&mut self) {
+        if let Some(state) = self.state.as_mut() {
+            state.spill(self.partial);
+        }
     }
 }
 
@@ -176,6 +197,7 @@ pub(crate) fn merge_call(calls: &mut Vec<ToolCall>, part: CallDelta) -> Result<(
             function: ToolFunction {
                 name: String::new(),
                 arguments: String::new(),
+                checked: super::message::Checked::Unchecked,
             },
         });
     }

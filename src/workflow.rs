@@ -102,11 +102,11 @@ pub fn names() -> Result<Vec<String>> {
 }
 
 pub fn default_name() -> Result<Option<String>> {
-    Ok(config::file()?.workflow)
+    Ok(config::file()?.workflow.clone())
 }
 
 pub fn load(name: &str) -> Result<Workflow> {
-    from_file(&config::file()?, name)
+    from_file(&*config::file()?, name)
 }
 
 pub(crate) fn from_file(file: &File, name: &str) -> Result<Workflow> {

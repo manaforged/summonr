@@ -1,12 +1,21 @@
-use serde_json::{Map, Value, json};
+#[cfg(test)]
+use serde_json::Value;
 
-use super::Chat;
-use super::traits::{Thinking, traits};
-use crate::provider::{CompletionRequest, Message, Role, Step, StopReason, Usage};
+use super::{Chat, Wired};
+use crate::provider::{CompletionRequest, Reasoning, StopReason};
 
 #[cfg(test)]
-use crate::provider::{AssistantMessage, ToolCall, ToolFunction, ToolKind};
+use crate::provider::Usage;
 
+#[cfg(test)]
+use serde_json::json;
+
+#[cfg(test)]
+use crate::provider::{AssistantMessage, Message, Role, ToolCall, ToolFunction, ToolKind};
+
+mod body;
+mod event;
+mod part;
 mod stream;
 
 pub(crate) use stream::Stream;
@@ -24,8 +33,12 @@ impl Chat for Wire {
         &[("anthropic-version", "2023-06-01")]
     }
 
-    fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
-        request(call, stream)
+    fn body(
+        call: &CompletionRequest<'_>,
+        reasoning: &Reasoning,
+        stream: bool,
+    ) -> crate::error::Result<Wired> {
+        body::body(call, reasoning, stream)
     }
 
     #[cfg(test)]
@@ -34,240 +47,9 @@ impl Chat for Wire {
     }
 }
 
+#[cfg(test)]
 pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
-    let mut system = Vec::new();
-    let mut turns: Vec<Value> = Vec::new();
-    for message in call.messages {
-        match message.role {
-            Role::System if turns.is_empty() => {
-                system.push(json!({"type": "text", "text": message.content}));
-            }
-            Role::System => push_user(
-                &mut turns,
-                vec![json!({"type": "text", "text": message.content})],
-            ),
-            Role::Tool => push_result(&mut turns, message),
-            Role::User => push_user(&mut turns, user_parts(message)),
-            Role::Assistant => {
-                let parts = assistant_parts(message, &call.model)?;
-                if !parts.is_empty() {
-                    turns.push(json!({"role": "assistant", "content": parts}));
-                }
-            }
-        }
-    }
-    if let Some(last) = system.last_mut() {
-        breakpoint(last);
-    }
-    let mut tools = tools(call);
-    if let Some(last) = tools.last_mut() {
-        breakpoint(last);
-    }
-    if let Some(Value::Object(turn)) = turns.last_mut()
-        && let Some(Value::Array(parts)) = turn.get_mut("content")
-        && let Some(last) = parts.iter_mut().rev().find(|part| {
-            !matches!(
-                part.get("type").and_then(Value::as_str),
-                Some("thinking" | "redacted_thinking")
-            )
-        })
-    {
-        breakpoint(last);
-    }
-    let unthought = turns.len() > 1
-        && turns[turns.len() - 1]["content"][0]["type"] == "tool_result"
-        && !matches!(
-            turns[turns.len() - 2]["content"][0]["type"].as_str(),
-            Some("thinking" | "redacted_thinking")
-        );
-    let mut body = Map::new();
-    body.insert("model".to_string(), json!(call.model));
-    let most = call.max_output_tokens.unwrap_or(16_000);
-    body.insert("max_tokens".to_string(), json!(most));
-    body.insert("messages".to_string(), Value::Array(turns));
-    if !system.is_empty() {
-        body.insert("system".to_string(), Value::Array(system));
-    }
-    if !tools.is_empty() {
-        body.insert("tools".to_string(), Value::Array(tools));
-    }
-    if stream {
-        body.insert("stream".to_string(), json!(true));
-    }
-    reasoning(&mut body, call, most, unthought);
-    Ok(Value::Object(body))
-}
-
-fn reasoning(
-    body: &mut Map<String, Value>,
-    call: &CompletionRequest<'_>,
-    most: u32,
-    unthought: bool,
-) {
-    let plan = call.reasoning.plan(&call.model);
-    let thinking = traits(&call.model).thinking;
-    match plan.step(call.effort) {
-        Step::Default => {}
-        Step::Off(off) => {
-            if let Some((key, value)) = off.fragment() {
-                body.insert(key.to_string(), value);
-            }
-        }
-        Step::Level(level) => {
-            if matches!(thinking, Thinking::Adaptive | Thinking::EffortBudget) {
-                body.insert(
-                    "output_config".to_string(),
-                    json!({"effort": level.as_str()}),
-                );
-            }
-            if unthought {
-                return;
-            }
-            match thinking {
-                Thinking::Adaptive => {
-                    body.insert("thinking".to_string(), json!({"type": "adaptive"}));
-                }
-                Thinking::Budgeted | Thinking::EffortBudget => {
-                    let budget = plan.budget(level, most);
-                    if (1024..most).contains(&budget) {
-                        body.insert(
-                            "thinking".to_string(),
-                            json!({"type": "enabled", "budget_tokens": budget}),
-                        );
-                    }
-                }
-                Thinking::Budget | Thinking::Level | Thinking::None => {}
-            }
-        }
-    }
-}
-
-fn breakpoint(part: &mut Value) {
-    part["cache_control"] = json!({"type": "ephemeral"});
-}
-
-fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
-    call.tools
-        .iter()
-        .map(|tool| {
-            json!({
-                "name": tool.function.name,
-                "description": tool.function.description,
-                "input_schema": tool.function.parameters,
-            })
-        })
-        .collect()
-}
-
-fn user_parts(message: &Message) -> Vec<Value> {
-    let mut parts: Vec<Value> = message
-        .images
-        .iter()
-        .map(|image| {
-            json!({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": image.media_type,
-                    "data": image.data.clone(),
-                },
-            })
-        })
-        .collect();
-    if !message.content.is_empty() {
-        parts.push(json!({"type": "text", "text": message.content}));
-    }
-    parts
-}
-
-fn assistant_parts(message: &Message, model: &str) -> crate::error::Result<Vec<Value>> {
-    if let Some(kept) = retained(message, model)? {
-        return Ok(kept);
-    }
-    let mut parts = Vec::new();
-    if !message.content.is_empty() {
-        parts.push(json!({"type": "text", "text": message.content}));
-    }
-    for call in &message.tool_calls {
-        parts.push(json!({
-            "type": "tool_use",
-            "id": call.id,
-            "name": call.function.name,
-            "input": super::arguments(&call.function.name, &call.function.arguments)?,
-        }));
-    }
-    Ok(parts)
-}
-
-fn retained(message: &Message, model: &str) -> crate::error::Result<Option<Vec<Value>>> {
-    let Some(mut blocks) = message.tool_calls.iter().find_map(|call| {
-        if let Some(crate::provider::Continuation::Anthropic {
-            model: made,
-            blocks,
-        }) = call.continuation.as_ref()
-            && made == model
-        {
-            Some(blocks.clone())
-        } else {
-            None
-        }
-    }) else {
-        return Ok(None);
-    };
-    let mut calls = message.tool_calls.iter();
-    for block in blocks
-        .iter_mut()
-        .filter(|block| block["type"] == "tool_use")
-    {
-        let Some(call) = calls.next().filter(|call| block["id"] == call.id.as_str()) else {
-            return Ok(None);
-        };
-        block["name"] = json!(call.function.name);
-        block["input"] = super::arguments(&call.function.name, &call.function.arguments)?;
-    }
-    Ok(calls.next().is_none().then_some(blocks))
-}
-
-fn push_result(turns: &mut Vec<Value>, message: &Message) {
-    let mut block = json!({
-        "type": "tool_result",
-        "tool_use_id": message.tool_call_id.clone().unwrap_or_default(),
-        "content": user_parts(message),
-    });
-    if message.failed {
-        block["is_error"] = json!(true);
-    }
-    let paired = turns.len() > 1 && turns[turns.len() - 2]["role"] == "assistant";
-    let merged = turns
-        .last()
-        .is_some_and(|turn| turn["content"][0]["type"] == "tool_result");
-    if (paired || merged)
-        && let Some(Value::Object(last)) = turns.last_mut()
-        && last.get("role").and_then(Value::as_str) == Some("user")
-        && let Some(Value::Array(parts)) = last.get_mut("content")
-    {
-        let at = parts
-            .iter()
-            .take_while(|part| part.get("type").and_then(Value::as_str) == Some("tool_result"))
-            .count();
-        parts.insert(at, block);
-        return;
-    }
-    turns.push(json!({"role": "user", "content": [block]}));
-}
-
-fn push_user(turns: &mut Vec<Value>, mut added: Vec<Value>) {
-    if added.is_empty() {
-        return;
-    }
-    if let Some(Value::Object(last)) = turns.last_mut()
-        && last.get("role").and_then(Value::as_str) == Some("user")
-        && let Some(Value::Array(parts)) = last.get_mut("content")
-    {
-        parts.append(&mut added);
-        return;
-    }
-    turns.push(json!({"role": "user", "content": added}));
+    body::body(call, &call.reasoning, stream)?.value()
 }
 
 #[cfg(test)]
@@ -328,34 +110,18 @@ fn tool_call(block: &Value) -> ToolCall {
                 .get("input")
                 .map(ToString::to_string)
                 .unwrap_or_else(|| "{}".to_string()),
+            checked: crate::provider::message::Checked::Valid,
         },
         continuation: None,
     }
 }
 
+#[cfg(test)]
 pub(crate) fn usage(value: Option<&Value>) -> Usage {
-    let Some(value) = value else {
-        return Usage::default();
-    };
-    let field = |name: &str| {
-        value
-            .get(name)
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32
-    };
-    Usage {
-        prompt_tokens: field("input_tokens")
-            + field("cache_creation_input_tokens")
-            + field("cache_read_input_tokens"),
-        completion_tokens: field("output_tokens"),
-        reasoning_tokens: value
-            .pointer("/output_tokens_details/thinking_tokens")
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32,
-        cached_tokens: field("cache_read_input_tokens"),
-    }
+    value
+        .and_then(|counted| serde_json::from_value::<event::Counted>(counted.clone()).ok())
+        .unwrap_or_default()
+        .usage()
 }
 
 pub(crate) fn stop_reason(raw: Option<&str>) -> StopReason {

@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
+use std::hash::{DefaultHasher, Hash, Hasher};
 use std::io;
 use std::path::Path;
 
@@ -18,6 +19,7 @@ pub(crate) use progress::{checks, roman};
 
 const LEDGER_WIDTH: usize = 72;
 const LEDGER_MAX: usize = 40;
+const TREES: &str = "tree.json";
 const DECISION: &str = "Goal Work requires a completion decision";
 
 #[derive(Clone, Debug, Error, PartialEq, Eq)]
@@ -106,6 +108,7 @@ impl Step {
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Candidate {
     pub(crate) paths: Vec<String>,
+    #[serde(default, skip_serializing)]
     pub(crate) snapshot: Snapshot,
 }
 
@@ -114,6 +117,12 @@ pub(crate) enum Decision {
     GoalComplete,
     GoalContinue(String),
     GoalStop(String),
+}
+
+#[derive(Deserialize, Hash, Serialize)]
+struct Trees<T> {
+    base: Option<T>,
+    candidate: Option<T>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
@@ -125,6 +134,7 @@ pub(crate) struct Work {
     pub(crate) checks: Vec<Check>,
     pub(crate) steps: Vec<Step>,
     pub(crate) active: Option<usize>,
+    #[serde(default, skip_serializing)]
     pub(crate) base: Option<Snapshot>,
     pub(crate) candidate: Option<Candidate>,
     pub(crate) pending: Vec<String>,
@@ -337,16 +347,49 @@ impl Work {
         lines
     }
 
-    pub(crate) fn save(&self, path: &Path) -> io::Result<()> {
-        store::write(path, serde_json::to_vec_pretty(self)?)
+    fn trees(&self) -> Trees<&Snapshot> {
+        Trees {
+            base: self.base.as_ref(),
+            candidate: self.candidate.as_ref().map(|candidate| &candidate.snapshot),
+        }
+    }
+
+    pub(crate) fn trees_mark(&self) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.trees().hash(&mut hasher);
+        hasher.finish()
+    }
+
+    pub(crate) fn save(&self, path: &Path, trees: bool) -> io::Result<()> {
+        let sidecar = path.with_extension(TREES);
+        if trees && self.base.is_none() && self.candidate.is_none() {
+            match std::fs::remove_file(&sidecar) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        } else if trees {
+            store::write(&sidecar, serde_json::to_vec(&self.trees())?)?;
+        }
+        store::write(path, serde_json::to_vec(self)?)
     }
 
     pub(crate) fn load(path: &Path) -> io::Result<Option<Self>> {
-        match std::fs::read(path) {
-            Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes)?)),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(None),
-            Err(error) => Err(error),
+        let mut work: Self = match std::fs::read(path) {
+            Ok(bytes) => serde_json::from_slice(&bytes)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let trees: Trees<Snapshot> = match std::fs::read(path.with_extension(TREES)) {
+            Ok(bytes) => serde_json::from_slice(&bytes)?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Some(work)),
+            Err(error) => return Err(error),
+        };
+        work.base = trees.base;
+        if let Some(candidate) = &mut work.candidate {
+            candidate.snapshot = trees.candidate.unwrap_or_default();
         }
+        Ok(Some(work))
     }
 }
 

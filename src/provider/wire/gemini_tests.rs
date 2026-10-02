@@ -173,8 +173,7 @@ fn an_unknown_finish_reason_is_not_a_clean_stop() {
 }
 
 fn with_effort<'a>(model: &str, messages: &'a [Message], effort: Effort) -> CompletionRequest<'a> {
-    let mut call = ask(messages);
-    call.model = model.to_string();
+    let mut call = ask(messages).with_model(model.to_string());
     call.effort = Some(effort);
     call
 }
@@ -186,6 +185,7 @@ fn call_for(id: &str, name: &str) -> ToolCall {
         function: crate::provider::ToolFunction {
             name: name.to_string(),
             arguments: "{}".to_string(),
+            checked: Default::default(),
         },
         continuation: None,
     }

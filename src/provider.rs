@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -61,6 +60,8 @@ pub use client::Client;
 pub(crate) use client::input_cap;
 #[cfg(test)]
 pub(crate) use client::response_failure;
+#[cfg(test)]
+pub(crate) use message::Checked;
 pub(crate) use message::{
     AssistantMessage, Continuation, Role, Source, StopReason, ToolCall, ToolFunction, ToolKind,
 };
@@ -70,7 +71,7 @@ pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, level
 pub use request::Effort;
 pub(crate) use request::compact;
 pub(crate) use request::dollars;
-pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition};
+pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition, ToolsJson};
 pub(crate) use request::{Partial, Price};
 #[cfg(test)]
 pub(crate) use wire::decisions;

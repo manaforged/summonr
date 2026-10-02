@@ -34,7 +34,11 @@ pub(super) fn edit_error_context(error: Error, text: &str, args: &Value) -> Erro
     };
     Error::Tool(format!(
         "{message}\nCurrent lines:\n{}",
-        tagged_span(text, line.saturating_sub(2), line.saturating_add(2))
+        tagged_span(
+            &text.lines().collect::<Vec<_>>(),
+            line.saturating_sub(2),
+            line.saturating_add(2)
+        )
     ))
 }
 

@@ -6,9 +6,7 @@ pub(in crate::tools) struct Span {
     pub(in crate::tools) len: usize,
 }
 
-pub(in crate::tools) fn changed(before: &str, after: &str) -> Vec<Span> {
-    let old: Vec<&str> = before.lines().collect();
-    let new: Vec<&str> = after.lines().collect();
+pub(in crate::tools) fn changed(old: &[&str], new: &[&str]) -> Vec<Span> {
     let mut head = 0;
     while head < old.len() && head < new.len() && old[head] == new[head] {
         head += 1;
@@ -73,7 +71,7 @@ fn walk(old: &[&str], new: &[&str]) -> Vec<Span> {
     spans
 }
 
-pub(in crate::tools) fn summary(before: &str, after: &str, spans: &[Span]) -> String {
+pub(in crate::tools) fn summary(before: usize, total: usize, spans: &[Span]) -> String {
     if spans.is_empty() {
         return "no change".to_string();
     }
@@ -86,8 +84,7 @@ pub(in crate::tools) fn summary(before: &str, after: &str, spans: &[Span]) -> St
         })
         .collect::<Vec<_>>()
         .join(", ");
-    let total = after.lines().count();
-    let delta = total as i64 - before.lines().count() as i64;
+    let delta = total as i64 - before as i64;
     let net = match delta {
         0 => String::new(),
         1 | -1 => format!("{delta:+} line, "),

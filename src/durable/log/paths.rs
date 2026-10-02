@@ -58,14 +58,10 @@ pub(crate) fn scan(path: &Path) -> io::Result<impl Iterator<Item = Line>> {
 }
 
 pub(crate) fn header(path: &Path) -> io::Result<Line> {
-    let bytes = fs::read(path)?;
-    let end = bytes
-        .iter()
-        .position(|byte| *byte == b'\n')
-        .unwrap_or(bytes.len());
-    let first = std::str::from_utf8(&bytes[..end])
-        .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-    Ok(serde_json::from_str(first)?)
+    use std::io::BufRead;
+    let mut first = String::new();
+    io::BufReader::new(File::open(path)?).read_line(&mut first)?;
+    Ok(serde_json::from_str(first.trim_end())?)
 }
 
 pub(crate) fn session_path(home: &Path, session: SessionId) -> PathBuf {

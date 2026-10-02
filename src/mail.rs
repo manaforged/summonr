@@ -6,12 +6,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
 use crate::error::{Error, Result};
+use crate::limits::{BEAT, MAIL_STALE_SECS as STALE_SECS, MAIL_SWEEP_SECS as SWEEP_SECS};
 use crate::prompt::summonr_home;
 
-const STALE_SECS: u64 = 120;
-
 const BOARD_COMPACT_BYTES: usize = 256 * 1024;
-const SWEEP_SECS: u64 = 24 * 3600;
 
 fn mail_enabled(value: Option<&OsStr>, fallback: bool) -> bool {
     value.map_or(fallback, |value| value != OsStr::new("off"))
@@ -102,6 +100,13 @@ pub(crate) struct Mailbox {
     cursor: u64,
     last_beat: u64,
     status: String,
+    stamp: Option<Stamp>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Stamp {
+    len: u64,
+    modified: Option<SystemTime>,
 }
 
 pub(crate) fn now() -> u64 {
@@ -213,6 +218,7 @@ impl Mailbox {
             cursor,
             last_beat: 0,
             status: String::new(),
+            stamp: None,
         };
         mailbox.write_record(model, cwd, "joined");
         Ok(mailbox)
@@ -250,7 +256,7 @@ impl Mailbox {
     }
 
     pub(crate) fn heartbeat(&mut self, model: &str, cwd: &Path, status: &str) {
-        if now() < self.last_beat + 2 && status == self.status {
+        if now() < self.last_beat + BEAT.as_secs() && status == self.status {
             return;
         }
         self.write_record(model, cwd, status);
@@ -277,26 +283,55 @@ impl Mailbox {
     }
 
     pub(crate) fn poll(&mut self) -> Result<Vec<Mail>> {
-        use std::io::{Read as _, Seek as _, SeekFrom};
         let path = inbox_path(&self.dir, &self.id);
-        let bytes = {
-            let _lock = store::lock(&path, true)?;
-            let mut file = match std::fs::File::open(&path) {
-                Ok(file) => file,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    self.cursor = 0;
-                    return Ok(Vec::new());
-                }
-                Err(error) => return Err(error.into()),
-            };
-            if file.metadata()?.len() < self.cursor {
+        let stamp = match std::fs::metadata(&path) {
+            Ok(meta) => Stamp {
+                len: meta.len(),
+                modified: meta.modified().ok(),
+            },
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 self.cursor = 0;
+                self.stamp = None;
+                return Ok(Vec::new());
             }
-            file.seek(SeekFrom::Start(self.cursor))?;
-            let mut bytes = Vec::new();
-            file.read_to_end(&mut bytes)?;
-            bytes
+            Err(error) => return Err(error.into()),
         };
+        if self.stamp == Some(stamp) {
+            return Ok(Vec::new());
+        }
+        let Some(bytes) = self.read_new(&path)? else {
+            return Ok(Vec::new());
+        };
+        let (mail, drained) = self.parse(&path, &bytes)?;
+        if drained {
+            self.stamp = Some(stamp);
+        }
+        Ok(mail)
+    }
+
+    fn read_new(&mut self, path: &Path) -> Result<Option<Vec<u8>>> {
+        use std::io::{Read as _, Seek as _, SeekFrom};
+        let Some(_lock) = store::lock(path, false)? else {
+            return Ok(None);
+        };
+        let mut file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                self.cursor = 0;
+                return Ok(None);
+            }
+            Err(error) => return Err(error.into()),
+        };
+        if file.metadata()?.len() < self.cursor {
+            self.cursor = 0;
+        }
+        file.seek(SeekFrom::Start(self.cursor))?;
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)?;
+        Ok(Some(bytes))
+    }
+
+    fn parse(&mut self, path: &Path, bytes: &[u8]) -> Result<(Vec<Mail>, bool)> {
         let complete = bytes
             .iter()
             .rposition(|byte| *byte == b'\n')
@@ -308,7 +343,7 @@ impl Mailbox {
             let body = body.strip_suffix(b"\r").unwrap_or(body);
             match serde_json::from_slice::<Mail>(body) {
                 Ok(item) => mail.push(item),
-                Err(_) if !mail.is_empty() => return Ok(mail),
+                Err(_) if !mail.is_empty() => return Ok((mail, false)),
                 Err(error) => {
                     self.cursor += width;
                     return Err(Error::Config(format!(
@@ -320,7 +355,7 @@ impl Mailbox {
             }
             self.cursor += width;
         }
-        Ok(mail)
+        Ok((mail, true))
     }
 
     pub(crate) fn board(&self, cwd: &Path) -> Result<Vec<(String, String, String)>> {

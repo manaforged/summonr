@@ -179,22 +179,26 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
 }
 
 fn added(root: &Path, path: &str) -> Result<u32> {
-    use std::io::BufRead;
     if path.ends_with('/') {
         return Ok(0);
     }
-    let mut reader = std::io::BufReader::new(std::fs::File::open(root.join(path))?);
+    let lines = line_count(&root.join(path))?.unwrap_or(0);
+    Ok(u32::try_from(lines).unwrap_or(u32::MAX))
+}
+
+pub(crate) fn line_count(path: &Path) -> Result<Option<u64>> {
+    use std::io::BufRead;
+    let mut reader = std::io::BufReader::new(std::fs::File::open(path)?);
     let mut lines = 0_u64;
     let mut head = true;
     let mut last = b'\n';
     loop {
         let chunk = reader.fill_buf()?;
         if chunk.is_empty() {
-            let lines = lines.saturating_add(u64::from(last != b'\n'));
-            return Ok(u32::try_from(lines).unwrap_or(u32::MAX));
+            return Ok(Some(lines.saturating_add(u64::from(last != b'\n'))));
         }
         if std::mem::take(&mut head) && chunk[..chunk.len().min(8000)].contains(&0) {
-            return Ok(0);
+            return Ok(None);
         }
         lines += chunk.iter().filter(|byte| **byte == b'\n').count() as u64;
         last = *chunk.last().unwrap_or(&b'\n');

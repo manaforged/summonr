@@ -1,11 +1,14 @@
-use serde_json::Value;
-
 use super::super::{Accumulate, Delta, blocked, parse};
+use super::frame::{Failure, Frame, FrameKind, Item, PartShape, Response, Shape};
 use crate::error::{Error, ProviderFailureKind};
+use crate::provider::message::Checked;
 use crate::provider::stream::ARGUMENT_CAP;
 use crate::provider::{
-    AssistantMessage, Continuation, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
+    AssistantMessage, Continuation, Partial, StopReason, ToolCall, ToolFunction, ToolKind, Usage,
 };
+
+#[cfg(test)]
+use serde_json::Value;
 
 #[derive(Default)]
 pub(crate) struct Stream {
@@ -33,11 +36,16 @@ impl Accumulate for Stream {
     }
 
     fn on(&mut self, frame: &str) -> crate::error::Result<Vec<Delta>> {
-        let frame = parse::<Value>(frame)?;
+        let Some(frame) = parse::<Option<Frame<'_>>>(frame)? else {
+            return Ok(Vec::new());
+        };
         self.event(&frame)
     }
 
     fn finish(mut self) -> AssistantMessage {
+        for call in &mut self.calls {
+            call.function.check();
+        }
         if !self.calls.is_empty() {
             if self.stop != StopReason::Length {
                 self.stop = StopReason::ToolCalls;
@@ -76,67 +84,80 @@ impl Accumulate for Stream {
     fn finished(&self) -> bool {
         self.done
     }
+
+    fn spill(&mut self, partial: &mut Partial) {
+        partial.text.push_str(&self.text);
+        partial.reasoning.push_str(&self.thinking);
+    }
 }
 
 impl Stream {
-    fn event(&mut self, frame: &Value) -> crate::error::Result<Vec<Delta>> {
-        let kind = frame.get("type").and_then(Value::as_str).unwrap_or("");
-        match kind {
-            "response.output_text.delta" => return Ok(vec![self.text(frame)]),
-            "response.refusal.delta" => {
-                let delta = frame.get("delta").and_then(Value::as_str).unwrap_or("");
-                return Err(blocked(&format!("refusal: {delta}")));
+    fn event(&mut self, frame: &Frame<'_>) -> crate::error::Result<Vec<Delta>> {
+        match frame.kind {
+            FrameKind::TextDelta => return Ok(vec![self.text(frame)]),
+            FrameKind::RefusalDelta => {
+                return Err(blocked(&format!("refusal: {}", frame.delta)));
             }
-            "response.reasoning_text.delta" | "response.reasoning_summary_text.delta" => {
-                let delta = frame
-                    .get("delta")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string();
+            FrameKind::ReasoningDelta | FrameKind::SummaryDelta => {
+                let delta = frame.delta.to_string();
                 self.thinking.push_str(&delta);
                 return Ok(vec![Delta::Thinking(delta)]);
             }
-            "response.output_item.added" => {
-                let item = frame.get("item").unwrap_or(&Value::Null);
-                let kind = item.get("type").and_then(Value::as_str);
-                if kind == Some("function_call") {
-                    return Ok(self.added(item).into_iter().collect());
-                }
-                if kind == Some("message") {
-                    self.phase(item);
-                }
-            }
-            "response.function_call_arguments.delta" => self.arguments(frame)?,
-            "response.output_item.done" => {
-                if let Some(item) = frame.get("item") {
+            FrameKind::ItemAdded => return Ok(self.opened(frame.item.as_ref())),
+            FrameKind::ArgumentsDelta => self.arguments(frame)?,
+            FrameKind::ItemDone => {
+                if let Some(item) = &frame.item {
                     self.item(item)?;
                 }
             }
-            "response.failed" => return Err(failed(frame.pointer("/response/error"))),
-            "error" => return Err(failed(frame.get("error").or(Some(frame)))),
-            "response.completed" | "response.incomplete" => {
-                if let Some(response) = frame.get("response") {
-                    if self.text.is_empty() && self.calls.is_empty() && self.signatures.is_empty() {
-                        self.value(response)?;
-                        self.done = true;
-                        return Ok((!self.text.is_empty())
-                            .then(|| Delta::Text(self.text.clone()))
-                            .into_iter()
-                            .collect());
-                    }
-                    self.status(response)?;
-                    self.done = true;
+            FrameKind::Failed => {
+                return Err(failed(
+                    frame
+                        .response
+                        .as_ref()
+                        .and_then(|response| response.error.as_ref()),
+                    frame,
+                ));
+            }
+            FrameKind::Error => return Err(failed(frame.error.as_ref(), frame)),
+            FrameKind::Completed | FrameKind::Incomplete => {
+                if let Some(response) = &frame.response {
+                    return self.completed(response);
                 }
             }
-            _ => {}
+            FrameKind::Other => {}
         }
         Ok(Vec::new())
     }
 
-    fn phase(&mut self, item: &Value) -> bool {
-        match item.get("phase").and_then(Value::as_str) {
+    fn opened(&mut self, item: Option<&Item<'_>>) -> Vec<Delta> {
+        match item {
+            Some(item) if item.shape == Shape::FunctionCall => vec![self.added(item)],
+            Some(item) if item.shape == Shape::Message => {
+                self.phase(item);
+                Vec::new()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    fn completed(&mut self, response: &Response<'_>) -> crate::error::Result<Vec<Delta>> {
+        self.done = true;
+        if self.text.is_empty() && self.calls.is_empty() && self.signatures.is_empty() {
+            self.value(response)?;
+            return Ok((!self.text.is_empty())
+                .then(|| Delta::Text(self.text.clone()))
+                .into_iter()
+                .collect());
+        }
+        self.status(response)?;
+        Ok(Vec::new())
+    }
+
+    fn phase(&mut self, item: &Item<'_>) -> bool {
+        match item.phase.as_deref() {
             Some("commentary") => {
-                self.commentary.push(key(item).to_string());
+                self.commentary.push(item.key().to_string());
                 self.remarks.push(String::new());
                 true
             }
@@ -147,9 +168,9 @@ impl Stream {
         }
     }
 
-    fn text(&mut self, frame: &Value) -> Delta {
-        let delta = frame.get("delta").and_then(Value::as_str).unwrap_or("");
-        let item = frame.get("item_id").and_then(Value::as_str).unwrap_or("");
+    fn text(&mut self, frame: &Frame<'_>) -> Delta {
+        let delta: &str = &frame.delta;
+        let item = frame.item_id.as_deref().unwrap_or("");
         if self.commentary.iter().any(|known| known == item) {
             self.thinking.push_str(delta);
             if let Some(remark) = self.remarks.last_mut() {
@@ -167,39 +188,21 @@ impl Stream {
         Delta::Text(text)
     }
 
-    fn added(&mut self, item: &Value) -> Option<Delta> {
-        let key = key(item).to_string();
-        self.items.push(key.clone());
-        let call = ToolCall {
-            id: item
-                .get("call_id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_string(),
-            kind: ToolKind::Function,
-            function: ToolFunction {
-                name: item
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_string(),
-                arguments: String::new(),
-            },
-            continuation: None,
-        };
+    fn added(&mut self, item: &Item<'_>) -> Delta {
+        self.items.push(item.key().to_string());
+        let call = called(item, String::new());
         let delta = Delta::Call(call.function.name.clone());
         self.calls.push(call);
-        Some(delta)
+        delta
     }
 
-    fn arguments(&mut self, frame: &Value) -> crate::error::Result<()> {
-        let key = frame.get("item_id").and_then(Value::as_str);
+    fn arguments(&mut self, frame: &Frame<'_>) -> crate::error::Result<()> {
+        let key = frame.item_id.as_deref();
         let index = key.and_then(|key| self.items.iter().position(|item| item == key));
-        let delta = frame.get("delta").and_then(Value::as_str);
-        if let (Some(index), Some(delta)) = (index, delta)
+        if let Some(index) = index
             && let Some(call) = self.calls.get_mut(index)
         {
-            call.function.arguments.push_str(delta);
+            call.function.arguments.push_str(&frame.delta);
             if call.function.arguments.len() > ARGUMENT_CAP {
                 return Err(Error::provider(
                     ProviderFailureKind::Malformed,
@@ -210,60 +213,42 @@ impl Stream {
         Ok(())
     }
 
-    fn item(&mut self, item: &Value) -> crate::error::Result<()> {
-        match item.get("type").and_then(Value::as_str) {
-            Some("reasoning") => {
-                if let Some(content) = item.get("encrypted_content").and_then(Value::as_str) {
+    fn item(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
+        match item.shape {
+            Shape::Reasoning => {
+                if let Some(content) = item.encrypted_content.as_deref() {
                     self.signatures.push(content.to_string());
                 }
             }
-            Some("message") => refusal(item)?,
-            Some("function_call") => {
-                let key = key(item);
+            Shape::Message => refusal(item)?,
+            Shape::FunctionCall => {
+                let key = item.key();
                 if let Some(index) = self.items.iter().position(|known| known == key) {
-                    if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
+                    if let Some(arguments) = item.arguments.as_deref()
                         && let Some(call) = self.calls.get_mut(index)
                     {
                         call.function.arguments = arguments.to_string();
                     }
                 } else {
                     self.items.push(key.to_string());
-                    self.calls.push(ToolCall {
-                        id: item
-                            .get("call_id")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_string(),
-                        kind: ToolKind::Function,
-                        function: ToolFunction {
-                            name: item
-                                .get("name")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .to_string(),
-                            arguments: item
-                                .get("arguments")
-                                .and_then(Value::as_str)
-                                .unwrap_or_default()
-                                .to_string(),
-                        },
-                        continuation: None,
-                    });
+                    let arguments = item.arguments.as_deref().unwrap_or_default().to_string();
+                    self.calls.push(called(item, arguments));
                 }
             }
-            _ => {}
+            Shape::Other => {}
         }
         Ok(())
     }
 
-    fn status(&mut self, response: &Value) -> crate::error::Result<()> {
-        if let Some(counted) = response.get("usage") {
-            self.usage = usage(counted);
+    fn status(&mut self, response: &Response<'_>) -> crate::error::Result<()> {
+        if let Some(counted) = &response.usage {
+            self.usage = counted.usage();
         }
-        match response.get("status").and_then(Value::as_str) {
+        match response.status.as_deref() {
             Some("incomplete") => match response
-                .pointer("/incomplete_details/reason")
-                .and_then(Value::as_str)
+                .incomplete_details
+                .as_ref()
+                .and_then(|details| details.reason.as_deref())
             {
                 Some("max_output_tokens") => self.stop = StopReason::Length,
                 Some("content_filter") => return Err(blocked("content_filter")),
@@ -275,103 +260,83 @@ impl Stream {
         Ok(())
     }
 
-    pub(super) fn value(&mut self, response: &Value) -> crate::error::Result<()> {
+    #[cfg(test)]
+    pub(super) fn whole(&mut self, response: &Value) -> crate::error::Result<()> {
+        let text = response.to_string();
+        self.value(&parse::<Response<'_>>(&text)?)
+    }
+
+    fn value(&mut self, response: &Response<'_>) -> crate::error::Result<()> {
         self.status(response)?;
-        for item in response
-            .get("output")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            match item.get("type").and_then(Value::as_str) {
-                Some("reasoning") => {
-                    if let Some(content) = item.get("encrypted_content").and_then(Value::as_str) {
-                        self.signatures.push(content.to_string());
-                    }
+        let Some(output) = response.output else {
+            return Ok(());
+        };
+        for item in parse::<Vec<Item<'_>>>(output.get())? {
+            match item.shape {
+                Shape::Message => self.message(&item)?,
+                Shape::Reasoning | Shape::FunctionCall => self.item(&item)?,
+                Shape::Other => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn message(&mut self, item: &Item<'_>) -> crate::error::Result<()> {
+        refusal(item)?;
+        let commentary = self.phase(item);
+        let target = if commentary {
+            &mut self.thinking
+        } else {
+            &mut self.text
+        };
+        if !target.is_empty() {
+            target.push_str("\n\n");
+        }
+        for part in item.parts() {
+            if part.shape == PartShape::OutputText
+                && let Some(text) = part.text.as_deref()
+            {
+                target.push_str(text);
+                if commentary && let Some(remark) = self.remarks.last_mut() {
+                    remark.push_str(text);
                 }
-                Some("message") => {
-                    refusal(item)?;
-                    let commentary = self.phase(item);
-                    let target = if commentary {
-                        &mut self.thinking
-                    } else {
-                        &mut self.text
-                    };
-                    if !target.is_empty() {
-                        target.push_str("\n\n");
-                    }
-                    for part in item
-                        .get("content")
-                        .and_then(Value::as_array)
-                        .into_iter()
-                        .flatten()
-                    {
-                        if part.get("type").and_then(Value::as_str) == Some("output_text")
-                            && let Some(text) = part.get("text").and_then(Value::as_str)
-                        {
-                            target.push_str(text);
-                            if commentary && let Some(remark) = self.remarks.last_mut() {
-                                remark.push_str(text);
-                            }
-                        }
-                    }
-                }
-                Some("function_call") => self.item(item)?,
-                _ => {}
             }
         }
         Ok(())
     }
 }
 
-fn key(item: &Value) -> &str {
-    item.get("id")
-        .or_else(|| item.get("call_id"))
-        .and_then(Value::as_str)
-        .unwrap_or_default()
+fn called(item: &Item<'_>, arguments: String) -> ToolCall {
+    ToolCall {
+        id: item.call_id.as_deref().unwrap_or_default().to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            name: item.name.as_deref().unwrap_or_default().to_string(),
+            arguments,
+            checked: Checked::Unchecked,
+        },
+        continuation: None,
+    }
 }
 
-fn refusal(item: &Value) -> crate::error::Result<()> {
-    let parts = item.get("content").and_then(Value::as_array);
-    match parts.into_iter().flatten().find_map(|part| {
-        (part.get("type").and_then(Value::as_str) == Some("refusal"))
-            .then(|| part.get("refusal").and_then(Value::as_str).unwrap_or(""))
+fn refusal(item: &Item<'_>) -> crate::error::Result<()> {
+    match item.parts().iter().find_map(|part| {
+        (part.shape == PartShape::Refusal).then(|| part.refusal.as_deref().unwrap_or(""))
     }) {
         Some(text) => Err(blocked(&format!("refusal: {text}"))),
         None => Ok(()),
     }
 }
 
-fn failed(error: Option<&Value>) -> crate::error::Error {
-    let text = |key: &str| {
-        error
-            .and_then(|error| error.get(key))
-            .and_then(Value::as_str)
-            .unwrap_or("")
+fn failed(error: Option<&Failure<'_>>, frame: &Frame<'_>) -> crate::error::Error {
+    let (code, message) = match error {
+        Some(error) => (error.code.as_ref(), error.message.as_deref()),
+        None if frame.kind == FrameKind::Error => (frame.code.as_ref(), frame.message.as_deref()),
+        None => (None, None),
     };
-    super::super::failed(None, text("code"), text("message"))
-}
-
-fn usage(counted: &Value) -> Usage {
-    let field = |name: &str| {
-        counted
-            .get(name)
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32
-    };
-    let detail = |outer: &str, inner: &str| {
-        counted
-            .get(outer)
-            .and_then(|details| details.get(inner))
-            .and_then(Value::as_u64)
-            .unwrap_or_default()
-            .min(u64::from(u32::MAX)) as u32
-    };
-    Usage {
-        prompt_tokens: field("input_tokens"),
-        completion_tokens: field("output_tokens"),
-        reasoning_tokens: detail("output_tokens_details", "reasoning_tokens"),
-        cached_tokens: detail("input_tokens_details", "cached_tokens"),
-    }
+    super::super::failed(
+        None,
+        code.and_then(serde_json::Value::as_str).unwrap_or(""),
+        message.unwrap_or(""),
+    )
 }

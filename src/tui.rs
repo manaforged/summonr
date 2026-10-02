@@ -198,7 +198,7 @@ enum Cmd {
     SaveWorkflow(String),
     ListWorkflows,
     SetMail(bool),
-    SetModule(String, bool),
+    SetModule(crate::modules::ModuleId, bool),
     Dequeue,
     DeleteSession(String),
     Export(Option<String>),

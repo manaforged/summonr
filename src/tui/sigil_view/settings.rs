@@ -26,7 +26,7 @@ pub(super) enum Setting {
     Tools,
     DiffLayout,
     Mail,
-    Module(usize),
+    Module(crate::modules::ModuleId),
     Theme,
     Splash,
     Motion,
@@ -121,18 +121,12 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         ),
     ];
     let modules = app.modules.peek();
-    for (index, module) in crate::modules::ALL.iter().enumerate() {
+    for module in &crate::modules::ALL {
         rows.push((
             "modules",
-            Setting::Module(index),
+            Setting::Module(module.id),
             module.id.name(),
-            on_off(
-                modules
-                    .get(module.id.name())
-                    .copied()
-                    .unwrap_or(module.default),
-            )
-            .to_string(),
+            on_off(modules.get(&module.id).copied().unwrap_or(module.default)).to_string(),
         ));
     }
     rows.extend([

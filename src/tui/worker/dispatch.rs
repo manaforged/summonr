@@ -130,7 +130,7 @@ impl Worker {
             Cmd::SetModel(model) => self.set_model(&model).await,
             Cmd::SetSeat(endpoint, model) => self.set_seat(&endpoint, &model).await,
             Cmd::SetMail(on) => self.set_mail_reply(on),
-            Cmd::SetModule(name, on) => self.set_module(&name, on),
+            Cmd::SetModule(id, on) => self.set_module(id, on),
             _command => unreachable!("dispatch routes only settings commands"),
         }
         true

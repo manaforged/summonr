@@ -1,5 +1,6 @@
 use super::edit::save_default_seat;
 use super::parse;
+use super::save_last_endpoint;
 
 fn written(text: &str) -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().unwrap();
@@ -66,4 +67,41 @@ fn plan_mode_survives_a_save() {
     prefs.plan_mode = true;
     crate::prefs::save_in(&path, &prefs).unwrap();
     assert!(crate::prefs::load_from(&path).unwrap().plan_mode);
+}
+
+#[test]
+fn saving_the_last_endpoint_changes_only_that_key() {
+    let (_dir, path) = written(
+        "# mine\nplan_mode = true\n\n[endpoint.local]\nbase_url = \"http://127.0.0.1:8080/v1\"\n",
+    );
+    assert!(save_last_endpoint(&path, "local").unwrap());
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        text,
+        "# mine\nplan_mode = true\nlast_endpoint = \"local\"\n\n[endpoint.local]\nbase_url = \"http://127.0.0.1:8080/v1\"\n"
+    );
+    assert!(
+        !save_last_endpoint(&path, "local").unwrap(),
+        "same value, no write"
+    );
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+}
+
+#[test]
+fn module_switches_load_by_id_and_unknown_names_do_not_break_the_file() {
+    let (_dir, path) =
+        written("[modules]\nmail = true\nbogus = false\n\n[sessions]\nretain_days = 2\n");
+    let file = parse(&path).unwrap();
+    assert_eq!(
+        file.modules,
+        [(crate::modules::ModuleId::Mail, true)].into()
+    );
+    assert_eq!(
+        file.sessions.retain(),
+        std::time::Duration::from_secs(2 * 24 * 60 * 60)
+    );
+    assert!(
+        crate::modules::Switches::from_maps(&file.modules, &std::collections::BTreeMap::new())
+            .enabled(crate::modules::ModuleId::Mail)
+    );
 }

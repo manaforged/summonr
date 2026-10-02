@@ -51,6 +51,7 @@ fn run(tools: &ToolRegistry, name: &str, arguments: serde_json::Value) -> String
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: name.to_string(),
             arguments: arguments.to_string(),
         },
@@ -171,12 +172,11 @@ fn ls_runs_in_the_shell_instead_of_turning_into_a_read() {
 fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
     let (_dir, mut tools) = workspace(&[]);
     let user = [
-        ("search", false),
-        ("lsp", false),
-        ("jobs", true),
-        ("skills", false),
+        (crate::modules::ModuleId::Search, false),
+        (crate::modules::ModuleId::Lsp, false),
+        (crate::modules::ModuleId::Jobs, true),
+        (crate::modules::ModuleId::Skills, false),
     ]
-    .map(|(name, on)| (name.to_string(), on))
     .into();
     tools.set_modules(&crate::modules::Switches::from_maps(
         &user,
@@ -257,6 +257,7 @@ fn an_edit_with_unknown_keys_names_them() {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "edit".to_string(),
             arguments: serde_json::json!({"path": "a.txt", "old_tags": "1:ab", "new": "two"})
                 .to_string(),
@@ -304,6 +305,7 @@ fn reading_an_image_hands_it_to_a_model_that_sees_images() {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
+            checked: Default::default(),
             name: "read".to_string(),
             arguments: serde_json::json!({"path": "board.png"}).to_string(),
         },
@@ -368,9 +370,7 @@ fn a_file_read_with_context_widens_the_page_around_the_offset() {
 #[test]
 fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     let (_dir, mut tools) = workspace(&[]);
-    let user = [("jobs", false)]
-        .map(|(name, on)| (name.to_string(), on))
-        .into();
+    let user = [(crate::modules::ModuleId::Jobs, false)].into();
     tools.set_modules(&crate::modules::Switches::from_maps(
         &user,
         &std::collections::BTreeMap::new(),
@@ -383,4 +383,15 @@ fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     );
     assert!(output.starts_with("exit 0"), "{output}");
     assert!(output.contains("finished"), "{output}");
+}
+
+#[test]
+fn the_full_output_note_counts_every_line_of_a_large_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let log = dir.path().join("out.log");
+    let line = "x".repeat(1023) + "\n";
+    std::fs::write(&log, line.repeat(700)).unwrap();
+    let note = spill::full_output_note(&log, true);
+    assert!(note.ends_with("— 700 lines]"), "got {note}");
+    assert_eq!(spill::full_output_note(&log, false), "");
 }

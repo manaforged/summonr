@@ -42,19 +42,74 @@ async fn launch_once(
 ) -> Result<Launch> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
-    let endpoint = if use_tui(args) {
-        summonr::resolve_endpoint(
-            args.endpoint.as_deref(),
-            args.model.as_deref(),
-            summonr::Need::Model,
-        )?
-    } else {
-        summonr::resolve_endpoint(
-            args.endpoint.as_deref(),
-            args.model.as_deref(),
-            summonr::Need::Seat,
-        )?
+    let endpoint = seat(args, adopted)?;
+    let ui = channels(use_tui(args));
+    ask_login(&ui, &endpoint, args.endpoint.is_some());
+    let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
+    let session = loop_.session_id();
+    summonr::prune_sessions(Some(&session));
+    let session_path = loop_.session_path().to_path_buf();
+    if let Some(log) = log {
+        log.session(&session, loop_.session_path(), &workspace);
+    }
+    let exit = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
+    let code = match exit {
+        summonr::tui::Exit::Code(code) => code,
+        summonr::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
     };
+    let Some(tree) = tree else {
+        return Ok(Launch::Done(code));
+    };
+    Ok(land(&tree, code, args, &session, &session_path))
+}
+
+type Assembled = (Loop<Client>, Vec<String>, Option<workflow::Workflow>);
+
+fn assemble(
+    args: &Args,
+    endpoint: &Endpoint,
+    workspace: &std::path::Path,
+    action: super::session::SessionAction,
+    ui: &Ui,
+) -> Result<Assembled> {
+    let provider = provider(endpoint, ui.0.as_ref(), args.json)?;
+    let probe = endpoint.context_window.is_none().then(|| {
+        let client = provider.clone();
+        let name = endpoint.name.clone();
+        let model = endpoint.model.clone();
+        tokio::spawn(async move { client.context(&name, &model).await })
+    });
+    let checks = if args.no_verify {
+        None
+    } else {
+        summonr::check_commands(workspace)?
+    };
+    let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
+    let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
+    let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {
+        self::provider(fallback, ui.0.as_ref(), args.json)
+    });
+    for note in skipped {
+        eprintln!("summonr: {note}");
+    }
+    loop_.set_fallbacks(fallbacks);
+    if let Some(probe) = probe {
+        loop_.set_context_probe(probe);
+    }
+    let workflow = workflow_name(args, &loop_)?
+        .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
+        .transpose()?;
+    Ok((loop_, goal_checks, workflow))
+}
+
+fn seat(args: &Args, adopted: &[String]) -> Result<Endpoint> {
+    let need = if use_tui(args) {
+        summonr::Need::Model
+    } else {
+        summonr::Need::Seat
+    };
+    let endpoint =
+        summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref(), need)?;
     if let Some(name) = args.endpoint.as_deref() {
         summonr::prefs::set_last_endpoint(name);
     }
@@ -67,13 +122,15 @@ async fn launch_once(
             endpoint.name, endpoint.name
         );
     }
-    let ui = channels(use_tui(args));
+    Ok(endpoint)
+}
+
+fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
     if let Some(ui) = &ui.0
         && endpoint.api_key.is_none()
         && endpoint.oauth.is_none()
     {
         let (ui, seat) = (ui.clone(), endpoint.clone());
-        let named = args.endpoint.is_some();
         drop(tokio::spawn(async move {
             let note = if !seat.keyless() && named {
                 format!(
@@ -96,53 +153,22 @@ async fn launch_once(
             ui.open_login(note);
         }));
     }
-    let provider = provider(&endpoint, ui.0.as_ref(), args.json)?;
-    let probe = endpoint.context_window.is_none().then(|| {
-        let client = provider.clone();
-        let name = endpoint.name.clone();
-        let model = endpoint.model.clone();
-        tokio::spawn(async move { client.context(&name, &model).await })
-    });
-    let checks = if args.no_verify {
-        None
-    } else {
-        summonr::check_commands(&workspace)?
-    };
-    let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
-    let mut loop_ = build(args, &endpoint, provider, &workspace, check, action)?;
-    let (fallbacks, skipped) = summonr::endpoint_fallbacks(&endpoint, |fallback| {
-        self::provider(fallback, ui.0.as_ref(), args.json)
-    });
-    for note in skipped {
-        eprintln!("summonr: {note}");
-    }
-    loop_.set_fallbacks(fallbacks);
-    if let Some(probe) = probe {
-        loop_.set_context_probe(probe);
-    }
-    let workflow = workflow_name(args, &loop_)?
-        .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
-        .transpose()?;
-    let session = loop_.session_id();
-    let session_path = loop_.session_path().to_path_buf();
-    if let Some(log) = log {
-        log.session(&session, loop_.session_path(), &workspace);
-    }
-    let exit = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
-    let code = match exit {
-        summonr::tui::Exit::Code(code) => code,
-        summonr::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
-    };
-    let Some(tree) = tree else {
-        return Ok(Launch::Done(code));
-    };
+}
+
+fn land(
+    tree: &summonr::Tree,
+    code: i32,
+    args: &Args,
+    session: &str,
+    session_path: &std::path::Path,
+) -> Launch {
     if code != 0 {
         eprintln!(
             "worktree kept {} ({}) — the run's files are there, uncommitted",
             tree.path.display(),
             tree.branch
         );
-        return Ok(Launch::Done(code));
+        return Launch::Done(code);
     }
     let live = summonr::live_jobs(&tree.path);
     if !live.is_empty() {
@@ -153,10 +179,10 @@ async fn launch_once(
             if live.len() == 1 { "" } else { "s" },
             live.join("; ")
         );
-        return Ok(Launch::Done(1));
+        return Launch::Done(1);
     }
-    let touched = Loop::<Client>::touched_at(&session_path);
-    match finish_worktree(&tree, &objective(args, &session), &touched) {
+    let touched = Loop::<Client>::touched_at(session_path);
+    match finish_worktree(tree, &objective(args, session), &touched) {
         Ok(files) => {
             eprintln!(
                 "merged {} into {}: {} file{}{}",
@@ -179,7 +205,7 @@ async fn launch_once(
                     println!("{line}");
                 }
             }
-            Ok(Launch::Done(code))
+            Launch::Done(code)
         }
         Err(error) => {
             eprintln!(
@@ -187,7 +213,7 @@ async fn launch_once(
                 tree.path.display(),
                 tree.branch
             );
-            Ok(Launch::Done(1))
+            Launch::Done(1)
         }
     }
 }

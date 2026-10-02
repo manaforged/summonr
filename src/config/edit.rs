@@ -90,9 +90,9 @@ pub(crate) fn remove_mcp_server(path: &Path, name: &str) -> Result<bool> {
     })
 }
 
-pub(crate) fn save_module(path: &Path, name: &str, on: bool) -> Result<()> {
+pub(crate) fn save_module(path: &Path, id: crate::modules::ModuleId, on: bool) -> Result<()> {
     update(path, |document| {
-        document["modules"][name] = value(on);
+        document["modules"][id.name()] = value(on);
         if let Some(table) = document["modules"].as_table_mut() {
             table.set_implicit(true);
         }

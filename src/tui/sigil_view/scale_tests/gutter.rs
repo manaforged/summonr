@@ -1,6 +1,6 @@
 use sigil::app::cell_width;
 
-use super::{State, busy_info, find, frame_with};
+use super::{State, busy_info, find, frame, frame_with};
 use crate::tools::Event;
 use crate::tui::Msg;
 
@@ -31,11 +31,10 @@ fn chrome_rows_start_at_the_gutter() {
         let (lines, width) = chat_side(&full, cols);
         let screen = full.join("\n");
         let rows = [
-            ("header", find(&lines, "summonr")),
             ("busy", find(&lines, " · 0s")),
             (
                 "todos",
-                find(&lines, "Todos").or((cols >= 120).then_some(0)),
+                find(&lines, "Todos").or(find(&lines, "● auto").filter(|_| cols >= 120)),
             ),
             ("composer", find(&lines, "● auto")),
             (
@@ -49,11 +48,30 @@ fn chrome_rows_start_at_the_gutter() {
             let left = line.chars().take_while(|c| *c == ' ').count();
             let right = width.saturating_sub(cell_width(line.trim_end()));
             assert_eq!(left, 2, "{cols}: {name} starts at col {left}:\n{screen}");
-            let fixed = matches!(name, "header" | "composer");
+            let fixed = name == "composer";
             assert!(
                 right >= 2 && (!fixed || right == 2),
                 "{cols}: {name} ends {right} from the edge:\n{screen}"
             );
         }
     }
+}
+
+#[test]
+fn the_transcript_opens_on_the_first_message_with_no_header_row() {
+    let roomy = frame(80, 24, State::Idle);
+    assert!(roomy[0].trim().is_empty(), "{}", roomy.join("\n"));
+    assert!(
+        roomy[1].contains("Review the change"),
+        "{}",
+        roomy.join("\n")
+    );
+    let footer = roomy.iter().rposition(|line| line.contains("main"));
+    assert_eq!(footer, Some(22), "{}", roomy.join("\n"));
+    let small = frame(40, 12, State::Idle);
+    assert!(
+        small[0].contains("Review the change"),
+        "{}",
+        small.join("\n")
+    );
 }

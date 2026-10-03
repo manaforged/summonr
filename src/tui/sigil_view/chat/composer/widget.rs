@@ -8,7 +8,7 @@ use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::Tone;
 use sigil::prelude::container;
 use sigil::prelude::divider_horizontal;
@@ -50,8 +50,9 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                 .child(
                     sigil::kernel::text("❯")
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs text-gray-12"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Gray12),
                 )
                 .child(
                     container()
@@ -87,7 +88,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                         .padding_x(8.0)
                         .gap(0.0),
                 )
-                .class("bg-surface")
+                .bg(sigil::prelude::Token::Surface)
                 .child(header_row(app.clone()))
                 .child(editor_area)
                 .child(hint_row(app.clone(), inner_width)),
@@ -151,7 +152,6 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
     let hint = sigil::reactive::derived(move || {
         let select = update.select.get();
         let model = update.model.get();
-        let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
         let select = select.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
         if update.view_edit.get() {
             "ctrl+s save · esc leave".to_string()
@@ -159,7 +159,6 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
             composer_hint(
                 model.busy_since.map(|(activity, _)| activity),
                 width,
-                &options,
                 select.as_deref(),
             )
             .trim()
@@ -172,16 +171,23 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
                 .fill_width()
                 .shrink(0.0)
                 .align_items(AlignItems::Center)
-                .gap(8.0),
+                .gap(0.0),
         )
         .children_reactive(move || {
+            let text = hint.get();
+            let text = if text.is_empty() {
+                text
+            } else {
+                format!(" {text} ")
+            };
             vec![
                 node(rule()),
                 node(
-                    sigil::kernel::text(hint.get())
+                    sigil::kernel::text(text)
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs text-gray-11"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Gray11),
                 ),
                 node(rule()),
             ]
@@ -192,15 +198,23 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
     let (text, class) = mode;
     let title = sigil::kernel::text(text)
         .nowrap()
-        .class(sigil::style::Token::OnSurface.text());
+        .text_color(sigil::prelude::Token::OnSurface);
     let title = if class == 0 {
-        title.class("text-xs text-accent")
+        title
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Accent)
     } else if class == 1 {
-        title.class("text-xs text-warn-11")
+        title
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Warn11)
     } else if class == 2 {
-        title.class("text-xs text-error-11")
+        title
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Error11)
     } else {
-        title.class("text-xs text-success-11")
+        title
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Success11)
     };
     container().child(title)
 }
@@ -209,7 +223,8 @@ fn model_label(model: String) -> NodeBuilder {
     container().child(
         sigil::kernel::text(model)
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class("text-xs text-gray-11"),
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Gray11),
     )
 }

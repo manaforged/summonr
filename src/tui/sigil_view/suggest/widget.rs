@@ -5,9 +5,8 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::container;
-use sigil::style::Style;
 
 #[derive(Clone, PartialEq)]
 struct SuggestRow {
@@ -30,11 +29,7 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
     let caret = app.caret.get();
     let rows = app.viewport.get().1;
     let model = app.model.get();
-    if app.view_edit.get()
-        || model.busy_since.is_some()
-        || !app.commands.open(&draft, caret, &model)
-        || width < 12
-    {
+    if app.view_edit.get() || !app.commands.open(&draft, caret, &model) || width < 12 {
         return None;
     }
     let matches = app.commands.rows(&draft, caret, &model);
@@ -119,12 +114,9 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
             vec![
                 container()
                     .layout(LayoutStyle::flex_column().padding_x(8.0).gap(0.0))
-                    .class("border border-gray-6")
-                    .style(
-                        Style::new()
-                            .bg(canvas::palette().tool_bg)
-                            .border_width(canvas::cell().h as i16),
-                    )
+                    .border_w(canvas::cell().h as i16)
+                    .border_color(sigil::prelude::Token::Gray6)
+                    .bg(canvas::palette().tool_bg)
                     .child(body.child(hint(popup.keys, popup.count))),
             ]
         })

@@ -169,6 +169,7 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
         mutated: false,
         grant: None,
         images: Vec::new(),
+        patch: None,
     }
 }
 

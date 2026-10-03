@@ -6,12 +6,12 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
 use super::chrome;
-use super::{App, Speed, canvas, cell_width};
+use super::{App, canvas, cell_width};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Target {
@@ -32,7 +32,7 @@ fn footer_view(app: &App) -> FooterView {
     let cache_open = app.cache_open.get();
     let hover = app.meter_hover.get();
     let model = app.model.get();
-    let speed = model.speed.last().map(Speed::label);
+    let spend = model.spend().map(crate::dollars);
     let open = if hover == Some(Target::Context) || (hover.is_none() && context_open) {
         Some((false, chrome::context_facts(&model)))
     } else if hover == Some(Target::Cache) || (hover.is_none() && cache_open) {
@@ -41,7 +41,7 @@ fn footer_view(app: &App) -> FooterView {
         None
     };
     (
-        speed,
+        spend,
         chrome::context_percent(&model),
         chrome::cache_percent(&model),
         open,
@@ -62,13 +62,13 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
 }
 
 fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
-    let (speed, context_pct, cache_pct, open) = view;
+    let (spend, context_pct, cache_pct, open) = view;
     let taken = 42
         + app
             .git_branch
             .as_deref()
             .map_or(0, |branch| cell_width(branch) + 4)
-        + speed.as_deref().map_or(0, |rate| cell_width(rate) + 2);
+        + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2);
     let place = crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken));
     let mut row = container().layout(
         LayoutStyle::flex_row()
@@ -80,8 +80,9 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
         row = row.child(
             sigil::kernel::text(place)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-12"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray12),
         );
     }
     if let Some(branch) = &app.git_branch {
@@ -96,24 +97,26 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
                 .child(
                     sigil::kernel::text("⎇")
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs text-gray-11"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(
                     sigil::kernel::text(branch.clone())
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs text-warn-11"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Warn11),
                 ),
         );
     }
     row = row.child(spacer());
-    if let Some(rate) = speed {
+    if let Some(cost) = spend {
         row = row.child(
-            sigil::kernel::text(rate)
+            sigil::kernel::text(cost)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray12),
         );
     }
     let context_card = open
@@ -125,20 +128,20 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
     row = row.child(meter_button(
         app.clone(),
         Target::Context,
-        meter("ctx", context_pct, "bg-accent"),
+        meter("ctx", context_pct, sigil::prelude::Token::Accent),
         context_card,
         width,
     ));
     row.child(meter_button(
         app,
         Target::Cache,
-        meter("cache", cache_pct, "bg-info-11"),
+        meter("cache", cache_pct, sigil::prelude::Token::Info11),
         cache_card,
         width,
     ))
 }
 
-fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
+fn meter(caption: &str, percent: u64, fill: sigil::prelude::Token) -> NodeBuilder {
     let bar = 64.0_f32;
     container()
         .layout(
@@ -149,13 +152,14 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
         .child(
             sigil::kernel::text(caption)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         )
         .child(
             container()
                 .layout(LayoutStyle::flex_row().width(bar).height(8.0))
-                .class("bg-gray-1")
+                .bg(sigil::prelude::Token::Gray1)
                 .child(
                     container()
                         .layout(
@@ -163,14 +167,15 @@ fn meter(caption: &str, percent: u64, fill: &'static str) -> NodeBuilder {
                                 .width(bar * percent.min(100) as f32 / 100.0)
                                 .height(8.0),
                         )
-                        .class(fill),
+                        .bg(fill),
                 ),
         )
         .child(
             sigil::kernel::text(format!("{percent}%"))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-12"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray12),
         )
 }
 
@@ -230,15 +235,17 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
     let card_width = width.min(30);
     let mut card = container()
         .layout(LayoutStyle::flex_column().width(card_width as f32 * canvas::cell().w))
-        .class("bg-gray-1");
+        .bg(sigil::prelude::Token::Gray1);
     card = card.child(
         sigil::kernel::text(format!(
             "╭{title}{}╮",
             "─".repeat(card_width.saturating_sub(cell_width(title) + 2))
         ))
         .nowrap()
-        .class(sigil::style::Token::OnSurface.text())
-        .class("text-xs font-mono text-gray-11"),
+        .text_color(sigil::prelude::Token::OnSurface)
+        .font_size(12.0)
+        .font_family(sigil::prelude::FontFamily::Mono)
+        .text_color(sigil::prelude::Token::Gray11),
     );
     for (key, value) in rows {
         card = card.child(
@@ -252,22 +259,28 @@ fn meter_card(rows: Vec<(String, String)>, width: usize, target: Target) -> Node
                 .child(
                     sigil::kernel::text(format!("│ {key}"))
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs font-mono text-gray-11"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .font_family(sigil::prelude::FontFamily::Mono)
+                        .text_color(sigil::prelude::Token::Gray11),
                 )
                 .child(spacer())
                 .child(
                     sigil::kernel::text(format!("{value} │"))
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs font-mono text-gray-12"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .font_family(sigil::prelude::FontFamily::Mono)
+                        .text_color(sigil::prelude::Token::Gray12),
                 ),
         );
     }
     card.child(
         sigil::kernel::text(format!("╰{}╯", "─".repeat(card_width.saturating_sub(2))))
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class("text-xs font-mono text-gray-11"),
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .font_family(sigil::prelude::FontFamily::Mono)
+            .text_color(sigil::prelude::Token::Gray11),
     )
 }

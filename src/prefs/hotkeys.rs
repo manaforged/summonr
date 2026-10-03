@@ -17,10 +17,11 @@ pub enum Hotkey {
     Pane,
     Search,
     History,
+    Fold,
 }
 
 impl Hotkey {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::Options,
         Self::Newline,
         Self::Editor,
@@ -33,6 +34,7 @@ impl Hotkey {
         Self::Pane,
         Self::Search,
         Self::History,
+        Self::Fold,
     ];
 
     #[must_use]
@@ -50,6 +52,7 @@ impl Hotkey {
             Self::Pane => "pane",
             Self::Search => "search",
             Self::History => "history",
+            Self::Fold => "fold",
         }
     }
 
@@ -70,7 +73,9 @@ pub(crate) struct Hotkeys {
 impl Default for Hotkeys {
     fn default() -> Self {
         Self {
-            keys: ['o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r'],
+            keys: [
+                'o', 'j', 'g', 'e', 'l', 'a', 'x', 'b', 't', 'p', 'f', 'r', 'n',
+            ],
         }
     }
 }
@@ -95,8 +100,10 @@ impl Hotkeys {
         }
         for action in Hotkey::ALL {
             let index = action.index();
-            let inherited = matches!(action, Hotkey::Copy | Hotkey::Search | Hotkey::History)
-                && !rows.contains_key(action.name());
+            let inherited = matches!(
+                action,
+                Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
+            ) && !rows.contains_key(action.name());
             if hotkeys.keys[index] == 'y'
                 || inherited
                     && hotkeys

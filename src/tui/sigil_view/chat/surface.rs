@@ -1,30 +1,25 @@
 use std::rc::Rc;
 
-use sigil::prelude::AlignItems;
-use sigil::prelude::ColorAtom;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
 use sigil::prelude::container;
 use sigil::prelude::effect;
 use sigil::prelude::empty_state;
 use sigil::prelude::node;
 use sigil::prelude::signal;
-use sigil::prelude::spacer;
 use sigil::prelude::virtual_list;
 use sigil::reactive::defer;
 use sigil::reactive::untrack;
-use sigil::style::Style;
 
 use super::composer;
 use super::entry;
 use super::footer;
 use super::panels;
 use super::todos;
-use super::{App, Entry, canvas, cell_width};
+use super::{App, Entry, canvas};
 use crate::prefs::Prefs;
 use crate::tui::ToolState;
 
@@ -41,9 +36,9 @@ pub(in crate::tui::sigil_view) fn layer(
                 .fill_width()
                 .fill_height()
                 .min_size(0.0, 0.0)
+                .padding_y(canvas::edge(app.viewport.peek().1))
                 .gap(0.0),
         )
-        .child(canvas::gutter(header(app.clone(), width)))
         .child(node(move || {
             let empty = || empty_state("Summonr", "ask anything · /login · @file · !cmd · /help");
             transcript(transcript_app, (canvas::GUTTER, canvas::cell().h), empty)
@@ -74,118 +69,6 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .child(canvas::gutter(panels::bands(app.clone(), width)))
         .child(composer::widget(app.clone(), width, editor))
         .child(canvas::gutter(footer::footer_bar(app, width)))
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Part {
-    Brand,
-    Model,
-    Pick,
-    Relay,
-    Session,
-    Mode,
-}
-
-const DROP_ORDER: [Part; 4] = [Part::Relay, Part::Session, Part::Pick, Part::Mode];
-
-fn fit(parts: &mut Vec<(Part, String)>, width: usize) {
-    let used = |parts: &[(Part, String)]| {
-        parts
-            .iter()
-            .map(|(_, text)| cell_width(text) + 1)
-            .sum::<usize>()
-    };
-    for drop in DROP_ORDER {
-        if used(parts) <= width {
-            return;
-        }
-        parts.retain(|(part, _)| *part != drop);
-    }
-    let over = used(parts).saturating_sub(width);
-    if let Some((_, text)) = parts.iter_mut().find(|(part, _)| *part == Part::Model) {
-        *text = crate::text::ellipsize(text, cell_width(text).saturating_sub(over));
-    }
-}
-
-type HeaderParts = (Vec<(Part, String)>, u8);
-
-fn header_parts(app: &App, width: usize) -> HeaderParts {
-    let model = app.model.get();
-    let snapshot = &model.snapshot;
-    let mode_class = if snapshot.plan {
-        0
-    } else if snapshot.work {
-        1
-    } else if snapshot.goal {
-        2
-    } else {
-        3
-    };
-    let mode = snapshot.mode_name();
-    let mut parts = vec![
-        (Part::Brand, "summonr".to_owned()),
-        (Part::Model, snapshot.model.clone()),
-    ];
-    if let Some(pick) = model.pick {
-        parts.push((Part::Pick, format!("({pick})")));
-    }
-    if let Some(relay) = snapshot.relay.as_deref().filter(|relay| !relay.is_empty()) {
-        parts.push((Part::Relay, format!("· {relay}")));
-    }
-    parts.push((
-        Part::Session,
-        format!("ses {}", crate::session::short(&model.session)),
-    ));
-    parts.push((Part::Mode, mode.to_owned()));
-    fit(&mut parts, width);
-    (parts, mode_class)
-}
-
-fn header(app: App, width: usize) -> NodeBuilder {
-    let update = app.clone();
-    let parts = sigil::reactive::derived(move || header_parts(&update, width));
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .align_items(AlignItems::Center)
-                .shrink(0.0)
-                .gap(8.0),
-        )
-        .children_reactive(move || {
-            let (parts, mode_class) = parts.get();
-            let mode_class = [
-                "text-xs text-accent",
-                "text-xs text-warn-11",
-                "text-xs text-error-11",
-                "text-xs text-success-11",
-            ][mode_class as usize];
-            let mut row = Vec::new();
-            let mut spaced = false;
-            for (part, text) in parts {
-                if !spaced && matches!(part, Part::Session | Part::Mode) {
-                    spaced = true;
-                    row.push(spacer());
-                }
-                let shown = sigil::kernel::text(text)
-                    .nowrap()
-                    .class(sigil::style::Token::OnSurface.text());
-                let shown = match part {
-                    Part::Brand => shown
-                        .class("text-sm font-bold")
-                        .style(Style::new().text_color(ColorAtom::Rgba8(canvas::palette().accent))),
-                    Part::Model => shown.class("text-sm text-gray-12"),
-                    Part::Mode => shown.class(mode_class),
-                    Part::Pick | Part::Relay | Part::Session => shown.class("text-xs text-gray-11"),
-                };
-                row.push(
-                    container()
-                        .layout(LayoutStyle::block().shrink(0.0))
-                        .child(shown),
-                );
-            }
-            row
-        })
 }
 
 type Content = (usize, u8, bool, Prefs);
@@ -321,9 +204,9 @@ pub(in crate::tui::sigil_view) fn transcript(
                         .scroll_bind(app.scroll_y)
                         .max_scroll_bind(app.max_scroll)
                         .content_height_bind(app.content_height)
-                        .auto_pin_to_bottom(true)
+                        .follow_end(true)
                         .scrollbar(true)
-                        .follow(jump),
+                        .follow_row(jump),
                     ),
             ]
         })

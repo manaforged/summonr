@@ -1,6 +1,7 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, PathNode, container,
-    list_row, section_label, sidebar_width, spacer,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, PathNode, WidgetLayoutExt,
+    container, list_row, section_label, sidebar, spacer,
 };
 
 use super::{App, Pane};
@@ -36,14 +37,18 @@ pub(super) fn rail(app: App) -> NodeBuilder {
                 }),
         );
     }
-    sidebar_width(
-        RAIL,
-        column
-            .child(section("Sessions"))
-            .child(sessions(&app))
-            .child(spacer())
-            .child(seat(&app)),
-    )
+    container()
+        .layout(LayoutStyle::flex_column().fill_height().shrink(0.0))
+        .child(
+            sidebar(
+                column
+                    .child(section("Sessions"))
+                    .child(sessions(&app))
+                    .child(spacer())
+                    .child(seat(&app)),
+            )
+            .width(RAIL),
+        )
 }
 
 fn glyph(pane: Pane) -> PathNode {
@@ -76,8 +81,9 @@ fn sessions(app: &App) -> NodeBuilder {
         list = list.child(
             sigil::kernel::text(format!("session {}", session::short(&current)))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for info in rows {

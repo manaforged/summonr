@@ -11,10 +11,8 @@ use sigil::layout::Position;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeStyleExt;
 use sigil::prelude::Rgba8;
 use sigil::prelude::container;
-use sigil::style::Style;
 
 pub(in crate::tui::sigil_view) use input::prompt_area;
 

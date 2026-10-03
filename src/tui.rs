@@ -200,6 +200,7 @@ enum Cmd {
     SetMail(bool),
     SetModule(crate::modules::ModuleId, bool),
     Dequeue,
+    SteerQueued,
     DeleteSession(String),
     Export(Option<String>),
     Cancel,
@@ -323,6 +324,8 @@ enum ToolState {
     Failed,
 }
 
+const QUIET_OPS: [&str; 2] = ["file", "sequence"];
+
 fn tool_arg(arguments: &str) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
         return String::new();
@@ -334,11 +337,23 @@ fn tool_arg(arguments: &str) -> String {
             .trim_end()
             .to_string();
     }
+    let paths = value
+        .get("paths")
+        .and_then(serde_json::Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(serde_json::Value::as_str)
+                .collect::<Vec<_>>()
+                .join(", ")
+        });
     let picked = ["path", "command", "name", "query", "url"]
         .iter()
         .find_map(|name| field(name))
-        .unwrap_or("");
-    let mut picked = after_cd(picked)
+        .map(str::to_string)
+        .or(paths)
+        .unwrap_or_default();
+    let mut picked = after_cd(&picked)
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ");
@@ -347,7 +362,7 @@ fn tool_arg(arguments: &str) -> String {
             picked.push_str(&format!(":{number}"));
         }
     }
-    if let Some(op) = field("op") {
+    if let Some(op) = field("op").filter(|op| !QUIET_OPS.contains(op)) {
         picked.push_str(&format!(" {op}"));
     }
     if value.get("references").and_then(serde_json::Value::as_bool) == Some(true) {

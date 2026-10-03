@@ -197,6 +197,7 @@ impl ToolRegistry {
             mutated: !read_only && code == 0 && !readonly_verb(command),
             grant,
             images: Vec::new(),
+            patch: None,
         })
     }
 
@@ -255,6 +256,7 @@ impl ToolRegistry {
             mutated: !read_only,
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 
@@ -295,6 +297,7 @@ impl ToolRegistry {
             mutated: !readonly_verb(command),
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 }

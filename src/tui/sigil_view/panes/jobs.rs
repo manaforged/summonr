@@ -1,6 +1,5 @@
-use sigil::prelude::{
-    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, list_row,
-};
+use sigil::prelude::Paint;
+use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
 use super::App;
 use super::body::{detail, header};
@@ -18,8 +17,9 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no background commands — run_command background:true starts one")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for (index, (record, status)) in model.jobs.iter().enumerate() {
@@ -34,7 +34,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
         };
         column = column.child(
             list_row(index == cursor, record.command.clone(), status.label())
-                .child(badge(status.label(), tone))
+                .child(chip(status.label(), tone))
                 .pointer_down(move |event| {
                     if event.button == Some(MouseButton::Right) {
                         menu.context_row(index);

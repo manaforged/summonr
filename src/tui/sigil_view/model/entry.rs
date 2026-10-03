@@ -16,6 +16,7 @@ pub(in crate::tui::sigil_view) enum Entry {
         state: ToolState,
         output: String,
         expanded: bool,
+        patch: Option<String>,
     },
     ToolGroup {
         name: String,
@@ -47,6 +48,7 @@ pub(in crate::tui::sigil_view) struct Call {
     pub(in crate::tui::sigil_view) state: ToolState,
     pub(in crate::tui::sigil_view) output: String,
     pub(in crate::tui::sigil_view) expanded: bool,
+    pub(in crate::tui::sigil_view) patch: Option<String>,
 }
 
 impl Call {
@@ -62,6 +64,7 @@ impl Call {
             state,
             output,
             expanded: false,
+            patch: None,
         }
     }
 }

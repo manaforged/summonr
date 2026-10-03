@@ -57,13 +57,12 @@ impl App {
             }
             return;
         }
-        if matches!(
-            self.model.get().entries.get(*entry),
-            Some(Entry::Tool { .. })
-        ) && self.model.get().prefs.tools == ToolOutput::Compact
-        {
-            self.toggle_tools();
-        }
+        self.model_mut(|model| {
+            if let Some(Entry::Tool { expanded, .. }) = model.entries.get_mut(*entry) {
+                *expanded = true;
+                model.entries.invalidate();
+            }
+        });
         batch(|| {
             self.search.target.set(Some(*entry));
             self.search.open.set(false);

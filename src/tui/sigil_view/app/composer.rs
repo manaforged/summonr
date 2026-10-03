@@ -16,52 +16,6 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn queue(&self) {
-        if matches!(self.model.get().busy_since, Some((Activity::Branch, _))) {
-            return;
-        }
-        self.splash.set(false);
-        let text = self.expand_pastes(&self.draft.peek());
-        if text.trim().is_empty() && self.attachments.borrow().is_empty() {
-            return;
-        }
-        let Some(mut input) = self.attach(&text) else {
-            return;
-        };
-        let pending = self.take_attachments();
-        self.replace(String::new());
-        self.pasted_text.borrow_mut().clear();
-        self.model_mut(|model| {
-            model.entries.push(Entry::User(text.clone()));
-            for attachment in pending {
-                if let Some(source) = attachment.source {
-                    model.entries.push(Entry::Image {
-                        source,
-                        bytes: attachment.image.bytes().unwrap_or_default().into(),
-                        label: attachment.label,
-                    });
-                }
-                input.images.push(attachment.image);
-            }
-            model
-                .entries
-                .push(Entry::System("queued for the next turn".to_string()));
-        });
-        drop(self.cmd.send(Cmd::Queue(input)));
-        self.scroll_y.set(self.max_scroll.peek());
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn queue_if_busy(&self) -> bool {
-        if self.model.get().busy_since.is_none()
-            || self.draft.peek().trim().is_empty() && self.attachments.borrow().is_empty()
-        {
-            return false;
-        }
-        self.queue();
-        true
-    }
-
     pub(in crate::tui::sigil_view) fn replace(&self, draft: String) {
         self.change(&draft);
         self.caret.set(draft.len());

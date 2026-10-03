@@ -33,6 +33,9 @@ esac
 if [ "$os" = apple-darwin ] && [ "$arch" = x86_64 ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null || echo 0)" = 1 ]; then
     arch=aarch64
 fi
+if [ "$os" = apple-darwin ] && [ "$arch" = x86_64 ]; then
+    fail "macOS builds need Apple silicon; Intel Macs are not supported. See $releases for available builds."
+fi
 
 name="summonr-$arch-$os"
 asset="$name.tar.gz"

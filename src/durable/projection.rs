@@ -68,12 +68,14 @@ impl Line {
                 success,
                 mutated,
                 millis,
+                patch,
             } => vec![Event::ToolResult {
                 id: call,
                 success,
                 mutated,
                 output: text,
                 millis: Some(millis),
+                patch,
             }],
             Line::Charge {
                 usage,

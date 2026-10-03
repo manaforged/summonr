@@ -63,16 +63,12 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
 }
 
 pub(super) fn validate(path: &Path, file: &File) -> Result<()> {
-    const THEMES: &[&str] = &["space", "fantasy", "nord", "gruvbox", "solarized", "light"];
     if file
         .theme
         .as_deref()
-        .is_some_and(|theme| !THEMES.contains(&theme))
+        .is_some_and(|theme| !crate::prefs::known_theme(theme))
     {
-        return Err(bad(
-            path,
-            "`theme` must be space, fantasy, nord, gruvbox, solarized, or light",
-        ));
+        return Err(bad(path, "`theme` must be space, nord, dawn, or auto"));
     }
     if file
         .fps

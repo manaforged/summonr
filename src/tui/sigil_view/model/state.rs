@@ -1,8 +1,11 @@
 use super::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub(in crate::tui::sigil_view) struct Agent {
     pub(in crate::tui::sigil_view) id: String,
+    pub(in crate::tui::sigil_view) call: String,
+    pub(in crate::tui::sigil_view) background: bool,
+    pub(in crate::tui::sigil_view) title: String,
     pub(in crate::tui::sigil_view) assignment: String,
     pub(in crate::tui::sigil_view) access: crate::child::Access,
     pub(in crate::tui::sigil_view) started: Instant,
@@ -18,6 +21,9 @@ impl Agent {
     pub(in crate::tui::sigil_view) fn placeholder(id: String) -> Self {
         Self {
             id,
+            call: String::new(),
+            background: false,
+            title: String::new(),
             assignment: String::new(),
             access: crate::child::Access::default(),
             started: Instant::now(),
@@ -33,6 +39,23 @@ impl Agent {
     pub(in crate::tui::sigil_view) fn elapsed(&self) -> u64 {
         self.secs
             .unwrap_or_else(|| self.started.elapsed().as_secs())
+    }
+
+    pub(in crate::tui::sigil_view) fn clock(&self) -> String {
+        let secs = self.elapsed();
+        if secs >= 60 {
+            format!("{}:{:02}", secs / 60, secs % 60)
+        } else {
+            format!("{secs}s")
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn state(&self) -> ToolState {
+        match (self.done, self.failed) {
+            (_, true) => ToolState::Failed,
+            (true, false) => ToolState::Ok,
+            (false, false) => ToolState::Running,
+        }
     }
 }
 

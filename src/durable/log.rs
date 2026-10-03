@@ -98,6 +98,8 @@ pub(crate) enum Line {
         #[serde(default, skip_serializing_if = "is_false")]
         mutated: bool,
         millis: u64,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        patch: Option<String>,
     },
     Charge {
         usage: Usage,

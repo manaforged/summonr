@@ -1,6 +1,7 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, container, list_row_with,
+    container, list_row_with,
 };
 
 use super::panes::ledger::item;
@@ -105,7 +106,7 @@ fn panel(app: App, view: TodosView) -> NodeBuilder {
                 .padding_top(canvas::cell().h)
                 .padding_x(canvas::GUTTER - 8.0),
         )
-        .class("rounded")
+        .rounded(sigil::prelude::Radius::Base)
         .child(
             list_row_with(
                 false,

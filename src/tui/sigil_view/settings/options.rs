@@ -28,7 +28,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     shell(
         app.settings_open,
-        "Options",
+        "Settings",
         app.viewport.peek().0,
         container()
             .layout(

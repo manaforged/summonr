@@ -16,6 +16,7 @@ impl Worker {
             }
             command @ (Cmd::Steer(_)
             | Cmd::Queue(_)
+            | Cmd::SteerQueued
             | Cmd::Send(..)
             | Cmd::Tick
             | Cmd::LoginAnswer(_)) => self.traffic(command),
@@ -104,6 +105,7 @@ impl Worker {
                 self.followups.push_back(text);
                 announce(&self.ui, &self.steering, &self.followups);
             }
+            Cmd::SteerQueued => {}
             Cmd::Send(to, text) => {
                 turn::mail(&self.ui, &self.loop_.session_id(), &to, &text);
             }

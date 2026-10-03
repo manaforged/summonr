@@ -5,7 +5,6 @@ impl App {
         !self.settings_open.peek()
             && !self.workflow.open.peek()
             && !self.picker.open.peek()
-            && self.model.get().busy_since.is_none()
             && self
                 .commands
                 .open(&self.draft.peek(), self.caret.peek(), &self.model.get())

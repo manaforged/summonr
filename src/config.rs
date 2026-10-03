@@ -22,6 +22,8 @@ pub(crate) struct File {
     #[serde(default)]
     pub search: Search,
     pub theme: Option<String>,
+    pub background: Option<crate::prefs::Background>,
+    pub notify: Option<crate::prefs::Notify>,
     pub splash: Option<bool>,
     pub animations: Option<bool>,
     pub fps: Option<u32>,

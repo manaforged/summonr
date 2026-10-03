@@ -92,10 +92,6 @@ impl Speed {
         self.clear();
     }
 
-    pub(super) fn last(&self) -> Option<f64> {
-        self.rate
-    }
-
     pub(super) fn label(rate: f64) -> String {
         format!("{rate:.0} tok/s")
     }

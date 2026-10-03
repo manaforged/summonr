@@ -3,19 +3,52 @@ use std::path::Path;
 use crate::config;
 use crate::error::Result;
 
+mod background;
 mod diff;
 mod edit;
 mod hotkeys;
+mod notify;
+pub(crate) use background::Background;
 pub(crate) use diff::DiffLayout;
 pub(crate) use edit::banned_edit;
 pub use hotkeys::Hotkey;
 pub(crate) use hotkeys::{Hotkeys, available};
+pub(crate) use notify::Notify;
+
+pub(crate) const AUTO_THEME: &str = "auto";
+pub(crate) const THEMES: [&str; 4] = ["space", "nord", "dawn", AUTO_THEME];
+const RETIRED_THEMES: [(&str, &str); 4] = [
+    ("light", "dawn"),
+    ("fantasy", "space"),
+    ("gruvbox", "space"),
+    ("solarized", "space"),
+];
+
+pub(crate) fn theme(name: &str) -> &'static str {
+    let name = name.trim();
+    THEMES
+        .into_iter()
+        .find(|known| *known == name)
+        .or_else(|| {
+            RETIRED_THEMES
+                .into_iter()
+                .find(|(retired, _)| *retired == name)
+                .map(|(_, now)| now)
+        })
+        .unwrap_or(THEMES[0])
+}
+
+pub(crate) fn known_theme(name: &str) -> bool {
+    let name = name.trim();
+    THEMES.contains(&name) || RETIRED_THEMES.iter().any(|(retired, _)| *retired == name)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum ToolOutput {
     Compact,
     Full,
+    Hidden,
 }
 
 impl ToolOutput {
@@ -40,6 +73,7 @@ impl ToolOutput {
         match self {
             Self::Compact => "compact",
             Self::Full => "full",
+            Self::Hidden => "hidden",
         }
     }
 
@@ -47,7 +81,8 @@ impl ToolOutput {
     pub(crate) fn toggle(self) -> Self {
         match self {
             Self::Compact => Self::Full,
-            Self::Full => Self::Compact,
+            Self::Full => Self::Hidden,
+            Self::Hidden => Self::Compact,
         }
     }
 }
@@ -96,6 +131,8 @@ pub(crate) const FPS_MAX: u32 = 240;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Prefs {
     pub(crate) theme: String,
+    pub(crate) background: Background,
+    pub(crate) notify: Notify,
     pub splash: bool,
     pub(crate) animations: bool,
     pub(crate) fps: u32,
@@ -116,6 +153,8 @@ impl Default for Prefs {
     fn default() -> Self {
         Self {
             theme: "space".to_string(),
+            background: Background::Theme,
+            notify: Notify::Turn,
             splash: true,
             animations: true,
             fps: FPS_DEFAULT,
@@ -144,6 +183,8 @@ fn from_file(file: &config::File) -> Result<Prefs> {
     Ok(Prefs {
         hotkeys: Hotkeys::configured(&file.hotkeys)?,
         theme: file.theme.clone().unwrap_or(base.theme),
+        background: file.background.unwrap_or(base.background),
+        notify: file.notify.unwrap_or(base.notify),
         splash: file.splash.unwrap_or(base.splash),
         animations: file.animations.unwrap_or(base.animations),
         fps: file.fps.unwrap_or(base.fps),

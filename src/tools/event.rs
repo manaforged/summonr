@@ -16,6 +16,8 @@ pub enum Event {
         output: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         millis: Option<u64>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        patch: Option<String>,
     },
     Assistant {
         text: String,
@@ -36,6 +38,10 @@ pub enum Event {
     Spawned {
         assignment: String,
         access: crate::child::Access,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        call: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        background: bool,
     },
     Unreported {
         tokens: u64,

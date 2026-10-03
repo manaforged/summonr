@@ -181,7 +181,6 @@ pub(in crate::tui::sigil_view) fn prompt(
         write(cells, cols, x + 5, y + 2, &input, palette().text);
     }
     write(cells, cols, x + width.saturating_sub(1), y + 2, "│", border);
-    let options = model.prefs.hotkeys.label(crate::prefs::Hotkey::Options);
     let select = app
         .select
         .peek()
@@ -196,7 +195,6 @@ pub(in crate::tui::sigil_view) fn prompt(
     let hint = super::chat::composer_hint(
         model.busy_since.map(|(activity, _)| activity),
         usize::from(width),
-        &options,
         select.as_deref(),
     );
     let dash = usize::from(width).saturating_sub(cell_width(hint.as_str()) + 2);

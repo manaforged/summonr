@@ -1,5 +1,6 @@
 use super::*;
 use sigil::layout::Dimension;
+use sigil::prelude::Paint;
 use sigil::reactive::untrack;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
@@ -14,7 +15,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     match layout.secondary {
         Some(pane) if side_cols > 0 => container()
             .layout(LayoutStyle::flex_row().fill_width().fill_height().gap(0.0))
-            .style(Style::new().bg(canvas::palette().base))
+            .bg(canvas::palette().base)
             .child(surface)
             .child(panes::body(&app, pane, side_cols)),
         _ => surface,
@@ -60,7 +61,7 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
                 .grow(1.0)
                 .min_size(0.0, 0.0),
         )
-        .style(Style::new().bg(canvas::palette().base))
+        .bg(canvas::palette().base)
         .child(surface)
 }
 

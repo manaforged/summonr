@@ -31,6 +31,8 @@ impl std::fmt::Display for ProviderFailure {
 pub enum Error {
     #[error("configuration error: {0}")]
     Config(String),
+    #[error("{0}")]
+    Setup(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("JSON error: {0}")]

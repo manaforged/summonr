@@ -105,3 +105,45 @@ fn module_switches_load_by_id_and_unknown_names_do_not_break_the_file() {
             .enabled(crate::modules::ModuleId::Mail)
     );
 }
+
+#[test]
+fn the_terminal_background_survives_a_save() {
+    let (_dir, path) = written("background = \"terminal\"\n");
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    assert_eq!(prefs.background, crate::prefs::Background::Terminal);
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    assert_eq!(
+        crate::prefs::load_from(&path).unwrap().background,
+        crate::prefs::Background::Terminal
+    );
+}
+
+#[test]
+fn a_retired_theme_name_loads_and_an_unknown_one_is_refused() {
+    let (_dir, path) = written("theme = \"solarized\"\n");
+    drop(crate::prefs::load_from(&path).unwrap());
+    let (_dir, path) = written("theme = \"auto\"\n");
+    drop(parse(&path).unwrap());
+    let (_dir, path) = written("theme = \"pink\"\n");
+    drop(parse(&path).unwrap_err());
+}
+
+#[test]
+fn the_notify_setting_survives_a_save() {
+    let (_dir, path) = written("notify = \"all\"\n");
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    assert_eq!(prefs.notify, crate::prefs::Notify::All);
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    assert_eq!(
+        crate::prefs::load_from(&path).unwrap().notify,
+        crate::prefs::Notify::All
+    );
+}
+
+#[test]
+fn an_old_hotkey_table_that_binds_ctrl_n_still_loads() {
+    let (_dir, path) = written("[hotkeys]\npane = \"ctrl+n\"\n");
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    assert_eq!(prefs.hotkeys.key(crate::prefs::Hotkey::Pane), 'n');
+    assert_ne!(prefs.hotkeys.key(crate::prefs::Hotkey::Fold), 'n');
+}

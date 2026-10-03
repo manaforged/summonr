@@ -35,6 +35,7 @@ pub(crate) fn run(
         exit: None,
         session: String::new(),
         busy: None,
+        asking: false,
         select: false,
     }));
     let inline = info.inline;
@@ -119,14 +120,7 @@ fn inline_rows(app: &App) -> u16 {
     if model.busy_since.is_some() {
         height += 1;
     }
-    let agents = if model.agents_expanded {
-        model.agents.len().min(8) as u16
-    } else {
-        0
-    };
-    if !model.agents.is_empty() {
-        height += 2 + agents;
-    }
+    height += crate::tui::sigil_view::chat::panels::strip_rows(app).min(9) as u16;
     height += crate::tui::sigil_view::chat::todos::height(app, cols);
     height.clamp(1, rows.max(1))
 }
@@ -137,6 +131,7 @@ struct Pump {
     exit: Option<Exit>,
     session: String,
     busy: Option<bool>,
+    asking: bool,
     select: bool,
 }
 
@@ -161,12 +156,27 @@ impl Pump {
             return self.finish(&app, Exit::Code(code));
         }
         let busy = app.model.get().busy_since.is_some();
+        let notify = app.model.get().prefs.notify;
         if self.busy != Some(busy) {
             drop(set_title(&title(&app, busy)));
-            if self.busy == Some(true) && !busy && !focused() {
-                drop(bell(Some("summonr: turn finished")));
+            if self.busy == Some(true) && !busy && !focused() && notify.turns() {
+                drop(bell(Some(&format!(
+                    "summonr · {}: {}",
+                    place(&app),
+                    ending(&app)
+                ))));
             }
             self.busy = Some(busy);
+        }
+        let asking = app.approval.peek().is_some();
+        if !asking {
+            self.asking = false;
+        } else if !self.asking && !focused() && notify.approvals() {
+            drop(bell(Some(&format!(
+                "summonr · {}: approval needed",
+                place(&app)
+            ))));
+            self.asking = true;
         }
         if !events.is_empty() {
             app.refresh();
@@ -258,12 +268,35 @@ pub(in crate::tui::sigil_view) fn stop<T>(
     });
 }
 
-pub(in crate::tui::sigil_view) fn title(app: &App, busy: bool) -> String {
-    let place = app
-        .workspace
+pub(in crate::tui::sigil_view) fn ending(app: &App) -> &'static str {
+    let model = app.model.get();
+    let last = model
+        .entries
+        .iter()
+        .rev()
+        .take_while(|entry| !matches!(entry, Entry::User(_)))
+        .find(|entry| matches!(entry, Entry::Aborted(_) | Entry::Error(_)));
+    match last {
+        Some(Entry::Aborted(_)) => "turn cancelled",
+        Some(_) => "turn failed",
+        None => "turn finished",
+    }
+}
+
+fn place(app: &App) -> String {
+    app.workspace
         .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .map(|name| {
+            name.to_string_lossy()
+                .chars()
+                .filter(|ch| !ch.is_control())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(in crate::tui::sigil_view) fn title(app: &App, busy: bool) -> String {
+    let place = place(app);
     format!(
         "summon · {place} · {}",
         if busy { "working" } else { "ready" }

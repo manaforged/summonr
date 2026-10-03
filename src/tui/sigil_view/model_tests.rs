@@ -22,6 +22,7 @@ fn finish(model: &mut Model, id: &str) {
         mutated: false,
         output: format!("output {id}"),
         millis: None,
+        patch: None,
     }));
 }
 
@@ -100,4 +101,38 @@ fn inline_commits_each_settled_entry_once_and_restarts_after_reset() {
     model.apply(Msg::Reset);
     model.apply(Msg::User("again".to_string()));
     assert!(model.commit_lines().contains("again"));
+}
+
+#[test]
+fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
+    let mut model = model();
+    let ids = [
+        "01a104ac00000000000000000000aaaa",
+        "01a104ac00000000000000000000bbbb",
+    ];
+    for (id, tokens) in ids.iter().zip([100_u32, 7]) {
+        model.apply_child(
+            id,
+            Event::Spawned {
+                assignment: format!("job {id}"),
+                access: crate::child::Access::Research,
+                call: String::new(),
+                background: false,
+            },
+        );
+        model.apply_child(
+            id,
+            Event::Usage {
+                prompt_tokens: tokens,
+                completion_tokens: 0,
+                reasoning_tokens: 0,
+                cached_tokens: 0,
+                millis: None,
+                prefix_hash: String::new(),
+                cost: None,
+            },
+        );
+    }
+    let tokens: Vec<u64> = model.agents.iter().map(|agent| agent.tokens).collect();
+    assert_eq!(tokens, [100, 7]);
 }

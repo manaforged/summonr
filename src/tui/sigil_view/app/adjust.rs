@@ -44,6 +44,8 @@ impl App {
             Setting::Mail => self.toggle_mail(),
             Setting::Module(id) => self.toggle_module(id),
             Setting::Theme => self.toggle_theme(),
+            Setting::Background => self.toggle_background(),
+            Setting::Notify => self.flip(|prefs| prefs.notify = prefs.notify.toggle()),
             Setting::Receipts => self.receipts_command(None),
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
@@ -173,28 +175,36 @@ impl App {
             Hotkey::Pane => self.toggle_side(),
             Hotkey::Search => self.search.start(""),
             Hotkey::History => self.prompt_history(""),
+            Hotkey::Fold => self.fold_cycle(),
         }
         true
     }
 
     pub(in crate::tui::sigil_view) fn toggle_theme(&self) {
-        let names = theme::Palette::ALL;
+        let names = crate::prefs::THEMES;
         self.model_mut(|model| {
+            let current = crate::prefs::theme(&model.prefs.theme);
             let next = names
                 .iter()
-                .position(|(name, _)| *name == model.prefs.theme)
-                .map_or(names[0].0, |index| names[(index + 1) % names.len()].0);
+                .position(|name| *name == current)
+                .map_or(names[0], |index| names[(index + 1) % names.len()]);
             model.prefs.theme = next.to_string();
             model.entries.invalidate();
         });
         let prefs = self.model.peek().prefs.clone();
-        theme::install(&prefs.theme, &self.workspace, self.info.config.as_deref());
+        theme::install(&prefs, &self.workspace, self.info.config.as_deref());
         self.persist(&prefs);
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn hide_agents(&self) {
-        self.model_mut(|model| model.agents_hidden = true);
+    fn toggle_background(&self) {
+        self.model_mut(|model| {
+            model.prefs.background = model.prefs.background.toggle();
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
+        theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        self.persist(&prefs);
         self.refresh();
     }
 
@@ -277,8 +287,30 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn toggle_tools(&self) {
+        self.set_tools(self.model.peek().prefs.tools.toggle());
+    }
+
+    pub(in crate::tui::sigil_view) fn set_tools(&self, tools: crate::prefs::ToolOutput) {
         self.model_mut(|model| {
-            model.prefs.tools = model.prefs.tools.toggle();
+            model.prefs.tools = tools;
+            model.entries.invalidate();
+        });
+        let prefs = self.model.peek().prefs.clone();
+        self.persist(&prefs);
+        self.refresh();
+    }
+
+    fn fold_cycle(&self) {
+        use crate::prefs::{ToolOutput, Visibility};
+        let prefs = &self.model.peek().prefs;
+        let (reasoning, tools) = match (prefs.reasoning, prefs.tools) {
+            (_, ToolOutput::Hidden) => (Visibility::Expanded, ToolOutput::Compact),
+            (Visibility::Expanded, _) => (Visibility::Collapsed, ToolOutput::Compact),
+            _ => (Visibility::Collapsed, ToolOutput::Hidden),
+        };
+        self.model_mut(|model| {
+            model.prefs.reasoning = reasoning;
+            model.prefs.tools = tools;
             model.entries.invalidate();
         });
         let prefs = self.model.peek().prefs.clone();

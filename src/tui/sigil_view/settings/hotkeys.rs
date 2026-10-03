@@ -1,6 +1,7 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    container, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    virtual_list,
 };
 
 use super::prelude::*;
@@ -55,8 +56,9 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         container().child(
                             sigil::kernel::text(note)
                                 .nowrap()
-                                .class(sigil::style::Token::OnSurface.text())
-                                .class("text-xs text-error-11"),
+                                .text_color(sigil::prelude::Token::OnSurface)
+                                .font_size(12.0)
+                                .text_color(sigil::prelude::Token::Error11),
                         ),
                     );
                 }
@@ -99,7 +101,7 @@ fn entry(
 
 const fn description(action: Hotkey) -> &'static str {
     match action {
-        Hotkey::Options => "open options",
+        Hotkey::Options => "open settings",
         Hotkey::Newline => "insert newline",
         Hotkey::Editor => "open $EDITOR",
         Hotkey::Files => "toggle files",
@@ -111,5 +113,6 @@ const fn description(action: Hotkey) -> &'static str {
         Hotkey::Pane => "hide/show pane",
         Hotkey::Search => "search conversation",
         Hotkey::History => "search saved prompts",
+        Hotkey::Fold => "fold thinking, then tool output",
     }
 }

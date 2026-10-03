@@ -1,6 +1,7 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    button, container, text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, button, container,
+    text_edit, virtual_list,
 };
 
 use super::prelude::*;
@@ -68,8 +69,9 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
         container().child(
             sigil::kernel::text("enter saves · esc goes back")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         ),
     ]
 }
@@ -139,15 +141,17 @@ fn saved(app: &App) -> NodeBuilder {
         .child(
             sigil::kernel::text("saved:")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     if names.is_empty() {
         row = row.child(
             sigil::kernel::text("none")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
         return row;
     }

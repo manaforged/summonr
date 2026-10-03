@@ -8,11 +8,11 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::Tone;
 use sigil::prelude::WidgetLayoutExt;
-use sigil::prelude::badge;
 use sigil::prelude::button;
+use sigil::prelude::chip;
 use sigil::prelude::container;
 use sigil::prelude::icon_button;
 use sigil::prelude::image;
@@ -35,7 +35,9 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
                 .min_size(0.0, 0.0)
                 .overflow_y(Overflow::Scroll),
         )
-        .class("bg-gray-2 border-l border-gray-6");
+        .bg(sigil::prelude::Token::Gray2)
+        .border_left(1)
+        .border_color(sigil::prelude::Token::Gray6);
     column = match pane {
         Pane::Diff => diff::diff(app, column),
         Pane::Files => files(app, column),
@@ -61,15 +63,18 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
         .child(
             sigil::kernel::text(title)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-sm font-medium text-gray-12"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(14.0)
+                .font_weight(500)
+                .text_color(sigil::prelude::Token::Gray12),
         )
         .child(spacer())
         .child(
             sigil::kernel::text(note)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         )
         .child(close(app.clone()))
 }
@@ -77,12 +82,13 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
 pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
     let mut detail = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-        .class("rounded-md bg-gray-1");
+        .rounded(sigil::prelude::Radius::Md)
+        .bg(sigil::prelude::Token::Gray1);
     for line in lines {
         detail = detail.child(
             sigil::kernel::text(line)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
+                .text_color(sigil::prelude::Token::OnSurface)
                 .ellipsize()
                 .layout(
                     LayoutStyle::block()
@@ -90,7 +96,9 @@ pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
                         .min_size(0.0, 14.0)
                         .padding_x(8.0),
                 )
-                .class("text-xs font-mono text-gray-11"),
+                .font_size(12.0)
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     detail
@@ -116,8 +124,9 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("No files in this folder yet.".to_string())
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-sm text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(14.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for (index, row) in rows.into_iter().enumerate() {
@@ -168,8 +177,9 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no worktrees — summonr --worktree, --goal, or --steps")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for (index, row) in trees.into_iter().enumerate() {
@@ -179,7 +189,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let menu = app.clone();
         column = column.child(
             list_row(false, row.tree.branch.clone(), format!("+{}", row.ahead))
-                .child(badge(
+                .child(chip(
                     if row.dirty { "dirty" } else { "clean" },
                     if row.dirty {
                         Tone::Error
@@ -206,8 +216,9 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no file open")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     };
     let editing = app.view_edit.peek();
@@ -232,8 +243,10 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .child(
                     sigil::kernel::text(view.path.clone())
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-sm font-medium text-gray-12"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(14.0)
+                        .font_weight(500)
+                        .text_color(sigil::prelude::Token::Gray12),
                 ),
         );
     if editing {
@@ -259,7 +272,9 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                         .grow(1.0)
                         .min_size(0.0, 0.0),
                 )
-                .class("font-mono text-xs bg-gray-1")
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .font_size(12.0)
+                .bg(sigil::prelude::Token::Gray1)
         }));
     }
     let text = &view.text;
@@ -270,7 +285,8 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
     };
     let mut body = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(1.0))
-        .class("rounded-md bg-gray-1");
+        .rounded(sigil::prelude::Radius::Md)
+        .bg(sigil::prelude::Token::Gray1);
     for (index, line) in text.lines().enumerate() {
         let number = index + 1;
         let mut row = container().layout(
@@ -281,22 +297,25 @@ fn view(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 .gap(10.0),
         );
         if added(number) {
-            row = row.class("bg-success-3");
+            row = row.bg(sigil::prelude::Token::Success3);
         }
         body = body.child(
             row.child(
                 sigil::kernel::text(number.to_string())
                     .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs text-gray-11"),
+                    .text_color(sigil::prelude::Token::OnSurface)
+                    .font_size(12.0)
+                    .text_color(sigil::prelude::Token::Gray11),
             )
             .child(
                 sigil::kernel::text(line.replace('\t', "    "))
                     .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
+                    .text_color(sigil::prelude::Token::OnSurface)
                     .ellipsize()
                     .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 14.0))
-                    .class("text-xs font-mono text-gray-12"),
+                    .font_size(12.0)
+                    .font_family(sigil::prelude::FontFamily::Mono)
+                    .text_color(sigil::prelude::Token::Gray12),
             ),
         );
     }

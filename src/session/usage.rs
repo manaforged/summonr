@@ -18,12 +18,15 @@ const FIXED: [(u64, usize, &str); 3] = [
     (DAY, 30, "30d ago"),
 ];
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct Total {
     pub(crate) input: u64,
     pub(crate) cached: u64,
     pub(crate) output: u64,
     pub(crate) cost: Option<f64>,
+    pub(crate) turns: u64,
+    pub(crate) millis: u64,
+    pub(crate) sessions: u64,
 }
 
 impl Total {
@@ -31,9 +34,18 @@ impl Total {
         self.input = self.input.saturating_add(row.input);
         self.cached = self.cached.saturating_add(row.cached);
         self.output = self.output.saturating_add(row.output);
+        self.turns = self.turns.saturating_add(row.turns);
+        self.millis = self.millis.saturating_add(row.millis);
+        self.sessions = self.sessions.saturating_add(row.sessions);
         if let Some(cost) = row.cost {
             self.cost = Some(self.cost.unwrap_or(0.0) + cost);
         }
+    }
+
+    pub(crate) fn of(row: &Spend) -> Self {
+        let mut total = Self::default();
+        total.add(row);
+        total
     }
 
     pub(crate) fn value(&self, cost: bool) -> f64 {
@@ -72,10 +84,14 @@ pub(crate) struct Spend {
     pub model: String,
     pub hour: u64,
     pub local: bool,
+    pub workspace: String,
     pub input: u64,
     pub cached: u64,
     pub output: u64,
     pub cost: Option<f64>,
+    pub turns: u64,
+    pub millis: u64,
+    pub sessions: u64,
 }
 
 #[derive(Deserialize)]
@@ -94,13 +110,15 @@ pub(crate) fn spend(
     roots: &[String],
     prices: &BTreeMap<String, Price>,
 ) -> Result<Vec<Spend>> {
-    let mut totals: BTreeMap<(String, u64, bool), Spend> = BTreeMap::new();
+    let mut totals: BTreeMap<(String, u64, String), Spend> = BTreeMap::new();
     for info in list_in(home)?.into_iter().filter(|info| info.depth == 0) {
         let Ok(records) = log::records::<Record>(&info.path) else {
             continue;
         };
         let local = info.cwd.as_ref().is_some_and(|cwd| roots.contains(cwd));
+        let workspace = info.cwd.clone().unwrap_or_default();
         let fallback = modified(&info.path);
+        let mut latest = None;
         let mut current = info.model.clone().unwrap_or_default();
         for record in records {
             if record.kind == "session" {
@@ -124,21 +142,27 @@ pub(crate) fn spend(
                 record.at / 1000
             };
             let hour = at - at % HOUR;
-            let row = totals
-                .entry((model.clone(), hour, local))
-                .or_insert_with(|| Spend {
-                    cost: prices.get(&model).map(|_| 0.0),
-                    model: model.clone(),
-                    hour,
-                    local,
-                    ..Spend::default()
-                });
+            let key = (model.clone(), hour, workspace.clone());
+            latest = Some(key.clone());
+            let row = totals.entry(key).or_insert_with(|| Spend {
+                cost: prices.get(&model).map(|_| 0.0),
+                model: model.clone(),
+                hour,
+                local,
+                workspace: workspace.clone(),
+                ..Spend::default()
+            });
+            row.turns += 1;
+            row.millis = row.millis.saturating_add(usage.millis);
             row.input = row.input.saturating_add(usage.input);
             row.cached = row.cached.saturating_add(usage.cached);
             row.output = row.output.saturating_add(usage.output);
             if let (Some(cost), Some(price)) = (row.cost.as_mut(), prices.get(&model)) {
                 *cost += price.cost(usage.input, usage.output, usage.cached);
             }
+        }
+        if let Some(row) = latest.and_then(|key| totals.get_mut(&key)) {
+            row.sessions += 1;
         }
     }
     Ok(totals.into_values().collect())

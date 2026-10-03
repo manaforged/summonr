@@ -217,6 +217,7 @@ impl SessionDriver {
         success: bool,
         mutated: bool,
         millis: u64,
+        patch: Option<String>,
     ) -> Result<(), DriverError> {
         let id = self
             .turn
@@ -234,6 +235,7 @@ impl SessionDriver {
             success,
             mutated,
             millis,
+            patch,
         })
     }
 
@@ -391,6 +393,7 @@ impl SessionDriver {
             success,
             mutated: false,
             millis: 0,
+            patch: None,
         })
     }
 }

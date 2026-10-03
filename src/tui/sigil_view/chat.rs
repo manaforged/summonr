@@ -4,6 +4,7 @@ pub(super) mod entry;
 mod footer;
 pub(super) mod form;
 pub(super) mod panels;
+mod strip;
 mod surface;
 pub(super) mod todos;
 

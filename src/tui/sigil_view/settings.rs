@@ -28,6 +28,8 @@ pub(super) enum Setting {
     Mail,
     Module(crate::modules::ModuleId),
     Theme,
+    Background,
+    Notify,
     Splash,
     Motion,
     Receipts,
@@ -103,13 +105,13 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             prefs.reasoning.name().to_string(),
         ),
         (
-            "agent",
+            "harness",
             Setting::Tools,
             "tools",
             prefs.tools.name().to_string(),
         ),
         (
-            "agent",
+            "harness",
             Setting::Mail,
             "mail",
             if prefs.mail {
@@ -131,6 +133,18 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     }
     rows.extend([
         ("interface", Setting::Theme, "theme", prefs.theme.clone()),
+        (
+            "interface",
+            Setting::Background,
+            "background",
+            prefs.background.name().to_string(),
+        ),
+        (
+            "interface",
+            Setting::Notify,
+            "notify",
+            prefs.notify.label().to_string(),
+        ),
         (
             "interface",
             Setting::DiffLayout,

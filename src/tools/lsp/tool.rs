@@ -117,6 +117,7 @@ impl ToolRegistry {
             mutated: false,
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 
@@ -147,6 +148,7 @@ impl ToolRegistry {
             mutated: true,
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 

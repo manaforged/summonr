@@ -1,7 +1,6 @@
 use sigil::kernel::ObjectFit;
-use sigil::layout::Overflow;
 use sigil::prelude::AlignItems;
-use sigil::prelude::DiffLayout as SigilDiffLayout;
+use sigil::prelude::DiffView;
 use sigil::prelude::ImageSource;
 use sigil::prelude::IntoNode;
 use sigil::prelude::LayoutBuilderExt;
@@ -9,7 +8,7 @@ use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::PointerEvent;
 use sigil::prelude::WidgetLayoutExt;
 use sigil::prelude::chart;
@@ -25,9 +24,12 @@ use sigil::widgets::DiffBuilder;
 
 use super::{App, Call, Entry};
 use crate::prefs::{DiffLayout, Prefs, Visibility};
+use crate::tui::sigil_view::look::Look;
 
+mod children;
 mod preview;
 mod tools;
+mod tree;
 
 const COMPACT_ROWS: usize = 32;
 
@@ -42,20 +44,22 @@ pub(in crate::tui::sigil_view) fn row(
     let layout = prefs.diff_layout;
     match entry {
         Entry::Tool {
+            id,
             name,
             arg,
             state,
             output,
             expanded,
-            ..
+            patch,
         } => tools::tool_card(
             &name,
             &Call {
-                id: String::new(),
+                id,
                 arg,
                 state,
                 output,
                 expanded,
+                patch,
             },
             tools,
             layout,
@@ -90,23 +94,39 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
                     .padding_x(16.0)
                     .min_size(0.0, 0.0),
             )
-            .class("bg-gray-5")
-            .child(text(format!("▌ {body}")).class("text-sm text-gray-12")),
+            .bg(sigil::prelude::Token::Gray5)
+            .child(
+                text(format!("▌ {body}"))
+                    .font_size(14.0)
+                    .text_color(sigil::prelude::Token::Gray12),
+            ),
         Entry::Assistant { text: body, .. } => assistant(body, app),
         Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
         Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
         Entry::Verify { command, passed } => verify(&command, passed),
-        Entry::Mail { from, text: body } => {
-            prose(&format!("{from}: {body}"), "text-sm text-info-11")
-        }
-        Entry::Aborted(reason) | Entry::Error(reason) => {
-            wrap(text(reason).class("text-xs text-error-11"))
-        }
-        Entry::System(body) => wrap(text(body).class("text-xs text-gray-11")),
+        Entry::Mail { from, text: body } => prose(
+            &format!("{from}: {body}"),
+            Look::sm(sigil::prelude::Token::Info11),
+        ),
+        Entry::Aborted(reason) | Entry::Error(reason) => wrap(
+            text(reason)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Error11),
+        ),
+        Entry::System(body) => wrap(
+            text(body)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
+        ),
         Entry::Chart(rounds) => wrap(
-            chart(rounds.iter().map(|round| round.total() as f32))
-                .height(72.0)
-                .width(280.0),
+            chart(
+                rounds
+                    .iter()
+                    .map(|round| round.total() as f32)
+                    .collect::<Vec<f32>>(),
+            )
+            .height(72.0)
+            .width(280.0),
         ),
         Entry::Image {
             source,
@@ -145,11 +165,12 @@ fn verify(command: &str, passed: bool) -> NodeBuilder {
     wrap(
         sigil::kernel::text(format!("{} {command}", if passed { "✓" } else { "✗" }))
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class(if passed {
-                "text-xs text-success-11"
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .text_color(if passed {
+                sigil::prelude::Token::Success11
             } else {
-                "text-xs text-error-11"
+                sigil::prelude::Token::Error11
             }),
     )
 }
@@ -179,8 +200,9 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
         .child(
             sigil::kernel::text(name)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         )
 }
 
@@ -212,34 +234,42 @@ fn collapsible(
         Visibility::Off | Visibility::Collapsed if live => wrap(
             sigil::kernel::text("✻ Thinking…")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs italic text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .font_italic(true)
+                .text_color(sigil::prelude::Token::Gray11),
         )
         .pointer_down(press),
         Visibility::Off => wrap(
-            sigil::kernel::text(format!("⌄ {kind} · hidden"))
+            sigil::kernel::text(format!("▸ {kind} · hidden"))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs italic text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .font_italic(true)
+                .text_color(sigil::prelude::Token::Gray11),
         )
         .pointer_down(press),
         Visibility::Collapsed if reasoning => {
             let words = body.split_whitespace().count();
             wrap(
-                sigil::kernel::text(format!("⌄ {kind} · {words} words"))
+                sigil::kernel::text(format!("▸ {kind} · {words} words"))
                     .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs italic text-gray-11"),
+                    .text_color(sigil::prelude::Token::OnSurface)
+                    .font_size(12.0)
+                    .font_italic(true)
+                    .text_color(sigil::prelude::Token::Gray11),
             )
             .pointer_down(press)
         }
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
             wrap(
-                sigil::kernel::text(format!("⌄ {kind} · {count} lines"))
+                sigil::kernel::text(format!("▸ {kind} · {count} lines"))
                     .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs italic text-gray-11"),
+                    .text_color(sigil::prelude::Token::OnSurface)
+                    .font_size(12.0)
+                    .font_italic(true)
+                    .text_color(sigil::prelude::Token::Gray11),
             )
             .pointer_down(press)
         }
@@ -252,10 +282,15 @@ fn collapsible(
                     format!("✻ {kind}")
                 })
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs italic text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .font_italic(true)
+                .text_color(sigil::prelude::Token::Gray11),
             )
-            .child(prose(body, "text-xs italic text-gray-10"))
+            .child(prose(
+                body,
+                Look::xs(sigil::prelude::Token::Gray10).italic(),
+            ))
             .pointer_down(press),
     }
 }
@@ -327,60 +362,23 @@ pub(in crate::tui::sigil_view) fn patch_view(
     layout: DiffLayout,
 ) -> DiffBuilder {
     let pick = app.clone();
-    diff(patch)
-        .layout(match layout {
-            DiffLayout::Split => SigilDiffLayout::Split,
-            DiffLayout::Unified => SigilDiffLayout::Unified,
+    diff(patch.into())
+        .view(match layout {
+            DiffLayout::Split => DiffView::Split,
+            DiffLayout::Unified => DiffView::Unified,
         })
-        .choose(move |choice| {
+        .change(move |choice| {
             pick.set_diff_layout(match choice {
-                SigilDiffLayout::Split => DiffLayout::Split,
-                SigilDiffLayout::Unified => DiffLayout::Unified,
+                DiffView::Split => DiffLayout::Split,
+                DiffView::Unified => DiffLayout::Unified,
             });
         })
 }
 
-fn output_block(output: impl AsRef<str>) -> NodeBuilder {
-    let output = output.as_ref();
-    let mut column = container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(0.0)
-                .overflow_y(Overflow::Scroll),
-        )
-        .class("bg-gray-4");
-    for line in output.lines() {
-        let class = if line.starts_with('+') {
-            "text-xs font-mono text-success-11"
-        } else if line.starts_with('-') {
-            "text-xs font-mono text-error-11"
-        } else if line.starts_with("@@") {
-            "text-xs font-mono text-info-11"
-        } else {
-            "text-xs font-mono text-gray-11"
-        };
-        column = column.child(
-            sigil::kernel::text(line.replace('\t', "    "))
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .ellipsize()
-                .layout(
-                    LayoutStyle::block()
-                        .fill_width()
-                        .padding_x(16.0)
-                        .min_size(0.0, 0.0),
-                )
-                .class(class),
-        );
-    }
-    column
-}
-
-fn prose(body: &str, class: &'static str) -> NodeBuilder {
+fn prose(body: &str, look: Look) -> NodeBuilder {
     let mut column = container().layout(LayoutStyle::flex_column().fill_width().gap(0.0));
     for para in body.split('\n') {
-        column = column.child(markdown_inline(para).class(class));
+        column = column.child(look.on(markdown_inline(para)));
     }
     column
 }

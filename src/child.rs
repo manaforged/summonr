@@ -97,5 +97,6 @@ pub(crate) struct ChildResult {
 
 #[must_use]
 pub fn tag(id: &str) -> String {
-    id.chars().take(8).collect()
+    let chars: Vec<char> = id.chars().collect();
+    chars[chars.len().saturating_sub(8)..].iter().collect()
 }

@@ -1,37 +1,29 @@
-use std::collections::BTreeMap;
-
-use sigil::prelude::ColorAtom;
-use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutBuilderExt;
-use sigil::prelude::LayoutStyle;
-use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeStyleExt;
-use sigil::prelude::Rgba8;
-use sigil::prelude::Signal;
-use sigil::prelude::Tone;
-use sigil::prelude::chart;
-use sigil::prelude::container;
-use sigil::prelude::panel;
-use sigil::prelude::request_focus;
-use sigil::prelude::scroll;
-use sigil::prelude::signal;
-use sigil::style::Style;
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, WidgetLayoutExt, container, request_focus,
+    scroll, segmented, signal,
+};
 
 use super::app::App;
-use super::canvas::palette;
-use super::prelude::*;
+use super::canvas::{self, palette};
+use super::overlay::wide_page;
 use crate::mail::now;
-use crate::provider::{compact, dollars};
-use crate::session::{DAY, HOUR, Spend, Total, buckets};
+use crate::session::Spend;
 
-const RANGES: [&str; 4] = ["24h", "7d", "30d", "lifetime"];
-const ROOM: usize = 78;
+mod report;
+mod sections;
+
+use report::{METRICS, Metric, Report};
+use sections::{bottom, cards, colored, spacer, trend};
+
+const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
+const CHROME_ROWS: u16 = 8;
+const INSET: f32 = 24.0;
 
 #[derive(Clone, Copy)]
 pub(super) struct Panel {
     pub(super) open: Signal<bool>,
     range: Signal<usize>,
-    cost: Signal<bool>,
+    metric: Signal<usize>,
     local: Signal<bool>,
     rows: Signal<Vec<Spend>>,
     status: Signal<String>,
@@ -42,7 +34,7 @@ impl Panel {
         Self {
             open: signal(false),
             range: signal(2),
-            cost: signal(false),
+            metric: signal(0),
             local: signal(false),
             rows: signal(Vec::new()),
             status: signal(String::new()),
@@ -70,7 +62,7 @@ impl Panel {
     }
 
     pub(super) fn metric(self) {
-        self.cost.set(!self.cost.peek());
+        self.metric.set((self.metric.peek() + 1) % METRICS.len());
     }
 
     pub(super) fn scope(self) {
@@ -80,240 +72,84 @@ impl Panel {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    shell(
+    let (cols, rows) = app.viewport.peek();
+    let width = canvas::dialog_width(cols, f32::from(cols));
+    let height = f32::from(rows.saturating_sub(CHROME_ROWS).max(4)) * canvas::cell().h;
+    let page = container()
+        .focusable(true)
+        .on_added(|_, id| request_focus(id))
+        .layout(LayoutStyle::flex_column().fill_width().gap(16.0))
+        .children_reactive(move || page(&paint, width - INSET * 2.0));
+    wide_page(
         app.usage.open,
         "Usage",
-        app.viewport.peek().0,
+        cols,
         container()
-            .layout(LayoutStyle::flex_column().fill_width())
-            .children_reactive(move || vec![body(&paint)]),
+            .layout(LayoutStyle::block().fill_width().height(height))
+            .child(scroll(page).fill().follow_end(false)),
     )
 }
 
-fn label(value: f64, cost: bool) -> String {
-    if cost {
-        dollars(value)
-    } else {
-        compact(value as u64)
-    }
-}
-
-fn colors() -> [Rgba8; 6] {
-    let palette = palette();
-    [
-        palette.accent,
-        palette.yellow,
-        palette.green,
-        palette.red,
-        palette.code_keyword,
-        palette.cyan,
-    ]
-}
-
-fn tone(index: usize) -> Tone {
-    const TONES: [Tone; 6] = [
-        Tone::Primary,
-        Tone::Warn,
-        Tone::Success,
-        Tone::Error,
-        Tone::Info,
-        Tone::Neutral,
-    ];
-    TONES[index % TONES.len()]
-}
-
-fn tinted(value: String, index: usize) -> impl IntoNode + 'static {
-    let colors = colors();
-    let ink = colors[index % colors.len()];
-    sigil::kernel::text(value)
-        .nowrap()
-        .class(sigil::style::Token::OnSurface.text())
-        .style(Style::new().text_color(ColorAtom::Rgba8(ink)))
-}
-
-fn scroll_panel(title: String, content: NodeBuilder) -> NodeBuilder {
-    let content = container()
-        .focusable(true)
-        .on_added(|_, id| request_focus(id))
-        .child(panel().title(title).child(content));
-    container()
-        .layout(LayoutStyle::block().fill())
-        .child(scroll(content).fill().auto_pin_to_bottom(false))
-}
-
-const SHOWN: usize = 5;
-const TICKS: usize = 6;
-const OTHER: &str = "other";
-
-fn axis(peak: f64, cost: bool) -> (f64, &'static str) {
-    if cost {
-        (1.0, "")
-    } else if peak >= 1e9 {
-        (1e9, " · billions")
-    } else if peak >= 1e6 {
-        (1e6, " · millions")
-    } else if peak >= 1e3 {
-        (1e3, " · thousands")
-    } else {
-        (1.0, "")
-    }
-}
-
-fn bucket(span: u64, back: usize) -> String {
-    let ago = span * back as u64;
-    if ago < DAY {
-        format!("{}h", ago / HOUR)
-    } else {
-        format!("{}d", ago / DAY)
-    }
-}
-
-fn body(app: &App) -> NodeBuilder {
+fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
     let usage = app.usage;
-    let range = usage.range.get();
-    let cost = usage.cost.get();
+    let metric = METRICS[usage.metric.get().min(METRICS.len() - 1)];
     let local = usage.local.get();
+    let range = usage.range.get();
     let all = usage.rows.get();
     let status = usage.status.get();
     let rows: Vec<&Spend> = all.iter().filter(|row| !local || row.local).collect();
-    let now = now();
-    let first = rows.iter().map(|row| row.hour).min();
-    let (span, count, first) = buckets(range, first, now, ROOM);
-    let start = now.saturating_sub(span * count as u64);
-
-    let mut total = Total::default();
-    let mut models: BTreeMap<&str, Total> = BTreeMap::new();
-    let mut columns: Vec<BTreeMap<&str, Total>> = (0..count).map(|_| BTreeMap::new()).collect();
-    for row in rows.iter().filter(|row| row.hour + HOUR > start) {
-        total.add(row);
-        models.entry(&row.model).or_default().add(row);
-        let index = (row.hour.saturating_sub(start) / span) as usize;
-        columns[index.min(count - 1)]
-            .entry(&row.model)
-            .or_default()
-            .add(row);
+    let mut nodes = vec![controls(usage, local, metric)];
+    if !status.is_empty() || rows.is_empty() {
+        let note = if status.is_empty() {
+            "no usage yet"
+        } else {
+            status.as_str()
+        };
+        nodes.push(colored(note, palette().dim));
+        return nodes;
     }
-    let mut order: Vec<(&str, Total)> = models.into_iter().collect();
-    order.sort_by(|a, b| b.1.value(cost).total_cmp(&a.1.value(cost)));
+    let report = Report::build(&rows, range, metric, now());
+    if report.models.is_empty() {
+        nodes.push(colored("no usage in this range", palette().dim));
+        return nodes;
+    }
+    nodes.push(cards(&report));
+    nodes.push(trend(&report, metric, width));
+    nodes.push(bottom(&report, metric));
+    nodes.push(colored(
+        "←/→ range   tab tokens/cost   ↵ this workspace/all   esc close",
+        palette().code_comment,
+    ));
+    nodes
+}
 
+fn controls(usage: Panel, local: bool, metric: Metric) -> NodeBuilder {
     let scope = if local {
         "this workspace"
     } else {
         "all workspaces"
     };
-    let title = format!(" ◷ usage · {scope} ");
-    let mut content = container().layout(LayoutStyle::flex_column().gap(6.0));
-    if !status.is_empty() || order.is_empty() {
-        let note = if status.is_empty() {
-            "no usage in this range"
-        } else {
-            status.as_str()
-        };
-        return scroll_panel(
-            title,
-            content.child(
-                sigil::kernel::text(note.to_string())
-                    .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
-            ),
-        );
-    }
-
-    let peak = columns
-        .iter()
-        .map(|column| column.values().map(|total| total.value(cost)).sum::<f64>())
-        .fold(0.0_f64, f64::max)
-        .max(f64::MIN_POSITIVE);
-    let (scale, suffix) = axis(peak, cost);
-    let named: Vec<&str> = order.iter().take(SHOWN).map(|(name, _)| *name).collect();
-    let bars = |want: Option<&str>| {
-        columns
-            .iter()
-            .map(|column| {
-                column
+    container()
+        .layout(LayoutStyle::flex_row().fill_width().gap(16.0))
+        .child(colored(scope, palette().dim))
+        .child(spacer())
+        .child(
+            segmented(
+                usage.range,
+                RANGES.iter().map(ToString::to_string).collect(),
+            )
+            .height(canvas::cell().h)
+            .label("Range"),
+        )
+        .child(
+            segmented(
+                usage.metric,
+                METRICS
                     .iter()
-                    .filter(|(name, _)| match want {
-                        Some(want) => **name == want,
-                        None => !named.contains(name),
-                    })
-                    .map(|(_, total)| total.value(cost))
-                    .sum::<f64>()
-                    / scale
-            })
-            .map(|value| value as f32)
-            .collect::<Vec<_>>()
-    };
-    let every = count.div_ceil(TICKS).max(1);
-    let mut plot = chart(std::iter::empty())
-        .bar()
-        .labels((0..count).map(|index| {
-            if index % every == 0 {
-                bucket(span, count - index)
-            } else {
-                String::new()
-            }
-        }))
-        .height(240.0);
-    for (index, name) in named.iter().enumerate() {
-        plot = plot.series(*name, bars(Some(name)), tone(index));
-    }
-    if order.len() > SHOWN {
-        plot = plot.series(OTHER, bars(None), tone(SHOWN));
-    }
-    content = content.child(plot);
-    let unit = if span < DAY {
-        format!("{}h", span / HOUR)
-    } else {
-        format!("{}d", span / DAY)
-    };
-    content = content.child(
-        sigil::kernel::text(format!(
-            "one column = {unit} · {}{suffix} · oldest {first} · peak {}",
-            if cost { "cost" } else { "tokens" },
-            label(peak, cost),
-        ))
-        .nowrap()
-        .class(sigil::style::Token::OnSurface.text())
-        .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
-    );
-    let cached = if total.input == 0 {
-        0.0
-    } else {
-        total.cached as f64 * 100.0 / total.input as f64
-    };
-    content = content.child(
-        sigil::kernel::text(format!(
-            "total   input {}   cached {cached:.1}%   output {}   cost {}",
-            compact(total.input),
-            compact(total.output),
-            total.cost.map_or_else(|| "–".to_string(), dollars),
-        ))
-        .nowrap()
-        .class(sigil::style::Token::OnSurface.text())
-        .style(Style::new().text_color(ColorAtom::Rgba8(palette().dim))),
-    );
-    let whole = order
-        .iter()
-        .map(|(_, total)| total.value(cost))
-        .sum::<f64>()
-        .max(f64::MIN_POSITIVE);
-    for (index, (name, model)) in order.iter().enumerate() {
-        let cached = if model.input == 0 {
-            0.0
-        } else {
-            model.cached as f64 * 100.0 / model.input as f64
-        };
-        content = content.child(tinted(
-            format!(
-                "{name}   in {}   cached {cached:.1}%   out {}   {}   {:.1}%",
-                compact(model.input),
-                compact(model.output),
-                model.cost.map_or_else(|| "–".to_string(), dollars),
-                model.value(cost) / whole * 100.0,
-            ),
-            index,
-        ));
-    }
-    scroll_panel(title, content)
+                    .map(|metric| metric.name().to_string())
+                    .collect(),
+            )
+            .height(canvas::cell().h)
+            .label(format!("Metric: {}", metric.name())),
+        )
 }

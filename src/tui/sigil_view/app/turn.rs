@@ -1,5 +1,8 @@
 use super::*;
 
+const QUEUED_NOW: &str = "queued · ↵ sends it now";
+const QUEUED_LATER: &str = "queued for the next turn";
+
 impl App {
     pub(in crate::tui::sigil_view) fn submit(&self) {
         if matches!(self.model.get().busy_since, Some((Activity::Branch, _))) {
@@ -16,6 +19,7 @@ impl App {
             text = line;
         }
         if text.trim().is_empty() && self.attachments.borrow().is_empty() {
+            self.steer_queued();
             return;
         }
         let argument = match argument(&text) {
@@ -71,9 +75,13 @@ impl App {
         });
         let activity = self.model.get().busy_since.map(|(activity, _)| activity);
         let command = match activity {
-            Some(Activity::Turn) => Cmd::Steer(input),
+            Some(Activity::Turn) => {
+                self.push_entry(Entry::System(QUEUED_NOW.to_string()));
+                self.model_mut(|model| model.queued.1 += 1);
+                Cmd::Queue(input)
+            }
             Some(_) => {
-                self.push_entry(Entry::System("queued for the next turn".to_string()));
+                self.push_entry(Entry::System(QUEUED_LATER.to_string()));
                 Cmd::Queue(input)
             }
             None => Cmd::Submit(input),
@@ -81,6 +89,16 @@ impl App {
         drop(self.cmd.send(command));
         self.scroll_y.set(self.max_scroll.peek());
         self.refresh();
+    }
+
+    fn steer_queued(&self) {
+        if matches!(self.model.get().busy_since, Some((Activity::Turn, _)))
+            && self.model.get().queued.1 > 0
+            && self.approval.peek().is_none()
+            && self.form.peek().is_none()
+        {
+            drop(self.cmd.send(Cmd::SteerQueued));
+        }
     }
 
     pub(in crate::tui::sigil_view) fn retry(&self) {
@@ -95,7 +113,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn complete(&self) -> bool {
-        if self.settings_open.peek() || self.model.get().busy_since.is_some() {
+        if self.settings_open.peek() {
             return false;
         }
         let typed = self.draft.peek();
@@ -112,7 +130,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn accept(&self) -> bool {
-        if self.settings_open.peek() || self.model.get().busy_since.is_some() {
+        if self.settings_open.peek() {
             return false;
         }
         let typed = self.draft.peek();

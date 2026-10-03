@@ -88,6 +88,7 @@ impl ToolRegistry {
                 mutated: false,
                 grant: Some(Grant::Danger(command.to_string())),
                 images: Vec::new(),
+                patch: None,
             }));
         }
         if approved {
@@ -153,6 +154,7 @@ impl ToolRegistry {
             mutated: false,
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 

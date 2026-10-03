@@ -190,13 +190,19 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
         let (output, millis) = result;
-        let (success, mutated, text, images) = match output {
-            Ok(output) => (output.success, output.mutated, output.text, output.images),
-            Err(error) => (false, false, error.to_string(), Vec::new()),
+        let (success, mutated, text, images, patch) = match output {
+            Ok(output) => (
+                output.success,
+                output.mutated,
+                output.text,
+                output.images,
+                output.patch,
+            ),
+            Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
         let text = self.tool_text(&call, success, text).await;
         self.session
-            .finish_tool(planned, text.as_str(), success, mutated, millis)
+            .finish_tool(planned, text.as_str(), success, mutated, millis, patch)
             .map_err(super::session_err)?;
         self.emit_records(events, emit)?;
         let todo = success && Builtin::is(&call.function.name, Builtin::Todo);

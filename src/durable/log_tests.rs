@@ -95,3 +95,28 @@ fn a_replayed_tool_call_is_checked_once_on_apply() {
         "the raw text stays for repair"
     );
 }
+
+#[test]
+fn a_tool_line_replays_its_display_patch_and_older_lines_still_load() {
+    let line = Line::Tool {
+        call: "c1".to_string(),
+        text: "edited a.py".to_string(),
+        success: true,
+        mutated: true,
+        millis: 3,
+        patch: Some("@@ -1 +1 @@\n-a\n+b".to_string()),
+    };
+    let stored: Line = serde_json::from_str(&serde_json::to_string(&line).unwrap()).unwrap();
+    let Some(Event::ToolResult { patch, .. }) = stored.events().into_iter().next() else {
+        panic!("expected a tool result");
+    };
+    assert_eq!(patch.as_deref(), Some("@@ -1 +1 @@\n-a\n+b"));
+    let older: Line = serde_json::from_str(
+        r#"{"kind":"tool","call":"c1","text":"edited a.py","success":true,"millis":3}"#,
+    )
+    .unwrap();
+    let Some(Event::ToolResult { patch, .. }) = older.events().into_iter().next() else {
+        panic!("expected a tool result");
+    };
+    assert_eq!(patch, None);
+}

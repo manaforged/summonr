@@ -12,7 +12,7 @@ impl Model {
             self.rounds = 0;
         } else {
             self.live_tool = None;
-            self.agents.retain(|agent| !agent.done);
+            self.agents.retain(|agent| !agent.done || !agent.background);
         }
     }
 
@@ -139,9 +139,10 @@ impl Model {
                 id,
                 success,
                 output,
+                patch,
                 ..
             } => {
-                self.finish_tool(&id, success, output);
+                self.finish_tool(&id, success, output, patch);
             }
             Event::Progress {
                 progress,
@@ -218,116 +219,6 @@ impl Model {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
-        if let Event::ToolCall {
-            name, arguments, ..
-        } = &event
-            && Builtin::is(name, Builtin::Todo)
-        {
-            self.apply_todos(arguments, Some(&crate::child::tag(id)));
-        }
-        let tag = crate::child::tag(id);
-        match &event {
-            Event::Spawned { assignment, access } => self.child_spawn(tag, assignment, *access),
-            Event::Usage {
-                prompt_tokens,
-                completion_tokens,
-                reasoning_tokens,
-                cost,
-                ..
-            } => self.child_usage(
-                tag,
-                *prompt_tokens,
-                *completion_tokens,
-                *reasoning_tokens,
-                *cost,
-            ),
-            other => {
-                let Some((last, done, failed)) = child_line(other) else {
-                    return;
-                };
-                self.child_status(tag, last, done, failed);
-            }
-        }
-    }
-
-    fn child_spawn(&mut self, tag: String, assignment: &str, access: crate::child::Access) {
-        self.agents.push(Agent {
-            id: tag,
-            assignment: assignment.to_string(),
-            access,
-            started: Instant::now(),
-            secs: None,
-            last: String::new(),
-            done: false,
-            failed: false,
-            tokens: 0,
-            cost: 0.0,
-        });
-        self.agents_hidden = false;
-    }
-
-    fn child_usage(
-        &mut self,
-        tag: String,
-        prompt: u32,
-        completion: u32,
-        reasoning: u32,
-        cost: Option<f64>,
-    ) {
-        let index = match self.agents.iter().position(|agent| agent.id == tag) {
-            Some(index) => index,
-            None => {
-                self.agents_hidden = false;
-                self.agents.push(Agent::placeholder(tag));
-                self.agents.len() - 1
-            }
-        };
-        let agent = &mut self.agents[index];
-        agent.tokens += u64::from(prompt) + u64::from(completion) + u64::from(reasoning);
-        agent.cost += cost.unwrap_or(0.0);
-    }
-
-    fn child_status(&mut self, tag: String, last: String, done: bool, failed: bool) {
-        if let Some(agent) = self.agents.iter_mut().find(|agent| agent.id == tag) {
-            agent.last = last.clone();
-            if done && !agent.done {
-                agent.secs = Some(agent.started.elapsed().as_secs());
-            }
-            agent.done = done;
-            agent.failed |= failed;
-        } else {
-            let mut agent = Agent::placeholder(tag.clone());
-            agent.last = last.clone();
-            agent.done = done;
-            agent.failed = failed;
-            if done {
-                agent.secs = Some(0);
-            }
-            self.agents.push(agent);
-            self.agents_hidden = false;
-        }
-        if done {
-            let failed = self
-                .agents
-                .iter()
-                .find(|agent| agent.id == tag)
-                .is_some_and(|agent| agent.failed);
-            self.entries.push(Entry::Tool {
-                id: String::new(),
-                name: "agent".to_string(),
-                arg: tag,
-                state: if failed {
-                    ToolState::Failed
-                } else {
-                    ToolState::Ok
-                },
-                output: last,
-                expanded: false,
-            });
-        }
-    }
-
     pub(in crate::tui::sigil_view) fn record_usage(
         &mut self,
         prompt: u32,
@@ -352,32 +243,4 @@ impl Model {
         self.reasoning_tokens += u64::from(reasoning);
         self.cached_tokens += u64::from(cached);
     }
-}
-
-fn child_line(event: &Event) -> Option<(String, bool, bool)> {
-    let compact = ToolOutput::Compact;
-    let line = match event {
-        Event::ToolCall {
-            name, arguments, ..
-        } => (
-            format!("{name} {}", tool_arg(arguments)).trim().to_string(),
-            false,
-            false,
-        ),
-        Event::ToolResult {
-            success: false,
-            output,
-            ..
-        } => (format!("✗ {}", compact.text(output)), false, true),
-        Event::Assistant { text } => (compact.text(text).to_string(), true, false),
-        Event::Aborted { reason } => (reason.clone(), true, true),
-        Event::Note { text } => (text.clone(), false, false),
-        Event::Verify { command, passed } => (
-            format!("{} {command}", if *passed { "✓" } else { "✗" }),
-            false,
-            !passed,
-        ),
-        _ => return None,
-    };
-    Some(line)
 }

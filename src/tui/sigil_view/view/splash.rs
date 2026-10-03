@@ -17,7 +17,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                     changed.change(draft);
                 })
                 .submit(move |_| submit.submit())
-                .class("w-full h-full"),
+                .layout(LayoutStyle::block().fill_width().fill_height()),
         )
         .child(scene::layer(surface))
 }

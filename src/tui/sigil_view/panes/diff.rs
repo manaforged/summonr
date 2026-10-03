@@ -1,8 +1,8 @@
 use sigil::layout::Dimension;
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
-    NodeStyleExt, Tone, WidgetLayoutExt, badge, button, container, list_row, node, spacer,
-    text_edit,
+    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Tone,
+    WidgetLayoutExt, button, chip, container, list_row, node, spacer, text_edit,
 };
 
 use super::App;
@@ -25,8 +25,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             return column.child(
                 sigil::kernel::text("loading…")
                     .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs text-gray-11"),
+                    .text_color(sigil::prelude::Token::OnSurface)
+                    .font_size(12.0)
+                    .text_color(sigil::prelude::Token::Gray11),
             );
         };
         let text = match result {
@@ -35,8 +36,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 return column.child(
                     sigil::kernel::text(error.clone())
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class("text-xs text-error-11"),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_size(12.0)
+                        .text_color(sigil::prelude::Token::Error11),
                 );
             }
         };
@@ -56,8 +58,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         column = column.child(
             sigil::kernel::text(notes)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
         drop(model);
         for (index, hunk) in hunks.iter().enumerate() {
@@ -72,8 +75,9 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no changes")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for (index, stat) in stats.into_iter().enumerate() {
@@ -131,7 +135,7 @@ fn hunk_view(
                         .gap(6.0)
                         .align_items(AlignItems::Center),
                 )
-                .child(badge(verdict, tone))
+                .child(chip(verdict, tone))
                 .child(spacer())
                 .pointer_down(move |event| {
                     if event.button == Some(MouseButton::Right) {
@@ -144,7 +148,7 @@ fn hunk_view(
         )
         .child(crate::tui::sigil_view::chat::entry::patch_view(
             app,
-            hunk.patch.clone(),
+            hunk.body().to_string(),
             model.prefs.diff_layout,
         ));
     drop(model);
@@ -162,22 +166,27 @@ fn hunk_view(
                         .height(Dimension::Auto)
                         .min_size(0.0, 20.0),
                 )
-                .class("font-mono text-xs bg-gray-1 rounded-md")
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .font_size(12.0)
+                .bg(sigil::prelude::Token::Gray1)
+                .rounded(sigil::prelude::Radius::Md)
         }));
         card = card.child(
             sigil::kernel::text(
                 "ctrl+enter saves · esc cancels · sent with your next prompt".to_string(),
             )
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class("text-xs text-gray-11"),
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(12.0)
+            .text_color(sigil::prelude::Token::Gray11),
         );
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
             sigil::kernel::text(format!("note: {comment}"))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-info-11")
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Info11)
                 .layout(LayoutStyle::block().fill_width().padding_x(8.0)),
         );
     }

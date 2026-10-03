@@ -61,6 +61,7 @@ pub(super) fn entries() -> Vec<Entry> {
             state: ToolState::Ok,
             output: DIFF.to_string(),
             expanded: false,
+            patch: None,
         },
         Entry::Chart(vec![
             Round {
@@ -94,6 +95,9 @@ pub(super) fn agents() -> Vec<Agent> {
                  tokens: u64,
                  cost: f64| Agent {
         id: id.to_string(),
+        call: String::new(),
+        background: true,
+        title: assignment.to_string(),
         assignment: assignment.to_string(),
         access,
         started: Instant::now() - std::time::Duration::from_secs(secs_ago),

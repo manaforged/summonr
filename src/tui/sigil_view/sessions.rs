@@ -1,3 +1,4 @@
+use sigil::prelude::Paint;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
@@ -6,7 +7,7 @@ use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
     virtual_list,
 };
-use sigil::prelude::{NodeBuilder, NodeStyleExt, Signal};
+use sigil::prelude::{NodeBuilder, Signal};
 
 use super::app::App;
 use super::canvas;
@@ -297,7 +298,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                     container().child(
                         sigil::kernel::text(picker.empty())
                             .nowrap()
-                            .class(sigil::style::Token::OnSurface.text()),
+                            .text_color(sigil::prelude::Token::OnSurface),
                     ),
                 ];
             }
@@ -313,7 +314,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                     .row_height(band)
                     .height(band * shown as f32)
                     .viewport_height(band * shown as f32)
-                    .follow(paint.sessions.selected),
+                    .follow_row(paint.sessions.selected),
                 ),
             ];
             items.push(hint(

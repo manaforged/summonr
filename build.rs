@@ -22,16 +22,39 @@ fn main() {
             println!("cargo:rerun-if-changed={reference}");
         }
     }
-    let Ok(output) = Command::new("git")
-        .args(["rev-parse", "--short=12", "HEAD"])
-        .output()
-    else {
-        return;
-    };
-    if !output.status.success() {
-        return;
+    println!("cargo:rerun-if-env-changed={REVISION_ENV}");
+    println!("cargo:rerun-if-env-changed={CI_SHA_ENV}");
+    if let Some(revision) = revision() {
+        println!("cargo:rustc-env={REVISION_ENV}={revision}");
     }
+}
+
+const REVISION_ENV: &str = "SUMMONR_REVISION";
+const CI_SHA_ENV: &str = "GITHUB_SHA";
+const SHORT_LEN: usize = 12;
+
+fn env_value(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn revision() -> Option<String> {
+    env_value(REVISION_ENV)
+        .or_else(|| env_value(CI_SHA_ENV).map(|sha| sha.chars().take(SHORT_LEN).collect()))
+        .or_else(git_revision)
+}
+
+fn git_revision() -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", &format!("--short={SHORT_LEN}"), "HEAD"])
+        .output()
+        .ok()?;
     let mut revision = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if !output.status.success() || revision.is_empty() {
+        return None;
+    }
     let dirty = Command::new("git")
         .args(["diff", "--quiet", "HEAD", "--"])
         .status()
@@ -39,9 +62,7 @@ fn main() {
     if dirty {
         revision.push_str("-dirty");
     }
-    if !revision.is_empty() {
-        println!("cargo:rustc-env=SUMMONR_REVISION={revision}");
-    }
+    Some(revision)
 }
 
 fn git_path(name: &str) -> Option<String> {

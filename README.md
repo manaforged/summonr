@@ -9,10 +9,30 @@ A terminal coding agent written in Rust that works until your test command passe
 macOS and Linux:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/manaforged/summonr/main/scripts/install.sh | sh
+curl -fsSL https://summonr.dev/install.sh | sh
 ```
 
-The script checks the SHA-256 of the download and installs `summonr` to `~/.local/bin`. Set `SUMMONR_INSTALL_DIR` to change the directory, or `SUMMONR_VERSION` to pick a release tag.
+Windows (PowerShell):
+
+```powershell
+irm https://summonr.dev/install.ps1 | iex
+```
+
+Release binaries cover macOS (arm64, x86_64), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer checks the SHA-256 of the download against the release's `SHA256SUMS` file and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+
+To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
+
+```sh
+shasum -a 256 -c SHA256SUMS --ignore-missing
+```
+
+On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. Each release file has a build attestation:
+
+```sh
+gh attestation verify <file> --repo manaforged/summonr
+```
+
+To update, run the installer again. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
 
 From source (any platform, Rust 1.98 and Git):
 
@@ -98,31 +118,18 @@ Optional capabilities are compiled modules; `summonr modules` lists them. You ex
 
 ## Benchmarks
 
-Same model, same three tasks, five samples each, every harness on its defaults, tokens counted at a logging proxy. GLM-5.3-Flash, 2026-09-05. Medians over solved runs.
+Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash, every harness on its defaults, 2026-10-02.
 
-| Harness | Solved | Agent RSS* | Prompt tokens / task |
-| --- | ---: | ---: | ---: |
-| summonr | 13/13 | 18 MB | 75,149 |
-| pi | 12/12 | 138 MB | 77,921 |
-| goose | 15/15 | 110 MB | 101,643 |
-| hermes | 14/14 | 160 MB | 136,433 |
-| opencode | 13/13 | 738 MB | 237,564 |
-| omp | 13/14 | 714 MB | 364,298 |
+| Harness | Version | Tasks solved | Mean memory | Median input tokens / solved task | Time / solved task |
+| --- | --- | ---: | ---: | ---: | ---: |
+| summonr | 0.1.0-rc.1 | 63 | 24 MB | 95,271 | 219 s |
+| pi | 1.0.0 | 62 | 134 MB | 240,762 | 368 s |
+| OpenCode | 2.0.22 | 58 | 394 MB | 228,578 | 341 s |
+| Hermes | v2026.9.24 | 49 | 202 MB | 225,215 | 335 s |
 
-\* RSS of the agent's main process in `-p` print mode. Language servers, MCP
-servers, and subagents run as separate processes and are not counted. Median
-session length here is about 10 s, so read these as startup and short-task
-numbers.
+Method and limits: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks.html).
 
-Summonr's fixed prefix is larger than pi's. In the graded 20-task suite
-(`BENCHMARKS.md`), the first request carried a 7,081 to 7,089 B system message
-plus 5,267 B of tool schemas for summonr (7 tools), and 4,511 to 4,527 B plus
-3,024 B for pi (4 tools). Part of summonr's system message in that run was the
-operator's global rules files, which `grade.sh` now keeps out.
-
-Three tasks is a smoke test, not a benchmark. A Terminal-Bench 2.0 run against the same harnesses is in progress. The method, the proxy, and the table script are in [`bench/`](bench/README.md), and the table will publish whatever it shows. The graded 16-task suite with deterministic verifiers — its full scorecard and limits — lives in [`BENCHMARKS.md`](BENCHMARKS.md).
-
-Where the savings come from: the first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. MCP schemas join the prefix only for servers you configure, and `tools = [...]` on a server keeps only the tools you name. The largest context on a solved task was 29k characters; opencode carried 85k for the same work. The 18 MB figure is `-p` print mode; the terminal UI has not been measured.
+The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. MCP schemas join the prefix only for servers you configure.
 
 ## Limits
 
@@ -154,11 +161,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-700 public items (71 types, 96 functions, 112 methods, 246 fields, 173 variants, 2 constants) at 700 paths; 0 are re-export aliases. 360 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
+704 public items (71 types, 97 functions, 113 methods, 246 fields, 173 variants, 4 constants) at 704 paths; 0 are re-export aliases. 362 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 463 | 40 | 45 | 93 | 0 |
+| `summonr` | 464 | 40 | 46 | 93 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -170,10 +177,10 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
 | `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
 | `summonr::diff` | 14 | 2 | 3 | 3 | 0 |
-| `summonr::limits` | 1 | 0 | 0 | 0 | 0 |
+| `summonr::limits` | 3 | 0 | 0 | 0 | 0 |
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
-| `summonr::modules` | 19 | 3 | 2 | 4 | 0 |
+| `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
 | `summonr::prefs` | 19 | 2 | 3 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 3 | 0 | 0 |
@@ -183,6 +190,12 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- /truesight -->
 
+## Security
+
+Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
 ## License
 
-MIT. See [LICENSE](LICENSE). A [Manaforge Technologies](https://manaforge.tech/) project.
+MIT. See [LICENSE](LICENSE).
+
+summonr is built by Manaforge Technologies LLC.

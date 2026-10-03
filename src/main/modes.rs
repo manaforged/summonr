@@ -1,4 +1,4 @@
-use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkProgress};
+use summonr::{Client, Event, Loop, Result, Turn, UserInput, WorkKind, WorkProgress};
 use tokio::io::{self, AsyncReadExt};
 
 use super::cli::Args;
@@ -140,7 +140,7 @@ fn print_live(event: &Event) {
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
-        Event::Work { progress } => {
+        Event::Work { progress } if progress.kind != WorkKind::Single => {
             eprintln!("\n{progress}");
             for line in &progress.ledger {
                 eprintln!("{line}");

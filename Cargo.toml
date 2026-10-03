@@ -4,7 +4,7 @@ version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-authors = ["Thomas Gardiner"]
+authors = ["Manaforge Technologies LLC"]
 description = "Terminal coding agent in Rust"
 readme = "README.md"
 repository = "https://github.com/manaforged/summonr"
@@ -21,7 +21,7 @@ version = "0.1.0-rc.1"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
-authors = ["Thomas Gardiner"]
+authors = ["Manaforge Technologies LLC"]
 
 [[bin]]
 name = "summonr"
@@ -36,7 +36,7 @@ base64 = "0.22"
 leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", rev = "278865437eb2aebddcde185370992a1101527907", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 sha2 = "0.10"
 thiserror = "2"
 tokio = { version = "1", features = ["time"] }
@@ -48,7 +48,7 @@ base64 = { workspace = true }
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
 regex = "1"
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["raw_value"] }
 thiserror = "2"
 tempfile = "3"
 zeroize = "1"
@@ -61,7 +61,7 @@ leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "2788
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", branch = "main", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "deebbe040118eee0e61c992e3c4990c901efb4b1", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"

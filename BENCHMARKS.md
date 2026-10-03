@@ -1,6 +1,6 @@
 # Benchmarks
 
-Harness-level comparison: same model, same tasks, same endpoint — the
+Harness-level comparison: same model, same tasks, same endpoint. The
 harness is the only variable. Method follows the Scaffold Effect study:
 task is the sampling unit, repeats are correlated trials, differences are
 paired and bootstrapped.
@@ -17,9 +17,8 @@ apply to the runs behind them:
   The output-token and latency differences are not attributable to the
   harness alone.
 - Operator rules loaded by summonr only. `grade.sh` did not isolate
-  `HOME`, so summonr loaded `~/.agents/AGENTS.md` and
-  `~/.config/devin/AGENTS.md` (about 4.2 KB of terse-output rules). Pi
-  loaded neither. This lowers summonr's output tokens and raises its
+  `HOME`, so summonr loaded the operator's global instruction files
+  (about 4.2 KB of terse-output rules). Pi loaded neither. This lowers summonr's output tokens and raises its
   prefix size.
 - Readable graders. Each run was a worktree of the summonr repo, so
   `bench/tasks*/*/verify.sh` was inside the workspace. Summonr read
@@ -66,7 +65,7 @@ three extra tools, larger read volume per task.
 
 ## Agentic suite: 20 tasks × 3 (superseded)
 
-`bench/tasks-hard/` — misleading-test diagnosis, multi-file bugs,
+`bench/tasks-hard/`: misleading-test diagnosis, multi-file bugs,
 cross-module refactors, system tasks (migration, config plumbing, feature
 removal), constrained fixes (no test edits, ≤6-line diff, no new imports,
 API-stable). 20 tasks × 3 repeats, release build, `--max-secs` bound.
@@ -110,22 +109,22 @@ same-file re-read and no-progress detection plus `TASK_TIMEOUT` bounds.
 - Pass/fail comes from `verify.sh` running against the worktree, not the
   agent's claims.
 - RSS comes from `bench/rsswatch.sh` polling the agent PID at 4 Hz for the
-  full run — mean RSS is the per-session sample mean, peak RSS the sample
+  full run. Mean RSS is the per-session sample mean, peak RSS the sample
   maximum. Both arms are sampled identically. All numbers here are the
-  release build — debug binaries inflate startup RSS ~1.5× and are never
+  release build. Debug binaries inflate startup RSS ~1.5× and are never
   benchmarked. RSS is the main process only: language servers, MCP
   servers, and subagents are separate processes and are not counted, and
   ~10 s median sessions mean these are largely startup footprints.
 - Tasks were fixture-audited before use: every verifier fails on the
   untouched fixture and passes on a hand-solved copy. The audit caught an
   unsolvable task (contradictory tests), a task targeting untracked files
-  worktrees don't contain, and an ambiguous prompt — all fixed pre-run.
+  worktrees don't contain, and an ambiguous prompt. All were fixed before the run.
 - Single-token aggregates are reported alongside repeats; the observed
   run-to-run band on uncached input is roughly ±15%.
 
 ## Suite layout
 
-`bench/tasks/<name>/` — `task.txt` (prompt), `fixture/` (the workspace,
+`bench/tasks/<name>/`: `task.txt` (prompt), `fixture/` (the workspace,
 committed as the baseline of a fresh repo), `verify.sh` (exit 0 = solved). 16 tasks: bugfix, feature,
 refactor fixtures plus repo-navigation tasks. `bench/README.md` documents
 the runner and the larger Harbor board.
@@ -136,7 +135,7 @@ the runner and the larger Harbor board.
   rows are efficiency and memory. Harder tasks (multi-file bugs,
   failing-test diagnosis, longer refactors) are needed before pass-rate
   claims.
-- 16 tasks, one model, one endpoint — internal tuning evidence, not an
+- 16 tasks, one model, one endpoint. Internal tuning evidence, not an
   external-validity claim. The Harbor board (`bench/README.md`) is the
   public-facing track.
 - Cost uses deepseek list prices; uncached-input premium translates

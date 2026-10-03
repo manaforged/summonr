@@ -216,7 +216,9 @@ pub fn summonr::diff::patch(root: &std::path::Path, path: core::option::Option<&
 pub fn summonr::diff::stats(root: &std::path::Path) -> summonr::Result<summonr::diff::Diff>
 pub fn summonr::diff::turns(journal: &std::path::Path) -> summonr::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
 pub mod summonr::limits
+pub const summonr::limits::JOB_RETAIN: core::time::Duration
 pub const summonr::limits::LOG_RETAIN: core::time::Duration
+pub const summonr::limits::SESSION_RETAIN: core::time::Duration
 pub mod summonr::mail
 pub mod summonr::mail::cli
 pub fn summonr::mail::cli::run(args: &[alloc::string::String], cwd: &std::path::Path) -> summonr::Result<i32>
@@ -230,10 +232,13 @@ pub summonr::modules::ModuleId::Search
 pub summonr::modules::ModuleId::Skills
 pub summonr::modules::ModuleId::Task
 impl summonr::modules::ModuleId
+pub fn summonr::modules::ModuleId::from_name(name: &str) -> core::option::Option<Self>
 pub const fn summonr::modules::ModuleId::name(self) -> &'static str
 impl core::clone::Clone for summonr::modules::ModuleId
 impl core::cmp::Eq for summonr::modules::ModuleId
+impl core::cmp::Ord for summonr::modules::ModuleId
 impl core::cmp::PartialEq for summonr::modules::ModuleId
+impl core::cmp::PartialOrd for summonr::modules::ModuleId
 impl core::fmt::Debug for summonr::modules::ModuleId
 impl core::marker::Copy for summonr::modules::ModuleId
 impl core::marker::StructuralPartialEq for summonr::modules::ModuleId
@@ -259,7 +264,7 @@ impl core::default::Default for summonr::modules::Switches
 impl core::fmt::Debug for summonr::modules::Switches
 impl core::marker::StructuralPartialEq for summonr::modules::Switches
 pub fn summonr::modules::named(name: &str) -> summonr::Result<summonr::modules::Module>
-pub fn summonr::modules::set(name: &str, on: bool) -> summonr::Result<()>
+pub fn summonr::modules::set(id: summonr::modules::ModuleId, on: bool) -> summonr::Result<()>
 pub mod summonr::prefs
 #[repr(usize)] pub enum summonr::prefs::Hotkey
 pub summonr::prefs::Hotkey::Agents
@@ -1084,7 +1089,7 @@ pub fn summonr::goal_prompt(objective: &str, gates: &[alloc::string::String], ro
 pub fn summonr::in_git(path: &std::path::Path) -> bool
 pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<alloc::string::String>
 pub fn summonr::is_endpoint(token: &str) -> bool
-pub fn summonr::last_for(workspace: &std::path::Path) -> summonr::Result<core::option::Option<std::path::PathBuf>>
+pub fn summonr::last_for(workspace: &std::path::Path) -> summonr::Result<core::option::Option<summonr::session::SessionInfo>>
 pub fn summonr::list_plugins() -> summonr::Result<alloc::string::String>
 pub fn summonr::list_sessions() -> summonr::Result<alloc::vec::Vec<summonr::session::SessionInfo>>
 pub fn summonr::list_worktrees(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<summonr::Tree>>
@@ -1096,6 +1101,7 @@ pub fn summonr::mcp_remove(name: &str) -> summonr::Result<bool>
 pub fn summonr::mcp_status(workspace: &std::path::Path, board: core::option::Option<&summonr::McpBoard>) -> summonr::Result<alloc::vec::Vec<summonr::ServerStatus>>
 pub fn summonr::parse_command(line: &str) -> core::option::Option<summonr::SlashCommand>
 pub fn summonr::profile(scope: summonr::ProfileScope<'_>) -> summonr::Result<alloc::string::String>
+pub fn summonr::prune_sessions(keep: core::option::Option<&str>)
 pub fn summonr::resolve_endpoint(name: core::option::Option<&str>, model: core::option::Option<&str>, need: summonr::Need) -> summonr::Result<summonr::Endpoint>
 pub fn summonr::resolve_session(id: &str) -> summonr::Result<std::path::PathBuf>
 pub fn summonr::revision() -> &'static str

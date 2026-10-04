@@ -33,7 +33,7 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
         )
         .unwrap();
     driver
-        .finish_tool(planned[0], "file body", true, false, 1)
+        .finish_tool(planned[0], "file body", true, false, 1, None)
         .unwrap();
     let seen = driver.history()[1..].to_vec();
     let attempt = driver.start_provider("model", exposure()).unwrap();

@@ -3,6 +3,8 @@ use super::*;
 pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
     update(path, |document| {
         document["theme"] = value(&prefs.theme);
+        document["background"] = value(prefs.background.name());
+        document["notify"] = value(prefs.notify.name());
         document["splash"] = value(prefs.splash);
         document["animations"] = value(prefs.animations);
         document["fps"] = value(i64::from(prefs.fps));

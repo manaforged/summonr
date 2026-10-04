@@ -31,7 +31,7 @@ fn an_image_only_draft_queues_during_a_turn() {
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.update(Msg::Busy(Some(Activity::Turn)));
         paste_png(&app);
-        assert!(app.queue_if_busy());
+        app.submit();
         let mut queued = None;
         while let Ok(command) = sent.try_recv() {
             if let Cmd::Queue(input) = command {

@@ -25,6 +25,11 @@ pub(super) fn blend(from: Rgba8, to: Rgba8, amount: f32) -> Rgba8 {
 
 pub(super) const GUTTER: f32 = 16.0;
 pub(super) const GUTTER_COLS: usize = 2;
+pub(super) const ROOMY_ROWS: u16 = 24;
+
+pub(super) fn edge(rows: u16) -> f32 {
+    if rows >= ROOMY_ROWS { cell().h } else { 0.0 }
+}
 
 pub(super) fn gutter(child: NodeBuilder) -> NodeBuilder {
     container()
@@ -125,7 +130,11 @@ pub(super) use super::theme::palette;
 pub(super) use sigil::terminal::{Cell, Ink};
 
 pub(super) const fn ink(colour: Rgba8) -> Ink {
-    Ink::Exact(colour)
+    if colour.a == 0 {
+        Ink::Bare
+    } else {
+        Ink::Exact(colour)
+    }
 }
 
 pub(super) fn shown(colour: Ink, fallback: Rgba8) -> Rgba8 {

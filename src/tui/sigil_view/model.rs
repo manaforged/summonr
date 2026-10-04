@@ -14,6 +14,7 @@ use crate::tui::{Activity, Info, Msg, Round, Snapshot, ToolState, tool_arg};
 pub(super) use super::app;
 use super::speed::Speed;
 
+mod children;
 mod entry;
 mod event;
 
@@ -97,6 +98,13 @@ pub(super) struct Model {
 }
 
 impl Model {
+    pub(in crate::tui::sigil_view) fn spend(&self) -> Option<f64> {
+        self.usage
+            .iter()
+            .any(|round| round.cost.is_some())
+            .then(|| self.usage.iter().filter_map(|round| round.cost).sum())
+    }
+
     pub(in crate::tui::sigil_view) fn commit_lines(&mut self) -> String {
         let len = self.entries.len();
         let last = len.saturating_sub(1);

@@ -20,12 +20,7 @@ impl App {
         if opened {
             self.load();
         }
-        self.model_mut(|model| {
-            model.prefs.layout = layout.text();
-            model
-                .entries
-                .push(Entry::System(format!("layout: {}", layout.text())));
-        });
+        self.model_mut(|model| model.prefs.layout = layout.text());
         let prefs = self.model.peek().prefs.clone();
         self.persist(&prefs);
         self.refresh();

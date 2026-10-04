@@ -106,6 +106,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
         mutated: true,
         grant: None,
         images: Vec::new(),
+        patch: None,
     })
 }
 

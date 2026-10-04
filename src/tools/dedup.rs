@@ -81,8 +81,12 @@ fn served_range(arguments: &str, text: &str) -> Option<(String, (usize, usize))>
         return None;
     }
     let path = args.get("path")?.as_str()?.to_string();
+    Some((path, read_span(text)?))
+}
+
+pub(crate) fn read_span(text: &str) -> Option<(usize, usize)> {
     let seg = text.lines().next()?.rsplit_once("  lines ")?.1;
     let (range, _) = seg.split_once('/')?;
     let (a, b) = range.split_once('-')?;
-    Some((path, (a.parse().ok()?, b.parse().ok()?)))
+    Some((a.parse().ok()?, b.parse().ok()?))
 }

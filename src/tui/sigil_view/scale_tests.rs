@@ -13,7 +13,9 @@ use crate::tui::{Activity, Info, Msg};
 
 mod attach;
 mod cards;
+mod children;
 mod effort;
+mod footer;
 mod form;
 mod gutter;
 mod mcp;
@@ -21,6 +23,9 @@ mod mention;
 mod mode;
 mod picker;
 mod secret;
+mod settings;
+mod typeahead;
+mod usage;
 
 const SIZES: [(u16, u16); 5] = [(40, 12), (60, 20), (80, 24), (110, 34), (200, 60)];
 
@@ -72,6 +77,7 @@ fn frame_with(
                 mutated: false,
                 output: "fn main() {}".to_owned(),
                 millis: Some(4),
+                patch: None,
             }));
         }
         app.update(Msg::Event(Event::Assistant {
@@ -151,7 +157,6 @@ fn composer_footer_and_branch_fit_every_size() {
                     "{cols}x{rows} {state:?}: overflow {line:?}"
                 );
             }
-            header_readable(&lines, &format!("{cols}x{rows} {state:?}"));
             let top = composer_top(&lines);
             let footer = find(&lines, "⎇ main")
                 .unwrap_or_else(|| panic!("{cols}x{rows} {state:?}: no branch:\n{shown}"));
@@ -164,10 +169,12 @@ fn composer_footer_and_branch_fit_every_size() {
                 "{cols}x{rows} {state:?}: corner glyph:\n{shown}"
             );
             assert!(
-                find(&lines, "send")
-                    .or_else(|| find(&lines, "cancel"))
-                    .is_some(),
-                "{cols}x{rows} {state:?}: composer hint cut:\n{shown}"
+                !lines.iter().any(|line| line.contains("─  ─")),
+                "{cols}x{rows} {state:?}: gap in the composer rule:\n{shown}"
+            );
+            assert!(
+                find(&lines, "steer").is_none() && find(&lines, "esc cancel").is_none(),
+                "{cols}x{rows} {state:?}: composer hint:\n{shown}"
             );
         }
     }
@@ -178,51 +185,10 @@ fn tool_card_shows_at_every_size() {
     for (cols, rows) in SIZES {
         let lines = frame(cols, rows, State::Tool);
         assert!(
-            find(&lines, "read").is_some(),
+            find(&lines, "Read").is_some(),
             "{cols}x{rows}: no tool card:\n{}",
             lines.join("\n")
         );
-    }
-}
-
-fn header_readable(lines: &[String], label: &str) {
-    let line = lines.first().map_or("", String::as_str);
-    let parts = [
-        "summonr",
-        "stub-model",
-        "(flag)",
-        "· 127.0.0.1:18080",
-        "ses ",
-        "auto",
-    ];
-    for part in parts {
-        let head: String = part.chars().take(3).collect();
-        let Some(start) = line.find(&head) else {
-            continue;
-        };
-        let rest = &line[start..];
-        let word = rest.split(' ').next().unwrap_or_default();
-        let whole = rest
-            .strip_prefix(part)
-            .is_some_and(|tail| part.ends_with(' ') || tail.is_empty() || tail.starts_with(' '));
-        assert!(
-            whole || (part == "stub-model" && word.ends_with('…')),
-            "{label}: segment {part:?} cut in {line:?}"
-        );
-        assert!(
-            start == 0 || line[..start].ends_with(' '),
-            "{label}: segment {part:?} not separated in {line:?}"
-        );
-    }
-    assert!(line.contains("summonr "), "{label}: brand cut in {line:?}");
-}
-
-#[test]
-fn header_is_readable_when_narrow() {
-    for cols in [40, 50, 60] {
-        for state in [State::Idle, State::Busy] {
-            header_readable(&frame(cols, 15, state), &format!("{cols} cols {state:?}"));
-        }
     }
 }
 

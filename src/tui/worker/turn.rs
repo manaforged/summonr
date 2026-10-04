@@ -10,6 +10,7 @@ use crate::tools::Event;
 use crate::tui::Activity;
 
 const MODE_LATER: &str = "mode switches when the current turn ends — esc cancels now";
+const SENT_NOW: &str = "sent to the running turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends — esc cancels now";
 
 enum Input {
@@ -100,9 +101,11 @@ impl MidTurn<'_> {
                 self.reader.run(command).await;
                 Outcome::Keep
             }
-            command @ (Cmd::Steer(_) | Cmd::Queue(_) | Cmd::Submit(_) | Cmd::Dequeue) => {
-                self.queued(command, workspace)
-            }
+            command @ (Cmd::Steer(_)
+            | Cmd::Queue(_)
+            | Cmd::Submit(_)
+            | Cmd::Dequeue
+            | Cmd::SteerQueued) => self.queued(command, workspace),
             Cmd::Export(target) => {
                 super::export_session(session_path, session_id, target, self.ui);
                 Outcome::Keep
@@ -131,8 +134,15 @@ impl MidTurn<'_> {
     }
 
     fn later(&mut self, command: Cmd) -> Outcome {
+        let note = match &command {
+            Cmd::Command(line) => format!(
+                "{} runs when the current turn ends — esc cancels now",
+                line.split_whitespace().next().unwrap_or(line)
+            ),
+            _ => SETTINGS_LATER.to_string(),
+        };
         self.deferred.push_back(command);
-        drop(self.ui.send(Msg::System(SETTINGS_LATER.to_string())));
+        drop(self.ui.send(Msg::System(note)));
         Outcome::Keep
     }
 
@@ -147,6 +157,20 @@ impl MidTurn<'_> {
                 }
             }
             Cmd::Queue(input) | Cmd::Submit(input) => self.followups.push_back(input),
+            Cmd::SteerQueued => {
+                let sent = self.followups.len();
+                if sent > 0
+                    && let Ok(mut queue) = self.steering.lock()
+                {
+                    queue.extend(self.followups.drain(..));
+                    if let Some(notes) = crate::hunks::drain(workspace) {
+                        queue.push_back(UserInput::from(notes));
+                    }
+                }
+                if sent > 0 {
+                    drop(self.ui.send(Msg::System(SENT_NOW.to_string())));
+                }
+            }
             Cmd::Dequeue => {
                 let mut pending: Vec<UserInput> = self
                     .steering
@@ -252,6 +276,7 @@ impl Worker {
             }
             drop(self.ui.send(Msg::Busy(None)));
         } else {
+            self.carry_steering();
             self.send_diff(true);
             drop(self.ui.send(Msg::Busy(None)));
             if self.loop_.is_work()
@@ -271,6 +296,20 @@ impl Worker {
             .abort_with(reason, |event| drop(ui.send(Msg::Event(event.clone()))))
     }
 
+    fn carry_steering(&mut self) {
+        let left: Vec<UserInput> = self
+            .steering
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .drain(..)
+            .collect();
+        self.carried = left.len();
+        for input in left.into_iter().rev() {
+            self.followups.push_front(input);
+        }
+        super::announce(&self.ui, &self.steering, &self.followups);
+    }
+
     pub(super) fn recover(&mut self) {
         let mut pending: Vec<UserInput> = self
             .steering
@@ -279,6 +318,7 @@ impl Worker {
             .drain(..)
             .collect();
         pending.extend(self.followups.drain(..));
+        self.carried = 0;
         while let Ok(command) = self.cmd.try_recv() {
             match command {
                 Cmd::Submit(input) | Cmd::Steer(input) | Cmd::Queue(input) => pending.push(input),
@@ -318,12 +358,6 @@ impl Worker {
             drop(self.ui.send(Msg::Edited(crate::diff::edited(calls))));
             if self.last_diff.as_ref() == Some(&diff) {
                 return;
-            }
-            if !diff.files.is_empty() {
-                drop(self.ui.send(Msg::System(format!(
-                    "changes: {} · /pane diff",
-                    diff.summary()
-                ))));
             }
         }
         self.last_diff = Some(diff.clone());

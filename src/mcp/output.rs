@@ -50,6 +50,7 @@ pub(super) fn output(mut result: Value, mutated: bool) -> ToolOutput {
         mutated,
         grant: None,
         images,
+        patch: None,
     }
 }
 

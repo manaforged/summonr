@@ -34,6 +34,7 @@ impl Worker {
             steering,
             deferred: VecDeque::new(),
             followups: VecDeque::new(),
+            carried: 0,
             last_turn: None,
             mail_error: None,
             last_diff: None,
@@ -60,6 +61,14 @@ impl Worker {
     }
 
     pub(super) async fn next(&mut self) -> Option<Cmd> {
+        if self.carried > 0
+            && let Some(next) = self.followups.pop_front()
+        {
+            self.carried -= 1;
+            announce(&self.ui, &self.steering, &self.followups);
+            return Some(Cmd::Submit(next));
+        }
+        self.carried = 0;
         if let Some(command) = self.deferred.pop_front() {
             return Some(command);
         }

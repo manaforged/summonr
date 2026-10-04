@@ -13,6 +13,11 @@ pub(in crate::tools) struct Change {
     pub(in crate::tools) content: Option<String>,
 }
 
+pub(in crate::tools) struct Written {
+    pub(in crate::tools) preview: String,
+    pub(in crate::tools) patch: Option<String>,
+}
+
 #[derive(Clone, Copy)]
 pub(in crate::tools) enum View {
     Hunk,
@@ -34,12 +39,17 @@ impl ToolRegistry {
         before: &str,
         content: &str,
         view: impl Into<View>,
-    ) -> Result<String> {
+    ) -> Result<Written> {
         let preview = self.stage_write(dest, before, content, view)?;
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
-        Ok(preview)
+        let old: Vec<&str> = before.lines().collect();
+        let new: Vec<&str> = content.lines().collect();
+        Ok(Written {
+            preview,
+            patch: super::spans::patch(&old, &new),
+        })
     }
 
     pub(in crate::tools) fn stage_write(

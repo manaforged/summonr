@@ -42,10 +42,7 @@ pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(tab.clone())
                 .key(tab, move |event| {
                     event.stop_propagation();
-                    if complete.overlay_tab(1) {
-                    } else if complete.model.get().busy_since.is_some() {
-                        complete.queue_if_busy();
-                    } else {
+                    if !complete.overlay_tab(1) {
                         complete.complete();
                     }
                 }),

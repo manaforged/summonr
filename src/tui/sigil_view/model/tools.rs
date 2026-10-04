@@ -21,6 +21,7 @@ impl Model {
             state: ToolState::Running,
             output: String::new(),
             expanded: false,
+            patch: None,
         });
         self.live_tool = Some((name, arg));
     }
@@ -68,6 +69,7 @@ impl Model {
                     state: old_state,
                     output: old_output,
                     expanded,
+                    patch,
                     ..
                 }) = self.entries.inner.pop()
                 else {
@@ -80,6 +82,7 @@ impl Model {
                         state: old_state,
                         output: old_output,
                         expanded,
+                        patch,
                     },
                     Call::new(id.to_string(), arg, ToolState::Running, String::new()),
                 ];
@@ -98,6 +101,7 @@ impl Model {
         id: &str,
         success: bool,
         output: String,
+        patch: Option<String>,
     ) {
         let state = if success {
             ToolState::Ok
@@ -108,16 +112,19 @@ impl Model {
             if let Some(Entry::Tool {
                 state: stored,
                 output: body,
+                patch: shown,
                 ..
             }) = self.entries.get_mut(index)
             {
                 *stored = state;
                 *body = output;
+                *shown = patch;
             } else if let Some(Entry::ToolGroup { calls, .. }) = self.entries.get_mut(index)
                 && let Some(call) = calls.iter_mut().find(|call| call.id == id)
             {
                 call.state = state;
                 call.output = output;
+                call.patch = patch;
             }
         }
         self.live_tool = Some(("thinking".to_string(), String::new()));

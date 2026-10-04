@@ -48,6 +48,7 @@ struct Worker {
     steering: Arc<crate::runtime::Steering>,
     deferred: VecDeque<Cmd>,
     followups: VecDeque<UserInput>,
+    carried: usize,
     last_turn: Option<crate::Turn>,
     mail_error: Option<String>,
     workflow: Workflow,

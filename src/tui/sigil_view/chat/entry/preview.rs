@@ -78,3 +78,11 @@ pub(super) fn text(full: bool, name: &str, output: &str, failed: bool, running: 
     let tail = lines[lines.len() - (SHOWN - 1)..].join("\n");
     format!("{}\n… +{} lines\n{tail}", lines[0], lines.len() - SHOWN)
 }
+
+pub(super) fn exit(output: &str) -> Option<&str> {
+    output
+        .lines()
+        .next()?
+        .strip_prefix("exit ")
+        .filter(|code| code.parse::<i32>().is_ok())
+}

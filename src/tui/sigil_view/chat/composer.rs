@@ -21,8 +21,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
             Some((name, arg)) => format!("{name} {arg}").trim_end().to_string(),
             None => activity.label().to_string(),
         };
-        let (steering, queued) = model.queued;
-        let waiting = match steering + queued {
+        let waiting = match model.queued.1 {
             0 => String::new(),
             n => format!(" · {n} queued, ↑ edits"),
         };
@@ -43,7 +42,6 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
 pub(in crate::tui::sigil_view) fn composer_hint(
     activity: Option<Activity>,
     width: usize,
-    options: &str,
     select: Option<&str>,
 ) -> String {
     let available = width.saturating_sub(2);
@@ -51,29 +49,8 @@ pub(in crate::tui::sigil_view) fn composer_hint(
         vec![format!(" select on · mouse to terminal · {key} off ")]
     } else if activity == Some(Activity::Branch) {
         vec![" branching · draft kept ".to_string()]
-    } else if activity == Some(Activity::Turn) {
-        vec![
-            " esc cancel · enter steer · tab queue ".to_string(),
-            " ↵ steer · tab queue · esc cancel ".to_string(),
-            " ↵ steer · esc cancel ".to_string(),
-        ]
-    } else if activity.is_some() {
-        vec![
-            " esc cancel · enter/tab queue ".to_string(),
-            " ↵ queue · esc cancel ".to_string(),
-        ]
     } else {
-        let copy = format!(" · {} copy reply", options);
-        vec![
-            format!(" enter send · ⇧↵ newline · {options} options{copy} · ^t select text "),
-            format!(" enter send · {options} options{copy} · ^t select text "),
-            format!(
-                " ↵ send · {} options{} · ^t select ",
-                options.replace("ctrl+", "^"),
-                copy
-            ),
-            " enter send · ^t select ".to_string(),
-        ]
+        vec![String::new()]
     };
     choices
         .into_iter()
@@ -110,3 +87,7 @@ pub(in crate::tui::sigil_view) fn draft_view(
     );
     format!("{prefix}{}", window.text(caret))
 }
+
+#[cfg(test)]
+#[path = "composer_tests.rs"]
+mod tests;

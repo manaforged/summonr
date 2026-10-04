@@ -38,6 +38,7 @@ impl Worker {
             mutated: false,
             output: output.clone(),
             millis: u64::try_from(started.elapsed().as_millis()).ok(),
+            patch: None,
         })));
         drop(self.ui.send(Msg::Busy(None)));
         if send {

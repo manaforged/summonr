@@ -14,7 +14,7 @@ use tokio::sync::oneshot;
 
 use crate::command::argument;
 use crate::endpoint::State;
-use crate::prefs::{self, Hotkey, Prefs, ToolOutput};
+use crate::prefs::{self, Hotkey, Prefs};
 use crate::provider::{Image, UserInput};
 use crate::recent::Seat;
 use crate::tools::IMAGES_MAX_BYTES;
@@ -94,6 +94,7 @@ pub(super) struct App {
     pub(super) cmd: UnboundedSender<Cmd>,
     pub(super) info: Info,
     pub(super) workspace: PathBuf,
+    pub(super) roots: Vec<String>,
     pub(super) git_branch: Option<String>,
     pub(super) prefs_path: Option<PathBuf>,
     pub(super) max_scroll: Signal<f32>,
@@ -204,7 +205,7 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        theme::install(&info.prefs.theme, &workspace, info.config.as_deref());
+        theme::install(&info.prefs, &workspace, info.config.as_deref());
         let model = Model::new(&info);
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
@@ -305,6 +306,7 @@ impl App {
             attached: signal(0),
             pasted_text: Rc::new(RefCell::new(Vec::new())),
             git_branch,
+            roots: roots(&workspace),
             workspace,
             prefs_path: info.config.clone(),
             info,
@@ -321,4 +323,12 @@ impl App {
     pub(super) fn push_entry(&self, entry: Entry) {
         self.model_mut(|model| model.entries.push(entry));
     }
+}
+
+fn roots(workspace: &std::path::Path) -> Vec<String> {
+    let real = std::fs::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
+    let mut roots = vec![real.display().to_string(), workspace.display().to_string()];
+    roots.dedup();
+    roots.retain(|root| root.len() > 1);
+    roots
 }

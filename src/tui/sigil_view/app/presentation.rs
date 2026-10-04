@@ -33,14 +33,9 @@ pub(super) fn status(model: &Model, info: &Info) -> String {
             format!("working · {}s{tool}", start.elapsed().as_secs())
         },
     );
-    let cost = if model.usage.iter().any(|round| round.cost.is_some()) {
-        format!(
-            " · {}",
-            crate::dollars(model.usage.iter().filter_map(|round| round.cost).sum())
-        )
-    } else {
-        String::new()
-    };
+    let cost = model
+        .spend()
+        .map_or_else(String::new, |spend| format!(" · {}", crate::dollars(spend)));
     format!(
         "{} · {} tokens{cost} · {}% cached · {} peer{} · {activity}",
         info.workspace,

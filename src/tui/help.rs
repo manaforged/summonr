@@ -29,8 +29,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
         [
             "".to_string(),
             "composer".to_string(),
-            "  enter        send, or steer the running turn".to_string(),
-            "  tab          complete a /command or @path; queue while busy".to_string(),
+            "  enter        send; during a turn, queue, then enter again sends it now".to_string(),
+            "  tab          complete a /command or @path".to_string(),
             "  ↑            on an empty draft, pull queued input back".to_string(),
             format!(
                 "  shift+tab    cycle reasoning effort: {}",
@@ -51,9 +51,10 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  a paste of 8+ lines folds into [pasted N lines #k] until sent".to_string(),
             "".to_string(),
             "interface".to_string(),
-            format!("  {:<12} options (hotkeys are editable there)", keys.label(Hotkey::Options)),
+            format!("  {:<12} settings, same as /settings (hotkeys are editable there)", keys.label(Hotkey::Options)),
             format!("  {:<12} search the conversation · /search TEXT", keys.label(Hotkey::Search)),
             format!("  {:<12} prompt history · /history TEXT", keys.label(Hotkey::History)),
+            format!("  {:<12} fold thinking, then tool output; again shows all", keys.label(Hotkey::Fold)),
             format!("  {:<12} files · {} ledger · {} diff · /pane worktrees", keys.label(Hotkey::Files), keys.label(Hotkey::Ledger), keys.label(Hotkey::Diff)),
             format!("  {:<12} hide or show the pane · ctrl+→ focus it · ctrl+← composer", keys.label(Hotkey::Pane)),
             format!("  {:<12} copy the last reply · /copy all · {} select text", keys.label(Hotkey::Copy), keys.label(Hotkey::Select)),

@@ -40,6 +40,7 @@
 | <code>Diff</code> |  |
 | <code>Editor</code> |  |
 | <code>Files</code> |  |
+| <code>Fold</code> |  |
 | <code>History</code> |  |
 | <code>Ledger</code> |  |
 | <code>Newline</code> |  |

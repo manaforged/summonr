@@ -529,6 +529,7 @@ command output shows it as `[secret]`.
 | `pgup` `pgdn` | scroll the transcript a page | same |
 | `home` `end` | on an empty draft, jump to the top or the latest reply | same |
 | `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
+| `alt+k` | in `/login`, pastes a key on a row that also offers a sign-in | |
 | `alt+p` | in `/model`, adds or removes the selected model from favorites | |
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
@@ -567,7 +568,7 @@ command output shows it as `[secret]`.
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
 | `/workflow [NAME]` | choose models for plan, work, and review |
-| `/login [NAME]` | sign in to a provider or store its key |
+| `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/plan` | enter plan mode: read and plan, no edits |
 | `/plan accept` | run the saved plan |
 | `/plan reject` | leave plan mode without running the plan |

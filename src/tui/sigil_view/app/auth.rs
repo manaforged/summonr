@@ -3,7 +3,6 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Login {
     List(String),
-    Method(usize),
     Key(String),
     Checking,
     SignIn {
@@ -28,23 +27,52 @@ impl Login {
     }
 }
 
-fn providers() -> Vec<crate::endpoint::AuthInfo> {
+pub(in crate::tui::sigil_view) type States = std::collections::BTreeMap<String, State>;
+
+fn providers(states: &States) -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()
         .filter_map(|name| crate::endpoint::auth_info(&name).ok())
         .collect();
-    choices.sort_by_key(|choice| (section(choice), choice.catalog_rank(), choice.name.clone()));
+    choices.sort_by_key(|choice| {
+        (
+            section(choice, states),
+            choice.catalog_rank(),
+            choice.name.clone(),
+        )
+    });
     choices
 }
 
-pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) -> u8 {
-    let connected = choice.configured && choice.source != Some(crate::secret::Source::Builtin);
-    match (connected, choice.keyless()) {
-        (true, _) => 0,
-        (false, true) => 1,
-        (false, false) => 2,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::tui::sigil_view) enum Tier {
+    Ready,
+    Attention,
+    Unset,
+}
+
+impl Tier {
+    pub(in crate::tui::sigil_view) const fn title(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Attention => "needs attention",
+            Self::Unset => "not set up",
+        }
     }
+}
+
+pub(in crate::tui::sigil_view) fn section(
+    choice: &crate::endpoint::AuthInfo,
+    states: &States,
+) -> Tier {
+    if states.get(&choice.name).is_some_and(|state| state.failed()) {
+        return Tier::Attention;
+    }
+    if choice.configured || choice.keyless() {
+        return Tier::Ready;
+    }
+    Tier::Unset
 }
 
 pub(in crate::tui::sigil_view) fn matching(
@@ -63,7 +91,7 @@ pub(in crate::tui::sigil_view) fn matching(
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
-        let choices = providers();
+        let choices = providers(&self.picker.groups.peek());
         let current = self.model.get().snapshot.endpoint.clone();
         if let Some(name) = focus
             && !choices.iter().any(|choice| choice.name == name)
@@ -98,11 +126,6 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn move_auth(&self, delta: isize) {
-        if let Login::Method(picked) = self.auth.step.peek() {
-            let next = picked.saturating_add_signed(delta).min(1);
-            self.auth.step.set(Login::Method(next));
-            return;
-        }
         if !matches!(self.auth.step.peek(), Login::List(_)) {
             return;
         }
@@ -125,9 +148,8 @@ impl App {
         };
         let name = choice.name.clone();
         match self.auth.step.peek() {
-            Login::List(_) => self.pick_auth(&choice, name),
-            Login::Method(1) => self.ask_key(),
-            Login::Method(_) => self.sign_in(name),
+            Login::List(_) if choice.login.signs_in() => self.sign_in(name),
+            Login::List(_) => self.key_entry(),
             Login::Key(_) => self.submit_key(name),
             Login::SignIn { asking: true, .. } => self.submit_code(),
             Login::SignIn { note, .. } if !note.is_empty() => self.sign_in(name),
@@ -150,20 +172,14 @@ impl App {
         }
     }
 
-    fn pick_auth(&self, choice: &crate::endpoint::AuthInfo, name: String) {
-        if choice.dual() && !choice.flow.signs_in() && self.env_note(choice) {
+    pub(in crate::tui::sigil_view) fn key_entry(&self) {
+        let Some(choice) = self.auth_choice() else {
+            return;
+        };
+        if !matches!(self.auth.step.peek(), Login::List(_)) || !choice.key || self.env_note(&choice)
+        {
             return;
         }
-        if choice.dual() {
-            self.auth.step.set(Login::Method(0));
-        } else if choice.flow.signs_in() {
-            self.sign_in(name);
-        } else if !self.env_note(choice) {
-            self.ask_key();
-        }
-    }
-
-    fn ask_key(&self) {
         self.auth.step.set(Login::Key(String::new()));
         self.auth.focus.set(self.auth.focus.peek() + 1);
         self.replace_auth_key(String::new());
@@ -300,7 +316,7 @@ impl App {
                     }
                     return;
                 }
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let found = self
                     .filtered_auth()
                     .iter()
@@ -330,11 +346,9 @@ impl App {
                         note: text,
                     },
                     Login::Checking if !self.auth.key.peek().is_empty() => Login::Key(text),
-                    Login::List(_)
-                    | Login::Method(_)
-                    | Login::Key(_)
-                    | Login::Checking
-                    | Login::Confirm => Login::List(text),
+                    Login::List(_) | Login::Key(_) | Login::Checking | Login::Confirm => {
+                        Login::List(text)
+                    }
                 };
                 self.auth.step.set(step);
             }

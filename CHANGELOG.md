@@ -20,6 +20,10 @@ First public release.
   `summonr logout NAME` returns the row to its key. `openai` now speaks
   the Responses API. A browser login keeps the client id a provider
   issues on the redirect and accepts a `redirect_uri` with port `0`.
+- `/login` groups providers as `ready`, `needs attention`, and `not set
+  up`, and on a wide terminal shows a detail pane with the row's key,
+  sign-in, models, and actions. `alt+k` pastes a key on a row that also
+  signs in.
 - The `claude-pro` seat is off. Anthropic's terms do not allow a
   third-party app to sign in with a Claude Pro or Max plan.
 - Windows x86_64 release binary and a PowerShell installer

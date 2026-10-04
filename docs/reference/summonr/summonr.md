@@ -730,6 +730,8 @@
 | <code>Command</code> |  |
 | <code>Url</code> |  |
 
+**Trait implementations:** <code>Clone</code>
+
 
 ### `McpState`
 
@@ -912,6 +914,7 @@
 | <code>Mcp</code> |  |
 | <code>Model</code> |  |
 | <code>Name</code> |  |
+| <code>New</code> |  |
 | <code>Pane</code> |  |
 | <code>Permissions</code> |  |
 | <code>Plan</code> |  |

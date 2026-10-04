@@ -5,7 +5,6 @@
 | [`Inbox`](#inbox) | struct |  |
 | [`Info`](#info) | struct |  |
 | [`Ui`](#ui) | struct |  |
-| [`Exit`](#exit) | enum |  |
 | [`channel`](#channel) | fn |  |
 | [`profile`](#profile) | fn |  |
 | [`run`](#run) | fn |  |
@@ -52,20 +51,6 @@
 **Trait implementations:** <code>Clone</code>
 
 
-## Enums
-
-### `Exit`
-
-**Variants**
-
-| Variant | Description |
-| --- | --- |
-| <code>Code(i32)</code> |  |
-| <code>Resume(String)</code> |  |
-
-**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
-
-
 ## Functions
 
 ### `channel`
@@ -80,7 +65,7 @@
 
 ### `run`
 
-<pre>pub fn <a href="#run">run</a>(loop_: <a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, workspace: PathBuf, info: <a href="#info">Info</a>, ui: <a href="#ui">Ui</a>, inbox: <a href="#inbox">Inbox</a>, gui: bool) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#exit">Exit</a>&gt;</pre>
+<pre>pub fn <a href="#run">run</a>(loop_: <a href="summonr.html#loop">Loop</a>&lt;<a href="summonr.html#client">Client</a>&gt;, workspace: PathBuf, info: <a href="#info">Info</a>, ui: <a href="#ui">Ui</a>, inbox: <a href="#inbox">Inbox</a>, gui: bool, factory: <a href="summonr-tui-hub.html#factory">Factory</a>) -&gt; <a href="summonr.html#result">Result</a>&lt;i32&gt;</pre>
 
 
 ---

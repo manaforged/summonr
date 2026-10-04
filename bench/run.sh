@@ -81,13 +81,13 @@ fi
   echo "harness.sh $(sha256sum "$root/harness.sh" | cut -d' ' -f1)"
   echo "summonr $(awk '$1=="summonr"{print $2}' "$root/tools/versions.txt")"
   echo "summonr_commit $(awk '$1=="summonr_commit"{print $2}' "$root/tools/versions.txt")"
-  awk '$1 ~ /^(summonr_version|pi|opencode2|hermes|node)$/ {print $1, $2}' "$root/tools/versions.txt"
+  awk '$1 ~ /^(summonr_version|pi|opencode2|hermes|omp|bun|node)$/ {print $1, $2}' "$root/tools/versions.txt"
   echo "manifest $(sha256sum "$root/tools/manifest.sha256" | cut -d' ' -f1)"
 } > "$root/jobs/$run/run.txt.new"
 if [ -f "$root/jobs/$run/run.txt" ]; then
   while read -r key value; do
     case $key in
-      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|summonr_version|pi|opencode2|hermes|node|manifest)
+      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|summonr_version|pi|opencode2|hermes|omp|bun|node|manifest)
         old=$(awk -v k="$key" '$1==k{print $2}' "$root/jobs/$run/run.txt")
         if [ -n "$old" ] && [ "$old" != "$value" ]; then
           rm -f "$root/jobs/$run/run.txt.new"

@@ -153,6 +153,7 @@ impl Counted {
                     .and_then(|details| details.thinking_tokens),
             ),
             cached_tokens: field(self.cache_read_input_tokens),
+            cache_write_tokens: field(self.cache_creation_input_tokens),
         }
     }
 }

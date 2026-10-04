@@ -201,6 +201,7 @@ impl SessionDriver {
                 output,
                 reasoning: 0,
                 cached: 0,
+                written: 0,
                 millis,
             },
             note: diagnostic.to_string(),

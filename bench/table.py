@@ -336,7 +336,7 @@ def flagged(rows):
         print(f"- {kind} {row['harness']} {row['task']} reward={row['reward']}: {', '.join(row['void'] + row['warn'])}")
 
 
-VERSION_KEYS = {"summonr": ("summonr_version", "summonr_commit"), "pi": ("pi",), "opencode2": ("opencode2",), "hermes": ("hermes",)}
+VERSION_KEYS = {"summonr": ("summonr_version", "summonr_commit"), "pi": ("pi",), "opencode2": ("opencode2",), "hermes": ("hermes",), "omp": ("omp",)}
 
 
 def version_of(info, harness):

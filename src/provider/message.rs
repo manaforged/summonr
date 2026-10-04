@@ -232,6 +232,8 @@ pub struct Usage {
     pub reasoning_tokens: u32,
     #[serde(default)]
     pub cached_tokens: u32,
+    #[serde(default)]
+    pub cache_write_tokens: u32,
 }
 
 #[derive(Deserialize)]
@@ -245,6 +247,8 @@ struct UsageWire {
     #[serde(default)]
     cached_tokens: u32,
     #[serde(default)]
+    cache_write_tokens: u32,
+    #[serde(default)]
     prompt_cache_hit_tokens: u32,
     #[serde(default)]
     prompt_tokens_details: Option<PromptDetails>,
@@ -256,6 +260,8 @@ struct UsageWire {
 struct PromptDetails {
     #[serde(default)]
     cached_tokens: u32,
+    #[serde(default)]
+    cache_write_tokens: u32,
 }
 
 #[derive(Deserialize)]
@@ -266,9 +272,9 @@ struct CompletionDetails {
 
 impl From<UsageWire> for Usage {
     fn from(wire: UsageWire) -> Self {
-        let nested = wire
+        let (nested, written) = wire
             .prompt_tokens_details
-            .map(|details| details.cached_tokens)
+            .map(|details| (details.cached_tokens, details.cache_write_tokens))
             .unwrap_or_default();
         Self {
             prompt_tokens: wire.prompt_tokens,
@@ -281,6 +287,7 @@ impl From<UsageWire> for Usage {
             cached_tokens: nested
                 .max(wire.cached_tokens)
                 .max(wire.prompt_cache_hit_tokens),
+            cache_write_tokens: written.max(wire.cache_write_tokens),
         }
     }
 }
@@ -293,6 +300,9 @@ impl Usage {
             .saturating_add(other.completion_tokens);
         self.reasoning_tokens = self.reasoning_tokens.saturating_add(other.reasoning_tokens);
         self.cached_tokens = self.cached_tokens.saturating_add(other.cached_tokens);
+        self.cache_write_tokens = self
+            .cache_write_tokens
+            .saturating_add(other.cache_write_tokens);
     }
 }
 

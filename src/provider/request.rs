@@ -111,14 +111,20 @@ pub struct Price {
     pub output: f64,
     #[serde(default)]
     pub cached: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
 }
 
 impl Price {
     #[must_use]
-    pub(crate) fn cost(&self, prompt: u64, completion: u64, cached: u64) -> f64 {
+    pub(crate) fn cost(&self, prompt: u64, completion: u64, cached: u64, written: u64) -> f64 {
         let cached = cached.min(prompt);
-        let fresh = prompt - cached;
-        (fresh as f64 * self.input + cached as f64 * self.cached + completion as f64 * self.output)
+        let written = written.min(prompt - cached);
+        let fresh = prompt - cached - written;
+        (fresh as f64 * self.input
+            + cached as f64 * self.cached
+            + written as f64 * self.cache_write.unwrap_or(self.input)
+            + completion as f64 * self.output)
             / 1_000_000.0
     }
 }

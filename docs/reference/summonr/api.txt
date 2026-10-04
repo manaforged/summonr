@@ -366,14 +366,16 @@ pub fn summonr::steps::missing(contract: &summonr::steps::Contract, workspace: &
 pub fn summonr::steps::parse(markdown: &str) -> summonr::Result<alloc::vec::Vec<summonr::steps::Step>>
 pub fn summonr::steps::prompt(step: &summonr::steps::Step, total: usize, plan_path: &str) -> alloc::string::String
 pub mod summonr::tui
-pub enum summonr::tui::Exit
-pub summonr::tui::Exit::Code(i32)
-pub summonr::tui::Exit::Resume(alloc::string::String)
-impl core::clone::Clone for summonr::tui::Exit
-impl core::cmp::Eq for summonr::tui::Exit
-impl core::cmp::PartialEq for summonr::tui::Exit
-impl core::fmt::Debug for summonr::tui::Exit
-impl core::marker::StructuralPartialEq for summonr::tui::Exit
+pub mod summonr::tui::hub
+pub enum summonr::tui::hub::Open
+pub summonr::tui::hub::Open::New
+pub summonr::tui::hub::Open::Resume(alloc::string::String)
+impl core::clone::Clone for summonr::tui::hub::Open
+impl core::cmp::Eq for summonr::tui::hub::Open
+impl core::cmp::PartialEq for summonr::tui::hub::Open
+impl core::fmt::Debug for summonr::tui::hub::Open
+impl core::marker::StructuralPartialEq for summonr::tui::hub::Open
+pub type summonr::tui::hub::Factory = alloc::sync::Arc<(dyn core::ops::function::Fn(summonr::tui::hub::Open, summonr::tui::Ui) -> summonr::Result<(summonr::Loop<summonr::Client>, core::option::Option<summonr::workflow::Workflow>)> + core::marker::Send + core::marker::Sync)>
 pub struct summonr::tui::Inbox(_)
 pub struct summonr::tui::Info
 pub summonr::tui::Info::config: core::option::Option<std::path::PathBuf>
@@ -400,7 +402,7 @@ pub fn summonr::tui::Ui::secret(&self, request: summonr::askpass::Request)
 impl core::clone::Clone for summonr::tui::Ui
 pub fn summonr::tui::channel() -> (summonr::tui::Ui, summonr::tui::Inbox)
 pub fn summonr::tui::profile(args: impl core::iter::traits::iterator::Iterator<Item = alloc::string::String>) -> summonr::Result<()>
-pub fn summonr::tui::run(loop_: summonr::Loop<summonr::Client>, workspace: std::path::PathBuf, info: summonr::tui::Info, ui: summonr::tui::Ui, inbox: summonr::tui::Inbox, gui: bool) -> summonr::Result<summonr::tui::Exit>
+pub fn summonr::tui::run(loop_: summonr::Loop<summonr::Client>, workspace: std::path::PathBuf, info: summonr::tui::Info, ui: summonr::tui::Ui, inbox: summonr::tui::Inbox, gui: bool, factory: summonr::tui::hub::Factory) -> summonr::Result<i32>
 pub mod summonr::workflow
 pub struct summonr::workflow::Seat
 pub summonr::workflow::Seat::endpoint: alloc::string::String
@@ -614,6 +616,7 @@ pub summonr::McpLaunch::Command::env: alloc::vec::Vec<(alloc::string::String, al
 pub summonr::McpLaunch::Url
 pub summonr::McpLaunch::Url::headers: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
 pub summonr::McpLaunch::Url::url: alloc::string::String
+impl core::clone::Clone for summonr::McpLaunch
 pub enum summonr::McpState
 pub summonr::McpState::Cached
 pub summonr::McpState::Failed
@@ -744,6 +747,7 @@ pub summonr::SlashCommand::Login
 pub summonr::SlashCommand::Mcp
 pub summonr::SlashCommand::Model
 pub summonr::SlashCommand::Name
+pub summonr::SlashCommand::New
 pub summonr::SlashCommand::Pane
 pub summonr::SlashCommand::Permissions
 pub summonr::SlashCommand::Plan
@@ -1025,6 +1029,7 @@ impl core::cmp::PartialEq for summonr::Turn
 impl core::fmt::Debug for summonr::Turn
 impl core::marker::StructuralPartialEq for summonr::Turn
 pub struct summonr::Usage
+pub summonr::Usage::cache_write_tokens: u32
 pub summonr::Usage::cached_tokens: u32
 pub summonr::Usage::completion_tokens: u32
 pub summonr::Usage::prompt_tokens: u32

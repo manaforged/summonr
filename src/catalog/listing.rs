@@ -98,16 +98,23 @@ fn price(item: &Value) -> Option<crate::provider::Price> {
             .or_else(|| value.as_str()?.parse().ok())
             .filter(|rate| *rate >= 0.0)
     };
-    let (input, output, cached, scale) = if pricing.get("prompt").is_some() {
-        ("prompt", "completion", "input_cache_read", 1_000_000.0)
+    let (input, output, cached, written, scale) = if pricing.get("prompt").is_some() {
+        (
+            "prompt",
+            "completion",
+            "input_cache_read",
+            "input_cache_write",
+            1_000_000.0,
+        )
     } else {
-        ("input", "output", "cached_input", 1.0)
+        ("input", "output", "cached_input", "cache_write", 1.0)
     };
     let input = rate(input)?;
     Some(crate::provider::Price {
         input: input * scale,
         output: rate(output)? * scale,
         cached: rate(cached).unwrap_or(input) * scale,
+        cache_write: rate(written).map(|rate| rate * scale),
     })
 }
 

@@ -119,14 +119,17 @@ Optional capabilities are compiled modules; `summonr modules` lists them. You ex
 
 ## Benchmarks
 
-Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash, every harness on its defaults, 2026-10-02.
+Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Runs `tb21-zai-1002d` (summonr, pi), `tb21-zai-1002f` (OpenCode, Hermes), and `tb21-zai-1003a` (OMP), 2026-10-02 to 2026-10-03; arms from different runs did not run side by side.
 
 | Harness | Version | Tasks solved | Mean memory | Median input tokens / solved task | Time / solved task |
 | --- | --- | ---: | ---: | ---: | ---: |
 | summonr | 0.1.0-rc.1 | 63 | 24 MB | 95,271 | 219 s |
 | pi | 1.0.0 | 62 | 134 MB | 240,762 | 368 s |
+| OMP | 18.4.12 | 59 | 387 MB | 218,939 | 294 s |
 | OpenCode | 2.0.22 | 58 | 394 MB | 228,578 | 341 s |
 | Hermes | v2026.9.24 | 49 | 202 MB | 225,215 | 335 s |
+
+Mean memory counts the harness and every helper it started without a shell, where the harness has helpers.
 
 Method and limits: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks.html).
 
@@ -162,11 +165,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-709 public items (71 types, 97 functions, 113 methods, 249 fields, 175 variants, 4 constants) at 709 paths; 0 are re-export aliases. 362 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
+712 public items (72 types, 97 functions, 113 methods, 250 fields, 176 variants, 4 constants) at 712 paths; 0 are re-export aliases. 363 trait impl lines, 31 inherent impl lines. 23 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 468 | 40 | 46 | 93 | 0 |
+| `summonr` | 470 | 40 | 46 | 93 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -186,7 +189,8 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 3 | 0 | 0 |
 | `summonr::steps` | 16 | 3 | 4 | 0 | 0 |
-| `summonr::tui` | 26 | 4 | 3 | 3 | 0 |
+| `summonr::tui` | 23 | 3 | 3 | 3 | 0 |
+| `summonr::tui::hub` | 4 | 2 | 0 | 0 | 0 |
 | `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |
 
 <!-- /truesight -->

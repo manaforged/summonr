@@ -433,6 +433,7 @@
 
 | Field | Description |
 | --- | --- |
+| <code>cache_write_tokens: u32</code> |  |
 | <code>cached_tokens: u32</code> |  |
 | <code>completion_tokens: u32</code> |  |
 | <code>prompt_tokens: u32</code> |  |
@@ -730,6 +731,8 @@
 | <code>Command</code> |  |
 | <code>Url</code> |  |
 
+**Trait implementations:** <code>Clone</code>
+
 
 ### `McpState`
 
@@ -912,6 +915,7 @@
 | <code>Mcp</code> |  |
 | <code>Model</code> |  |
 | <code>Name</code> |  |
+| <code>New</code> |  |
 | <code>Pane</code> |  |
 | <code>Permissions</code> |  |
 | <code>Plan</code> |  |

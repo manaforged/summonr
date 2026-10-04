@@ -36,7 +36,7 @@ Then `summonr local`. `effort = "low"` on a row (or `--effort LEVEL`,
 seat. `/effort` and `shift+tab` are remembered per seat. A seat with no
 effort set, and none remembered, uses `high` when the model catalog says
 the model reasons, and sends no effort otherwise. Reasoning effort below
-lists the levels each model accepts. `price = { input, output, cached }` in USD per million tokens
+lists the levels each model accepts. `price = { input, output, cached, cache_write }` in USD per million tokens (`cache_write` defaults to `input`)
 prices every round in the footer. A workflow seat keeps
 its own row's effort and price; `--effort` and `/effort` set the
 driving seat and any role seat whose row does not say.

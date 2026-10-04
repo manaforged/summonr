@@ -21,6 +21,7 @@ pub(in crate::tui::sigil_view) enum Target {
 
 type FooterView = (
     Option<String>,
+    Option<(String, bool)>,
     u64,
     u64,
     Option<(bool, Vec<(String, String)>)>,
@@ -42,10 +43,28 @@ fn footer_view(app: &App) -> FooterView {
     };
     (
         spend,
+        elsewhere(&model.live),
         chrome::context_percent(&model),
         chrome::cache_percent(&model),
         open,
     )
+}
+
+fn elsewhere(live: &[crate::tui::hub::Live]) -> Option<(String, bool)> {
+    let others: Vec<_> = live.iter().filter(|entry| !entry.active).collect();
+    if others.is_empty() {
+        return None;
+    }
+    let waiting = others
+        .iter()
+        .filter(|entry| entry.status == crate::tui::hub::Status::NeedsYou)
+        .count();
+    let open = crate::text::plural(others.len(), "other session");
+    Some(if waiting == 0 {
+        (open, false)
+    } else {
+        (format!("{open} · {waiting} waiting on you · /resume"), true)
+    })
 }
 
 pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
@@ -62,8 +81,11 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
 }
 
 fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
-    let (spend, context_pct, cache_pct, open) = view;
+    let (spend, elsewhere, context_pct, cache_pct, open) = view;
     let taken = 42
+        + elsewhere
+            .as_ref()
+            .map_or(0, |(note, _)| cell_width(note) + 2)
         + app
             .git_branch
             .as_deref()
@@ -111,6 +133,18 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
         );
     }
     row = row.child(spacer());
+    if let Some((note, waiting)) = elsewhere {
+        row = row.child(
+            sigil::kernel::text(note)
+                .nowrap()
+                .font_size(12.0)
+                .text_color(if waiting {
+                    sigil::prelude::Token::Warn11
+                } else {
+                    sigil::prelude::Token::Gray11
+                }),
+        );
+    }
     if let Some(cost) = spend {
         row = row.child(
             sigil::kernel::text(cost)

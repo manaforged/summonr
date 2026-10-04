@@ -108,3 +108,107 @@ fn text_handed_back_while_away_returns_once_on_switch() {
     shown.record(&restored(), true);
     assert_eq!(handed(&mut shown), 0);
 }
+
+fn session(
+    home: &std::path::Path,
+    work: &std::path::Path,
+) -> crate::runtime::Loop<crate::provider::Client> {
+    let client = crate::provider::Client::new("k", "http://127.0.0.1:9/v1").unwrap();
+    let driver =
+        crate::durable::driver::SessionDriver::open(home, work, "m", "system", None).unwrap();
+    crate::runtime::Loop::open(client, "m", work, "system", driver).unwrap()
+}
+
+fn info() -> crate::tui::Info {
+    crate::tui::Info {
+        version: String::new(),
+        model: "m".to_string(),
+        relay: None,
+        session: String::new(),
+        endpoint: "e".to_string(),
+        pick: None,
+        prefs: crate::prefs::Prefs::default(),
+        splash: false,
+        inline: false,
+        plan: false,
+        strict: false,
+        workspace: String::new(),
+        workflow: None,
+        config: None,
+    }
+}
+
+async fn until<T>(
+    step: &str,
+    inbox: &mut tokio::sync::mpsc::UnboundedReceiver<Msg>,
+    pick: impl Fn(&Msg) -> Option<T>,
+) -> T {
+    let wait = std::time::Duration::from_secs(10);
+    tokio::time::timeout(wait, async {
+        loop {
+            if let Some(found) = pick(&inbox.recv().await.unwrap()) {
+                return found;
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("no {step} within the wait"))
+}
+
+fn active(msg: &Msg) -> Option<(String, usize)> {
+    if let Msg::Live(live) = msg {
+        return live
+            .iter()
+            .find(|entry| entry.active)
+            .map(|entry| (entry.session.clone(), live.len()));
+    }
+    None
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_new_session_takes_the_view_and_the_first_comes_back_in_place() {
+    let home = tempfile::tempdir().unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let first = session(home.path(), work.path());
+    let first_id = first.session_id();
+    let (made_home, made_work) = (home.path().to_path_buf(), work.path().to_path_buf());
+    let factory: super::Factory =
+        std::sync::Arc::new(move |_, _| Ok((session(&made_home, &made_work), None)));
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let started = super::start(first, info(), (tx, rx), factory);
+    let mut inbox = started.inbox;
+    started
+        .commands
+        .send(crate::tui::Cmd::Open(super::Open::New))
+        .unwrap();
+    let wanted = first_id.clone();
+    let second = until("the new session as active", &mut inbox, |msg| {
+        active(msg)
+            .filter(|(id, open)| *id != wanted && *open == 2)
+            .map(|(id, _)| id)
+    })
+    .await;
+    until("the new session's id", &mut inbox, |msg| {
+        matches!(msg, Msg::Session(id) if *id == second).then_some(())
+    })
+    .await;
+    started
+        .commands
+        .send(crate::tui::Cmd::Open(super::Open::Resume(first_id.clone())))
+        .unwrap();
+    until("the reset", &mut inbox, |msg| {
+        matches!(msg, Msg::Reset).then_some(())
+    })
+    .await;
+    let wanted = first_id.clone();
+    until("the first session as active", &mut inbox, |msg| {
+        active(msg).filter(|seen| *seen == (wanted.clone(), 2))
+    })
+    .await;
+    until("the first session's id", &mut inbox, |msg| {
+        matches!(msg, Msg::Session(id) if *id == first_id).then_some(())
+    })
+    .await;
+    started.commands.send(crate::tui::Cmd::Quit).unwrap();
+    started.task.await.unwrap();
+}

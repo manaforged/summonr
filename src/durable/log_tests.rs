@@ -168,5 +168,12 @@ fn a_session_journal_opens_in_one_host_at_a_time() {
     let second = Log::open(&path).err().map(|error| error.kind());
     assert_eq!(second, Some(io::ErrorKind::WouldBlock));
     drop(held);
-    Log::open(&path).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    let reopened = std::iter::repeat_with(|| Log::open(&path))
+        .find(|opened| opened.is_ok() || std::time::Instant::now() > deadline)
+        .map(|opened| opened.map(drop));
+    assert!(
+        matches!(reopened, Some(Ok(()))),
+        "a released journal opens again once forked children exec"
+    );
 }

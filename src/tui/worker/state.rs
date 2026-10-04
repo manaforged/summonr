@@ -46,6 +46,7 @@ impl Worker {
 
     pub(super) async fn run(mut self) {
         self.replay();
+        drop(self.ui.send(Msg::Session(self.loop_.session_id())));
         if let Some(name) = self.loop_.workflow() {
             self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }

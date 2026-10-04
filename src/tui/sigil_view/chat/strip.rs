@@ -27,14 +27,14 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
             crate::child::Access::Research => "ro",
         };
         format!(
-            "{} · {access} · {} · {}",
+            "{} · {access} · {} · {} tok",
             agent.id,
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
     } else {
         format!(
-            "{} · {}",
+            "{} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
@@ -104,13 +104,19 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
             if expanded && !rows.is_empty() {
                 let tokens: u64 = rows.iter().map(|agent| agent.tokens).sum();
                 let toggle = app.clone();
+                let close = app
+                    .model
+                    .peek()
+                    .prefs
+                    .hotkeys
+                    .label(crate::prefs::Hotkey::Agents);
                 nodes.push(
                     container()
                         .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
                         .child(text("children", Look::xs(Token::Gray12).bold()))
                         .child(text(
                             format!(
-                                "{} · {} tok · ctrl+a closes",
+                                "{} · {} tok · {close} closes",
                                 rows.len(),
                                 crate::provider::compact(tokens)
                             ),
@@ -125,8 +131,8 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 );
             }
             for agent in &rows {
-                let lead = if agent.background { "background" } else { "  " };
-                nodes.push(line(agent, lead, &app.roots, expanded));
+                let lead = format!("{:<10}", if agent.background { "background" } else { "" });
+                nodes.push(line(agent, &lead, &app.roots, expanded));
             }
             nodes
         })

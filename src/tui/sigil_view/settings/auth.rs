@@ -246,7 +246,7 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
         let characters = count.auth.key.get().chars().count();
         vec![hint(
             "↵ save and check · esc back",
-            format!("{characters} chars"),
+            crate::text::plural(characters, "char"),
         )]
     }));
     nodes
@@ -255,11 +255,11 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
 fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
     let [text, url, code, note] = lines;
     let wide = span(app).saturating_sub(10);
-    let width = wide.saturating_sub(6);
+    let width = wide.saturating_sub(16);
     let mut nodes = vec![group(format!("Sign in to {name}"))];
     if !url.is_empty() {
         nodes.push(line(format!(
-            "1. Open  {}",
+            "1. Open         {}",
             crate::text::ellipsize(&url, width)
         )));
     }

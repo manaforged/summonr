@@ -233,7 +233,7 @@ fn collapsible(
     };
     match visibility {
         Visibility::Off | Visibility::Collapsed if live => wrap(
-            sigil::kernel::text("✻ Thinking…")
+            sigil::kernel::text("✻ thinking…")
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
@@ -253,7 +253,7 @@ fn collapsible(
         Visibility::Collapsed if reasoning => {
             let words = body.split_whitespace().count();
             wrap(
-                sigil::kernel::text(format!("▸ {kind} · {words} words"))
+                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(words, "word")))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
@@ -265,7 +265,7 @@ fn collapsible(
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
             wrap(
-                sigil::kernel::text(format!("▸ {kind} · {count} lines"))
+                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(count, "line")))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)
@@ -278,7 +278,7 @@ fn collapsible(
             .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
             .child(
                 sigil::kernel::text(if live {
-                    "✻ Thinking…".to_string()
+                    "✻ thinking…".to_string()
                 } else {
                     format!("✻ {kind}")
                 })

@@ -77,3 +77,16 @@ fn messages_sent_into_the_turn_no_longer_count_as_queued() {
     .join("\n");
     assert!(!shown.contains("queued"), "{shown}");
 }
+
+#[test]
+fn up_brings_back_a_draft_cleared_with_ctrl_c() {
+    let mut seen = (String::new(), String::new());
+    let _ = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.replace("half written thought".to_owned());
+        app.interrupt();
+        let cleared = app.draft.peek();
+        assert!(app.recall(true));
+        seen = (cleared, app.draft.peek());
+    });
+    assert_eq!(seen, (String::new(), "half written thought".to_owned()));
+}

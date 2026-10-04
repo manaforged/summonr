@@ -107,6 +107,14 @@ fn above(child: NodeBuilder) -> NodeBuilder {
         .child(child)
 }
 
+fn approval_hint(persist: bool) -> &'static str {
+    if persist {
+        "y allow · Y always · n deny"
+    } else {
+        "y allow · n deny"
+    }
+}
+
 fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeBuilder {
     let text = crate::text::ellipsize(&detail, width.saturating_sub(4));
     let mut actions = container().layout(
@@ -129,15 +137,11 @@ fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeB
             .destructive()
             .activate(move || app.approval_answer(crate::runtime::GrantAnswer::Deny)),
     );
-    notice_band(format!("Needs approval: {text}"), Tone::Warn)
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(8.0)
-                .padding_y(8.0),
-        )
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
+        .child(notice_band(format!("Needs approval: {text}"), Tone::Warn))
         .child(
-            sigil::kernel::text("The agent is waiting. Choose Allow or Deny.")
+            sigil::kernel::text(approval_hint(persist))
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface),
         )

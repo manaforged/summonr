@@ -106,7 +106,7 @@ const fn description(action: Hotkey) -> &'static str {
         Hotkey::Editor => "open $EDITOR",
         Hotkey::Files => "toggle files",
         Hotkey::Ledger => "expand or collapse tasks",
-        Hotkey::Agents => "expand or collapse agents",
+        Hotkey::Agents => "expand or collapse children",
         Hotkey::Diff => "toggle diff",
         Hotkey::Copy => "copy last reply",
         Hotkey::Select => "select transcript text",

@@ -19,6 +19,18 @@ pub(crate) fn plural(count: usize, word: &str) -> String {
     }
 }
 
+pub(crate) fn duration(secs: u64) -> String {
+    if secs < 60 {
+        return format!("{secs}s");
+    }
+    let (hours, minutes, seconds) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if hours > 0 {
+        format!("{hours}h{minutes:02}m{seconds:02}s")
+    } else {
+        format!("{minutes}m{seconds:02}s")
+    }
+}
+
 pub(crate) fn ellipsize(text: &str, width: usize) -> String {
     if cell_width(text) <= width {
         return text.to_string();
@@ -89,3 +101,7 @@ pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>)
             text.replace(secret, "[secret]")
         })
 }
+
+#[cfg(test)]
+#[path = "text_tests.rs"]
+mod tests;

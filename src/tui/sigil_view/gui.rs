@@ -93,10 +93,10 @@ fn outputs(app: &App) {
     if app.editor_requested.peek() {
         app.editor_requested.set(false);
         app.model_mut(|model| {
-            model.entries.push(Entry::System(
-                "ctrl+g opens $EDITOR in the terminal interface; the window edits in place"
-                    .to_string(),
-            ))
+            let key = model.prefs.hotkeys.label(crate::prefs::Hotkey::Editor);
+            model.entries.push(Entry::System(format!(
+                "{key} opens $EDITOR in the terminal interface · the window edits in place"
+            )))
         });
         app.refresh();
     }

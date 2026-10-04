@@ -35,8 +35,8 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             Err(error) => {
                 return column.child(
                     sigil::kernel::text(error.clone())
-                        .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface)
+                        .wrap()
+                        .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                         .font_size(12.0)
                         .text_color(sigil::prelude::Token::Error11),
                 );
@@ -52,13 +52,13 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         }
         let cursor = app.hunk_cursor.peek();
         let notes = format!(
-            "{} hunks · enter accepts · r reverts · n notes",
-            hunks.len()
+            "{} · enter accept · r revert · n note",
+            crate::text::plural(hunks.len(), "hunk")
         );
         column = column.child(
             sigil::kernel::text(notes)
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+                .wrap()
+                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
@@ -115,7 +115,7 @@ fn hunk_view(
     let note = app.hunk_note(path, &hunk.id);
     let (verdict, tone) = match note.as_ref().and_then(|note| note.verdict) {
         Some(crate::hunks::Verdict::Accepted) => ("accepted", Tone::Success),
-        Some(crate::hunks::Verdict::Rejected) => ("rejected", Tone::Warn),
+        Some(crate::hunks::Verdict::Rejected) => ("reverted", Tone::Warn),
         None => ("pending", Tone::Neutral),
     };
     let editing = app
@@ -173,21 +173,25 @@ fn hunk_view(
         }));
         card = card.child(
             sigil::kernel::text(
-                "ctrl+enter saves · esc cancels · sent with your next prompt".to_string(),
+                "ctrl+enter save · esc cancel · sent with your next prompt".to_string(),
             )
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
+            .wrap()
+            .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
             .font_size(12.0)
             .text_color(sigil::prelude::Token::Gray11),
         );
     } else if let Some(comment) = note.and_then(|note| note.comment) {
         card = card.child(
             sigil::kernel::text(format!("note: {comment}"))
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+                .wrap()
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Info11)
-                .layout(LayoutStyle::block().fill_width().padding_x(8.0)),
+                .layout(
+                    LayoutStyle::block()
+                        .fill_width()
+                        .min_size(0.0, 14.0)
+                        .padding_x(8.0),
+                ),
         );
     }
     card

@@ -230,7 +230,7 @@ fn retry_shows_one_live_thinking_row() {
         app.update(Msg::Busy(Some(Activity::Turn)));
     })
     .join("\n");
-    assert_eq!(shown.matches("Thinking…").count(), 1, "{shown}");
+    assert_eq!(shown.matches("thinking…").count(), 1, "{shown}");
 }
 
 #[test]

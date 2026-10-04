@@ -33,7 +33,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
             crate::jobs::JobState::Dead => Tone::Neutral,
         };
         column = column.child(
-            list_row(index == cursor, record.command.clone(), status.label())
+            list_row(index == cursor, record.command.clone(), String::new())
                 .child(chip(status.label(), tone))
                 .pointer_down(move |event| {
                     if event.button == Some(MouseButton::Right) {

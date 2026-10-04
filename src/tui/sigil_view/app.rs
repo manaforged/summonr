@@ -105,6 +105,7 @@ pub(super) struct App {
     pub(super) editor: TextEditState,
     pub(super) editor_focus: Signal<u64>,
     recalled: Signal<Option<(usize, String, usize)>>,
+    cleared: Signal<Option<String>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
     pub(super) settings: Signal<String>,
@@ -194,7 +195,7 @@ impl Attachment {
 
     fn restore(image: crate::provider::Image) -> Self {
         let source = image.bytes().ok().and_then(|b| preview(&b).ok());
-        let label = format!("📷 {}", image.media_type);
+        let label = format!("image · {}", image.media_type);
         Self {
             image,
             source,
@@ -224,6 +225,7 @@ impl App {
             editor: TextEditState::new(draft, caret),
             editor_focus: signal(0),
             recalled: signal(None),
+            cleared: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
             settings: signal(String::new()),

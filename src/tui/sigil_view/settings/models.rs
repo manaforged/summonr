@@ -207,11 +207,13 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     if choices.is_empty() && paint.picker.loading.get() {
         items.push(group("loading models…"));
     } else if choices.is_empty() {
+        let draft = paint.picker.draft.peek().trim().to_string();
         items.push(band(
-            format!(
-                "No match. ↵ uses \"{}\" as the model id.",
-                paint.picker.draft.peek().trim()
-            ),
+            if draft.is_empty() {
+                "no models — /login adds a provider".to_string()
+            } else {
+                format!("no match · ↵ uses \"{draft}\" as the model id")
+            },
             false,
         ));
     } else {

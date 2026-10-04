@@ -68,7 +68,7 @@ impl App {
             && !choices.iter().any(|choice| choice.name == name)
         {
             self.push_entry(Entry::Error(format!(
-                "Provider `{name}` is unavailable. Use /login to choose a provider."
+                "provider `{name}` is unavailable — /login chooses a provider"
             )));
             self.splash.set(false);
             self.refresh();
@@ -215,7 +215,7 @@ impl App {
         }
         if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
             self.push_entry(Entry::System(
-                "No provider is set up — /login to add one".to_string(),
+                "no provider is set up — /login adds one".to_string(),
             ));
             self.splash.set(false);
             self.refresh();

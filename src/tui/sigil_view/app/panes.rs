@@ -5,7 +5,7 @@ impl App {
         if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
             if self.view_text.peek() != self.view_saved.peek() {
                 self.push_entry(Entry::Error(
-                    "unsaved edits in the view pane — ctrl+s saves, esc leaves".to_string(),
+                    "unsaved edits in the view pane — ctrl+s save · esc leave".to_string(),
                 ));
                 self.refresh();
                 return;
@@ -19,6 +19,12 @@ impl App {
         self.layout.set(layout);
         if opened {
             self.load();
+        }
+        if opened && layout.secondary.is_some() && layout.split(self.viewport.peek().0).1 == 0 {
+            self.push_entry(Entry::System(format!(
+                "widen to {} columns for panes",
+                Layout::MIN_COLS
+            )));
         }
         self.model_mut(|model| model.prefs.layout = layout.text());
         let prefs = self.model.peek().prefs.clone();

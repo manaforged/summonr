@@ -70,6 +70,7 @@ impl Default for Layout {
 impl Layout {
     pub(super) const MIN_CHAT: u16 = 48;
     pub(super) const MIN_SIDE: u16 = 20;
+    pub(super) const MIN_COLS: u16 = Self::MIN_CHAT + Self::MIN_SIDE + 1;
 
     pub(super) fn parse(text: &str) -> Option<Self> {
         if let Some(preset) = Self::preset(text) {
@@ -128,7 +129,7 @@ impl Layout {
         let Some(_) = self.secondary else {
             return (cols, 0);
         };
-        if cols < Self::MIN_CHAT + Self::MIN_SIDE + 1 {
+        if cols < Self::MIN_COLS {
             return (cols, 0);
         }
         let side = (u32::from(cols) * u32::from(self.share) / 100) as u16;

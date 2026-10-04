@@ -136,7 +136,8 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
             "sessions",
             group(total.sessions),
             None,
-            format!("{} turns", group(total.turns)),
+            crate::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
+                .replacen(&total.turns.to_string(), &group(total.turns), 1),
         ),
         card("cost", cost, None, priced.to_string()),
     ])
@@ -233,17 +234,20 @@ fn bar(share: f64, cells: usize) -> String {
 fn model_line(at: usize, name: &str, model: &Total, whole: f64, metric: Metric) -> NodeBuilder {
     let share = model.value(metric.cost()) / whole;
     let tint = ink(at.min(SHOWN));
-    let short: String = name.chars().take(NAME_CELLS - 1).collect();
+    let short = crate::text::ellipsize(name, NAME_CELLS - 1);
+    let short = format!(
+        "{short}{}",
+        " ".repeat(NAME_CELLS.saturating_sub(sigil::app::cell_width(&short)))
+    );
     row(vec![
         colored("●", tint),
         colored(
             format!(
-                "{short:<width$}{:>9}{:>8.0}%{:>9}{:>8.1}s",
+                "{short}{:>9}{:>8.0}%{:>9}{:>8.1}s",
                 compact(model.input),
                 hit(model),
                 compact(model.output),
                 turn_secs(model),
-                width = NAME_CELLS,
             ),
             palette().text,
         ),
@@ -266,7 +270,7 @@ pub(super) fn models(report: &Report, metric: Metric) -> NodeBuilder {
                 "  {:<width$}{:>9}{:>9}{:>9}{:>9}  share",
                 "model",
                 "input",
-                "cached",
+                "hit",
                 "output",
                 "turn",
                 width = NAME_CELLS,

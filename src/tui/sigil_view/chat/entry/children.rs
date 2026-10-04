@@ -42,7 +42,11 @@ fn child_row(kid: &Agent, first: bool, roots: &[String]) -> NodeBuilder {
     let (title, note) = match state {
         ToolState::Running => (
             Look::xs(Token::Gray12),
-            format!("{} · {}", kid.clock(), crate::provider::compact(kid.tokens)),
+            format!(
+                "{} · {} tok",
+                kid.clock(),
+                crate::provider::compact(kid.tokens)
+            ),
         ),
         ToolState::Ok => (Look::xs(Token::Gray11), kid.last.clone()),
         ToolState::Failed => (Look::xs(Token::Gray12), kid.last.clone()),
@@ -93,9 +97,9 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         let what = if kids.len() == 1 {
             kids[0].title.clone()
         } else {
-            format!("{} children", kids.len())
+            crate::text::plural(kids.len(), "child")
         };
-        let detail = format!("background · {}", crate::text::plural(kids.len(), "child"));
+        let detail = "background".to_string();
         return Some(header(
             &ToolState::Running,
             call_line("Task", &what, Some((detail, Look::xs(Token::Gray10))), true),

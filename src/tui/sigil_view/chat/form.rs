@@ -14,16 +14,12 @@ pub(in crate::tui::sigil_view) fn form_band(
 ) -> NodeBuilder {
     let mut lines = lines.into_iter();
     let head = lines.next().unwrap_or_default();
-    let mut band = notice_band(
-        crate::text::ellipsize(&head, width.saturating_sub(4)),
-        Tone::Info,
-    )
-    .layout(
-        LayoutStyle::flex_column()
-            .fill_width()
-            .gap(4.0)
-            .padding_y(8.0),
-    );
+    let mut band = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
+        .child(notice_band(
+            crate::text::ellipsize(&head, width.saturating_sub(4)),
+            Tone::Info,
+        ));
     for line in lines {
         band = band.child(
             sigil::kernel::text(crate::text::ellipsize(&line, width.saturating_sub(4)))

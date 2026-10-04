@@ -31,6 +31,7 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "composer".to_string(),
             "  enter        send; during a turn, queue, then enter again sends it now".to_string(),
             "  tab          complete a /command or @path".to_string(),
+            "  ?            on an empty draft, show this help".to_string(),
             "  ↑            on an empty draft, pull queued input back".to_string(),
             format!(
                 "  shift+tab    cycle reasoning effort: {}",
@@ -48,7 +49,11 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  ↑↓           recall prompts at the first or last line".to_string(),
             "  @path        attach text or an image".to_string(),
             "  !cmd         run in the sandbox and send the output; !!cmd runs only".to_string(),
-            "  a paste of 8+ lines folds into [pasted N lines #k] until sent".to_string(),
+            format!(
+                "  a paste of {}+ lines or {}+ characters folds into [pasted N lines #k] until sent",
+                crate::limits::PASTE_FOLD_LINES,
+                crate::limits::PASTE_FOLD_CHARS
+            ),
             "".to_string(),
             "interface".to_string(),
             format!("  {:<12} settings, same as /settings (hotkeys are editable there)", keys.label(Hotkey::Options)),
@@ -58,7 +63,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             format!("  {:<12} files · {} ledger · {} diff · /pane worktrees", keys.label(Hotkey::Files), keys.label(Hotkey::Ledger), keys.label(Hotkey::Diff)),
             format!("  {:<12} hide or show the pane · ctrl+→ focus it · ctrl+← composer", keys.label(Hotkey::Pane)),
             format!("  {:<12} copy the last reply · /copy all · {} select text", keys.label(Hotkey::Copy), keys.label(Hotkey::Select)),
-            "  ctrl+shift+←/→  resize the split · pgup/pgdn or wheel scroll".to_string(),
+            "  ctrl+shift+←/→".to_string(),
+            "               resize the split · pgup/pgdn or wheel scroll".to_string(),
             "  home/end     on an empty draft, jump to the top or the latest reply · ctrl+home/end always".to_string(),
             "  in a pane    ↑↓ move · ←→ collapse/expand or hunks/list · enter · right-click menu · esc".to_string(),
             "  view         → on a file or /view PATH · o opens in $EDITOR · e edits in place".to_string(),

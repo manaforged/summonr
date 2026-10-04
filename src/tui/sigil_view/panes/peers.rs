@@ -32,7 +32,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let kind = if agent.kind.is_empty() || agent.kind == "summonr" {
             String::new()
         } else {
-            format!("{} · ", agent.kind)
+            agent.kind.clone()
         };
         let dir = agent
             .cwd
@@ -43,7 +43,11 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
             list_row(
                 index == cursor,
                 format!("@{}", agent.label()),
-                format!("{kind}{} · {dir}", agent.model),
+                [kind.as_str(), agent.model.as_str(), dir]
+                    .into_iter()
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(" · "),
             )
             .child(chip(agent.status.clone(), tone))
             .pointer_down(move |event| {

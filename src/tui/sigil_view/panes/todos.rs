@@ -1,5 +1,5 @@
-use sigil::prelude::NodeBuilder;
 use sigil::prelude::Paint;
+use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder};
 
 use super::App;
 use super::body::header;
@@ -14,10 +14,10 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
     };
     let lines = model.ledger.clone();
     drop(model);
-    column = column.child(header(app, "Todos".to_string(), count));
+    column = column.child(header(app, "Ledger".to_string(), count));
     if lines.is_empty() {
         return column.child(
-            sigil::kernel::text("no todos yet")
+            sigil::kernel::text("no ledger items yet")
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)
@@ -28,8 +28,8 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         let (shown, done) = plan_mark(&line);
         column = column.child(
             sigil::kernel::text(shown)
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+                .wrap()
+                .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
                 .font_size(12.0)
                 .text_color(if done {
                     sigil::prelude::Token::Gray11

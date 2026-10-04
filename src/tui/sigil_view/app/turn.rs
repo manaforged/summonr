@@ -104,7 +104,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn retry(&self) {
         if self.model.get().busy_since.is_some() {
             self.push_entry(Entry::System(
-                "Cancel the active turn before retrying.".to_string(),
+                "cancel the active turn before retrying".to_string(),
             ));
             self.refresh();
             return;
@@ -173,11 +173,15 @@ impl App {
                 self.refresh();
             }
         } else {
+            let draft = self.draft.peek();
+            if !draft.trim().is_empty() {
+                self.cleared.set(Some(draft));
+            }
             self.replace(String::new());
             self.pasted_text.borrow_mut().clear();
             if !self.take_attachments().is_empty() {
                 self.push_entry(Entry::System(
-                    "Draft discarded. Attached images were removed.".to_string(),
+                    "draft discarded · attached images removed".to_string(),
                 ));
                 self.refresh();
             }

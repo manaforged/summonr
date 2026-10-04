@@ -112,6 +112,21 @@ First public release.
 
 ### Fixed
 
+- Review follow-ups: `xargs -I {} sh -c {}` is seen by the ask gate; a
+  failed attempt's partial reply is no longer sent back as the last
+  message; the password dialog names the program that really asked;
+  a hook's process group is stopped only on timeout; compaction keeps a
+  later message that repeats the turn's first prompt and says when it
+  starts.
+- Terminal UI polish: the approval and form bands render on their own
+  rows instead of over the footer; approvals list their keys
+  (y allow · Y always · n deny); `?` in an empty composer opens the
+  shortcuts and `↑` brings back a draft cleared with ctrl+c; counts read
+  "1 hunk" and "3 hunks"; long times read 12m34s; key hints follow your
+  hotkeys; pane titles ellipsize instead of hiding the close button, and a
+  narrow terminal says how wide panes need; Nord and Dawn hints and code
+  blocks are readable; empty states, separators, and wording match
+  across panes, search, usage, and messages.
 - Terminal UI: tool output can no longer move the cursor or ring the
   bell; typing y or n while an approval waits goes into the draft;
   ctrl+a and ctrl+x select and cut in a non-empty composer on Linux and
@@ -119,8 +134,8 @@ First public release.
   hotkeys; child lines render the same in the strip and the transcript.
 - Tools: a pre-tool hook that fails or times out blocks the call and its
   helpers are stopped; tags on lines longer than 8 KB match their edits;
-  MCP over HTTP delivers progress as it arrives, caps each event, and
-  cancels a stopped call on the server.
+  MCP over HTTP delivers progress as it arrives, refuses an event over
+  the frame cap, and cancels a stopped call on the server.
 - Providers: a long tool-argument stream no longer trips the stall
   timeout; a rejected OAuth token is refreshed instead of reused; OAuth
   errors never echo the token reply; cached tokens without a listed

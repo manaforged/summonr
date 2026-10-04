@@ -18,6 +18,7 @@ use sections::{bottom, cards, colored, spacer, trend};
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
 const CHROME_ROWS: u16 = 8;
 const INSET: f32 = 24.0;
+const KEYS: &str = "←/→ range · tab tokens/cost · ↵ this workspace/all · esc close";
 
 #[derive(Clone, Copy)]
 pub(super) struct Panel {
@@ -106,20 +107,19 @@ fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
             status.as_str()
         };
         nodes.push(colored(note, palette().dim));
+        nodes.push(colored(KEYS, palette().code_comment));
         return nodes;
     }
     let report = Report::build(&rows, range, metric, now());
     if report.models.is_empty() {
         nodes.push(colored("no usage in this range", palette().dim));
+        nodes.push(colored(KEYS, palette().code_comment));
         return nodes;
     }
     nodes.push(cards(&report));
     nodes.push(trend(&report, metric, width));
     nodes.push(bottom(&report, metric));
-    nodes.push(colored(
-        "←/→ range   tab tokens/cost   ↵ this workspace/all   esc close",
-        palette().code_comment,
-    ));
+    nodes.push(colored(KEYS, palette().code_comment));
     nodes
 }
 

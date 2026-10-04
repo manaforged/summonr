@@ -43,8 +43,27 @@ fn answering(app: &App) -> bool {
     !app.options_active() && app.draft.peek().is_empty() && app.approval.peek().is_some()
 }
 
+fn shortcuts(app: &App, event: &mut KeyEvent) {
+    if !app.options_active()
+        && !app.view_edit.peek()
+        && !app.pane_focus.peek()
+        && app.form_stage().is_none()
+        && app.approval.peek().is_none()
+        && app.draft.peek().is_empty()
+    {
+        event.stop_propagation();
+        app.help.show();
+        app.refresh();
+    }
+}
+
 fn respond() -> Vec<(Shortcut, Handler)> {
     vec![
+        (LogicalKey::character("?").into(), shortcuts),
+        (
+            Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
+            shortcuts,
+        ),
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {

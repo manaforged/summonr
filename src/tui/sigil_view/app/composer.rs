@@ -69,6 +69,14 @@ impl App {
             return false;
         }
         let draft = self.draft.peek();
+        if older
+            && draft.is_empty()
+            && let Some(text) = self.cleared.peek()
+        {
+            self.cleared.set(None);
+            self.replace(text);
+            return true;
+        }
         let caret = self.caret.peek().min(draft.len());
         let edge = if older {
             &draft[..caret]

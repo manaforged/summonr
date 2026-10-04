@@ -168,7 +168,6 @@ impl Hotkeys {
     }
 }
 
-#[must_use]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum EditorKey {
     SelectAll,

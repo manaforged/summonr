@@ -37,7 +37,7 @@ impl App {
         if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
             self.discard_armed.set(true);
             self.push_entry(Entry::System(
-                "unsaved edits — ctrl+s saves, esc again discards".to_string(),
+                "unsaved edits — ctrl+s save · esc again discard".to_string(),
             ));
             self.refresh();
             return true;

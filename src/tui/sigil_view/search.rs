@@ -105,6 +105,14 @@ impl Picker {
         }
     }
 
+    fn action(self) -> &'static str {
+        match self.mode.get() {
+            Mode::Conversation => "↑↓ select · ↵ jump · esc close",
+            Mode::Prompts => "↑↓ select · ↵ insert · esc close",
+            Mode::Branch => "↑↓ select · ↵ branch · esc close",
+        }
+    }
+
     fn detail(self, index: usize) -> String {
         let Some(prompt) = self.prompt(index).filter(|_| self.is_history()) else {
             return String::new();
@@ -158,7 +166,7 @@ impl Picker {
                     let preview = snippet(&pattern, &prompt.text)
                         .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
                     let preview = if prompt.text.is_empty() {
-                        format!("{} attached image(s)", prompt.images)
+                        format!("{} attached", crate::text::plural(prompt.images, "image"))
                     } else {
                         preview
                     };
@@ -264,13 +272,17 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     if rows.is_empty() {
                         items.push(
                             container().child(
-                                sigil::kernel::text("No matches. Edit the search.")
+                                sigil::kernel::text("no matches · edit the search")
                                     .nowrap()
                                     .text_color(sigil::prelude::Token::OnSurface),
                             ),
                         );
                     }
-                    let count = format!("{} / {}", selected + 1, rows.len());
+                    let count = if rows.is_empty() {
+                        String::new()
+                    } else {
+                        format!("{} / {}", selected + 1, rows.len())
+                    };
                     let height = if picker.is_history() {
                         canvas::overlay_list_row() * 2.0
                     } else {
@@ -288,7 +300,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             .follow_row(picker.selected),
                         ),
                     );
-                    items.push(hint("↑↓ select · ↵ jump · esc close", count));
+                    items.push(hint(picker.action(), count));
                 }
                 Err(error) => items.push(
                     container().child(
@@ -311,11 +323,7 @@ fn row(
     selected: usize,
 ) -> NodeBuilder {
     let choose = app.clone();
-    let title = if picker.is_history() {
-        preview.to_string()
-    } else {
-        format!("{}  {preview}", entry + 1)
-    };
+    let title = preview.to_string();
     let detail = picker.detail(entry);
     pick(index == selected, title, detail).pointer_down(move |event| {
         choose.search.selected.set(index);

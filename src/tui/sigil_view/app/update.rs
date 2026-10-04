@@ -221,9 +221,9 @@ impl App {
                     .is_some();
                 let lines = text.lines().count();
                 model.entries.push(Entry::System(format!(
-                    "saved {} · {lines} line{}",
+                    "saved {} · {}",
                     file.display(),
-                    if lines == 1 { "" } else { "s" }
+                    crate::text::plural(lines, "line")
                 )));
                 saved = viewed && editing;
             }

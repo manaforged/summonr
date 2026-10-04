@@ -32,10 +32,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
         let model = app.model.get();
         let path = model.view.as_ref().map_or("", |view| view.path.as_str());
         editor_area = editor_area
-            .child(notice_band(
-                format!("editing {path} · ctrl+s save · esc leave"),
-                Tone::Info,
-            ))
+            .child(notice_band(format!("editing {path}"), Tone::Info))
             .child(editor);
     } else {
         editor_area = editor_area.child(

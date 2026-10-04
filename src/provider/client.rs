@@ -6,7 +6,7 @@ mod login;
 mod meta;
 
 use encode::*;
-pub(crate) use meta::{input_cap, response_failure};
+pub(crate) use meta::{input_cap, plan_usage, response_failure};
 
 fn fixed_headers<'a>(raw: impl Iterator<Item = (&'a String, &'a String)>) -> Vec<(String, String)> {
     let mut headers: Vec<(String, String)> = Vec::new();

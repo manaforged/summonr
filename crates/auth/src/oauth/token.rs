@@ -48,6 +48,7 @@ pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Resu
     let mut chat = minted(&body)?;
     chat.refresh = grant.refresh;
     chat.identity = chat.identity.or(grant.identity);
+    chat.client = grant.client;
     Ok(chat)
 }
 
@@ -112,6 +113,7 @@ pub(crate) fn minted(body: &Value) -> Result<Issued> {
             .get("id_token")
             .and_then(Value::as_str)
             .map(str::to_string),
+        client: None,
     })
 }
 
@@ -161,13 +163,17 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
         .refresh
         .as_deref()
         .ok_or_else(|| Error::Denied("no refresh token to spend".to_string()))?;
+    let client = issued.client.as_deref().unwrap_or(&spec.client_id);
     let mut form = vec![
         ("grant_type".to_string(), "refresh_token".to_string()),
         ("refresh_token".to_string(), token.to_string()),
-        ("client_id".to_string(), spec.client_id.clone()),
+        ("client_id".to_string(), client.to_string()),
     ];
     if let Some(secret) = &spec.client_secret {
         form.push(("client_secret".to_string(), secret.clone()));
+    }
+    for (key, value) in &spec.token_params {
+        form.push((key.clone(), value.clone()));
     }
     let (status, body) = post(http, &spec.token_url, &form, spec.token_style).await?;
     if status >= 400 {
@@ -183,6 +189,7 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
     if fresh.identity.is_none() {
         fresh.identity = issued.identity.clone();
     }
+    fresh.client = issued.client.clone();
     Ok(fresh)
 }
 

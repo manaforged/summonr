@@ -118,6 +118,7 @@ pub(crate) struct Issued {
     pub(crate) refresh: Option<String>,
     pub(crate) expires: Option<Instant>,
     pub(crate) identity: Option<String>,
+    pub(crate) client: Option<String>,
 }
 
 impl Issued {
@@ -259,3 +260,7 @@ pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder 
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "registration_tests.rs"]
+mod registration_tests;

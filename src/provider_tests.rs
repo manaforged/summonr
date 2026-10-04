@@ -100,3 +100,29 @@ fn a_hosted_model_window_comes_from_local_data_without_a_request() {
         "the window lookup reached the network"
     );
 }
+
+#[test]
+fn a_plan_cap_is_a_rate_limit_that_names_its_code() {
+    let text = r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"cap"}}"#;
+    let error = response_failure(429, text, None);
+    let failure = error.provider_failure().unwrap();
+    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert!(
+        failure
+            .message
+            .contains("subscription_sharing_usage_limit_exceeded"),
+        "the user sees which plan rule stopped the turn, got {}",
+        failure.message
+    );
+}
+
+#[test]
+fn an_ineligible_plan_user_is_not_asked_to_sign_in_again() {
+    let text = r#"{"error":{"code":"subscription_sharing_user_not_eligible","message":"no"}}"#;
+    let error = response_failure(403, text, None);
+    assert_eq!(
+        error.provider_failure().unwrap().kind,
+        ProviderFailureKind::Http,
+        "a 403 for eligibility must not read as a rejected key"
+    );
+}

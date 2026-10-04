@@ -6,6 +6,11 @@ First public release.
 
 ### Added
 
+- `summonr login chatgpt` signs in with ChatGPT and runs GPT models on a
+  Plus or Pro plan through the Responses API. `summonr login supergrok`
+  signs in with a SuperGrok or X Premium+ plan. A browser login now keeps
+  the client id a provider issues on the redirect and accepts a
+  `redirect_uri` with port `0`.
 - Windows x86_64 release binary and a PowerShell installer
   (`irm https://summonr.dev/install.ps1 | iex`). Linux binaries are
   static musl builds. `https://summonr.dev/install.sh` installs on macOS

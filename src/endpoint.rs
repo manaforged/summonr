@@ -23,6 +23,17 @@ const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";
 const CLAUDE_CLIENT: &str = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const CLAUDE_SCOPES: &str = "org:create_api_key user:profile user:inference user:sessions:claude_code \
      user:mcp_servers user:file_upload";
+const OPENAI_API: &str = "https://api.openai.com/v1";
+const CHATGPT_AUTHORIZE: &str = "https://auth.openai.com/api/accounts/authorize";
+const CHATGPT_TOKEN: &str = "https://auth.openai.com/api/accounts/oauth/token";
+const CHATGPT_CLIENT: &str = "dynamic_agent_client";
+const CHATGPT_REDIRECT: &str = "http://127.0.0.1:0/auth/callback";
+const CHATGPT_SCOPES: &str =
+    "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
+const XAI_DEVICE: &str = "https://auth.x.ai/oauth2/device/code";
+const XAI_TOKEN: &str = "https://auth.x.ai/oauth2/token";
+const XAI_CLIENT: &str = "b1a00492-073a-47ea-816f-4c329264a828";
+const XAI_SCOPES: &str = "openid profile email offline_access grok-cli:access api:access";
 
 #[derive(Clone, PartialEq)]
 pub struct Endpoint {

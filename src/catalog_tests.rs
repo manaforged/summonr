@@ -78,3 +78,17 @@ fn a_listing_without_a_cache_read_rate_prices_cached_tokens_as_input() {
     assert!((price.cached - price.input).abs() < 1e-9, "{price:?}");
     assert!(price.input > 0.0);
 }
+
+#[test]
+fn a_model_the_plan_hides_is_not_listed() {
+    let value = serde_json::json!({"data": [
+        {"id": "gpt-6.1-sol", "visibility": "list"},
+        {"id": "gpt-internal", "visibility": "hidden"},
+        {"id": "gpt-4o"}
+    ]});
+    let ids: Vec<String> = super::listing::parse(&value, super::Cost::Plan)
+        .into_iter()
+        .map(|model| model.id)
+        .collect();
+    assert_eq!(ids, ["gpt-6.1-sol", "gpt-4o"]);
+}

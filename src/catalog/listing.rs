@@ -14,6 +14,13 @@ pub fn parse(value: &Value, fallback: Cost) -> Vec<Model> {
 }
 
 fn row(item: &Value, fallback: Cost) -> Option<Model> {
+    if item
+        .get("visibility")
+        .and_then(Value::as_str)
+        .is_some_and(|shown| shown != "list")
+    {
+        return None;
+    }
     let raw = item
         .get("id")
         .or_else(|| item.get("name"))

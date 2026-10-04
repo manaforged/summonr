@@ -77,6 +77,8 @@ If you have a coding plan, sign in instead of using a metered key:
 ```sh
 summonr login              # every plan and key, with its status
 summonr login claude-pro   # Claude Pro or Max, through the browser
+summonr login chatgpt      # ChatGPT Plus or Pro, through the browser
+summonr login supergrok    # SuperGrok or X Premium+, with a device code
 summonr claude-pro
 ```
 
@@ -105,7 +107,7 @@ Next commands:
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `ollama`, `openrouter`, `kimi`, `copilot`, `together`, `fireworks`, `deepinfra`, and `minimax`. Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
+Built-in endpoints include `anthropic`, `openai`, `chatgpt`, `gemini`, `grok`, `supergrok`, `deepseek`, `ollama`, `openrouter`, `kimi`, `copilot`, `together`, `fireworks`, `deepinfra`, and `minimax`. Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]

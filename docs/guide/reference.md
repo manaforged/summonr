@@ -48,7 +48,11 @@ The browser flow picks its return path from `redirect_uri`:
 
 - A loopback `redirect_uri`, or none at all, opens a local port, catches
   the provider's redirect, and closes. Omit it and Summonr picks a free
-  port; set it when the provider registered a fixed one.
+  port; set it when the provider registered a fixed one. Port `0` keeps
+  the provider's path and lets Summonr pick the port.
+- When the redirect carries a `client_id`, Summonr stores it with the
+  token and uses it for every refresh and the next sign-in. This is how
+  a provider that registers the app on first sign-in hands out its id.
 - Any other `redirect_uri` switches to paste-back: Summonr asks for the
   code the browser shows and accepts the `code#state` form. No port opens.
 
@@ -70,6 +74,18 @@ Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
 `claude-pro` is built in: `summonr login claude-pro` signs in with a
 Claude Pro or Max plan and stores a rotating token. `config.example.toml`
 carries ready rows for other plans.
+
+`chatgpt` signs in with ChatGPT (Plus or Pro) and runs on the plan's
+usage through the Responses API. The first sign-in registers Summonr
+with OpenAI and stores the issued client id; `~/.summonr/host-id` holds
+the install id that OpenAI asks for on every sign-in. OpenAI caps each
+app per week in ChatGPT settings → Usage; when the cap is reached, the
+error names that page after the standard retry policy. The plan path rejects
+`max_output_tokens`, sampling fields, and hosted tools.
+
+`supergrok` signs in with a SuperGrok or X Premium+ plan through the
+device flow at `auth.x.ai` and sends requests to `api.x.ai` as a bearer
+token. `grok` stays the metered key (`XAI_API_KEY`).
 
 Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
@@ -107,10 +123,10 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
+`ollama`, `deepseek`, `kimi`, `grok`, `supergrok`, `copilot`, `openai`, `openrouter`, `together`,
 `groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`,
-`fireworks`, `deepinfra`, `minimax`, `minimax-cn`; native
-wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
+`fireworks`, `deepinfra`, `minimax`, `minimax-cn`; the Responses seat
+`chatgpt`; native wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
 `[endpoint.NAME]` row with `wire = "decisions"` to use `summonr classify`. OpenRouter is a
 chat seat (`OPENROUTER_API_KEY`); `/model` lists its catalog the same
 way it lists OpenCode. `together`, `groq`, `cerebras`,
@@ -525,6 +541,7 @@ command output shows it as `[secret]`.
 | Command | Job |
 | --- | --- |
 | `/resume [ID\|NAME]` | open another session |
+| `/new` | start another session beside this one |
 | `/name [TEXT]` | name this session |
 | `/clear` | start a fresh context; files stay |
 | `/compact` | summarize earlier turns |

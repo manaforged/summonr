@@ -15,6 +15,8 @@ struct Stored {
     expires_at: Option<u64>,
     #[serde(default)]
     id_token: Option<String>,
+    #[serde(default)]
+    client_id: Option<String>,
 }
 
 pub(crate) fn parse_stored(raw: &str) -> Option<Issued> {
@@ -24,6 +26,7 @@ pub(crate) fn parse_stored(raw: &str) -> Option<Issued> {
         refresh: disk.refresh_token,
         expires: disk.expires_at.map(from_unix),
         identity: disk.id_token,
+        client: disk.client_id,
     })
 }
 
@@ -33,6 +36,7 @@ fn to_stored(issued: &Issued) -> Stored {
         refresh_token: issued.refresh.clone(),
         expires_at: issued.expires.map(to_unix),
         id_token: issued.identity.clone(),
+        client_id: issued.client.clone(),
     }
 }
 

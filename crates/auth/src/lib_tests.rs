@@ -329,6 +329,7 @@ fn a_token_that_expires_within_the_skew_is_not_fresh() {
         refresh: None,
         expires: Some(Instant::now() + Duration::from_secs(5)),
         identity: None,
+        client: None,
     };
     assert!(
         !soon.fresh(),

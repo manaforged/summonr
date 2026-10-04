@@ -143,6 +143,7 @@ async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<S
         refresh: parts.spec.refresh_token.clone(),
         expires: None,
         identity: None,
+        client: None,
     };
     let minted = refresh(parts.spec, http, &seed).await?;
     save(parts, store, minted.clone())?;
@@ -163,6 +164,7 @@ pub(crate) async fn login(
                 refresh: parts.spec.refresh_token.clone(),
                 expires: None,
                 identity: None,
+                client: None,
             };
             let minted = refresh(parts.spec, http, &seed).await?;
             save(&parts, store, minted)

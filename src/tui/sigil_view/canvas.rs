@@ -49,6 +49,10 @@ pub(super) fn inner_cols(cols: usize) -> usize {
 
 static WINDOW: AtomicBool = AtomicBool::new(false);
 
+pub(in crate::tui::sigil_view) fn is_window() -> bool {
+    WINDOW.load(Ordering::Relaxed)
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Metrics {
     pub(super) w: f32,

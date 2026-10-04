@@ -23,9 +23,73 @@ pub(crate) fn input_cap(text: &str) -> Option<u32> {
     digits.parse().ok().filter(|value| *value > 0)
 }
 
+const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
+    (
+        "subscription_sharing_usage_limit_exceeded",
+        ProviderFailureKind::RateLimited,
+    ),
+    (
+        "subscription_sharing_user_not_eligible",
+        ProviderFailureKind::Http,
+    ),
+    (
+        "subscription_sharing_unsupported_capability",
+        ProviderFailureKind::Http,
+    ),
+    (
+        "subscription_sharing_route_not_supported",
+        ProviderFailureKind::Http,
+    ),
+    (
+        "subscription_sharing_invalid_user",
+        ProviderFailureKind::Authentication,
+    ),
+    (
+        "subscription_sharing_usage_unavailable",
+        ProviderFailureKind::Server,
+    ),
+    (
+        "subscription_sharing_user_unavailable",
+        ProviderFailureKind::Server,
+    ),
+    (
+        "chatpass_v2_scope_not_authorized",
+        ProviderFailureKind::Authentication,
+    ),
+];
+
+const PLAN_USAGE_CAP: &str = "subscription_sharing_usage_limit_exceeded";
+const PLAN_USAGE_SETTINGS: &str = "https://chatgpt.com/settings/usage";
+
+pub(crate) fn plan_usage(code: u16, text: &str, retry_after: Option<u64>) -> Option<Error> {
+    let (named, kind) = PLAN_USAGE
+        .iter()
+        .find(|(code, _)| text.contains(code))
+        .copied()?;
+    Some(Error::Provider(ProviderFailure {
+        kind,
+        status: Some(code),
+        message: format!("HTTP {code}: {named}: {}", reason(text)),
+        partial_output: false,
+        retry_after,
+    }))
+}
+
 pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) -> Error {
-    let lower = text.to_lowercase();
-    let kind = match code {
+    if let Some(error) = plan_usage(code, text, retry_after) {
+        return error;
+    }
+    Error::Provider(ProviderFailure {
+        kind: failure_kind(code, &text.to_lowercase()),
+        status: Some(code),
+        message: format!("HTTP {code}: {}", reason(text)),
+        partial_output: false,
+        retry_after: retry_after.or_else(|| retry_delay(text)),
+    })
+}
+
+fn failure_kind(code: u16, lower: &str) -> ProviderFailureKind {
+    match code {
         401 | 403 => ProviderFailureKind::Authentication,
         429 => ProviderFailureKind::RateLimited,
         400 | 500..=599
@@ -49,14 +113,7 @@ pub(crate) fn response_failure(code: u16, text: &str, retry_after: Option<u64>) 
             ProviderFailureKind::ContextOverflow
         }
         _ => ProviderFailureKind::Http,
-    };
-    Error::Provider(ProviderFailure {
-        kind,
-        status: Some(code),
-        message: format!("HTTP {code}: {}", reason(text)),
-        partial_output: false,
-        retry_after: retry_after.or_else(|| retry_delay(text)),
-    })
+    }
 }
 
 fn retry_delay(text: &str) -> Option<u64> {
@@ -114,6 +171,9 @@ impl Client {
         };
         let lower = failure.message.to_lowercase();
         let advice = match (failure.kind, model) {
+            (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
+                "{name} reached this app's cap on your ChatGPT plan — open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
+            ),
             (ProviderFailureKind::Authentication, _) => {
                 format!("{name} rejected the key — run `summonr login {name}` to replace it")
             }

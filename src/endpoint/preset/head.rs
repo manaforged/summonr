@@ -1,4 +1,4 @@
-use super::preset::copilot_oauth;
+use super::preset::{chatgpt_oauth, copilot_oauth, supergrok_oauth};
 use super::*;
 use crate::endpoint::preset::{KIMI_CLI, Preset};
 use crate::provider::EffortField::{ReasoningEffort, ReasoningObject};
@@ -188,6 +188,30 @@ pub(super) const HEAD: &[Preset] = &[
         context_window: None,
     },
     Preset {
+        name: "supergrok",
+        base_url: GROK,
+        model: "grok-4.6",
+        env_keys: &[],
+        default_key: None,
+        missing: "run `summonr login supergrok` to sign in with a SuperGrok or X Premium+ plan",
+        aliases: &[
+            ("grok", "grok-4.6"),
+            ("grok-4-6", "grok-4.6"),
+            ("grok4.6", "grok-4.6"),
+        ],
+        oauth: Some(supergrok_oauth),
+        headers: &[],
+        opencode: false,
+        prompt_cache_key: false,
+        cli_token: None,
+        opencode_oauth: false,
+        env_default: false,
+        plan: true,
+        wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Unsupported),
+        context_window: None,
+    },
+    Preset {
         name: "copilot",
         base_url: COPILOT,
         model: "gpt-4o",
@@ -213,7 +237,7 @@ pub(super) const HEAD: &[Preset] = &[
     },
     Preset {
         name: "openai",
-        base_url: "https://api.openai.com/v1",
+        base_url: OPENAI_API,
         model: "gpt-4o",
         env_keys: &["OPENAI_API_KEY"],
         default_key: None,
@@ -228,6 +252,26 @@ pub(super) const HEAD: &[Preset] = &[
         env_default: false,
         plan: false,
         wire: Wire::Completions,
+        reasoning: Spec::new(ReasoningEffort, STANDARD, Unsupported),
+        context_window: None,
+    },
+    Preset {
+        name: "chatgpt",
+        base_url: OPENAI_API,
+        model: "gpt-6.1-sol",
+        env_keys: &[],
+        default_key: None,
+        missing: "run `summonr login chatgpt` to sign in with a ChatGPT Plus or Pro plan",
+        aliases: &[],
+        oauth: Some(chatgpt_oauth),
+        headers: &[],
+        opencode: false,
+        prompt_cache_key: false,
+        cli_token: None,
+        opencode_oauth: false,
+        env_default: false,
+        plan: true,
+        wire: Wire::Responses,
         reasoning: Spec::new(ReasoningEffort, STANDARD, Unsupported),
         context_window: None,
     },

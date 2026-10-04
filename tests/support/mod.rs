@@ -180,6 +180,22 @@ impl Session {
             .collect()
     }
 
+    pub(crate) fn received_until(
+        &self,
+        name: &str,
+        wait: Duration,
+        ready: impl Fn(&[Value]) -> bool,
+    ) -> Vec<Value> {
+        let until = Instant::now() + wait;
+        loop {
+            let received = self.received(name);
+            if ready(&received) || Instant::now() >= until {
+                return received;
+            }
+            pause(Duration::from_millis(20));
+        }
+    }
+
     pub(crate) fn starts(&self, name: &str) -> usize {
         read(&self.file(&format!("{name}.starts"))).lines().count()
     }

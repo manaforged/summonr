@@ -6,11 +6,10 @@ delete provider::limits	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` 
 delete limits::secs	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
 delete limits::secs_f64	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
 delete FALLBACK_RETRIES	0	`limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs`
-delete config::load	0	`config::file`, `command_policy_checked`, `write_block_segments`, `session::short`
-delete Policy::command_policy	0	`config::file`, `command_policy_checked`, `write_block_segments`, `session::short`
-delete policy::write_block	0	`config::file`, `command_policy_checked`, `write_block_segments`, `session::short`
-delete tui::short_session	0	`config::file`, `command_policy_checked`, `write_block_segments`, `session::short`
-delete short_session	0	`config::file`, `command_policy_checked`, `write_block_segments`, `session::short`
+delete config::load	0	`config::file`, `command_policy_checked`, `policy::blocks::write_block`, `session::short`
+delete Policy::command_policy	0	`config::file`, `command_policy_checked`, `policy::blocks::write_block`, `session::short`
+delete tui::short_session	0	`config::file`, `command_policy_checked`, `policy::blocks::write_block`, `session::short`
+delete short_session	0	`config::file`, `command_policy_checked`, `policy::blocks::write_block`, `session::short`
 delete ModelMut	0	`App::model_mut(FnOnce)`, the `ticks` signal, `Cmd::Clipboard`
 delete Model::spinner	0	`App::model_mut(FnOnce)`, the `ticks` signal, `Cmd::Clipboard`
 delete App::image	0	`App::model_mut(FnOnce)`, the `ticks` signal, `Cmd::Clipboard`
@@ -54,8 +53,8 @@ delete Goal.max_turns	0	`--max-tokens`, `--max-secs`
 delete canvas::Span	0	Sigil `markdown` in `chat/entry.rs`
 delete canvas::Line	0	Sigil `markdown` in `chat/entry.rs`
 delete canvas::Source	0	Sigil `markdown` in `chat/entry.rs`
-delete Loop::commit	0	`Loop::hydrate`, the once-per-registry skills probe
-delete ToolRegistry::skill_ready	0	`Loop::hydrate`, the once-per-registry skills probe
+delete Loop::commit	0	`ToolRegistry::probed`, the once-per-registry LSP and skills probe read by `ToolRegistry::definitions`
+delete ToolRegistry::skill_ready	0	`ToolRegistry::probed`, the once-per-registry LSP and skills probe read by `ToolRegistry::definitions`
 delete summonr room serve	0	`summonr mail`, `mail/tools.rs::definitions`
 delete room/serve.rs::tools	0	`summonr mail`, `mail/tools.rs::definitions`
 delete room::host::codex	0	`summonr mail`, `mail/tools.rs::definitions`
@@ -70,7 +69,7 @@ surface painter	0	rows::paint
 sigil prelude glob	0	named imports
 legacy tool alias literal	12	one alias table
 match wildcard arm	113	name the arm
-timeout mention	16	one timeout policy
+timeout mention	22	one timeout policy
 delete unicode-width	0	nothing
 delete winapi-util	0	nothing
 delete smol_str	0	nothing

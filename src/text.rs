@@ -1,3 +1,5 @@
+use std::hash::Hasher;
+
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -36,13 +38,31 @@ pub(crate) fn ellipsize_start(text: &str, width: usize) -> String {
     format!("…{}", &text[start.unwrap_or(0)..])
 }
 
-pub(crate) fn fnv64(bytes: &[u8]) -> String {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for byte in bytes {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+pub(crate) struct Fnv64(u64);
+
+impl Default for Fnv64 {
+    fn default() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
     }
-    format!("{hash:016x}")
+}
+
+impl Hasher for Fnv64 {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+
+    fn write(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.0 ^= u64::from(*byte);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+}
+
+pub(crate) fn fnv64(bytes: &[u8]) -> String {
+    let mut hasher = Fnv64::default();
+    hasher.write(bytes);
+    format!("{:016x}", hasher.finish())
 }
 
 pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> String {

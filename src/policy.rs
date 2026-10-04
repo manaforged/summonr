@@ -276,19 +276,37 @@ impl Policy {
     }
 }
 
+#[derive(Clone, Copy)]
+enum WriteRoot {
+    CargoHome,
+    NpmCache,
+    GoPath,
+}
+
+const IMPLICIT_WRITES: &[(&str, WriteRoot)] = &[
+    ("cargo", WriteRoot::CargoHome),
+    ("rustup", WriteRoot::CargoHome),
+    ("npm", WriteRoot::NpmCache),
+    ("npx", WriteRoot::NpmCache),
+    ("pnpm", WriteRoot::NpmCache),
+    ("yarn", WriteRoot::NpmCache),
+    ("bun", WriteRoot::NpmCache),
+    ("go", WriteRoot::GoPath),
+];
+
 #[must_use]
 pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
     let verb = first_verb(command)?;
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .map(PathBuf::from)?;
-    let dir = match verb.as_str() {
-        "cargo" | "rustup" => home.join(".cargo"),
-        "npm" | "npx" | "pnpm" | "yarn" | "bun" => home.join(".npm"),
-        "go" => std::env::var_os("GOPATH")
+    let (_, root) = IMPLICIT_WRITES.iter().find(|(name, _)| *name == verb)?;
+    let dir = match root {
+        WriteRoot::CargoHome => home.join(".cargo"),
+        WriteRoot::NpmCache => home.join(".npm"),
+        WriteRoot::GoPath => std::env::var_os("GOPATH")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("go")),
-        _ => return None,
     };
     (!protected_write(&dir)).then_some(dir)
 }

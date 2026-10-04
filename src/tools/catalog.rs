@@ -102,6 +102,21 @@ impl Builtin {
     pub(crate) fn edits(self) -> bool {
         matches!(self, Self::Edit | Self::Write)
     }
+
+    #[must_use]
+    pub(crate) fn verb(self) -> &'static str {
+        match self {
+            Self::Read => "Read",
+            Self::Edit => "Edit",
+            Self::Write => "Write",
+            Self::Lsp => "Lsp",
+            Self::Skill => "Skill",
+            Self::RunCommand => "Run",
+            Self::Todo => "Todo",
+            Self::Web => "Web",
+            Self::Task => "Task",
+        }
+    }
 }
 
 pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
@@ -150,7 +165,7 @@ fn read() -> ToolDefinition {
             "properties": {
                 "path": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": 1000},
+                "limit": {"type": "integer", "minimum": 1, "maximum": crate::limits::READ_LINE_LIMIT},
                 "pattern": {"type": "string"},
                 "glob": {"type": "string"},
                 "paths": {"type": "array", "items": {"type": "string"}},

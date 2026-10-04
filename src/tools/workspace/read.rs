@@ -12,7 +12,6 @@ use super::{ToolRegistry, object_string, object_usize, parse_args};
 use crate::tools::ToolOutput;
 
 const READ_PAGE_BYTES: usize = 50 * 1024;
-const READ_MAX_LIMIT: usize = 1000;
 const READ_MAX_BYTES: usize = 8 * 1024;
 const READ_MAX_WORK_BYTES: usize = 8 * 1024 * 1024;
 
@@ -138,7 +137,7 @@ impl ToolRegistry {
             limit
                 .saturating_add(before.min(offset - 1))
                 .saturating_add(after)
-                .clamp(1, READ_MAX_LIMIT)
+                .clamp(1, crate::limits::READ_LINE_LIMIT)
         });
         let tags = args.get("tags").and_then(Value::as_bool).unwrap_or(false);
         let mut reader = match self.open_text(path)? {

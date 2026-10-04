@@ -139,3 +139,17 @@ fn reject_reports_a_stale_hunk() {
     let error = apply(root, "f.txt", "deadbeef", Op::Reject).unwrap_err();
     assert!(error.to_string().contains("the hunk is gone"), "{error}");
 }
+
+#[test]
+fn a_hunk_body_starts_at_its_hunk_header() {
+    let patch = "diff --git a/a.txt b/a.txt\nindex 1..2 100644\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-old\n+new\n";
+    let hunk = &super::split("a.txt", patch)[0];
+    assert_eq!(hunk.body(), "@@ -1 +1 @@\n-old\n+new\n");
+    assert!(hunk.patch.starts_with("diff --git"));
+}
+
+#[test]
+fn hunk_ids_use_the_stable_content_hash() {
+    let hunks = split("a.txt", "@@ -1 +1 @@\n-x\n+y\n");
+    assert_eq!(hunks[0].id, crate::text::fnv64(b"a.txt\n-x\n+y"));
+}

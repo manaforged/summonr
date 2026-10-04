@@ -17,6 +17,7 @@ pub(crate) use event::progress_text;
 mod catalog;
 mod dedup;
 pub(crate) use catalog::{Builtin, readonly, retired_op};
+pub(crate) use dedup::read_span;
 pub(crate) mod command;
 mod lsp;
 mod paths;
@@ -75,6 +76,7 @@ pub(crate) struct ToolOutput {
     pub(crate) mutated: bool,
     pub(crate) grant: Option<Grant>,
     pub(crate) images: Vec<crate::provider::Image>,
+    pub(crate) patch: Option<String>,
 }
 
 impl ToolOutput {
@@ -85,6 +87,7 @@ impl ToolOutput {
             mutated: false,
             grant: None,
             images: Vec::new(),
+            patch: None,
         }
     }
 }
@@ -236,6 +239,13 @@ impl ToolRegistry {
 
     pub(crate) fn set_read_only(&mut self, on: bool) {
         self.policy.set_read_only(on);
+    }
+
+    pub(crate) fn contain_read_only(&mut self) {
+        self.policy.set_read_only(true);
+        if self.sandbox.is_none() {
+            drop(self.enable_sandbox(sandbox::Network::Allowed));
+        }
     }
 
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {

@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs::{File, Metadata, read_link};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::io::{self, Read};
 #[cfg(unix)]
 use std::os::unix::ffi::OsStrExt;
@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+
+use crate::text::Fnv64;
 
 #[derive(Clone, Copy, Debug, Deserialize, Hash, PartialEq, Eq, Serialize)]
 pub(crate) struct Entry(u64, u64, u64);
@@ -134,14 +136,11 @@ fn mode(metadata: &Metadata) -> u32 {
 }
 
 fn fingerprint(path: &Path, metadata: &Metadata) -> io::Result<u64> {
-    let mut hasher = DefaultHasher::new();
-    metadata.is_symlink().hash(&mut hasher);
-    #[cfg(unix)]
-    metadata.permissions().mode().hash(&mut hasher);
-    #[cfg(not(unix))]
-    metadata.permissions().readonly().hash(&mut hasher);
+    let mut hasher = Fnv64::default();
+    hasher.write_u8(u8::from(metadata.is_symlink()));
+    hasher.write_u32(mode(metadata));
     if metadata.is_symlink() {
-        read_link(path)?.hash(&mut hasher);
+        hasher.write(read_link(path)?.as_os_str().as_encoded_bytes());
         return Ok(hasher.finish());
     }
     let mut file = File::open(path)?;

@@ -111,3 +111,13 @@ fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
     let error = Policy::builtin().command(command, workspace).unwrap_err();
     assert!(error.to_string().contains("protected"), "{error}");
 }
+
+#[test]
+fn package_managers_write_to_their_own_cache() {
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .unwrap();
+    assert_eq!(implicit_write("npx tsc"), Some(home.join(".npm")));
+    assert_eq!(implicit_write("rustup update"), Some(home.join(".cargo")));
+    assert_eq!(implicit_write("ls -la"), None);
+}

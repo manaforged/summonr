@@ -97,7 +97,7 @@ fn replayed_reasoning(name: &str, model: &str) -> Value {
 fn replayed_through(name: &str, model: &str, proxy: Option<&str>) -> Value {
     let mut endpoint = builtin(name).unwrap();
     if let Some(proxy) = proxy {
-        endpoint.name = "env".to_string();
+        endpoint.name = super::ENV_ENDPOINT.to_string();
         endpoint.base_url = Some(proxy.to_string());
         endpoint.keep_reasoning = false;
     }
@@ -213,7 +213,7 @@ fn a_tool_image_reaches_a_chat_completions_model_as_a_user_attachment() {
 #[test]
 fn glm_keeps_its_reasoning_and_streams_tool_arguments() {
     let mut endpoint = builtin("zai").unwrap();
-    endpoint.name = "env".to_string();
+    endpoint.name = super::ENV_ENDPOINT.to_string();
     endpoint.base_url = Some("http://172.17.0.1:8095/label/v1".to_string());
     endpoint.model = "glm-5.3-flash".to_string();
     endpoint.api_key = Some("k".to_string());

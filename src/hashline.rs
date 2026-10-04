@@ -1,14 +1,15 @@
+use std::hash::Hasher;
+
 use crate::error::{Error, Result};
+use crate::text::Fnv64;
 
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 
 #[must_use]
 pub(crate) fn line_hash(text: &str) -> String {
-    let mut hash = 0x811c_9dc5_u32;
-    for byte in text.as_bytes() {
-        hash ^= u32::from(*byte);
-        hash = hash.wrapping_mul(0x0100_0193);
-    }
+    let mut hasher = Fnv64::default();
+    hasher.write(text.as_bytes());
+    let hash = hasher.finish();
     let mut out = [b'0'; 4];
     let mut rest = hash;
     for slot in out.iter_mut().rev() {
@@ -177,3 +178,7 @@ pub(crate) fn resolve_span(
 ) -> Result<(usize, usize)> {
     span(content, tag, end_tag)
 }
+
+#[cfg(test)]
+#[path = "hashline_tests.rs"]
+mod tests;

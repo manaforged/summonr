@@ -50,7 +50,7 @@ in the same change.
 | Change | Files |
 | --- | --- |
 | Slash command | `src/command/specs.rs` (the spec row), `src/command.rs` (the `SlashCommand` variant), the handler in `src/tui/worker/command/flow.rs` |
-| Model-facing tool | `src/tools/NAME.rs`, `src/tools.rs`, `src/tools/catalog.rs`, `src/runtime/turn/calls.rs`, and a row in `module-api.md` |
+| Model-facing tool | the owning file among `src/tools/{workspace,command,search,todo,lsp}.rs`, `src/tools.rs`, `src/tools/catalog.rs`, `src/runtime/turn/calls.rs`, and a row in `module-api.md` |
 | Endpoint preset | one `Preset` in `src/endpoint/preset/head.rs` or `tail.rs` |
 | Provider wire | the `Wire` enum in `src/endpoint.rs`, `src/provider/wire.rs`, `src/provider/wire/NAME.rs`, `src/provider/client.rs`, `src/provider/stream.rs` |
 

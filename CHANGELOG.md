@@ -39,6 +39,40 @@ First public release.
 
 ### Changed
 
+- macOS release binaries are Apple silicon only. The TLS stack does not
+  build for Intel Macs, so `install.sh` stops there with a clear message
+  instead of a failed download.
+- Tool calls take one line each: `● Read path 1-40`, `● Run command`
+  with its output under `⎿`, and `● Explored 3 files, 1 search` for a
+  run of reads. A failed call turns the dot red and names its exit
+  code. An edit shows its diff right under the call, split or unified.
+- Research children run shell commands in a read-only sandbox, so they
+  can run checks and scripts instead of replicating them with reads;
+  `read` with `op=search` takes `paths` to search several paths.
+- Child tasks: children the turn waits on show inline under their task
+  call, one line each with their latest action, and fold to their result
+  when done; background children run in a strip above the composer and
+  report in the transcript when they finish. `ctrl+a` lists every child
+  with its id, access, time, and tokens.
+- During a turn, `enter` queues a message and `enter` on an empty
+  composer sends the queue into the running turn. Command suggestions
+  work during a turn; settings and pages open at once, and other
+  commands run when the turn ends.
+- `notify = "off" | "turn" | "all"` (the Notify row in `/settings`):
+  desktop notifications when a turn ends and, with `all`, when an
+  approval waits, only while the terminal is not focused.
+- Three themes: `space`, `nord`, and `dawn`, a low-glare light theme;
+  `theme = "auto"` picks `space` or `dawn` from the terminal background.
+  Configs that name a retired theme still load.
+- `ctrl+n` folds every thinking block, then every tool output, then
+  shows them all again; `tools = "hidden"` keeps only the call lines.
+- The footer shows the session's spend beside the context and cache
+  meters when the model has a price.
+- `background = "terminal"` in `config.toml`, or the Background row in
+  `/settings`, uses the terminal's own background instead of the theme's.
+- `/usage` is a full-screen page: tokens, cache hit, sessions, and cost
+  for 24h, 7d, 30d, or all time, a daily chart, and breakdowns by model,
+  workspace, and hour of day.
 - The `mcp` module is on by default. A server starts on its first tool
   call and stops after two idle minutes, so configured servers use no
   memory until called. `tools`, `idle_secs`, `keep_alive`, and

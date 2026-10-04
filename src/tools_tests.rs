@@ -441,3 +441,36 @@ fn a_search_runs_across_several_paths() {
     );
     assert!(text.contains("a.rs") && text.contains("b.rs"), "{text}");
 }
+
+fn outcome(tools: &ToolRegistry, command: &str) -> String {
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({ "command": command }).to_string(),
+        },
+        continuation: None,
+    };
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    match result {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn a_contained_session_asks_before_a_hazard_and_strict_refuses_it() {
+    let (_dir, mut tools) = workspace(&[]);
+    let asked = outcome(&tools, "sudo true");
+    assert!(asked.contains("needs the user's approval"), "{asked}");
+    tools.set_strict();
+    let refused = outcome(&tools, "sudo true");
+    assert!(refused.contains("strict mode never runs it"), "{refused}");
+}

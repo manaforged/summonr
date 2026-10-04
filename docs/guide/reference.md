@@ -795,7 +795,9 @@ the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
 target those paths, and the OS sandbox allows the write. `write` and `edit`
 accept files under them too. `~` and `$HOME` expand before the check.
-Hard denials never prompt: force-push, `sudo`, `rm -rf /`, and deny-list matches.
+Force-push, `sudo`, `rm -rf /`, a pipe into a shell, and the other built-in
+hazards ask before they run, with or without the sandbox. Under `--strict` they
+never run. Matches on your own `[policy] deny` list never prompt.
 A protected path outside the workspace (`.git/hooks`, `.git/config`, `~/.ssh`,
 `~/.gnupg`, `~/.summonr`, shell startup files) prompts as `protected path <dir>`,
 never with `[ always ]`. A protected file inside the workspace (`.env`) is

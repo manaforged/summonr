@@ -39,6 +39,10 @@ First public release.
 
 ### Changed
 
+- A sandboxed session asks before a force push, `sudo`, a pipe into a
+  shell, and the other built-in hazards, as an unsandboxed one does,
+  instead of refusing them. `--strict` still refuses them, and your own
+  `[policy] deny` rules stay hard refusals.
 - macOS release binaries are Apple silicon only. The TLS stack does not
   build for Intel Macs, so `install.sh` stops there with a clear message
   instead of a failed download.

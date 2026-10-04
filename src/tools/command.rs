@@ -77,7 +77,7 @@ impl ToolRegistry {
 
     fn gate_command(&self, command: &str, approved: bool) -> Result<Option<ToolOutput>> {
         if !approved
-            && self.policy.is_unrestricted()
+            && !self.policy.is_strict()
             && let Some(reason) = crate::policy::danger(command, &self.workspace)
         {
             return Ok(Some(ToolOutput {

@@ -129,6 +129,11 @@ impl Policy {
     }
 
     #[must_use]
+    pub(crate) fn is_strict(&self) -> bool {
+        self.strict
+    }
+
+    #[must_use]
     pub(crate) fn configured(&self) -> bool {
         self.strict || !self.deny.is_empty() || !self.allow.is_empty() || !self.write.is_empty()
     }
@@ -180,9 +185,9 @@ impl Policy {
         if self.unrestricted {
             return Ok(());
         }
-        if builtin_deny(command, segments) {
+        if self.strict && builtin_deny(command, segments) {
             return Err(Error::Denied(format!(
-                "blocked command `{command}` — summonr never runs it; run it yourself in another terminal"
+                "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"
             )));
         }
         for pattern in &self.deny {
@@ -276,41 +281,6 @@ impl Policy {
     }
 }
 
-#[derive(Clone, Copy)]
-enum WriteRoot {
-    CargoHome,
-    NpmCache,
-    GoPath,
-}
-
-const IMPLICIT_WRITES: &[(&str, WriteRoot)] = &[
-    ("cargo", WriteRoot::CargoHome),
-    ("rustup", WriteRoot::CargoHome),
-    ("npm", WriteRoot::NpmCache),
-    ("npx", WriteRoot::NpmCache),
-    ("pnpm", WriteRoot::NpmCache),
-    ("yarn", WriteRoot::NpmCache),
-    ("bun", WriteRoot::NpmCache),
-    ("go", WriteRoot::GoPath),
-];
-
-#[must_use]
-pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
-    let verb = first_verb(command)?;
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)?;
-    let (_, root) = IMPLICIT_WRITES.iter().find(|(name, _)| *name == verb)?;
-    let dir = match root {
-        WriteRoot::CargoHome => home.join(".cargo"),
-        WriteRoot::NpmCache => home.join(".npm"),
-        WriteRoot::GoPath => std::env::var_os("GOPATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| home.join("go")),
-    };
-    (!protected_write(&dir)).then_some(dir)
-}
-
 pub(crate) fn first_verb(command: &str) -> Option<String> {
     let word = command
         .split_whitespace()
@@ -380,7 +350,9 @@ mod shell;
 mod verbs;
 
 use blocks::*;
-pub(crate) use blocks::{grant_from_error, outside_hint, outside_write, write_denied};
+pub(crate) use blocks::{
+    grant_from_error, implicit_write, outside_hint, outside_write, write_denied,
+};
 use paths::*;
 use shell::*;
 

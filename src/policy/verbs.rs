@@ -97,10 +97,12 @@ pub(crate) enum Clip {
     Tail,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Gate {
-    Ask,
-    Strict,
+    #[default]
+    Destructive,
+    Risky,
 }
 
 pub(crate) struct Rule {

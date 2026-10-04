@@ -44,7 +44,8 @@ First public release.
   `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and
   dropped tables, including inside a heredoc fed to a shell. `sudo`,
   force pushes, pipes into a shell, git discards, and protected-path
-  writes no longer ask. `--strict` refuses the whole list, and your own
+  writes no longer ask; `confirm = "risky"` in `policy.toml` brings
+  those prompts back. `--strict` refuses the whole list, and your own
   `[policy] deny` rules stay hard refusals under `--sandbox` or `--strict`.
 - summonr starts when its home is not writable, such as inside another
   tool's sandbox: the session lives in the temp directory, says so,

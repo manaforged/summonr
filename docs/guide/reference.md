@@ -929,6 +929,16 @@ on paths relative to a writable root; extra roots themselves come only from
 except that `strict = true` with an empty allow list denies all commands.
 Repository policy can narrow user permissions, never widen them. Children
 inherit these restrictions.
+
+`confirm` picks which commands ask first. `confirm = "destructive"`, the
+default, asks only before irreversible destruction (see Confirmation).
+`confirm = "risky"` also asks before `sudo`, force pushes, pipes into a shell,
+git commands that discard work or rewrite history, and writes to protected
+paths. The stricter value wins across overlays.
+
+```toml
+confirm = "risky"
+```
 In plan mode `edit` and `write` are denied. Shell commands stay read-only, so
 source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables

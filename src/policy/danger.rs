@@ -17,8 +17,8 @@ pub(crate) fn danger(
     let texts: Vec<String> = steps.iter().map(|step| step.text.clone()).collect();
     let flat = without_heredocs(command);
     let hit = match gate {
-        Gate::Ask => catastrophic(&flat),
-        Gate::Strict => builtin_deny(&flat, &texts),
+        Gate::Destructive => catastrophic(&flat),
+        Gate::Risky => builtin_deny(&flat, &texts),
     };
     if hit {
         return Some("it can damage the system");
@@ -30,7 +30,7 @@ pub(crate) fn danger(
     {
         return Some(reason);
     }
-    if gate == Gate::Strict
+    if gate == Gate::Risky
         && matches!(
             write_block(&steps, workspace, &[]),
             Some(Block::Protected(_))

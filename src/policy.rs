@@ -16,6 +16,7 @@ pub(crate) use {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct Policy {
     pub strict: bool,
+    confirm: Gate,
     read_only: bool,
     unrestricted: bool,
     deny: Vec<String>,
@@ -53,6 +54,8 @@ struct File {
     #[serde(default)]
     strict: bool,
     #[serde(default)]
+    confirm: Gate,
+    #[serde(default)]
     deny: Vec<String>,
     #[serde(default)]
     allow: Vec<String>,
@@ -89,6 +92,7 @@ impl Policy {
 
     fn overlay(&mut self, file: File) {
         self.strict |= file.strict;
+        self.confirm = self.confirm.max(file.confirm);
         for item in file.deny {
             if !item.trim().is_empty() && !self.deny.iter().any(|have| have == &item) {
                 self.deny.push(item);
@@ -131,6 +135,11 @@ impl Policy {
     #[must_use]
     pub(crate) fn is_strict(&self) -> bool {
         self.strict
+    }
+
+    #[must_use]
+    pub(crate) fn confirm(&self) -> Gate {
+        self.confirm
     }
 
     #[must_use]
@@ -193,7 +202,7 @@ impl Policy {
         }
         if self.strict
             && (builtin_deny(command, segments)
-                || danger(command, workspace, start, Gate::Strict).is_some())
+                || danger(command, workspace, start, Gate::Risky).is_some())
         {
             return Err(Error::Denied(format!(
                 "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"

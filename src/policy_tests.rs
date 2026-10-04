@@ -49,7 +49,7 @@ fn cleanup_inside_the_workspace_or_scratch_runs_after_a_cd() {
         "cd /app/pyknotid && rm -rf $(find . -type d -name __pycache__)",
     ] {
         assert_eq!(
-            super::danger(command, workspace, workspace, Gate::Strict),
+            super::danger(command, workspace, workspace, Gate::Risky),
             None,
             "{command}"
         );
@@ -85,7 +85,7 @@ fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
         "echo 'rm -rf ~' | xargs -I{} sh -c {}",
     ] {
         assert!(
-            super::danger(command, workspace, workspace, Gate::Strict).is_some(),
+            super::danger(command, workspace, workspace, Gate::Risky).is_some(),
             "{command}"
         );
     }
@@ -101,7 +101,7 @@ fn a_narrow_command_the_bench_saw_refused_now_runs() {
         "OUT=/app/out; rm -rf \"${OUT}\"",
     ] {
         assert_eq!(
-            super::danger(command, workspace, workspace, Gate::Strict),
+            super::danger(command, workspace, workspace, Gate::Risky),
             None,
             "{command}"
         );
@@ -120,7 +120,7 @@ fn a_variable_or_wildcard_that_reaches_a_root_still_asks() {
         "cd /app && rm -rf .*",
     ] {
         assert!(
-            super::danger(command, workspace, workspace, Gate::Strict).is_some(),
+            super::danger(command, workspace, workspace, Gate::Risky).is_some(),
             "{command}"
         );
     }
@@ -131,7 +131,7 @@ fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
     let workspace = Path::new("/app");
     let command = "H=.git/hooks; echo x > $H/pre-commit";
     assert_eq!(
-        super::danger(command, workspace, workspace, Gate::Strict),
+        super::danger(command, workspace, workspace, Gate::Risky),
         Some("it writes a protected path")
     );
     let error = Policy::builtin()
@@ -245,7 +245,7 @@ fn by_default_only_irreversible_destruction_asks() {
         "shutdown -h now",
     ] {
         assert_eq!(
-            super::danger(command, workspace, workspace, Gate::Ask),
+            super::danger(command, workspace, workspace, Gate::Destructive),
             None,
             "{command}"
         );
@@ -261,8 +261,28 @@ fn by_default_only_irreversible_destruction_asks() {
         "psql -c 'drop table users'",
     ] {
         assert!(
-            super::danger(command, workspace, workspace, Gate::Ask).is_some(),
+            super::danger(command, workspace, workspace, Gate::Destructive).is_some(),
             "{command}"
         );
     }
+}
+
+#[test]
+fn confirm_risky_in_policy_toml_opts_into_asking_before_routine_hazards() {
+    let workspace = Path::new("/app");
+    let dir = tempfile::tempdir().unwrap();
+    let risky = dir.path().join("risky.toml");
+    let quiet = dir.path().join("quiet.toml");
+    std::fs::write(&risky, "confirm = \"risky\"\n").unwrap();
+    std::fs::write(&quiet, "confirm = \"destructive\"\n").unwrap();
+    let mut policy = Policy::builtin();
+    assert_eq!(policy.confirm(), Gate::Destructive);
+    assert_eq!(
+        super::danger("sudo true", workspace, workspace, policy.confirm()),
+        None
+    );
+    policy.overlay_file(&risky).unwrap();
+    policy.overlay_file(&quiet).unwrap();
+    assert_eq!(policy.confirm(), Gate::Risky);
+    assert!(super::danger("sudo true", workspace, workspace, policy.confirm()).is_some());
 }

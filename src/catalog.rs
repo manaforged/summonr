@@ -87,19 +87,9 @@ impl Model {
 
     #[must_use]
     pub(crate) fn window(&self) -> String {
-        match self.context {
-            Some(tokens) if tokens >= 950_000 => {
-                let millions = f64::from(tokens) / 1_000_000.0;
-                if (millions - millions.round()).abs() < 0.1 {
-                    format!("{}M", millions.round())
-                } else {
-                    format!("{millions:.1}M")
-                }
-            }
-            Some(tokens) if tokens >= 1000 => format!("{}k", tokens / 1000),
-            Some(tokens) => tokens.to_string(),
-            None => String::new(),
-        }
+        self.context.map_or_else(String::new, |tokens| {
+            crate::provider::CountStyle::Window.format(u64::from(tokens))
+        })
     }
 
     #[must_use]

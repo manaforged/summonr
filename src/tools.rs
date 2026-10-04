@@ -27,8 +27,8 @@ mod spill;
 mod todo;
 mod workspace;
 
-pub(crate) use args::tool;
-use args::{nonempty_path, object_bool, object_string, object_usize, parse_args};
+use args::{nonempty_path, object_bool, object_string, object_usize};
+pub(crate) use args::{parse_args, tool};
 use todo::parse_todo;
 pub(crate) use todo::{TodoStatus, todos_from_args};
 

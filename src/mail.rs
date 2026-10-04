@@ -390,7 +390,7 @@ use files::inbox_path;
 pub(crate) use files::{post_board, read_board, read_inbox, take_inbox};
 pub(crate) use roster::{live, roster};
 use roster::{targets, unique_name};
-pub(crate) use tools::{definitions, is_mail_tool};
+pub(crate) use tools::{Tool, definitions, is_mail_tool};
 
 #[cfg(test)]
 #[path = "mail_tests.rs"]

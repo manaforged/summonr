@@ -264,9 +264,9 @@ impl App {
         self.refresh();
     }
 
-    pub(in crate::tui::sigil_view) fn approval_answer(&self, token: &str) {
+    pub(in crate::tui::sigil_view) fn approval_answer(&self, answer: crate::runtime::GrantAnswer) {
         self.approval.set(None);
-        self.steer_answer(token.to_string());
+        self.steer_answer(answer.token().to_string());
     }
 
     pub(in crate::tui::sigil_view) fn steer_answer(&self, text: String) {

@@ -22,16 +22,10 @@ pub(super) fn head_tail(command: &str) -> bool {
         .any(|verb| matches!(verb, "head" | "tail" | "less" | "more"))
 }
 
+const BRIEF_WIDTH: usize = 80;
+
 pub(super) fn brief(arguments: &str) -> String {
-    let value: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
-    let text = value
-        .get("command")
-        .or_else(|| value.get("path"))
-        .or_else(|| value.get("query"))
-        .or_else(|| value.get("url"))
-        .and_then(serde_json::Value::as_str)
-        .map_or_else(|| arguments.to_string(), str::to_string);
-    crate::text::ellipsize(&text.split_whitespace().collect::<Vec<_>>().join(" "), 80)
+    crate::text::ellipsize(&crate::tui::tool_arg(arguments), BRIEF_WIDTH)
 }
 
 pub(super) fn secs(millis: u64) -> String {

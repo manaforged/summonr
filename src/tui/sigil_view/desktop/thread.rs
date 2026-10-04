@@ -166,16 +166,18 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
             actions = actions.child(
                 button("Allow")
                     .primary()
-                    .activate(move || go.approval_answer("y")),
+                    .activate(move || go.approval_answer(crate::runtime::GrantAnswer::Allow)),
             );
             if persist {
-                actions = actions
-                    .child(button("Always").activate(move || always.approval_answer("always")));
+                actions =
+                    actions.child(button("Always").activate(move || {
+                        always.approval_answer(crate::runtime::GrantAnswer::Always)
+                    }));
             }
             actions = actions.child(
                 button("Deny")
                     .destructive()
-                    .activate(move || stop.approval_answer("n")),
+                    .activate(move || stop.approval_answer(crate::runtime::GrantAnswer::Deny)),
             );
             notice_band(format!("Needs approval: {detail}"), Tone::Warn)
                 .child(

@@ -116,18 +116,18 @@ fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeB
     );
     actions = actions.child(button("Allow").primary().activate({
         let app = app.clone();
-        move || app.approval_answer("y")
+        move || app.approval_answer(crate::runtime::GrantAnswer::Allow)
     }));
     if persist {
         actions = actions.child(button("Always").activate({
             let app = app.clone();
-            move || app.approval_answer("always")
+            move || app.approval_answer(crate::runtime::GrantAnswer::Always)
         }));
     }
     actions = actions.child(
         button("Deny")
             .destructive()
-            .activate(move || app.approval_answer("n")),
+            .activate(move || app.approval_answer(crate::runtime::GrantAnswer::Deny)),
     );
     notice_band(format!("Needs approval: {text}"), Tone::Warn)
         .layout(

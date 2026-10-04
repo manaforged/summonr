@@ -326,7 +326,7 @@ enum ToolState {
 
 const QUIET_OPS: [&str; 2] = ["file", "sequence"];
 
-fn tool_arg(arguments: &str) -> String {
+pub(crate) fn tool_arg(arguments: &str) -> String {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments) else {
         return String::new();
     };

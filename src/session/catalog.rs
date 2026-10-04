@@ -60,8 +60,10 @@ pub fn short(id: &str) -> &str {
     short.map_or(id, |short| short.get(..12).unwrap_or(short))
 }
 
+const PREVIEW_WIDTH: usize = 72;
+
 pub(crate) fn preview(text: &str) -> String {
-    user_text(text).chars().take(72).collect()
+    crate::text::ellipsize(user_text(text), PREVIEW_WIDTH)
 }
 
 pub(crate) fn name_of(path: &Path) -> Option<String> {

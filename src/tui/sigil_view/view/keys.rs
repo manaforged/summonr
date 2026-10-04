@@ -50,7 +50,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             |app, event| {
                 if answering(app) && app.approval.peek().is_some_and(|(_, persist)| persist) {
                     event.stop_propagation();
-                    app.approval_answer("always");
+                    app.approval_answer(crate::runtime::GrantAnswer::Always);
                 }
             },
         ),
@@ -60,7 +60,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
                 app.form_reply(crate::tui::sigil_view::app::Reply::Send);
             } else if answering(app) {
                 event.stop_propagation();
-                app.approval_answer("y");
+                app.approval_answer(crate::runtime::GrantAnswer::Allow);
             }
         }),
         (LogicalKey::character("n").into(), |app, event| {
@@ -69,7 +69,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
                 app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
             } else if answering(app) {
                 event.stop_propagation();
-                app.approval_answer("n");
+                app.approval_answer(crate::runtime::GrantAnswer::Deny);
             }
         }),
         (Key::F5.into(), |app, event| {

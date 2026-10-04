@@ -5,6 +5,8 @@ use super::user_text;
 use crate::durable::log::{self, Line};
 use crate::error::Result;
 
+const ARG_WIDTH: usize = 100;
+
 pub fn export(path: &Path) -> Result<String> {
     let mut out = String::new();
     for line in log::read(path)? {
@@ -45,7 +47,10 @@ pub fn export(path: &Path) -> Result<String> {
                     out.push_str(&format!("## Assistant\n\n{text}\n\n"));
                 }
                 for call in &tool_calls {
-                    let args: String = call.function.arguments.chars().take(100).collect();
+                    let args = crate::text::ellipsize(
+                        &crate::tui::tool_arg(&call.function.arguments),
+                        ARG_WIDTH,
+                    );
                     out.push_str(&format!("- `{}` {args}\n", call.function.name));
                 }
                 if !tool_calls.is_empty() {

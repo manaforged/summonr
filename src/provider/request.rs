@@ -123,8 +123,31 @@ impl Price {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CountStyle {
+    Usage,
+    Window,
+}
+
+const WINDOW_MILLIONS_FROM: u64 = 950_000;
+const WINDOW_ROUND_SLACK: f64 = 0.1;
+
+impl CountStyle {
+    #[must_use]
+    pub(crate) fn format(self, count: u64) -> String {
+        match self {
+            Self::Usage => usage_count(count),
+            Self::Window => window_count(count),
+        }
+    }
+}
+
 #[must_use]
 pub(crate) fn compact(count: u64) -> String {
+    CountStyle::Usage.format(count)
+}
+
+fn usage_count(count: u64) -> String {
     let value = count as f64;
     if value >= 1e9 {
         format!("{:.2}b", value / 1e9)
@@ -132,6 +155,21 @@ pub(crate) fn compact(count: u64) -> String {
         format!("{:.1}m", value / 1e6)
     } else if value >= 1e3 {
         format!("{:.1}k", value / 1e3)
+    } else {
+        count.to_string()
+    }
+}
+
+fn window_count(count: u64) -> String {
+    if count >= WINDOW_MILLIONS_FROM {
+        let millions = count as f64 / 1e6;
+        if (millions - millions.round()).abs() < WINDOW_ROUND_SLACK {
+            format!("{}M", millions.round())
+        } else {
+            format!("{millions:.1}M")
+        }
+    } else if count >= 1000 {
+        format!("{}k", count / 1000)
     } else {
         count.to_string()
     }

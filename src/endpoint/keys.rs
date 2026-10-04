@@ -47,7 +47,10 @@ fn fallback_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
         return Ok(endpoint);
     }
     let row = preset(&endpoint.name);
-    if let Some(key) = row.and_then(|row| row.default_key) {
+    if let Some(key) = row
+        .filter(|row| own_base(&endpoint, row))
+        .and_then(|row| row.default_key)
+    {
         endpoint.api_key = Some(key.to_string());
         endpoint.source = Some(Source::Builtin);
         return Ok(endpoint);

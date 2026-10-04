@@ -12,26 +12,28 @@ const CHARGED: &str = "Restored token usage. Historical reasoning tokens and cos
 
 impl Worker {
     pub(super) fn replay(&self) {
-        let charged = journal(self.loop_.session_path(), &self.ui);
-        drop(self.ui.send(Msg::Event(Event::Unreported {
-            tokens: self.loop_.unreported_tokens(),
-        })));
-        if charged {
+        if self.restore() {
             self.system(CHARGED);
         }
     }
 
     pub(super) fn reshow(&self) {
-        self.replay();
+        self.restore();
         drop(self.ui.send(Msg::Session(self.loop_.session_id())));
         drop(self.ui.send(Msg::Replayed));
+    }
+
+    fn restore(&self) -> bool {
+        let charged = journal(self.loop_.session_path(), &self.ui);
+        drop(self.ui.send(Msg::Event(Event::Unreported {
+            tokens: self.loop_.unreported_tokens(),
+        })));
+        charged
     }
 }
 
 pub(super) fn reshow_running(path: &Path, session: &str, ui: &UnboundedSender<Msg>) {
-    if journal(path, ui) {
-        drop(ui.send(Msg::System(CHARGED.to_string())));
-    }
+    journal(path, ui);
     drop(ui.send(Msg::Session(session.to_string())));
     drop(ui.send(Msg::Replayed));
 }
@@ -48,12 +50,12 @@ fn journal(path: &Path, ui: &UnboundedSender<Msg>) -> bool {
         .iter()
         .any(|line| matches!(line, Line::Assistant { .. } | Line::Charge { .. }));
     for line in lines {
-        restore(line, ui);
+        restore_line(line, ui);
     }
     charged
 }
 
-fn restore(line: Line, ui: &UnboundedSender<Msg>) {
+fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {
     match &line {
         Line::User {
             text,

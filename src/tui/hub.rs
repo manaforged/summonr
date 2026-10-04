@@ -43,7 +43,6 @@ pub(crate) struct Live {
 }
 
 impl Status {
-    #[cfg(feature = "gui")]
     pub(crate) const fn label(self) -> &'static str {
         match self {
             Self::Working => "working",

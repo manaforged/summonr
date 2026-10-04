@@ -323,7 +323,7 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         })
     };
     let finished = tokio::time::timeout(JOB_WAIT, work).await;
-    if !matches!(finished, Ok(Ok(_)))
+    if finished.is_err()
         && let Some(pid) = pid
     {
         drop(crate::tools::command::ProcessGroup::new(pid, false));

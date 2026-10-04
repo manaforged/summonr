@@ -1,28 +1,9 @@
 #[cfg(any(target_os = "linux", test))]
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum GitGuard {
-    Tree(&'static str),
-    File(&'static str),
-}
-
-impl GitGuard {
-    #[must_use]
-    pub(crate) fn name(self) -> &'static str {
-        match self {
-            Self::Tree(name) | Self::File(name) => name,
-        }
-    }
-}
-
 pub(crate) const GIT_DIR: &str = ".git";
 pub(crate) const GIT_MODULES: &str = "modules";
-pub(crate) const GIT_GUARDS: &[GitGuard] = &[
-    GitGuard::Tree("hooks"),
-    GitGuard::File("config"),
-    GitGuard::File("commondir"),
-];
+pub(crate) const GIT_GUARDS: &[&str] = &["hooks", "config", "commondir"];
 #[cfg(any(target_os = "linux", test))]
 const GIT_DATA: &[&str] = &["objects", "refs", "logs", "lfs"];
 
@@ -30,11 +11,10 @@ pub(super) fn guarded_git_part(parts: &[&str]) -> bool {
     parts.iter().enumerate().any(|(at, part)| {
         *part == GIT_DIR
             && match parts.get(at + 1..).unwrap_or_default() {
-                [first, ..] if GIT_GUARDS.iter().any(|guard| guard.name() == *first) => true,
-                [first, rest @ ..] if *first == GIT_MODULES => rest
-                    .iter()
-                    .skip(1)
-                    .any(|part| GIT_GUARDS.iter().any(|guard| guard.name() == *part)),
+                [first, ..] if GIT_GUARDS.contains(first) => true,
+                [first, rest @ ..] if *first == GIT_MODULES => {
+                    rest.iter().skip(1).any(|part| GIT_GUARDS.contains(part))
+                }
                 _ => false,
             }
     })
@@ -53,7 +33,7 @@ fn collect(dir: &Path, found: &mut Vec<PathBuf>) {
     found.extend(
         GIT_GUARDS
             .iter()
-            .map(|guard| dir.join(guard.name()))
+            .map(|guard| dir.join(guard))
             .filter(|path| path.exists()),
     );
     let Ok(entries) = std::fs::read_dir(dir.join(GIT_MODULES)) else {
@@ -94,7 +74,7 @@ pub(crate) fn guarded_git_regex(workspace: &str) -> String {
             meta.then_some('\\').into_iter().chain([c])
         })
         .collect();
-    let names: Vec<&str> = GIT_GUARDS.iter().map(|guard| guard.name()).collect();
+    let names: Vec<&str> = GIT_GUARDS.to_vec();
     format!(
         "^{escaped}/\\{GIT_DIR}/({GIT_MODULES}/.+/)?({})(/.*)?$",
         names.join("|")

@@ -57,3 +57,18 @@ fn a_prompt_names_the_program_that_asked() {
     );
     assert!(labeled("", "Password:").starts_with("unrecognized program unknown"));
 }
+
+#[test]
+fn the_asker_comes_from_the_peer_process_not_the_client() {
+    let (server, mut client) = std::os::unix::net::UnixStream::pair().unwrap();
+    std::io::Write::write_all(&mut client, b"sudo -A true\n").unwrap();
+    let asker = super::peer::asker(&server, 256);
+    let parent = std::process::Command::new("ps")
+        .args(["-o", "command=", "-p"])
+        .arg(std::os::unix::process::parent_id().to_string())
+        .output()
+        .unwrap();
+    let parent = String::from_utf8_lossy(&parent.stdout).trim().to_string();
+    assert_eq!(asker, parent.chars().take(256).collect::<String>());
+    assert!(!asker.contains("sudo -A true"));
+}

@@ -122,7 +122,7 @@ fn a_tool_line_replays_its_display_patch_and_older_lines_still_load() {
 }
 
 #[test]
-fn a_summary_keeps_the_turn_opener_once_when_the_tail_holds_it_mid_way() {
+fn a_summary_keeps_a_later_message_that_repeats_the_opener() {
     let user = |text: &str, start: bool| Line::User {
         text: text.to_string(),
         source: None,
@@ -130,18 +130,21 @@ fn a_summary_keeps_the_turn_opener_once_when_the_tail_holds_it_mid_way() {
         start,
     };
     let mut state = State::default();
-    state.apply(user("earlier", true));
+    state.apply(user("continue", true));
     state.apply(answer(Vec::new(), None));
-    state.apply(user("now", true));
+    state.apply(user("continue", false));
     let reply = state.history[1].clone();
-    let opener = state.history[2].clone();
+    let repeat = state.history[2].clone();
     state.apply(Line::Summary {
         text: "summary".to_string(),
-        tail: vec![reply, opener.clone()],
+        tail: vec![reply, repeat],
     });
     let texts: Vec<&str> = state.history.iter().map(|m| m.content.as_str()).collect();
-    assert_eq!(texts, ["now", "summary", "Here"], "got {texts:?}");
-    assert_eq!(state.history[0], opener);
+    assert_eq!(
+        texts,
+        ["continue", "summary", "Here", "continue"],
+        "got {texts:?}"
+    );
 }
 
 #[test]

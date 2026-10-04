@@ -214,7 +214,11 @@ impl<P: Provider> Loop<P> {
         messages: &'a [Message],
         advertised: &'a mail::Advertised,
     ) -> CompletionRequest<'a> {
-        self.request(role, messages, &advertised.tools, true)
+        let sent = messages
+            .split_last()
+            .filter(|(last, _)| last.role == Role::Assistant && last.tool_calls.is_empty())
+            .map_or(messages, |(_, earlier)| earlier);
+        self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
 

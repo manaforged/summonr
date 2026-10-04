@@ -39,6 +39,7 @@ pub(super) const WRAPPERS: [&str; 16] = [
 const XARGS: &str = "xargs";
 const XARGS_REPLACE: &[&str] = &["-I", "-J", "--replace=", "-i"];
 const XARGS_DEFAULT_TOKEN: &str = "{}";
+const XARGS_VALUE_FLAGS: &[&str] = &["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"];
 
 fn xargs_runs_input(words: &[&str], at: usize) -> bool {
     let Some(from) = words[..at].iter().position(|word| *word == XARGS) else {
@@ -82,10 +83,15 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                 .split_whitespace()
                 .map(|word| word.rsplit('/').next().unwrap_or(word))
                 .collect();
+            let mut value = false;
             words
                 .iter()
-                .position(|word| {
-                    !WRAPPERS.contains(word)
+                .enumerate()
+                .position(|(index, word)| {
+                    let skipped = value;
+                    value = XARGS_VALUE_FLAGS.contains(word) && words[..index].contains(&XARGS);
+                    !skipped
+                        && !WRAPPERS.contains(word)
                         && !word.starts_with('-')
                         && !word.contains('=')
                         && !word.chars().all(|c| c.is_ascii_digit())

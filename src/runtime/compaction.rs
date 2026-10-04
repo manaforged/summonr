@@ -193,6 +193,13 @@ impl<P: Provider> Loop<P> {
         else {
             return Ok(());
         };
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "compacting the context…".to_string(),
+            },
+        )?;
         let Some(summary) = self
             .summarize(&messages[0], &messages[1..keep_from])
             .await?

@@ -122,15 +122,11 @@ impl State {
         self.opener = opener.as_ref().map(|_| 0);
         self.history.extend(opener.clone());
         self.history.push(Message::system(text));
-        let skip = opener
+        let repeated = opener
             .as_ref()
-            .and_then(|opener| tail.iter().position(|m| m == opener));
-        self.history.extend(
-            tail.iter()
-                .enumerate()
-                .filter(|(index, _)| Some(*index) != skip)
-                .map(|(_, m)| m.clone()),
-        );
+            .is_some_and(|opener| tail.first() == Some(opener));
+        self.history
+            .extend(tail.iter().skip(usize::from(repeated)).cloned());
     }
 
     fn apply_end(&mut self, end: &Line) {

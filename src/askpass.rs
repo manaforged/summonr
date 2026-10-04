@@ -137,11 +137,11 @@ pub fn start(_send: impl Fn(Request) + Send + 'static) -> Result<()> {
 fn serve(mut stream: std::os::unix::net::UnixStream, send: &impl Fn(Request)) {
     use std::io::{BufRead, BufReader, Read, Write};
 
-    let mut asker = String::new();
+    let asker = peer::asker(&stream, ASKER_CHARS);
     let mut prompt = String::new();
     {
         let mut reader = BufReader::new(Read::by_ref(&mut stream).take(PROMPT_BYTES));
-        if reader.read_line(&mut asker).is_err() || reader.read_line(&mut prompt).is_err() {
+        if reader.read_line(&mut prompt).is_err() {
             return;
         }
     }
@@ -345,12 +345,7 @@ fn ask(socket: &std::ffi::OsStr, prompt: &str) -> i32 {
         eprintln!("summonr askpass: the summonr session is not reachable");
         return 1;
     };
-    let asker: String = parent_command()
-        .replace(['\n', '\r'], " ")
-        .chars()
-        .take(ASKER_CHARS)
-        .collect();
-    if writeln!(stream, "{asker}\n{}", prompt.replace(['\n', '\r'], " ")).is_err() {
+    if writeln!(stream, "{}", prompt.replace(['\n', '\r'], " ")).is_err() {
         return 1;
     }
     let mut secret = Zeroizing::new(String::new());
@@ -365,23 +360,14 @@ fn ask(socket: &std::ffi::OsStr, prompt: &str) -> i32 {
     0
 }
 
-#[cfg(unix)]
-fn parent_command() -> String {
-    std::process::Command::new("ps")
-        .args(["-o", "command=", "-p"])
-        .arg(std::os::unix::process::parent_id().to_string())
-        .output()
-        .ok()
-        .filter(|output| output.status.success())
-        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_string())
-        .unwrap_or_default()
-}
-
 #[cfg(not(unix))]
 fn ask(_socket: &std::ffi::OsStr, _prompt: &str) -> i32 {
     eprintln!("summonr askpass: secret prompts need a Unix host");
     1
 }
+
+#[cfg(unix)]
+mod peer;
 
 #[cfg(all(test, unix))]
 #[path = "askpass_tests.rs"]

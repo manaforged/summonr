@@ -83,6 +83,8 @@ fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
         "find ~ -execdir rm -rf {} +",
         "bash -c -- 'rm -rf ~'",
         "echo 'rm -rf ~' | xargs -I{} sh -c {}",
+        "echo 'rm -rf ~' | xargs -I {} sh -c {}",
+        "echo 'rm -rf ~' | xargs -n 1 -I % sh -c %",
     ] {
         assert!(
             super::danger(command, workspace, workspace, Gate::Risky).is_some(),

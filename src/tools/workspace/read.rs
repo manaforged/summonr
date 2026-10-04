@@ -5,7 +5,7 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::error::{Error, Result};
-use crate::hashline::tagged_lines;
+use crate::hashline::{Tags, line_hash, tagged_lines};
 
 use super::image::image_type;
 use super::{ToolRegistry, object_string, object_usize, parse_args};
@@ -23,6 +23,7 @@ enum Opened {
 #[derive(Default)]
 struct Page {
     window: Vec<String>,
+    hashes: Vec<String>,
     bytes: usize,
     total: usize,
     truncated: bool,
@@ -35,12 +36,13 @@ impl Page {
         !self.truncated && self.total >= first && self.total < first.saturating_add(limit)
     }
 
-    fn keep(&mut self, line: String, clipped: bool) {
+    fn keep(&mut self, line: String, hash: String, clipped: bool) {
         let size = line.len().saturating_add(1);
         if self.window.is_empty() || self.bytes.saturating_add(size) <= READ_PAGE_BYTES {
             self.bytes = self.bytes.saturating_add(size);
             self.clipped |= clipped;
             self.window.push(line);
+            self.hashes.push(hash);
         } else {
             self.truncated = true;
         }
@@ -58,6 +60,11 @@ impl Page {
             )));
         }
         let shown = self.window.len();
+        let tags = if tags {
+            Tags::Given(&self.hashes)
+        } else {
+            Tags::Off
+        };
         let body = tagged_lines(&self.window, first, self.total, tags);
         let body = if self.unknown {
             body.replacen(&format!("/{}", self.total), "/unknown", 1)
@@ -223,8 +230,9 @@ fn scan(
         };
         let over = read_bytes > READ_MAX_WORK_BYTES;
         if page.wants(first, limit) {
+            let hash = line_hash(body.strip_suffix(b"\r").unwrap_or(body));
             let (line, clipped) = decode(body, over && !ended);
-            page.keep(line, clipped);
+            page.keep(line, hash, clipped);
         }
         page.total += 1;
         if over {
@@ -255,3 +263,7 @@ fn decode(raw: &[u8], partial: bool) -> (String, bool) {
     }
     (text, clipped)
 }
+
+#[cfg(test)]
+#[path = "read_tests.rs"]
+mod tests;

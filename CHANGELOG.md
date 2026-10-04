@@ -110,6 +110,10 @@ First public release.
 
 ### Fixed
 
+- Tools: a pre-tool hook that fails or times out blocks the call and its
+  helpers are stopped; tags on lines longer than 8 KB match their edits;
+  MCP over HTTP delivers progress as it arrives, caps each event, and
+  cancels a stopped call on the server.
 - Providers: a long tool-argument stream no longer trips the stall
   timeout; a rejected OAuth token is refreshed instead of reused; OAuth
   errors never echo the token reply; cached tokens without a listed

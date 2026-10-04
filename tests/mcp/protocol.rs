@@ -124,7 +124,7 @@ pub(crate) fn an_aborted_call_is_cancelled() {
     session.run(
         &model,
         &session.server("fixture1", ""),
-        &["--max-secs", "2"],
+        &["--max-secs", "5"],
     );
     drop(
         session.received_until("fixture1", Duration::from_secs(5), |received| {

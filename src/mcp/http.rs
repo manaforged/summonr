@@ -16,6 +16,7 @@ pub(super) struct Http {
     auth: Option<crate::provider::Auth>,
     expired: bool,
     next: i64,
+    inflight: Option<Value>,
 }
 
 enum Failure {
@@ -35,6 +36,8 @@ impl Failure {
 struct Events {
     start: usize,
     searched: usize,
+    reply: Option<Result<Value>>,
+    oversize: bool,
 }
 
 impl Http {
@@ -56,6 +59,7 @@ impl Http {
             auth,
             expired: false,
             next: 1,
+            inflight: None,
         })
     }
 
@@ -70,7 +74,9 @@ impl Http {
     }
 
     pub(super) async fn initialize(&mut self, params: Value) -> Result<Option<Value>> {
-        let result = match self.exchange("initialize", params, &mut |_| {}).await {
+        let reply = self.exchange("initialize", params, &mut |_| {}).await;
+        self.inflight = None;
+        let result = match reply {
             Ok(result) => result,
             Err(Failure::Refused(_)) => return Ok(None),
             Err(Failure::Unreachable(error)) => return Err(error),
@@ -94,9 +100,23 @@ impl Http {
         params: Value,
         on_note: &mut (dyn FnMut(Notice<'_>) + Send),
     ) -> Result<Value> {
-        self.exchange(method, params, on_note)
-            .await
-            .map_err(Failure::error)
+        let reply = self.exchange(method, params, on_note).await;
+        self.inflight = None;
+        reply.map_err(Failure::error)
+    }
+
+    pub(super) async fn cancel_inflight(&mut self) {
+        let Some(id) = self.inflight.take() else {
+            return;
+        };
+        let method = "notifications/cancelled";
+        let body = rpc::notification(
+            method,
+            json!({"requestId": id, "reason": "the user stopped the call"}),
+        );
+        if let Err(error) = self.post(method, &Value::Null, &body).await {
+            eprintln!("mcp cancel was not delivered: {error}");
+        }
     }
 
     async fn exchange(
@@ -108,6 +128,7 @@ impl Http {
         let id = json!(self.next);
         self.next += 1;
         let body = rpc::request(&id, method, params.clone());
+        self.inflight = Some(id.clone());
         let response = self
             .post(method, &params, &body)
             .await
@@ -116,56 +137,18 @@ impl Http {
             self.session = Some(session.to_string());
         }
         let status = response.status();
-        let stream = response
-            .header("content-type")
-            .is_some_and(|kind| kind.contains("text/event-stream"));
-        let mut events = Events::default();
-        let body = response
-            .read_until(MCP_FRAME_MAX + 1, |body, _| {
-                stream && events.replied(body, &id)
-            })
-            .await
-            .map_err(|error| {
-                Failure::Unreachable(Error::Tool(format!("`{method}` response broke: {error}")))
-            })?;
-        if body.len() > MCP_FRAME_MAX {
-            return Err(Failure::Unreachable(Error::Tool(format!(
-                "a reply to `{method}` was over {} MiB; summonr dropped it",
-                MCP_FRAME_MAX / (1024 * 1024)
-            ))));
-        }
-        let text = String::from_utf8_lossy(&body);
         if !status.is_success() {
+            let body = response
+                .read_until(MCP_FRAME_MAX + 1, |_, _| false)
+                .await
+                .unwrap_or_default();
             self.expired = status == StatusCode::NOT_FOUND && self.session.is_some();
-            let head: String = text.chars().take(200).collect();
+            let head: String = String::from_utf8_lossy(&body).chars().take(200).collect();
             return Err(Failure::Refused(Error::Tool(format!(
                 "`{method}` returned HTTP {status}: {head}"
             ))));
         }
-        let lines: Vec<&str> = if stream {
-            text.lines()
-                .filter_map(|line| line.strip_prefix("data:"))
-                .map(str::trim)
-                .collect()
-        } else {
-            vec![text.as_ref()]
-        };
-        lines
-            .into_iter()
-            .find_map(|line| match rpc::parse(line) {
-                Ok(Frame::Response {
-                    id: got,
-                    result,
-                    error,
-                }) if got == id => Some(rpc::outcome(method, result, error)),
-                Ok(Frame::Notification { method, params }) => {
-                    on_note(rpc::notice(&method, &params));
-                    None
-                }
-                Ok(Frame::Response { .. } | Frame::Request { .. }) | Err(_) => None,
-            })
-            .unwrap_or_else(|| Err(Error::Tool(format!("`{method}` returned no response"))))
-            .map_err(Failure::Refused)
+        read_reply(response, &id, method, on_note).await
     }
 
     async fn post(&self, method: &str, params: &Value, body: &Value) -> Result<leyline::Response> {
@@ -202,28 +185,108 @@ impl Http {
     }
 }
 
+async fn read_reply(
+    response: leyline::Response,
+    id: &Value,
+    method: &str,
+    on_note: &mut (dyn FnMut(Notice<'_>) + Send),
+) -> std::result::Result<Value, Failure> {
+    let stream = response
+        .header("content-type")
+        .is_some_and(|kind| kind.contains("text/event-stream"));
+    let mut events = Events::default();
+    let body = response
+        .read_until(MCP_FRAME_MAX + 1, |body, _| {
+            stream && events.feed(body, id, method, on_note)
+        })
+        .await
+        .map_err(|error| {
+            Failure::Unreachable(Error::Tool(format!("`{method}` response broke: {error}")))
+        })?;
+    if events.reply.is_none() && !events.oversize {
+        let rest = body.get(events.start..).unwrap_or_default();
+        if stream {
+            events.take(rest, id, method, on_note);
+        } else {
+            events.answer(&String::from_utf8_lossy(rest), id, method, on_note);
+        }
+    }
+    if events.oversize || (events.reply.is_none() && body.len() > MCP_FRAME_MAX) {
+        return Err(Failure::Unreachable(Error::Tool(format!(
+            "a reply to `{method}` was over {} MiB; summonr dropped it",
+            MCP_FRAME_MAX / (1024 * 1024)
+        ))));
+    }
+    events
+        .reply
+        .unwrap_or_else(|| Err(Error::Tool(format!("`{method}` returned no response"))))
+        .map_err(Failure::Refused)
+}
+
 impl Events {
-    fn replied(&mut self, body: &[u8], id: &Value) -> bool {
+    fn feed(
+        &mut self,
+        body: &[u8],
+        id: &Value,
+        method: &str,
+        on_note: &mut (dyn FnMut(Notice<'_>) + Send),
+    ) -> bool {
         while let Some((end, width)) =
             crate::provider::boundary(body, self.searched.max(self.start))
         {
             let event = &body[self.start..end];
             self.start = end + width;
             self.searched = self.start;
-            if answers(event, id) {
+            if event.len() > MCP_FRAME_MAX {
+                self.oversize = true;
                 return true;
             }
+            if self.take(event, id, method, on_note) {
+                return true;
+            }
+        }
+        if body.len().saturating_sub(self.start) > MCP_FRAME_MAX {
+            self.oversize = true;
+            return true;
         }
         self.searched = body.len().saturating_sub(3).max(self.start);
         false
     }
-}
 
-fn answers(event: &[u8], id: &Value) -> bool {
-    String::from_utf8_lossy(event)
-        .lines()
-        .filter_map(|line| line.strip_prefix("data:"))
-        .any(|data| {
-            matches!(rpc::parse(data.trim()), Ok(Frame::Response { id: got, .. }) if got == *id)
-        })
+    fn take(
+        &mut self,
+        event: &[u8],
+        id: &Value,
+        method: &str,
+        on_note: &mut (dyn FnMut(Notice<'_>) + Send),
+    ) -> bool {
+        String::from_utf8_lossy(event)
+            .lines()
+            .filter_map(|line| line.strip_prefix("data:"))
+            .any(|data| self.answer(data, id, method, on_note))
+    }
+
+    fn answer(
+        &mut self,
+        data: &str,
+        id: &Value,
+        method: &str,
+        on_note: &mut (dyn FnMut(Notice<'_>) + Send),
+    ) -> bool {
+        match rpc::parse(data.trim()) {
+            Ok(Frame::Response {
+                id: got,
+                result,
+                error,
+            }) if got == *id => {
+                self.reply = Some(rpc::outcome(method, result, error));
+                true
+            }
+            Ok(Frame::Notification { method, params }) => {
+                on_note(rpc::notice(&method, &params));
+                false
+            }
+            Ok(Frame::Response { .. } | Frame::Request { .. }) | Err(_) => false,
+        }
+    }
 }

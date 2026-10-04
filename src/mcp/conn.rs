@@ -144,9 +144,10 @@ impl Conn {
         }
     }
 
-    pub(super) fn cancel_inflight(&mut self) {
-        if let Transport::Stdio(client) = &mut self.transport {
-            client.cancel_inflight();
+    pub(super) async fn cancel_inflight(&mut self) {
+        match &mut self.transport {
+            Transport::Stdio(client) => client.cancel_inflight(),
+            Transport::Http(http) => http.cancel_inflight().await,
         }
     }
 

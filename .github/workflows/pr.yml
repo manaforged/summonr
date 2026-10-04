@@ -56,10 +56,14 @@ jobs:
           done
           echo "ok=$ok" >> "$GITHUB_OUTPUT"
           if [ "$ok" = false ]; then
-            if [ -n "$TOKEN" ]; then
-              exit 1
+            if [ -z "$TOKEN" ]; then
+              msg="cargo fetch failed and CI_CROSS_REPO_TOKEN is not set, so private dependencies cannot be fetched. clippy and tests did not run."
+            else
+              msg="cargo fetch failed. clippy and tests did not run."
             fi
-            echo "cargo fetch failed without CI_CROSS_REPO_TOKEN (private dependencies). Only cargo fmt ran on this PR; clippy and tests did not run." >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::$msg"
+            echo "$msg" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
         if: steps.deps.outputs.ok == 'true'

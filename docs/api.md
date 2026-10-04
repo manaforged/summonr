@@ -83,6 +83,12 @@ echo $?
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
 | 2 | A check failed. | `exit` in `src/main/modes.rs` |
 | 3 | Stopped short: budget, stall, or aborted turn. | `src/main/modes.rs`, `src/durable/work.rs` |
+| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `interrupted` in `src/main.rs` |
+| 143 | Terminated by `SIGTERM` (Unix). | `interrupted` in `src/main.rs` |
+| 129 | Hung up by `SIGHUP` (Unix). | `interrupted` in `src/main.rs` |
+
+A signal exit skips the `--worktree` finish: the worktree and its branch
+stay in place, with the run's files uncommitted.
 
 An unknown option is exit code 1 with `unknown option`.
 

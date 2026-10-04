@@ -18,7 +18,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer checks the SHA-256 of the download against the release's `SHA256SUMS` file and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -26,7 +26,7 @@ To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases]
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. Each release file has a build attestation:
+On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release does not prove where the file came from. To check provenance, verify the build attestation that each release file has:
 
 ```sh
 gh attestation verify <file> --repo manaforged/summonr
@@ -150,7 +150,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 | Read | For |
 | --- | --- |
 | [User guide](docs/guide/README.md) | Task pages in reading order. Build the book with `mdbook serve docs`. |
-| [Reference](docs/guide/reference.md) | Every flag, config key, exit code, and environment variable. |
+| [Reference](docs/guide/reference.md) | Flags, config keys, exit codes, and environment variables. |
 | [API map](docs/api.md) | For agents and tools: each job mapped to its symbol or command, the error model, and what is off-limits. |
 | [Architecture](docs/guide/architecture.md) | How it works inside. |
 | [Contributing](CONTRIBUTING.md) | Build, check, and test commands, and where each kind of change goes. |

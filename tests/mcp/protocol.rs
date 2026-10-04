@@ -126,8 +126,9 @@ pub(crate) fn an_aborted_call_is_cancelled() {
         &session.server("fixture1", ""),
         &["--max-secs", "2"],
     );
-    crate::support::pause(Duration::from_millis(200));
-    let received = session.received("fixture1");
+    let received = session.received_until("fixture1", Duration::from_secs(5), |received| {
+        !calls(received, "notifications/cancelled").is_empty()
+    });
     let call = calls(&received, "tools/call")[0]["id"].clone();
     let cancelled = calls(&received, "notifications/cancelled");
     assert_eq!(cancelled.len(), 1, "{received:?}");

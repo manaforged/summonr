@@ -110,6 +110,11 @@ First public release.
 
 ### Fixed
 
+- Terminal UI: tool output can no longer move the cursor or ring the
+  bell; typing y or n while an approval waits goes into the draft;
+  ctrl+a and ctrl+x select and cut in a non-empty composer on Linux and
+  Windows, and ctrl+u, ctrl+k, and ctrl+w can no longer be bound as
+  hotkeys; child lines render the same in the strip and the transcript.
 - Tools: a pre-tool hook that fails or times out blocks the call and its
   helpers are stopped; tags on lines longer than 8 KB match their edits;
   MCP over HTTP delivers progress as it arrives, caps each event, and

@@ -16,6 +16,8 @@ use sigil::prelude::{
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
+const SNIPPET_CELLS: usize = 180;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Conversation,
@@ -153,16 +155,8 @@ impl Picker {
                         prompt.session.id,
                         prompt.session.cwd.as_deref().unwrap_or("")
                     );
-                    let preview = snippet(&pattern, &prompt.text).or_else(|| {
-                        pattern.is_match(&context).then(|| {
-                            prompt
-                                .text
-                                .chars()
-                                .take(180)
-                                .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
-                                .collect()
-                        })
-                    })?;
+                    let preview = snippet(&pattern, &prompt.text)
+                        .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
                     let preview = if prompt.text.is_empty() {
                         format!("{} attached image(s)", prompt.images)
                     } else {
@@ -208,12 +202,16 @@ fn snippet(pattern: &Regex, text: &str) -> Option<String> {
         .rev()
         .nth(24)
         .map_or(0, |(byte, _)| byte);
-    let preview: String = text[start..]
+    let preview = one_line(&text[start..]);
+    Some(format!("{}{}", if start > 0 { "…" } else { "" }, preview))
+}
+
+fn one_line(text: &str) -> String {
+    let flat: String = text
         .chars()
-        .take(180)
         .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
-    Some(format!("{}{}", if start > 0 { "…" } else { "" }, preview))
+    crate::text::ellipsize(&flat, SNIPPET_CELLS)
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {

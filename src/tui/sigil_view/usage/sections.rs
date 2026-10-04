@@ -15,6 +15,7 @@ const TICKS: usize = 6;
 const BAR_CELLS: usize = 16;
 const MODEL_ROWS: usize = 8;
 const PLACE_CELLS: usize = 26;
+const PLACE_NAME_CELLS: usize = 20;
 const NAME_CELLS: usize = 24;
 
 fn inks() -> [Rgba8; 6] {
@@ -292,9 +293,10 @@ pub(super) fn places(report: &Report, metric: Metric) -> NodeBuilder {
     let mut lines = vec![strong("Workspaces")];
     for (name, value) in &report.places {
         let filled = ((value / peak) * PLACE_CELLS as f64).round() as usize;
-        let short: String = name.chars().take(20).collect();
+        let short = crate::text::ellipsize(name, PLACE_NAME_CELLS);
+        let pad = PLACE_NAME_CELLS.saturating_sub(sigil::app::cell_width(&short));
         lines.push(row(vec![
-            colored(format!("{short:<20}"), palette().text),
+            colored(format!("{short}{}", " ".repeat(pad)), palette().text),
             colored("█".repeat(filled.max(1)), palette().accent),
             colored(amount(*value, metric), palette().dim),
         ]));

@@ -39,13 +39,16 @@ fn review(app: &App) -> bool {
     !app.options_active() && app.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
 }
 
+fn answering(app: &App) -> bool {
+    !app.options_active() && app.draft.peek().is_empty() && app.approval.peek().is_some()
+}
+
 fn respond() -> Vec<(Shortcut, Handler)> {
     vec![
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if !app.options_active() && app.approval.peek().is_some_and(|(_, persist)| persist)
-                {
+                if answering(app) && app.approval.peek().is_some_and(|(_, persist)| persist) {
                     event.stop_propagation();
                     app.approval_answer("always");
                 }
@@ -55,7 +58,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             if review(app) {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Send);
-            } else if !app.options_active() && app.approval.peek().is_some() {
+            } else if answering(app) {
                 event.stop_propagation();
                 app.approval_answer("y");
             }
@@ -64,7 +67,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             if review(app) {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
-            } else if !app.options_active() && app.approval.peek().is_some() {
+            } else if answering(app) {
                 event.stop_propagation();
                 app.approval_answer("n");
             }

@@ -29,6 +29,7 @@ use crate::tui::sigil_view::look::Look;
 mod children;
 mod preview;
 mod tools;
+pub(super) use tools::workspace_relative;
 mod tree;
 
 const COMPACT_ROWS: usize = 32;

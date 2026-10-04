@@ -11,6 +11,7 @@ use super::view::root;
 use crate::tools::Event;
 use crate::tui::{Activity, Info, Msg};
 
+mod approval;
 mod attach;
 mod cards;
 mod children;

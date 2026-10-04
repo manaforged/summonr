@@ -12,7 +12,7 @@ pub(crate) use background::Background;
 pub(crate) use diff::DiffLayout;
 pub(crate) use edit::banned_edit;
 pub use hotkeys::Hotkey;
-pub(crate) use hotkeys::{Hotkeys, available};
+pub(crate) use hotkeys::{EditorKey, Hotkeys, available};
 pub(crate) use notify::Notify;
 
 pub(crate) const AUTO_THEME: &str = "auto";

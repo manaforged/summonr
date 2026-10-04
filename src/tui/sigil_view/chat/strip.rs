@@ -19,12 +19,6 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
     }
 }
 
-fn relative(text: &str, roots: &[String]) -> String {
-    roots.iter().fold(text.to_string(), |text, root| {
-        text.replace(&format!(" {root}/"), " ")
-    })
-}
-
 fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
     let meta = if detail {
@@ -57,9 +51,12 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
         .child(text(glyph, tone))
         .child(text(agent.title.clone(), Look::xs(Token::Gray12)))
         .child(
-            text(relative(&agent.last, roots), Look::xs(Token::Gray10))
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+            text(
+                super::entry::workspace_relative(&agent.last, roots),
+                Look::xs(Token::Gray10),
+            )
+            .ellipsize()
+            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
         .child(text(meta, Look::xs(Token::Gray10)))
 }

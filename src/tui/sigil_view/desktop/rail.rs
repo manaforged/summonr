@@ -9,6 +9,7 @@ use super::{icons, open};
 use crate::session;
 
 const RAIL: f32 = 252.0;
+const PREVIEW_CELLS: usize = 36;
 
 pub(super) fn rail(app: App) -> NodeBuilder {
     let mut column = container().label("Panes").layout(
@@ -90,7 +91,7 @@ fn sessions(app: &App) -> NodeBuilder {
         let title = info
             .name
             .clone()
-            .unwrap_or_else(|| info.preview.chars().take(36).collect());
+            .unwrap_or_else(|| crate::text::ellipsize(&info.preview, PREVIEW_CELLS));
         let live = info.id == current;
         let open = app.clone();
         let id = info.id.clone();

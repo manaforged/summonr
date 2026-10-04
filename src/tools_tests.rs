@@ -395,3 +395,49 @@ fn the_full_output_note_counts_every_line_of_a_large_log() {
     assert!(note.ends_with("— 700 lines]"), "got {note}");
     assert_eq!(spill::full_output_note(&log, false), "");
 }
+
+#[cfg(sandboxed)]
+#[test]
+fn a_contained_read_only_registry_runs_read_commands_and_refuses_writes() {
+    let (dir, mut tools) = workspace(&[("notes.txt", "one\ntwo\n")]);
+    tools.contain_read_only();
+    let counted = run(
+        &tools,
+        "run_command",
+        serde_json::json!({"command": "wc -l notes.txt"}),
+    );
+    assert!(counted.contains("2 notes.txt"), "{counted}");
+    let call = ToolCall {
+        id: "t2".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({"command": "echo x > made.txt"}).to_string(),
+        },
+        continuation: None,
+    };
+    drop(
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(tools.execute_outcome(&call)),
+    );
+    assert!(!dir.path().join("made.txt").exists());
+}
+
+#[test]
+fn a_search_runs_across_several_paths() {
+    let (dir, tools) = workspace(&[
+        ("a.rs", "fn retry() {}\n"),
+        ("b.rs", "fn retry_twice() {}\n"),
+    ]);
+    std::fs::create_dir_all(dir.path().join("c")).unwrap();
+    let text = run(
+        &tools,
+        "read",
+        serde_json::json!({"op": "search", "pattern": "retry", "paths": ["a.rs", "b.rs"]}),
+    );
+    assert!(text.contains("a.rs") && text.contains("b.rs"), "{text}");
+}

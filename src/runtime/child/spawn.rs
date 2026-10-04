@@ -30,6 +30,7 @@ impl<P: Provider> Loop<P> {
                 mutated: false,
                 grant: None,
                 images: Vec::new(),
+                patch: None,
             },
             usage: Usage::default(),
             millis: 0,
@@ -94,7 +95,7 @@ impl<P: Provider> Loop<P> {
         )?;
         child.tools = self.tools.child_at(&workspace, &child.session_id())?;
         if args.access == Access::Research {
-            child.tools.set_read_only(true);
+            child.tools.contain_read_only();
         }
         child.depth = 1;
         child.mode = self.mode;
@@ -124,6 +125,8 @@ impl<P: Provider> Loop<P> {
             event: Box::new(Event::Spawned {
                 assignment: record.assignment.clone(),
                 access: record.access,
+                call: args.call.clone(),
+                background: args.background,
             }),
         }));
         Ok(Run {
@@ -212,6 +215,7 @@ impl<P: Provider> Loop<P> {
                 mutated,
                 grant: None,
                 images: Vec::new(),
+                patch: None,
             },
             usage: done.usage,
             millis: done.millis,

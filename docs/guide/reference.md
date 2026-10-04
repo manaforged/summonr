@@ -356,6 +356,8 @@ presets, `/pane "chat | files 30%"` sets the split, and
 ctrl+shift+←/→ resizes it. The layout persists in `~/.summonr/config.toml`
 as `layout`. `ctrl+o` opens the settings modal, where every hotkey is
 editable; the choice is stored under `[hotkeys]` in the same file.
+`ctrl+n` folds every thinking block, then every tool output (`tools =
+"hidden"`), then shows them all again; a click still opens one block.
 
 `ctrl+x` (or `/pane diff`, `/diff`) shows the changes against the base:
 the worktree base when you passed `--worktree`, `HEAD` otherwise. Each
@@ -390,8 +392,9 @@ latest session in this directory.
 
 While a turn runs, a row above the composer shows a spinner, what the
 model is doing (`thinking`, or the tool it is running), the round, the
-seconds so far, the output rate, and the queue count; the composer's bottom
-border keeps the keys: `esc` cancels, `enter` steers, `tab` queues.
+seconds so far, the output rate, and the queue count. A message sent during
+the turn waits in the queue for the next turn; `enter` on an empty composer
+sends the queue into the running turn instead.
 
 The output rate is tokens per second. While text streams it is an
 estimate: characters received in the last three seconds, divided by the
@@ -399,7 +402,16 @@ characters per token measured on the previous round (4 until then), over
 that span. When the provider reports the round's usage, the rate becomes
 exact: output tokens over the time between the first and last streamed
 chunk, or over the whole round when nothing streamed, as in a round that
-only called tools. The footer shows the last round's rate after the turn.
+only called tools.
+
+When a turn ends while the terminal is not focused, summonr rings the bell
+and sends a desktop notification (OSC 9) naming the workspace. `notify` in
+`config.toml`, or the Notify row in `/settings`, sets `off`, `turn` (the
+default), or `all`, which also notifies when an approval is waiting.
+
+The footer shows the workspace and branch on the left and, on the right, the
+session's spend when the model has a price or the provider reports a cost,
+then the context and cache meters.
 
 When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`,
 such as an ssh key passphrase, a **Credential required** dialog opens.
@@ -412,8 +424,8 @@ command output shows it as `[secret]`.
 
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
-| `enter` | send | steer: delivered after the current tool calls |
-| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri` | queue: delivered after the turn |
+| `enter` | send | queue for the next turn; on an empty composer, send the queue into the running turn after the current tool calls |
+| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri` | the same |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
@@ -572,7 +584,10 @@ stay with the parent. The parent verifies after they finish. Pass
 `--worktree` on the session to isolate the whole run.
 
 A `research` child reads the parent workspace. It cannot write files or
-start background commands; shell commands run only inside the sandbox.
+start background commands. Its shell commands run in a read-only sandbox
+(Seatbelt on macOS, bubblewrap on Linux) that summonr turns on for it, so
+it can run checks, searches, and scripts but cannot change the workspace;
+where no sandbox is available it has no shell.
 Each child uses the endpoint context window. If the parent has a token or
 time budget, the children share what remains of it; otherwise a child runs
 until it finishes or you cancel it. Children have no web tools or another
@@ -880,8 +895,14 @@ Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token imp
 
 ## Theme
 
-`theme` in `config.toml` selects the `space` preset. Every other color is a
-named token you can override in a theme file:
+`theme` in `config.toml` selects `space` (the default), `nord`, `dawn`
+(a low-glare light theme), or `auto`, which picks `space` or `dawn` from
+the terminal's background. The Theme row in `/settings` cycles them.
+`background = "terminal"` leaves the background unpainted so the
+terminal's own background (and any transparency) shows through;
+`"theme"`, the default, paints the theme's `base` color. The Background
+row in `/settings` switches between them. Every other color is a named
+token you can override in a theme file:
 
 ```toml
 accent = "#698cd2"
@@ -892,7 +913,7 @@ code_bg = "#1e202a"
 Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to
 `<workspace>/.summonr/theme.toml` for one project. Unset tokens keep the preset.
 Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
-The Theme row in `/settings` switches between the two theme files. The tokens are
+Both files apply on top of the chosen theme. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
 `green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,
 `code_bg`, `diff_add_bg`, `diff_del_bg`, `code_comment`,

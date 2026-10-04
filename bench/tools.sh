@@ -15,10 +15,10 @@ fi
 
 here=$(cd "$(dirname "$0")" && pwd)
 pin() { awk -v k="$1" '$1==k{print $2}' "$here/tools.lock"; }
-hermes=$(pin hermes) uv=$(pin uv)
+hermes=$(pin hermes) uv=$(pin uv) bun=$(pin bun)
 
 docker run --rm -v "$out":/opt/bench \
-  -e HERMES="$hermes" -e UV="$uv" -e OWNER="$(id -u):$(id -g)" \
+  -e HERMES="$hermes" -e UV="$uv" -e BUN="$bun" -e OWNER="$(id -u):$(id -g)" \
   ${src:+-v "$src":/src:ro} \
   ${sigil:+-v "$sigil":/sigil:ro} \
   -v "$HOME/.cargo/git:/root/.cargo/git" \
@@ -27,7 +27,7 @@ docker run --rm -v "$out":/opt/bench \
   -w /opt/bench debian:bookworm bash -euo pipefail -c "
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
 apt-get update -qq >/dev/null
-apt-get install -y -qq curl ca-certificates git openssh-client make cmake clang libclang-dev g++ pkg-config libssl-dev >/dev/null
+apt-get install -y -qq curl ca-certificates git openssh-client unzip make cmake clang libclang-dev g++ pkg-config libssl-dev >/dev/null
 if [ -d /src ]; then
   mkdir -p /root/ssh2
   cp /root/.ssh/id_ed25519 /root/.ssh/known_hosts /root/ssh2/
@@ -46,6 +46,11 @@ if [ -n \"\$HERMES\" ] && [ -n \"\$UV\" ]; then
   git clone --quiet --depth 1 --branch \$HERMES https://github.com/NousResearch/hermes-agent hermes
   (cd hermes && UV_PYTHON_INSTALL_DIR=/opt/bench/hermes-python ../uv/uv sync --quiet --frozen --python 3.12)
 fi
+if [ -n \"\$BUN\" ]; then
+  rm -rf bun /tmp/bun.zip && mkdir -p bun
+  curl -fsSL -o /tmp/bun.zip https://github.com/oven-sh/bun/releases/download/bun-v\$BUN/bun-linux-x64.zip
+  unzip -q -j /tmp/bun.zip -d bun && chmod 755 bun/bun
+fi
 chown -R \"\$OWNER\" /opt/bench
 "
 
@@ -62,7 +67,7 @@ fi
 if [ -x "$out/summonr/bin/summonr" ]; then
   echo "summonr_version $("$out/summonr/bin/summonr" --version | awk '{print $2}')" >> "$out/versions.txt"
 fi
-pi=$(pin pi) opencode2=$(pin opencode2)
+pi=$(pin pi) opencode2=$(pin opencode2) omp=$(pin omp)
 if [ -x "$out/node/bin/node" ] && [ -n "$pi" ]; then
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/pi" "@earendil-works/pi-coding-agent@$pi"
   echo "node $("$out/node/bin/node" --version | tr -d v)" >> "$out/versions.txt"
@@ -72,6 +77,12 @@ if [ -x "$out/node/bin/node" ] && [ -n "$opencode2" ]; then
   rm -rf "$out/opencode"
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/opencode" "@opencode/cli@$opencode2"
   echo "opencode2 $("$out/node/bin/node" -p "require('$out/opencode/lib/node_modules/@opencode/cli/package.json').version")" >> "$out/versions.txt"
+fi
+if [ -x "$out/node/bin/node" ] && [ -n "$omp" ]; then
+  rm -rf "$out/omp"
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/omp" "@oh-my-pi/pi-coding-agent@$omp"
+  echo "omp $("$out/node/bin/node" -p "require('$out/omp/lib/node_modules/@oh-my-pi/pi-coding-agent/package.json').version")" >> "$out/versions.txt"
+  echo "bun $("$out/bun/bun" --version)" >> "$out/versions.txt"
 fi
 if [ -n "$hermes" ]; then
   [ -x "$out/hermes/.venv/bin/hermes" ] || { echo "missing tool entrypoint: hermes/.venv/bin/hermes" >&2; exit 1; }

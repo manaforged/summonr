@@ -75,6 +75,14 @@ opencode2)
     "$tools/opencode/bin/opencode2" run --standalone --auto --format json \
     --model "$ocprovider/$BENCH_MODEL${BENCH_EFFORT:+#$BENCH_EFFORT}" -- "$prompt" </dev/null
   ;;
+omp)
+  mkdir -p "$home/.omp/agent"
+  printf 'providers:\n  %s:\n    baseUrl: %s\n    modelOverrides:\n      %s:\n        maxTokens: %s\n' \
+    "$provider" "$BENCH_BASE" "$BENCH_MODEL" "$max_tokens" > "$home/.omp/agent/models.yml"
+  HOME=$home ZAI_API_KEY=$key DEEPSEEK_API_KEY=$key \
+    "$tools/bun/bun" "$tools/omp/lib/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js" \
+    -p --mode json --no-session --yolo --model "$provider/$BENCH_MODEL" ${BENCH_EFFORT:+--thinking "$BENCH_EFFORT"} "$prompt" </dev/null
+  ;;
 hermes)
   case "$provider" in
   zai*) hprovider=zai baseenv=GLM_BASE_URL ;;

@@ -122,12 +122,15 @@ impl State {
         self.opener = opener.as_ref().map(|_| 0);
         self.history.extend(opener.clone());
         self.history.push(Message::system(text));
-        let tail = if tail.first().is_some_and(|m| Some(m) == opener.as_ref()) {
-            &tail[1..]
-        } else {
-            tail
-        };
-        self.history.extend(tail.iter().cloned());
+        let skip = opener
+            .as_ref()
+            .and_then(|opener| tail.iter().position(|m| m == opener));
+        self.history.extend(
+            tail.iter()
+                .enumerate()
+                .filter(|(index, _)| Some(*index) != skip)
+                .map(|(_, m)| m.clone()),
+        );
     }
 
     fn apply_end(&mut self, end: &Line) {

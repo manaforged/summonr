@@ -214,6 +214,10 @@ impl SessionDriver {
         &self.state.history
     }
 
+    pub(crate) fn opener(&self) -> Option<usize> {
+        self.state.opener
+    }
+
     pub(crate) fn spent_tokens(&self) -> u64 {
         self.state.spent
     }

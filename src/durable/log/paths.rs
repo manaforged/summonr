@@ -32,11 +32,17 @@ pub(crate) fn records<T: DeserializeOwned>(path: &Path) -> io::Result<Vec<T>> {
     let text = std::str::from_utf8(&bytes[..complete])
         .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
     let mut lines = Vec::new();
+    let mut first = true;
     for line in text.lines() {
         if line.trim().is_empty() {
             continue;
         }
-        lines.push(serde_json::from_str(line)?);
+        match serde_json::from_str(line) {
+            Ok(line) => lines.push(line),
+            Err(error) if first => return Err(error.into()),
+            Err(_) => {}
+        }
+        first = false;
     }
     if let Ok(tail) = std::str::from_utf8(&bytes[complete..])
         && !tail.trim().is_empty()

@@ -110,6 +110,11 @@ First public release.
 
 ### Fixed
 
+- Sessions: auto-compaction no longer keeps the current prompt twice;
+  a failed model round with partial text keeps history in step for later
+  repairs; a refused dangerous command asks again next time; cancelling a
+  turn stops its background jobs; a session with one bad log line still
+  resumes; an aborted child reports its real reason.
 - Sandbox and policy: `--strict` refuses an allow-listed command that
   destroys work, such as `git reset --hard`; git hooks, config, and
   commondir stay protected inside submodules too; the ask gate sees

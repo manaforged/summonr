@@ -10,7 +10,7 @@ use crate::durable::log::{Usage as Meter, UsageMeta};
 use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::mail::{Mail, Mailbox};
-use crate::policy::{Grant, Policy};
+use crate::policy::Policy;
 use crate::provider::{
     AssistantMessage, CompletionRequest, Effort, Message, Price, Provider, Role, ToolCall,
     ToolDefinition, ToolFunction, ToolKind, Usage, UserInput,
@@ -134,7 +134,6 @@ pub struct Loop<P> {
     tasks: bool,
     plan_sandbox: bool,
     interactive: bool,
-    asked: Vec<Grant>,
     spawned: BTreeMap<String, child::Spawned>,
     events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
     catalog_frozen: bool,

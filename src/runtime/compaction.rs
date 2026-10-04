@@ -189,7 +189,8 @@ impl<P: Provider> Loop<P> {
                 .unwrap_or(chars / 4)
                 .max(1)
         });
-        let Some(keep_from) = compact_boundary(messages, tail_chars, keep) else {
+        let Some(keep_from) = compact_boundary(messages, tail_chars, keep, self.session.opener())
+        else {
             return Ok(());
         };
         let Some(summary) = self
@@ -312,10 +313,16 @@ fn compact_boundary(
     messages: &[Message],
     target_chars: usize,
     reasoning_on_wire: bool,
+    opener: Option<usize>,
 ) -> Option<usize> {
-    let mut start = tail_start(messages, target_chars, reasoning_on_wire);
-    while start > 1 && messages[start].role == Role::Tool {
+    let floor = opener.map_or(1, |index| (index + 2).min(messages.len()));
+    let mut start = tail_start(messages, target_chars, reasoning_on_wire).max(floor);
+    while start > floor && messages.get(start).is_some_and(|m| m.role == Role::Tool) {
         start -= 1;
     }
     (start > 1).then_some(start)
 }
+
+#[cfg(test)]
+#[path = "compaction_tests.rs"]
+mod tests;

@@ -153,7 +153,6 @@ impl<P: Provider> Loop<P> {
             tasks: true,
             plan_sandbox: false,
             interactive: false,
-            asked: Vec::new(),
             spawned: BTreeMap::new(),
             events: tokio::sync::mpsc::unbounded_channel(),
             catalog_frozen: false,

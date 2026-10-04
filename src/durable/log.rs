@@ -226,8 +226,10 @@ impl Log {
         bytes.push(b'\n');
         let file = &mut self.file;
         crate::tools::blocking(|| {
-            file.write_all(&bytes)?;
-            file.flush()
+            let before = file.metadata()?.len();
+            file.write_all(&bytes)
+                .and_then(|()| file.flush())
+                .inspect_err(|_| drop(file.set_len(before)))
         })
     }
 

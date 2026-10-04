@@ -96,106 +96,50 @@ impl<P: Provider> Loop<P> {
                 }
                 Err(WaitError::Provider(error)) => {
                     let failure = error.provider_failure();
-                    let retryable = !retried
-                        && failure.is_some_and(|failure| {
-                            failure.kind == ProviderFailureKind::Authentication
-                                || (failure.partial_output
-                                    && failure.status.is_none()
-                                    && matches!(
-                                        failure.kind,
-                                        ProviderFailureKind::Transport
-                                            | ProviderFailureKind::Server
-                                    ))
-                        });
-                    if retryable {
-                        self.session.partial = crate::provider::Partial::default();
-                    }
-                    self.session
-                        .fail_provider(
-                            durable_attempt,
-                            &error.to_string(),
-                            super::elapsed_millis(started),
-                            super::billable(&error),
-                        )
-                        .map_err(super::session_err)?;
-                    self.emit_records(events, emit)?;
-                    self.sync_usage(emit);
+                    let retryable = !retried && failure.is_some_and(retryable_failure);
+                    let kind = failure.map(|failure| failure.kind);
+                    self.record_failure(
+                        durable_attempt,
+                        &error,
+                        started,
+                        retryable,
+                        messages,
+                        events,
+                        emit,
+                    )?;
                     if self.round_abort().is_some() {
                         return Ok(None);
                     }
                     let text = error.to_string();
-                    if failure.is_some_and(|failure| {
-                        failure.kind == ProviderFailureKind::MalformedToolCall
-                    }) {
+                    if kind == Some(ProviderFailureKind::MalformedToolCall) {
                         if repairs >= REPAIR_LIMIT {
                             return Err(error);
                         }
                         repairs += 1;
-                        let edits = repair_arguments(&messages[1..]);
-                        self.rewrite(messages, edits)?;
-                        let input = UserInput::from(
-                            "[summon control: the provider rejected the previous tool call because \
-                             its arguments were invalid JSON.]",
-                        );
-                        self.session.steer(&input).map_err(super::session_err)?;
-                        messages.push(Message::user(input));
-                        self.push_event(
-                            events,
-                            emit,
-                            Event::Note {
-                                text: "malformed tool-call JSON — requesting a repaired call"
-                                    .to_string(),
-                            },
-                        )?;
+                        self.repair_call(messages, events, emit)?;
                         continue;
                     }
-                    if failure
-                        .is_some_and(|failure| failure.kind == ProviderFailureKind::ContextOverflow)
-                    {
+                    if kind == Some(ProviderFailureKind::ContextOverflow) {
                         if overflows >= REPAIR_LIMIT {
                             return Err(error);
                         }
                         overflows += 1;
-                        if let Some(cap) = crate::provider::input_cap(&text) {
-                            self.set_context_window(Some(cap));
-                        }
-                        self.auto_compact(messages, tools.json.len(), &mut usage, events, emit)
-                            .await?;
-                        let edits = force_compact(&messages[1..]);
-                        self.rewrite(messages, edits)?;
-                        self.tools.forget_reads();
-                        self.push_event(
+                        self.recover_overflow(
+                            &text,
+                            messages,
+                            tools.json.len(),
+                            &mut usage,
                             events,
                             emit,
-                            Event::Note {
-                                text: "context overflow — compacted old tool results, retrying"
-                                    .to_string(),
-                            },
-                        )?;
+                        )
+                        .await?;
                         continue;
                     }
                     if !retryable {
-                        if self.seats.contains_key(&role) {
+                        if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {
                             return Err(error);
                         }
-                        let Some((provider, model)) = self.fallbacks.pop_front() else {
-                            return Err(error);
-                        };
-                        let from = std::mem::replace(&mut self.model, model);
-                        self.provider = provider;
-                        self.context_sample = None;
                         retried = false;
-                        self.push_event(
-                            events,
-                            emit,
-                            Event::Note {
-                                text: format!(
-                                    "{from} failed: {} — falling back to {}",
-                                    text.lines().next().unwrap_or("unknown"),
-                                    self.model
-                                ),
-                            },
-                        )?;
                         continue;
                     }
                     retried = true;
@@ -213,4 +157,124 @@ impl<P: Provider> Loop<P> {
             }
         }
     }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "one record path for a failed provider attempt"
+    )]
+    fn record_failure(
+        &mut self,
+        attempt: Attempt,
+        error: &Error,
+        started: Instant,
+        retryable: bool,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if retryable {
+            self.session.partial = crate::provider::Partial::default();
+        }
+        let interrupted = (!self.session.partial.text.is_empty()).then(|| Message {
+            role: Role::Assistant,
+            ..Message::system(self.session.partial.text.clone())
+        });
+        self.session
+            .fail_provider(
+                attempt,
+                &error.to_string(),
+                super::elapsed_millis(started),
+                super::billable(error),
+            )
+            .map_err(super::session_err)?;
+        messages.extend(interrupted);
+        self.emit_records(events, emit)?;
+        self.sync_usage(emit);
+        Ok(())
+    }
+
+    fn repair_call(
+        &mut self,
+        messages: &mut Vec<Message>,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let edits = repair_arguments(&messages[1..]);
+        self.rewrite(messages, edits)?;
+        let input = UserInput::from(
+            "[summon control: the provider rejected the previous tool call because \
+             its arguments were invalid JSON.]",
+        );
+        self.session.steer(&input).map_err(super::session_err)?;
+        messages.push(Message::user(input));
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "malformed tool-call JSON — requesting a repaired call".to_string(),
+            },
+        )
+    }
+
+    async fn recover_overflow(
+        &mut self,
+        text: &str,
+        messages: &mut Vec<Message>,
+        tool_bytes: usize,
+        usage: &mut Usage,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        if let Some(cap) = crate::provider::input_cap(text) {
+            self.set_context_window(Some(cap));
+        }
+        self.auto_compact(messages, tool_bytes, usage, events, emit)
+            .await?;
+        let edits = force_compact(&messages[1..]);
+        self.rewrite(messages, edits)?;
+        self.tools.forget_reads();
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: "context overflow — compacted old tool results, retrying".to_string(),
+            },
+        )
+    }
+
+    fn fall_back(
+        &mut self,
+        text: &str,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let Some((provider, model)) = self.fallbacks.pop_front() else {
+            return Ok(false);
+        };
+        let from = std::mem::replace(&mut self.model, model);
+        self.provider = provider;
+        self.context_sample = None;
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!(
+                    "{from} failed: {} — falling back to {}",
+                    text.lines().next().unwrap_or("unknown"),
+                    self.model
+                ),
+            },
+        )?;
+        Ok(true)
+    }
+}
+
+fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
+    failure.kind == ProviderFailureKind::Authentication
+        || (failure.partial_output
+            && failure.status.is_none()
+            && matches!(
+                failure.kind,
+                ProviderFailureKind::Transport | ProviderFailureKind::Server
+            ))
 }

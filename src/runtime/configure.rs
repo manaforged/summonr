@@ -14,8 +14,8 @@ impl<P: Provider> Loop<P> {
         let workspace = workspace.as_ref();
         let model = model.into();
         let system_prompt = system_prompt.into();
-        let session = open_driver(
-            crate::prompt::summonr_home()?,
+        let session = session_home::fresh(
+            crate::prompt::summonr_home(),
             workspace,
             &model,
             &system_prompt,
@@ -365,6 +365,7 @@ impl<P: Provider> Loop<P> {
 }
 
 mod seat;
+mod session_home;
 mod work;
 
 fn resume_driver(workspace: &Path, path: &Path) -> Result<SessionDriver> {

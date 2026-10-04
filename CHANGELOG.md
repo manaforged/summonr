@@ -43,6 +43,10 @@ First public release.
   shell, and the other built-in hazards, as an unsandboxed one does,
   instead of refusing them. `--strict` still refuses them, and your own
   `[policy] deny` rules stay hard refusals.
+- summonr starts when its home is not writable, such as inside another
+  tool's sandbox: the session lives in the temp directory, says so,
+  and does not resume. A keychain key that cannot move to the key file
+  still works.
 - macOS release binaries are Apple silicon only. The TLS stack does not
   build for Intel Macs, so `install.sh` stops there with a clear message
   instead of a failed download.

@@ -207,16 +207,7 @@ impl Accumulate for Stream {
                 deltas.push(Delta::Text(text));
             }
         }
-        for part in choice.delta.tool_calls {
-            merge_call(&mut self.calls, part)?;
-        }
-        while let Some(call) = self.calls.get(self.named) {
-            if call.function.name.is_empty() {
-                break;
-            }
-            deltas.push(Delta::Call(call.function.name.clone()));
-            self.named += 1;
-        }
+        self.merge_calls(choice.delta.tool_calls, &mut deltas)?;
         Ok(deltas)
     }
 
@@ -248,6 +239,34 @@ impl Accumulate for Stream {
             stop_reason: self.stop,
             continuation: None,
         }
+    }
+}
+
+impl Stream {
+    fn merge_calls(
+        &mut self,
+        parts: Vec<crate::provider::stream::CallDelta>,
+        deltas: &mut Vec<Delta>,
+    ) -> crate::error::Result<()> {
+        for part in parts {
+            if part
+                .function
+                .as_ref()
+                .and_then(|function| function.arguments.as_deref())
+                .is_some_and(|arguments| !arguments.is_empty())
+            {
+                deltas.push(Delta::Progress);
+            }
+            merge_call(&mut self.calls, part)?;
+        }
+        while let Some(call) = self.calls.get(self.named) {
+            if call.function.name.is_empty() {
+                break;
+            }
+            deltas.push(Delta::Call(call.function.name.clone()));
+            self.named += 1;
+        }
+        Ok(())
     }
 }
 

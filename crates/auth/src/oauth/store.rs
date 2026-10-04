@@ -59,6 +59,16 @@ pub(super) fn stored(parts: &Parts<'_>, store: &dyn Store) -> Result<Option<Issu
     Ok(store.get(parts.name)?.as_deref().and_then(parse_stored))
 }
 
+pub(crate) fn stale(parts: &Parts<'_>, store: &dyn Store) -> Result<()> {
+    let Some(mut grant) = stored(parts, store)? else {
+        return Ok(());
+    };
+    grant.expires = Some(Instant::now());
+    let raw = serde_json::to_string(&to_stored(&grant))
+        .map_err(|error| Error::Config(error.to_string()))?;
+    store.set(parts.name, &raw)
+}
+
 pub(super) fn held(parts: &Parts<'_>) -> Result<Option<Issued>> {
     let slot = parts
         .held

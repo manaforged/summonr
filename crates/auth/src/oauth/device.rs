@@ -10,7 +10,7 @@ use crate::{
 
 use super::pkce::{challenge, random};
 use super::store::{keep, save};
-use super::token::{exchange, minted, post};
+use super::token::{exchange, minted, post, told};
 
 const DEVICE_GRANT: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
@@ -40,13 +40,14 @@ pub(super) async fn login(
     let (status, body) = post(http, device_url, &form, parts.spec.token_style).await?;
     if status >= 400 {
         return Err(Error::Denied(format!(
-            "the device request failed: HTTP {status} {body}"
+            "the device request failed: HTTP {status} {}",
+            told(&body)
         )));
     }
     let code = body
         .get("device_code")
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Denied(format!("no device_code in the reply: {body}")))?;
+        .ok_or_else(|| Error::Denied(format!("no device_code in the reply: {}", told(&body))))?;
     let shown = body
         .get("user_code")
         .and_then(Value::as_str)

@@ -110,6 +110,12 @@ First public release.
 
 ### Fixed
 
+- Providers: a long tool-argument stream no longer trips the stall
+  timeout; a rejected OAuth token is refreshed instead of reused; OAuth
+  errors never echo the token reply; cached tokens without a listed
+  rate are priced at the input rate; an environment key is not sent to
+  a base URL you overrode; Claude 3 models other than 3.7 get no
+  thinking budget.
 - Sessions: auto-compaction no longer keeps the current prompt twice;
   a failed model round with partial text keeps history in step for later
   repairs; a refused dangerous command asks again next time; cancelling a

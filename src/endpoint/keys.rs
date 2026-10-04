@@ -14,7 +14,9 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
     } else {
         None
     };
-    let row = preset(&endpoint.name).or_else(|| endpoint.base_url.as_deref().and_then(hosted));
+    let row = preset(&endpoint.name)
+        .filter(|row| own_base(&endpoint, row))
+        .or_else(|| endpoint.base_url.as_deref().and_then(hosted));
     if own.is_none()
         && let Some(key) = row.and_then(|row| env_key(row.env_keys))
     {
@@ -64,13 +66,15 @@ fn fallback_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     )))
 }
 
+fn own_base(endpoint: &Endpoint, row: &super::preset::Preset) -> bool {
+    endpoint
+        .base_url
+        .as_deref()
+        .is_some_and(|base| trim_slash(base) == trim_slash(row.base_url))
+}
+
 fn peer_key(endpoint: &Endpoint, row: Option<&super::preset::Preset>) -> Option<(String, Source)> {
-    let row = row.filter(|row| {
-        endpoint
-            .base_url
-            .as_deref()
-            .is_some_and(|base| trim_slash(base) == trim_slash(row.base_url))
-    })?;
+    let row = row.filter(|row| own_base(endpoint, row))?;
     if let Some(cli) = &row.cli_token
         && let Some(token) = (cli.read)()
     {

@@ -15,7 +15,7 @@ fn feed(stream: &mut Stream, events: &[Value]) -> Vec<String> {
             Some(Delta::Text(chunk)) => seen.push(format!("text:{chunk}")),
             Some(Delta::Thinking(chunk)) => seen.push(format!("think:{chunk}")),
             Some(Delta::Call(name)) => seen.push(format!("call:{name}")),
-            None => {}
+            Some(Delta::Progress) | None => {}
         }
     }
     seen

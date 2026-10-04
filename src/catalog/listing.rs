@@ -96,10 +96,11 @@ fn price(item: &Value) -> Option<crate::provider::Price> {
     } else {
         ("input", "output", "cached_input", 1.0)
     };
+    let input = rate(input)?;
     Some(crate::provider::Price {
-        input: rate(input)? * scale,
+        input: input * scale,
         output: rate(output)? * scale,
-        cached: rate(cached).unwrap_or_default() * scale,
+        cached: rate(cached).unwrap_or(input) * scale,
     })
 }
 

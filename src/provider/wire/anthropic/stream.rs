@@ -222,7 +222,7 @@ impl Stream {
             Block::Thinking { signature, .. } => {
                 signature.push_str(&change.signature);
                 if change.thinking.is_empty() {
-                    return None;
+                    return (!change.signature.is_empty()).then_some(Delta::Progress);
                 }
                 let chunk = change.thinking.to_string();
                 self.thinking.push_str(&chunk);
@@ -230,7 +230,7 @@ impl Stream {
             }
             Block::Call { input, .. } => {
                 input.push_str(&change.partial_json);
-                None
+                (!change.partial_json.is_empty()).then_some(Delta::Progress)
             }
             Block::Raw(_) | Block::Other => None,
         }

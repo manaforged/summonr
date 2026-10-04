@@ -141,6 +141,7 @@ impl Client {
                 (self.on_reasoning.as_ref(), text)
             }
             Delta::Call(name) => (self.on_tool.as_ref(), name),
+            Delta::Progress => return Ok(()),
         };
         if request.emit_deltas
             && let Some(emit) = emit

@@ -208,11 +208,13 @@ impl Auth {
     }
 
     pub fn forget_live(&self) {
-        if let Held::Login(seat) = self.held.as_ref()
-            && let Ok(mut slot) = seat.held.lock()
-        {
+        let Held::Login(seat) = self.held.as_ref() else {
+            return;
+        };
+        if let Ok(mut slot) = seat.held.lock() {
             slot.take();
         }
+        drop(oauth::stale(&parts(seat), self.store.as_ref()));
     }
 
     pub fn ready(&self) -> Result<bool> {

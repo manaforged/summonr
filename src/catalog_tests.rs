@@ -67,3 +67,14 @@ fn a_listing_with_top_level_input_modalities_marks_vision() {
     );
     assert!(models[0].vision);
 }
+
+#[test]
+fn a_listing_without_a_cache_read_rate_prices_cached_tokens_as_input() {
+    let models = super::parse(
+        &serde_json::json!({"data": [{"id": "m", "pricing": {"prompt": "0.000003", "completion": "0.000015"}}]}),
+        super::Cost::Unknown,
+    );
+    let price = models[0].price.expect("the listing is priced");
+    assert!((price.cached - price.input).abs() < 1e-9, "{price:?}");
+    assert!(price.input > 0.0);
+}

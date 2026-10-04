@@ -69,6 +69,7 @@ pub(crate) enum Delta {
     Text(String),
     Thinking(String),
     Call(String),
+    Progress,
 }
 
 pub(crate) const MOST_PENDING: usize = 64 * 1024 * 1024;

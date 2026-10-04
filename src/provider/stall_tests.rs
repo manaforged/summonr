@@ -3,13 +3,19 @@ use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
 use super::*;
-use crate::error::{Error, ProviderFailureKind};
+use crate::error::{Error, ProviderFailureKind, Result};
 
 fn chunk(data: &str) -> String {
     format!("{:x}\r\n{data}\r\n", data.len())
 }
 
+const GREETING: &str = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
+
 fn stalled_server(filler: &'static str) -> String {
+    server(GREETING, filler, 600, "")
+}
+
+fn server(first: &'static str, filler: &'static str, rounds: usize, last: &'static str) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}/v1", listener.local_addr().unwrap());
     std::thread::spawn(move || {
@@ -17,7 +23,6 @@ fn stalled_server(filler: &'static str) -> String {
         read_request(&mut socket);
         let mut request = [0u8; 65536];
         let head = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n";
-        let first = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n";
         if socket
             .write_all(format!("{head}{}", chunk(first)).as_bytes())
             .is_err()
@@ -25,18 +30,19 @@ fn stalled_server(filler: &'static str) -> String {
             return;
         }
         drop(socket.set_read_timeout(Some(Duration::from_millis(100))));
-        for _ in 0..600 {
+        for _ in 0..rounds {
             drop(socket.read(&mut request));
             if socket.write_all(chunk(filler).as_bytes()).is_err() {
                 return;
             }
         }
+        drop(socket.write_all(format!("{}0\r\n\r\n", chunk(last)).as_bytes()));
     });
     base
 }
 
-async fn cut(filler: &'static str) -> (crate::error::ProviderFailure, Partial) {
-    let mut client = Client::new("k", stalled_server(filler)).unwrap();
+async fn run(base: String) -> (Result<AssistantMessage>, Partial) {
+    let mut client = Client::new("k", base).unwrap();
     client.idle = Some(Duration::from_secs(1));
     let messages = [Message::user("hi".to_string())];
     let request = CompletionRequest::new(
@@ -55,6 +61,11 @@ async fn cut(filler: &'static str) -> (crate::error::ProviderFailure, Partial) {
     )
     .await
     .expect("a stream that produces nothing must end, not hang");
+    (outcome, partial)
+}
+
+async fn cut(filler: &'static str) -> (crate::error::ProviderFailure, Partial) {
+    let (outcome, partial) = run(stalled_server(filler)).await;
     let Err(Error::Provider(failure)) = outcome else {
         panic!("expected a provider failure, got {outcome:?}");
     };
@@ -81,6 +92,18 @@ async fn a_stream_of_empty_deltas_fails_as_a_retryable_cut() {
         "{failure:?}"
     );
     assert_eq!(partial.text, "hi");
+}
+
+#[tokio::test]
+async fn a_long_tool_argument_stream_is_not_cut_as_silence() {
+    let first = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"write\",\"arguments\":\"\"}}]}}]}\n\n";
+    let filler = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\" \"}}]}}]}\n\n";
+    let last = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n";
+    let (outcome, _) = run(server(first, filler, 30, last)).await;
+    let message = outcome.expect("argument fragments are progress, not silence");
+    assert_eq!(message.tool_calls.len(), 1);
+    assert_eq!(message.tool_calls[0].function.name, "write");
+    assert!(message.tool_calls[0].function.arguments.ends_with("{}"));
 }
 
 fn read_request(socket: &mut TcpStream) {

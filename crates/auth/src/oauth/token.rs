@@ -84,12 +84,14 @@ pub(super) async fn post(
     Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
 }
 
-pub(super) fn minted(body: &Value) -> Result<Issued> {
+pub(crate) fn minted(body: &Value) -> Result<Issued> {
     let access = body
         .get("access_token")
         .or_else(|| body.get("token"))
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Denied(format!("the reply carried no access token: {body}")))?;
+        .ok_or_else(|| {
+            Error::Denied(format!("the reply carried no access token: {}", told(body)))
+        })?;
     let expires = body
         .get("expires_in")
         .and_then(Value::as_u64)
@@ -170,7 +172,8 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
     let (status, body) = post(http, &spec.token_url, &form, spec.token_style).await?;
     if status >= 400 {
         return Err(Error::Denied(format!(
-            "refresh failed: HTTP {status} {body}"
+            "refresh failed: HTTP {status} {}",
+            told(&body)
         )));
     }
     let mut fresh = minted(&body)?;
@@ -181,4 +184,19 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
         fresh.identity = issued.identity.clone();
     }
     Ok(fresh)
+}
+
+pub(super) fn told(body: &Value) -> String {
+    let said = ["error", "error_description"]
+        .iter()
+        .filter_map(|key| body.get(key).and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if !said.is_empty() {
+        return said.join(": ");
+    }
+    let keys = body
+        .as_object()
+        .map(|fields| fields.keys().map(String::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    format!("fields [{}]", keys.join(", "))
 }

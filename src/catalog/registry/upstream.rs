@@ -102,10 +102,11 @@ fn meta(model_id: &str, model: &UpstreamModel) -> Meta {
         deprecated: model.status.as_deref() == Some(DEPRECATED),
         tools: model.tool_call,
         price: cost.and_then(|cost| {
+            let input = cost.input?;
             Some(Price {
-                input: cost.input?,
+                input,
                 output: cost.output?,
-                cached: cost.cache_read.unwrap_or_default(),
+                cached: cost.cache_read.unwrap_or(input),
             })
         }),
     }

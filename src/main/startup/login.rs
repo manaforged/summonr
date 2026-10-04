@@ -114,7 +114,7 @@ pub(super) fn print_login_catalog() -> Result<()> {
         if row.catalog_heading() != heading {
             heading = row.catalog_heading();
             if heading == "Coding plans" {
-                println!("\n{heading}  (Claude Pro/Max, Copilot, Kimi, GLM/Z.AI, OpenCode)");
+                println!("\n{heading}  (ChatGPT, SuperGrok, Copilot, Kimi, GLM/Z.AI, OpenCode)");
             } else if heading == "Decisions" {
                 println!("\n{heading}  (summonr classify / Jev)");
             } else if heading == "Local" {

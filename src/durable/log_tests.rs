@@ -159,3 +159,14 @@ fn records_skip_a_malformed_line_in_the_middle_of_the_log() {
     let lines = read(&path).unwrap();
     assert_eq!(lines, [Line::Clear, Line::Clear]);
 }
+
+#[test]
+fn a_session_journal_opens_in_one_host_at_a_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    let held = Log::create(&path).unwrap();
+    let second = Log::open(&path).err().map(|error| error.kind());
+    assert_eq!(second, Some(io::ErrorKind::WouldBlock));
+    drop(held);
+    Log::open(&path).unwrap();
+}

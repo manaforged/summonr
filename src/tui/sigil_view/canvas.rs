@@ -49,6 +49,7 @@ pub(super) fn inner_cols(cols: usize) -> usize {
 
 static WINDOW: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) fn is_window() -> bool {
     WINDOW.load(Ordering::Relaxed)
 }

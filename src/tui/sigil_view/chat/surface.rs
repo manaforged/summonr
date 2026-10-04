@@ -71,9 +71,9 @@ pub(in crate::tui::sigil_view) fn inline_layer(
         .child(canvas::gutter(footer::footer_bar(app, width)))
 }
 
-type Content = (usize, u8, bool, Prefs);
+pub(in crate::tui::sigil_view) type Content = (usize, u8, bool, Prefs);
 
-fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
+pub(in crate::tui::sigil_view) fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
     let (size, state) = match entry {
         Entry::Assistant { text, done } => (text.len(), u8::from(*done)),
         Entry::Thinking(text) => (text.len(), 0),
@@ -112,6 +112,10 @@ fn content(entry: &Entry, live: bool, prefs: &Prefs) -> Content {
 }
 
 fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
+    #[cfg(feature = "gui")]
+    if canvas::is_window() {
+        return super::super::desktop::entry::row(app, index, spacing);
+    }
     let model = app.model;
     let version = sigil::reactive::derived(move || {
         model.with(|model| {

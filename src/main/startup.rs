@@ -52,7 +52,7 @@ async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {
     if let Some(code) = listing(&args) {
         return code;
     }
-    launch(args, log, &adopted).await
+    launch(&args, log, &adopted).await
 }
 
 async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32>> {

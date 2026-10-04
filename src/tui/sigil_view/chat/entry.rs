@@ -27,9 +27,19 @@ use crate::prefs::{DiffLayout, Prefs, Visibility};
 use crate::tui::sigil_view::look::Look;
 
 mod children;
-mod preview;
+pub(in crate::tui::sigil_view) mod preview;
+#[cfg(any(feature = "gui", test))]
+mod steps;
 mod tools;
-pub(super) use tools::workspace_relative;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use super::surface::{Content, content};
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use steps::{Slot, counts, slot};
+pub(in crate::tui::sigil_view) use tools::workspace_relative;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use tools::{call_output, flip, glyph, searched};
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use tree::label;
 mod tree;
 
 const COMPACT_ROWS: usize = 32;
@@ -302,7 +312,7 @@ fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
         .child(child)
 }
 
-fn patch_of(output: &str) -> Option<String> {
+pub(in crate::tui::sigil_view) fn patch_of(output: &str) -> Option<String> {
     let mut patch = Vec::new();
     for line in output
         .lines()

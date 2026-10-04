@@ -6,6 +6,14 @@ First public release.
 
 ### Added
 
+- Several sessions stay live in one window or terminal. `/new` starts a
+  session beside the current one, and `/resume` or a click in the
+  window's sidebar switches without restarting. The sidebar groups open
+  sessions by project and marks each as working, needs you, ready, or
+  failed. A session open in one summonr cannot be opened in another.
+- The window draws its own conversation view: tool calls fold into a
+  steps card, code blocks carry a copy button, and the composer holds
+  the attach, model, and mode controls.
 - `summonr login chatgpt` signs in with ChatGPT and runs GPT models on a
   Plus or Pro plan through the Responses API. `summonr login supergrok`
   signs in with a SuperGrok or X Premium+ plan. A browser login now keeps

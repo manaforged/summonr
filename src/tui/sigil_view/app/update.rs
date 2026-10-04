@@ -17,7 +17,7 @@ impl App {
             Msg::Prompts { session, result } => self.prompts_loaded(session, result),
             Msg::Restored(inputs) => self.restore(inputs),
             Msg::Saved { file, text, result } => self.save_done(file, text, result),
-            Msg::Resume(id) => self.request_resume(id),
+            Msg::Resume(id) => self.open_session(crate::tui::hub::Open::Resume(id)),
             Msg::Sessions(rows) => self.sessions.update(rows),
             Msg::Usage(rows) => self.usage.update(rows),
             msg @ Msg::Models { .. } => self.models_loaded(msg),
@@ -75,6 +75,11 @@ impl App {
                     self.model_mut(|model| model.patch = None);
                     drop(self.cmd.send(Cmd::Patch(self.root(), path)));
                 }
+                false
+            }
+            Msg::Reset => {
+                self.approval.set(None);
+                self.form.set(None);
                 false
             }
             Msg::Busy(None) => {

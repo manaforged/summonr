@@ -4,7 +4,7 @@ use sigil::prelude::Token;
 use crate::tui::sigil_view::look::Look;
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, container};
 
-pub(super) fn label(body: impl Into<String>, look: Look) -> TextBuilder {
+pub(in crate::tui::sigil_view) fn label(body: impl Into<String>, look: Look) -> TextBuilder {
     look.on(sigil::kernel::text(body.into()).nowrap())
 }
 

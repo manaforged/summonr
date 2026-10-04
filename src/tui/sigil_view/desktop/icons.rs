@@ -14,6 +14,14 @@ pub(super) fn folder() -> PathNode {
         .close()
 }
 
+pub(super) fn plus() -> PathNode {
+    mark(16, 16)
+        .move_to(8.0, 3.0)
+        .line_to(8.0, 13.0)
+        .move_to(3.0, 8.0)
+        .line_to(13.0, 8.0)
+}
+
 pub(super) fn clock() -> PathNode {
     ring(fine(16, 16), 8.0, 8.0, 6.2)
         .move_to(8.0, 4.5)

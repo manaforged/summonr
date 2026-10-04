@@ -1,6 +1,6 @@
 const SHOWN: usize = 3;
 
-pub(super) fn summary(output: &str, failed: bool) -> String {
+pub(in crate::tui::sigil_view) fn summary(output: &str, failed: bool) -> String {
     let lines: Vec<&str> = output
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -71,7 +71,7 @@ fn skip(kind: Escape, chars: &mut std::iter::Peekable<std::str::Chars<'_>>) {
     }
 }
 
-pub(super) fn plain(output: &str) -> String {
+pub(in crate::tui::sigil_view) fn plain(output: &str) -> String {
     let mut out = String::with_capacity(output.len());
     let mut chars = output.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -137,7 +137,7 @@ pub(super) fn text(full: bool, name: &str, output: &str, failed: bool, running: 
     )
 }
 
-pub(super) fn exit(output: &str) -> Option<&str> {
+pub(in crate::tui::sigil_view) fn exit(output: &str) -> Option<&str> {
     output
         .lines()
         .next()?

@@ -5,6 +5,7 @@ use summonr::{Error, McpLaunch, Result};
 use super::flags::Input;
 use super::value;
 
+#[derive(Clone)]
 pub(crate) enum McpCommand {
     List { json: bool },
     Get { name: String, json: bool },

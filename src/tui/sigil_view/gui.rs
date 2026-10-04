@@ -1,12 +1,11 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
 
 use sigil::prelude::effect;
 use sigil::reactive::defer;
 use sigil::reactive::untrack;
 use sigil::tasks::on_message;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::app::App;
 use super::desktop::root;
@@ -15,7 +14,8 @@ use super::model::Entry;
 use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tui::{Exit, Info, Msg, worker};
+use crate::tui::hub::{Factory, Started, start};
+use crate::tui::{Info, Msg};
 
 const TITLE: &str = "Summonr";
 const SIZE: (u32, u32) = (1280, 800);
@@ -26,19 +26,20 @@ pub(crate) fn run(
     info: Info,
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
-) -> Result<Exit> {
-    let (cmd_tx, cmd_rx) = unbounded_channel();
+    factory: Factory,
+) -> Result<i32> {
+    let Started {
+        commands: cmd_tx,
+        inbox: ui_rx,
+        task: worker,
+    } = start(loop_, info.clone(), (ui_tx, ui_rx), factory);
     start_tick(cmd_tx.clone());
-    let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
     let inbox = RefCell::new(Some(ui_rx));
     let commands = cmd_tx.clone();
-    let resume = Rc::new(RefCell::new(None));
-    let requested = resume.clone();
     let opened = tokio::task::block_in_place(|| {
         sigil::run(window(), move || {
             super::canvas::window_cells();
-            let mut app = App::new(info.clone(), workspace.clone(), commands.clone());
-            app.resume = requested.clone();
+            let app = App::new(info.clone(), workspace.clone(), commands.clone());
             app.resize(160, 50);
             app.refresh();
             app.animate();
@@ -57,8 +58,7 @@ pub(crate) fn run(
     });
     stop(worker, &cmd_tx, crate::limits::WORKER_STOP);
     opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
-    let selected = resume.borrow().clone();
-    Ok(selected.map_or(Exit::Code(0), Exit::Resume))
+    Ok(0)
 }
 
 fn window() -> sigil::AppConfig {

@@ -1,8 +1,10 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, app_shell, container,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, Token, container,
 };
 
-use super::ui::{Hints, Key};
+use sigil::layout::Position;
+
 use super::view::shell;
 use crate::tui::Cmd;
 
@@ -10,6 +12,7 @@ pub(super) use super::app::App;
 pub(super) use super::chat;
 pub(super) use super::pane::Pane;
 
+pub(super) mod entry;
 mod icons;
 mod rail;
 mod thread;
@@ -24,9 +27,17 @@ pub(super) fn root(app: App) -> NodeBuilder {
             let navigation = screen.clone();
             let side = screen.clone();
             let top = screen.clone();
-            let keys = screen.model.peek().prefs.hotkeys.clone();
+            let changes = {
+                let model = screen.model;
+                sigil::reactive::derived(move || !model.get().diff.files.is_empty())
+            };
             let work = container()
-                .layout(LayoutStyle::flex_row().fill())
+                .layout(
+                    LayoutStyle::flex_row()
+                        .fill_width()
+                        .grow(1.0)
+                        .min_size(0.0, 0.0),
+                )
                 .child(
                     container()
                         .layout(LayoutStyle::block().fill_height().shrink(0.0))
@@ -65,21 +76,37 @@ pub(super) fn root(app: App) -> NodeBuilder {
                                 side.workflow.draft.get(),
                                 side.diff_view.get(),
                                 side.view_edit.get(),
+                                changes.get(),
                             ));
-                            vec![pane(side.clone())]
+                            vec![pane(side.clone(), changes.peek())]
                         }),
                 );
-            vec![app_shell(
-                container()
-                    .layout(LayoutStyle::block().fill_width())
-                    .children_reactive(move || {
-                        let _updates = top.layout.get();
-                        vec![thread::title_bar(top.clone())]
-                    }),
-                work,
-                Hints::new().key(Key::Esc, "closes overlays").bar(&keys),
-                overlay(&screen),
-            )]
+            let mut window = container()
+                .layout(LayoutStyle::flex_column().fill())
+                .child(
+                    container()
+                        .layout(LayoutStyle::block().fill_width().shrink(0.0))
+                        .bg(Token::SurfaceSubtle)
+                        .border_bottom(1)
+                        .border_color(Token::Border)
+                        .children_reactive(move || {
+                            let _updates = top.layout.get();
+                            vec![thread::title_bar(top.clone())]
+                        }),
+                )
+                .child(work);
+            if let Some(layer) = overlay(&screen) {
+                window = window.child(
+                    container()
+                        .layout(
+                            LayoutStyle::flex_column()
+                                .position(Position::Absolute)
+                                .fill(),
+                        )
+                        .child(layer),
+                );
+            }
+            vec![window]
         })
 }
 
@@ -87,11 +114,16 @@ fn overlay(app: &App) -> Option<NodeBuilder> {
     app.overlay().and_then(|overlay| overlay.layer(app.clone()))
 }
 
-fn pane(app: App) -> NodeBuilder {
+fn pane(app: App, changes: bool) -> NodeBuilder {
     match app.layout.peek().secondary {
-        Some(pane) => super::panes::body::pane_body(app, pane, 360.0),
-        None => container().layout(LayoutStyle::block().fixed_size(0.0, 0.0).shrink(0.0)),
+        Some(Pane::Diff) if !changes => closed(),
+        Some(pane) => super::panes::body::pane_body(app, pane, 380.0),
+        None => closed(),
     }
+}
+
+fn closed() -> NodeBuilder {
+    container().layout(LayoutStyle::block().fixed_size(0.0, 0.0).shrink(0.0))
 }
 
 fn open(app: &App, pane: Pane) -> bool {

@@ -3,6 +3,7 @@ use toml_edit::{Array, InlineTable, Item, Table, value};
 use crate::config;
 use crate::error::{Error, Result};
 
+#[derive(Clone)]
 pub enum McpLaunch {
     Command {
         command: String,

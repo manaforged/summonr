@@ -13,7 +13,7 @@ use crate::tui::sigil_view::look::Look;
 
 pub(super) type Detail = Option<(String, Look)>;
 
-pub(super) fn glyph(state: &ToolState) -> (&'static str, Look) {
+pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, Look) {
     match state {
         ToolState::Running => ("○", Look::xs(Token::Gray11)),
         ToolState::Ok => ("●", Look::xs(Token::Success11)),
@@ -21,12 +21,12 @@ pub(super) fn glyph(state: &ToolState) -> (&'static str, Look) {
     }
 }
 
-fn searched(arg: &str) -> Option<&str> {
+pub(in crate::tui::sigil_view) fn searched(arg: &str) -> Option<&str> {
     arg.strip_prefix("search ")
         .filter(|rest| rest.starts_with('"'))
 }
 
-pub(in crate::tui::sigil_view::chat) fn workspace_relative(arg: &str, roots: &[String]) -> String {
+pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {
     arg.split(' ')
         .map(|word| {
             let (lead, path) =
@@ -115,7 +115,11 @@ pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
         .child(words)
 }
 
-fn flip(app: &App, index: usize, call: Option<usize>) -> impl Fn(&mut PointerEvent) + 'static {
+pub(in crate::tui::sigil_view) fn flip(
+    app: &App,
+    index: usize,
+    call: Option<usize>,
+) -> impl Fn(&mut PointerEvent) + 'static {
     let app = app.clone();
     move |event: &mut PointerEvent| {
         if event.button != Some(MouseButton::Left) {
@@ -142,7 +146,7 @@ fn flip(app: &App, index: usize, call: Option<usize>) -> impl Fn(&mut PointerEve
     }
 }
 
-fn call_output(
+pub(in crate::tui::sigil_view) fn call_output(
     name: &str,
     call: &Call,
     output: &str,

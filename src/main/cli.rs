@@ -9,7 +9,7 @@ mod mcp;
 
 pub(super) use mcp::McpCommand;
 
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(super) struct Args {
     pub(super) print: bool,
     pub(super) effort: Option<summonr::Effort>,

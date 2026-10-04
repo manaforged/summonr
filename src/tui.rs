@@ -10,6 +10,7 @@ use crate::tools::Event;
 
 mod channel;
 mod help;
+pub mod hub;
 mod matching;
 mod sigil_view;
 pub use channel::{Inbox, Ui, channel};
@@ -103,6 +104,8 @@ pub(crate) enum Msg {
         result: std::result::Result<crate::hunks::Marks, String>,
     },
     Resume(String),
+    Live(Vec<hub::Live>),
+    Replayed,
     LoginStep {
         text: String,
         url: String,
@@ -135,12 +138,6 @@ impl Activity {
             Self::Shell => "running",
         }
     }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Exit {
-    Code(i32),
-    Resume(String),
 }
 
 enum Cmd {
@@ -204,6 +201,8 @@ enum Cmd {
     DeleteSession(String),
     Export(Option<String>),
     Cancel,
+    Open(hub::Open),
+    Replay,
     Quit,
     Tick,
 }
@@ -280,41 +279,18 @@ pub fn run(
     ui: Ui,
     inbox: Inbox,
     gui: bool,
-) -> Result<Exit> {
+    factory: hub::Factory,
+) -> Result<i32> {
     let (ui_tx, ui_rx) = (ui.0, inbox.0);
     if gui {
         #[cfg(feature = "gui")]
-        return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx);
+        return sigil_view::run_gui(loop_, workspace, info, ui_tx, ui_rx, factory);
         #[cfg(not(feature = "gui"))]
         return Err(crate::error::Error::Config(
             "this build has no window; install with `cargo install --features gui`".to_string(),
         ));
     }
-    sigil_view::run(loop_, workspace, info, ui_tx, ui_rx)
-}
-
-#[cfg_attr(
-    not(feature = "gui"),
-    expect(
-        dead_code,
-        reason = "the desktop panes are the only caller, and they are a gui feature"
-    )
-)]
-fn context(round: Option<&Round>, window: Option<u32>, compact: bool) -> String {
-    let Some(window) = window.filter(|window| *window > 0) else {
-        return "—".to_string();
-    };
-    let used = round.map_or(0, Round::total).min(window);
-    let percent = u64::from(used) * 100 / u64::from(window);
-    if compact {
-        return format!("{percent}%");
-    }
-    format!(
-        "{} / {} · {}% used",
-        crate::provider::compact(u64::from(used)),
-        crate::provider::compact(u64::from(window)),
-        percent,
-    )
+    sigil_view::run(loop_, workspace, info, ui_tx, ui_rx, factory)
 }
 
 #[derive(Clone, Debug)]

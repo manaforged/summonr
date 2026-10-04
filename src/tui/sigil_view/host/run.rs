@@ -18,10 +18,14 @@ pub(crate) fn run(
     info: Info,
     ui_tx: UnboundedSender<Msg>,
     ui_rx: UnboundedReceiver<Msg>,
-) -> Result<Exit> {
-    let (cmd_tx, cmd_rx) = unbounded_channel();
+    factory: Factory,
+) -> Result<i32> {
+    let Started {
+        commands: cmd_tx,
+        inbox: ui_rx,
+        task: worker,
+    } = start(loop_, info.clone(), (ui_tx, ui_rx), factory);
     start_tick(cmd_tx.clone());
-    let worker = tokio::spawn(worker(loop_, cmd_rx, ui_tx, info.clone()));
     let version = info.version.clone();
     let slot: Rc<RefCell<Option<App>>> = Rc::default();
     let mounted = slot.clone();
@@ -89,13 +93,11 @@ pub(crate) fn run(
     stop(worker, &cmd_tx, BEAT);
     ran.map_err(|error| Error::Tool(format!("the terminal failed: {error}")))?;
     let mut pump = pump.borrow_mut();
-    let exit = pump.exit.take().unwrap_or(Exit::Code(0));
-    if matches!(exit, Exit::Code(_)) {
-        let session = &pump.session;
-        eprintln!(
-            "\n  summonr {version} · session {session}\n  resume: summonr -c · by id: summonr --session {session} · branch: summonr --fork\n"
-        );
-    }
+    let exit = pump.exit.take().unwrap_or(0);
+    let session = &pump.session;
+    eprintln!(
+        "\n  summonr {version} · session {session}\n  resume: summonr -c · by id: summonr --session {session} · branch: summonr --fork\n"
+    );
     Ok(exit)
 }
 
@@ -128,7 +130,7 @@ fn inline_rows(app: &App) -> u16 {
 struct Pump {
     app: Rc<RefCell<Option<App>>>,
     closed: Rc<Cell<bool>>,
-    exit: Option<Exit>,
+    exit: Option<i32>,
     session: String,
     busy: Option<bool>,
     asking: bool,
@@ -149,11 +151,8 @@ impl Pump {
         {
             app.resize(size.0, size.1);
         }
-        if let Some(id) = app.resume.borrow().clone() {
-            return self.finish(&app, Exit::Resume(id));
-        }
         if let Some(code) = status(self.closed.get(), app.quit.peek()) {
-            return self.finish(&app, Exit::Code(code));
+            return self.finish(&app, code);
         }
         let busy = app.model.get().busy_since.is_some();
         let notify = app.model.get().prefs.notify;
@@ -191,7 +190,7 @@ impl Pump {
         copy_out(&app);
     }
 
-    fn finish(&mut self, app: &App, exit: Exit) {
+    fn finish(&mut self, app: &App, exit: i32) {
         self.session = app.model.get().session.to_string();
         self.exit = Some(exit);
         sigil::request_exit();

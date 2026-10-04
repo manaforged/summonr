@@ -57,6 +57,7 @@ impl Extend<Entry> for Entries {
 #[derive(Clone)]
 pub(super) struct Model {
     pub(super) session: String,
+    pub(super) live: Vec<crate::tui::hub::Live>,
     pub(super) entries: Entries,
     committed: usize,
     pub(super) ledger: Vec<String>,
@@ -146,6 +147,7 @@ impl Model {
     pub(super) fn new(info: &Info) -> Self {
         Self {
             session: info.session.clone(),
+            live: Vec::new(),
             entries: Entries::default(),
             committed: 0,
             ledger: Vec::new(),
@@ -197,6 +199,7 @@ impl Model {
     pub(super) fn apply(&mut self, msg: Msg) -> bool {
         match msg {
             Msg::Bye => return false,
+            Msg::Live(live) => self.live = live,
             Msg::Event(event) => self.apply_event(event),
             msg @ (Msg::User(_)
             | Msg::Image(_)
@@ -237,6 +240,7 @@ impl Model {
             | Msg::Prompts { .. }
             | Msg::Workflow { .. }
             | Msg::Resume(_)
+            | Msg::Replayed
             | Msg::LoginStep { .. }
             | Msg::LoginDone { .. }
             | Msg::Restored(_)

@@ -18,6 +18,9 @@ impl<P: Provider> Loop<P> {
             return Ok(());
         }
         let cached = after.cached_tokens.saturating_sub(before.cached_tokens);
+        let written = after
+            .cache_write_tokens
+            .saturating_sub(before.cache_write_tokens);
         self.push_event(
             events,
             emit,
@@ -31,7 +34,12 @@ impl<P: Provider> Loop<P> {
                 millis: None,
                 prefix_hash: format!("{role:?}").to_lowercase(),
                 cost: self.price_for(role).map(|price| {
-                    price.cost(u64::from(prompt), u64::from(completion), u64::from(cached))
+                    price.cost(
+                        u64::from(prompt),
+                        u64::from(completion),
+                        u64::from(cached),
+                        u64::from(written),
+                    )
                 }),
             },
         )
@@ -53,6 +61,7 @@ impl<P: Provider> Loop<P> {
                     u64::from(assistant.usage.prompt_tokens),
                     u64::from(assistant.usage.completion_tokens),
                     u64::from(assistant.usage.cached_tokens),
+                    u64::from(assistant.usage.cache_write_tokens),
                 )
             }),
         }

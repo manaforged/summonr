@@ -241,6 +241,7 @@ pub(super) fn meter(usage: &Usage, millis: u64) -> Meter {
         output: u64::from(usage.completion_tokens),
         reasoning: u64::from(usage.reasoning_tokens),
         cached: u64::from(usage.cached_tokens),
+        written: u64::from(usage.cache_write_tokens),
         millis,
     }
 }

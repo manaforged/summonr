@@ -158,7 +158,7 @@ pub(crate) fn spend(
             row.cached = row.cached.saturating_add(usage.cached);
             row.output = row.output.saturating_add(usage.output);
             if let (Some(cost), Some(price)) = (row.cost.as_mut(), prices.get(&model)) {
-                *cost += price.cost(usage.input, usage.output, usage.cached);
+                *cost += price.cost(usage.input, usage.output, usage.cached, usage.written);
             }
         }
         if let Some(row) = latest.and_then(|key| totals.get_mut(&key)) {

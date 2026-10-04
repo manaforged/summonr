@@ -304,3 +304,34 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
         "arguments are embedded verbatim, not re-serialized: {raw}"
     );
 }
+
+#[test]
+fn a_cache_write_is_priced_at_the_write_rate() {
+    let usage = super::usage(Some(&serde_json::json!({
+        "input_tokens": 100,
+        "cache_creation_input_tokens": 1000,
+        "cache_read_input_tokens": 2000,
+        "output_tokens": 50,
+    })));
+    assert_eq!(
+        (
+            usage.prompt_tokens,
+            usage.cached_tokens,
+            usage.cache_write_tokens
+        ),
+        (3100, 2000, 1000)
+    );
+    let price = crate::provider::Price {
+        input: 3.0,
+        output: 15.0,
+        cached: 0.3,
+        cache_write: Some(3.75),
+    };
+    let cost = price.cost(
+        u64::from(usage.prompt_tokens),
+        u64::from(usage.completion_tokens),
+        u64::from(usage.cached_tokens),
+        u64::from(usage.cache_write_tokens),
+    );
+    assert!((cost - 0.0054).abs() < 1e-12, "{cost}");
+}

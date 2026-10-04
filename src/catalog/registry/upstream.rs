@@ -107,6 +107,7 @@ fn meta(model_id: &str, model: &UpstreamModel) -> Meta {
                 input,
                 output: cost.output?,
                 cached: cost.cache_read.unwrap_or(input),
+                cache_write: cost.cache_write,
             })
         }),
     }

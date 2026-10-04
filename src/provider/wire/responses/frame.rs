@@ -181,6 +181,7 @@ impl Counted {
                 self.input_tokens_details
                     .and_then(|detail| detail.cached_tokens),
             ),
+            cache_write_tokens: 0,
         }
     }
 }

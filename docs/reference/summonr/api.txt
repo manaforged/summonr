@@ -1029,6 +1029,7 @@ impl core::cmp::PartialEq for summonr::Turn
 impl core::fmt::Debug for summonr::Turn
 impl core::marker::StructuralPartialEq for summonr::Turn
 pub struct summonr::Usage
+pub summonr::Usage::cache_write_tokens: u32
 pub summonr::Usage::cached_tokens: u32
 pub summonr::Usage::completion_tokens: u32
 pub summonr::Usage::prompt_tokens: u32

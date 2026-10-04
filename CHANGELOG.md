@@ -158,7 +158,8 @@ First public release.
 - Providers: a long tool-argument stream no longer trips the stall
   timeout; a rejected OAuth token is refreshed instead of reused; OAuth
   errors never echo the token reply; cached tokens without a listed
-  rate are priced at the input rate; an environment key is not sent to
+  rate are priced at the input rate; prompt-cache writes are priced at
+  the model's cache-write rate (Anthropic bills them above input); an environment key is not sent to
   a base URL you overrode; Claude 3 models other than 3.7 get no
   thinking budget.
 - Sessions: auto-compaction no longer keeps the current prompt twice;

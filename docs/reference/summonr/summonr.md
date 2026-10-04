@@ -433,6 +433,7 @@
 
 | Field | Description |
 | --- | --- |
+| <code>cache_write_tokens: u32</code> |  |
 | <code>cached_tokens: u32</code> |  |
 | <code>completion_tokens: u32</code> |  |
 | <code>prompt_tokens: u32</code> |  |

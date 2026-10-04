@@ -19,6 +19,8 @@ pub(crate) struct Usage {
     #[serde(default)]
     pub(crate) reasoning: u64,
     pub(crate) cached: u64,
+    #[serde(default)]
+    pub(crate) written: u64,
     pub(crate) millis: u64,
 }
 

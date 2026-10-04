@@ -127,9 +127,9 @@ impl<P: Provider> Loop<P> {
                 let meta = UsageMeta {
                     continuation: message.continuation.clone(),
                     prefix_hash: request.prefix_hash(),
-                    cost: self
-                        .price_for(role)
-                        .map(|price| price.cost(meter.input, meter.output, meter.cached)),
+                    cost: self.price_for(role).map(|price| {
+                        price.cost(meter.input, meter.output, meter.cached, meter.written)
+                    }),
                 };
                 self.session
                     .finish_provider(

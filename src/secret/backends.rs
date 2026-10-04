@@ -46,7 +46,6 @@ impl Store {
         let Some(secret) = find(tool, name)? else {
             return Ok(None);
         };
-        cache::clear();
         drop(self.locked(|| {
             let mut blob = self.read_blob(tool)?;
             blob[name] = value(&secret);
@@ -58,6 +57,7 @@ impl Store {
             )
             .map(drop)
         }));
+        cache::clear();
         Ok(Some((secret, Source::Keychain)))
     }
 

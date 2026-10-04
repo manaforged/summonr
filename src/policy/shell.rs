@@ -133,13 +133,13 @@ fn escalates(command: &str) -> bool {
 
 #[cfg(unix)]
 #[expect(unsafe_code, reason = "std has no effective-uid query")]
-fn running_as_root() -> bool {
+pub(crate) fn running_as_root() -> bool {
     // SAFETY: geteuid has no preconditions and cannot fail.
     unsafe { libc::geteuid() == 0 }
 }
 
 #[cfg(not(unix))]
-fn running_as_root() -> bool {
+pub(crate) fn running_as_root() -> bool {
     false
 }
 

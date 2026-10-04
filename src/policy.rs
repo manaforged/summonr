@@ -357,6 +357,8 @@ use paths::*;
 use shell::*;
 
 pub(crate) use paths::{expand_path, split_segments};
+#[cfg(test)]
+pub(crate) use shell::running_as_root;
 pub(crate) use verbs::*;
 
 #[cfg(test)]

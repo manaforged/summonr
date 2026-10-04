@@ -41,8 +41,9 @@ First public release.
 
 - A sandboxed session asks before a force push, `sudo`, a pipe into a
   shell, and the other built-in hazards, as an unsandboxed one does,
-  instead of refusing them. `--strict` still refuses them, and your own
-  `[policy] deny` rules stay hard refusals.
+  instead of refusing them, including inside a heredoc fed to a shell.
+  `--strict` still refuses them, and your own `[policy] deny` rules stay
+  hard refusals under `--sandbox` or `--strict`.
 - summonr starts when its home is not writable, such as inside another
   tool's sandbox: the session lives in the temp directory, says so,
   and does not resume. A keychain key that cannot move to the key file

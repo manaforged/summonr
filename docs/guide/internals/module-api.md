@@ -138,7 +138,7 @@ not against the name.
 | `Error::MaxRounds`, `--max-turns`, `Goal.max_turns` | `--max-tokens`, `--max-secs` | round caps are banned; only token and wall-clock budgets bound a run |
 | the gui module row | `--gui` flag | the row was never read; the flag decides |
 | the old chat transcript cell renderer, `canvas::{Span, Line, Source}` | Sigil `markdown` in `chat/entry.rs` | compiled only for one test |
-| `Loop::commit`, `ToolRegistry::skill_ready` | `ToolRegistry::probed`, the once-per-registry LSP and skills probe read by `ToolRegistry::definitions` | commit ignored its argument; the skills rescan changed the prefix mid-session |
+| `Loop::commit`, `ToolRegistry::skill_ready` | the `probed` once-cell in `ToolRegistry`, which `ToolRegistry::definitions` reads to run the LSP and skills probe once per registry | commit ignored its argument; the skills rescan changed the prefix mid-session |
 | per-host transcript builders | `chat::surface::transcript` | the TUI and desktop hosts share one keyed builder |
 | `summonr room serve`, `room/serve.rs::tools`, `room::host::codex` | `summonr mail`, `mail/tools.rs::definitions` | a stdio MCP server and a Codex host beside the mail files; any agent CLI reaches the same files through `summonr mail` |
 

@@ -223,6 +223,26 @@ pub(crate) fn without_heredocs(command: &str) -> String {
     kept.join("\n")
 }
 
+pub(crate) fn heredocs(command: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut open: Option<(String, String, Vec<&str>)> = None;
+    for line in command.lines() {
+        if let Some((end, opening, body)) = &mut open {
+            if line.trim() == end.as_str() {
+                found.push((std::mem::take(opening), body.join("\n")));
+                open = None;
+            } else {
+                body.push(line);
+            }
+            continue;
+        }
+        if let Some(end) = heredoc_end(line) {
+            open = Some((end, line.to_string(), Vec::new()));
+        }
+    }
+    found
+}
+
 fn heredoc_end(line: &str) -> Option<String> {
     let (_, rest) = line.split_once("<<")?;
     let rest = rest.trim_start_matches(['-', '~']).trim_start();

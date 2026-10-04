@@ -468,9 +468,25 @@ fn outcome(tools: &ToolRegistry, command: &str) -> String {
 #[test]
 fn a_contained_session_asks_before_a_hazard_and_strict_refuses_it() {
     let (_dir, mut tools) = workspace(&[]);
-    let asked = outcome(&tools, "sudo true");
-    assert!(asked.contains("needs the user's approval"), "{asked}");
+    for command in ["sudo true", "bash <<'EOF'\nsudo true\nEOF"] {
+        let asked = outcome(&tools, command);
+        assert!(asked.contains("needs the user's approval"), "{asked}");
+    }
+    let written = outcome(&tools, "cat > notes.md <<'EOF'\nsudo true\nEOF");
+    assert!(!written.contains("needs the user's approval"), "{written}");
     tools.set_strict();
     let refused = outcome(&tools, "sudo true");
     assert!(refused.contains("strict mode never runs it"), "{refused}");
+}
+
+#[test]
+fn a_search_over_several_paths_reports_a_missing_one_inline() {
+    let (_dir, tools) = workspace(&[("a.txt", "needle here\n")]);
+    let hits = run(
+        &tools,
+        "read",
+        serde_json::json!({"pattern": "needle", "paths": ["a.txt", "missing.txt"]}),
+    );
+    assert!(hits.contains("a.txt:1:"), "{hits}");
+    assert!(hits.contains("missing.txt: "), "{hits}");
 }

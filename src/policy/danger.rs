@@ -1,9 +1,10 @@
 use std::path::{Component, Path, PathBuf};
 
-use super::walk::{Step, resolve, walk, without_heredocs};
+use super::shell::{WRAPPERS, interpreter, shell};
+use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
 use super::{
-    Block, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, subcommand, verb_row,
-    write_block,
+    Block, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, subcommand, unquoted,
+    verb_row, write_block,
 };
 
 pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
@@ -12,6 +13,13 @@ pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
     if builtin_deny(&without_heredocs(command), &texts) {
         return Some("it can damage the system");
     }
+    if let Some(reason) = heredocs(command)
+        .iter()
+        .filter(|(opening, _)| feeds_shell(opening))
+        .find_map(|(_, body)| danger(body, workspace))
+    {
+        return Some(reason);
+    }
     if matches!(
         write_block(&steps, workspace, &[]),
         Some(Block::Protected(_))
@@ -19,6 +27,22 @@ pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
         return Some("it writes a protected path");
     }
     steps.iter().find_map(|step| risky(step, workspace))
+}
+
+fn feeds_shell(opening: &str) -> bool {
+    let head = opening.split_once("<<").map_or(opening, |(head, _)| head);
+    unquoted(head, &["&&", "||", "|", ";", "&"])
+        .last()
+        .and_then(|segment| {
+            segment
+                .split_whitespace()
+                .map(|word| word.rsplit('/').next().unwrap_or(word))
+                .find(|word| {
+                    !word.contains('=') && !word.starts_with('-') && !WRAPPERS.contains(word)
+                })
+                .map(|word| shell(word) || interpreter(word) || matches!(word, "source" | "."))
+        })
+        .unwrap_or(false)
 }
 
 fn inquiry(args: &[String]) -> bool {

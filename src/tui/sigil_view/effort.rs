@@ -4,7 +4,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas;
-use super::prelude::*;
+use super::ui::{Dialog, Hints, Key, Size, group};
 use crate::provider::Effort;
 
 #[derive(Clone, Copy)]
@@ -73,31 +73,23 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     };
     let cols = app.viewport.peek().0;
     let width = canvas::dialog_width(cols, canvas::DIALOG_CELLS) - canvas::cell().w * 8.0;
-    shell(
-        app.effort.open,
-        "Effort",
-        cols,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .child(group(note))
-            .child(
-                container()
-                    .layout(LayoutStyle::block().fill_width().padding_x(16.0))
-                    .child(
-                        slider(app.effort.level, 0.0..=position(Effort::ALL.len() - 1))
-                            .step(1.0)
-                            .length(width)
-                            .label("Effort")
-                            .marks(Effort::ALL.map(Effort::as_str)),
-                    ),
-            )
-            .child(hint(
-                "←→ move · ↵ set · esc close",
-                format!("now {}", current.as_str()),
-            )),
-    )
+    let hints = Hints::new()
+        .key(Key::LeftRight, "move")
+        .key(Key::Enter, "set")
+        .key(Key::Esc, "close")
+        .right(format!("now {}", current.as_str()));
+    Dialog::new(Size::Normal, "Effort", hints)
+        .child(group(note))
+        .child(
+            container()
+                .layout(LayoutStyle::block().fill_width().padding_x(16.0))
+                .child(
+                    slider(app.effort.level, 0.0..=position(Effort::ALL.len() - 1))
+                        .step(1.0)
+                        .length(width)
+                        .label("Effort")
+                        .marks(Effort::ALL.map(Effort::as_str)),
+                ),
+        )
+        .build(app.effort.open, cols, &app.model.peek().prefs.hotkeys)
 }

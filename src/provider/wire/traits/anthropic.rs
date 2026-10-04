@@ -16,7 +16,7 @@ pub(super) const ROWS: &[Row] = &[
     row(&["claude-opus-4-6"], Adaptive, HIGH_MAX, Omit),
     row(&["claude-sonnet-4-6"], Adaptive, HIGH_MAX, Omit),
     row(&["claude-opus-4-5"], EffortBudget, STANDARD, Omit),
-    row(&["claude-3"], Budgeted, STANDARD, Omit),
+    row(&["claude-3-7"], Budgeted, STANDARD, Omit),
     row(&["claude-sonnet-4-5"], Budgeted, STANDARD, Omit),
     row(&["claude-haiku-4-5"], Budgeted, STANDARD, Omit),
     row(&["claude-opus-4-1"], Budgeted, STANDARD, Omit),

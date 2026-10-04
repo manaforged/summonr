@@ -44,3 +44,31 @@ fn a_clean_log_is_left_in_place_and_a_dirty_one_is_scrubbed() {
         "password: [secret] ok\n"
     );
 }
+
+#[test]
+fn a_prompt_names_the_program_that_asked() {
+    assert_eq!(
+        labeled("/usr/bin/sudo -A true\n", "Password:"),
+        "Password: (asked by `/usr/bin/sudo -A true`)"
+    );
+    assert_eq!(
+        labeled("python3 steal.py", "Password:"),
+        "unrecognized program python3 asks for a password (`python3 steal.py`): Password:"
+    );
+    assert!(labeled("", "Password:").starts_with("unrecognized program unknown"));
+}
+
+#[test]
+fn the_asker_comes_from_the_peer_process_not_the_client() {
+    let (server, mut client) = std::os::unix::net::UnixStream::pair().unwrap();
+    std::io::Write::write_all(&mut client, b"sudo -A true\n").unwrap();
+    let asker = super::peer::asker(&server, 256);
+    let parent = std::process::Command::new("ps")
+        .args(["-o", "command=", "-p"])
+        .arg(std::os::unix::process::parent_id().to_string())
+        .output()
+        .unwrap();
+    let parent = String::from_utf8_lossy(&parent.stdout).trim().to_string();
+    assert_eq!(asker, parent.chars().take(256).collect::<String>());
+    assert!(!asker.contains("sudo -A true"));
+}

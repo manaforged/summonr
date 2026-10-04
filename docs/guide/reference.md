@@ -1,7 +1,8 @@
 # Summonr reference
 
-This page documents every flag, key, slash command, pane, policy rule,
-workflow seat, child session, and peer mail. The
+This page documents the flags, config keys, environment variables, exit
+codes, slash commands, panes, policy rules, workflow seats, child
+sessions, and peer mail. The
 [README](../../README.md) is the short form.
 
 
@@ -47,7 +48,11 @@ The browser flow picks its return path from `redirect_uri`:
 
 - A loopback `redirect_uri`, or none at all, opens a local port, catches
   the provider's redirect, and closes. Omit it and Summonr picks a free
-  port; set it when the provider registered a fixed one.
+  port; set it when the provider registered a fixed one. Port `0` keeps
+  the provider's path and lets Summonr pick the port.
+- When the redirect carries a `client_id`, Summonr stores it with the
+  token and uses it for every refresh and the next sign-in. This is how
+  a provider that registers the app on first sign-in hands out its id.
 - Any other `redirect_uri` switches to paste-back: Summonr asks for the
   code the browser shows and accepts the `code#state` form. No port opens.
 
@@ -66,9 +71,21 @@ not code:
 
 Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
 
-`claude-pro` is built in: `summonr login claude-pro` signs in with a
-Claude Pro or Max plan and stores a rotating token. `config.example.toml`
-carries ready rows for other plans.
+`config.example.toml` carries ready rows for other plans. The `claude-pro`
+seat is off: Anthropic's terms do not allow a third-party app to sign in
+with a Claude Pro or Max plan.
+
+`chatgpt` signs in with ChatGPT (Plus or Pro) and runs on the plan's
+usage through the Responses API. The first sign-in registers Summonr
+with OpenAI and stores the issued client id; `~/.summonr/host-id` holds
+the install id that OpenAI asks for on every sign-in. OpenAI caps each
+app per week in ChatGPT settings → Usage; when the cap is reached, the
+error names that page after the standard retry policy. The plan path rejects
+`max_output_tokens`, sampling fields, and hosted tools.
+
+`supergrok` signs in with a SuperGrok or X Premium+ plan through the
+device flow at `auth.x.ai` and sends requests to `api.x.ai` as a bearer
+token. `grok` stays the metered key (`XAI_API_KEY`).
 
 Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
@@ -106,10 +123,10 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openai`, `openrouter`, `together`,
+`ollama`, `deepseek`, `kimi`, `grok`, `supergrok`, `copilot`, `openai`, `openrouter`, `together`,
 `groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`,
-`fireworks`, `deepinfra`, `minimax`, `minimax-cn`; native
-wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
+`fireworks`, `deepinfra`, `minimax`, `minimax-cn`; the Responses seat
+`chatgpt`; native wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
 `[endpoint.NAME]` row with `wire = "decisions"` to use `summonr classify`. OpenRouter is a
 chat seat (`OPENROUTER_API_KEY`); `/model` lists its catalog the same
 way it lists OpenCode. `together`, `groq`, `cerebras`,
@@ -167,6 +184,74 @@ removes the tree; a tree that cannot fast-forward or still holds
 uncommitted files is kept and named, and the exit code is 1.
 `--here` is the default.
 
+### Flags
+
+| Flag | Effect |
+| --- | --- |
+| `-e`, `--endpoint NAME` | Use endpoint NAME. A bare endpoint name as the first word does the same. |
+| `-p`, `--print` | Run one prompt and exit. |
+| `-c`, `--continue` | Resume the last session in this directory. |
+| `--fork` | Copy the resumed session (`-c`, `--session`) and continue the copy. Not with `--goal` or `--steps`. |
+| `--trust` | Read workspace `SYSTEM.md`, `AGENTS.md`, and `CLAUDE.md`. On by default. |
+| `--no-trust` | Ignore those workspace files. |
+| `--net` | Allow network inside the sandbox. On by default. |
+| `--no-net` | Deny network inside the sandbox. |
+| `--no-verify` | Skip the `.summonr/check.toml` gate. |
+| `--no-splash` | Skip the startup banner. |
+| `--inline` | Keep the transcript in terminal scrollback, with the composer pinned at the bottom. |
+| `--here` | Work in this checkout. This is the default; it cannot be combined with `--worktree`. |
+
+The last of a pair (`--trust`/`--no-trust`, `--net`/`--no-net`) wins.
+An option that takes a value rejects a value that starts with `-`:
+`--name -x` is an error, not the name `-x`.
+
+`summonr -p` with no prompt reads the prompt from stdin until EOF. So
+does `summonr` with no prompt when stdin or stdout is not a terminal:
+
+```sh
+git diff | summonr kimi -p
+```
+
+### Config keys
+
+Top-level keys in `~/.summonr/config.toml`:
+
+| Key | Values | Effect |
+| --- | --- | --- |
+| `splash` | `true` (default), `false` | Show the startup banner. |
+| `animations` | `true` (default), `false` | Animate the interface. |
+| `fps` | 1 to 240, default 25 | Interface frame rate. |
+| `diff_layout` | `split` (default), `unified` | Diff pane layout. |
+
+Keys on an `[endpoint.NAME]` row:
+
+| Key | Effect |
+| --- | --- |
+| `context_window` | Context size in tokens. Without it, Summonr asks the provider. |
+| `idle_timeout_secs` | Seconds a response stream may stay silent before the request fails. At least 1; default 240. |
+| `headers` | A table of extra HTTP headers sent on every request. |
+| `fallback` | A list of endpoint names. When a request fails with an error that a retry cannot fix, the session moves to the next name. |
+| `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
+| `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
+| `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
+| `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
+
+### Environment variables
+
+| Variable | Effect |
+| --- | --- |
+| `SUMMONR_HOME` | Summonr home directory. Default `~/.summonr`. |
+| `SUMMONR_BASE_URL` | Use this OpenAI-compatible base URL as the endpoint when no endpoint is named. |
+| `SUMMONR_API_KEY` | API key for `SUMMONR_BASE_URL`. |
+| `SUMMONR_MAX_TOKENS` | `max_tokens` sent with `SUMMONR_BASE_URL`. |
+| `SUMMONR_KEEP_REASONING` | When set, `SUMMONR_BASE_URL` keeps reasoning as `keep_reasoning = true` does. |
+| `SUMMONR_SYSTEM_PROMPT` | Replace the whole system prompt. `SYSTEM.md`, `AGENTS.md`, `CLAUDE.md`, and skills are not added. |
+| `SUMMONR_MODELS_URL` | URL of the model catalog. |
+| `SUMMONR_CAPTURE_DIR` | Write raw provider request and stream frames as JSON lines to this directory. |
+| `SUMMONR_VERSION` | Installer: release tag to install. Default `latest`. |
+| `SUMMONR_INSTALL_DIR` | Installer: install directory. |
+| `SUMMONR_LIBC` | `install.sh` on Linux: `musl` (default) or `gnu`. |
+
 ### Reasoning effort
 
 The levels are `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, and
@@ -176,13 +261,15 @@ a model that stops at `high` sends `high`. `medium` on a model that
 accepts only `low` and `high` sends `low`.
 
 A model that takes no effort setting gets no effort field, so a level
-you pick cannot fail the request. With no effort set, Summonr also sends
-no effort field, and the model uses its own default.
+you pick cannot fail the request. With no effort set and none
+remembered, Summonr uses `high` for a model the catalog marks as
+reasoning. For any other model it sends no effort field, and the model
+uses its own default.
 
 `none` turns thinking off where the model can turn it off. If the model
 cannot, Summonr sends the lowest level it accepts.
 
-Anthropic Messages (`anthropic`, `claude-pro`, or any row with
+Anthropic Messages (`anthropic`, or any row with
 `wire = "anthropic"`), by model id:
 
 | Model | Levels | `none` |
@@ -294,10 +381,12 @@ from `--sandbox` or `[sandbox] on` stays.
 
 ### Confirmation
 
-Everything runs without a prompt except the hard denials: `sudo`,
-`rm -rf` outside the workspace, force-push, and the rest of the built-in
-deny list. Those ask first with `[ allow ]` / `[ deny ]` (or `y` / `n`).
-`-p` has no one to ask, so a hard denial does not run there.
+Everything runs without a prompt except irreversible destruction: wiping
+the system, home, or project root, `mkfs`, `dd` to a device, a fork bomb,
+`chmod -R 777 /`, `terraform destroy`, cluster deletes, and dropped database
+tables. Those ask first with `[ allow ]` / `[ deny ]` (or `y` / `n`). `-p` has
+no one to ask, so they do not run there. Each turn's checkpoint makes the rest,
+such as `git reset --hard`, recoverable with `/undo`.
 
 `sudo` asks for your password in a dialog. The password goes to `sudo`
 through `SUDO_ASKPASS`; the model never sees it, and command output is
@@ -452,6 +541,7 @@ command output shows it as `[secret]`.
 | Command | Job |
 | --- | --- |
 | `/resume [ID\|NAME]` | open another session |
+| `/new` | start another session beside this one |
 | `/name [TEXT]` | name this session |
 | `/clear` | start a fresh context; files stay |
 | `/compact` | summarize earlier turns |
@@ -703,7 +793,9 @@ the project configuration it reads.
 Unknown flags exit 1. A red verify gate exits 2 (`-p`, or a bounded
 goal that ends red). A run that stops short exits 3: a budget breach, a
 stalled or impossible goal, a bounded goal the judge did not accept,
-or an aborted turn.
+or an aborted turn. On Unix, `SIGINT` exits 130, `SIGTERM` 143, and
+`SIGHUP` 129; on Windows, Ctrl+C exits 130. A signal exit skips the
+`--worktree` finish, so the worktree and its branch stay in place.
 JSON turn receipts keep model text separate from the changed-path list
 and every configured completion check. `verified` on a receipt is true
 only when at least one check ran and every check passed; a turn with no
@@ -795,11 +887,15 @@ the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
 target those paths, and the OS sandbox allows the write. `write` and `edit`
 accept files under them too. `~` and `$HOME` expand before the check.
-Hard denials never prompt: force-push, `sudo`, `rm -rf /`, and deny-list matches.
-A protected path outside the workspace (`.git/hooks`, `.git/config`, `~/.ssh`,
-`~/.gnupg`, `~/.summonr`, shell startup files) prompts as `protected path <dir>`,
-never with `[ always ]`. A protected file inside the workspace (`.env`) is
-denied with no prompt. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
+The same irreversible commands ask before they run, with or without the
+sandbox. Under `--strict` they never run, and neither do force pushes, `sudo`,
+pipes into a shell, history rewrites, or writes to protected paths. Under `--sandbox` or `--strict`, matches on your own `[policy] deny`
+list are refused without a prompt.
+In the sandbox, a write to a protected path outside the workspace
+(`.git/hooks`, `.git/config`, `~/.ssh`, `~/.gnupg`, `~/.summonr`, shell
+startup files) is allowed for the session without a prompt, and a note in
+the transcript names the path. A protected file inside the workspace (`.env`)
+is denied. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
 
 A sandboxed `cargo`, `rustup`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, or `go`
 command that fails with `Operation not permitted` offers the matching home
@@ -850,6 +946,16 @@ on paths relative to a writable root; extra roots themselves come only from
 except that `strict = true` with an empty allow list denies all commands.
 Repository policy can narrow user permissions, never widen them. Children
 inherit these restrictions.
+
+`confirm` picks which commands ask first. `confirm = "destructive"`, the
+default, asks only before irreversible destruction (see Confirmation).
+`confirm = "risky"` also asks before `sudo`, force pushes, pipes into a shell,
+git commands that discard work or rewrite history, and writes to protected
+paths. The stricter value wins across overlays.
+
+```toml
+confirm = "risky"
+```
 In plan mode `edit` and `write` are denied. Shell commands stay read-only, so
 source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables

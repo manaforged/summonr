@@ -6,6 +6,7 @@ use sigil::prelude::{
 use super::{Agent, App};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 fn text(body: impl Into<String>, look: Look) -> sigil::kernel::TextBuilder {
     look.on(sigil::kernel::text(body.into()).nowrap())
@@ -19,12 +20,6 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
     }
 }
 
-fn relative(text: &str, roots: &[String]) -> String {
-    roots.iter().fold(text.to_string(), |text, root| {
-        text.replace(&format!(" {root}/"), " ")
-    })
-}
-
 fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
     let meta = if detail {
@@ -33,14 +28,14 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
             crate::child::Access::Research => "ro",
         };
         format!(
-            "{} · {access} · {} · {}",
+            "{} · {access} · {} · {} tok",
             agent.id,
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
     } else {
         format!(
-            "{} · {}",
+            "{} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )
@@ -57,9 +52,12 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
         .child(text(glyph, tone))
         .child(text(agent.title.clone(), Look::xs(Token::Gray12)))
         .child(
-            text(relative(&agent.last, roots), Look::xs(Token::Gray10))
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
+            text(
+                super::entry::workspace_relative(&agent.last, roots),
+                Look::xs(Token::Gray10),
+            )
+            .ellipsize()
+            .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0)),
         )
         .child(text(meta, Look::xs(Token::Gray10)))
 }
@@ -107,13 +105,16 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
             if expanded && !rows.is_empty() {
                 let tokens: u64 = rows.iter().map(|agent| agent.tokens).sum();
                 let toggle = app.clone();
+                let close = Hints::new()
+                    .key(Key::Hotkey(crate::prefs::Hotkey::Agents), "closes")
+                    .text(&app.model.peek().prefs.hotkeys);
                 nodes.push(
                     container()
                         .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
                         .child(text("children", Look::xs(Token::Gray12).bold()))
                         .child(text(
                             format!(
-                                "{} · {} tok · ctrl+a closes",
+                                "{} · {} tok · {close}",
                                 rows.len(),
                                 crate::provider::compact(tokens)
                             ),
@@ -128,8 +129,8 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
                 );
             }
             for agent in &rows {
-                let lead = if agent.background { "background" } else { "  " };
-                nodes.push(line(agent, lead, &app.roots, expanded));
+                let lead = format!("{:<10}", if agent.background { "background" } else { "" });
+                nodes.push(line(agent, &lead, &app.roots, expanded));
             }
             nodes
         })

@@ -57,7 +57,7 @@ impl<P: Provider> Run<P> {
                         &turn.text,
                         turn.rounds,
                         turn.usage.clone(),
-                        Some("the child reached its round or resource budget"),
+                        Some(&turn.text),
                         access,
                     ))
                 } else {

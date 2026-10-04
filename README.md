@@ -18,7 +18,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer checks the SHA-256 of the download against the release's `SHA256SUMS` file and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer downloads the archive's `.sha256` file from the same release, checks the archive's SHA-256 against it, and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -26,7 +26,7 @@ To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases]
 shasum -a 256 -c SHA256SUMS --ignore-missing
 ```
 
-On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. Each release file has a build attestation:
+On Windows, compare the output of `Get-FileHash <file> -Algorithm SHA256` with the line in `SHA256SUMS`. A checksum from the same release does not prove where the file came from. To check provenance, verify the build attestation that each release file has:
 
 ```sh
 gh attestation verify <file> --repo manaforged/summonr
@@ -76,8 +76,9 @@ If you have a coding plan, sign in instead of using a metered key:
 
 ```sh
 summonr login              # every plan and key, with its status
-summonr login claude-pro   # Claude Pro or Max, through the browser
-summonr claude-pro
+summonr login chatgpt      # ChatGPT Plus or Pro, through the browser
+summonr login supergrok    # SuperGrok or X Premium+, with a device code
+summonr chatgpt
 ```
 
 Run one prompt and exit:
@@ -105,7 +106,7 @@ Next commands:
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `ollama`, `openrouter`, `kimi`, `copilot`, `together`, `fireworks`, `deepinfra`, and `minimax`. Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
+Built-in endpoints include `anthropic`, `openai`, `chatgpt`, `gemini`, `grok`, `supergrok`, `deepseek`, `ollama`, `openrouter`, `kimi`, `copilot`, `together`, `fireworks`, `deepinfra`, and `minimax`. Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]
@@ -133,7 +134,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 
 ## Limits
 
-- Under `--sandbox` or `--strict`, `policy.toml` rules are hard refusals: built-in denies cover force pushes, `sudo`, and `rm -rf /`. Without containment those commands ask you to confirm, and `-p` never runs them.
+- Commands run without a prompt. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. Set `confirm = "risky"` in `~/.summonr/policy.toml` to also ask before force pushes, `sudo`, pipes into a shell, and history rewrites; `--strict` refuses that whole list. Under `--sandbox` or `--strict`, your own `policy.toml` deny rules are hard refusals.
 - Six identical results from the same call end the turn. The terminal UI asks first.
 - The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.
@@ -150,7 +151,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 | Read | For |
 | --- | --- |
 | [User guide](docs/guide/README.md) | Task pages in reading order. Build the book with `mdbook serve docs`. |
-| [Reference](docs/guide/reference.md) | Every flag, config key, exit code, and environment variable. |
+| [Reference](docs/guide/reference.md) | Flags, config keys, exit codes, and environment variables. |
 | [API map](docs/api.md) | For agents and tools: each job mapped to its symbol or command, the error model, and what is off-limits. |
 | [Architecture](docs/guide/architecture.md) | How it works inside. |
 | [Contributing](CONTRIBUTING.md) | Build, check, and test commands, and where each kind of change goes. |

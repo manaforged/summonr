@@ -162,7 +162,13 @@ pub(in crate::tui::sigil_view) fn prompt(
             cols,
             x + 3,
             y + 2,
-            &format!("editing {path} · ctrl+s save · esc leave"),
+            &format!(
+                "editing {path} · {}",
+                crate::tui::sigil_view::ui::Hints::new()
+                    .key(crate::tui::sigil_view::ui::Key::Fixed("ctrl+s"), "save")
+                    .key(crate::tui::sigil_view::ui::Key::Esc, "leave")
+                    .text(&model.prefs.hotkeys)
+            ),
             palette().dim,
         );
     } else if visible {

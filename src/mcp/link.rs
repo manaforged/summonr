@@ -329,7 +329,7 @@ impl Drop for Pending {
                 return;
             };
             if let Some(conn) = link.conn.lock().await.as_mut() {
-                conn.cancel_inflight();
+                conn.cancel_inflight().await;
             }
         }));
     }

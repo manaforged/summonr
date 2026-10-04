@@ -51,7 +51,8 @@ pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
             400
         },
     );
-    let mut error = super::client::response_failure(code, message, None);
+    let mut error = super::client::plan_usage(code, kind, None)
+        .unwrap_or_else(|| super::client::response_failure(code, message, None));
     if let Error::Provider(failure) = &mut error {
         failure.status = status;
     }
@@ -69,6 +70,7 @@ pub(crate) enum Delta {
     Text(String),
     Thinking(String),
     Call(String),
+    Progress,
 }
 
 pub(crate) const MOST_PENDING: usize = 64 * 1024 * 1024;

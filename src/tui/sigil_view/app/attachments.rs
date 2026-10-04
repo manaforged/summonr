@@ -6,7 +6,7 @@ impl App {
             return false;
         }
         let lines = text.lines().count();
-        if lines < PASTE_FOLD_LINES && text.len() < PASTE_FOLD_CHARS {
+        if lines < crate::limits::PASTE_FOLD_LINES && text.len() < crate::limits::PASTE_FOLD_CHARS {
             return false;
         }
         let index = {
@@ -73,7 +73,7 @@ impl App {
         if let Some(path) = image_path(&self.workspace, text) {
             match read_image(&path) {
                 Ok(Some((image, source))) => {
-                    self.paste_image(image, source, format!("📷 {}", path.display()));
+                    self.paste_image(image, source, format!("image · {}", path.display()));
                 }
                 Ok(None) => return false,
                 Err(error) => {
@@ -87,7 +87,7 @@ impl App {
             return true;
         }
         if let Some((image, source)) = image_from_bytes(text.as_bytes()) {
-            self.paste_image(image, source, "📷 pasted image".to_string());
+            self.paste_image(image, source, "image · pasted".to_string());
             return true;
         }
         false
@@ -110,7 +110,7 @@ impl App {
             }
             Ok(bytes) => {
                 if let Some((image, source)) = image_from_bytes(&bytes) {
-                    self.attach_picture(image, source, "📷 Clipboard image".to_string());
+                    self.attach_picture(image, source, "image · clipboard".to_string());
                 } else {
                     let text = String::from_utf8_lossy(&bytes);
                     if !text.is_empty() && !self.paste(&text) && !self.paste_text(&text) {
@@ -151,12 +151,8 @@ impl App {
     }
 }
 
-const PASTE_FOLD_LINES: usize = 8;
-
-const PASTE_FOLD_CHARS: usize = 1000;
-
 fn paste_token(lines: usize, index: usize) -> String {
-    format!("[pasted {lines} lines #{index}]")
+    format!("[pasted {} #{index}]", crate::text::plural(lines, "line"))
 }
 
 fn image_path(workspace: &Path, text: &str) -> Option<PathBuf> {

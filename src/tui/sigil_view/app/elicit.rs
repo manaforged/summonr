@@ -77,7 +77,6 @@ impl FormState {
         if let Some(error) = &self.error {
             lines.push(error.clone());
         }
-        lines.push("enter next · esc cancel".to_string());
     }
 
     fn review_lines(&self, lines: &mut Vec<String>) {
@@ -85,7 +84,6 @@ impl FormState {
             let value = self.values.get(&field.name).map_or_else(String::new, shown);
             lines.push(format!("{}: {value}", field.title));
         }
-        lines.push("y send · n decline · e edit · esc cancel".to_string());
     }
 }
 

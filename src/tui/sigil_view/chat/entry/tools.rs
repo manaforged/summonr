@@ -13,7 +13,7 @@ use crate::tui::sigil_view::look::Look;
 
 pub(super) type Detail = Option<(String, Look)>;
 
-pub(super) fn glyph(state: &ToolState) -> (&'static str, Look) {
+pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, Look) {
     match state {
         ToolState::Running => ("○", Look::xs(Token::Gray11)),
         ToolState::Ok => ("●", Look::xs(Token::Success11)),
@@ -21,12 +21,12 @@ pub(super) fn glyph(state: &ToolState) -> (&'static str, Look) {
     }
 }
 
-fn searched(arg: &str) -> Option<&str> {
+pub(in crate::tui::sigil_view) fn searched(arg: &str) -> Option<&str> {
     arg.strip_prefix("search ")
         .filter(|rest| rest.starts_with('"'))
 }
 
-pub(super) fn workspace_relative(arg: &str, roots: &[String]) -> String {
+pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {
     arg.split(' ')
         .map(|word| {
             let (lead, path) =
@@ -115,7 +115,11 @@ pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
         .child(words)
 }
 
-fn flip(app: &App, index: usize, call: Option<usize>) -> impl Fn(&mut PointerEvent) + 'static {
+pub(in crate::tui::sigil_view) fn flip(
+    app: &App,
+    index: usize,
+    call: Option<usize>,
+) -> impl Fn(&mut PointerEvent) + 'static {
     let app = app.clone();
     move |event: &mut PointerEvent| {
         if event.button != Some(MouseButton::Left) {
@@ -142,22 +146,22 @@ fn flip(app: &App, index: usize, call: Option<usize>) -> impl Fn(&mut PointerEve
     }
 }
 
-fn call_output(
+pub(in crate::tui::sigil_view) fn call_output(
     name: &str,
     call: &Call,
+    output: &str,
     full: bool,
     layout: DiffLayout,
     app: &App,
 ) -> Option<NodeBuilder> {
-    let output = preview::plain(&call.output);
     let failed = matches!(call.state, ToolState::Failed);
     let running = matches!(call.state, ToolState::Running);
-    let Some(patch) = call.patch.clone().or_else(|| patch_of(&output)) else {
-        let ranged = Builtin::is(name, Builtin::Read) && crate::tools::read_span(&output).is_some();
+    let Some(patch) = call.patch.clone().or_else(|| patch_of(output)) else {
+        let ranged = Builtin::is(name, Builtin::Read) && crate::tools::read_span(output).is_some();
         if ranged && !full && !failed {
             return None;
         }
-        let shown = preview::text(full, name, &output, failed, running);
+        let shown = preview::text(full, name, output, failed, running);
         return (!shown.is_empty()).then(|| tree(&shown));
     };
     let rows = if full { usize::MAX } else { COMPACT_ROWS };
@@ -168,7 +172,7 @@ fn call_output(
     let view = if Builtin::of(name).is_some_and(Builtin::edits) {
         view
     } else {
-        view.path(patch_path(&output).unwrap_or_else(|| call.arg.clone()))
+        view.path(patch_path(output).unwrap_or_else(|| call.arg.clone()))
     };
     Some(container().child(view))
 }
@@ -191,13 +195,14 @@ pub(super) fn tool_card(
     let hidden = tools == ToolOutput::Hidden && !call.expanded;
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = verb(name, &shown);
-    let detail = detail(name, call, &preview::plain(&call.output));
+    let output = preview::plain(&call.output);
+    let detail = detail(name, call, &output);
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .pointer_up(flip(app, index, at))
         .child(header(&call.state, call_line(verb, arg, detail, true)));
     match (!hidden)
-        .then(|| call_output(name, call, full, layout, app))
+        .then(|| call_output(name, call, &output, full, layout, app))
         .flatten()
     {
         Some(body) => card.child(body),
@@ -266,7 +271,7 @@ fn group_row(
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(line);
     match expanded
-        .then(|| call_output(name, call, true, layout, app))
+        .then(|| call_output(name, call, &output, true, layout, app))
         .flatten()
     {
         Some(body) => column.child(body),

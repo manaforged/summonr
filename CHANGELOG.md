@@ -6,6 +6,21 @@ First public release.
 
 ### Added
 
+- Several sessions stay live in one window or terminal. `/new` starts a
+  session beside the current one, and `/resume` or a click in the
+  window's sidebar switches without restarting. The sidebar groups open
+  sessions by project and marks each as working, needs you, ready, or
+  failed. A session open in one summonr cannot be opened in another.
+- The window draws its own conversation view: tool calls fold into a
+  steps card, code blocks carry a copy button, and the composer holds
+  the attach, model, and mode controls.
+- `summonr login chatgpt` signs in with ChatGPT and runs GPT models on a
+  Plus or Pro plan through the Responses API. `summonr login supergrok`
+  signs in with a SuperGrok or X Premium+ plan. A browser login now keeps
+  the client id a provider issues on the redirect and accepts a
+  `redirect_uri` with port `0`.
+- The `claude-pro` seat is off. Anthropic's terms do not allow a
+  third-party app to sign in with a Claude Pro or Max plan.
 - Windows x86_64 release binary and a PowerShell installer
   (`irm https://summonr.dev/install.ps1 | iex`). Linux binaries are
   static musl builds. `https://summonr.dev/install.sh` installs on macOS
@@ -39,6 +54,22 @@ First public release.
 
 ### Changed
 
+- Every dialog, inline prompt, and key hint is built from one UI kit:
+  dialogs share one frame and always end in their key hints, approval and
+  form prompts look the same in the terminal and the desktop window, and
+  hints show your own key bindings with one separator style.
+- Commands run without a prompt, sandboxed or not. Only irreversible
+  destruction asks first: wiping the system, home, or project root,
+  `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and
+  dropped tables, including inside a heredoc fed to a shell. `sudo`,
+  force pushes, pipes into a shell, git discards, and protected-path
+  writes no longer ask; `confirm = "risky"` in `policy.toml` brings
+  those prompts back. `--strict` refuses the whole list, and your own
+  `[policy] deny` rules stay hard refusals under `--sandbox` or `--strict`.
+- summonr starts when its home is not writable, such as inside another
+  tool's sandbox: the session lives in the temp directory, says so,
+  and does not resume. A keychain key that cannot move to the key file
+  still works.
 - macOS release binaries are Apple silicon only. The TLS stack does not
   build for Intel Macs, so `install.sh` stops there with a clear message
   instead of a failed download.
@@ -80,9 +111,8 @@ First public release.
 - MCP calls follow `policy.toml` and `--strict`, and stdio servers run
   inside `--sandbox`. A reply over 4 MiB is dropped; output over 50 KB
   is cut and the full text saved to a file.
-- One permission mode: everything runs without a prompt except hard
-  denials (`sudo`, `rm -rf` outside the workspace, force push, the deny
-  list), which ask first. `/permissions approve` is removed.
+- One permission mode: everything runs without a prompt.
+  `/permissions approve` is removed.
 - `sudo` asks for the password in a dialog through `SUDO_ASKPASS`.
 - Fewer wasted rounds: command output keeps about 16 KB, `write` over a
   file returns one line, `read` pages by 50 KB, and batch edits to the
@@ -101,6 +131,46 @@ First public release.
 
 ### Fixed
 
+- Review follow-ups: `xargs -I {} sh -c {}` is seen by the ask gate; a
+  failed attempt's partial reply is no longer sent back as the last
+  message; the password dialog names the program that really asked;
+  a hook's process group is stopped only on timeout; compaction keeps a
+  later message that repeats the turn's first prompt and says when it
+  starts.
+- Terminal UI polish: the approval and form bands render on their own
+  rows instead of over the footer; approvals list their keys
+  (y allow · Y always · n deny); `?` in an empty composer opens the
+  shortcuts and `↑` brings back a draft cleared with ctrl+c; counts read
+  "1 hunk" and "3 hunks"; long times read 12m34s; key hints follow your
+  hotkeys; pane titles ellipsize instead of hiding the close button, and a
+  narrow terminal says how wide panes need; Nord and Dawn hints and code
+  blocks are readable; empty states, separators, and wording match
+  across panes, search, usage, and messages.
+- Terminal UI: tool output can no longer move the cursor or ring the
+  bell; typing y or n while an approval waits goes into the draft;
+  ctrl+a and ctrl+x select and cut in a non-empty composer on Linux and
+  Windows, and ctrl+u, ctrl+k, and ctrl+w can no longer be bound as
+  hotkeys; child lines render the same in the strip and the transcript.
+- Tools: a pre-tool hook that fails or times out blocks the call and its
+  helpers are stopped; tags on lines longer than 8 KB match their edits;
+  MCP over HTTP delivers progress as it arrives, refuses an event over
+  the frame cap, and cancels a stopped call on the server.
+- Providers: a long tool-argument stream no longer trips the stall
+  timeout; a rejected OAuth token is refreshed instead of reused; OAuth
+  errors never echo the token reply; cached tokens without a listed
+  rate are priced at the input rate; an environment key is not sent to
+  a base URL you overrode; Claude 3 models other than 3.7 get no
+  thinking budget.
+- Sessions: auto-compaction no longer keeps the current prompt twice;
+  a failed model round with partial text keeps history in step for later
+  repairs; a refused dangerous command asks again next time; cancelling a
+  turn stops its background jobs; a session with one bad log line still
+  resumes; an aborted child reports its real reason.
+- Sandbox and policy: `--strict` refuses an allow-listed command that
+  destroys work, such as `git reset --hard`; git hooks, config, and
+  commondir stay protected inside submodules too; the ask gate sees
+  quoted verbs, `eval`, `find -exec rm`, `bash -c --`, and `xargs sh -c`;
+  a password prompt names the program that asked for it.
 - MCP: a timed-out call no longer corrupts the next one, server start
   waits at most 60 seconds, remote servers reconnect after their session
   expires, and Ctrl-C stops servers and commands.

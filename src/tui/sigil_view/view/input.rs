@@ -66,6 +66,11 @@ pub(super) fn hotkey_shortcuts(mut node: NodeBuilder, app: &App) -> NodeBuilder 
             Shortcut::ctrl(LogicalKey::character(key.to_string())),
             move |event| {
                 if !route.hotkeys.recording.peek()
+                    && crate::prefs::EditorKey::yields(key, route.draft.peek().is_empty())
+                {
+                    return;
+                }
+                if !route.hotkeys.recording.peek()
                     && !route.options_active()
                     && route.model.get().prefs.hotkeys.action(key)
                         == Some(crate::prefs::Hotkey::Newline)

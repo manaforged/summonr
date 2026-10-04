@@ -39,15 +39,37 @@ fn review(app: &App) -> bool {
     !app.options_active() && app.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
 }
 
+fn answering(app: &App) -> bool {
+    !app.options_active() && app.draft.peek().is_empty() && app.approval.peek().is_some()
+}
+
+fn shortcuts(app: &App, event: &mut KeyEvent) {
+    if !app.options_active()
+        && !app.view_edit.peek()
+        && !app.pane_focus.peek()
+        && app.form_stage().is_none()
+        && app.approval.peek().is_none()
+        && app.draft.peek().is_empty()
+    {
+        event.stop_propagation();
+        app.help.show();
+        app.refresh();
+    }
+}
+
 fn respond() -> Vec<(Shortcut, Handler)> {
     vec![
+        (LogicalKey::character("?").into(), shortcuts),
+        (
+            Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
+            shortcuts,
+        ),
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if !app.options_active() && app.approval.peek().is_some_and(|(_, persist)| persist)
-                {
+                if answering(app) && app.approval.peek().is_some_and(|(_, persist)| persist) {
                     event.stop_propagation();
-                    app.approval_answer("always");
+                    app.approval_answer(crate::runtime::GrantAnswer::Always);
                 }
             },
         ),
@@ -55,18 +77,18 @@ fn respond() -> Vec<(Shortcut, Handler)> {
             if review(app) {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Send);
-            } else if !app.options_active() && app.approval.peek().is_some() {
+            } else if answering(app) {
                 event.stop_propagation();
-                app.approval_answer("y");
+                app.approval_answer(crate::runtime::GrantAnswer::Allow);
             }
         }),
         (LogicalKey::character("n").into(), |app, event| {
             if review(app) {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
-            } else if !app.options_active() && app.approval.peek().is_some() {
+            } else if answering(app) {
                 event.stop_propagation();
-                app.approval_answer("n");
+                app.approval_answer(crate::runtime::GrantAnswer::Deny);
             }
         }),
         (Key::F5.into(), |app, event| {

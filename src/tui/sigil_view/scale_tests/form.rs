@@ -107,11 +107,10 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
         typed(&app, "7");
         assert_eq!(app.draft.peek(), "Red");
         typed(&app, "2");
-        let review = app.form.peek().unwrap().lines().join("\n");
-        assert!(
-            review.contains("Color: Green") && review.contains("y send"),
-            "{review}"
-        );
+        let form = app.form.peek().unwrap();
+        let review = form.lines().join("\n");
+        assert!(review.contains("Color: Green"), "{review}");
+        assert!(form.stage == crate::tui::sigil_view::app::Stage::Review);
         app.form_reply(Reply::Send);
         let answer = sent(&mut receiver);
         assert_eq!(answer.action, FormAction::Accept);

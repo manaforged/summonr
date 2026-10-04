@@ -87,3 +87,6 @@ pub(crate) fn retry_policy() -> leyline::RetryPolicy {
             leyline::RetryTrigger::ServerError,
         ])
 }
+
+pub(crate) const PASTE_FOLD_LINES: usize = 8;
+pub(crate) const PASTE_FOLD_CHARS: usize = 1000;

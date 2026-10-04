@@ -31,10 +31,47 @@ pub(super) fn shell(program: &str) -> bool {
     )
 }
 
-pub(super) const WRAPPERS: [&str; 15] = [
+pub(super) const WRAPPERS: [&str; 16] = [
     "env", "sudo", "doas", "nice", "nohup", "exec", "command", "builtin", "time", "xargs",
-    "timeout", "stdbuf", "setsid", "flock", "chronic",
+    "timeout", "stdbuf", "setsid", "flock", "chronic", "eval",
 ];
+
+const XARGS: &str = "xargs";
+const XARGS_REPLACE: &[&str] = &["-I", "-J", "--replace=", "-i"];
+const XARGS_DEFAULT_TOKEN: &str = "{}";
+const XARGS_VALUE_FLAGS: &[&str] = &["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"];
+
+fn xargs_runs_input(words: &[&str], at: usize) -> bool {
+    let Some(from) = words[..at].iter().position(|word| *word == XARGS) else {
+        return false;
+    };
+    let options = &words[from + 1..at];
+    let token = options.iter().enumerate().find_map(|(index, word)| {
+        let flag = XARGS_REPLACE.iter().find(|flag| word.starts_with(*flag))?;
+        let rest = &word[flag.len()..];
+        Some(if !rest.is_empty() {
+            rest
+        } else if *flag == "-I" || *flag == "-J" {
+            options
+                .get(index + 1)
+                .copied()
+                .unwrap_or(XARGS_DEFAULT_TOKEN)
+        } else {
+            XARGS_DEFAULT_TOKEN
+        })
+    });
+    let rest = &words[at + 1..];
+    let Some(flag) = rest
+        .iter()
+        .position(|word| word.starts_with('-') && !word.starts_with("--") && word.contains('c'))
+    else {
+        return false;
+    };
+    match rest[flag + 1..].iter().find(|word| **word != "--") {
+        None => true,
+        Some(script) => token.is_some_and(|token| script.replace(['\'', '"'], "") == token),
+    }
+}
 
 pub(super) fn pipes_to_shell(command: &str) -> bool {
     unquoted(command, &["|"])
@@ -46,10 +83,15 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                 .split_whitespace()
                 .map(|word| word.rsplit('/').next().unwrap_or(word))
                 .collect();
+            let mut value = false;
             words
                 .iter()
-                .position(|word| {
-                    !WRAPPERS.contains(word)
+                .enumerate()
+                .position(|(index, word)| {
+                    let skipped = value;
+                    value = XARGS_VALUE_FLAGS.contains(word) && words[..index].contains(&XARGS);
+                    !skipped
+                        && !WRAPPERS.contains(word)
                         && !word.starts_with('-')
                         && !word.contains('=')
                         && !word.chars().all(|c| c.is_ascii_digit())
@@ -67,7 +109,8 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                         .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
                         .to_ascii_lowercase();
                     word.starts_with('`')
-                        || ((shell(&name) || interpreter(&name)) && reads_stdin(&words[at + 1..]))
+                        || ((shell(&name) || interpreter(&name))
+                            && (reads_stdin(&words[at + 1..]) || xargs_runs_input(&words, at)))
                 })
         })
 }
@@ -101,16 +144,21 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
 
 pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
     let folded = collapse(command);
-    wipes_root(&folded)
+    catastrophic(command)
         || folded.contains("git push --force")
         || folded.contains("git push -f")
         || folded.contains("git push --mirror")
         || pipes_to_shell(command)
         || runs_substitution(segments)
-        || folded.contains("mkfs")
-        || folded.contains(":(){ :|:& };:")
         || escalates(command)
         || powers_off(segments)
+}
+
+pub(super) fn catastrophic(command: &str) -> bool {
+    let folded = collapse(command);
+    wipes_root(&folded)
+        || folded.contains("mkfs")
+        || folded.contains(":(){ :|:& };:")
         || folded.contains("chmod -r 777 /")
         || (folded.contains("dd if=") && folded.contains("of=/dev/"))
 }
@@ -133,13 +181,13 @@ fn escalates(command: &str) -> bool {
 
 #[cfg(unix)]
 #[expect(unsafe_code, reason = "std has no effective-uid query")]
-fn running_as_root() -> bool {
+pub(crate) fn running_as_root() -> bool {
     // SAFETY: geteuid has no preconditions and cannot fail.
     unsafe { libc::geteuid() == 0 }
 }
 
 #[cfg(not(unix))]
-fn running_as_root() -> bool {
+pub(crate) fn running_as_root() -> bool {
     false
 }
 

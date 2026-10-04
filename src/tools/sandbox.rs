@@ -281,7 +281,7 @@ impl Sandbox {
                         path.as_os_str().to_os_string(),
                     ]);
                 }
-                for path in [".git/hooks", ".git/config"].map(|path| self.workspace.join(path)) {
+                for path in crate::policy::guarded_git_paths(&self.workspace) {
                     if !read_only && path.exists() {
                         command.extend([
                             "--ro-bind".into(),

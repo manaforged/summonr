@@ -42,12 +42,7 @@ impl Agent {
     }
 
     pub(in crate::tui::sigil_view) fn clock(&self) -> String {
-        let secs = self.elapsed();
-        if secs >= 60 {
-            format!("{}:{:02}", secs / 60, secs % 60)
-        } else {
-            format!("{secs}s")
-        }
+        crate::text::duration(self.elapsed())
     }
 
     pub(in crate::tui::sigil_view) fn state(&self) -> ToolState {

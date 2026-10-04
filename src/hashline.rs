@@ -6,9 +6,9 @@ use crate::text::Fnv64;
 const ALPH: &[u8] = b"0123456789abcdefghijklmnopqrstuv";
 
 #[must_use]
-pub(crate) fn line_hash(text: &str) -> String {
+pub(crate) fn line_hash(text: impl AsRef<[u8]>) -> String {
     let mut hasher = Fnv64::default();
-    hasher.write(text.as_bytes());
+    hasher.write(text.as_ref());
     let hash = hasher.finish();
     let mut out = [b'0'; 4];
     let mut rest = hash;
@@ -20,12 +20,19 @@ pub(crate) fn line_hash(text: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum Tags<'a> {
+    Off,
+    FromText,
+    Given(&'a [String]),
+}
+
 #[must_use]
 pub(crate) fn tagged_lines<S: AsRef<str>>(
     lines: &[S],
     first: usize,
     total: usize,
-    tags: bool,
+    tags: Tags<'_>,
 ) -> String {
     if total == 0 || lines.is_empty() {
         return format!("lines 0-0/{total}");
@@ -37,8 +44,13 @@ pub(crate) fn tagged_lines<S: AsRef<str>>(
         out.push('\n');
         out.push_str(&(first + offset + 1).to_string());
         out.push(':');
-        if tags {
-            out.push_str(&line_hash(line));
+        let hash = match tags {
+            Tags::Off => None,
+            Tags::FromText => Some(line_hash(line)),
+            Tags::Given(hashes) => hashes.get(offset).cloned(),
+        };
+        if let Some(hash) = hash {
+            out.push_str(&hash);
             out.push('|');
         }
         out.push_str(line);
@@ -54,7 +66,7 @@ pub(crate) fn tagged_span(lines: &[&str], first: usize, last: usize) -> String {
     }
     let first = first.min(total - 1);
     let last = last.min(total - 1).max(first);
-    tagged_lines(&lines[first..=last], first, total, true)
+    tagged_lines(&lines[first..=last], first, total, Tags::FromText)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

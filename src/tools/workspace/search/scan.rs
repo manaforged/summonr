@@ -229,19 +229,19 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
     let mut out = match spec.mode {
         Mode::Files => format!(
             "{} with `{}` ({} searched)",
-            plural(tally.matches, "file"),
+            crate::text::plural(tally.matches, "file"),
             spec.pattern,
             tally.searched
         ),
         Mode::Count => format!(
             "{} in {} ({} searched)",
-            plural(tally.match_total, "match"),
-            plural(tally.matches, "file"),
+            crate::text::plural(tally.match_total, "match"),
+            crate::text::plural(tally.matches, "file"),
             tally.searched
         ),
         Mode::Content => format!(
             "{} for `{}` ({} files searched)",
-            plural(tally.matches, "match"),
+            crate::text::plural(tally.matches, "match"),
             spec.pattern,
             tally.searched
         ),
@@ -255,7 +255,7 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
     if tally.capped > 0 {
         out.push_str(&format!(
             "; {} had more than {GREP_FILE_HITS} matching lines",
-            plural(tally.capped, "file"),
+            crate::text::plural(tally.capped, "file"),
         ));
     }
     if tally.skipped > 0 {
@@ -269,16 +269,6 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
         out.push_str(hit);
     }
     out
-}
-
-fn plural(count: usize, word: &str) -> String {
-    if count == 1 {
-        format!("{count} {word}")
-    } else if word.ends_with(['s', 'x']) || word.ends_with("ch") || word.ends_with("sh") {
-        format!("{count} {word}es")
-    } else {
-        format!("{count} {word}s")
-    }
 }
 
 fn match_column(matcher: &RegexMatcher, bytes: &[u8]) -> usize {

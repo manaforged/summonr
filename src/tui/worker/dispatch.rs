@@ -10,6 +10,8 @@ impl Worker {
             | Cmd::Dequeue
             | Cmd::Export(_)
             | Cmd::Mail
+            | Cmd::Replay
+            | Cmd::Open(_)
             | Cmd::Submit(_)) => self.lifecycle(command).await,
             command @ (Cmd::Login(_) | Cmd::SetKey(_, _) | Cmd::Logout(_)) => {
                 self.auth(command).await
@@ -72,7 +74,11 @@ impl Worker {
                 }
                 false
             }
-            Cmd::Cancel => true,
+            Cmd::Cancel | Cmd::Open(_) => true,
+            Cmd::Replay => {
+                self.reshow();
+                true
+            }
             Cmd::Dequeue => {
                 self.recover();
                 true

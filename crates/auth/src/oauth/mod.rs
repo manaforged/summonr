@@ -13,7 +13,9 @@ use crate::{Error, Issued, Parts, Prompt, Result, Store};
 use store::{held, save, stored};
 use token::{exchanged, refresh};
 
-pub(crate) use store::parse_stored;
+pub(crate) use store::{parse_stored, stale};
+#[cfg(test)]
+pub(crate) use token::minted;
 pub(crate) use token::stamped;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -141,6 +143,7 @@ async fn renew(parts: &Parts<'_>, http: &Session, store: &dyn Store) -> Result<S
         refresh: parts.spec.refresh_token.clone(),
         expires: None,
         identity: None,
+        client: None,
     };
     let minted = refresh(parts.spec, http, &seed).await?;
     save(parts, store, minted.clone())?;
@@ -161,6 +164,7 @@ pub(crate) async fn login(
                 refresh: parts.spec.refresh_token.clone(),
                 expires: None,
                 identity: None,
+                client: None,
             };
             let minted = refresh(parts.spec, http, &seed).await?;
             save(&parts, store, minted)

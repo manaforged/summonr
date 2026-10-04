@@ -112,8 +112,12 @@ impl<P: Provider> Loop<P> {
     pub(crate) fn abort_with(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<()> {
         self.forget_children();
         self.session
+            .interrupt_children(reason)
+            .map_err(super::session_err)?;
+        self.session
             .abort(reason, None)
             .map_err(super::session_err)?;
+        self.tools.stop_jobs()?;
         self.emit_records(&mut Vec::new(), &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(())

@@ -4,9 +4,9 @@ use sigil::prelude::{
     text_edit, virtual_list,
 };
 
-use super::prelude::*;
 use super::{App, canvas};
 use crate::tui::Cmd;
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, pick, press};
 use crate::workflow::Role;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
@@ -28,23 +28,36 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    shell(
-        app.workflow.open,
-        title(&app),
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || {
-                if paint.workflow.naming.get() {
-                    return naming(&paint);
-                }
-                seats(&paint)
-            }),
-    )
+    let state = app.clone();
+    let hotkeys = app.model.peek().prefs.hotkeys.clone();
+    Dialog::new(Size::Normal, title(&app), Hints::new())
+        .live_hints(move || {
+            if state.workflow.naming.get() {
+                Hints::new().key(Key::Enter, "save").key(Key::Esc, "back")
+            } else {
+                Hints::new()
+                    .key(Key::UpDown, "move")
+                    .key(Key::Enter, "pick model")
+                    .key(Key::Fixed("d"), "clear")
+                    .key(Key::Fixed("s"), "save")
+                    .key(Key::Esc, "close")
+            }
+        })
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::overlay_gap()),
+                )
+                .children_reactive(move || {
+                    if paint.workflow.naming.get() {
+                        return naming(&paint);
+                    }
+                    seats(&paint)
+                }),
+        )
+        .build(app.workflow.open, app.viewport.peek().0, &hotkeys)
 }
 
 fn title(app: &App) -> String {
@@ -65,13 +78,6 @@ fn naming(app: &App) -> Vec<NodeBuilder> {
                 .placeholder("Workflow name")
                 .submit(move |_| save.commit_workflow())
                 .height(canvas::overlay_field()),
-        ),
-        container().child(
-            sigil::kernel::text("enter saves · esc goes back")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .text_color(sigil::prelude::Token::Gray11),
         ),
     ]
 }

@@ -329,9 +329,68 @@ fn a_token_that_expires_within_the_skew_is_not_fresh() {
         refresh: None,
         expires: Some(Instant::now() + Duration::from_secs(5)),
         identity: None,
+        client: None,
     };
     assert!(
         !soon.fresh(),
         "a token expiring inside the skew must be refreshed, not used"
     );
+}
+
+#[tokio::test]
+async fn a_rejected_token_without_expiry_is_refreshed_on_the_next_call() {
+    let issuer = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .expect("the mock token endpoint binds");
+    let token_url = format!(
+        "http://{}/token",
+        issuer.local_addr().expect("the mock has an address")
+    );
+    let served = tokio::spawn(async move {
+        let (mut stream, _) = issuer.accept().await.expect("the mock takes the refresh");
+        let seen = whole(&mut stream).await;
+        let body = r#"{"access_token":"new"}"#;
+        let reply = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        tokio::io::AsyncWriteExt::write_all(&mut stream, reply.as_bytes())
+            .await
+            .expect("the mock answers");
+        seen
+    });
+    let kept = store();
+    kept.set("svc", r#"{"access_token":"old","refresh_token":"r"}"#)
+        .unwrap();
+    let spec = Spec {
+        token_url,
+        client_id: "cli".into(),
+        refresh_token: Some("seed".into()),
+        ..Spec::default()
+    };
+    let auth = Auth::new(Method::Login(Box::new(spec)), Scheme::Bearer, "svc", kept);
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).expect("a client builds");
+    assert_eq!(auth.token(&http).await.unwrap(), "old");
+    auth.forget_live();
+    assert_eq!(
+        auth.token(&http).await.expect("the refresh lands"),
+        "new",
+        "a rejected grant must take the refresh path, not be reused"
+    );
+    let seen = served.await.expect("the mock finishes");
+    assert!(seen.contains("grant_type=refresh_token"), "got {seen}");
+    assert!(seen.contains("refresh_token=r"), "got {seen}");
+}
+
+#[test]
+fn a_token_reply_without_an_access_token_names_no_secret() {
+    let Err(error) = oauth::minted(&serde_json::json!({
+        "refresh_token": "rt-secret",
+        "id_token": "id-secret"
+    })) else {
+        panic!("a reply without an access token was accepted");
+    };
+    let error = error.to_string();
+    assert!(!error.contains("secret"), "got {error}");
+    assert!(error.contains("refresh_token"), "got {error}");
 }

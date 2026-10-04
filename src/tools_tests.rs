@@ -441,3 +441,89 @@ fn a_search_runs_across_several_paths() {
     );
     assert!(text.contains("a.rs") && text.contains("b.rs"), "{text}");
 }
+
+fn outcome(tools: &ToolRegistry, command: &str) -> String {
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({ "command": command }).to_string(),
+        },
+        continuation: None,
+    };
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    match result {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    }
+}
+
+#[test]
+fn only_catastrophic_commands_ask_and_strict_refuses_every_hazard() {
+    let (_dir, mut tools) = workspace(&[]);
+    let wipe = "dd if=/dev/zero of=/dev/null count=1";
+    for command in [wipe.to_string(), format!("bash <<'EOF'\n{wipe}\nEOF")] {
+        let asked = outcome(&tools, &command);
+        assert!(asked.contains("needs the user's approval"), "{asked}");
+    }
+    let written = outcome(&tools, &format!("cat > notes.md <<'EOF'\n{wipe}\nEOF"));
+    assert!(!written.contains("needs the user's approval"), "{written}");
+    let routine = outcome(&tools, "git stash drop --help >/dev/null 2>&1; echo ran");
+    assert!(routine.contains("ran"), "{routine}");
+    tools.set_strict();
+    let refused = outcome(&tools, "sudo true");
+    assert!(refused.contains("strict mode never runs it"), "{refused}");
+}
+
+#[test]
+fn a_search_over_several_paths_reports_a_missing_one_inline() {
+    let (_dir, tools) = workspace(&[("a.txt", "needle here\n")]);
+    let hits = run(
+        &tools,
+        "read",
+        serde_json::json!({"pattern": "needle", "paths": ["a.txt", "missing.txt"]}),
+    );
+    assert!(hits.contains("a.txt:1:"), "{hits}");
+    assert!(hits.contains("missing.txt: "), "{hits}");
+}
+
+#[test]
+fn a_command_in_another_workdir_is_judged_from_that_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("ws");
+    std::fs::create_dir_all(workspace.join("keep")).unwrap();
+    std::fs::create_dir_all(root.path().join("keep")).unwrap();
+    let tools = ToolRegistry::with_policy_and_search(&workspace, Policy::builtin(), None).unwrap();
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({
+                "command": "rm -rf keep",
+                "workdir": root.path().display().to_string(),
+            })
+            .to_string(),
+        },
+        continuation: None,
+    };
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    let text = match result {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    };
+    assert!(root.path().join("keep").exists(), "{text}");
+}

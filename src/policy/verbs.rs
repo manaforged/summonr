@@ -11,6 +11,7 @@ pub(crate) enum Cond {
     Prefix(&'static [&'static str]),
     Short(char),
     First(&'static str),
+    Runs(&'static [&'static str], &'static [&'static str]),
 }
 
 impl Cond {
@@ -26,6 +27,10 @@ impl Cond {
                 .iter()
                 .any(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains(flag)),
             Cond::First(name) => args.first().is_some_and(|arg| arg == name),
+            Cond::Runs(flags, verbs) => args.windows(2).any(|pair| {
+                flags.contains(&pair[0].as_str())
+                    && verbs.contains(&pair[1].rsplit('/').next().unwrap_or(&pair[1]))
+            }),
         }
     }
 }
@@ -92,15 +97,25 @@ pub(crate) enum Clip {
     Tail,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Gate {
+    #[default]
+    Destructive,
+    Risky,
+}
+
 pub(crate) struct Rule {
     pub(crate) when: &'static [Cond],
     pub(crate) broad: bool,
+    pub(crate) gate: Gate,
     pub(crate) reason: &'static str,
 }
 
 pub(crate) struct SubRule {
     pub(crate) names: &'static [&'static str],
     pub(crate) when: &'static [Cond],
+    pub(crate) gate: Gate,
     pub(crate) reason: &'static str,
 }
 

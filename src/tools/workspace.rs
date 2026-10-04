@@ -53,7 +53,10 @@ impl ToolRegistry {
                 fields.remove("paths");
                 fields.insert("path".to_string(), Value::from(path));
             }
-            found.push(self.grep(&one.to_string())?);
+            found.push(match self.grep(&one.to_string()) {
+                Ok(hits) => hits,
+                Err(error) => format!("{path}: {error}"),
+            });
         }
         Ok(ToolOutput::ok(found.join("\n")))
     }

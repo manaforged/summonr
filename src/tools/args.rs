@@ -14,7 +14,7 @@ pub(crate) fn tool(name: &str, description: &str, parameters: Value) -> ToolDefi
     }
 }
 
-pub(in crate::tools) fn parse_args(name: &str, arguments: &str) -> Result<Value> {
+pub(crate) fn parse_args(name: &str, arguments: &str) -> Result<Value> {
     serde_json::from_str(arguments)
         .map_err(|error| Error::Tool(format!("{name} arguments are invalid: {error}")))
 }

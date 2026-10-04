@@ -12,6 +12,13 @@ pub(super) const SPECS: &[CommandSpec] = &[
     )
     .usage("[ID|NAME]"),
     spec(
+        "/new",
+        "start another session beside this one",
+        SlashCommand::New,
+        Bare,
+        Session,
+    ),
+    spec(
         "/name",
         "name this session",
         SlashCommand::Name,

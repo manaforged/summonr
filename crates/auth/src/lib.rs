@@ -118,6 +118,7 @@ pub(crate) struct Issued {
     pub(crate) refresh: Option<String>,
     pub(crate) expires: Option<Instant>,
     pub(crate) identity: Option<String>,
+    pub(crate) client: Option<String>,
 }
 
 impl Issued {
@@ -208,11 +209,13 @@ impl Auth {
     }
 
     pub fn forget_live(&self) {
-        if let Held::Login(seat) = self.held.as_ref()
-            && let Ok(mut slot) = seat.held.lock()
-        {
+        let Held::Login(seat) = self.held.as_ref() else {
+            return;
+        };
+        if let Ok(mut slot) = seat.held.lock() {
             slot.take();
         }
+        drop(oauth::stale(&parts(seat), self.store.as_ref()));
     }
 
     pub fn ready(&self) -> Result<bool> {
@@ -257,3 +260,7 @@ pub fn builder(timeout: Duration, connect: Duration) -> leyline::SessionBuilder 
 #[cfg(test)]
 #[path = "lib_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "registration_tests.rs"]
+mod registration_tests;

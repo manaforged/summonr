@@ -10,7 +10,7 @@ use crate::durable::log::{Usage as Meter, UsageMeta};
 use crate::error::{Error, Result};
 use crate::herdr::Reporter;
 use crate::mail::{Mail, Mailbox};
-use crate::policy::{Grant, Policy};
+use crate::policy::Policy;
 use crate::provider::{
     AssistantMessage, CompletionRequest, Effort, Message, Price, Provider, Role, ToolCall,
     ToolDefinition, ToolFunction, ToolKind, Usage, UserInput,
@@ -20,7 +20,7 @@ use crate::verify::Outcome;
 use crate::workflow;
 
 pub(crate) use crate::limits::{JOB_WAIT, JOB_WAIT_SECS};
-pub(crate) use turn::Steering;
+pub(crate) use turn::{GrantAnswer, Steering};
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Budget {
     pub max_tokens: Option<u64>,
@@ -134,7 +134,6 @@ pub struct Loop<P> {
     tasks: bool,
     plan_sandbox: bool,
     interactive: bool,
-    asked: Vec<Grant>,
     spawned: BTreeMap<String, child::Spawned>,
     events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
     catalog_frozen: bool,
@@ -215,7 +214,11 @@ impl<P: Provider> Loop<P> {
         messages: &'a [Message],
         advertised: &'a mail::Advertised,
     ) -> CompletionRequest<'a> {
-        self.request(role, messages, &advertised.tools, true)
+        let sent = messages
+            .split_last()
+            .filter(|(last, _)| last.role == Role::Assistant && last.tool_calls.is_empty())
+            .map_or(messages, |(_, earlier)| earlier);
+        self.request(role, sent, &advertised.tools, true)
             .with_tools_json(&advertised.json)
     }
 

@@ -120,3 +120,53 @@ fn a_tool_line_replays_its_display_patch_and_older_lines_still_load() {
     };
     assert_eq!(patch, None);
 }
+
+#[test]
+fn a_summary_keeps_a_later_message_that_repeats_the_opener() {
+    let user = |text: &str, start: bool| Line::User {
+        text: text.to_string(),
+        source: None,
+        images: Vec::new(),
+        start,
+    };
+    let mut state = State::default();
+    state.apply(user("continue", true));
+    state.apply(answer(Vec::new(), None));
+    state.apply(user("continue", false));
+    let reply = state.history[1].clone();
+    let repeat = state.history[2].clone();
+    state.apply(Line::Summary {
+        text: "summary".to_string(),
+        tail: vec![reply, repeat],
+    });
+    let texts: Vec<&str> = state.history.iter().map(|m| m.content.as_str()).collect();
+    assert_eq!(
+        texts,
+        ["continue", "summary", "Here", "continue"],
+        "got {texts:?}"
+    );
+}
+
+#[test]
+fn records_skip_a_malformed_line_in_the_middle_of_the_log() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    std::fs::write(
+        &path,
+        "{\"kind\":\"clear\"}\n{\"kind\":\"clear\"\n{\"kind\":\"clear\"}\n",
+    )
+    .unwrap();
+    let lines = read(&path).unwrap();
+    assert_eq!(lines, [Line::Clear, Line::Clear]);
+}
+
+#[test]
+fn a_session_journal_opens_in_one_host_at_a_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("session.jsonl");
+    let held = Log::create(&path).unwrap();
+    let second = Log::open(&path).err().map(|error| error.kind());
+    assert_eq!(second, Some(io::ErrorKind::WouldBlock));
+    drop(held);
+    Log::open(&path).unwrap();
+}

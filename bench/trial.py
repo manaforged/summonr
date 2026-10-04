@@ -9,7 +9,7 @@ SOURCES = rb"terminal-bench|tbench|marginlab|laude-institute|harbor-framework"
 VOID = re.compile(rb"https?:(?:\\?/){2}[^\s\"'<>]*(?:" + SOURCES + rb")|github\.com[:/](?:laude-institute|harbor-framework)", re.I)
 WARN = re.compile(rb"/logs/verifier|reward\.txt|/solution/|/tests/test|terminal-bench(?!-canary)|tbench\.ai|marginlab\.ai|laude-institute|harbor-framework", re.I)
 GRADER = re.compile(rb"uvx: command not found|/root/\.local/bin/env: No such file")
-MEMORY = ("agent", "tree", "agent_avg", "tree_avg")
+MEMORY = ("agent", "tree", "harness", "agent_avg", "tree_avg", "harness_avg")
 
 
 def suspect(agent):

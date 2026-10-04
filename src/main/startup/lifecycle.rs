@@ -12,34 +12,11 @@ use crate::{diagnostics, modes};
 
 type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
-enum Launch {
-    Done(i32),
-    Resume(String),
-}
-
 pub(super) async fn launch(
-    mut args: Args,
-    log: Option<&diagnostics::Log>,
-    adopted: &[String],
-) -> Result<i32> {
-    loop {
-        match launch_once(&args, log, adopted).await? {
-            Launch::Done(code) => return Ok(code),
-            Launch::Resume(id) => {
-                args.session = Some(id);
-                args.resume = false;
-                args.fork = false;
-                args.name = None;
-            }
-        }
-    }
-}
-
-async fn launch_once(
     args: &Args,
     log: Option<&diagnostics::Log>,
     adopted: &[String],
-) -> Result<Launch> {
+) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
     let endpoint = seat(args, adopted)?;
@@ -52,18 +29,33 @@ async fn launch_once(
     if let Some(log) = log {
         log.session(&session, loop_.session_path(), &workspace);
     }
-    let exit = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
-    let code = match exit {
-        summonr::tui::Exit::Code(code) => code,
-        summonr::tui::Exit::Resume(id) => return Ok(Launch::Resume(id)),
-    };
+    let code = dispatch(loop_, args, &endpoint, workspace, ui, goal_checks, workflow).await?;
     let Some(tree) = tree else {
-        return Ok(Launch::Done(code));
+        return Ok(code);
     };
     Ok(land(&tree, code, args, &session, &session_path))
 }
 
 type Assembled = (Loop<Client>, Vec<String>, Option<workflow::Workflow>);
+
+fn factory(args: &Args, endpoint: &Endpoint, cwd: PathBuf) -> summonr::tui::hub::Factory {
+    let (args, endpoint) = (args.clone(), endpoint.clone());
+    Arc::new(move |open, ui| {
+        let mut args = args.clone();
+        args.resume = false;
+        args.fork = false;
+        args.worktree = false;
+        args.name = None;
+        args.session = match open {
+            summonr::tui::hub::Open::New => None,
+            summonr::tui::hub::Open::Resume(id) => Some(id),
+        };
+        let (workspace, _, action) = isolate(&args, &cwd)?;
+        let (loop_, _, workflow) =
+            assemble(&args, &endpoint, &workspace, action, &(Some(ui), None))?;
+        Ok((loop_, workflow))
+    })
+}
 
 fn assemble(
     args: &Args,
@@ -161,14 +153,14 @@ fn land(
     args: &Args,
     session: &str,
     session_path: &std::path::Path,
-) -> Launch {
+) -> i32 {
     if code != 0 {
         eprintln!(
             "worktree kept {} ({}) — the run's files are there, uncommitted",
             tree.path.display(),
             tree.branch
         );
-        return Launch::Done(code);
+        return code;
     }
     let live = summonr::live_jobs(&tree.path);
     if !live.is_empty() {
@@ -179,7 +171,7 @@ fn land(
             if live.len() == 1 { "" } else { "s" },
             live.join("; ")
         );
-        return Launch::Done(1);
+        return 1;
     }
     let touched = Loop::<Client>::touched_at(session_path);
     match finish_worktree(tree, &objective(args, session), &touched) {
@@ -205,7 +197,7 @@ fn land(
                     println!("{line}");
                 }
             }
-            Launch::Done(code)
+            code
         }
         Err(error) => {
             eprintln!(
@@ -213,7 +205,7 @@ fn land(
                 tree.path.display(),
                 tree.branch
             );
-            Launch::Done(1)
+            1
         }
     }
 }
@@ -234,7 +226,7 @@ async fn dispatch(
     ui: Ui,
     goal_checks: Vec<String>,
     workflow: Option<workflow::Workflow>,
-) -> Result<summonr::tui::Exit> {
+) -> Result<i32> {
     let model = endpoint.model.as_str();
     let session = loop_.session_id();
     let splash = splash::Splash {
@@ -251,19 +243,13 @@ async fn dispatch(
     };
     if let Some(plan_path) = args.steps.as_deref() {
         splash::line(&splash);
-        modes::steps(loop_, args, plan_path)
-            .await
-            .map(summonr::tui::Exit::Code)
+        modes::steps(loop_, args, plan_path).await
     } else if let Some(objective) = args.goal.as_deref() {
         splash::line(&splash);
-        modes::goal(loop_, args, objective, goal_checks)
-            .await
-            .map(summonr::tui::Exit::Code)
+        modes::goal(loop_, args, objective, goal_checks).await
     } else if args.print || !args.prompt.is_empty() {
         splash::line(&splash);
-        modes::print(loop_, args)
-            .await
-            .map(summonr::tui::Exit::Code)
+        modes::print(loop_, args).await
     } else if let Some(ui_rx) = ui.1 {
         let prefs = summonr::prefs::load()?;
         let splash = prefs.splash && !args.no_splash;
@@ -291,12 +277,11 @@ async fn dispatch(
                 secrets.secret(request);
             })?;
         }
-        summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui)
+        let opener = factory(args, endpoint, super::commands::workspace()?);
+        summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui, opener)
     } else {
         splash::line(&splash);
-        modes::print(loop_, args)
-            .await
-            .map(summonr::tui::Exit::Code)
+        modes::print(loop_, args).await
     }
 }
 

@@ -14,6 +14,13 @@ pub fn parse(value: &Value, fallback: Cost) -> Vec<Model> {
 }
 
 fn row(item: &Value, fallback: Cost) -> Option<Model> {
+    if item
+        .get("visibility")
+        .and_then(Value::as_str)
+        .is_some_and(|shown| shown != "list")
+    {
+        return None;
+    }
     let raw = item
         .get("id")
         .or_else(|| item.get("name"))
@@ -96,10 +103,11 @@ fn price(item: &Value) -> Option<crate::provider::Price> {
     } else {
         ("input", "output", "cached_input", 1.0)
     };
+    let input = rate(input)?;
     Some(crate::provider::Price {
-        input: rate(input)? * scale,
+        input: input * scale,
         output: rate(output)? * scale,
-        cached: rate(cached).unwrap_or_default() * scale,
+        cached: rate(cached).unwrap_or(input) * scale,
     })
 }
 

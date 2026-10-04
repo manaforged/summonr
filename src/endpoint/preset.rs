@@ -53,6 +53,50 @@ fn claude_oauth() -> crate::config::OAuth {
     }
 }
 
+fn chatgpt_oauth() -> crate::config::OAuth {
+    let mut authorize_params = BTreeMap::from([
+        ("agent_name_hint".to_string(), "summonr".to_string()),
+        ("resource".to_string(), OPENAI_API.to_string()),
+    ]);
+    if let Some(host) = host_id() {
+        authorize_params.insert("ext_agent_host_id".to_string(), host);
+    }
+    crate::config::OAuth {
+        token_url: CHATGPT_TOKEN.into(),
+        client_id: CHATGPT_CLIENT.into(),
+        authorize_url: Some(CHATGPT_AUTHORIZE.into()),
+        redirect_uri: Some(CHATGPT_REDIRECT.into()),
+        scope: Some(CHATGPT_SCOPES.into()),
+        grant: Some("authorization_code".into()),
+        authorize_params,
+        token_params: BTreeMap::from([("resource".to_string(), OPENAI_API.to_string())]),
+        ..crate::config::OAuth::default()
+    }
+}
+
+fn host_id() -> Option<String> {
+    let path = crate::prompt::summonr_home().ok()?.join("host-id");
+    if let Ok(found) = std::fs::read_to_string(&path)
+        && !found.trim().is_empty()
+    {
+        return Some(found.trim().to_string());
+    }
+    let fresh = uuid::Uuid::now_v7().urn().to_string();
+    std::fs::write(&path, &fresh).ok()?;
+    Some(fresh)
+}
+
+fn supergrok_oauth() -> crate::config::OAuth {
+    crate::config::OAuth {
+        token_url: XAI_TOKEN.into(),
+        client_id: XAI_CLIENT.into(),
+        scope: Some(XAI_SCOPES.into()),
+        grant: Some("device_code".into()),
+        device_url: Some(XAI_DEVICE.into()),
+        ..crate::config::OAuth::default()
+    }
+}
+
 fn copilot_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
         token_url: GITHUB_TOKEN.into(),
@@ -67,8 +111,12 @@ fn copilot_oauth() -> crate::config::OAuth {
     }
 }
 
+const OFF: &[&str] = &["claude-pro"];
+
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
-    HEAD.iter().chain(TAIL)
+    HEAD.iter()
+        .chain(TAIL)
+        .filter(|preset| !OFF.contains(&preset.name))
 }
 
 pub(super) fn preset(name: &str) -> Option<&'static Preset> {
@@ -94,7 +142,9 @@ const PROVIDER_IDS: &[(&str, &[&str])] = &[
         ],
     ),
     ("grok", &["xai"]),
+    ("supergrok", &["xai"]),
     ("openai", &["openai"]),
+    ("chatgpt", &["openai"]),
     ("openrouter", &["openrouter"]),
     ("together", &["togetherai"]),
     ("groq", &["groq"]),

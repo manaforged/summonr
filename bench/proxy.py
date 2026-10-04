@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -183,20 +184,26 @@ class Proxy(BaseHTTPRequestHandler):
         if not raw or not (path.endswith("/chat/completions") or path.endswith("/messages")):
             return raw, None
         body = json.loads(raw)
-        record = {"label": label, "key": index, "request": shape(body), "usage_requested": False}
+        host = urllib.parse.urlsplit(self.upstreams[index]).hostname
+        dropped = [field for field in self.drops.get(host, ()) if field in body]
+        record = {"label": label, "key": index, "upstream": host, "dropped": dropped, "request": shape(body), "usage_requested": False}
+        for field in dropped:
+            del body[field]
         options = body.get("stream_options") or {}
         if path.endswith("/chat/completions") and body.get("stream") and not options.get("include_usage"):
             body["stream_options"] = {**options, "include_usage": True}
             record["usage_requested"] = True
+        if dropped or record["usage_requested"]:
             raw = json.dumps(body).encode()
         return raw, record
 
-    def target(self, path):
+    def target(self, path, index):
+        upstream = self.upstreams[index]
         if path.startswith("/anthropic") and self.anthropic:
             return self.anthropic + path[len("/anthropic") :]
-        if re.search(r"/v\d+$", self.upstream) and path.startswith("/v1/"):
-            return self.upstream + path[len("/v1") :]
-        return self.upstream + path
+        if re.search(r"/v\d+$", upstream) and path.startswith("/v1/"):
+            return upstream + path[len("/v1") :]
+        return upstream + path
 
     def stream(self, response):
         first, chunks = None, []
@@ -231,9 +238,9 @@ class Proxy(BaseHTTPRequestHandler):
                 headers[name] = f"Bearer {key}"
             elif name.lower() == "x-api-key":
                 headers[name] = key
-        if "opencode.ai" in self.upstream:
+        if "opencode.ai" in self.upstreams[index]:
             headers["x-opencode-session"] = label
-        request = urllib.request.Request(self.target(path), data=raw, method=method, headers=headers)
+        request = urllib.request.Request(self.target(path, index), data=raw, method=method, headers=headers)
         started = time.time()
         try:
             response = urllib.request.urlopen(request, timeout=900)
@@ -293,9 +300,16 @@ def main():
     parser.add_argument("--strip", action="append", default=[])
     parser.add_argument("--key-env", action="append", required=True)
     parser.add_argument("--dump")
+    parser.add_argument("--drop", action="append", default=[])
     args = parser.parse_args()
-    Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name in args.key_env]
+    routes = [entry.partition("=") for entry in args.key_env]
+    Proxy.keys = [os.environ.get(name) or parser.error(f"{name} is not set") for name, _, _ in routes]
+    Proxy.upstreams = [(url or args.upstream).rstrip("/") for _, _, url in routes]
     Proxy.groups = {}
+    Proxy.drops = {}
+    for entry in args.drop:
+        host, _, fields = entry.partition("=")
+        Proxy.drops.setdefault(host, []).extend(filter(None, fields.split(",")))
     Proxy.dump = args.dump
     Proxy.upstream = args.upstream.rstrip("/")
     Proxy.anthropic = args.anthropic.rstrip("/")

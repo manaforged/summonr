@@ -11,7 +11,7 @@ use std::os::windows::process::CommandExt;
 use sigil::events::ShellEvent;
 use sigil::prelude::{Key, LogicalKey, ModifiersState};
 use sigil::terminal::{Hooks, bell, calibrate, focused, set_mouse_capture, set_title, suspend};
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::app::App;
 use super::model::Entry;
@@ -19,7 +19,8 @@ use super::view::root;
 use crate::error::{Error, Result};
 use crate::provider::Client;
 use crate::runtime::Loop;
-use crate::tui::{Cmd, Exit, Info, Msg, worker};
+use crate::tui::hub::{Factory, Started, start};
+use crate::tui::{Cmd, Info, Msg};
 
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use run::{copy_out, start_tick, stop};

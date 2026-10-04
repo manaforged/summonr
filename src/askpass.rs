@@ -51,7 +51,31 @@ const SHORTEST: usize = 4;
 const SCRUB_CHUNK: usize = 64 * 1024;
 
 #[cfg(unix)]
-const PROMPT_BYTES: u64 = 512;
+const PROMPT_BYTES: u64 = 1024;
+
+#[cfg(unix)]
+const ASKER_CHARS: usize = 256;
+
+#[cfg(unix)]
+const RECOGNIZED: &[&str] = &["sudo", "ssh", "git", "doas"];
+
+#[cfg(unix)]
+fn labeled(asker: &str, prompt: &str) -> String {
+    let asker = asker.trim();
+    let name = asker
+        .split_whitespace()
+        .next()
+        .and_then(|word| Path::new(word).file_name())
+        .map_or_else(
+            || "unknown".to_string(),
+            |name| name.to_string_lossy().into_owned(),
+        );
+    if RECOGNIZED.contains(&name.as_str()) {
+        format!("{prompt} (asked by `{asker}`)")
+    } else {
+        format!("unrecognized program {name} asks for a password (`{asker}`): {prompt}")
+    }
+}
 
 #[cfg(unix)]
 pub fn start(send: impl Fn(Request) + Send + 'static) -> Result<()> {
@@ -113,16 +137,17 @@ pub fn start(_send: impl Fn(Request) + Send + 'static) -> Result<()> {
 fn serve(mut stream: std::os::unix::net::UnixStream, send: &impl Fn(Request)) {
     use std::io::{BufRead, BufReader, Read, Write};
 
+    let asker = peer::asker(&stream, ASKER_CHARS);
     let mut prompt = String::new();
-    if BufReader::new(Read::by_ref(&mut stream).take(PROMPT_BYTES))
-        .read_line(&mut prompt)
-        .is_err()
     {
-        return;
+        let mut reader = BufReader::new(Read::by_ref(&mut stream).take(PROMPT_BYTES));
+        if reader.read_line(&mut prompt).is_err() {
+            return;
+        }
     }
     let (reply, answer) = std::sync::mpsc::sync_channel(1);
     send(Request {
-        prompt: prompt.trim().to_string(),
+        prompt: labeled(&asker, prompt.trim()),
         reply,
     });
     let Ok(Some(secret)) = answer.recv() else {
@@ -340,6 +365,9 @@ fn ask(_socket: &std::ffi::OsStr, _prompt: &str) -> i32 {
     eprintln!("summonr askpass: secret prompts need a Unix host");
     1
 }
+
+#[cfg(unix)]
+mod peer;
 
 #[cfg(all(test, unix))]
 #[path = "askpass_tests.rs"]

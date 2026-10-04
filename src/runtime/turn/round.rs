@@ -295,7 +295,6 @@ impl<P: Provider> Loop<P> {
         self.tools.set_read_only(read_only);
         if self.depth == 0 {
             self.tools.reset_edits();
-            self.asked.retain(|grant| !matches!(grant, Grant::Edit(_)));
         }
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();

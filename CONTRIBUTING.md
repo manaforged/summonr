@@ -3,8 +3,8 @@
 ## Build
 
 You need Rust. `rust-toolchain.toml` pins the version, and rustup
-downloads it on the first build. The default build needs no system
-packages. `--sandbox` on Linux needs bubblewrap.
+downloads it on the first build. The default build also needs Git,
+CMake, and a C and C++ compiler. `--sandbox` on Linux needs bubblewrap.
 
 ```sh
 cargo build --locked
@@ -13,8 +13,10 @@ cargo run --locked -- anthropic
 
 ## Check
 
-Run these before you open a pull request. CI runs the same checks for
-the packages that your change touches.
+Run these before you open a pull request. Pull request CI runs
+`cargo fmt` on the whole workspace, then `cargo clippy` and `cargo test`
+only for the packages that your change touches. It does not run
+`api-census`, so run it locally.
 
 ```sh
 cargo fmt --all -- --check

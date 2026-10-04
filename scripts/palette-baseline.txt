@@ -15,7 +15,7 @@ space error #dc5a5a
 space black #000000
 space user_bg #2a2c3a
 space tool_bg #181a24
-space code_bg #1e202a
+space code_bg #282a38
 space diff_add_bg #124c1c
 space diff_del_bg #541820
 space code_comment #609466
@@ -25,7 +25,7 @@ space accent #698cd2
 dawn base #dedad0
 dawn text #2e3440
 dawn gray #4c5260
-dawn dim #686e7a
+dawn dim #545a66
 dawn thought #5c626e
 dawn green #347048
 dawn red #a04038
@@ -35,10 +35,10 @@ dawn error #a04038
 dawn black #ccc7bb
 dawn user_bg #d0cbbf
 dawn tool_bg #d7d2c7
-dawn code_bg #d4cfc4
+dawn code_bg #c0baac
 dawn diff_add_bg #c4d6c4
 dawn diff_del_bg #e2c8c3
-dawn code_comment #686e7a
+dawn code_comment #545a66
 dawn code_string #80641e
 dawn code_keyword #744894
 dawn accent #385ca0
@@ -55,10 +55,10 @@ nord error #bf616a
 nord black #242933
 nord user_bg #3b4252
 nord tool_bg #2b313d
-nord code_bg #343b4a
+nord code_bg #434c5e
 nord diff_add_bg #3b4a3f
 nord diff_del_bg #4a3a3f
-nord code_comment #616e88
+nord code_comment #8291aa
 nord code_string #ebcb8b
 nord code_keyword #b48ead
-nord accent #88c0d0
+nord accent #81a1c1

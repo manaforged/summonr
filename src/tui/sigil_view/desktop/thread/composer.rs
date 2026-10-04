@@ -1,10 +1,11 @@
 use super::*;
-use sigil::prelude::Paint;
-use sigil::prelude::{button, card, signal, spacer};
+use sigil::prelude::{Radius, signal};
+
+const PLACEHOLDER: &str = "Ask anything — @ attaches a file, / runs a command";
+const EDITING: &str = "Editing the file — ctrl+s saves, esc leaves";
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let submit = app.clone();
-    let send = app.clone();
     let changed = app.clone();
     let paste = app.clone();
     let paste_meta = app.clone();
@@ -13,7 +14,6 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     } else {
         (app.draft, app.caret)
     };
-    let model = app.clone();
     let focus = signal(0_u64);
     container()
         .key_capture(Shortcut::ctrl(LogicalKey::character("v")), move |event| {
@@ -32,29 +32,28 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
         .layout(
             LayoutStyle::flex_column()
                 .fill_width()
-                .padding_x(24.0)
-                .padding_y(12.0)
+                .padding_top(S)
                 .shrink(0.0)
                 .align_items(AlignItems::Stretch),
         )
         .pointer_down(move |_| focus.update(|n| *n += 1))
-        .child(card(
+        .child(
             container()
                 .layout(
                     LayoutStyle::flex_column()
                         .fill_width()
-                        .gap(12.0)
-                        .min_size(0.0, 120.0),
+                        .padding_x(M)
+                        .padding_y(S)
+                        .gap(S),
                 )
-                .bg(sigil::prelude::Token::Gray3)
+                .rounded(Radius::Lg)
+                .bg(Token::SurfaceSubtle)
+                .border_w(1)
+                .border_color(Token::Border)
                 .child(
                     text_edit(value)
                         .caret_position(caret)
-                        .placeholder(if editing {
-                            "editing the file — ctrl+s saves, esc leaves"
-                        } else {
-                            "Message — @file attaches, /help lists"
-                        })
+                        .placeholder(if editing { EDITING } else { PLACEHOLDER })
                         .change(move |draft| {
                             if !editing {
                                 changed.change(draft);
@@ -62,28 +61,83 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         })
                         .submit(move |_| submit.submit())
                         .focus_when(focus)
-                        .layout(LayoutStyle::flex_column().fill_width().height(96.0))
-                        .font_size(14.0)
-                        .text_color(sigil::prelude::Token::Gray12),
+                        .layout(LayoutStyle::flex_column().fill_width().height(72.0))
+                        .font_size(BODY)
+                        .text_color(Token::OnSurface),
                 )
-                .child(
-                    container()
-                        .layout(
-                            LayoutStyle::flex_row()
-                                .fill_width()
-                                .align_items(AlignItems::Center)
-                                .gap(8.0),
-                        )
-                        .child(
-                            sigil::kernel::text(move || {
-                                drop(model.header.get());
-                                model.model.get().snapshot.model.clone()
-                            })
-                            .font_size(14.0)
-                            .text_color(sigil::prelude::Token::Gray12),
-                        )
-                        .child(spacer())
-                        .child(button("Send").activate(move || send.submit())),
-                ),
-        ))
+                .child(tools(&app, editing)),
+        )
+}
+
+fn tools(app: &App, editing: bool) -> NodeBuilder {
+    let attach = app.clone();
+    let mention = app.clone();
+    let picker = app.clone();
+    let send = app.clone();
+    let mut row = container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .align_items(AlignItems::Center)
+                .gap(XS),
+        )
+        .child(
+            icon_button("+", move || {
+                attach.clipboard();
+            })
+            .accessible("Attach from clipboard"),
+        )
+        .child(
+            icon_button("@", move || {
+                if !mention.view_edit.peek() {
+                    let draft = mention.draft.peek();
+                    mention.edit(&format!("{draft}@"));
+                }
+            })
+            .accessible("Attach a file"),
+        )
+        .child(
+            button(model_label(app))
+                .ghost()
+                .size(ControlSize::Compact)
+                .accessible("Model")
+                .activate(move || picker.begin_model_edit()),
+        );
+    row = row.child(mode(app));
+    row.child(spacer()).child(
+        button("Send")
+            .primary()
+            .size(ControlSize::Compact)
+            .disabled(editing)
+            .activate(move || send.submit()),
+    )
+}
+
+fn mode(app: &App) -> NodeBuilder {
+    let (plan, offered) = {
+        let model = app.model.get();
+        (model.snapshot.plan, model.prefs.plan_mode)
+    };
+    let current = if plan {
+        crate::RunMode::Plan
+    } else {
+        crate::RunMode::Auto
+    };
+    let toggle = app.clone();
+    let chip = button(current.name())
+        .ghost()
+        .size(ControlSize::Compact)
+        .accessible("Mode");
+    let chip = if plan || offered {
+        chip.activate(move || {
+            if plan {
+                toggle.leave_plan();
+            } else {
+                toggle.enter_plan();
+            }
+        })
+    } else {
+        chip.disabled(true)
+    };
+    container().child(chip)
 }

@@ -1,4 +1,4 @@
-use super::{Cond, Rule, SubRule};
+use super::{Cond, Gate, Rule, SubRule};
 
 pub(crate) const INQUIRY_FLAGS: &[&str] = &["--version", "--help"];
 
@@ -11,31 +11,41 @@ pub(super) const RM: &[Rule] = &[Rule {
         Cond::Short('R'),
     ],
     broad: true,
+    gate: Gate::Destructive,
     reason: "it deletes a system, home, or project root recursively",
 }];
+const DESTRUCTIVE: &[&str] = &["rm", "rmdir", "unlink", "shred", "truncate"];
 pub(super) const FIND: &[Rule] = &[Rule {
-    when: &[Cond::Any(&["-delete"])],
+    when: &[
+        Cond::Any(&["-delete"]),
+        Cond::Runs(&["-exec", "-execdir", "-ok", "-okdir"], DESTRUCTIVE),
+    ],
     broad: true,
+    gate: Gate::Destructive,
     reason: "it deletes files across a system, home, or project root",
 }];
 pub(super) const SHRED: &[Rule] = &[Rule {
     when: &[Cond::Always],
     broad: false,
+    gate: Gate::Risky,
     reason: "it destroys file contents",
 }];
 pub(super) const DESTROY: &[Rule] = &[Rule {
     when: &[Cond::Any(&["destroy"])],
     broad: false,
+    gate: Gate::Destructive,
     reason: "it destroys infrastructure",
 }];
 pub(super) const CLUSTER: &[Rule] = &[Rule {
     when: &[Cond::First("delete")],
     broad: false,
+    gate: Gate::Destructive,
     reason: "it deletes cluster resources",
 }];
 pub(super) const PRUNE: &[Rule] = &[Rule {
     when: &[Cond::Any(&["prune"])],
     broad: false,
+    gate: Gate::Risky,
     reason: "it deletes container data",
 }];
 
@@ -43,21 +53,25 @@ pub(super) const GIT: &[SubRule] = &[
     SubRule {
         names: &["reset"],
         when: &[Cond::Any(&["--hard"])],
+        gate: Gate::Risky,
         reason: "it discards uncommitted changes",
     },
     SubRule {
         names: &["clean"],
         when: &[Cond::Any(&["--force"]), Cond::Short('f')],
+        gate: Gate::Risky,
         reason: "it deletes untracked files",
     },
     SubRule {
         names: &["checkout", "restore"],
         when: &[Cond::Any(&["."])],
+        gate: Gate::Risky,
         reason: "it discards uncommitted changes",
     },
     SubRule {
         names: &["branch"],
         when: &[Cond::Any(&["-D"]), Cond::All(&["--delete", "--force"])],
+        gate: Gate::Risky,
         reason: "it force-deletes a branch",
     },
     SubRule {
@@ -72,16 +86,19 @@ pub(super) const GIT: &[SubRule] = &[
             ]),
             Cond::Prefix(&["+", ":"]),
         ],
+        gate: Gate::Risky,
         reason: "it rewrites or deletes remote history",
     },
     SubRule {
         names: &["stash"],
         when: &[Cond::Any(&["drop", "clear"])],
+        gate: Gate::Risky,
         reason: "it deletes stashed work",
     },
     SubRule {
         names: &["filter-branch", "filter-repo"],
         when: &[Cond::Always],
+        gate: Gate::Risky,
         reason: "it rewrites history",
     },
 ];

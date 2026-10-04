@@ -1,13 +1,13 @@
 use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
     text_field, virtual_list,
 };
 
-use super::prelude::*;
 use super::{App, canvas};
 use crate::endpoint::State;
 use crate::tui::sigil_view::app::{Login, matching, section};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, alt, group, notice, pick};
 use crate::{AuthInfo, LoginFlow};
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
@@ -19,45 +19,81 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
+    let state = app.clone();
     let title = match app.auth_choice() {
         Some(choice) if app.picker.open.peek() => format!("Models › {}", choice.name),
         Some(_) | None => "Providers".to_string(),
     };
-    shell(
-        app.auth.open,
-        title,
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || {
-                let name = paint
-                    .auth_choice()
-                    .map(|choice| choice.name)
-                    .unwrap_or_default();
-                match paint.auth.step.get() {
-                    Login::List(note) => choices(&paint, &note),
-                    Login::Key(note) => entering(&paint, &note),
-                    Login::Checking => {
-                        vec![line("Checking the key…"), hint("esc cancel", String::new())]
+    let hotkeys = app.model.peek().prefs.hotkeys.clone();
+    Dialog::new(Size::Normal, title, Hints::new())
+        .live_hints(move || hints(&state))
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::overlay_gap()),
+                )
+                .children_reactive(move || {
+                    let name = paint
+                        .auth_choice()
+                        .map(|choice| choice.name)
+                        .unwrap_or_default();
+                    match paint.auth.step.get() {
+                        Login::List(note) => choices(&paint, &note),
+                        Login::Key(note) => entering(&paint, &note),
+                        Login::Checking => vec![line("Checking the key…")],
+                        Login::SignIn {
+                            text,
+                            url,
+                            code,
+                            asking,
+                            note,
+                        } => signing(&paint, &name, [text, url, code, note], asking),
+                        Login::Confirm => vec![line(format!("Sign out of {name}?"))],
                     }
-                    Login::SignIn {
-                        text,
-                        url,
-                        code,
-                        asking,
-                        note,
-                    } => signing(&paint, &name, [text, url, code, note], asking),
-                    Login::Confirm => vec![
-                        line(format!("Sign out of {name}?")),
-                        hint("↵ yes · esc no", String::new()),
-                    ],
-                }
-            }),
-    )
+                }),
+        )
+        .build(app.auth.open, app.viewport.peek().0, &hotkeys)
+}
+
+fn hints(app: &App) -> Hints {
+    match app.auth.step.get() {
+        Login::List(_) => listing_hints(app),
+        Login::Key(_) => Hints::new()
+            .key(Key::Enter, "save and check")
+            .key(Key::Esc, "back")
+            .right(crate::text::plural(
+                app.auth.key.get().chars().count(),
+                "char",
+            )),
+        Login::Checking => Hints::new().key(Key::Esc, "cancel"),
+        Login::SignIn { note, .. } if !note.is_empty() => Hints::new()
+            .key(Key::Enter, "try again")
+            .key(Key::Esc, "back"),
+        Login::SignIn { asking: true, .. } => Hints::new()
+            .key(Key::Enter, "send code")
+            .key(Key::Esc, "cancel"),
+        Login::SignIn { asking: false, .. } => Hints::new().key(Key::Esc, "cancel"),
+        Login::Confirm => Hints::new().key(Key::Enter, "yes").key(Key::Esc, "no"),
+    }
+}
+
+fn listing_hints(app: &App) -> Hints {
+    let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
+    let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
+    let Some(choice) = rows.get(selected) else {
+        return Hints::new().key(Key::Esc, "close").right("0 / 0");
+    };
+    let mut hints = Hints::new()
+        .key(Key::UpDown, "move")
+        .key(Key::Enter, "open");
+    if choice.stored() {
+        hints = hints.key(Key::Fixed("alt+d"), "sign out");
+    }
+    hints
+        .key(Key::Esc, "close")
+        .right(format!("{} / {}", selected + 1, rows.len()))
 }
 
 fn line(text: impl Into<String>) -> NodeBuilder {
@@ -113,10 +149,15 @@ const SEARCH: &str = "Search providers";
 
 fn choices(app: &App, note: &str) -> Vec<NodeBuilder> {
     let paint = app.clone();
-    let mut nodes = Vec::new();
-    for part in wrapped(note, span(app).saturating_sub(10)) {
-        nodes.push(band(part, note.starts_with('✗')));
-    }
+    let tone = if note.starts_with('✗') {
+        Tone::Error
+    } else {
+        Tone::Neutral
+    };
+    let mut nodes: Vec<NodeBuilder> = wrapped(note, span(app).saturating_sub(10))
+        .into_iter()
+        .map(|part| notice(part, tone))
+        .collect();
     nodes.push(field(app, SEARCH, false));
     nodes.push(
         container()
@@ -135,7 +176,7 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
     let rows = matching(app.auth.choices.get(), &app.auth.filter.get());
     let selected = app.auth.sel.get().min(rows.len().saturating_sub(1));
     let Some(choice) = rows.get(selected) else {
-        return vec![group("No providers match."), hint("esc close", "0 / 0")];
+        return vec![group("No providers match.")];
     };
     let states = app.picker.groups.get();
     let mut lookup: Vec<(String, String, Option<usize>)> = Vec::new();
@@ -168,11 +209,6 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         shown + 1 - visible
     };
     let state = chip(choice, states.get(&choice.name));
-    let keys = if choice.stored() {
-        "↑↓ move · ↵ open · alt+d sign out · esc close"
-    } else {
-        "↑↓ move · ↵ open · esc close"
-    };
     vec![
         container().layout(LayoutStyle::block().fill_width()).child(
             virtual_list(
@@ -191,7 +227,6 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
             &format!("{} — {}", choice.name, action(choice, &state)),
             span(app).saturating_sub(10),
         )),
-        hint(keys, format!("{} / {}", selected + 1, rows.len())),
     ]
 }
 
@@ -229,7 +264,6 @@ fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
 }
 
 fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
-    let count = app.clone();
     let choice = app.auth_choice();
     let name = choice.as_ref().map(|choice| choice.name.clone());
     let width = span(app).saturating_sub(10);
@@ -240,26 +274,19 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
     nodes.extend(
         wrapped(note, width)
             .into_iter()
-            .map(|part| band(part, true)),
+            .map(|part| notice(part, Tone::Error)),
     );
-    nodes.push(container().children_reactive(move || {
-        let characters = count.auth.key.get().chars().count();
-        vec![hint(
-            "↵ save and check · esc back",
-            format!("{characters} chars"),
-        )]
-    }));
     nodes
 }
 
 fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
     let [text, url, code, note] = lines;
     let wide = span(app).saturating_sub(10);
-    let width = wide.saturating_sub(6);
+    let width = wide.saturating_sub(16);
     let mut nodes = vec![group(format!("Sign in to {name}"))];
     if !url.is_empty() {
         nodes.push(line(format!(
-            "1. Open  {}",
+            "1. Open         {}",
             crate::text::ellipsize(&url, width)
         )));
     }
@@ -274,9 +301,8 @@ fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeB
         nodes.extend(
             wrapped(&note, wide)
                 .into_iter()
-                .map(|part| band(part, true)),
+                .map(|part| notice(part, Tone::Error)),
         );
-        nodes.push(hint("↵ try again · esc back", String::new()));
         return nodes;
     }
     let clock = app.clone();
@@ -294,11 +320,5 @@ fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeB
             seconds % 60
         ))]
     }));
-    let keys = if asking {
-        "↵ send code · esc cancel"
-    } else {
-        "esc cancel"
-    };
-    nodes.push(hint(keys, String::new()));
     nodes
 }

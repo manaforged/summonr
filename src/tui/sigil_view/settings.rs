@@ -1,6 +1,5 @@
 pub(super) use super::app::App;
 pub(super) use super::canvas;
-pub(super) use super::prelude;
 
 mod auth;
 mod hotkeys;

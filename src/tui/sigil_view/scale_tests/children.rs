@@ -104,7 +104,7 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
     .join("\n");
     assert_eq!(running, "1");
     assert!(
-        done.contains("Task Benchmark startup and RSS") && done.contains("background · 1 child"),
+        done.contains("Task Benchmark startup and RSS") && done.contains("background"),
         "{done}"
     );
     assert!(

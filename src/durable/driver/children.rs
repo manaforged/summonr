@@ -59,7 +59,7 @@ impl SessionDriver {
         self.state.children.get(&id).cloned()
     }
 
-    pub(super) fn interrupt_children(&mut self, reason: &str) -> Result<(), DriverError> {
+    pub(crate) fn interrupt_children(&mut self, reason: &str) -> Result<(), DriverError> {
         let records = self
             .state
             .children

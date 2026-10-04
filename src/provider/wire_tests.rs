@@ -326,3 +326,19 @@ fn a_whole_reply_and_a_streamed_one_agree_on_every_wire() {
          survives only on the streaming path"
     );
 }
+
+#[test]
+fn only_claude_3_7_among_claude_3_models_takes_a_thinking_budget() {
+    use traits::{Thinking, traits};
+    assert_eq!(
+        traits("claude-3-7-sonnet-latest").thinking,
+        Thinking::Budgeted
+    );
+    for model in [
+        "claude-3-5-haiku-latest",
+        "claude-3-haiku-20240307",
+        "claude-3-opus-latest",
+    ] {
+        assert_ne!(traits(model).thinking, Thinking::Budgeted, "{model}");
+    }
+}

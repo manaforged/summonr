@@ -186,6 +186,16 @@ impl State {
 pub(crate) struct Log {
     path: PathBuf,
     file: File,
+    _held: File,
+}
+
+fn hold(path: &Path) -> io::Result<File> {
+    super::store::lock(path, false)?.ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::WouldBlock,
+            format!("{} is open in another summonr window", path.display()),
+        )
+    })
 }
 
 impl Log {
@@ -193,6 +203,7 @@ impl Log {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
+        let held = hold(path)?;
         let file = OpenOptions::new()
             .create_new(true)
             .append(true)
@@ -200,15 +211,18 @@ impl Log {
         Ok(Self {
             path: path.to_path_buf(),
             file,
+            _held: held,
         })
     }
 
     pub(crate) fn open(path: &Path) -> io::Result<Self> {
+        let held = hold(path)?;
         heal(path)?;
         let file = OpenOptions::new().append(true).open(path)?;
         Ok(Self {
             path: path.to_path_buf(),
             file,
+            _held: held,
         })
     }
 
@@ -226,8 +240,10 @@ impl Log {
         bytes.push(b'\n');
         let file = &mut self.file;
         crate::tools::blocking(|| {
-            file.write_all(&bytes)?;
-            file.flush()
+            let before = file.metadata()?.len();
+            file.write_all(&bytes)
+                .and_then(|()| file.flush())
+                .inspect_err(|_| drop(file.set_len(before)))
         })
     }
 

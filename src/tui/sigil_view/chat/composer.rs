@@ -23,7 +23,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
         };
         let waiting = match model.queued.1 {
             0 => String::new(),
-            n => format!(" · {n} queued, ↑ edits"),
+            n => format!(" · {n} queued · ↑ edits"),
         };
         let now = Instant::now();
         let speed = model
@@ -32,9 +32,9 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
             .map(|rate| format!(" · {}", Speed::label(rate)))
             .unwrap_or_default();
         format!(
-            "{} {doing} · {}s{speed}{waiting}",
+            "{} {doing} · {}{speed}{waiting}",
             sigil::prelude::spinner_frame(tick),
-            since.elapsed().as_secs()
+            crate::text::duration(since.elapsed().as_secs())
         )
     })
 }

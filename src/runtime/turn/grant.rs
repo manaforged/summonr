@@ -78,6 +78,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Result<ToolOutput>> {
+        let mut asked = Vec::new();
         for _ in 0..4 {
             let Some(grant) = needed_grant(&output) else {
                 break;
@@ -87,7 +88,7 @@ impl<P: Provider> Loop<P> {
             }
             let persist = matches!(grant, Grant::Write(_));
             let question = grant.prompt();
-            if self.asked.contains(&grant) {
+            if asked.contains(&grant) {
                 break;
             }
             if !matches!(grant, Grant::Danger(_)) {
@@ -98,7 +99,7 @@ impl<P: Provider> Loop<P> {
             if self.steer_shared.is_none() {
                 break;
             }
-            self.asked.push(grant.clone());
+            asked.push(grant.clone());
             match self.approve(question, persist, events, emit).await? {
                 GrantAnswer::Deny => break,
                 GrantAnswer::Allow => self.apply_grant(&grant, false, events, emit)?,

@@ -61,3 +61,17 @@ fn the_last_seat_wins_over_the_config_default() {
         (Some("qwen"), Some(super::Pick::Default))
     );
 }
+
+#[test]
+fn the_plan_seats_sign_in_instead_of_taking_a_key() {
+    let grok = super::keys::builtin("supergrok").unwrap();
+    let spec = crate::credentials::spec(grok.oauth.as_ref().unwrap()).unwrap();
+    assert_eq!(spec.grant, summonr_auth::Grant::DeviceCode);
+    assert!(
+        grok.api_key.is_none(),
+        "a plan seat carries a token, not a key"
+    );
+    let chat = super::preset::preset("chatgpt").unwrap();
+    assert_eq!(chat.wire, super::Wire::Responses);
+    assert!(chat.oauth.is_some() && chat.plan);
+}

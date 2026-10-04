@@ -37,6 +37,7 @@ pub enum SlashCommand {
     Status,
     Mcp,
     Resume,
+    New,
     Search,
     History,
     Retry,

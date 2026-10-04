@@ -1,12 +1,17 @@
 use super::*;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 impl App {
     pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) {
         if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
             if self.view_text.peek() != self.view_saved.peek() {
-                self.push_entry(Entry::Error(
-                    "unsaved edits in the view pane — ctrl+s saves, esc leaves".to_string(),
-                ));
+                let keys = Hints::new()
+                    .key(Key::Fixed("ctrl+s"), "save")
+                    .key(Key::Esc, "leave")
+                    .text(&self.model.peek().prefs.hotkeys);
+                self.push_entry(Entry::Error(format!(
+                    "unsaved edits in the view pane — {keys}"
+                )));
                 self.refresh();
                 return;
             }
@@ -19,6 +24,12 @@ impl App {
         self.layout.set(layout);
         if opened {
             self.load();
+        }
+        if opened && layout.secondary.is_some() && layout.split(self.viewport.peek().0).1 == 0 {
+            self.push_entry(Entry::System(format!(
+                "widen to {} columns for panes",
+                Layout::MIN_COLS
+            )));
         }
         self.model_mut(|model| model.prefs.layout = layout.text());
         let prefs = self.model.peek().prefs.clone();

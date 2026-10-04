@@ -21,11 +21,22 @@ use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, ve
 
 use crate::limits::REPAIR_LIMIT;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum GrantAnswer {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum GrantAnswer {
     Deny,
     Allow,
     Always,
+}
+
+impl GrantAnswer {
+    #[must_use]
+    pub(crate) fn token(self) -> &'static str {
+        match self {
+            Self::Deny => "n",
+            Self::Allow => "y",
+            Self::Always => "always",
+        }
+    }
 }
 
 fn parse_decision(text: &str, persist: bool) -> Option<GrantAnswer> {
@@ -81,9 +92,7 @@ mod permission_tests;
 impl<P: Provider> Loop<P> {
     pub(super) fn remaining_time(&self) -> Option<Duration> {
         let limit = crate::limits::seconds(self.budget.max_secs?);
-        Some(limit.saturating_sub(crate::limits::seconds(
-            self.session.elapsed_millis() / 1_000,
-        )))
+        Some(limit.saturating_sub(crate::limits::seconds(self.elapsed_secs())))
     }
 
     pub(super) async fn complete_once(

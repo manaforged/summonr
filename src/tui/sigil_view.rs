@@ -12,10 +12,8 @@ mod host;
 mod look;
 
 mod model;
-pub(in crate::tui) mod overlay;
 mod pane;
 mod panes;
-pub(in crate::tui) mod prelude;
 pub(super) mod profile;
 #[cfg(test)]
 mod scale_tests;
@@ -27,6 +25,7 @@ pub(in crate::tui) mod settings;
 mod speed;
 mod suggest;
 mod theme;
+pub(in crate::tui) mod ui;
 mod usage;
 mod view;
 

@@ -48,6 +48,7 @@ pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Resu
     let mut chat = minted(&body)?;
     chat.refresh = grant.refresh;
     chat.identity = chat.identity.or(grant.identity);
+    chat.client = grant.client;
     Ok(chat)
 }
 
@@ -84,12 +85,14 @@ pub(super) async fn post(
     Ok((status, serde_json::from_str(&text).unwrap_or(Value::Null)))
 }
 
-pub(super) fn minted(body: &Value) -> Result<Issued> {
+pub(crate) fn minted(body: &Value) -> Result<Issued> {
     let access = body
         .get("access_token")
         .or_else(|| body.get("token"))
         .and_then(Value::as_str)
-        .ok_or_else(|| Error::Denied(format!("the reply carried no access token: {body}")))?;
+        .ok_or_else(|| {
+            Error::Denied(format!("the reply carried no access token: {}", told(body)))
+        })?;
     let expires = body
         .get("expires_in")
         .and_then(Value::as_u64)
@@ -110,6 +113,7 @@ pub(super) fn minted(body: &Value) -> Result<Issued> {
             .get("id_token")
             .and_then(Value::as_str)
             .map(str::to_string),
+        client: None,
     })
 }
 
@@ -159,18 +163,23 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
         .refresh
         .as_deref()
         .ok_or_else(|| Error::Denied("no refresh token to spend".to_string()))?;
+    let client = issued.client.as_deref().unwrap_or(&spec.client_id);
     let mut form = vec![
         ("grant_type".to_string(), "refresh_token".to_string()),
         ("refresh_token".to_string(), token.to_string()),
-        ("client_id".to_string(), spec.client_id.clone()),
+        ("client_id".to_string(), client.to_string()),
     ];
     if let Some(secret) = &spec.client_secret {
         form.push(("client_secret".to_string(), secret.clone()));
     }
+    for (key, value) in &spec.token_params {
+        form.push((key.clone(), value.clone()));
+    }
     let (status, body) = post(http, &spec.token_url, &form, spec.token_style).await?;
     if status >= 400 {
         return Err(Error::Denied(format!(
-            "refresh failed: HTTP {status} {body}"
+            "refresh failed: HTTP {status} {}",
+            told(&body)
         )));
     }
     let mut fresh = minted(&body)?;
@@ -180,5 +189,21 @@ pub(super) async fn refresh(spec: &Spec, http: &Session, issued: &Issued) -> Res
     if fresh.identity.is_none() {
         fresh.identity = issued.identity.clone();
     }
+    fresh.client = issued.client.clone();
     Ok(fresh)
+}
+
+pub(super) fn told(body: &Value) -> String {
+    let said = ["error", "error_description"]
+        .iter()
+        .filter_map(|key| body.get(key).and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if !said.is_empty() {
+        return said.join(": ");
+    }
+    let keys = body
+        .as_object()
+        .map(|fields| fields.keys().map(String::as_str).collect::<Vec<_>>())
+        .unwrap_or_default();
+    format!("fields [{}]", keys.join(", "))
 }

@@ -104,7 +104,7 @@ impl Stream {
                 return Ok(vec![Delta::Thinking(delta)]);
             }
             FrameKind::ItemAdded => return Ok(self.opened(frame.item.as_ref())),
-            FrameKind::ArgumentsDelta => self.arguments(frame)?,
+            FrameKind::ArgumentsDelta => return self.arguments(frame),
             FrameKind::ItemDone => {
                 if let Some(item) = &frame.item {
                     self.item(item)?;
@@ -196,7 +196,7 @@ impl Stream {
         delta
     }
 
-    fn arguments(&mut self, frame: &Frame<'_>) -> crate::error::Result<()> {
+    fn arguments(&mut self, frame: &Frame<'_>) -> crate::error::Result<Vec<Delta>> {
         let key = frame.item_id.as_deref();
         let index = key.and_then(|key| self.items.iter().position(|item| item == key));
         if let Some(index) = index
@@ -210,7 +210,10 @@ impl Stream {
                 ));
             }
         }
-        Ok(())
+        Ok((!frame.delta.is_empty())
+            .then_some(Delta::Progress)
+            .into_iter()
+            .collect())
     }
 
     fn item(&mut self, item: &Item<'_>) -> crate::error::Result<()> {

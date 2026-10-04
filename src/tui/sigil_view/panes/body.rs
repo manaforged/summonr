@@ -18,7 +18,6 @@ use sigil::prelude::icon_button;
 use sigil::prelude::image;
 use sigil::prelude::list_row;
 use sigil::prelude::node;
-use sigil::prelude::spacer;
 use sigil::prelude::text_edit;
 
 use super::{App, FileRow, Pane, diff, jobs, mcp, peers, todos};
@@ -63,20 +62,29 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
         .child(
             sigil::kernel::text(title)
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+                .ellipsize()
+                .layout(
+                    LayoutStyle::block()
+                        .grow(1.0)
+                        .shrink(1.0)
+                        .min_size(0.0, 16.0),
+                )
                 .font_size(14.0)
                 .font_weight(500)
                 .text_color(sigil::prelude::Token::Gray12),
         )
-        .child(spacer())
         .child(
             sigil::kernel::text(note)
                 .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
+                .layout(LayoutStyle::block().shrink(0.0))
                 .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         )
-        .child(close(app.clone()))
+        .child(
+            container()
+                .layout(LayoutStyle::block().shrink(0.0))
+                .child(close(app.clone())),
+        )
 }
 
 pub(super) fn detail(lines: impl IntoIterator<Item = String>) -> NodeBuilder {
@@ -122,10 +130,10 @@ fn files(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let rows: Vec<FileRow> = app.file_rows();
     if rows.is_empty() {
         return column.child(
-            sigil::kernel::text("No files in this folder yet.".to_string())
+            sigil::kernel::text("no files in this folder yet")
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(14.0)
+                .font_size(12.0)
                 .text_color(sigil::prelude::Token::Gray11),
         );
     }
@@ -188,23 +196,23 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let branch = row.tree.branch.clone();
         let menu = app.clone();
         column = column.child(
-            list_row(false, row.tree.branch.clone(), format!("+{}", row.ahead))
-                .child(chip(
-                    if row.dirty { "dirty" } else { "clean" },
-                    if row.dirty {
-                        Tone::Error
-                    } else {
-                        Tone::Neutral
-                    },
-                ))
-                .pointer_down(move |event| {
-                    if event.button == Some(MouseButton::Right) {
-                        menu.context_row(index);
-                    } else {
-                        show.tree_show(path.clone(), branch.clone());
-                    }
-                    event.stop_propagation();
-                }),
+            list_row(
+                false,
+                row.tree.branch.clone(),
+                format!("{} ahead", row.ahead),
+            )
+            .child(chip(
+                if row.dirty { "dirty" } else { "clean" },
+                if row.dirty { Tone::Warn } else { Tone::Neutral },
+            ))
+            .pointer_down(move |event| {
+                if event.button == Some(MouseButton::Right) {
+                    menu.context_row(index);
+                } else {
+                    show.tree_show(path.clone(), branch.clone());
+                }
+                event.stop_propagation();
+            }),
         );
     }
     column

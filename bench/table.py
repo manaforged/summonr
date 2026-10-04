@@ -112,14 +112,17 @@ def summary(rows, scope="all"):
 
 def memory(rows):
     lines = [
-        "| Harness | Mean agent RSS (MB) | Peak agent RSS (MB) | Max agent RSS (MB) | Mean tree RSS (MB) | Peak tree RSS (MB) | Max tree RSS (MB) | Trials sampled |",
-        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+        "| Harness | Mean agent RSS (MB) | Peak agent RSS (MB) | Max agent RSS (MB) | Mean harness RSS (MB) | Peak harness RSS (MB) | Max harness RSS (MB) | Mean tree RSS (MB) | Peak tree RSS (MB) | Max tree RSS (MB) | Trials sampled |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
     for harness in order(rows):
-        agent = [row["agent_mb"] for row in rows if row["harness"] == harness and row["agent_mb"]]
-        tree = [row["tree_mb"] for row in rows if row["harness"] == harness and row["tree_mb"]]
-        mean = {key: [row[f"{key}_mb"] for row in rows if row["harness"] == harness and row[f"{key}_mb"]] for key in ("agent_avg", "tree_avg")}
-        lines.append(table_row([harness, cell(mean["agent_avg"]), cell(agent), fmt(max(agent, default=None)), cell(mean["tree_avg"]), cell(tree), fmt(max(tree, default=None)), len(agent)]))
+        mine = [row for row in rows if row["harness"] == harness]
+        cols = []
+        for key in ("agent", "harness", "tree"):
+            peaks = [row[f"{key}_mb"] for row in mine if row.get(f"{key}_mb")]
+            means = [row[f"{key}_avg_mb"] for row in mine if row.get(f"{key}_avg_mb")]
+            cols += [cell(means), cell(peaks), fmt(max(peaks, default=None))]
+        lines.append(table_row([harness, *cols, len([row for row in mine if row.get("agent_mb")])]))
     return "\n".join(lines)
 
 
@@ -277,7 +280,7 @@ def paired(rows, subject, seed=20260916, samples=10000):
 
 def arguments():
     parser = argparse.ArgumentParser()
-    parser.add_argument("run")
+    parser.add_argument("runs", nargs="+")
     parser.add_argument("--jobs", default=str(Path(__file__).parent / "jobs"))
     parser.add_argument("--proxy", nargs="+")
     parser.add_argument("--csv")
@@ -287,7 +290,16 @@ def arguments():
 
 
 def load(args, rates):
-    rows = trials(args.jobs, args.run, requests(args.proxy or [Path(args.jobs).parent / "logs" / f"{args.run}.jsonl"]), rates)
+    if args.proxy and len(args.runs) > 1:
+        raise SystemExit("--proxy names one log; give one run with it")
+    rows = []
+    for run in args.runs:
+        found = trials(args.jobs, run, requests(args.proxy or [Path(args.jobs).parent / "logs" / f"{run}.jsonl"]), rates)
+        rows += [{**row, "run": run} for row in found]
+    shared = {}
+    for row in rows:
+        if shared.setdefault(row["harness"], row["run"]) != row["run"]:
+            raise SystemExit(f"harness {row['harness']} appears in {shared[row['harness']]} and {row['run']}")
     if args.tasks:
         keep = {line.strip() for line in open(args.tasks) if line.strip()}
         rows = [row for row in rows if row["task"] in keep]
@@ -324,6 +336,15 @@ def flagged(rows):
         print(f"- {kind} {row['harness']} {row['task']} reward={row['reward']}: {', '.join(row['void'] + row['warn'])}")
 
 
+VERSION_KEYS = {"summonr": ("summonr_version", "summonr_commit"), "pi": ("pi",), "opencode2": ("opencode2",), "hermes": ("hermes",)}
+
+
+def version_of(info, harness):
+    keys = VERSION_KEYS.get(harness, ("summonr_commit",) if harness.startswith("summonr-") else ())
+    found = [info[key][:12] if key.endswith("commit") else info[key] for key in keys if info.get(key)]
+    return " ".join(found[:1] + [f"({value})" for value in found[1:]]) or "unrecorded"
+
+
 def write_csv(path, rows):
     keys = [key for key in rows[0] if key not in ("effort", "models", "void", "warn", "controls")] if rows else []
     with open(path, "w") as out:
@@ -332,17 +353,22 @@ def write_csv(path, rows):
             out.write(",".join(str(row[key]) for key in keys) + "\n")
 
 
-def report(args, info, rows, vendor, rates):
+def report(args, info, infos, rows, vendor, rates):
     models = sorted({model for row in rows for model in row["models"]})
     checksums = len({row["checksum"] for row in rows})
-    print(f"Run `{args.run}`: vendor {vendor}, effort {info.get('effort', 'default')}, {len(rows)} trials, response models {models}, {checksums} task checksums.")
+    runs = ", ".join(f"`{run}`" for run in args.runs)
+    print(f"Run {runs}: vendor {vendor}, effort {info.get('effort', 'default')}, {len(rows)} trials, response models {models}, {checksums} task checksums.")
+    if len(args.runs) > 1:
+        print("Combined runs: arms from different runs did not run side by side; tasks, model, effort, and dataset match.")
+    run_of = {row["harness"]: row["run"] for row in rows}
+    print("Versions: " + ", ".join(f"{harness} {version_of(infos[run_of[harness]], harness)}" for harness in order(rows)) + ".")
     print(cost_note(vendor, rates) + " Intervals: 95% Wilson for solved, bootstrap median (10,000 resamples, seed 20260916) elsewhere. A URL to a dataset source voids the solve; a source name or verifier path is a warn.")
     sections = [
         ("Reliability (task-level; pass@k = any of k, pass^k = all k)\n", lambda: reliability(rows)),
         ("\nAll trials\n", lambda: summary(rows)),
         ("\nSolved trials only\n", lambda: summary(rows, scope="solved")),
         ("\nFailed trials only\n", lambda: summary(rows, scope="failed")),
-        ("\nMemory (mean and peak RSS per trial, sampled every 0.5 s; agent = the harness process, tree = it and every tool it ran)\n", lambda: memory(rows)),
+        ("\nMemory (mean and peak RSS per trial, sampled every 0.5 s; agent = the harness process, harness = it and every helper it started without a shell (language servers, MCP servers, its own server), tree = it and every process it ran)\n", lambda: memory(rows)),
         ("\nWhere the time and tokens go\n", lambda: breakdown(rows, info.get("effort"))),
         (f"\nPaired against {args.subject}\n", lambda: paired(rows, args.subject)),
     ]
@@ -354,7 +380,12 @@ def report(args, info, rows, vendor, rates):
 
 def main():
     args = arguments()
-    info = meta(args.jobs, args.run)
+    infos = {run: meta(args.jobs, run) for run in args.runs}
+    for key in ("vendor", "provider", "model", "effort", "dataset", "tasks", "timeout_mult"):
+        values = {run: found.get(key) for run, found in infos.items()}
+        if len(set(values.values())) > 1:
+            raise SystemExit(f"runs differ on {key}: {values}")
+    info = infos[args.runs[0]]
     vendor = info.get("vendor", "deepseek")
     rates = RATES.get(vendor)
     pin = info.get("model")
@@ -362,7 +393,7 @@ def main():
         raise SystemExit("run.txt records no pinned model")
     rows = load(args, rates)
     refuse(rows, pin)
-    report(args, info, rows, vendor, rates)
+    report(args, info, infos, rows, vendor, rates)
     if args.csv:
         write_csv(args.csv, rows)
 

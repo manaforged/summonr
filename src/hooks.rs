@@ -242,6 +242,7 @@ pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
     };
     let outcome = match execute(hook, call.workspace, &body).await {
         Ok(outcome) => outcome,
+        Err(error) if call.event == HookEvent::PreTool => return Verdict::Block(error),
         Err(error) => return Verdict::Note(error),
     };
     judge(hook.dialect, call.event, outcome)
@@ -282,6 +283,8 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    command.process_group(0);
     if let Some(root) = &hook.root {
         command
             .env("CLAUDE_PLUGIN_ROOT", root)
@@ -298,6 +301,7 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
     let mut child = command
         .spawn()
         .map_err(|error| format!("hook `{}` did not start: {error}", hook.command))?;
+    let pid = child.id();
     let text = body.to_string();
     let work = async move {
         let stdin = child.stdin.take();
@@ -318,8 +322,13 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
             stderr,
         })
     };
-    tokio::time::timeout(JOB_WAIT, work)
-        .await
+    let finished = tokio::time::timeout(JOB_WAIT, work).await;
+    if finished.is_err()
+        && let Some(pid) = pid
+    {
+        drop(crate::tools::command::ProcessGroup::new(pid, false));
+    }
+    finished
         .map_err(|_elapsed| format!("hook `{}` ran past {}s", hook.command, JOB_WAIT.as_secs()))?
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }

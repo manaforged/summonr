@@ -69,9 +69,9 @@ pub(crate) use message::{Image, Message};
 pub use message::{Usage, UserInput};
 pub(crate) use reasoning::{EffortField, Off, Reasoning, Scale, Spec, Step, levels};
 pub use request::Effort;
-pub(crate) use request::compact;
 pub(crate) use request::dollars;
 pub(crate) use request::{CompletionRequest, FunctionDefinition, ToolDefinition, ToolsJson};
+pub(crate) use request::{CountStyle, compact};
 pub(crate) use request::{Partial, Price};
 #[cfg(test)]
 pub(crate) use wire::decisions;

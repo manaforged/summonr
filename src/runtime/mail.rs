@@ -45,25 +45,42 @@ impl<P: Provider> Loop<P> {
 
     pub(super) fn mail_execute(&mut self, call: &ToolCall) -> Result<String> {
         let name = call.function.name.as_str();
+        let Some(tool) = crate::mail::Tool::of(name) else {
+            return Err(Error::Tool(format!("unknown tool `{name}`")));
+        };
         if self.mailbox.is_none() || !crate::mail::tools(self.mail_module) {
             return Err(Error::Tool(format!(
                 "`{name}` needs the mail module (/modules mail on)"
             )));
         }
-        let args = mail_args(call, name)?;
+        let arguments = call.function.arguments.trim();
+        let args = crate::tools::parse_args(
+            name,
+            if arguments.is_empty() {
+                "{}"
+            } else {
+                arguments
+            },
+        )?;
         let text = mail_text(&args);
         let read_only = self.tools.is_read_only();
-        if name == "inbox" {
-            return Ok(crate::mail::inbox_text(&self.take_all_mail()?));
-        }
-        let Some(mailbox) = self.mailbox.as_mut() else {
-            return Err(Error::Tool("the mailbox is not connected".to_string()));
-        };
-        match name {
-            "agents" => agents(mailbox),
-            "send" => send(mailbox, &args, text, read_only),
-            "board" => board(mailbox, &self.workspace, &args, text, read_only),
-            other => Err(Error::Tool(format!("unknown tool `{other}`"))),
+        let missing = || Error::Tool("the mailbox is not connected".to_string());
+        match tool {
+            crate::mail::Tool::Inbox => Ok(crate::mail::inbox_text(&self.take_all_mail()?)),
+            crate::mail::Tool::Agents => agents(self.mailbox.as_mut().ok_or_else(missing)?),
+            crate::mail::Tool::Send => send(
+                self.mailbox.as_mut().ok_or_else(missing)?,
+                &args,
+                text,
+                read_only,
+            ),
+            crate::mail::Tool::Board => board(
+                self.mailbox.as_mut().ok_or_else(missing)?,
+                &self.workspace,
+                &args,
+                text,
+                read_only,
+            ),
         }
     }
 
@@ -107,14 +124,6 @@ impl<P: Provider> Loop<P> {
             None => Vec::new(),
         }
     }
-}
-
-fn mail_args(call: &ToolCall, name: &str) -> Result<serde_json::Value> {
-    if call.function.arguments.trim().is_empty() {
-        return Ok(serde_json::json!({}));
-    }
-    serde_json::from_str(&call.function.arguments)
-        .map_err(|error| Error::Tool(format!("{name} arguments are invalid: {error}")))
 }
 
 fn mail_text(args: &serde_json::Value) -> &str {

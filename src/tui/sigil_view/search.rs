@@ -8,13 +8,15 @@ use regex::{Regex, RegexBuilder, escape};
 use super::app::App;
 use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
-use super::prelude::*;
+use super::ui::{Dialog, Hints, Key, Size, pick};
 use crate::session::Prompt;
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
     virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
+
+const SNIPPET_CELLS: usize = 180;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -103,6 +105,26 @@ impl Picker {
         }
     }
 
+    fn hints(self, model: &Model) -> Hints {
+        let count = match self.rows(model) {
+            Ok(rows) if !rows.is_empty() => {
+                let selected = self.selected.get().min(rows.len() - 1);
+                format!("{} / {}", selected + 1, rows.len())
+            }
+            Ok(_) | Err(_) => String::new(),
+        };
+        let action = match self.mode.get() {
+            Mode::Conversation => "jump",
+            Mode::Prompts => "insert",
+            Mode::Branch => "branch",
+        };
+        Hints::new()
+            .key(Key::UpDown, "select")
+            .key(Key::Enter, action)
+            .key(Key::Esc, "close")
+            .right(count)
+    }
+
     fn detail(self, index: usize) -> String {
         let Some(prompt) = self.prompt(index).filter(|_| self.is_history()) else {
             return String::new();
@@ -153,18 +175,10 @@ impl Picker {
                         prompt.session.id,
                         prompt.session.cwd.as_deref().unwrap_or("")
                     );
-                    let preview = snippet(&pattern, &prompt.text).or_else(|| {
-                        pattern.is_match(&context).then(|| {
-                            prompt
-                                .text
-                                .chars()
-                                .take(180)
-                                .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
-                                .collect()
-                        })
-                    })?;
+                    let preview = snippet(&pattern, &prompt.text)
+                        .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
                     let preview = if prompt.text.is_empty() {
-                        format!("{} attached image(s)", prompt.images)
+                        format!("{} attached", crate::text::plural(prompt.images, "image"))
                     } else {
                         preview
                     };
@@ -208,33 +222,32 @@ fn snippet(pattern: &Regex, text: &str) -> Option<String> {
         .rev()
         .nth(24)
         .map_or(0, |(byte, _)| byte);
-    let preview: String = text[start..]
+    let preview = one_line(&text[start..]);
+    Some(format!("{}{}", if start > 0 { "…" } else { "" }, preview))
+}
+
+fn one_line(text: &str) -> String {
+    let flat: String = text
         .chars()
-        .take(180)
         .map(|ch| if ch.is_whitespace() { ' ' } else { ch })
         .collect();
-    Some(format!("{}{}", if start > 0 { "…" } else { "" }, preview))
+    crate::text::ellipsize(&flat, SNIPPET_CELLS)
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.search;
-    shell(
-        picker.open,
-        picker.title(),
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .child(
-                text_edit(picker.query)
-                    .caret_position(picker.caret)
-                    .height(canvas::overlay_field()),
-            )
-            .child(results(app, picker)),
-    )
+    let cols = app.viewport.peek().0;
+    let keys = app.model.peek().prefs.hotkeys.clone();
+    let live = app.clone();
+    Dialog::new(Size::Normal, picker.title(), Hints::new())
+        .live_hints(move || picker.hints(&live.model.get()))
+        .child(
+            text_edit(picker.query)
+                .caret_position(picker.caret)
+                .height(canvas::overlay_field()),
+        )
+        .child(results(app, picker))
+        .build(picker.open, cols, &keys)
 }
 
 fn results(app: App, picker: Picker) -> NodeBuilder {
@@ -266,13 +279,12 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     if rows.is_empty() {
                         items.push(
                             container().child(
-                                sigil::kernel::text("No matches. Edit the search.")
+                                sigil::kernel::text("no matches · edit the search")
                                     .nowrap()
                                     .text_color(sigil::prelude::Token::OnSurface),
                             ),
                         );
                     }
-                    let count = format!("{} / {}", selected + 1, rows.len());
                     let height = if picker.is_history() {
                         canvas::overlay_list_row() * 2.0
                     } else {
@@ -290,7 +302,6 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             .follow_row(picker.selected),
                         ),
                     );
-                    items.push(hint("↑↓ select · ↵ jump · esc close", count));
                 }
                 Err(error) => items.push(
                     container().child(
@@ -313,11 +324,7 @@ fn row(
     selected: usize,
 ) -> NodeBuilder {
     let choose = app.clone();
-    let title = if picker.is_history() {
-        preview.to_string()
-    } else {
-        format!("{}  {preview}", entry + 1)
-    };
+    let title = preview.to_string();
     let detail = picker.detail(entry);
     pick(index == selected, title, detail).pointer_down(move |event| {
         choose.search.selected.set(index);

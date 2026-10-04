@@ -9,7 +9,7 @@ use url::Url;
 
 use crate::{Error, Parts, Prompt, Result, Store};
 
-use super::store::{keep, save};
+use super::store::{keep, save, stored};
 use super::token::{exchange, minted, post};
 
 use crate::LOGIN_WAIT as WAIT;
@@ -25,18 +25,12 @@ pub(super) async fn login(
         parts.spec.authorize_url.as_deref().ok_or_else(|| {
             Error::Config("an authorization_code login needs authorize_url".into())
         })?;
-    let wanted = parts.spec.redirect_uri.as_deref();
-    let listener = match loopback(wanted) {
-        true => Some(bind(wanted).await?),
-        false => None,
-    };
-    let redirect = match &listener {
-        Some(listener) => redirect(wanted, listener)?,
-        None => wanted.unwrap_or_default().to_string(),
-    };
+    let (listener, redirect) = listen(parts.spec.redirect_uri.as_deref()).await?;
+    let issued = stored(parts, store)?.and_then(|grant| grant.client);
+    let client = issued.as_deref().unwrap_or(&parts.spec.client_id);
     let verifier = random(32)?;
     let state = random(16)?;
-    let asked = target(authorize, parts, &redirect, &verifier, &state)?;
+    let asked = target(authorize, parts, client, &redirect, &verifier, &state)?;
 
     prompt.notice(&format!("open {asked}"));
     if let Err(error) = crate::open::external(asked.as_str()) {
@@ -45,25 +39,51 @@ pub(super) async fn login(
         ));
     }
 
-    let code = match &listener {
-        Some(listener) => {
-            prompt.notice("waiting for the browser to come back");
-            tokio::time::timeout(WAIT, caught(listener, &state))
-                .await
-                .map_err(|_| Error::Denied("the login timed out".to_string()))??
-        }
-        None => pasted(prompt, &state).await?,
-    };
+    let back = returned(listener.as_ref(), prompt, &state).await?;
     let carried = listener.is_none().then_some(state.as_str());
-    let grant = redeemed(parts, http, &redirect, &verifier, &code, carried).await?;
+    let client = back.client.as_deref().unwrap_or(client).to_string();
+    let mut grant = redeemed(
+        parts, http, &client, &redirect, &verifier, &back.code, carried,
+    )
+    .await?;
+    grant.client = Some(client).filter(|used| *used != parts.spec.client_id);
     save(parts, store, grant.clone())?;
     let chat = exchange(parts.spec, http, grant).await?;
     keep(parts, chat)
 }
 
+async fn listen(wanted: Option<&str>) -> Result<(Option<TcpListener>, String)> {
+    if !loopback(wanted) {
+        return Ok((None, wanted.unwrap_or_default().to_string()));
+    }
+    let listener = bind(wanted).await?;
+    let redirect = redirect(wanted, &listener)?;
+    Ok((Some(listener), redirect))
+}
+
+async fn returned(
+    listener: Option<&TcpListener>,
+    prompt: &mut Prompt,
+    state: &str,
+) -> Result<Callback> {
+    let Some(listener) = listener else {
+        return pasted(prompt, state).await;
+    };
+    prompt.notice("waiting for the browser to come back");
+    tokio::time::timeout(WAIT, caught(listener, state))
+        .await
+        .map_err(|_| Error::Denied("the login timed out".to_string()))?
+}
+
+struct Callback {
+    code: String,
+    client: Option<String>,
+}
+
 fn target(
     authorize: &str,
     parts: &Parts<'_>,
+    client: &str,
     redirect: &str,
     verifier: &str,
     state: &str,
@@ -73,11 +93,12 @@ fn target(
     {
         let mut query = asked.query_pairs_mut();
         query.append_pair("response_type", "code");
-        query.append_pair("client_id", &parts.spec.client_id);
+        query.append_pair("client_id", client);
         query.append_pair("redirect_uri", redirect);
         query.append_pair("code_challenge", &challenge(verifier));
         query.append_pair("code_challenge_method", "S256");
         query.append_pair("state", state);
+        query.append_pair("nonce", &random(16)?);
         if let Some(scope) = &parts.spec.scope {
             query.append_pair("scope", scope);
         }
@@ -91,6 +112,7 @@ fn target(
 async fn redeemed(
     parts: &Parts<'_>,
     http: &Session,
+    client: &str,
     redirect: &str,
     verifier: &str,
     code: &str,
@@ -100,7 +122,7 @@ async fn redeemed(
         ("grant_type".to_string(), "authorization_code".to_string()),
         ("code".to_string(), code.to_string()),
         ("redirect_uri".to_string(), redirect.to_string()),
-        ("client_id".to_string(), parts.spec.client_id.clone()),
+        ("client_id".to_string(), client.to_string()),
         ("code_verifier".to_string(), verifier.to_string()),
     ];
     if let Some(state) = state {
@@ -126,7 +148,7 @@ async fn redeemed(
     minted(&body)
 }
 
-async fn pasted(prompt: &mut Prompt, state: &str) -> Result<String> {
+async fn pasted(prompt: &mut Prompt, state: &str) -> Result<Callback> {
     let typed = prompt
         .request("paste the code shown in the browser, then press enter")
         .await?;
@@ -140,7 +162,10 @@ async fn pasted(prompt: &mut Prompt, state: &str) -> Result<String> {
             "the pasted code carried the wrong state; start the login again".to_string(),
         ));
     }
-    Ok(code.to_string())
+    Ok(Callback {
+        code: code.to_string(),
+        client: None,
+    })
 }
 
 fn loopback(wanted: Option<&str>) -> bool {
@@ -167,17 +192,25 @@ async fn bind(wanted: Option<&str>) -> Result<TcpListener> {
 }
 
 fn redirect(wanted: Option<&str>, listener: &TcpListener) -> Result<String> {
-    if let Some(raw) = wanted {
-        return Ok(raw.to_string());
-    }
     let port = listener
         .local_addr()
         .map_err(|error| Error::Transport(error.to_string()))?
         .port();
-    Ok(format!("http://127.0.0.1:{port}/callback"))
+    let Some(raw) = wanted else {
+        return Ok(format!("http://127.0.0.1:{port}/callback"));
+    };
+    let mut asked =
+        Url::parse(raw).map_err(|error| Error::Config(format!("redirect_uri: {error}")))?;
+    if asked.port() != Some(0) {
+        return Ok(raw.to_string());
+    }
+    asked
+        .set_port(Some(port))
+        .map_err(|()| Error::Config("redirect_uri cannot carry a port".to_string()))?;
+    Ok(asked.to_string())
 }
 
-async fn caught(listener: &TcpListener, state: &str) -> Result<String> {
+async fn caught(listener: &TcpListener, state: &str) -> Result<Callback> {
     loop {
         let (mut stream, _) = listener
             .accept()
@@ -190,12 +223,14 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<String> {
         let mut code = None;
         let mut sent = None;
         let mut refused = None;
+        let mut client = None;
         for (key, value) in asked.query_pairs() {
             match key.as_ref() {
                 "code" => code = Some(value.into_owned()),
                 "state" => sent = Some(value.into_owned()),
                 "error" => refused = Some(value.into_owned()),
-                _ => {}
+                "client_id" => client = Some(value.into_owned()),
+                _other => {}
             }
         }
         if let Some(error) = refused {
@@ -213,7 +248,7 @@ async fn caught(listener: &TcpListener, state: &str) -> Result<String> {
             ));
         }
         answer(&mut stream, "Signed in. You can close this tab.").await;
-        return Ok(code);
+        return Ok(Callback { code, client });
     }
 }
 

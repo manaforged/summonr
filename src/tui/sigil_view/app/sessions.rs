@@ -1,17 +1,8 @@
 use super::*;
 
 impl App {
-    pub(in crate::tui::sigil_view) fn request_resume(&self, id: String) {
-        if !self.draft.peek().is_empty() || !self.attachments.borrow().is_empty() {
-            self.push_entry(Entry::Error(
-                "Draft kept. Send it or press Ctrl+C to discard it before switching sessions."
-                    .to_string(),
-            ));
-            self.refresh();
-            return;
-        }
-        *self.resume.borrow_mut() = Some(id);
-        self.quit.set(true);
+    pub(in crate::tui::sigil_view) fn open_session(&self, open: crate::tui::hub::Open) {
+        drop(self.cmd.send(Cmd::Open(open)));
     }
 
     pub(in crate::tui::sigil_view) fn restore(&self, inputs: Vec<UserInput>) {
@@ -39,7 +30,7 @@ impl App {
         self.replace(text);
         self.caret.set(position);
         self.push_entry(Entry::System(
-            "Pending input restored. Edit the composer, then press Enter to send.".to_string(),
+            "pending input restored — edit it, then enter sends".to_string(),
         ));
     }
 

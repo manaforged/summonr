@@ -1,7 +1,7 @@
 use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -9,6 +9,8 @@ use std::thread::JoinHandle;
 const AGENT: &str = "summonr";
 const SOURCE: &str = "summonr:lifecycle";
 const DISPLAY: &str = "summonr:display";
+
+static CLAIMED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
@@ -63,7 +65,8 @@ impl Reporter {
                     std::env::var_os(key)
                 })
                 .map(Arc::new)
-            });
+            })
+            .filter(|_| !CLAIMED.swap(true, Ordering::Relaxed));
         if let Some(target) = &target {
             target.report(State::Idle);
             target.metadata();

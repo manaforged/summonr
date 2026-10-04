@@ -197,3 +197,22 @@ async fn an_unchanged_harness_note_is_sent_once() {
     assert_ne!(last_user(&sent[0]), "first");
     assert_eq!(last_user(&sent[1]), "second");
 }
+
+#[test]
+fn a_partial_reply_at_the_end_is_never_sent_as_the_last_message() {
+    let mut run = session([]);
+    let tools = run.loop_.advertised_tools();
+    let messages = vec![
+        Message::system("system".to_string()),
+        Message::user("do it".to_string()),
+        Message {
+            role: Role::Assistant,
+            ..Message::system("half a sent".to_string())
+        },
+    ];
+    let request = run
+        .loop_
+        .request_with(workflow::Role::Implement, &messages, &tools);
+    assert_eq!(request.messages.len(), 2);
+    assert_eq!(request.messages[1].content, "do it");
+}

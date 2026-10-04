@@ -31,7 +31,7 @@ impl App {
             if self.search.is_branch() {
                 if self.model.get().busy_since.is_some() {
                     self.push_entry(Entry::Error(
-                        "Wait for the active operation or cancel it before branching.".to_string(),
+                        "wait for the active operation or cancel it before branching".to_string(),
                     ));
                     self.search.open.set(false);
                     self.refresh();
@@ -51,7 +51,7 @@ impl App {
             self.change(&self.draft.peek());
             if prompt.images > 0 {
                 self.push_entry(Entry::System(
-                    "Inserted prompt text. Saved images were not added.".to_string(),
+                    "inserted the prompt text · saved images were not added".to_string(),
                 ));
                 self.refresh();
             }

@@ -15,11 +15,11 @@ fn fill(model: &Model) -> (u32, u32, u64) {
     (used, window, percent)
 }
 
-pub(super) fn context_percent(model: &Model) -> u64 {
+pub(in crate::tui::sigil_view) fn context_percent(model: &Model) -> u64 {
     fill(model).2
 }
 
-pub(super) fn cache_percent(model: &Model) -> u64 {
+pub(in crate::tui::sigil_view) fn cache_percent(model: &Model) -> u64 {
     cache_hit(model)
 }
 

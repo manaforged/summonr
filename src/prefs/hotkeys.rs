@@ -168,17 +168,86 @@ impl Hotkeys {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EditorKey {
+    SelectAll,
+    Cut,
+    DeleteToStart,
+    DeleteToEnd,
+    DeleteWord,
+}
+
+impl EditorKey {
+    pub(crate) const ALL: [Self; 5] = [
+        Self::SelectAll,
+        Self::Cut,
+        Self::DeleteToStart,
+        Self::DeleteToEnd,
+        Self::DeleteWord,
+    ];
+
+    #[must_use]
+    pub(crate) const fn key(self) -> char {
+        match self {
+            Self::SelectAll => 'a',
+            Self::Cut => 'x',
+            Self::DeleteToStart => 'u',
+            Self::DeleteToEnd => 'k',
+            Self::DeleteWord => 'w',
+        }
+    }
+
+    #[must_use]
+    pub(crate) const fn shared(self) -> bool {
+        matches!(self, Self::SelectAll | Self::Cut)
+    }
+
+    #[must_use]
+    pub(crate) fn of(key: char) -> Option<Self> {
+        Self::ALL.into_iter().find(|editor| editor.key() == key)
+    }
+
+    #[must_use]
+    pub(crate) fn yields(key: char, draft_empty: bool) -> bool {
+        !cfg!(target_os = "macos") && !draft_empty && Self::of(key).is_some_and(Self::shared)
+    }
+}
+
 #[must_use]
-pub(crate) const fn available(key: char) -> bool {
+pub(crate) fn available(key: char) -> bool {
     key.is_ascii_lowercase()
         && !matches!(
             key,
             'c' | 'd' | 'h' | 'i' | 'm' | 'q' | 's' | 'v' | 'y' | 'z'
         )
+        && EditorKey::of(key).is_none_or(EditorKey::shared)
 }
 
 fn parse(binding: &str) -> Option<char> {
     let mut chars = binding.strip_prefix("ctrl+")?.chars();
     let key = chars.next()?;
     (chars.next().is_none() && (available(key) || key == 'y')).then_some(key)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EditorKey, Hotkey, Hotkeys, available};
+
+    #[test]
+    fn editor_line_keys_cannot_be_bound() {
+        for key in ['u', 'k', 'w'] {
+            assert!(!available(key));
+            assert!(!Hotkeys::default().assign(Hotkey::Fold, key));
+        }
+        assert!(available('a') && available('x'));
+    }
+
+    #[test]
+    fn select_all_and_cut_reach_a_non_empty_composer_off_macos() {
+        let off_mac = !cfg!(target_os = "macos");
+        assert_eq!(EditorKey::yields('a', false), off_mac);
+        assert_eq!(EditorKey::yields('x', false), off_mac);
+        assert!(!EditorKey::yields('a', true));
+        assert!(!EditorKey::yields('o', false));
+    }
 }

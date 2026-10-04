@@ -59,12 +59,12 @@ impl ToolRegistry {
             return Ok(output);
         }
         let approved = self.take_approval();
-        if let Some(output) = self.gate_command(command, approved)? {
+        let cwd = self.command_dir(args)?;
+        if let Some(output) = self.gate_command(command, &cwd, approved)? {
             return Ok(output);
         }
         let background = object_bool(args, "background");
         self.check_launch(plan, restricted, background)?;
-        let cwd = self.command_dir(args)?;
         let started = self.start_command(command, background, read_only, approved, cwd)?;
         if background {
             return Ok(background_result(started));
@@ -75,10 +75,16 @@ impl ToolRegistry {
             .await
     }
 
-    fn gate_command(&self, command: &str, approved: bool) -> Result<Option<ToolOutput>> {
+    fn gate_command(
+        &self,
+        command: &str,
+        cwd: &Path,
+        approved: bool,
+    ) -> Result<Option<ToolOutput>> {
         if !approved
-            && self.policy.is_unrestricted()
-            && let Some(reason) = crate::policy::danger(command, &self.workspace)
+            && !self.policy.is_strict()
+            && let Some(reason) =
+                crate::policy::danger(command, &self.workspace, cwd, self.policy.confirm())
         {
             return Ok(Some(ToolOutput {
                 text: format!(
@@ -92,9 +98,9 @@ impl ToolRegistry {
             }));
         }
         if approved {
-            self.check_policy(command)?;
+            self.check_policy(command, cwd)?;
         } else {
-            self.check_command(command)?;
+            self.check_command(command, cwd)?;
         }
         Ok(None)
     }
@@ -190,14 +196,16 @@ impl ToolRegistry {
         Ok(())
     }
 
-    fn check_command(&self, command: &str) -> Result<()> {
-        self.policy.command(command, &self.workspace)
+    fn check_command(&self, command: &str, cwd: &Path) -> Result<()> {
+        self.policy.command(command, &self.workspace, cwd)
     }
 
-    fn check_policy(&self, command: &str) -> Result<()> {
+    fn check_policy(&self, command: &str, cwd: &Path) -> Result<()> {
         self.policy.command_policy_checked(
             command.trim(),
             &crate::policy::split_segments(command.trim()),
+            &self.workspace,
+            cwd,
         )
     }
 

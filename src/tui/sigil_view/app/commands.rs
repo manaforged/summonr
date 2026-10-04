@@ -67,6 +67,7 @@ impl App {
                 self.fork_command(argument.unwrap_or(""));
             }
             Some(crate::SlashCommand::Resume) if argument.is_none() => self.open_sessions(false),
+            Some(crate::SlashCommand::New) => self.open_session(crate::tui::hub::Open::New),
             Some(crate::SlashCommand::Usage) if argument.is_none() => {
                 self.usage.start();
                 drop(self.cmd.send(Cmd::ListUsage));
@@ -79,7 +80,7 @@ impl App {
     fn fork_command(&self, argument: &str) {
         if self.model.get().busy_since.is_some() {
             self.push_entry(Entry::Error(
-                "Wait for the active operation or cancel it before forking.".to_string(),
+                "wait for the active operation or cancel it before forking".to_string(),
             ));
             self.refresh();
         } else {
@@ -137,7 +138,7 @@ impl App {
     pub(in crate::tui::sigil_view) fn open_sessions(&self, tree: bool) {
         if self.model.get().busy_since.is_some() {
             self.push_entry(Entry::Error(
-                "Cancel the active turn before resuming a session.".to_string(),
+                "cancel the active turn before resuming a session".to_string(),
             ));
             self.refresh();
         } else {

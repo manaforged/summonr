@@ -56,11 +56,12 @@ impl Step {
 
 const REDIRECTS: &[&str] = &[">", ">>", "1>", "2>", "&>"];
 
-pub(crate) fn walk(command: &str, workspace: &Path, roots: &[PathBuf]) -> Vec<Step> {
+pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathBuf]) -> Vec<Step> {
     let repo = workspace.join(".git").exists();
     let mut vars = HashMap::new();
-    let mut cwd = Some(workspace.to_path_buf());
-    let mut outside = false;
+    let mut cwd = Some(start.to_path_buf());
+    let mut outside =
+        !start.starts_with(workspace) && !roots.iter().any(|root| start.starts_with(root));
     let mut steps = Vec::new();
     for segment in split_segments(without_heredocs(command.trim()).trim()) {
         let segment = if repo && !outside {
@@ -69,7 +70,10 @@ pub(crate) fn walk(command: &str, workspace: &Path, roots: &[PathBuf]) -> Vec<St
             segment
         };
         let text = expand_vars(&segment, &vars);
-        let words = shell_words(&text);
+        let words: Vec<String> = shell_words(&text)
+            .into_iter()
+            .map(|word| word.replace(['\'', '"'], ""))
+            .collect();
         assign(&words, &mut vars);
         let step = Step {
             text,
@@ -124,7 +128,14 @@ pub(crate) fn argv(segment: &str) -> Vec<String> {
 }
 
 pub(crate) fn verb(words: &[String]) -> Option<String> {
-    Some(words.first()?.rsplit('/').next()?.to_ascii_lowercase())
+    Some(
+        words
+            .first()?
+            .rsplit('/')
+            .next()?
+            .replace('\\', "")
+            .to_ascii_lowercase(),
+    )
 }
 
 fn is_assignment(word: &str) -> bool {
@@ -221,6 +232,26 @@ pub(crate) fn without_heredocs(command: &str) -> String {
         ending = heredoc_end(line);
     }
     kept.join("\n")
+}
+
+pub(crate) fn heredocs(command: &str) -> Vec<(String, String)> {
+    let mut found = Vec::new();
+    let mut open: Option<(String, String, Vec<&str>)> = None;
+    for line in command.lines() {
+        if let Some((end, opening, body)) = &mut open {
+            if line.trim() == end.as_str() {
+                found.push((std::mem::take(opening), body.join("\n")));
+                open = None;
+            } else {
+                body.push(line);
+            }
+            continue;
+        }
+        if let Some(end) = heredoc_end(line) {
+            open = Some((end, line.to_string(), Vec::new()));
+        }
+    }
+    found
 }
 
 fn heredoc_end(line: &str) -> Option<String> {

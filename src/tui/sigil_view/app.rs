@@ -105,6 +105,7 @@ pub(super) struct App {
     pub(super) editor: TextEditState,
     pub(super) editor_focus: Signal<u64>,
     recalled: Signal<Option<(usize, String, usize)>>,
+    cleared: Signal<Option<String>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
     pub(super) settings: Signal<String>,
@@ -158,7 +159,6 @@ pub(super) struct App {
     pub(super) select: Signal<bool>,
     copy_pending: Signal<Option<(Option<PathBuf>, String)>>,
     pub(super) open_file: Signal<Option<PathBuf>>,
-    pub(super) resume: Rc<RefCell<Option<String>>>,
     pub(super) quit: Signal<bool>,
     quit_armed: Rc<Cell<Option<std::time::Instant>>>,
     escape_armed: Rc<Cell<Option<std::time::Instant>>>,
@@ -194,7 +194,7 @@ impl Attachment {
 
     fn restore(image: crate::provider::Image) -> Self {
         let source = image.bytes().ok().and_then(|b| preview(&b).ok());
-        let label = format!("📷 {}", image.media_type);
+        let label = format!("image · {}", image.media_type);
         Self {
             image,
             source,
@@ -224,6 +224,7 @@ impl App {
             editor: TextEditState::new(draft, caret),
             editor_focus: signal(0),
             recalled: signal(None),
+            cleared: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
             settings: signal(String::new()),
@@ -288,7 +289,6 @@ impl App {
             select: signal(false),
             copy_pending: signal(None),
             open_file: signal(None),
-            resume: Rc::new(RefCell::new(None)),
             quit: signal(false),
             quit_armed: Rc::new(Cell::new(None)),
             escape_armed: Rc::new(Cell::new(None)),

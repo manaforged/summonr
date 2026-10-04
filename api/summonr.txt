@@ -272,6 +272,7 @@ pub summonr::prefs::Hotkey::Copy
 pub summonr::prefs::Hotkey::Diff
 pub summonr::prefs::Hotkey::Editor
 pub summonr::prefs::Hotkey::Files
+pub summonr::prefs::Hotkey::Fold
 pub summonr::prefs::Hotkey::History
 pub summonr::prefs::Hotkey::Ledger
 pub summonr::prefs::Hotkey::Newline
@@ -478,6 +479,7 @@ pub summonr::Error::EditApproval::setting: &'static str
 pub summonr::Error::Io(core::io::error::Error)
 pub summonr::Error::Json(serde_json::error::Error)
 pub summonr::Error::Provider(summonr::error::ProviderFailure)
+pub summonr::Error::Setup(alloc::string::String)
 pub summonr::Error::Tool(alloc::string::String)
 impl summonr::Error
 pub fn summonr::Error::provider(kind: summonr::ProviderFailureKind, message: impl core::convert::Into<alloc::string::String>) -> Self
@@ -522,6 +524,8 @@ pub summonr::Event::Receipt::receipt: summonr::Receipt
 pub summonr::Event::Spawned
 pub summonr::Event::Spawned::access: summonr::child::Access
 pub summonr::Event::Spawned::assignment: alloc::string::String
+pub summonr::Event::Spawned::background: bool
+pub summonr::Event::Spawned::call: alloc::string::String
 pub summonr::Event::ToolCall
 pub summonr::Event::ToolCall::arguments: alloc::string::String
 pub summonr::Event::ToolCall::id: alloc::string::String
@@ -531,6 +535,7 @@ pub summonr::Event::ToolResult::id: alloc::string::String
 pub summonr::Event::ToolResult::millis: core::option::Option<u64>
 pub summonr::Event::ToolResult::mutated: bool
 pub summonr::Event::ToolResult::output: alloc::string::String
+pub summonr::Event::ToolResult::patch: core::option::Option<alloc::string::String>
 pub summonr::Event::ToolResult::success: bool
 pub summonr::Event::Unreported
 pub summonr::Event::Unreported::tokens: u64

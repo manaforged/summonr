@@ -7,6 +7,8 @@ use crate::error::{Error, Result};
 use crate::provider::{Effort, Price, Reasoning};
 use crate::secret::{self, Source};
 
+pub(crate) const ENV_ENDPOINT: &str = "env";
+const PLAN_PATH_MARKER: &str = "/coding/";
 const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
 const GLM_INTL: &str = "https://api.z.ai/api/coding/paas/v4";
 const KIMI: &str = "https://api.kimi.com/coding/v1";
@@ -107,7 +109,7 @@ impl Endpoint {
                     && url
                         .and_then(hosted)
                         .is_none_or(|row| row.env_keys.is_empty())
-                    && (self.name == "env" || url.is_some_and(local))
+                    && (self.name == ENV_ENDPOINT || url.is_some_and(local))
             }
         }
     }
@@ -310,7 +312,7 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
         return LoginGroup::Key;
     }
     let url = endpoint.base_url.as_deref().unwrap_or("");
-    if url.contains("/coding/") || hosted(url).is_some_and(|preset| preset.plan) {
+    if url.contains(PLAN_PATH_MARKER) || hosted(url).is_some_and(|preset| preset.plan) {
         LoginGroup::Plan
     } else if endpoint.keyless() {
         LoginGroup::Local

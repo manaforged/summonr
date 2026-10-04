@@ -227,9 +227,9 @@ fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Opti
             .join(" ")
             .to_lowercase();
         let hash = {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            normalized.hash(&mut hasher);
+            use std::hash::Hasher;
+            let mut hasher = crate::text::Fnv64::default();
+            hasher.write(normalized.as_bytes());
             hasher.finish()
         };
         if normalized.len() < 40 || seen.insert(hash) {

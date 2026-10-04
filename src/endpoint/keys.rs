@@ -99,7 +99,7 @@ fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
             Some("oauth") if bearer => {
                 let expires = entry.get("expires").and_then(serde_json::Value::as_i64)?;
                 let now = i64::try_from(crate::mail::now()).ok()?.saturating_mul(1000);
-                if expires <= now + 60_000 {
+                if expires <= now + skew_millis() {
                     return None;
                 }
                 entry.get("access")
@@ -169,7 +169,7 @@ pub(super) fn kimi_cli_token() -> Option<String> {
         .get("expires_at")
         .and_then(serde_json::Value::as_i64)?;
     let now = i64::try_from(crate::mail::now()).ok()?;
-    if expires <= now + 60 {
+    if expires <= now + skew_secs() {
         return None;
     }
     value
@@ -189,4 +189,12 @@ pub(super) fn env_key(names: &[&str]) -> Option<String> {
 
 pub(super) fn trim_slash(url: &str) -> String {
     url.trim().trim_end_matches('/').to_string()
+}
+
+fn skew_millis() -> i64 {
+    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_millis()).unwrap_or(i64::MAX)
+}
+
+fn skew_secs() -> i64 {
+    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_secs()).unwrap_or(i64::MAX)
 }

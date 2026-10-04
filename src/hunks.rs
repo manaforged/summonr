@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::Hasher;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 use crate::diff;
 use crate::durable::store;
 use crate::error::{Error, Result};
+use crate::text::Fnv64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Hunk {
@@ -58,6 +59,15 @@ fn save(root: &Path, marks: &Marks) -> Result<()> {
     Ok(())
 }
 
+impl Hunk {
+    pub(crate) fn body(&self) -> &str {
+        self.patch
+            .match_indices("@@ ")
+            .find(|(at, _)| *at == 0 || self.patch.as_bytes()[at - 1] == b'\n')
+            .map_or(self.patch.as_str(), |(at, _)| &self.patch[at..])
+    }
+}
+
 pub(crate) fn split(path: &str, patch: &str) -> Vec<Hunk> {
     let mut head = String::new();
     let mut bodies: Vec<String> = Vec::new();
@@ -73,10 +83,11 @@ pub(crate) fn split(path: &str, patch: &str) -> Vec<Hunk> {
         .into_iter()
         .map(|body| {
             let header = body.lines().next().unwrap_or_default().to_string();
-            let mut hash = DefaultHasher::new();
-            path.hash(&mut hash);
+            let mut hash = Fnv64::default();
+            hash.write(path.as_bytes());
             for line in body.lines().skip(1) {
-                line.hash(&mut hash);
+                hash.write_u8(b'\n');
+                hash.write(line.as_bytes());
             }
             Hunk {
                 id: format!("{:016x}", hash.finish()),

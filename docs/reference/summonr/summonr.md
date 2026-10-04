@@ -564,6 +564,7 @@
 | <code>Io(Error)</code> |  |
 | <code>Json(Error)</code> |  |
 | <code>Provider(error::ProviderFailure)</code> |  |
+| <code>Setup(String)</code> |  |
 | <code>Tool(String)</code> |  |
 
 **Trait implementations:** <code>From&lt;Error&gt;</code>, <code>Error</code>, <code>Debug</code>, <code>Display</code>
@@ -597,6 +598,8 @@
 | <code>Receipt::receipt: <a href="#receipt">Receipt</a></code> |  |
 | <code>Spawned::access: <a href="summonr-child.html#access">Access</a></code> |  |
 | <code>Spawned::assignment: String</code> |  |
+| <code>Spawned::background: bool</code> |  |
+| <code>Spawned::call: String</code> |  |
 | <code>ToolCall::arguments: String</code> |  |
 | <code>ToolCall::id: String</code> |  |
 | <code>ToolCall::name: String</code> |  |
@@ -604,6 +607,7 @@
 | <code>ToolResult::millis: Option&lt;u64&gt;</code> |  |
 | <code>ToolResult::mutated: bool</code> |  |
 | <code>ToolResult::output: String</code> |  |
+| <code>ToolResult::patch: Option&lt;String&gt;</code> |  |
 | <code>ToolResult::success: bool</code> |  |
 | <code>Unreported::tokens: u64</code> |  |
 | <code>Usage::cached_tokens: u32</code> |  |

@@ -170,7 +170,9 @@ fn client() -> Result<Session> {
                 .connect(crate::limits::WEB_CONNECT),
         )
         .redirect(RedirectPolicy::custom(|attempt| {
-            if attempt.previous.len() >= 5 || !safe_redirect(attempt.url) {
+            if attempt.previous.len() >= crate::limits::WEB_REDIRECT_MAX
+                || !safe_redirect(attempt.url)
+            {
                 RedirectAction::Stop
             } else {
                 RedirectAction::Follow

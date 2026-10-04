@@ -1,4 +1,5 @@
 use super::*;
+use leyline::http::StatusCode;
 
 mod encode;
 mod login;
@@ -281,7 +282,7 @@ impl Client {
         if status.is_success() {
             return Ok(response);
         }
-        if status.as_u16() == 401 || status.as_u16() == 403 {
+        if status == StatusCode::UNAUTHORIZED || status == StatusCode::FORBIDDEN {
             self.auth.forget_live();
         }
         Err(self.rejected(response, model).await)

@@ -2,7 +2,7 @@
 
 A terminal coding agent written in Rust that works until your test command passes, and loads no third-party code into its process.
 
-![summonr in a terminal](docs/guide/assets/summonr-splash.png)
+![summonr fixing two bugs in calc.py and running pytest, captured from a real session](docs/guide/assets/summonr-session.png)
 
 ## Install
 
@@ -18,7 +18,7 @@ Windows (PowerShell):
 irm https://summonr.dev/install.ps1 | iex
 ```
 
-Release binaries cover macOS (arm64, x86_64), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer checks the SHA-256 of the download against the release's `SHA256SUMS` file and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
+Release binaries cover macOS (Apple silicon), Linux (x86_64, arm64, static musl), and Windows (x86_64). The installer checks the SHA-256 of the download against the release's `SHA256SUMS` file and installs `summonr` to `~/.local/bin`, or `%LOCALAPPDATA%\Programs\summonr\bin` on Windows. Set `SUMMONR_VERSION` to pick a release tag and `SUMMONR_INSTALL_DIR` to change the directory.
 
 To install by hand, download the archive and `SHA256SUMS` from [GitHub Releases](https://github.com/manaforged/summonr/releases), then check the archive:
 
@@ -34,7 +34,7 @@ gh attestation verify <file> --repo manaforged/summonr
 
 To update, run the installer again. To uninstall, delete the binary: `~/.local/bin/summonr` or `%LOCALAPPDATA%\Programs\summonr\bin\summonr.exe`.
 
-From source (any platform, Rust 1.98 and Git):
+From source (the same targets as the release binaries, Rust 1.98, Git, CMake, and a C and C++ compiler):
 
 ```sh
 cargo install --git https://github.com/manaforged/summonr --locked
@@ -161,11 +161,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-704 public items (71 types, 97 functions, 113 methods, 246 fields, 173 variants, 4 constants) at 704 paths; 0 are re-export aliases. 362 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
+709 public items (71 types, 97 functions, 113 methods, 249 fields, 175 variants, 4 constants) at 709 paths; 0 are re-export aliases. 362 trait impl lines, 31 inherent impl lines. 22 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 464 | 40 | 46 | 93 | 0 |
+| `summonr` | 468 | 40 | 46 | 93 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -181,7 +181,7 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
-| `summonr::prefs` | 19 | 2 | 3 | 1 | 0 |
+| `summonr::prefs` | 20 | 2 | 3 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 3 | 0 | 0 |
 | `summonr::steps` | 16 | 3 | 4 | 0 | 0 |

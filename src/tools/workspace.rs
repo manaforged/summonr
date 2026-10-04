@@ -31,7 +31,9 @@ impl ToolRegistry {
             .filter(|paths| !paths.is_empty())
         {
             return match op {
-                None | Some("file") => self.read_files(&args, paths),
+                None if args.get("pattern").is_none() => self.read_files(&args, paths),
+                Some("file") => self.read_files(&args, paths),
+                None | Some("search") => self.search_paths(&args, paths),
                 Some(operation) => Err(Error::Tool(format!(
                     "paths does not apply to read op={operation}"
                 ))),
@@ -43,13 +45,26 @@ impl ToolRegistry {
         }
     }
 
+    fn search_paths(&self, args: &Value, paths: &[Value]) -> Result<ToolOutput> {
+        let mut found = Vec::new();
+        for path in paths.iter().filter_map(Value::as_str) {
+            let mut one = args.clone();
+            if let Some(fields) = one.as_object_mut() {
+                fields.remove("paths");
+                fields.insert("path".to_string(), Value::from(path));
+            }
+            found.push(self.grep(&one.to_string())?);
+        }
+        Ok(ToolOutput::ok(found.join("\n")))
+    }
+
     fn read_op(&self, operation: &str, arguments: &str) -> Result<ToolOutput> {
         match operation {
             "file" => self.read_file(arguments),
             "list" => self.list_dir(arguments).map(ToolOutput::ok),
             "search" => self.grep(arguments).map(ToolOutput::ok),
             "image" => self.show_image(arguments),
-            "help" => Ok(ToolOutput::ok(super::help::READ.to_string())),
+            "help" => Ok(ToolOutput::ok(super::help::read())),
             unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
         }
     }
@@ -120,9 +135,10 @@ impl ToolRegistry {
                 mutated: true,
                 grant: None,
                 images: Vec::new(),
+                patch: None,
             });
         }
-        let (dest, mut out) = super::blocking(|| self.edit_in_place(path, args))?;
+        let (dest, mut out, patch) = super::blocking(|| self.edit_in_place(path, args))?;
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -133,6 +149,7 @@ impl ToolRegistry {
             mutated: true,
             grant: None,
             images: Vec::new(),
+            patch,
         })
     }
 
@@ -146,7 +163,7 @@ impl ToolRegistry {
             .get("content")
             .and_then(Value::as_str)
             .ok_or_else(|| Error::Tool("write requires content".to_string()))?;
-        let (dest, mut out) = super::blocking(|| self.write_one(path, content))?;
+        let (dest, mut out, patch) = super::blocking(|| self.write_one(path, content))?;
         if let Some(check) = self.check_after_edit(&dest).await {
             out.push('\n');
             out.push_str(&check.text);
@@ -157,6 +174,7 @@ impl ToolRegistry {
             mutated: true,
             grant: None,
             images: Vec::new(),
+            patch,
         })
     }
 
@@ -177,10 +195,11 @@ impl ToolRegistry {
             mutated: true,
             grant: None,
             images: Vec::new(),
+            patch: None,
         })
     }
 
-    fn edit_in_place(&self, path: &str, args: &Value) -> Result<(PathBuf, String)> {
+    fn edit_in_place(&self, path: &str, args: &Value) -> Result<(PathBuf, String, Option<String>)> {
         let dest = self.resolve_existing(path)?;
         self.check_write(&dest)?;
         let raw = std::fs::read_to_string(&dest)
@@ -194,23 +213,27 @@ impl ToolRegistry {
         let original = raw.replace("\r\n", "\n");
         let (edited, relaxed) = edited_text(&original, args)?;
         let edited = edit::restore(&endings, &original, &edited);
-        let preview = self.atomic_write(&dest, path, &raw, &edited, edit::uses_tags(args))?;
-        let mut out = format!("edited {path}\n{preview}");
+        let written = self.atomic_write(&dest, path, &raw, &edited, edit::uses_tags(args))?;
+        let mut out = format!("edited {path}\n{}", written.preview);
         if relaxed {
             out.push_str(
                 "\nnote: old matched only with whitespace normalized — check the edit above",
             );
         }
-        Ok((dest, out))
+        Ok((dest, out, written.patch))
     }
 
-    fn write_one(&self, path: &str, content: &str) -> Result<(PathBuf, String)> {
+    fn write_one(&self, path: &str, content: &str) -> Result<(PathBuf, String, Option<String>)> {
         let dest = self.resolve_write(path)?;
         self.check_write(&dest)?;
         let before = write::current(&dest, path)?;
-        let note = self.atomic_write(&dest, path, &before, content, write::View::Overwrite)?;
-        let out = format!("wrote {path} ({} lines, {note})", content.lines().count());
-        Ok((dest, out))
+        let written = self.atomic_write(&dest, path, &before, content, write::View::Overwrite)?;
+        let out = format!(
+            "wrote {path} ({} lines, {})",
+            content.lines().count(),
+            written.preview
+        );
+        Ok((dest, out, written.patch))
     }
 
     fn stage_files(&self, files: &[Value]) -> Result<(Vec<write::Change>, String)> {

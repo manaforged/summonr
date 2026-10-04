@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, OnceLock};
 
+use leyline::http::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use super::{Cost, Model, now, shelf};
@@ -123,14 +124,15 @@ async fn fetch_registry(etag: &str) -> Result<Option<Registry>> {
         .send()
         .await
         .map_err(|error| crate::error::Error::Config(error.to_string()))?;
-    match response.status().as_u16() {
-        304 => return Ok(None),
-        200..=299 => {}
-        code => {
-            return Err(crate::error::Error::Config(format!(
-                "models.dev returned {code}"
-            )));
-        }
+    let status = response.status();
+    if status == StatusCode::NOT_MODIFIED {
+        return Ok(None);
+    }
+    if !status.is_success() {
+        return Err(crate::error::Error::Config(format!(
+            "models.dev returned {}",
+            status.as_u16()
+        )));
     }
     let etag = response.header("etag").unwrap_or_default().to_string();
     let text = response

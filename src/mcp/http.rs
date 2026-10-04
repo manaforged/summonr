@@ -1,3 +1,4 @@
+use leyline::http::StatusCode;
 use serde_json::{Value, json};
 
 use std::time::Duration;
@@ -135,7 +136,7 @@ impl Http {
         }
         let text = String::from_utf8_lossy(&body);
         if !status.is_success() {
-            self.expired = status.as_u16() == 404 && self.session.is_some();
+            self.expired = status == StatusCode::NOT_FOUND && self.session.is_some();
             let head: String = text.chars().take(200).collect();
             return Err(Failure::Refused(Error::Tool(format!(
                 "`{method}` returned HTTP {status}: {head}"

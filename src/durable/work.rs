@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 use std::fmt::{Display, Formatter};
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::hash::{Hash, Hasher};
 use std::io;
 use std::path::Path;
 
@@ -355,7 +355,7 @@ impl Work {
     }
 
     pub(crate) fn trees_mark(&self) -> u64 {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::text::Fnv64::default();
         self.trees().hash(&mut hasher);
         hasher.finish()
     }

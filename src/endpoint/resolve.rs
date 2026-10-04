@@ -93,10 +93,10 @@ pub(crate) fn choose(
 pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<Endpoint> {
     if let Ok(base) = std::env::var("SUMMONR_BASE_URL")
         && !base.trim().is_empty()
-        && matches!(name, None | Some("env"))
+        && matches!(name, None | Some(ENV_ENDPOINT))
     {
         return Ok(Endpoint {
-            name: "env".to_string(),
+            name: ENV_ENDPOINT.to_string(),
             base_url: Some(trim_slash(&base)),
             model: model
                 .map(str::to_string)
@@ -137,7 +137,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         Some(chosen) => chosen,
         None => match first_ready(&file) {
             Some(name) => name,
-            None if need.key() => return Err(Error::Config(no_seat())),
+            None if need.key() => return Err(Error::Setup(no_seat())),
             None => presets()
                 .next()
                 .map_or_else(String::new, |row| row.name.to_string()),

@@ -3,9 +3,9 @@
 
 Two jobs:
 
-1. Census. Every `pub`, `pub(crate)`, `pub(super)` item in `src/`, then every
-   function with its body length and how many times its name is mentioned,
-   then the line count of every file. Writes `off/functions.tsv` and
+1. Census. Every `pub`, `pub(crate)`, `pub(super)` item in `src/` and
+   `crates/*/src/`, then every function with its body length and how many
+   times its name is mentioned, then the line count of every file. Writes `off/functions.tsv` and
    `off/lines.tsv`. Totals only, no rows, on stdout.
 2. Ratchet. Reads the "Names we delete" table on
    `docs/guide/internals/module-api.md` and counts every backticked name in
@@ -107,7 +107,8 @@ CAP = 400
 
 
 def rust_files() -> list[Path]:
-    return sorted((ROOT / "src").rglob("*.rs"))
+    trees = [ROOT / "src", *sorted((ROOT / "crates").glob("*/src"))]
+    return sorted(p for tree in trees for p in tree.rglob("*.rs"))
 
 
 def source_files() -> list[Path]:

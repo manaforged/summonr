@@ -62,10 +62,14 @@ pub(crate) const REPEAT_WINDOW: Duration = Duration::from_secs(2);
 pub(crate) const RETRY_LIMIT: usize = 3;
 pub(crate) const REPAIR_LIMIT: usize = 6;
 pub(crate) const EDIT_HUNK_ROWS: usize = 80;
+pub(crate) const DISPLAY_PATCH_LINES: usize = 1_000;
 pub(crate) const SUMMARY_RETRY_ROUNDS: usize = 8;
 pub(crate) const RETRY_BASE: Duration = Duration::from_secs(1);
 pub(crate) const RETRY_MAX: Duration = Duration::from_secs(8);
 pub(crate) const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
+pub(crate) const TOKEN_EXPIRY_SKEW: Duration = Duration::from_secs(60);
+pub(crate) const WEB_REDIRECT_MAX: usize = 5;
+pub(crate) const READ_LINE_LIMIT: usize = 1000;
 
 pub(crate) const fn seconds(value: u64) -> Duration {
     Duration::from_secs(value)

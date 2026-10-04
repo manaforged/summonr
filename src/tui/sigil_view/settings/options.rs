@@ -3,9 +3,9 @@ use sigil::prelude::{
     virtual_list,
 };
 
-use super::prelude::*;
 use super::{App, canvas};
 use super::{Row, setting_rows};
+use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, group, pick, press};
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     vec![
@@ -26,45 +26,56 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
-    shell(
-        app.settings_open,
-        "Settings",
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || {
-                let rows = setting_rows(&paint);
-                let selected = paint.settings_sel.get().min(rows.len().saturating_sub(1));
-                let items = list_items(&rows);
-                let top = items
-                    .iter()
-                    .position(|item| matches!(item, Item::Seat(index) if *index == selected))
-                    .map_or(0, |at| at.saturating_sub(1));
-                let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
-                let count = format!("{} / {}", selected + 1, rows.len());
-                let lookup = rows.clone();
-                let source = paint.clone();
-                vec![
-                    container().layout(LayoutStyle::block().fill_width()).child(
-                        virtual_list(items, move |_, item: &Item| match item {
-                            Item::Heading(name) => group(*name),
-                            Item::Seat(index) => {
-                                entry(source.clone(), &lookup[*index], *index, *index == selected)
-                            }
-                        })
-                        .row_height(canvas::overlay_list_row())
-                        .height(canvas::overlay_list_row() * visible as f32)
-                        .viewport_height(canvas::overlay_list_row() * visible as f32)
-                        .scroll_into_view(top),
-                    ),
-                    hint("↑↓ move · ↵ change · esc close", count),
-                ]
-            }),
-    )
+    let count = app.clone();
+    let hotkeys = app.model.peek().prefs.hotkeys.clone();
+    Dialog::new(Size::Normal, "Settings", Hints::new())
+        .live_hints(move || {
+            let total = setting_rows(&count).len();
+            let selected = count.settings_sel.get().min(total.saturating_sub(1));
+            Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Enter, "change")
+                .key(Key::Esc, "close")
+                .right(format!("{} / {total}", selected + 1))
+        })
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::overlay_gap()),
+                )
+                .children_reactive(move || {
+                    let rows = setting_rows(&paint);
+                    let selected = paint.settings_sel.get().min(rows.len().saturating_sub(1));
+                    let items = list_items(&rows);
+                    let top = items
+                        .iter()
+                        .position(|item| matches!(item, Item::Seat(index) if *index == selected))
+                        .map_or(0, |at| at.saturating_sub(1));
+                    let visible = canvas::overlay_shown(items.len(), paint.viewport.get().1);
+                    let lookup = rows.clone();
+                    let source = paint.clone();
+                    vec![
+                        container().layout(LayoutStyle::block().fill_width()).child(
+                            virtual_list(items, move |_, item: &Item| match item {
+                                Item::Heading(name) => group(*name),
+                                Item::Seat(index) => entry(
+                                    source.clone(),
+                                    &lookup[*index],
+                                    *index,
+                                    *index == selected,
+                                ),
+                            })
+                            .row_height(canvas::overlay_list_row())
+                            .height(canvas::overlay_list_row() * visible as f32)
+                            .viewport_height(canvas::overlay_list_row() * visible as f32)
+                            .scroll_into_view(top),
+                        ),
+                    ]
+                }),
+        )
+        .build(app.settings_open, app.viewport.peek().0, &hotkeys)
 }
 
 enum Item {

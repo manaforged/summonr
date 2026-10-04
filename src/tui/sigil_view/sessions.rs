@@ -11,7 +11,7 @@ use sigil::prelude::{NodeBuilder, Signal};
 
 use super::app::App;
 use super::canvas;
-use super::prelude::*;
+use super::ui::{Bindings, Dialog, Hints, Key, Size, alt, pick};
 
 #[derive(Clone, Copy)]
 pub(super) struct Picker {
@@ -262,23 +262,31 @@ pub(super) fn keys() -> Bindings {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.sessions;
-    shell(
-        picker.open,
-        picker.heading(),
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .child(
-                text_edit(picker.query)
-                    .caret_position(picker.caret)
-                    .height(canvas::overlay_field()),
-            )
-            .child(list(app, picker)),
-    )
+    let cols = app.viewport.peek().0;
+    let keys = app.model.peek().prefs.hotkeys.clone();
+    Dialog::new(Size::Normal, picker.heading(), Hints::new())
+        .live_hints(move || {
+            let total = picker.rows().len();
+            let count = if total == 0 {
+                String::new()
+            } else {
+                format!("{} / {}", picker.selected.get().min(total - 1) + 1, total)
+            };
+            Hints::new()
+                .key(Key::UpDown, "move")
+                .key(Key::Enter, "resume")
+                .key(Key::Tab, "scope")
+                .key(Key::Fixed("alt+d"), "delete")
+                .key(Key::Esc, "close")
+                .right(count)
+        })
+        .child(
+            text_edit(picker.query)
+                .caret_position(picker.caret)
+                .height(canvas::overlay_field()),
+        )
+        .child(list(app, picker))
+        .build(picker.open, cols, &keys)
 }
 
 fn list(app: App, picker: Picker) -> NodeBuilder {
@@ -305,8 +313,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
             let source = paint.clone();
             let band = canvas::overlay_list_row();
             let shown = canvas::overlay_shown(rows.len(), paint.viewport.get().1);
-            let total = rows.len();
-            let mut items = vec![
+            vec![
                 container().layout(LayoutStyle::block().fill_width()).child(
                     virtual_list(rows, move |index, info: &SessionInfo| {
                         row(source.clone(), picker, index, info, selected)
@@ -316,12 +323,7 @@ fn list(app: App, picker: Picker) -> NodeBuilder {
                     .viewport_height(band * shown as f32)
                     .follow_row(paint.sessions.selected),
                 ),
-            ];
-            items.push(hint(
-                "↑↓ move · ↵ resume · tab scope · esc close",
-                format!("{} / {}", selected + 1, total),
-            ));
-            items
+            ]
         })
 }
 

@@ -1,11 +1,10 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, WidgetLayoutExt, container, derived,
-    signal, text_field, virtual_list,
+    NodeBuilder, Signal, WidgetLayoutExt, derived, signal, text_field, virtual_list,
 };
 
 use super::app::App;
 use super::canvas;
-use super::prelude::*;
+use super::ui::{Dialog, Hints, Key, Size, pick};
 
 #[derive(Clone, Copy)]
 pub(super) struct View {
@@ -63,37 +62,28 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let cols = app.viewport.peek().0;
     let visible = visible(&app) as f32;
     let rows = derived(move || lines(&keys, &query.get()));
-    shell(
-        app.help.open,
-        "Help",
-        cols,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .child(
-                text_field(query)
-                    .placeholder("find")
-                    .focus_when(focus)
-                    .change(move |_| scroll.set(0.0))
-                    .height(canvas::overlay_field()),
-            )
-            .child(
-                virtual_list(rows, move |_, line: &String| {
-                    pick(false, line.clone(), String::new())
-                })
-                .row_height(canvas::overlay_list_row())
-                .height(canvas::overlay_list_row() * visible)
-                .viewport_height(canvas::overlay_list_row() * visible)
-                .scroll_bind(scroll),
-            )
-            .child(hint(
-                "type to filter · scroll for more · esc close",
-                String::new(),
-            )),
-    )
+    let hints = Hints::new()
+        .key(Key::Fixed("type"), "to filter")
+        .key(Key::Fixed("scroll"), "for more")
+        .key(Key::Esc, "close");
+    Dialog::new(Size::Normal, "Help", hints)
+        .child(
+            text_field(query)
+                .placeholder("find")
+                .focus_when(focus)
+                .change(move |_| scroll.set(0.0))
+                .height(canvas::overlay_field()),
+        )
+        .child(
+            virtual_list(rows, move |_, line: &String| {
+                pick(false, line.clone(), String::new())
+            })
+            .row_height(canvas::overlay_list_row())
+            .height(canvas::overlay_list_row() * visible)
+            .viewport_height(canvas::overlay_list_row() * visible)
+            .scroll_bind(scroll),
+        )
+        .build(app.help.open, cols, &app.model.peek().prefs.hotkeys)
 }
 
 fn matching(text: &str, query: &str) -> Vec<String> {

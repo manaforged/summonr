@@ -1,4 +1,5 @@
 use super::*;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 impl App {
     pub(in crate::tui::sigil_view) fn view_open(&self, path: String) {
@@ -36,9 +37,11 @@ impl App {
         }
         if self.view_text.peek() != self.view_saved.peek() && !self.discard_armed.peek() {
             self.discard_armed.set(true);
-            self.push_entry(Entry::System(
-                "unsaved edits — ctrl+s save · esc again discard".to_string(),
-            ));
+            let keys = Hints::new()
+                .key(Key::Fixed("ctrl+s"), "save")
+                .key(Key::Esc, "again discard")
+                .text(&self.model.peek().prefs.hotkeys);
+            self.push_entry(Entry::System(format!("unsaved edits — {keys}")));
             self.refresh();
             return true;
         }

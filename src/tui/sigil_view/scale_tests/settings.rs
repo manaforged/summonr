@@ -75,3 +75,22 @@ fn the_turn_notification_names_how_the_turn_ended() {
     });
     assert_eq!(seen, ["turn finished", "turn failed"]);
 }
+
+#[test]
+fn every_dialog_ends_in_its_key_hints() {
+    let hotkeys =
+        frame_with(busy_info(), 110, 40, State::Idle, |app| app.open_hotkeys()).join("\n");
+    assert!(
+        hotkeys.contains("↑↓ move · ↵ rebind · r reset all · esc close"),
+        "{hotkeys}"
+    );
+    let settings = frame_with(busy_info(), 110, 40, State::Idle, |app| {
+        app.replace("/settings".to_owned());
+        app.submit();
+    })
+    .join("\n");
+    assert!(
+        settings.contains("↑↓ move · ↵ change · esc close"),
+        "{settings}"
+    );
+}

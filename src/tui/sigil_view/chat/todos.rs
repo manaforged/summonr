@@ -5,8 +5,8 @@ use sigil::prelude::{
 };
 
 use super::panes::ledger::item;
-use super::prelude::*;
 use super::{App, Model, Pane, canvas};
+use crate::tui::sigil_view::ui::pick;
 
 #[derive(Clone, PartialEq)]
 struct TodosView {

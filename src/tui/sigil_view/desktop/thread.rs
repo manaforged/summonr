@@ -155,48 +155,14 @@ fn empty_home() -> NodeBuilder {
 fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
     match band {
         chat::panels::Band::Approval { detail, persist } => {
-            let go = app.clone();
-            let always = app.clone();
-            let stop = app.clone();
-            let mut actions = container().layout(
-                LayoutStyle::flex_row()
-                    .gap(8.0)
-                    .align_items(AlignItems::Center),
-            );
-            actions = actions.child(
-                button("Allow")
-                    .primary()
-                    .activate(move || go.approval_answer(crate::runtime::GrantAnswer::Allow)),
-            );
-            if persist {
-                actions =
-                    actions.child(button("Always").activate(move || {
-                        always.approval_answer(crate::runtime::GrantAnswer::Always)
-                    }));
-            }
-            actions = actions.child(
-                button("Deny")
-                    .destructive()
-                    .activate(move || stop.approval_answer(crate::runtime::GrantAnswer::Deny)),
-            );
-            notice_band(format!("Needs approval: {detail}"), Tone::Warn)
-                .child(
-                    sigil::kernel::text("The agent is waiting. Allow, Always, or Deny.")
-                        .nowrap()
-                        .text_color(sigil::prelude::Token::OnSurface),
-                )
-                .child(actions)
+            chat::panels::approval_band(app, usize::MAX, detail, persist)
         }
         chat::panels::Band::Form { lines, review } => {
             chat::form::form_band(app, usize::MAX, lines, review)
         }
         chat::panels::Band::Busy(status) => notice_band(status, Tone::Neutral),
-        chat::panels::Band::Attached(count) => notice_band(
-            format!(
-                "{} · enter sends with your prompt",
-                chat::panels::attached_text(count)
-            ),
-            Tone::Info,
-        ),
+        chat::panels::Band::Attached(count) => {
+            notice_band(chat::panels::attached_note(&app, count), Tone::Info)
+        }
     }
 }

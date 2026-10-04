@@ -39,6 +39,10 @@ First public release.
 
 ### Changed
 
+- Every dialog, inline prompt, and key hint is built from one UI kit:
+  dialogs share one frame and always end in their key hints, approval and
+  form prompts look the same in the terminal and the desktop window, and
+  hints show your own key bindings with one separator style.
 - Commands run without a prompt, sandboxed or not. Only irreversible
   destruction asks first: wiping the system, home, or project root,
   `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and

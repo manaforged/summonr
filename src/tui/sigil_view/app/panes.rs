@@ -1,12 +1,17 @@
 use super::*;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 impl App {
     pub(in crate::tui::sigil_view) fn set_layout(&self, layout: Layout) {
         if self.view_edit.peek() && layout.secondary != Some(Pane::View) {
             if self.view_text.peek() != self.view_saved.peek() {
-                self.push_entry(Entry::Error(
-                    "unsaved edits in the view pane — ctrl+s save · esc leave".to_string(),
-                ));
+                let keys = Hints::new()
+                    .key(Key::Fixed("ctrl+s"), "save")
+                    .key(Key::Esc, "leave")
+                    .text(&self.model.peek().prefs.hotkeys);
+                self.push_entry(Entry::Error(format!(
+                    "unsaved edits in the view pane — {keys}"
+                )));
                 self.refresh();
                 return;
             }

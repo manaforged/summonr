@@ -5,7 +5,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas::{self, palette};
-use super::overlay::wide_page;
+use super::ui::{Dialog, Hints, Key, Size};
 use crate::mail::now;
 use crate::session::Spend;
 
@@ -18,7 +18,6 @@ use sections::{bottom, cards, colored, spacer, trend};
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
 const CHROME_ROWS: u16 = 8;
 const INSET: f32 = 24.0;
-const KEYS: &str = "←/→ range · tab tokens/cost · ↵ this workspace/all · esc close";
 
 #[derive(Clone, Copy)]
 pub(super) struct Panel {
@@ -81,14 +80,18 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .on_added(|_, id| request_focus(id))
         .layout(LayoutStyle::flex_column().fill_width().gap(16.0))
         .children_reactive(move || page(&paint, width - INSET * 2.0));
-    wide_page(
-        app.usage.open,
-        "Usage",
-        cols,
-        container()
-            .layout(LayoutStyle::block().fill_width().height(height))
-            .child(scroll(page).fill().follow_end(false)),
-    )
+    let hints = Hints::new()
+        .key(Key::LeftRight, "range")
+        .key(Key::Tab, "tokens/cost")
+        .key(Key::Enter, "this workspace/all")
+        .key(Key::Esc, "close");
+    Dialog::new(Size::Page, "Usage", hints)
+        .child(
+            container()
+                .layout(LayoutStyle::block().fill_width().height(height))
+                .child(scroll(page).fill().follow_end(false)),
+        )
+        .build(app.usage.open, cols, &app.model.peek().prefs.hotkeys)
 }
 
 fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
@@ -107,19 +110,16 @@ fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
             status.as_str()
         };
         nodes.push(colored(note, palette().dim));
-        nodes.push(colored(KEYS, palette().code_comment));
         return nodes;
     }
     let report = Report::build(&rows, range, metric, now());
     if report.models.is_empty() {
         nodes.push(colored("no usage in this range", palette().dim));
-        nodes.push(colored(KEYS, palette().code_comment));
         return nodes;
     }
     nodes.push(cards(&report));
     nodes.push(trend(&report, metric, width));
     nodes.push(bottom(&report, metric));
-    nodes.push(colored(KEYS, palette().code_comment));
     nodes
 }
 

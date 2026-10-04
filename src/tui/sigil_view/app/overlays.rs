@@ -34,7 +34,7 @@ impl Overlay {
         }
     }
 
-    fn keys(self) -> super::super::prelude::Bindings {
+    fn keys(self) -> super::super::ui::Bindings {
         match self {
             Self::Sessions => super::super::sessions::keys(),
             Self::Auth => settings::auth_keys(),
@@ -69,7 +69,7 @@ impl Overlay {
             Self::Settings => settings::settings_layer(app),
             Self::Context | Self::Cache => return None,
         };
-        Some(super::super::prelude::keyed(node, &owner, keys))
+        Some(super::super::ui::keyed(node, &owner, keys))
     }
 }
 

@@ -13,7 +13,6 @@ pub(super) use super::canvas;
 pub(super) use super::model::{Agent, Call, Entry, Model};
 pub(super) use super::pane::Pane;
 pub(super) use super::panes;
-pub(super) use super::prelude;
 pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
 pub(super) use composer::{busy_status, composer_hint, draft_view};

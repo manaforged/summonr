@@ -96,6 +96,12 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | checkpoint | `checkpoint.rs`, `runtime/checkpoint.rs`, `/rollback`, `/undo` | one git tree per turn through a private index, which starts as a copy of the repository index when the workspace is the repository root; `Loop::checkpoint` captures it in the background and `Loop::settle` joins it before any tool runs; restore and turn undo |
 | fallback | `endpoint.rs::fallbacks`, `[endpoint.NAME] fallback` | switch to the next endpoint after retries run out |
 | edit approval | `prefs::banned_edit`, `Grant::Edit`, `ToolRegistry::{allow_edit,reset_edits}` | tests and comments use saved defaults; an explicit user request or interactive approval allows the current task, and the next user turn resets the exception |
+| UI kit | `tui::sigil_view::ui` | every dialog, inline prompt, and key hint composes Sigil primitives through one typed kit; screens never build modals, prompt buttons, or hint strings by hand; a one-row status line uses Sigil `notice_band` directly |
+| dialog | `ui::Dialog`, `ui::Size::{Normal, Wide, Page}` | one framed modal with a title, body, optional notice, and a required `Hints` footer; size picks the width |
+| inline prompt | `ui::Prompt`, `ui::Action`, `ui::ActionKind` | approval and form bands above the composer, in the terminal and the desktop window: a one-row notice, detail lines, the key hint, then buttons |
+| key hints | `ui::Hints`, `ui::Key` | typed `(key, action)` lists rendered as `key action · key action`; rebindable actions use `Key::Hotkey`, so hints follow the user's bindings |
+| notice row | `ui::notice(text, Tone)` | an error or note row inside a dialog |
+| list rows | `ui::{pick, slotted, group, heading}` | picker rows, section labels, and heading lines |
 | task progress | `chat::todos`, `panes::ledger::item`, `App::{toggle_todos, scroll_todos}` | a compact strip reserves space above the composer; click or the ledger hotkey expands the list, wheel scrolls it, and completion removes it |
 | diff layout | `Prefs::diff_layout`, `DiffLayout`, `chat/entry.rs` diff row | split by default, unified selectable in edit headers or settings; the saved choice applies to inline edits, with unified rendering in narrow panes |
 | hunk review | `hunks.rs::{split, apply, load, drain}`, `Cmd::Review`, `Msg::Review`, `.summonr/review.json` | `split` cuts a file's patch into self-contained one-hunk patches; `apply` records a verdict or note, or reverts one hunk through `git apply --reverse`; `drain` moves pending notes into the next prompt |
@@ -132,6 +138,7 @@ not against the name.
 
 | Delete | Keep | Evidence |
 | --- | --- | --- |
+| `overlay::{shell, wide_shell, wide_page, hint, band}`, hand-built approval and form bands, free-form hint strings | `ui::{Dialog, Prompt, Hints, notice}` | each screen assembled modals, prompts, and hints itself, so wording drifted and the approval band drew over the footer |
 | `summonr decide`, `summonr infer`, the decisions module row | `summonr classify`, `classify` | one command and one module name the typed-question job; the requests ride `provider::Client` like every other wire |
 | a second session record beside Line | `Line`, with `Event` projected by `Line::events`; `Msg`/`Cmd` stay UI transport | `Event` was built by hand beside the journal line |
 | `provider::limits`, `limits::secs`, `limits::secs_f64`, `FALLBACK_RETRIES` | `limits.rs`, leyline `RetryPolicy`; `RETRY_AFTER_MAX` lives in `limits.rs` | a second backoff loop and timeout builder beside leyline |

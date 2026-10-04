@@ -8,7 +8,7 @@ use regex::{Regex, RegexBuilder, escape};
 use super::app::App;
 use super::canvas;
 use super::model::{Entry, Model, entry_markdown};
-use super::prelude::*;
+use super::ui::{Dialog, Hints, Key, Size, pick};
 use crate::session::Prompt;
 use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
@@ -105,12 +105,24 @@ impl Picker {
         }
     }
 
-    fn action(self) -> &'static str {
-        match self.mode.get() {
-            Mode::Conversation => "↑↓ select · ↵ jump · esc close",
-            Mode::Prompts => "↑↓ select · ↵ insert · esc close",
-            Mode::Branch => "↑↓ select · ↵ branch · esc close",
-        }
+    fn hints(self, model: &Model) -> Hints {
+        let count = match self.rows(model) {
+            Ok(rows) if !rows.is_empty() => {
+                let selected = self.selected.get().min(rows.len() - 1);
+                format!("{} / {}", selected + 1, rows.len())
+            }
+            Ok(_) | Err(_) => String::new(),
+        };
+        let action = match self.mode.get() {
+            Mode::Conversation => "jump",
+            Mode::Prompts => "insert",
+            Mode::Branch => "branch",
+        };
+        Hints::new()
+            .key(Key::UpDown, "select")
+            .key(Key::Enter, action)
+            .key(Key::Esc, "close")
+            .right(count)
     }
 
     fn detail(self, index: usize) -> String {
@@ -224,23 +236,18 @@ fn one_line(text: &str) -> String {
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let picker = app.search;
-    shell(
-        picker.open,
-        picker.title(),
-        app.viewport.peek().0,
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .child(
-                text_edit(picker.query)
-                    .caret_position(picker.caret)
-                    .height(canvas::overlay_field()),
-            )
-            .child(results(app, picker)),
-    )
+    let cols = app.viewport.peek().0;
+    let keys = app.model.peek().prefs.hotkeys.clone();
+    let live = app.clone();
+    Dialog::new(Size::Normal, picker.title(), Hints::new())
+        .live_hints(move || picker.hints(&live.model.get()))
+        .child(
+            text_edit(picker.query)
+                .caret_position(picker.caret)
+                .height(canvas::overlay_field()),
+        )
+        .child(results(app, picker))
+        .build(picker.open, cols, &keys)
 }
 
 fn results(app: App, picker: Picker) -> NodeBuilder {
@@ -278,11 +285,6 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             ),
                         );
                     }
-                    let count = if rows.is_empty() {
-                        String::new()
-                    } else {
-                        format!("{} / {}", selected + 1, rows.len())
-                    };
                     let height = if picker.is_history() {
                         canvas::overlay_list_row() * 2.0
                     } else {
@@ -300,7 +302,6 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             .follow_row(picker.selected),
                         ),
                     );
-                    items.push(hint(picker.action(), count));
                 }
                 Err(error) => items.push(
                     container().child(

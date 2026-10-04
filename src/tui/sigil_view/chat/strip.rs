@@ -6,6 +6,7 @@ use sigil::prelude::{
 use super::{Agent, App};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 fn text(body: impl Into<String>, look: Look) -> sigil::kernel::TextBuilder {
     look.on(sigil::kernel::text(body.into()).nowrap())
@@ -104,19 +105,16 @@ pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder 
             if expanded && !rows.is_empty() {
                 let tokens: u64 = rows.iter().map(|agent| agent.tokens).sum();
                 let toggle = app.clone();
-                let close = app
-                    .model
-                    .peek()
-                    .prefs
-                    .hotkeys
-                    .label(crate::prefs::Hotkey::Agents);
+                let close = Hints::new()
+                    .key(Key::Hotkey(crate::prefs::Hotkey::Agents), "closes")
+                    .text(&app.model.peek().prefs.hotkeys);
                 nodes.push(
                     container()
                         .layout(LayoutStyle::flex_row().fill_width().gap(8.0))
                         .child(text("children", Look::xs(Token::Gray12).bold()))
                         .child(text(
                             format!(
-                                "{} · {} tok · {close} closes",
+                                "{} · {} tok · {close}",
                                 rows.len(),
                                 crate::provider::compact(tokens)
                             ),

@@ -15,6 +15,8 @@ use sigil::prelude::divider_horizontal;
 use sigil::prelude::node;
 use sigil::prelude::notice_band;
 
+use crate::tui::sigil_view::ui::{Hints, Key};
+
 pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
     app: App,
     width: usize,
@@ -149,9 +151,13 @@ fn hint_row(app: App, width: usize) -> NodeBuilder {
     let hint = sigil::reactive::derived(move || {
         let select = update.select.get();
         let model = update.model.get();
-        let select = select.then(|| model.prefs.hotkeys.label(crate::prefs::Hotkey::Select));
+        let keys = &model.prefs.hotkeys;
+        let select = select.then(|| keys.label(crate::prefs::Hotkey::Select));
         if update.view_edit.get() {
-            "ctrl+s save · esc leave".to_string()
+            Hints::new()
+                .key(Key::Fixed("ctrl+s"), "save")
+                .key(Key::Esc, "leave")
+                .text(keys)
         } else {
             composer_hint(
                 model.busy_since.map(|(activity, _)| activity),

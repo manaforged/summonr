@@ -1,5 +1,5 @@
 use super::{App, LIMIT, MAX_WIDTH, canvas, mention, usage};
-use crate::tui::sigil_view::prelude::{group, hint, pick};
+use crate::tui::sigil_view::ui::{Hints, Key, group, pick};
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::MouseButton;
@@ -20,7 +20,7 @@ struct SuggestRow {
 struct Popup {
     title: String,
     rows: Vec<SuggestRow>,
-    keys: &'static str,
+    keys: Hints,
     count: String,
 }
 
@@ -66,11 +66,16 @@ fn popup(app: &App, width: usize) -> Option<Popup> {
             }
         })
         .collect();
-    let keys = if head.is_some() || mention(&draft, caret).is_some() {
-        "↑↓ · tab complete · ↵ complete · esc"
+    let enter = if head.is_some() || mention(&draft, caret).is_some() {
+        "complete"
     } else {
-        "↑↓ · tab complete · ↵ run · esc"
+        "run"
     };
+    let keys = Hints::new()
+        .key(Key::UpDown, "move")
+        .key(Key::Tab, "complete")
+        .key(Key::Enter, enter)
+        .key(Key::Esc, "close");
     let count = format!("{} / {}", cursor + 1, matches.len());
     Some(Popup {
         title,
@@ -90,6 +95,7 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
                 return Vec::new();
             };
             let popup_width = MAX_WIDTH.min(width.saturating_sub(4).max(1));
+            let hotkeys = app.model.peek().prefs.hotkeys.clone();
             let mut body = container()
                 .layout(
                     LayoutStyle::flex_column()
@@ -117,7 +123,7 @@ pub(in crate::tui::sigil_view) fn widget(app: App, width: usize) -> NodeBuilder 
                     .border_w(canvas::cell().h as i16)
                     .border_color(sigil::prelude::Token::Gray6)
                     .bg(canvas::palette().tool_bg)
-                    .child(body.child(hint(popup.keys, popup.count))),
+                    .child(body.child(popup.keys.right(popup.count).bar(&hotkeys))),
             ]
         })
 }

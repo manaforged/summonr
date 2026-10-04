@@ -1,13 +1,15 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
     text_field, virtual_list,
 };
 
-use super::prelude::*;
 use super::{App, canvas};
 use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, KeyAction, Size, alt, group, notice, slotted,
+};
 
 mod row;
 
@@ -140,29 +142,54 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let typing = app.clone();
-    let column = || {
-        container().layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .gap(canvas::overlay_gap()),
+    let count = app.clone();
+    let hotkeys = app.model.peek().prefs.hotkeys.clone();
+    Dialog::new(Size::Wide, "Models", Hints::new())
+        .live_hints(move || hints(&count))
+        .child(
+            container().child(
+                text_field(app.picker.draft)
+                    .placeholder("Search models")
+                    .focus_when(app.picker.focus)
+                    .change(move |draft| typing.replace_model_draft(draft.to_string()))
+                    .submit(|_| {})
+                    .height(canvas::overlay_field()),
+            ),
         )
-    };
-    wide_shell(
-        app.picker.open,
-        "Models",
-        app.viewport.peek().0,
-        column()
-            .child(
-                container().child(
-                    text_field(app.picker.draft)
-                        .placeholder("Search models")
-                        .focus_when(app.picker.focus)
-                        .change(move |draft| typing.replace_model_draft(draft.to_string()))
-                        .submit(|_| {})
-                        .height(canvas::overlay_field()),
-                ),
-            )
-            .child(column().children_reactive(move || body(&paint))),
+        .child(
+            container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::overlay_gap()),
+                )
+                .children_reactive(move || body(&paint)),
+        )
+        .build(app.picker.open, app.viewport.peek().0, &hotkeys)
+}
+
+fn hints(app: &App) -> Hints {
+    let total = app.picker.shown.get().len();
+    let selected = app.picker.sel.get().min(total.saturating_sub(1));
+    let checking = app
+        .picker
+        .groups
+        .get()
+        .values()
+        .filter(|state| matches!(state, State::Checking | State::Loading))
+        .count();
+    let mut hints = Hints::new()
+        .key(Key::Enter, "use")
+        .key(Key::Fixed("alt+p"), "favorite");
+    if app.picker.target.get().is_none() {
+        hints = hints.key(Key::Fixed("alt+d"), "default");
+    }
+    hints.key(Key::Fixed("F5"), "refresh").right(
+        match (app.picker.loading.get() && checking > 0, total) {
+            (true, _) => format!("checking {checking}…"),
+            (false, 0) => "0 / 0".to_string(),
+            (false, total) => format!("{} / {total}", selected + 1),
+        },
     )
 }
 
@@ -188,16 +215,12 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     } else {
         (0..choices.len()).map(ModelRow::Seat).collect()
     };
-    let checking = groups
-        .values()
-        .filter(|state| matches!(state, State::Checking | State::Loading))
-        .count();
     let mut items = Vec::new();
     let error = paint.picker.error.get();
     if !error.is_empty() {
-        items.push(band(
+        items.push(notice(
             crate::text::ellipsize(&error, span.saturating_sub(10)),
-            true,
+            Tone::Error,
         ));
     }
     let note = paint.picker.note.get();
@@ -208,13 +231,13 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         items.push(group("loading models…"));
     } else if choices.is_empty() {
         let draft = paint.picker.draft.peek().trim().to_string();
-        items.push(band(
+        items.push(notice(
             if draft.is_empty() {
                 "no models — /login adds a provider".to_string()
             } else {
                 format!("no match · ↵ uses \"{draft}\" as the model id")
             },
-            false,
+            Tone::Neutral,
         ));
     } else {
         let top = rows
@@ -325,17 +348,5 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         &detail,
         span.saturating_sub(10),
     )));
-    items.push(hint(
-        if paint.picker.target.peek().is_some() {
-            "↵ use · alt+p favorite · F5 refresh"
-        } else {
-            "↵ use · alt+p favorite · alt+d default · F5 refresh"
-        },
-        match (paint.picker.loading.get() && checking > 0, choices.len()) {
-            (true, _) => format!("checking {checking}…"),
-            (false, 0) => "0 / 0".to_string(),
-            (false, total) => format!("{} / {total}", selected + 1),
-        },
-    ));
     items
 }

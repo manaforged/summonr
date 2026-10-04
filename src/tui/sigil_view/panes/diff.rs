@@ -7,6 +7,7 @@ use sigil::prelude::{
 
 use super::App;
 use super::body::header;
+use crate::tui::sigil_view::ui::{Hints, Key};
 
 pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();
@@ -52,8 +53,13 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         }
         let cursor = app.hunk_cursor.peek();
         let notes = format!(
-            "{} · enter accept · r revert · n note",
-            crate::text::plural(hunks.len(), "hunk")
+            "{} · {}",
+            crate::text::plural(hunks.len(), "hunk"),
+            Hints::new()
+                .key(Key::Enter, "accept")
+                .key(Key::Fixed("r"), "revert")
+                .key(Key::Fixed("n"), "note")
+                .text(&model.prefs.hotkeys)
         );
         column = column.child(
             sigil::kernel::text(notes)
@@ -172,9 +178,13 @@ fn hunk_view(
                 .rounded(sigil::prelude::Radius::Md)
         }));
         card = card.child(
-            sigil::kernel::text(
-                "ctrl+enter save · esc cancel · sent with your next prompt".to_string(),
-            )
+            sigil::kernel::text(format!(
+                "{} · sent with your next prompt",
+                Hints::new()
+                    .key(Key::Fixed("ctrl+enter"), "save")
+                    .key(Key::Esc, "cancel")
+                    .text(&app.model.peek().prefs.hotkeys)
+            ))
             .wrap()
             .layout(LayoutStyle::block().fill_width().min_size(0.0, 14.0))
             .font_size(12.0)

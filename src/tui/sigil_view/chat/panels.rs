@@ -1,7 +1,7 @@
 use sigil::prelude::Paint;
-use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, container, notice_band,
-};
+use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, container, notice_band};
+
+use crate::tui::sigil_view::ui::{Action, ActionKind, Hints, Key, Prompt};
 
 use super::App;
 use super::busy_status;
@@ -42,6 +42,16 @@ pub(in crate::tui::sigil_view) fn attached_text(attached: usize) -> String {
     format!("{attached} {noun} attached")
 }
 
+pub(in crate::tui::sigil_view) fn attached_note(app: &App, attached: usize) -> String {
+    format!(
+        "{} · {}",
+        attached_text(attached),
+        Hints::new()
+            .key(Key::Enter, "sends with your prompt")
+            .text(&app.model.peek().prefs.hotkeys)
+    )
+}
+
 pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
     match band {
         Band::Approval { detail, persist } => {
@@ -51,10 +61,7 @@ pub(super) fn band_nodes(app: &App, width: usize, band: Band) -> NodeBuilder {
             above(super::form::form_band(app.clone(), width, lines, review))
         }
         Band::Busy(status) => busy_row(&crate::text::ellipsize(&status, width)),
-        Band::Attached(attached) => above(notice_band(
-            format!("{} · enter sends with your prompt", attached_text(attached)),
-            Tone::Info,
-        )),
+        Band::Attached(attached) => above(notice_band(attached_note(app, attached), Tone::Info)),
     }
 }
 
@@ -107,43 +114,38 @@ fn above(child: NodeBuilder) -> NodeBuilder {
         .child(child)
 }
 
-fn approval_hint(persist: bool) -> &'static str {
+pub(in crate::tui::sigil_view) fn approval_band(
+    app: App,
+    width: usize,
+    detail: String,
+    persist: bool,
+) -> NodeBuilder {
+    use crate::runtime::GrantAnswer;
+    let mut hints = Hints::new().key(Key::Fixed("y"), "allow");
     if persist {
-        "y allow · Y always · n deny"
-    } else {
-        "y allow · n deny"
+        hints = hints.key(Key::Fixed("Y"), "always");
     }
-}
-
-fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeBuilder {
-    let text = crate::text::ellipsize(&detail, width.saturating_sub(4));
-    let mut actions = container().layout(
-        LayoutStyle::flex_row()
-            .gap(12.0)
-            .align_items(AlignItems::Center),
-    );
-    actions = actions.child(button("Allow").primary().activate({
+    hints = hints.key(Key::Fixed("n"), "deny");
+    let keys = app.model.peek().prefs.hotkeys.clone();
+    let answer = |kind: GrantAnswer| {
         let app = app.clone();
-        move || app.approval_answer(crate::runtime::GrantAnswer::Allow)
-    }));
-    if persist {
-        actions = actions.child(button("Always").activate({
-            let app = app.clone();
-            move || app.approval_answer(crate::runtime::GrantAnswer::Always)
-        }));
-    }
-    actions = actions.child(
-        button("Deny")
-            .destructive()
-            .activate(move || app.approval_answer(crate::runtime::GrantAnswer::Deny)),
+        move || app.approval_answer(kind)
+    };
+    let mut prompt = Prompt::new(Tone::Warn, format!("Needs approval: {detail}"), hints).action(
+        Action::new("Allow", ActionKind::Primary, answer(GrantAnswer::Allow)),
     );
-    container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(8.0))
-        .child(notice_band(format!("Needs approval: {text}"), Tone::Warn))
-        .child(
-            sigil::kernel::text(approval_hint(persist))
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface),
-        )
-        .child(actions)
+    if persist {
+        prompt = prompt.action(Action::new(
+            "Always",
+            ActionKind::Plain,
+            answer(GrantAnswer::Always),
+        ));
+    }
+    prompt
+        .action(Action::new(
+            "Deny",
+            ActionKind::Destructive,
+            answer(GrantAnswer::Deny),
+        ))
+        .build(width, &keys)
 }

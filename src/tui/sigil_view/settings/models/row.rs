@@ -5,11 +5,11 @@ use sigil::widgets::ListColumn;
 use sigil::widgets::RowTone;
 
 use super::super::canvas;
-use super::super::prelude::*;
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State;
 use crate::recent::Seat;
 use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::ui::{heading, slotted};
 
 const NAME_MIN: usize = 16;
 const NAME_MAX: usize = 44;

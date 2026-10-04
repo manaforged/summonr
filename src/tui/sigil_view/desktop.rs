@@ -1,7 +1,8 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, app_shell, container, hint_bar,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Theme, app_shell, container,
 };
 
+use super::ui::{Hints, Key};
 use super::view::shell;
 use crate::tui::Cmd;
 
@@ -23,6 +24,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
             let navigation = screen.clone();
             let side = screen.clone();
             let top = screen.clone();
+            let keys = screen.model.peek().prefs.hotkeys.clone();
             let work = container()
                 .layout(LayoutStyle::flex_row().fill())
                 .child(
@@ -75,7 +77,7 @@ pub(super) fn root(app: App) -> NodeBuilder {
                         vec![thread::title_bar(top.clone())]
                     }),
                 work,
-                hint_bar("esc closes overlays", String::new()),
+                Hints::new().key(Key::Esc, "closes overlays").bar(&keys),
                 overlay(&screen),
             )]
         })

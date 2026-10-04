@@ -76,10 +76,9 @@ If you have a coding plan, sign in instead of using a metered key:
 
 ```sh
 summonr login              # every plan and key, with its status
-summonr login claude-pro   # Claude Pro or Max, through the browser
 summonr login chatgpt      # ChatGPT Plus or Pro, through the browser
 summonr login supergrok    # SuperGrok or X Premium+, with a device code
-summonr claude-pro
+summonr chatgpt
 ```
 
 Run one prompt and exit:

@@ -19,6 +19,8 @@ First public release.
   signs in with a SuperGrok or X Premium+ plan. A browser login now keeps
   the client id a provider issues on the redirect and accepts a
   `redirect_uri` with port `0`.
+- The `claude-pro` seat is off. Anthropic's terms do not allow a
+  third-party app to sign in with a Claude Pro or Max plan.
 - Windows x86_64 release binary and a PowerShell installer
   (`irm https://summonr.dev/install.ps1 | iex`). Linux binaries are
   static musl builds. `https://summonr.dev/install.sh` installs on macOS

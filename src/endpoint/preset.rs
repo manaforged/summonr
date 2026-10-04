@@ -111,8 +111,12 @@ fn copilot_oauth() -> crate::config::OAuth {
     }
 }
 
+const OFF: &[&str] = &["claude-pro"];
+
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
-    HEAD.iter().chain(TAIL)
+    HEAD.iter()
+        .chain(TAIL)
+        .filter(|preset| !OFF.contains(&preset.name))
 }
 
 pub(super) fn preset(name: &str) -> Option<&'static Preset> {

@@ -71,9 +71,9 @@ not code:
 
 Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
 
-`claude-pro` is built in: `summonr login claude-pro` signs in with a
-Claude Pro or Max plan and stores a rotating token. `config.example.toml`
-carries ready rows for other plans.
+`config.example.toml` carries ready rows for other plans. The `claude-pro`
+seat is off: Anthropic's terms do not allow a third-party app to sign in
+with a Claude Pro or Max plan.
 
 `chatgpt` signs in with ChatGPT (Plus or Pro) and runs on the plan's
 usage through the Responses API. The first sign-in registers Summonr
@@ -269,7 +269,7 @@ uses its own default.
 `none` turns thinking off where the model can turn it off. If the model
 cannot, Summonr sends the lowest level it accepts.
 
-Anthropic Messages (`anthropic`, `claude-pro`, or any row with
+Anthropic Messages (`anthropic`, or any row with
 `wire = "anthropic"`), by model id:
 
 | Model | Levels | `none` |

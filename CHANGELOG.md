@@ -14,11 +14,12 @@ First public release.
 - The window draws its own conversation view: tool calls fold into a
   steps card, code blocks carry a copy button, and the composer holds
   the attach, model, and mode controls.
-- `summonr login chatgpt` signs in with ChatGPT and runs GPT models on a
-  Plus or Pro plan through the Responses API. `summonr login supergrok`
-  signs in with a SuperGrok or X Premium+ plan. A browser login now keeps
-  the client id a provider issues on the redirect and accepts a
-  `redirect_uri` with port `0`.
+- `summonr login openai` offers Sign in with ChatGPT (Plus or Pro) next
+  to the API key, and `summonr login grok` offers a SuperGrok or X
+  Premium+ sign-in next to its key. A stored sign-in wins over a key;
+  `summonr logout NAME` returns the row to its key. `openai` now speaks
+  the Responses API. A browser login keeps the client id a provider
+  issues on the redirect and accepts a `redirect_uri` with port `0`.
 - The `claude-pro` seat is off. Anthropic's terms do not allow a
   third-party app to sign in with a Claude Pro or Max plan.
 - Windows x86_64 release binary and a PowerShell installer

@@ -74,7 +74,8 @@ pub use endpoint::{
     AuthInfo, Endpoint, LoginFlow, Need, Pick, State as EndpointState, adopt_keys, auth_info,
     check_key, chosen_by as endpoint_chosen_by, closest as closest_endpoint,
     fallbacks as endpoint_fallbacks, first_classify as classify_endpoint, is_named as is_endpoint,
-    logout, names as endpoint_names, resolve as resolve_endpoint, vision as vision_endpoint,
+    login_seat, logout, names as endpoint_names, resolve as resolve_endpoint,
+    vision as vision_endpoint,
 };
 pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;

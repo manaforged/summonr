@@ -31,8 +31,7 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let endpoint = match crate::endpoint::resolve(Some(name), None, crate::endpoint::Need::Seat)
-        {
+        let endpoint = match crate::endpoint::login_seat(name) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.done(name, Err(error.to_string()));

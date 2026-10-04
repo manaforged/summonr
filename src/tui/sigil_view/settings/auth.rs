@@ -41,6 +41,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         .unwrap_or_default();
                     match paint.auth.step.get() {
                         Login::List(note) => choices(&paint, &note),
+                        Login::Method(picked) => methods(&paint, picked),
                         Login::Key(note) => entering(&paint, &note),
                         Login::Checking => vec![line("Checking the key…")],
                         Login::SignIn {
@@ -60,6 +61,10 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
 fn hints(app: &App) -> Hints {
     match app.auth.step.get() {
         Login::List(_) => listing_hints(app),
+        Login::Method(_) => Hints::new()
+            .key(Key::UpDown, "move")
+            .key(Key::Enter, "choose")
+            .key(Key::Esc, "back"),
         Login::Key(_) => Hints::new()
             .key(Key::Enter, "save and check")
             .key(Key::Esc, "back")
@@ -133,6 +138,9 @@ fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
 }
 
 fn action(choice: &AuthInfo, state: &str) -> String {
+    if choice.dual() && choice.env.is_none() {
+        return format!("↵ signs in with {} or takes a key", choice.plan);
+    }
     match (choice.flow, choice.env) {
         (LoginFlow::Browser, _) => "↵ opens the browser to sign in".to_string(),
         (LoginFlow::Device, _) => "↵ shows a device code to sign in".to_string(),
@@ -261,6 +269,36 @@ fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
         .submit(move |_| save.commit_auth())
         .height(canvas::overlay_field());
     container().child(if secret { field.password() } else { field })
+}
+
+fn methods(app: &App, picked: usize) -> Vec<NodeBuilder> {
+    let choice = app.auth_choice().unwrap_or_else(|| {
+        app.auth
+            .choices
+            .peek()
+            .first()
+            .cloned()
+            .expect("a dialog with a method step has a chosen row")
+    });
+    let rows = [
+        format!("Sign in with {}", choice.plan),
+        format!("Paste a {} API key", choice.name),
+    ];
+    let mut nodes = vec![group(format!(
+        "How do you want to connect {}?",
+        choice.name
+    ))];
+    for (index, label) in rows.into_iter().enumerate() {
+        let choose = app.clone();
+        nodes.push(
+            pick(index == picked, label, String::new()).pointer_down(move |event| {
+                choose.auth.step.set(Login::Method(index));
+                choose.commit_auth();
+                event.stop_propagation();
+            }),
+        );
+    }
+    nodes
 }
 
 fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {

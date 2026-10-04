@@ -63,15 +63,18 @@ fn the_last_seat_wins_over_the_config_default() {
 }
 
 #[test]
-fn the_plan_seats_sign_in_instead_of_taking_a_key() {
-    let grok = super::keys::builtin("supergrok").unwrap();
-    let spec = crate::credentials::spec(grok.oauth.as_ref().unwrap()).unwrap();
-    assert_eq!(spec.grant, summonr_auth::Grant::DeviceCode);
-    assert!(
-        grok.api_key.is_none(),
-        "a plan seat carries a token, not a key"
+fn openai_and_grok_offer_a_sign_in_and_a_key() {
+    for (name, grant) in [
+        ("openai", summonr_auth::Grant::AuthorizationCode),
+        ("grok", summonr_auth::Grant::DeviceCode),
+    ] {
+        let row = super::keys::builtin(name).unwrap();
+        let spec = crate::credentials::spec(row.oauth.as_ref().unwrap()).unwrap();
+        assert_eq!(spec.grant, grant, "{name}");
+        assert!(super::keys::takes_key(&row), "{name} still takes a key");
+    }
+    assert_eq!(
+        super::keys::builtin("openai").unwrap().wire,
+        super::Wire::Responses
     );
-    let chat = super::preset::preset("chatgpt").unwrap();
-    assert_eq!(chat.wire, super::Wire::Responses);
-    assert!(chat.oauth.is_some() && chat.plan);
 }

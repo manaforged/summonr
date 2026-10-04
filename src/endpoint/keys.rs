@@ -1,13 +1,26 @@
 use super::*;
 
 pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
-    if endpoint.oauth.is_some() {
+    let offered = match endpoint.oauth.take() {
+        Some(login) if takes_key(&endpoint) && !signed_in(&login, &endpoint.name) => Some(login),
+        Some(login) => {
+            endpoint.oauth = Some(login);
+            return Ok(endpoint);
+        }
+        None => None,
+    };
+    if let Some((key, source)) = known_key(&endpoint)? {
+        endpoint.api_key = Some(key);
+        endpoint.source = Some(source);
         return Ok(endpoint);
     }
+    fallback_key(endpoint, require_key, offered)
+}
+
+fn known_key(endpoint: &Endpoint) -> Result<Option<(String, Source)>> {
     let custom = preset(&endpoint.name).is_none();
-    if custom && endpoint.api_key.is_some() {
-        endpoint.source = Some(Source::Config);
-        return Ok(endpoint);
+    if custom && let Some(key) = &endpoint.api_key {
+        return Ok(Some((key.clone(), Source::Config)));
     }
     let own = if custom {
         secret::get(&endpoint.name)?
@@ -15,35 +28,40 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
         None
     };
     let row = preset(&endpoint.name)
-        .filter(|row| own_base(&endpoint, row))
+        .filter(|row| own_base(endpoint, row))
         .or_else(|| endpoint.base_url.as_deref().and_then(hosted));
     if own.is_none()
         && let Some(key) = row.and_then(|row| env_key(row.env_keys))
     {
-        endpoint.api_key = Some(key);
-        endpoint.source = Some(Source::Env);
-        return Ok(endpoint);
+        return Ok(Some((key, Source::Env)));
     }
     let stored = if custom {
         own
     } else {
         secret::get(&endpoint.name)?
     };
-    let found = match stored {
-        Some(stored) => Some(stored),
-        None => peer_key(&endpoint, row),
-    };
-    if let Some((key, source)) = found {
-        endpoint.api_key = Some(key);
-        endpoint.source = Some(source);
-        return Ok(endpoint);
-    }
-    fallback_key(endpoint, require_key)
+    Ok(stored.or_else(|| peer_key(endpoint, row)))
 }
 
-fn fallback_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
+pub(super) fn takes_key(endpoint: &Endpoint) -> bool {
+    preset(&endpoint.name).is_some_and(|row| !row.env_keys.is_empty())
+}
+
+fn signed_in(login: &crate::config::OAuth, name: &str) -> bool {
+    logged_in(login, name).is_ok_and(|ready| ready)
+}
+
+fn fallback_key(
+    mut endpoint: Endpoint,
+    require_key: bool,
+    offered: Option<crate::config::OAuth>,
+) -> Result<Endpoint> {
     if endpoint.api_key.is_some() {
         endpoint.source = Some(Source::Config);
+        return Ok(endpoint);
+    }
+    if offered.is_some() {
+        endpoint.oauth = offered;
         return Ok(endpoint);
     }
     let row = preset(&endpoint.name);

@@ -169,6 +169,8 @@ pub(crate) struct Model {
 pub struct OAuth {
     pub token_url: String,
     pub client_id: String,
+    #[serde(default)]
+    pub label: Option<String>,
     pub client_secret: Option<String>,
     pub refresh_token: Option<String>,
     pub scope: Option<String>,

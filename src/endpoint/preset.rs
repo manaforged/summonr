@@ -43,6 +43,7 @@ fn claude_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
         token_url: "https://platform.claude.com/v1/oauth/token".into(),
         client_id: CLAUDE_CLIENT.into(),
+        label: Some("Claude Pro or Max".into()),
         authorize_url: Some("https://claude.ai/oauth/authorize".into()),
         redirect_uri: Some("https://platform.claude.com/oauth/code/callback".into()),
         scope: Some(CLAUDE_SCOPES.into()),
@@ -64,6 +65,7 @@ fn chatgpt_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
         token_url: CHATGPT_TOKEN.into(),
         client_id: CHATGPT_CLIENT.into(),
+        label: Some("ChatGPT Plus or Pro".into()),
         authorize_url: Some(CHATGPT_AUTHORIZE.into()),
         redirect_uri: Some(CHATGPT_REDIRECT.into()),
         scope: Some(CHATGPT_SCOPES.into()),
@@ -90,6 +92,7 @@ fn supergrok_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
         token_url: XAI_TOKEN.into(),
         client_id: XAI_CLIENT.into(),
+        label: Some("SuperGrok or X Premium+".into()),
         scope: Some(XAI_SCOPES.into()),
         grant: Some("device_code".into()),
         device_url: Some(XAI_DEVICE.into()),
@@ -101,6 +104,7 @@ fn copilot_oauth() -> crate::config::OAuth {
     crate::config::OAuth {
         token_url: GITHUB_TOKEN.into(),
         client_id: COPILOT_CLIENT.into(),
+        label: Some("GitHub Copilot".into()),
         client_secret: None,
         refresh_token: None,
         scope: Some("read:user".into()),
@@ -142,9 +146,7 @@ const PROVIDER_IDS: &[(&str, &[&str])] = &[
         ],
     ),
     ("grok", &["xai"]),
-    ("supergrok", &["xai"]),
     ("openai", &["openai"]),
-    ("chatgpt", &["openai"]),
     ("openrouter", &["openrouter"]),
     ("together", &["togetherai"]),
     ("groq", &["groq"]),

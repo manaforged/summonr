@@ -3,6 +3,7 @@ use super::*;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Login {
     List(String),
+    Method(usize),
     Key(String),
     Checking,
     SignIn {
@@ -97,6 +98,11 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn move_auth(&self, delta: isize) {
+        if let Login::Method(picked) = self.auth.step.peek() {
+            let next = picked.saturating_add_signed(delta).min(1);
+            self.auth.step.set(Login::Method(next));
+            return;
+        }
         if !matches!(self.auth.step.peek(), Login::List(_)) {
             return;
         }
@@ -119,30 +125,11 @@ impl App {
         };
         let name = choice.name.clone();
         match self.auth.step.peek() {
-            Login::List(_) if choice.flow.signs_in() => self.sign_in(name),
-            Login::List(_) if self.env_note(&choice) => {}
-            Login::List(_) => {
-                self.auth.step.set(Login::Key(String::new()));
-                self.auth.focus.set(self.auth.focus.peek() + 1);
-                self.replace_auth_key(String::new());
-            }
-            Login::Key(_) => {
-                let key = self.auth.key.peek();
-                if key.trim().is_empty() {
-                    return;
-                }
-                self.auth.step.set(Login::Checking);
-                drop(self.cmd.send(Cmd::SetKey(name, key)));
-            }
-            Login::SignIn { asking: true, .. } => {
-                let code = self.auth.key.peek();
-                if code.trim().is_empty() {
-                    return;
-                }
-                self.replace_auth_key(String::new());
-                self.auth.step.set(Login::signing());
-                drop(self.cmd.send(Cmd::LoginAnswer(code)));
-            }
+            Login::List(_) => self.pick_auth(&choice, name),
+            Login::Method(1) => self.ask_key(),
+            Login::Method(_) => self.sign_in(name),
+            Login::Key(_) => self.submit_key(name),
+            Login::SignIn { asking: true, .. } => self.submit_code(),
             Login::SignIn { note, .. } if !note.is_empty() => self.sign_in(name),
             Login::Confirm => {
                 self.auth.step.set(Login::Checking);
@@ -161,6 +148,44 @@ impl App {
             self.auth.filter.set(filter);
             self.auth.sel.set(0);
         }
+    }
+
+    fn pick_auth(&self, choice: &crate::endpoint::AuthInfo, name: String) {
+        if choice.dual() && !choice.flow.signs_in() && self.env_note(choice) {
+            return;
+        }
+        if choice.dual() {
+            self.auth.step.set(Login::Method(0));
+        } else if choice.flow.signs_in() {
+            self.sign_in(name);
+        } else if !self.env_note(choice) {
+            self.ask_key();
+        }
+    }
+
+    fn ask_key(&self) {
+        self.auth.step.set(Login::Key(String::new()));
+        self.auth.focus.set(self.auth.focus.peek() + 1);
+        self.replace_auth_key(String::new());
+    }
+
+    fn submit_key(&self, name: String) {
+        let key = self.auth.key.peek();
+        if key.trim().is_empty() {
+            return;
+        }
+        self.auth.step.set(Login::Checking);
+        drop(self.cmd.send(Cmd::SetKey(name, key)));
+    }
+
+    fn submit_code(&self) {
+        let code = self.auth.key.peek();
+        if code.trim().is_empty() {
+            return;
+        }
+        self.replace_auth_key(String::new());
+        self.auth.step.set(Login::signing());
+        drop(self.cmd.send(Cmd::LoginAnswer(code)));
     }
 
     fn sign_in(&self, name: String) {
@@ -305,9 +330,11 @@ impl App {
                         note: text,
                     },
                     Login::Checking if !self.auth.key.peek().is_empty() => Login::Key(text),
-                    Login::List(_) | Login::Key(_) | Login::Checking | Login::Confirm => {
-                        Login::List(text)
-                    }
+                    Login::List(_)
+                    | Login::Method(_)
+                    | Login::Key(_)
+                    | Login::Checking
+                    | Login::Confirm => Login::List(text),
                 };
                 self.auth.step.set(step);
             }

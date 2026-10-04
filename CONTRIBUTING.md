@@ -1,5 +1,7 @@
 # Contributing
 
+Issues are welcome. Pull requests are by invitation: open an issue first, and send a patch only when asked.
+
 ## Build
 
 You need Rust. `rust-toolchain.toml` pins the version, and rustup
@@ -13,7 +15,7 @@ cargo run --locked -- anthropic
 
 ## Check
 
-Run these before you open a pull request. Pull request CI runs
+Run these before you send a patch. Pull request CI runs
 `cargo fmt` on the whole workspace, then `cargo clippy` and `cargo test`
 only for the packages that your change touches. It does not run
 `api-census`, so run it locally.

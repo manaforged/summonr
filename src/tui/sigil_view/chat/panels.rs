@@ -1,202 +1,12 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, Tone, button, card, container, icon_button, list_row_with,
-    notice_band, section_label, spacer, spinner_frame,
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, container, notice_band,
 };
 
+use super::App;
 use super::busy_status;
-use super::{Agent, App, Model};
 
-#[derive(Clone, PartialEq)]
-struct AgentView {
-    expanded: bool,
-    headline: String,
-    detail: String,
-    spend: String,
-    rows: Vec<AgentRow>,
-}
-
-#[derive(Clone, PartialEq)]
-struct AgentRow {
-    label: String,
-    detail: String,
-    metrics: String,
-    last: String,
-}
-
-fn agent_view(app: &App, model: &Model, width: usize) -> AgentView {
-    let running = model.agents.iter().filter(|agent| !agent.done).count();
-    let tick = if running > 0 { app.ticks.get() } else { 0 };
-    let tokens: u64 = model.agents.iter().map(|agent| agent.tokens).sum();
-    let cost: f64 = model.agents.iter().map(|agent| agent.cost).sum();
-    let priced = model.agents.iter().any(|agent| agent.cost > 0.0);
-    let total = model.agents.len();
-    let noun = if total == 1 { "child" } else { "children" };
-    let glyph = if running == 0 {
-        "✓".to_string()
-    } else {
-        spinner_frame(tick).to_string()
-    };
-    AgentView {
-        expanded: model.agents_expanded,
-        headline: format!("{glyph} {total} {noun}"),
-        detail: format!("{running} running"),
-        spend: {
-            let spend = spend(tokens, cost, priced);
-            if model.agents_expanded {
-                format!("{running} running · {spend}")
-            } else {
-                format!("{spend} ▸")
-            }
-        },
-        rows: if model.agents_expanded {
-            model
-                .agents
-                .iter()
-                .map(|agent| AgentRow {
-                    label: format!("{} {}", agent_glyph(agent, tick), agent.id),
-                    detail: crate::text::ellipsize(&agent.assignment, width.saturating_sub(44))
-                        .to_string(),
-                    metrics: {
-                        let access = match agent.access {
-                            crate::child::Access::Implement => "rw",
-                            crate::child::Access::Research => "ro",
-                        };
-                        let cost = if priced && agent.cost > 0.0 {
-                            format!(" · {}", crate::dollars(agent.cost))
-                        } else {
-                            String::new()
-                        };
-                        format!(
-                            "{access} · {} · {}{cost}",
-                            clock(agent.elapsed()),
-                            crate::provider::compact(agent.tokens),
-                        )
-                    },
-                    last: crate::text::ellipsize(&agent.last, width.saturating_sub(6)).to_string(),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        },
-    }
-}
-
-pub(in crate::tui::sigil_view) fn agents(app: App, width: usize) -> NodeBuilder {
-    let update = app.clone();
-    let view = sigil::reactive::derived(move || {
-        let model = update.model.get();
-        if model.agents_hidden || model.agents.is_empty() || width < 12 {
-            None
-        } else {
-            Some(agent_view(&update, &model, width))
-        }
-    });
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .shrink(0.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            view.get()
-                .map(|view| vec![agent_panel(app.clone(), view)])
-                .unwrap_or_default()
-        })
-}
-
-fn agent_glyph(agent: &Agent, tick: u64) -> String {
-    if agent.done {
-        if agent.failed { "✗" } else { "✓" }.to_string()
-    } else {
-        spinner_frame(tick).to_string()
-    }
-}
-
-fn clock(secs: u64) -> String {
-    if secs >= 60 {
-        format!("{}:{:02}", secs / 60, secs % 60)
-    } else {
-        format!("{secs}s")
-    }
-}
-
-fn spend(tokens: u64, cost: f64, priced: bool) -> String {
-    let cost = priced.then(|| format!(" · {}", crate::dollars(cost)));
-    format!(
-        "{} tok{}",
-        crate::provider::compact(tokens),
-        cost.unwrap_or_default()
-    )
-}
-
-fn agent_panel(app: App, view: AgentView) -> NodeBuilder {
-    if !view.expanded {
-        let toggle = app.clone();
-        return card(
-            list_row_with(
-                false,
-                view.headline,
-                ListRowSlots {
-                    detail: Some(view.detail.into()),
-                    status: Some(view.spend.into()),
-                    shrink: true,
-                    ..ListRowSlots::default()
-                },
-            )
-            .pointer_down(move |event| {
-                if event.button == Some(MouseButton::Left) {
-                    toggle.toggle_agents();
-                    event.stop_propagation();
-                }
-            }),
-        );
-    }
-    let close = app.clone();
-    let mut body = container()
-        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_row()
-                        .fill_width()
-                        .gap(4.0)
-                        .align_items(AlignItems::Center),
-                )
-                .child(section_label(view.spend.clone()))
-                .child(spacer())
-                .child(
-                    icon_button("▾", move || close.toggle_agents()).accessible("Collapse agents"),
-                )
-                .child(
-                    icon_button("✕", {
-                        let app = app.clone();
-                        move || app.hide_agents()
-                    })
-                    .accessible("Hide agents"),
-                ),
-        );
-    for row in view.rows {
-        let slots = ListRowSlots {
-            detail: (!row.detail.is_empty()).then(|| row.detail.into()),
-            status: Some(row.metrics.into()),
-            shrink: true,
-            ..ListRowSlots::default()
-        };
-        body = body.child(list_row_with(false, row.label, slots));
-        if !row.last.is_empty() {
-            body = body.child(
-                sigil::kernel::text(row.last)
-                    .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs text-gray-10")
-                    .layout(LayoutStyle::block().padding_x(12.0)),
-            );
-        }
-    }
-    card(body)
-}
+pub(in crate::tui::sigil_view) use super::strip::{agents, rows as strip_rows};
 
 #[derive(Clone, PartialEq)]
 pub(in crate::tui::sigil_view) enum Band {
@@ -278,14 +88,16 @@ fn busy_row(status: &str) -> NodeBuilder {
         .child(
             sigil::kernel::text(spinner.to_owned())
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-accent"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Accent),
         )
         .child(
             sigil::kernel::text(rest.to_owned())
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         )
 }
 
@@ -327,7 +139,7 @@ fn approval_band(app: App, width: usize, detail: String, persist: bool) -> NodeB
         .child(
             sigil::kernel::text("The agent is waiting. Choose Allow or Deny.")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text()),
+                .text_color(sigil::prelude::Token::OnSurface),
         )
         .child(actions)
 }

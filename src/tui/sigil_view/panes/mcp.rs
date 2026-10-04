@@ -1,6 +1,5 @@
-use sigil::prelude::{
-    IntoNode, MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, list_row,
-};
+use sigil::prelude::Paint;
+use sigil::prelude::{IntoNode, MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
 use super::App;
 use super::body::{detail, header};
@@ -25,7 +24,7 @@ pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
         let toggle = app.clone();
         column = column.child(
             list_row(index == cursor, server.name.clone(), summary(server))
-                .child(badge(server.state.label(), tone(server.state)))
+                .child(chip(server.state.label(), tone(server.state)))
                 .pointer_down(move |event| {
                     if event.button == Some(MouseButton::Right) {
                         menu.context_row(index);
@@ -74,6 +73,7 @@ fn tone(state: McpState) -> Tone {
 fn dim(text: String) -> impl IntoNode + 'static {
     sigil::kernel::text(text)
         .nowrap()
-        .class(sigil::style::Token::OnSurface.text())
-        .class("text-xs text-gray-11")
+        .text_color(sigil::prelude::Token::OnSurface)
+        .font_size(12.0)
+        .text_color(sigil::prelude::Token::Gray11)
 }

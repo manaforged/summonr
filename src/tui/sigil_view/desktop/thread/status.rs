@@ -1,4 +1,5 @@
 use super::*;
+use sigil::prelude::Paint;
 use sigil::prelude::{IntoNode, button, hairline, kv_row, spacer, status_bar};
 
 pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
@@ -23,7 +24,8 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
                 .gap(2.0)
                 .align_items(AlignItems::Center),
         )
-        .class("rounded-md bg-gray-3");
+        .rounded(sigil::prelude::Radius::Md)
+        .bg(sigil::prelude::Token::Gray3);
     let auto = app.clone();
     modes = modes.child(seg(
         crate::RunMode::Auto.name(),
@@ -50,23 +52,28 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
             "context",
             sigil::kernel::text(context)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs font-mono text-gray-12"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .text_color(sigil::prelude::Token::Gray12),
         ))
         .child(hairline())
         .child(kv_row(
             "session",
             sigil::kernel::text(format!("{} tokens", crate::provider::compact(tokens)))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs font-mono text-gray-12"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .font_family(sigil::prelude::FontFamily::Mono)
+                .text_color(sigil::prelude::Token::Gray12),
         ));
     if let Some(cached) = cached {
         facts = facts.child(
             sigil::kernel::text(format!("{cached}% cached"))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     let git = container()
@@ -79,8 +86,9 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
         .child(
             sigil::kernel::text(branch)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     status_bar([facts, spacer(), git])
 }
@@ -88,7 +96,7 @@ pub(in crate::tui::sigil_view) fn status_strip(app: App) -> NodeBuilder {
 pub(super) fn seg(title: &'static str, on: bool, act: impl Fn() + 'static) -> impl IntoNode {
     let mut control = button(title).ghost().activate(act);
     if on {
-        control = control.class("bg-gray-1");
+        control = control.bg(sigil::prelude::Token::Gray1);
     }
     control
 }

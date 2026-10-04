@@ -1,6 +1,6 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeStyleExt, Tone, button, container,
-    notice_band,
+    AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, button, container, notice_band,
 };
 
 use super::App;
@@ -28,7 +28,7 @@ pub(in crate::tui::sigil_view) fn form_band(
         band = band.child(
             sigil::kernel::text(crate::text::ellipsize(&line, width.saturating_sub(4)))
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text()),
+                .text_color(sigil::prelude::Token::OnSurface),
         );
     }
     band.child(actions(app, review))

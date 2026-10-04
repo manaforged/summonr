@@ -1,3 +1,4 @@
+use sigil::prelude::Paint;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
@@ -10,8 +11,8 @@ use super::model::{Entry, Model, entry_markdown};
 use super::prelude::*;
 use crate::session::Prompt;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeEventsExt, NodeStyleExt, WidgetLayoutExt, container, signal,
-    text_edit, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeEventsExt, WidgetLayoutExt, container, signal, text_edit,
+    virtual_list,
 };
 use sigil::prelude::{NodeBuilder, Signal};
 
@@ -253,8 +254,9 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     container().child(
                         sigil::kernel::text(warning)
                             .nowrap()
-                            .class(sigil::style::Token::OnSurface.text())
-                            .class("text-xs text-error-11"),
+                            .text_color(sigil::prelude::Token::OnSurface)
+                            .font_size(12.0)
+                            .text_color(sigil::prelude::Token::Error11),
                     ),
                 );
             }
@@ -266,7 +268,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             container().child(
                                 sigil::kernel::text("No matches. Edit the search.")
                                     .nowrap()
-                                    .class(sigil::style::Token::OnSurface.text()),
+                                    .text_color(sigil::prelude::Token::OnSurface),
                             ),
                         );
                     }
@@ -285,7 +287,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                             .row_height(height)
                             .height(height * 10.0)
                             .viewport_height(height * 10.0)
-                            .follow(picker.selected),
+                            .follow_row(picker.selected),
                         ),
                     );
                     items.push(hint("↑↓ select · ↵ jump · esc close", count));
@@ -294,7 +296,7 @@ fn results(app: App, picker: Picker) -> NodeBuilder {
                     container().child(
                         sigil::kernel::text(error)
                             .nowrap()
-                            .class(sigil::style::Token::OnSurface.text()),
+                            .text_color(sigil::prelude::Token::OnSurface),
                     ),
                 ),
             }

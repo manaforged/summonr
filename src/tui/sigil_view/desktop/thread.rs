@@ -1,8 +1,9 @@
 use crate::tui::context;
+use sigil::prelude::Paint;
 use sigil::prelude::{
     AlignItems, JustifyContent, LayoutBuilderExt, LayoutStyle, LogicalKey, ModifiersState,
-    NodeBuilder, NodeEventsExt, NodeStyleExt, Shortcut, Tone, WidgetLayoutExt, button, container,
-    empty_state, hairline, icon_button, node, notice_band, spacer, text_edit,
+    NodeBuilder, NodeEventsExt, Shortcut, Tone, WidgetLayoutExt, button, container, empty_state,
+    hairline, icon_button, node, notice_band, spacer, text_edit,
 };
 
 use super::icons;
@@ -24,7 +25,7 @@ pub(super) fn main_col(app: App) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Stretch),
         )
-        .class("bg-gray-1")
+        .bg(sigil::prelude::Token::Gray1)
         .child(node(move || {
             chat::transcript(transcript_app, (36.0, 16.0), empty_home)
         }))
@@ -111,14 +112,17 @@ pub(super) fn title_bar(app: App) -> NodeBuilder {
                 workspace
             })
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class("text-sm font-medium text-gray-12"),
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(14.0)
+            .font_weight(500)
+            .text_color(sigil::prelude::Token::Gray12),
         )
         .child(
             sigil::kernel::text(session::short(&app.model.get().session).to_string())
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         )
         .child(spacer())
         .child(icon_button("···", move || options.toggle_options()).accessible("Options"))
@@ -177,7 +181,7 @@ fn notice_bar(app: App, band: chat::panels::Band) -> NodeBuilder {
                 .child(
                     sigil::kernel::text("The agent is waiting. Allow, Always, or Deny.")
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text()),
+                        .text_color(sigil::prelude::Token::OnSurface),
                 )
                 .child(actions)
         }

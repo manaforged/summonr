@@ -1,6 +1,5 @@
-use sigil::prelude::{
-    MouseButton, NodeBuilder, NodeEventsExt, NodeStyleExt, Tone, badge, list_row,
-};
+use sigil::prelude::Paint;
+use sigil::prelude::{MouseButton, NodeBuilder, NodeEventsExt, Tone, chip, list_row};
 
 use super::App;
 use super::body::header;
@@ -17,8 +16,9 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no other live sessions")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for (index, agent) in model.peers.iter().enumerate() {
@@ -45,7 +45,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
                 format!("@{}", agent.label()),
                 format!("{kind}{} · {dir}", agent.model),
             )
-            .child(badge(agent.status.clone(), tone))
+            .child(chip(agent.status.clone(), tone))
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
                     menu.context_row(index);

@@ -1,5 +1,4 @@
 use sigil::prelude::AlignItems;
-use sigil::prelude::Geometry;
 use sigil::prelude::IntoNode;
 use sigil::prelude::KeyEvent;
 use sigil::prelude::LayoutBuilderExt;
@@ -9,7 +8,7 @@ use sigil::prelude::LogicalKey;
 use sigil::prelude::ModifiersState;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
-use sigil::prelude::NodeStyleExt;
+use sigil::prelude::Paint;
 use sigil::prelude::Shortcut;
 use sigil::prelude::Signal;
 use sigil::prelude::Tone;
@@ -20,10 +19,10 @@ use sigil::prelude::list_row_with;
 use sigil::prelude::modal;
 use sigil::prelude::notice_band;
 use sigil::prelude::section_label;
-use sigil::style::Style;
 
 use super::app::App;
 use super::canvas;
+use super::look::Look;
 
 pub(in crate::tui::sigil_view) type KeyAction = fn(&App, &mut KeyEvent);
 pub(in crate::tui::sigil_view) type Bindings = Vec<(Shortcut, KeyAction)>;
@@ -90,6 +89,20 @@ pub(in crate::tui) fn wide_shell(
     )
 }
 
+pub(in crate::tui) fn wide_page(
+    open: Signal<bool>,
+    title: impl Into<String>,
+    cols: u16,
+    body: impl IntoNode + 'static,
+) -> NodeBuilder {
+    framed(
+        open,
+        title.into(),
+        canvas::dialog_width(cols, f32::from(cols)),
+        body,
+    )
+}
+
 fn framed(
     open: Signal<bool>,
     title: String,
@@ -111,7 +124,7 @@ fn framed(
                             .padding_y(canvas::overlay_gap() * 4.0)
                             .gap(canvas::overlay_gap()),
                     )
-                    .class("rounded")
+                    .rounded(sigil::prelude::Radius::Base)
                     .child(body),
             ),
     )
@@ -163,18 +176,10 @@ pub(in crate::tui) fn group(title: impl Into<String>) -> NodeBuilder {
     section_label(title.into()).layout(row(8.0))
 }
 
-pub(in crate::tui) fn heading(parts: Vec<(String, &'static str)>) -> NodeBuilder {
+pub(in crate::tui) fn heading(parts: Vec<(String, Look)>) -> NodeBuilder {
     parts.into_iter().fold(
         container().layout(row(8.0).align_items(AlignItems::Center)),
-        |line, (text, tone)| {
-            line.child(
-                sigil::kernel::text(text)
-                    .nowrap()
-                    .class(sigil::style::Token::OnSurface.text())
-                    .class("text-xs")
-                    .class(tone),
-            )
-        },
+        |line, (text, look)| line.child(look.on(sigil::kernel::text(text).nowrap())),
     )
 }
 
@@ -194,5 +199,5 @@ pub(in crate::tui) fn band(text: impl Into<String>, error: bool) -> NodeBuilder 
     };
     notice_band(text.into(), tone)
         .layout(row(8.0))
-        .style(Style::new().bg(canvas::blend(canvas::palette().base, color, 0.14)))
+        .bg(canvas::blend(canvas::palette().base, color, 0.14))
 }

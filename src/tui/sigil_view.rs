@@ -9,6 +9,7 @@ mod effort;
 mod gui;
 mod help;
 mod host;
+mod look;
 
 mod model;
 pub(in crate::tui) mod overlay;

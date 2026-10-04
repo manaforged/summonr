@@ -1,6 +1,7 @@
+use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, NodeStyleExt, WidgetLayoutExt,
-    container, text_field, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    text_field, virtual_list,
 };
 
 use super::prelude::*;
@@ -63,8 +64,8 @@ fn line(text: impl Into<String>) -> NodeBuilder {
     container().child(
         sigil::kernel::text(text.into())
             .nowrap()
-            .class(sigil::style::Token::OnSurface.text())
-            .class("text-sm"),
+            .text_color(sigil::prelude::Token::OnSurface)
+            .font_size(14.0),
     )
 }
 

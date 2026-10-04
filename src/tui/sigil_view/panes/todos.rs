@@ -1,4 +1,5 @@
-use sigil::prelude::{NodeBuilder, NodeStyleExt};
+use sigil::prelude::NodeBuilder;
+use sigil::prelude::Paint;
 
 use super::App;
 use super::body::header;
@@ -18,8 +19,9 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         return column.child(
             sigil::kernel::text("no todos yet")
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-11"),
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(sigil::prelude::Token::Gray11),
         );
     }
     for line in lines {
@@ -27,11 +29,12 @@ pub(super) fn ledger(app: &App, mut column: NodeBuilder) -> NodeBuilder {
         column = column.child(
             sigil::kernel::text(shown)
                 .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class(if done {
-                    "text-xs text-gray-11"
+                .text_color(sigil::prelude::Token::OnSurface)
+                .font_size(12.0)
+                .text_color(if done {
+                    sigil::prelude::Token::Gray11
                 } else {
-                    "text-xs text-gray-12"
+                    sigil::prelude::Token::Gray12
                 }),
         );
     }

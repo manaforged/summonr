@@ -1,7 +1,7 @@
 use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, overlay, prompt, write};
 use super::space::STAR_BRIGHT;
 use super::*;
-use sigil::prelude::ColorAtom;
+use sigil::prelude::Paint;
 
 pub(in crate::tui::sigil_view) fn compose(
     cells: &mut [Cell],
@@ -214,13 +214,9 @@ pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
             .iter()
             .map(|cell| cell.text.as_str())
             .collect();
-        let surface = Style::new().bg(shown(cell.bg, palette().base));
-        let ink = Style::new().text_color(ColorAtom::Rgba8(shown(cell.fg, palette().text)));
-        let class = if cell.bold {
-            "font-mono font-bold"
-        } else {
-            "font-mono"
-        };
+        let surface = shown(cell.bg, palette().base);
+        let ink = shown(cell.fg, palette().text);
+        let weight = if cell.bold { 700 } else { 400 };
         row = row.child(
             container()
                 .layout(
@@ -228,13 +224,14 @@ pub(in crate::tui::sigil_view) fn scene_row(cells: &[Cell]) -> NodeBuilder {
                         .width((end - start) as f32 * metrics().w)
                         .height(metrics().h),
                 )
-                .style(surface)
+                .bg(surface)
                 .child(
                     sigil::kernel::text(text)
                         .nowrap()
-                        .class(sigil::style::Token::OnSurface.text())
-                        .class(class)
-                        .style(ink),
+                        .text_color(sigil::prelude::Token::OnSurface)
+                        .font_family(sigil::prelude::FontFamily::Mono)
+                        .font_weight(weight)
+                        .text_color(ink),
                 ),
         );
         start = end;

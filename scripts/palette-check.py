@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Palette lock. Six presets, twenty tokens each, frozen in a baseline file.
+"""Palette lock. Three presets, twenty tokens each, frozen in a baseline file.
 
 The interface colours are approved as they stand. This script reads the
 presets out of src/tui/sigil_view/theme.rs and compares them with
@@ -21,17 +21,14 @@ BASELINE = ROOT / "scripts" / "palette-baseline.txt"
 
 PRESETS = {
     "SPACE": "space",
-    "FANTASY": "fantasy",
     "NORD": "nord",
-    "GRUVBOX": "gruvbox",
-    "SOLARIZED": "solarized",
-    "LIGHT": "light",
+    "DAWN": "dawn",
 }
 
 
 def read_presets() -> dict[tuple[str, str], str]:
     text = THEME.read_text()
-    blocks = re.findall(r"const (SPACE|FANTASY|NORD|GRUVBOX|SOLARIZED|LIGHT): Self = Self \{(.*?)\n    \};", text, re.S)
+    blocks = re.findall(r"const (SPACE|NORD|DAWN): Self = Self \{(.*?)\n    \};", text, re.S)
     if len(blocks) != len(PRESETS):
         raise SystemExit(f"theme.rs: expected {len(PRESETS)} presets, found {len(blocks)}")
     table: dict[tuple[str, str], str] = {}

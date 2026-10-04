@@ -1,27 +1,108 @@
 use sigil::prelude::{
-    AlignItems, Fill, Geometry, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder,
-    NodeEventsExt, NodeStyleExt, PointerEvent, container,
+    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
+    PointerEvent, Token, container,
 };
 
 use super::super::{App, Call, Entry};
-use super::{COMPACT_ROWS, output_block, patch_of, patch_path, patch_view, preview, wrap};
+use super::tree::{branch, label, tree};
+use super::{COMPACT_ROWS, patch_of, patch_path, patch_view, preview};
 use crate::prefs::{DiffLayout, ToolOutput};
+use crate::tools::Builtin;
 use crate::tui::ToolState;
+use crate::tui::sigil_view::look::Look;
 
-fn glyph(state: &ToolState) -> (&'static str, &'static str) {
+pub(super) type Detail = Option<(String, Look)>;
+
+pub(super) fn glyph(state: &ToolState) -> (&'static str, Look) {
     match state {
-        ToolState::Running => ("○", "text-xs text-gray-11"),
-        ToolState::Ok => ("✓", "text-xs text-success-11"),
-        ToolState::Failed => ("✗", "text-xs text-error-11"),
+        ToolState::Running => ("○", Look::xs(Token::Gray11)),
+        ToolState::Ok => ("●", Look::xs(Token::Success11)),
+        ToolState::Failed => ("●", Look::xs(Token::Error11)),
     }
 }
 
-fn header(name: &str, arg: &str, state: &ToolState) -> NodeBuilder {
-    let (mark, tone) = glyph(state);
-    let (name, arg) = arg
-        .strip_prefix("search ")
+fn searched(arg: &str) -> Option<&str> {
+    arg.strip_prefix("search ")
         .filter(|rest| rest.starts_with('"'))
-        .map_or((name, arg), |rest| ("search", rest));
+}
+
+pub(super) fn workspace_relative(arg: &str, roots: &[String]) -> String {
+    arg.split(' ')
+        .map(|word| {
+            let (lead, path) =
+                word.split_at(word.find(|ch| !matches!(ch, '"' | '\'' | '=')).unwrap_or(0));
+            roots
+                .iter()
+                .find_map(|root| {
+                    let rest = path.strip_prefix(root.as_str())?;
+                    match rest.strip_prefix('/') {
+                        Some(inner) => Some(format!("{lead}{inner}")),
+                        None if rest.is_empty() || rest.starts_with(['"', '\'']) => {
+                            Some(format!("{lead}.{rest}"))
+                        }
+                        None => None,
+                    }
+                })
+                .unwrap_or_else(|| word.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn verb<'a>(name: &'a str, arg: &'a str) -> (&'a str, &'a str) {
+    match searched(arg) {
+        Some(rest) => ("Search", rest),
+        None => (Builtin::of(name).map_or(name, |kind| kind.verb()), arg),
+    }
+}
+
+fn detail(name: &str, call: &Call, output: &str) -> Detail {
+    match call.state {
+        ToolState::Running => None,
+        ToolState::Failed => {
+            preview::exit(output).map(|code| (format!("exit {code}"), Look::xs(Token::Error11)))
+        }
+        ToolState::Ok => Builtin::is(name, Builtin::Read)
+            .then(|| crate::tools::read_span(output))
+            .flatten()
+            .filter(|_| output.starts_with(call.arg.as_str()))
+            .map(|(from, to)| (format!("{from}-{to}"), Look::xs(Token::Gray10))),
+    }
+}
+
+pub(super) fn call_line(verb: &str, arg: &str, detail: Detail, strong: bool) -> NodeBuilder {
+    let (head, body) = if strong {
+        (
+            Look::xs(Token::Gray12).bold(),
+            Look::xs(Token::Gray12).mono(),
+        )
+    } else {
+        (Look::xs(Token::Gray11), Look::xs(Token::Gray11).mono())
+    };
+    let mut row = container()
+        .layout(
+            LayoutStyle::flex_row()
+                .grow(1.0)
+                .gap(8.0)
+                .min_size(0.0, 0.0)
+                .align_items(AlignItems::Center),
+        )
+        .child(label(verb, head));
+    if !arg.is_empty() {
+        row = row.child(
+            label(arg, body)
+                .ellipsize()
+                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+        );
+    }
+    match detail {
+        Some((text, class)) => row.child(label(text, class)),
+        None => row,
+    }
+}
+
+pub(super) fn header(state: &ToolState, words: NodeBuilder) -> NodeBuilder {
+    let (mark, tone) = glyph(state);
     container()
         .layout(
             LayoutStyle::flex_row()
@@ -30,26 +111,8 @@ fn header(name: &str, arg: &str, state: &ToolState) -> NodeBuilder {
                 .min_size(0.0, 0.0)
                 .align_items(AlignItems::Center),
         )
-        .child(
-            sigil::kernel::text(mark)
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class(tone),
-        )
-        .child(
-            sigil::kernel::text(name.to_string())
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-12"),
-        )
-        .child(
-            sigil::kernel::text(arg.to_string())
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                .class("text-xs font-mono text-gray-11"),
-        )
+        .child(label(mark, tone))
+        .child(words)
 }
 
 fn flip(app: &App, index: usize, call: Option<usize>) -> impl Fn(&mut PointerEvent) + 'static {
@@ -89,28 +152,25 @@ fn call_output(
     let output = preview::plain(&call.output);
     let failed = matches!(call.state, ToolState::Failed);
     let running = matches!(call.state, ToolState::Running);
-    let Some(patch) = patch_of(&output) else {
+    let Some(patch) = call.patch.clone().or_else(|| patch_of(&output)) else {
+        let ranged = Builtin::is(name, Builtin::Read) && crate::tools::read_span(&output).is_some();
+        if ranged && !full && !failed {
+            return None;
+        }
         let shown = preview::text(full, name, &output, failed, running);
-        return (!shown.is_empty()).then(|| output_block(shown));
-    };
-    let path = patch_path(&output).unwrap_or_else(|| call.arg.clone());
-    let status = match call.state {
-        ToolState::Running => "editing",
-        ToolState::Ok => "✓ Applied",
-        ToolState::Failed => "✗ Failed",
+        return (!shown.is_empty()).then(|| tree(&shown));
     };
     let rows = if full { usize::MAX } else { COMPACT_ROWS };
     let view = patch_view(app, patch, layout)
-        .bg("field")
+        .bg(Token::Field)
         .border_w(0)
-        .path(path)
         .max_rows(rows);
-    let body = if crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits) {
-        container().child(view.status(status))
+    let view = if Builtin::of(name).is_some_and(Builtin::edits) {
+        view
     } else {
-        container().child(view)
+        view.path(patch_path(&output).unwrap_or_else(|| call.arg.clone()))
     };
-    Some(body)
+    Some(container().child(view))
 }
 
 pub(super) fn tool_card(
@@ -122,19 +182,31 @@ pub(super) fn tool_card(
     index: usize,
     at: Option<usize>,
 ) -> NodeBuilder {
+    if Builtin::is(name, Builtin::Task)
+        && let Some(card) = super::children::task_card(app, &call.id)
+    {
+        return card;
+    }
     let full = call.expanded || tools == ToolOutput::Full;
+    let hidden = tools == ToolOutput::Hidden && !call.expanded;
+    let shown = workspace_relative(&call.arg, &app.roots);
+    let (verb, arg) = verb(name, &shown);
+    let detail = detail(name, call, &preview::plain(&call.output));
     let card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .pointer_up(flip(app, index, at))
-        .child(header(name, &call.arg, &call.state));
-    match call_output(name, call, full, layout, app) {
+        .child(header(&call.state, call_line(verb, arg, detail, true)));
+    match (!hidden)
+        .then(|| call_output(name, call, full, layout, app))
+        .flatten()
+    {
         Some(body) => card.child(body),
         None => card,
     }
 }
 
-fn group_header(name: &str, calls: &[Call]) -> NodeBuilder {
-    let state = if calls
+fn group_state(calls: &[Call]) -> ToolState {
+    if calls
         .iter()
         .any(|call| matches!(call.state, ToolState::Running))
     {
@@ -146,28 +218,29 @@ fn group_header(name: &str, calls: &[Call]) -> NodeBuilder {
         ToolState::Failed
     } else {
         ToolState::Ok
-    };
-    let (mark, tone) = glyph(&state);
-    container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(8.0)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
-        .child(
-            sigil::kernel::text(mark)
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class(tone),
-        )
-        .child(
-            sigil::kernel::text(format!("{name} ×{}", calls.len()))
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class("text-xs text-gray-12"),
-        )
+    }
+}
+
+fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
+    if !Builtin::is(name, Builtin::Read) {
+        let verb = Builtin::of(name).map_or(name, |kind| kind.verb());
+        return (verb, format!("×{}", calls.len()));
+    }
+    let searches = calls
+        .iter()
+        .filter(|call| searched(&call.arg).is_some())
+        .count();
+    let counts = [
+        (calls.len() - searches, "file", "files"),
+        (searches, "search", "searches"),
+    ];
+    let parts = counts
+        .iter()
+        .filter(|(count, ..)| *count > 0)
+        .map(|(count, one, many)| format!("{count} {}", if *count == 1 { one } else { many }))
+        .collect::<Vec<_>>()
+        .join(", ");
+    ("Explored", parts)
 }
 
 fn group_row(
@@ -179,49 +252,25 @@ fn group_row(
     app: &App,
     index: usize,
 ) -> NodeBuilder {
-    let (mark, tone) = glyph(&call.state);
-    let summary = preview::summary(
-        &preview::plain(&call.output),
-        matches!(call.state, ToolState::Failed),
-    );
-    let row = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .fill_width()
-                .gap(8.0)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
-        .pointer_up(flip(app, index, Some(at)))
-        .child(
-            sigil::kernel::text(mark)
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .class(tone),
-        )
-        .child(
-            sigil::kernel::text(call.arg.clone())
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .ellipsize()
-                .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                .class("text-xs font-mono text-gray-11"),
-        )
-        .child(
-            sigil::kernel::text(summary)
-                .nowrap()
-                .class(sigil::style::Token::OnSurface.text())
-                .ellipsize()
-                .class("text-xs text-gray-10"),
-        );
+    let output = preview::plain(&call.output);
+    let shown = workspace_relative(&call.arg, &app.roots);
+    let (verb, arg) = verb(name, &shown);
+    let detail = match call.state {
+        ToolState::Failed => Some((preview::summary(&output, true), Look::xs(Token::Error11))),
+        _ => detail(name, call, &output),
+    };
+    let line =
+        branch(at == 0, call_line(verb, arg, detail, false)).pointer_up(flip(app, index, Some(at)));
     let expanded = call.expanded || tools == ToolOutput::Full;
-    let row = wrap(row);
+    let column = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .child(line);
     match expanded
         .then(|| call_output(name, call, true, layout, app))
         .flatten()
     {
-        Some(body) => row.child(body),
-        None => row,
+        Some(body) => column.child(body),
+        None => column,
     }
 }
 
@@ -233,9 +282,13 @@ pub(super) fn group_card(
     app: &App,
     index: usize,
 ) -> NodeBuilder {
+    let (title, counts) = group_title(name, calls);
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-        .child(group_header(name, calls));
+        .child(header(
+            &group_state(calls),
+            call_line(title, "", Some((counts, Look::xs(Token::Gray10))), true),
+        ));
     for (at, call) in calls.iter().enumerate() {
         card = card.child(group_row(name, call, at, tools, layout, app, index));
     }

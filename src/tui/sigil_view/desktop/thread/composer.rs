@@ -1,4 +1,5 @@
 use super::*;
+use sigil::prelude::Paint;
 use sigil::prelude::{button, card, signal, spacer};
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
@@ -45,7 +46,7 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .gap(12.0)
                         .min_size(0.0, 120.0),
                 )
-                .class("bg-gray-3")
+                .bg(sigil::prelude::Token::Gray3)
                 .child(
                     text_edit(value)
                         .caret_position(caret)
@@ -62,7 +63,8 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                         .submit(move |_| submit.submit())
                         .focus_when(focus)
                         .layout(LayoutStyle::flex_column().fill_width().height(96.0))
-                        .class("text-sm text-gray-12"),
+                        .font_size(14.0)
+                        .text_color(sigil::prelude::Token::Gray12),
                 )
                 .child(
                     container()
@@ -77,7 +79,8 @@ pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
                                 drop(model.header.get());
                                 model.model.get().snapshot.model.clone()
                             })
-                            .class("text-sm text-gray-12"),
+                            .font_size(14.0)
+                            .text_color(sigil::prelude::Token::Gray12),
                         )
                         .child(spacer())
                         .child(button("Send").activate(move || send.submit())),

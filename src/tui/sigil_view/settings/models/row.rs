@@ -1,5 +1,6 @@
 use sigil::prelude::ListRowSlots;
 use sigil::prelude::NodeBuilder;
+use sigil::prelude::Token;
 use sigil::widgets::ListColumn;
 use sigil::widgets::RowTone;
 
@@ -8,6 +9,7 @@ use super::super::prelude::*;
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State;
 use crate::recent::Seat;
+use crate::tui::sigil_view::look::Look;
 
 const NAME_MIN: usize = 16;
 const NAME_MAX: usize = 44;
@@ -133,23 +135,23 @@ pub(super) const fn blocked(state: State) -> bool {
 }
 
 pub(super) fn section_heading(title: &str) -> NodeBuilder {
-    heading(vec![(title.to_string(), "text-gray-12 font-bold")])
+    heading(vec![(title.to_string(), Look::xs(Token::Gray12).bold())])
 }
 
 pub(super) fn provider_heading(name: &str, state: Option<State>, count: usize) -> NodeBuilder {
-    let mut parts = vec![(name.to_string(), "text-gray-12 font-bold")];
+    let mut parts = vec![(name.to_string(), Look::xs(Token::Gray12).bold())];
     if let Some(state) = state {
         let tone = match state {
-            State::Ready | State::NoKey => "text-success-11",
-            State::Checking | State::Loading => "text-gray-10",
+            State::Ready | State::NoKey => Look::xs(Token::Success11),
+            State::Checking | State::Loading => Look::xs(Token::Gray10),
             State::RateLimited | State::SignIn | State::NeedsKey | State::NeedsModel => {
-                "text-warn-11"
+                Look::xs(Token::Warn11)
             }
-            State::KeyRejected | State::Offline | State::Error => "text-error-11",
+            State::KeyRejected | State::Offline | State::Error => Look::xs(Token::Error11),
         };
         parts.push((format!(" · {}", state.word()), tone));
     }
-    parts.push((format!(" · {count}"), "text-gray-10"));
+    parts.push((format!(" · {count}"), Look::xs(Token::Gray10)));
     heading(parts)
 }
 

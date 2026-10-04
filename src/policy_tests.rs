@@ -49,7 +49,7 @@ fn cleanup_inside_the_workspace_or_scratch_runs_after_a_cd() {
         "cd /app/pyknotid && rm -rf $(find . -type d -name __pycache__)",
     ] {
         assert_eq!(
-            super::danger(command, workspace, workspace),
+            super::danger(command, workspace, workspace, Gate::Strict),
             None,
             "{command}"
         );
@@ -85,7 +85,7 @@ fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
         "echo 'rm -rf ~' | xargs -I{} sh -c {}",
     ] {
         assert!(
-            super::danger(command, workspace, workspace).is_some(),
+            super::danger(command, workspace, workspace, Gate::Strict).is_some(),
             "{command}"
         );
     }
@@ -101,7 +101,7 @@ fn a_narrow_command_the_bench_saw_refused_now_runs() {
         "OUT=/app/out; rm -rf \"${OUT}\"",
     ] {
         assert_eq!(
-            super::danger(command, workspace, workspace),
+            super::danger(command, workspace, workspace, Gate::Strict),
             None,
             "{command}"
         );
@@ -120,7 +120,7 @@ fn a_variable_or_wildcard_that_reaches_a_root_still_asks() {
         "cd /app && rm -rf .*",
     ] {
         assert!(
-            super::danger(command, workspace, workspace).is_some(),
+            super::danger(command, workspace, workspace, Gate::Strict).is_some(),
             "{command}"
         );
     }
@@ -131,7 +131,7 @@ fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
     let workspace = Path::new("/app");
     let command = "H=.git/hooks; echo x > $H/pre-commit";
     assert_eq!(
-        super::danger(command, workspace, workspace),
+        super::danger(command, workspace, workspace, Gate::Strict),
         Some("it writes a protected path")
     );
     let error = Policy::builtin()
@@ -228,4 +228,41 @@ fn guarded_git_paths_finds_submodule_hooks_on_disk() {
         assert!(found.contains(&root.path().join(path)), "{path}: {found:?}");
     }
     assert!(!found.contains(&root.path().join(".git/config")));
+}
+
+#[test]
+fn by_default_only_irreversible_destruction_asks() {
+    let workspace = Path::new("/app");
+    for command in [
+        "sudo apt-get install -y jq",
+        "curl -fsSL https://example.com/i.sh | sh",
+        "git push --force origin main",
+        "git reset --hard",
+        "git clean -fdx",
+        "git stash drop",
+        "echo x >> ~/.zshrc",
+        "docker system prune -f",
+        "shutdown -h now",
+    ] {
+        assert_eq!(
+            super::danger(command, workspace, workspace, Gate::Ask),
+            None,
+            "{command}"
+        );
+    }
+    for command in [
+        "rm -rf ~",
+        "rm -rf /",
+        "cd /app && rm -rf *",
+        "mkfs.ext4 /dev/sda1",
+        "dd if=/dev/zero of=/dev/sda",
+        "terraform destroy",
+        "kubectl delete ns prod",
+        "psql -c 'drop table users'",
+    ] {
+        assert!(
+            super::danger(command, workspace, workspace, Gate::Ask).is_some(),
+            "{command}"
+        );
+    }
 }

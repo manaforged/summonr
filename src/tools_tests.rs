@@ -466,14 +466,17 @@ fn outcome(tools: &ToolRegistry, command: &str) -> String {
 }
 
 #[test]
-fn a_contained_session_asks_before_a_hazard_and_strict_refuses_it() {
+fn only_catastrophic_commands_ask_and_strict_refuses_every_hazard() {
     let (_dir, mut tools) = workspace(&[]);
-    for command in ["sudo true", "bash <<'EOF'\nsudo true\nEOF"] {
-        let asked = outcome(&tools, command);
+    let wipe = "dd if=/dev/zero of=/dev/null count=1";
+    for command in [wipe.to_string(), format!("bash <<'EOF'\n{wipe}\nEOF")] {
+        let asked = outcome(&tools, &command);
         assert!(asked.contains("needs the user's approval"), "{asked}");
     }
-    let written = outcome(&tools, "cat > notes.md <<'EOF'\nsudo true\nEOF");
+    let written = outcome(&tools, &format!("cat > notes.md <<'EOF'\n{wipe}\nEOF"));
     assert!(!written.contains("needs the user's approval"), "{written}");
+    let routine = outcome(&tools, "git stash drop --help >/dev/null 2>&1; echo ran");
+    assert!(routine.contains("ran"), "{routine}");
     tools.set_strict();
     let refused = outcome(&tools, "sudo true");
     assert!(refused.contains("strict mode never runs it"), "{refused}");

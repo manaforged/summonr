@@ -138,16 +138,21 @@ pub(super) fn runs_substitution(segments: &[String]) -> bool {
 
 pub(super) fn builtin_deny(command: &str, segments: &[String]) -> bool {
     let folded = collapse(command);
-    wipes_root(&folded)
+    catastrophic(command)
         || folded.contains("git push --force")
         || folded.contains("git push -f")
         || folded.contains("git push --mirror")
         || pipes_to_shell(command)
         || runs_substitution(segments)
-        || folded.contains("mkfs")
-        || folded.contains(":(){ :|:& };:")
         || escalates(command)
         || powers_off(segments)
+}
+
+pub(super) fn catastrophic(command: &str) -> bool {
+    let folded = collapse(command);
+    wipes_root(&folded)
+        || folded.contains("mkfs")
+        || folded.contains(":(){ :|:& };:")
         || folded.contains("chmod -r 777 /")
         || (folded.contains("dd if=") && folded.contains("of=/dev/"))
 }

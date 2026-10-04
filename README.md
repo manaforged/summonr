@@ -133,7 +133,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 
 ## Limits
 
-- Force pushes, `sudo`, `rm -rf /`, and the other built-in hazards ask you to confirm, with or without `--sandbox`, and `-p` never runs them. Under `--strict` they never run. Under `--sandbox` or `--strict`, your own `policy.toml` deny rules are hard refusals.
+- Commands run without a prompt. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped database tables. `-p` never runs those. `--strict` refuses them and the wider hazard list (force pushes, `sudo`, pipes into a shell, history rewrites). Under `--sandbox` or `--strict`, your own `policy.toml` deny rules are hard refusals.
 - Six identical results from the same call end the turn. The terminal UI asks first.
 - The `mcp` module is on by default. A server starts on its first tool call, stops after two idle minutes, and runs inside `--sandbox` when that is on. A server with more than 8 KB of tool schemas is reached through one `mcp` tool, so large servers do not fill the prompt. `/server:prompt` runs a server prompt, `@server:uri` attaches a server resource, and a server can ask you to fill a form during a call. A reply over 4 MiB is dropped, and output over 50 KB is cut with the full text saved to a file. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. A project `.mcp.json` server runs only after you set `enabled = true` for it.
 - A project can turn a module off. A project can't turn a module on.

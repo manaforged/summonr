@@ -83,7 +83,8 @@ impl ToolRegistry {
     ) -> Result<Option<ToolOutput>> {
         if !approved
             && !self.policy.is_strict()
-            && let Some(reason) = crate::policy::danger(command, &self.workspace, cwd)
+            && let Some(reason) =
+                crate::policy::danger(command, &self.workspace, cwd, crate::policy::Gate::Ask)
         {
             return Ok(Some(ToolOutput {
                 text: format!(

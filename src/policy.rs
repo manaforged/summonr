@@ -192,7 +192,8 @@ impl Policy {
             return Ok(());
         }
         if self.strict
-            && (builtin_deny(command, segments) || danger(command, workspace, start).is_some())
+            && (builtin_deny(command, segments)
+                || danger(command, workspace, start, Gate::Strict).is_some())
         {
             return Err(Error::Denied(format!(
                 "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"

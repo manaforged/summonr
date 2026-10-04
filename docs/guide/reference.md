@@ -365,10 +365,12 @@ from `--sandbox` or `[sandbox] on` stays.
 
 ### Confirmation
 
-Everything runs without a prompt except the hard denials: `sudo`,
-`rm -rf` outside the workspace, force-push, and the rest of the built-in
-deny list. Those ask first with `[ allow ]` / `[ deny ]` (or `y` / `n`).
-`-p` has no one to ask, so a hard denial does not run there.
+Everything runs without a prompt except irreversible destruction: wiping
+the system, home, or project root, `mkfs`, `dd` to a device, a fork bomb,
+`chmod -R 777 /`, `terraform destroy`, cluster deletes, and dropped database
+tables. Those ask first with `[ allow ]` / `[ deny ]` (or `y` / `n`). `-p` has
+no one to ask, so they do not run there. Each turn's checkpoint makes the rest,
+such as `git reset --hard`, recoverable with `/undo`.
 
 `sudo` asks for your password in a dialog. The password goes to `sudo`
 through `SUDO_ASKPASS`; the model never sees it, and command output is
@@ -868,14 +870,15 @@ the extra roots.
 Writers such as `cp`, `ln`, `mv`, `mkdir`, `touch`, and `install` may then
 target those paths, and the OS sandbox allows the write. `write` and `edit`
 accept files under them too. `~` and `$HOME` expand before the check.
-Force-push, `sudo`, `rm -rf /`, a pipe into a shell, and the other built-in
-hazards ask before they run, with or without the sandbox. Under `--strict` they
-never run. Under `--sandbox` or `--strict`, matches on your own `[policy] deny`
+The same irreversible commands ask before they run, with or without the
+sandbox. Under `--strict` they never run, and neither do force pushes, `sudo`,
+pipes into a shell, history rewrites, or writes to protected paths. Under `--sandbox` or `--strict`, matches on your own `[policy] deny`
 list are refused without a prompt.
-A protected path outside the workspace (`.git/hooks`, `.git/config`, `~/.ssh`,
-`~/.gnupg`, `~/.summonr`, shell startup files) prompts as `protected path <dir>`,
-never with `[ always ]`. A protected file inside the workspace (`.env`) is
-denied with no prompt. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
+In the sandbox, a write to a protected path outside the workspace
+(`.git/hooks`, `.git/config`, `~/.ssh`, `~/.gnupg`, `~/.summonr`, shell
+startup files) is allowed for the session without a prompt, and a note in
+the transcript names the path. A protected file inside the workspace (`.env`)
+is denied. Reads of `.env` and `~/.ssh` / `~/.gnupg` are blocked too.
 
 A sandboxed `cargo`, `rustup`, `npm`, `npx`, `pnpm`, `yarn`, `bun`, or `go`
 command that fails with `Operation not permitted` offers the matching home

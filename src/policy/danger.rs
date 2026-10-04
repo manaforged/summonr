@@ -3,30 +3,42 @@ use std::path::{Component, Path, PathBuf};
 use super::shell::{WRAPPERS, interpreter, shell};
 use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
 use super::{
-    Block, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, subcommand, unquoted,
-    verb_row, write_block,
+    Block, Gate, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, catastrophic,
+    subcommand, unquoted, verb_row, write_block,
 };
 
-pub(crate) fn danger(command: &str, workspace: &Path, start: &Path) -> Option<&'static str> {
+pub(crate) fn danger(
+    command: &str,
+    workspace: &Path,
+    start: &Path,
+    gate: Gate,
+) -> Option<&'static str> {
     let steps = walk(command, workspace, start, &[]);
     let texts: Vec<String> = steps.iter().map(|step| step.text.clone()).collect();
-    if builtin_deny(&without_heredocs(command), &texts) {
+    let flat = without_heredocs(command);
+    let hit = match gate {
+        Gate::Ask => catastrophic(&flat),
+        Gate::Strict => builtin_deny(&flat, &texts),
+    };
+    if hit {
         return Some("it can damage the system");
     }
     if let Some(reason) = heredocs(command)
         .iter()
         .filter(|(opening, _)| feeds_shell(opening))
-        .find_map(|(_, body)| danger(body, workspace, start))
+        .find_map(|(_, body)| danger(body, workspace, start, gate))
     {
         return Some(reason);
     }
-    if matches!(
-        write_block(&steps, workspace, &[]),
-        Some(Block::Protected(_))
-    ) {
+    if gate == Gate::Strict
+        && matches!(
+            write_block(&steps, workspace, &[]),
+            Some(Block::Protected(_))
+        )
+    {
         return Some("it writes a protected path");
     }
-    steps.iter().find_map(|step| risky(step, workspace))
+    steps.iter().find_map(|step| risky(step, workspace, gate))
 }
 
 fn feeds_shell(opening: &str) -> bool {
@@ -59,7 +71,7 @@ fn inquiry(args: &[String]) -> bool {
             .all(|arg| INQUIRY_FLAGS.contains(&arg.as_str()))
 }
 
-fn risky(step: &Step, workspace: &Path) -> Option<&'static str> {
+fn risky(step: &Step, workspace: &Path, gate: Gate) -> Option<&'static str> {
     let verb = step.verb()?;
     let args = &step.argv()[1..];
     let cwd = step.cwd.as_deref();
@@ -72,7 +84,11 @@ fn risky(step: &Step, workspace: &Path) -> Option<&'static str> {
         Hazard::Args(_) if inquiry(args) => None,
         Hazard::Args(rules) => rules
             .iter()
-            .find(|rule| any_hit(rule.when, args) && !(rule.broad && narrow(args, workspace, cwd)))
+            .find(|rule| {
+                rule.gate <= gate
+                    && any_hit(rule.when, args)
+                    && !(rule.broad && narrow(args, workspace, cwd))
+            })
             .map(|rule| rule.reason),
         Hazard::Sub { skip, rules } => {
             let (sub, rest) = subcommand(args, skip)?;
@@ -81,7 +97,9 @@ fn risky(step: &Step, workspace: &Path) -> Option<&'static str> {
             }
             rules
                 .iter()
-                .find(|rule| rule.names.contains(&sub) && any_hit(rule.when, rest))
+                .find(|rule| {
+                    rule.gate <= gate && rule.names.contains(&sub) && any_hit(rule.when, rest)
+                })
                 .map(|rule| rule.reason)
         }
     }

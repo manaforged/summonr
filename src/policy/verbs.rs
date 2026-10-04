@@ -97,15 +97,23 @@ pub(crate) enum Clip {
     Tail,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Gate {
+    Ask,
+    Strict,
+}
+
 pub(crate) struct Rule {
     pub(crate) when: &'static [Cond],
     pub(crate) broad: bool,
+    pub(crate) gate: Gate,
     pub(crate) reason: &'static str,
 }
 
 pub(crate) struct SubRule {
     pub(crate) names: &'static [&'static str],
     pub(crate) when: &'static [Cond],
+    pub(crate) gate: Gate,
     pub(crate) reason: &'static str,
 }
 

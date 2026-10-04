@@ -3,6 +3,22 @@ use std::hash::Hasher;
 use sigil::app::cell_width;
 use unicode_segmentation::UnicodeSegmentation;
 
+const IRREGULAR: &[(&str, &str)] = &[("child", "children")];
+
+pub(crate) fn plural(count: usize, word: &str) -> String {
+    if count == 1 {
+        return format!("{count} {word}");
+    }
+    if let Some((_, many)) = IRREGULAR.iter().find(|(one, _)| *one == word) {
+        return format!("{count} {many}");
+    }
+    if word.ends_with(['s', 'x']) || word.ends_with("ch") || word.ends_with("sh") {
+        format!("{count} {word}es")
+    } else {
+        format!("{count} {word}s")
+    }
+}
+
 pub(crate) fn ellipsize(text: &str, width: usize) -> String {
     if cell_width(text) <= width {
         return text.to_string();

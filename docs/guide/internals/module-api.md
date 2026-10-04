@@ -77,6 +77,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on`, `policy::git::{GIT_GUARDS, guarded_git_paths}` | containment is opt-in; when on, writes stay under the roots; `GIT_GUARDS` is the one list of git internals (hooks, config, commondir, also under `.git/modules`) that the Seatbelt profile, the bwrap binds, and `protected_write` all refuse |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from |
 | output budget | `tools/budget.rs::{plain, lines, fit}`, `ToolRegistry::bounded` | one 50 KB budget for `run_command` and MCP results; `bounded` keeps the full text in a file that lives until the session ends |
+| count noun | `text::plural` | `"1 hunk"` / `"3 hunks"`; irregular forms such as child/children live in its table |
 | content hash | `text::fnv64`, `text::Fnv64` | the one non-cryptographic hash: `prefix_hash`, MCP catalog keys, line tags, hunk ids, tree fingerprints, and prompt dedup; `Fnv64` is the stable `Hasher` for multi-field input and for any value stored or compared across runs |
 | mcp status | `mcp::status`, `mcp::Board`, `Loop::mcp_board`, `/mcp` pane, `summonr mcp list\|get` | one status for the pane and the CLI: configured and waiting servers, state from the live hub when a session has one, tool count and schema bytes from the catalog |
 | mcp config | `config::edit::{save_mcp_server, remove_mcp_server}`, `mcp::{add, remove}` | the one writer of `[mcp.NAME]` tables; `summonr install` and `summonr mcp add` both use it |

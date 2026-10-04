@@ -92,9 +92,8 @@ First public release.
 - MCP calls follow `policy.toml` and `--strict`, and stdio servers run
   inside `--sandbox`. A reply over 4 MiB is dropped; output over 50 KB
   is cut and the full text saved to a file.
-- One permission mode: everything runs without a prompt except hard
-  denials (`sudo`, `rm -rf` outside the workspace, force push, the deny
-  list), which ask first. `/permissions approve` is removed.
+- One permission mode: everything runs without a prompt.
+  `/permissions approve` is removed.
 - `sudo` asks for the password in a dialog through `SUDO_ASKPASS`.
 - Fewer wasted rounds: command output keeps about 16 KB, `write` over a
   file returns one line, `read` pages by 50 KB, and batch edits to the

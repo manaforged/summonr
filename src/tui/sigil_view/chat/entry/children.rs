@@ -6,10 +6,6 @@ use super::tree::{branch, label};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
 
-fn noun(count: usize) -> &'static str {
-    if count == 1 { "child" } else { "children" }
-}
-
 fn state_of(kids: &[&Agent]) -> ToolState {
     if kids.iter().any(|kid| !kid.done) {
         ToolState::Running
@@ -99,13 +95,13 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         } else {
             format!("{} children", kids.len())
         };
-        let detail = format!("background · {} {}", kids.len(), noun(kids.len()));
+        let detail = format!("background · {}", crate::text::plural(kids.len(), "child"));
         return Some(header(
             &ToolState::Running,
             call_line("Task", &what, Some((detail, Look::xs(Token::Gray10))), true),
         ));
     }
-    let head = format!("{} {}", kids.len(), noun(kids.len()));
+    let head = crate::text::plural(kids.len(), "child");
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(header(

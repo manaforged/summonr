@@ -8,6 +8,7 @@ fn a_relative_shell_var_is_not_outside_the_workspace() {
         .command(
             "git cat-file -p 9caf0adc > crates/ide-core/$name",
             Path::new("/tmp"),
+            Path::new("/tmp"),
         )
         .unwrap();
 }
@@ -16,11 +17,15 @@ fn a_relative_shell_var_is_not_outside_the_workspace() {
 fn home_and_tmp_vars_stay_outside() {
     let policy = Policy::builtin();
     let error = policy
-        .command("echo hi > $HOME/secret", Path::new("/tmp"))
+        .command(
+            "echo hi > $HOME/secret",
+            Path::new("/tmp"),
+            Path::new("/tmp"),
+        )
         .unwrap_err();
     assert!(matches!(error, Error::Denied(_)), "{error}");
     let error = policy
-        .command("chmod 777 ~/.ssh", Path::new("/tmp"))
+        .command("chmod 777 ~/.ssh", Path::new("/tmp"), Path::new("/tmp"))
         .unwrap_err();
     assert!(matches!(error, Error::Denied(_)), "{error}");
 }
@@ -43,7 +48,11 @@ fn cleanup_inside_the_workspace_or_scratch_runs_after_a_cd() {
         "python3 - <<'PY'\nimport os\nos.system('rm -rf /')\nPY\necho done",
         "cd /app/pyknotid && rm -rf $(find . -type d -name __pycache__)",
     ] {
-        assert_eq!(super::danger(command, workspace), None, "{command}");
+        assert_eq!(
+            super::danger(command, workspace, workspace),
+            None,
+            "{command}"
+        );
     }
 }
 
@@ -68,7 +77,10 @@ fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
         "find / -name '*.log' -delete",
         "rm -rf $(find / -type d -name __pycache__)",
     ] {
-        assert!(super::danger(command, workspace).is_some(), "{command}");
+        assert!(
+            super::danger(command, workspace, workspace).is_some(),
+            "{command}"
+        );
     }
 }
 
@@ -81,7 +93,11 @@ fn a_narrow_command_the_bench_saw_refused_now_runs() {
         "ALT_DIR=/tmp/alt; rm -rf $ALT_DIR; mkdir -p $ALT_DIR/data",
         "OUT=/app/out; rm -rf \"${OUT}\"",
     ] {
-        assert_eq!(super::danger(command, workspace), None, "{command}");
+        assert_eq!(
+            super::danger(command, workspace, workspace),
+            None,
+            "{command}"
+        );
     }
 }
 
@@ -96,7 +112,10 @@ fn a_variable_or_wildcard_that_reaches_a_root_still_asks() {
         "rm -rf /usr/*",
         "cd /app && rm -rf .*",
     ] {
-        assert!(super::danger(command, workspace).is_some(), "{command}");
+        assert!(
+            super::danger(command, workspace, workspace).is_some(),
+            "{command}"
+        );
     }
 }
 
@@ -105,10 +124,12 @@ fn a_variable_that_names_a_protected_path_is_caught_by_both_checks() {
     let workspace = Path::new("/app");
     let command = "H=.git/hooks; echo x > $H/pre-commit";
     assert_eq!(
-        super::danger(command, workspace),
+        super::danger(command, workspace, workspace),
         Some("it writes a protected path")
     );
-    let error = Policy::builtin().command(command, workspace).unwrap_err();
+    let error = Policy::builtin()
+        .command(command, workspace, workspace)
+        .unwrap_err();
     assert!(error.to_string().contains("protected"), "{error}");
 }
 

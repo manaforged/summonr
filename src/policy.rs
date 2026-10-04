@@ -152,7 +152,7 @@ impl Policy {
         self.read_only
     }
 
-    pub(crate) fn command(&self, command: &str, workspace: &Path) -> Result<()> {
+    pub(crate) fn command(&self, command: &str, workspace: &Path, start: &Path) -> Result<()> {
         let command = command.trim();
         let segments = split_segments(command);
         self.command_policy_checked(command, &segments)?;
@@ -160,7 +160,7 @@ impl Policy {
             return Ok(());
         }
         match write_block(
-            &walk::walk(command, workspace, &self.roots),
+            &walk::walk(command, workspace, start, &self.roots),
             workspace,
             &self.roots,
         ) {

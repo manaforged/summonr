@@ -110,7 +110,11 @@ fn grant_from_message(message: &str) -> Option<Grant> {
 }
 
 pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) -> Option<Grant> {
-    match write_block(&walk::walk(command, workspace, roots), workspace, roots) {
+    match write_block(
+        &walk::walk(command, workspace, workspace, roots),
+        workspace,
+        roots,
+    ) {
         Some(Block::Outside(path)) => write_grant(write_directory(&path)),
         Some(Block::Protected(path)) => {
             write_grant(write_directory(&locate(&path, workspace).to_string_lossy()))

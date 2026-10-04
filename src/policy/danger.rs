@@ -7,8 +7,8 @@ use super::{
     verb_row, write_block,
 };
 
-pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
-    let steps = walk(command, workspace, &[]);
+pub(crate) fn danger(command: &str, workspace: &Path, start: &Path) -> Option<&'static str> {
+    let steps = walk(command, workspace, start, &[]);
     let texts: Vec<String> = steps.iter().map(|step| step.text.clone()).collect();
     if builtin_deny(&without_heredocs(command), &texts) {
         return Some("it can damage the system");
@@ -16,7 +16,7 @@ pub(crate) fn danger(command: &str, workspace: &Path) -> Option<&'static str> {
     if let Some(reason) = heredocs(command)
         .iter()
         .filter(|(opening, _)| feeds_shell(opening))
-        .find_map(|(_, body)| danger(body, workspace))
+        .find_map(|(_, body)| danger(body, workspace, start))
     {
         return Some(reason);
     }

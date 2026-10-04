@@ -490,3 +490,37 @@ fn a_search_over_several_paths_reports_a_missing_one_inline() {
     assert!(hits.contains("a.txt:1:"), "{hits}");
     assert!(hits.contains("missing.txt: "), "{hits}");
 }
+
+#[test]
+fn a_command_in_another_workdir_is_judged_from_that_directory() {
+    let root = tempfile::tempdir().unwrap();
+    let workspace = root.path().join("ws");
+    std::fs::create_dir_all(workspace.join("keep")).unwrap();
+    std::fs::create_dir_all(root.path().join("keep")).unwrap();
+    let tools = ToolRegistry::with_policy_and_search(&workspace, Policy::builtin(), None).unwrap();
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({
+                "command": "rm -rf keep",
+                "workdir": root.path().display().to_string(),
+            })
+            .to_string(),
+        },
+        continuation: None,
+    };
+    let result = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    let text = match result {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    };
+    assert!(root.path().join("keep").exists(), "{text}");
+}

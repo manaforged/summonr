@@ -56,11 +56,12 @@ impl Step {
 
 const REDIRECTS: &[&str] = &[">", ">>", "1>", "2>", "&>"];
 
-pub(crate) fn walk(command: &str, workspace: &Path, roots: &[PathBuf]) -> Vec<Step> {
+pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathBuf]) -> Vec<Step> {
     let repo = workspace.join(".git").exists();
     let mut vars = HashMap::new();
-    let mut cwd = Some(workspace.to_path_buf());
-    let mut outside = false;
+    let mut cwd = Some(start.to_path_buf());
+    let mut outside =
+        !start.starts_with(workspace) && !roots.iter().any(|root| start.starts_with(root));
     let mut steps = Vec::new();
     for segment in split_segments(without_heredocs(command.trim()).trim()) {
         let segment = if repo && !outside {

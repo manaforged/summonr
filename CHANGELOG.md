@@ -110,6 +110,11 @@ First public release.
 
 ### Fixed
 
+- Sandbox and policy: `--strict` refuses an allow-listed command that
+  destroys work, such as `git reset --hard`; git hooks, config, and
+  commondir stay protected inside submodules too; the ask gate sees
+  quoted verbs, `eval`, `find -exec rm`, `bash -c --`, and `xargs sh -c`;
+  a password prompt names the program that asked for it.
 - MCP: a timed-out call no longer corrupts the next one, server start
   waits at most 60 seconds, remote servers reconnect after their session
   expires, and Ctrl-C stops servers and commands.

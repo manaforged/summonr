@@ -70,7 +70,10 @@ pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathB
             segment
         };
         let text = expand_vars(&segment, &vars);
-        let words = shell_words(&text);
+        let words: Vec<String> = shell_words(&text)
+            .into_iter()
+            .map(|word| word.replace(['\'', '"'], ""))
+            .collect();
         assign(&words, &mut vars);
         let step = Step {
             text,
@@ -125,7 +128,14 @@ pub(crate) fn argv(segment: &str) -> Vec<String> {
 }
 
 pub(crate) fn verb(words: &[String]) -> Option<String> {
-    Some(words.first()?.rsplit('/').next()?.to_ascii_lowercase())
+    Some(
+        words
+            .first()?
+            .rsplit('/')
+            .next()?
+            .replace('\\', "")
+            .to_ascii_lowercase(),
+    )
 }
 
 fn is_assignment(word: &str) -> bool {

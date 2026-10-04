@@ -13,8 +13,12 @@ pub(super) const RM: &[Rule] = &[Rule {
     broad: true,
     reason: "it deletes a system, home, or project root recursively",
 }];
+const DESTRUCTIVE: &[&str] = &["rm", "rmdir", "unlink", "shred", "truncate"];
 pub(super) const FIND: &[Rule] = &[Rule {
-    when: &[Cond::Any(&["-delete"])],
+    when: &[
+        Cond::Any(&["-delete"]),
+        Cond::Runs(&["-exec", "-execdir", "-ok", "-okdir"], DESTRUCTIVE),
+    ],
     broad: true,
     reason: "it deletes files across a system, home, or project root",
 }];

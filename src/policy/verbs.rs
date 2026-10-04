@@ -11,6 +11,7 @@ pub(crate) enum Cond {
     Prefix(&'static [&'static str]),
     Short(char),
     First(&'static str),
+    Runs(&'static [&'static str], &'static [&'static str]),
 }
 
 impl Cond {
@@ -26,6 +27,10 @@ impl Cond {
                 .iter()
                 .any(|arg| arg.starts_with('-') && !arg.starts_with("--") && arg.contains(flag)),
             Cond::First(name) => args.first().is_some_and(|arg| arg == name),
+            Cond::Runs(flags, verbs) => args.windows(2).any(|pair| {
+                flags.contains(&pair[0].as_str())
+                    && verbs.contains(&pair[1].rsplit('/').next().unwrap_or(&pair[1]))
+            }),
         }
     }
 }

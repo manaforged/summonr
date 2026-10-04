@@ -155,7 +155,7 @@ impl Policy {
     pub(crate) fn command(&self, command: &str, workspace: &Path, start: &Path) -> Result<()> {
         let command = command.trim();
         let segments = split_segments(command);
-        self.command_policy_checked(command, &segments)?;
+        self.command_policy_checked(command, &segments, workspace, start)?;
         if self.unrestricted {
             return Ok(());
         }
@@ -178,14 +178,22 @@ impl Policy {
         Ok(())
     }
 
-    pub(crate) fn command_policy_checked(&self, command: &str, segments: &[String]) -> Result<()> {
+    pub(crate) fn command_policy_checked(
+        &self,
+        command: &str,
+        segments: &[String],
+        workspace: &Path,
+        start: &Path,
+    ) -> Result<()> {
         if command.is_empty() {
             return Err(Error::Denied("command is empty".to_string()));
         }
         if self.unrestricted {
             return Ok(());
         }
-        if self.strict && builtin_deny(command, segments) {
+        if self.strict
+            && (builtin_deny(command, segments) || danger(command, workspace, start).is_some())
+        {
             return Err(Error::Denied(format!(
                 "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"
             )));
@@ -297,10 +305,7 @@ pub(crate) fn first_verb(command: &str) -> Option<String> {
 pub(crate) fn protected_write(path: &Path) -> bool {
     let unix = path.to_string_lossy().replace('\\', "/");
     let parts: Vec<&str> = unix.split('/').filter(|part| !part.is_empty()).collect();
-    if parts
-        .windows(2)
-        .any(|pair| pair[0] == ".git" && matches!(pair[1], "hooks" | "config"))
-    {
+    if git::guarded_git_part(&parts) {
         return true;
     }
     if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
@@ -345,6 +350,7 @@ pub(crate) fn protected_read(path: &Path) -> bool {
 }
 
 mod blocks;
+mod git;
 mod paths;
 mod shell;
 mod verbs;
@@ -356,6 +362,10 @@ pub(crate) use blocks::{
 use paths::*;
 use shell::*;
 
+#[cfg(any(target_os = "linux", test))]
+pub(crate) use git::guarded_git_paths;
+#[cfg(any(target_os = "macos", test))]
+pub(crate) use git::guarded_git_regex;
 pub(crate) use paths::{expand_path, split_segments};
 #[cfg(test)]
 pub(crate) use shell::running_as_root;

@@ -9,6 +9,9 @@ pub(super) fn profile(
     deny_network: bool,
     read_only: bool,
 ) -> Result<String> {
+    let git = path_string(Path::new(&crate::policy::guarded_git_regex(
+        &workspace.to_string_lossy(),
+    )))?;
     let workspace = path_string(workspace)?;
     let temp = path_string(temp)?;
     let extra = write
@@ -28,9 +31,7 @@ pub(super) fn profile(
     } else {
         (
             format!("    (subpath \"{workspace}\")\n"),
-            format!(
-                "(deny file-write* (literal \"{workspace}/.git\") (subpath \"{workspace}/.git/hooks\") (literal \"{workspace}/.git/config\"))\n"
-            ),
+            format!("(deny file-write* (literal \"{workspace}/.git\") (regex \"{git}\"))\n"),
         )
     };
     Ok(format!(

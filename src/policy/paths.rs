@@ -54,7 +54,7 @@ pub(super) fn inline_script(segment: &str) -> Option<String> {
         return None;
     }
     words.find(|word| word.starts_with('-') && !word.starts_with("--") && word.contains('c'))?;
-    let script = words.next()?;
+    let script = words.find(|word| *word != "--")?;
     Some(
         ['\'', '"']
             .iter()

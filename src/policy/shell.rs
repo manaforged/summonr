@@ -31,10 +31,46 @@ pub(super) fn shell(program: &str) -> bool {
     )
 }
 
-pub(super) const WRAPPERS: [&str; 15] = [
+pub(super) const WRAPPERS: [&str; 16] = [
     "env", "sudo", "doas", "nice", "nohup", "exec", "command", "builtin", "time", "xargs",
-    "timeout", "stdbuf", "setsid", "flock", "chronic",
+    "timeout", "stdbuf", "setsid", "flock", "chronic", "eval",
 ];
+
+const XARGS: &str = "xargs";
+const XARGS_REPLACE: &[&str] = &["-I", "-J", "--replace=", "-i"];
+const XARGS_DEFAULT_TOKEN: &str = "{}";
+
+fn xargs_runs_input(words: &[&str], at: usize) -> bool {
+    let Some(from) = words[..at].iter().position(|word| *word == XARGS) else {
+        return false;
+    };
+    let options = &words[from + 1..at];
+    let token = options.iter().enumerate().find_map(|(index, word)| {
+        let flag = XARGS_REPLACE.iter().find(|flag| word.starts_with(*flag))?;
+        let rest = &word[flag.len()..];
+        Some(if !rest.is_empty() {
+            rest
+        } else if *flag == "-I" || *flag == "-J" {
+            options
+                .get(index + 1)
+                .copied()
+                .unwrap_or(XARGS_DEFAULT_TOKEN)
+        } else {
+            XARGS_DEFAULT_TOKEN
+        })
+    });
+    let rest = &words[at + 1..];
+    let Some(flag) = rest
+        .iter()
+        .position(|word| word.starts_with('-') && !word.starts_with("--") && word.contains('c'))
+    else {
+        return false;
+    };
+    match rest[flag + 1..].iter().find(|word| **word != "--") {
+        None => true,
+        Some(script) => token.is_some_and(|token| script.replace(['\'', '"'], "") == token),
+    }
+}
 
 pub(super) fn pipes_to_shell(command: &str) -> bool {
     unquoted(command, &["|"])
@@ -67,7 +103,8 @@ pub(super) fn pipes_to_shell(command: &str) -> bool {
                         .trim_end_matches(|c: char| !c.is_ascii_alphanumeric())
                         .to_ascii_lowercase();
                     word.starts_with('`')
-                        || ((shell(&name) || interpreter(&name)) && reads_stdin(&words[at + 1..]))
+                        || ((shell(&name) || interpreter(&name))
+                            && (reads_stdin(&words[at + 1..]) || xargs_runs_input(&words, at)))
                 })
         })
 }

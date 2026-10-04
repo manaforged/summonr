@@ -97,7 +97,7 @@ impl ToolRegistry {
             }));
         }
         if approved {
-            self.check_policy(command)?;
+            self.check_policy(command, cwd)?;
         } else {
             self.check_command(command, cwd)?;
         }
@@ -199,10 +199,12 @@ impl ToolRegistry {
         self.policy.command(command, &self.workspace, cwd)
     }
 
-    fn check_policy(&self, command: &str) -> Result<()> {
+    fn check_policy(&self, command: &str, cwd: &Path) -> Result<()> {
         self.policy.command_policy_checked(
             command.trim(),
             &crate::policy::split_segments(command.trim()),
+            &self.workspace,
+            cwd,
         )
     }
 

@@ -51,7 +51,7 @@ pub(crate) fn failed(status: Option<u16>, kind: &str, message: &str) -> Error {
             400
         },
     );
-    let mut error = super::client::plan_usage(code, kind, None)
+    let mut error = super::client::plan_usage(code, &format!("{kind}: {message}"), None)
         .unwrap_or_else(|| super::client::response_failure(code, message, None));
     if let Error::Provider(failure) = &mut error {
         failure.status = status;

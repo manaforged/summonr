@@ -103,13 +103,14 @@ impl App {
             self.refresh();
             return;
         }
-        let named = focus.is_some();
+        let asked = focus.is_some();
         let focus = focus.unwrap_or(&current);
         let selected = choices
             .iter()
             .position(|choice| choice.name == focus)
             .or_else(|| choices.iter().position(|choice| choice.name == current))
             .unwrap_or(0);
+        let named = asked && choices.get(selected).is_some_and(|row| !row.dual());
         self.auth.choices.set(choices);
         self.auth.filter.set(String::new());
         self.auth.seat.set(None);
@@ -122,6 +123,28 @@ impl App {
             self.commit_auth();
         } else if !self.picker.open.peek() {
             self.list_models(None);
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn regroup_auth(&self) {
+        let states = self.picker.groups.peek();
+        let keep = self.auth_choice().map(|choice| choice.name);
+        let mut choices = self.auth.choices.peek();
+        choices.sort_by_key(|choice| {
+            (
+                section(choice, &states),
+                choice.catalog_rank(),
+                choice.name.clone(),
+            )
+        });
+        self.auth.choices.set(choices);
+        if let Some(name) = keep
+            && let Some(at) = self
+                .filtered_auth()
+                .iter()
+                .position(|choice| choice.name == name)
+        {
+            self.auth.sel.set(at);
         }
     }
 
@@ -176,8 +199,8 @@ impl App {
         let Some(choice) = self.auth_choice() else {
             return;
         };
-        if !matches!(self.auth.step.peek(), Login::List(_)) || !choice.key || self.env_note(&choice)
-        {
+        let takes = choice.key || choice.keyless();
+        if !matches!(self.auth.step.peek(), Login::List(_)) || !takes || self.env_note(&choice) {
             return;
         }
         self.auth.step.set(Login::Key(String::new()));

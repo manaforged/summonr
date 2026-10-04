@@ -2,27 +2,31 @@ use serde_json::Value;
 
 use super::{Cost, Model, registry};
 
+const LISTED: &str = "list";
+
 pub fn parse(value: &Value, fallback: Cost) -> Vec<Model> {
-    value
+    let rows: Vec<&Value> = value
         .get("data")
         .or_else(|| value.get("models"))
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
+        .collect();
+    let curated = rows.iter().any(|item| visibility(item) == Some(LISTED));
+    rows.into_iter()
+        .filter(|item| !curated || visibility(item) == Some(LISTED))
         .filter_map(|item| row(item, fallback))
         .collect()
 }
 
+fn visibility(item: &Value) -> Option<&str> {
+    item.get("visibility").and_then(Value::as_str)
+}
+
 fn row(item: &Value, fallback: Cost) -> Option<Model> {
-    if item
-        .get("visibility")
-        .and_then(Value::as_str)
-        .is_some_and(|shown| shown != "list")
-    {
-        return None;
-    }
     let raw = item
         .get("id")
+        .or_else(|| item.get("slug"))
         .or_else(|| item.get("name"))
         .and_then(Value::as_str)?;
     let id = raw.strip_prefix("models/").unwrap_or(raw);

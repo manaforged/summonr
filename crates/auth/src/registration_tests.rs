@@ -183,3 +183,53 @@ async fn a_refresh_spends_the_issued_client_id_and_the_token_params() {
         "a refresh keeps the original grant, got {form}"
     );
 }
+
+#[tokio::test]
+async fn a_sign_in_without_the_plan_scope_is_refused() {
+    let (token_url, _seen) = token_endpoint(
+        r#"{"access_token":"at","refresh_token":"rt","expires_in":3600,"scope":"openid profile"}"#,
+    )
+    .await;
+    let kept: Arc<dyn Store> = Arc::new(Memory(Mutex::new(Default::default())));
+    let mut spec = registering(token_url);
+    spec.required_scope = Some("chatgpt.tokens.use.direct".into());
+    let auth = Auth::new(
+        Method::Login(Box::new(spec)),
+        Scheme::Bearer,
+        "plan",
+        kept.clone(),
+    );
+    let http = http(Duration::from_secs(5), Duration::from_secs(5)).unwrap();
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let shown = lines.clone();
+    tokio::spawn(async move {
+        let link: String = loop {
+            if let Some(line) = shown.lock().unwrap().first().cloned() {
+                break line;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+        let asked = url::Url::parse(link.trim_start_matches("open ")).unwrap();
+        let query: std::collections::BTreeMap<_, _> = asked.query_pairs().into_owned().collect();
+        let back = url::Url::parse(query.get("redirect_uri").unwrap()).unwrap();
+        let state = query.get("state").unwrap();
+        let mut stream = tokio::net::TcpStream::connect(back.socket_addrs(|| None).unwrap()[0])
+            .await
+            .unwrap();
+        let get = format!("GET /auth/callback?code=xyz&state={state} HTTP/1.1\r\nhost: x\r\n\r\n");
+        tokio::io::AsyncWriteExt::write_all(&mut stream, get.as_bytes())
+            .await
+            .unwrap();
+    });
+    let heard = lines.clone();
+    let mut prompt = Prompt::telling(move |line| heard.lock().unwrap().push(line.to_string()));
+    let error = auth
+        .login(&http, &mut prompt)
+        .await
+        .expect_err("a token without plan usage must not count as signed in");
+    assert!(
+        error.to_string().contains("chatgpt.tokens.use.direct"),
+        "the message names the missing scope, got {error}"
+    );
+    assert!(kept.get("plan").unwrap().is_none(), "nothing is stored");
+}

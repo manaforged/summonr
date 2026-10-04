@@ -88,6 +88,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
         return Err(Error::Config("API key cannot be empty".to_string()));
     }
     let source = secret::set(name, key)?;
+    secret::forget(&crate::credentials::login_slot(name))?;
     config::remove_key(&config::path()?, name)?;
     Ok(source)
 }
@@ -96,6 +97,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
     endpoint.api_key = Some(key.trim().to_string());
     endpoint.source = None;
+    endpoint.oauth = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await
         && crate::provider::Client::state(&error) == State::KeyRejected
     {
@@ -109,7 +111,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
 
 pub(crate) fn forget_key(name: &str) -> Result<bool> {
     let stored = secret::forget(name)?;
-    let token = secret::forget(&format!("oauth:{name}"))?;
+    let token = secret::forget(&crate::credentials::login_slot(name))?;
     let config = config::remove_key(&config::path()?, name)?;
     Ok(stored || token || config)
 }

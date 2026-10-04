@@ -117,6 +117,17 @@ fn effort(body: &mut Map<String, Value>, call: &CompletionRequest<'_>, reasoning
     }
 }
 
+const NAMESPACE: &str = "summonr";
+
+pub(crate) fn namespace(tools: Value) -> Value {
+    json!({
+        "type": "namespace",
+        "name": NAMESPACE,
+        "description": "Tools of the Summonr coding agent",
+        "tools": tools,
+    })
+}
+
 fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
     call.tools
         .iter()

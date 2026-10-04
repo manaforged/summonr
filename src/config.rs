@@ -196,6 +196,8 @@ pub struct OAuth {
     pub pkce: bool,
     #[serde(default)]
     pub claim_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub required_scope: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

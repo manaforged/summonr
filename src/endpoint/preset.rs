@@ -72,6 +72,7 @@ fn chatgpt_oauth() -> crate::config::OAuth {
         grant: Some("authorization_code".into()),
         authorize_params,
         token_params: BTreeMap::from([("resource".to_string(), OPENAI_API.to_string())]),
+        required_scope: Some(CHATGPT_PLAN_SCOPE.into()),
         ..crate::config::OAuth::default()
     }
 }

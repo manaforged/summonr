@@ -202,6 +202,12 @@ impl Client {
         if self.prompt_cache_key && !self.auth.is_login() {
             body.set("prompt_cache_key", json!(request.prefix_hash()));
         }
+        if self.wire == Wire::Responses
+            && self.auth.is_login()
+            && let Some(tools) = body.take("tools")
+        {
+            body.set("tools", json!([wire::responses::namespace(tools)]));
+        }
         if let Some(Value::Object(extra)) = &self.body {
             for (key, value) in extra {
                 body.set(key, value.clone());

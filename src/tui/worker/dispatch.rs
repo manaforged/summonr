@@ -98,7 +98,7 @@ impl Worker {
             Cmd::Login(name) => self.login(&name).await,
             Cmd::SetKey(name, key) => self.set_key(&name, &key).await,
             Cmd::Logout(name) => {
-                self.logout(&name);
+                self.logout(&name).await;
                 true
             }
             _command => unreachable!("dispatch routes only auth commands"),

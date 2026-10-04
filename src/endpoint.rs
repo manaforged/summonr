@@ -28,6 +28,7 @@ const CHATGPT_AUTHORIZE: &str = "https://auth.openai.com/api/accounts/authorize"
 const CHATGPT_TOKEN: &str = "https://auth.openai.com/api/accounts/oauth/token";
 const CHATGPT_CLIENT: &str = "dynamic_agent_client";
 const CHATGPT_REDIRECT: &str = "http://127.0.0.1:0/auth/callback";
+const CHATGPT_PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
 const CHATGPT_SCOPES: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 const XAI_DEVICE: &str = "https://auth.x.ai/oauth2/device/code";

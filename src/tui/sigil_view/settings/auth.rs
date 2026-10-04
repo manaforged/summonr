@@ -61,7 +61,7 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                     match paint.auth.step.get() {
                         Login::List(note) => choices(&paint, &note),
                         Login::Key(note) => entering(&paint, &note),
-                        Login::Checking => vec![line("Checking the key…")],
+                        Login::Checking => vec![line("Checking…")],
                         Login::SignIn {
                             text,
                             url,
@@ -108,6 +108,8 @@ fn listing_hints(app: &App) -> Hints {
         Key::Enter,
         if choice.login.signs_in() {
             "sign in"
+        } else if choice.keyless() {
+            "set a key"
         } else {
             "open"
         },

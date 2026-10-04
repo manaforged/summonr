@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     let offered = match endpoint.oauth.take() {
-        Some(login) if takes_key(&endpoint) && !signed_in(&login, &endpoint.name) => Some(login),
+        Some(login) if takes_key(&endpoint) && !logged_in(&login, &endpoint.name)? => Some(login),
         Some(login) => {
             endpoint.oauth = Some(login);
             return Ok(endpoint);
@@ -45,10 +45,6 @@ fn known_key(endpoint: &Endpoint) -> Result<Option<(String, Source)>> {
 
 pub(super) fn takes_key(endpoint: &Endpoint) -> bool {
     preset(&endpoint.name).is_some_and(|row| !row.env_keys.is_empty())
-}
-
-fn signed_in(login: &crate::config::OAuth, name: &str) -> bool {
-    logged_in(login, name).is_ok_and(|ready| ready)
 }
 
 fn fallback_key(

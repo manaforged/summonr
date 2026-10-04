@@ -87,8 +87,11 @@ issued client id; `~/.summonr/host-id` holds the install id that OpenAI
 asks for on every sign-in. OpenAI caps each app per week in ChatGPT
 settings → Usage; when the cap is reached, the error names that page
 after the standard retry policy. The plan path rejects
-`max_output_tokens`, sampling fields, and hosted tools, and Summonr sends
-no `prompt_cache_key` on a plan token.
+`max_output_tokens`, sampling fields, and hosted tools; on a plan token
+Summonr sends no `prompt_cache_key` and groups its tools in one
+`namespace`, as that route requires. A sign-in that does not grant
+`chatgpt.tokens.use.direct` is refused, so the row never shows signed in
+without plan usage.
 
 `grok` offers a SuperGrok or X Premium+ sign-in next to `XAI_API_KEY`,
 through the device flow at `auth.x.ai`.
@@ -99,7 +102,8 @@ blob (mode 0600, written through a rename). The wrapping key is a
 shows ciphertext. File mode also needs that keychain item: if the
 keychain is locked, Summonr reports an error and keeps `config.toml`
 untouched. The key prompt disables echo and stores the key;
-`summonr login NAME --key` forces it for a device-login endpoint.
+`summonr login NAME --key` skips the method question on a row that
+offers both, and storing a key signs that row out of its plan.
 `summonr logout NAME` forgets the key and any login
 token, and names the key that applies next. A plaintext `api_key` in
 `config.toml` is moved into that file the first time Summonr runs, and
@@ -107,7 +111,7 @@ it says so once. Resolution order is the host's environment variable,
 the store, peer stores, `api_key` in `config.toml`, then the built-in
 default. An endpoint with no key fails with the missing-key message;
 only local and keyless endpoints run without one. `--key` is refused on
-a login endpoint, so it cannot replace the login token.
+a row that only signs in, such as `copilot`.
 
 Peer stores are read live: OpenCode's
 `~/.local/share/opencode/auth.json` lends `type: "api"` keys, plus
@@ -241,6 +245,7 @@ Keys on an `[endpoint.NAME]` row:
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
 | `auth.label` | Name of the plan shown when a row offers both a sign-in and a key. |
+| `auth.required_scope` | A scope the token reply must grant, or the sign-in fails. |
 | `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
 
 ### Environment variables

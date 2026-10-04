@@ -31,8 +31,7 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn login(&mut self, name: &str) -> bool {
-        let endpoint = match crate::endpoint::resolve(Some(name), None, crate::endpoint::Need::Seat)
-        {
+        let endpoint = match crate::endpoint::login_seat(name) {
             Ok(endpoint) => endpoint,
             Err(error) => {
                 self.done(name, Err(error.to_string()));
@@ -60,6 +59,9 @@ impl Worker {
         let outcome = attend(self.inbox(Some(answers)), login).await;
         let running = match outcome {
             Attended::Done(Ok(())) => {
+                if name == self.endpoint {
+                    self.set_endpoint(name).await;
+                }
                 self.done(name, Ok(format!("✓ Signed in to {name}.")));
                 true
             }
@@ -93,11 +95,12 @@ impl Worker {
         true
     }
 
-    pub(in crate::tui::worker) fn logout(&self, name: &str) {
-        self.done(
-            name,
-            crate::endpoint::logout(name).map_err(|error| error.to_string()),
-        );
+    pub(in crate::tui::worker) async fn logout(&mut self, name: &str) {
+        let result = crate::endpoint::logout(name).map_err(|error| error.to_string());
+        if result.is_ok() && name == self.endpoint {
+            self.set_endpoint(name).await;
+        }
+        self.done(name, result);
     }
 
     fn done(&self, name: &str, result: std::result::Result<String, String>) {

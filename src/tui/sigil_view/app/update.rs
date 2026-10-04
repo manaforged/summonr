@@ -151,6 +151,11 @@ impl App {
         }
         if !self.picker.open.peek() {
             self.picker.groups.update(|held| held.extend(groups));
+            if self.auth.open.peek() {
+                self.picker.choices.set(std::rc::Rc::new(rows));
+                self.picker.facts.set(std::rc::Rc::new(facts));
+                self.regroup_auth();
+            }
             return;
         }
         let snapshot = self.model.peek().snapshot.clone();

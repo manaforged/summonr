@@ -27,23 +27,52 @@ impl Login {
     }
 }
 
-fn providers() -> Vec<crate::endpoint::AuthInfo> {
+pub(in crate::tui::sigil_view) type States = std::collections::BTreeMap<String, State>;
+
+fn providers(states: &States) -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()
         .filter_map(|name| crate::endpoint::auth_info(&name).ok())
         .collect();
-    choices.sort_by_key(|choice| (section(choice), choice.catalog_rank(), choice.name.clone()));
+    choices.sort_by_key(|choice| {
+        (
+            section(choice, states),
+            choice.catalog_rank(),
+            choice.name.clone(),
+        )
+    });
     choices
 }
 
-pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) -> u8 {
-    let connected = choice.configured && choice.source != Some(crate::secret::Source::Builtin);
-    match (connected, choice.keyless()) {
-        (true, _) => 0,
-        (false, true) => 1,
-        (false, false) => 2,
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::tui::sigil_view) enum Tier {
+    Ready,
+    Attention,
+    Unset,
+}
+
+impl Tier {
+    pub(in crate::tui::sigil_view) const fn title(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Attention => "needs attention",
+            Self::Unset => "not set up",
+        }
     }
+}
+
+pub(in crate::tui::sigil_view) fn section(
+    choice: &crate::endpoint::AuthInfo,
+    states: &States,
+) -> Tier {
+    if states.get(&choice.name).is_some_and(|state| state.failed()) {
+        return Tier::Attention;
+    }
+    if choice.configured || choice.keyless() {
+        return Tier::Ready;
+    }
+    Tier::Unset
 }
 
 pub(in crate::tui::sigil_view) fn matching(
@@ -62,7 +91,7 @@ pub(in crate::tui::sigil_view) fn matching(
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
-        let choices = providers();
+        let choices = providers(&self.picker.groups.peek());
         let current = self.model.get().snapshot.endpoint.clone();
         if let Some(name) = focus
             && !choices.iter().any(|choice| choice.name == name)
@@ -74,13 +103,14 @@ impl App {
             self.refresh();
             return;
         }
-        let named = focus.is_some();
+        let asked = focus.is_some();
         let focus = focus.unwrap_or(&current);
         let selected = choices
             .iter()
             .position(|choice| choice.name == focus)
             .or_else(|| choices.iter().position(|choice| choice.name == current))
             .unwrap_or(0);
+        let named = asked && choices.get(selected).is_some_and(|row| !row.dual());
         self.auth.choices.set(choices);
         self.auth.filter.set(String::new());
         self.auth.seat.set(None);
@@ -93,6 +123,28 @@ impl App {
             self.commit_auth();
         } else if !self.picker.open.peek() {
             self.list_models(None);
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn regroup_auth(&self) {
+        let states = self.picker.groups.peek();
+        let keep = self.auth_choice().map(|choice| choice.name);
+        let mut choices = self.auth.choices.peek();
+        choices.sort_by_key(|choice| {
+            (
+                section(choice, &states),
+                choice.catalog_rank(),
+                choice.name.clone(),
+            )
+        });
+        self.auth.choices.set(choices);
+        if let Some(name) = keep
+            && let Some(at) = self
+                .filtered_auth()
+                .iter()
+                .position(|choice| choice.name == name)
+        {
+            self.auth.sel.set(at);
         }
     }
 
@@ -119,30 +171,10 @@ impl App {
         };
         let name = choice.name.clone();
         match self.auth.step.peek() {
-            Login::List(_) if choice.flow.signs_in() => self.sign_in(name),
-            Login::List(_) if self.env_note(&choice) => {}
-            Login::List(_) => {
-                self.auth.step.set(Login::Key(String::new()));
-                self.auth.focus.set(self.auth.focus.peek() + 1);
-                self.replace_auth_key(String::new());
-            }
-            Login::Key(_) => {
-                let key = self.auth.key.peek();
-                if key.trim().is_empty() {
-                    return;
-                }
-                self.auth.step.set(Login::Checking);
-                drop(self.cmd.send(Cmd::SetKey(name, key)));
-            }
-            Login::SignIn { asking: true, .. } => {
-                let code = self.auth.key.peek();
-                if code.trim().is_empty() {
-                    return;
-                }
-                self.replace_auth_key(String::new());
-                self.auth.step.set(Login::signing());
-                drop(self.cmd.send(Cmd::LoginAnswer(code)));
-            }
+            Login::List(_) if choice.login.signs_in() => self.sign_in(name),
+            Login::List(_) => self.key_entry(),
+            Login::Key(_) => self.submit_key(name),
+            Login::SignIn { asking: true, .. } => self.submit_code(),
             Login::SignIn { note, .. } if !note.is_empty() => self.sign_in(name),
             Login::Confirm => {
                 self.auth.step.set(Login::Checking);
@@ -161,6 +193,38 @@ impl App {
             self.auth.filter.set(filter);
             self.auth.sel.set(0);
         }
+    }
+
+    pub(in crate::tui::sigil_view) fn key_entry(&self) {
+        let Some(choice) = self.auth_choice() else {
+            return;
+        };
+        let takes = choice.key || choice.keyless();
+        if !matches!(self.auth.step.peek(), Login::List(_)) || !takes || self.env_note(&choice) {
+            return;
+        }
+        self.auth.step.set(Login::Key(String::new()));
+        self.auth.focus.set(self.auth.focus.peek() + 1);
+        self.replace_auth_key(String::new());
+    }
+
+    fn submit_key(&self, name: String) {
+        let key = self.auth.key.peek();
+        if key.trim().is_empty() {
+            return;
+        }
+        self.auth.step.set(Login::Checking);
+        drop(self.cmd.send(Cmd::SetKey(name, key)));
+    }
+
+    fn submit_code(&self) {
+        let code = self.auth.key.peek();
+        if code.trim().is_empty() {
+            return;
+        }
+        self.replace_auth_key(String::new());
+        self.auth.step.set(Login::signing());
+        drop(self.cmd.send(Cmd::LoginAnswer(code)));
     }
 
     fn sign_in(&self, name: String) {
@@ -275,7 +339,7 @@ impl App {
                     }
                     return;
                 }
-                self.auth.choices.set(providers());
+                self.auth.choices.set(providers(&self.picker.groups.peek()));
                 let found = self
                     .filtered_auth()
                     .iter()

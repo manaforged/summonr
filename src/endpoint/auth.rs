@@ -3,9 +3,16 @@ use super::*;
 
 pub fn auth_info(name: &str) -> Result<AuthInfo> {
     let endpoint = resolve(Some(name), None, Need::Config)?;
+    let offered = offered_login(name, &endpoint);
     let mut info = AuthInfo {
         name: name.to_string(),
         flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
+        login: offered.as_ref().map(flow).unwrap_or_default(),
+        key: takes_key(&endpoint) || (preset(name).is_none() && offered.is_none()),
+        plan: offered
+            .as_ref()
+            .and_then(|row| row.label.clone())
+            .unwrap_or_default(),
         configured: endpoint.api_key.is_some(),
         source: endpoint.source,
         setup: preset(name)
@@ -24,11 +31,17 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
         group: login_group(name, &endpoint),
     };
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
-        info.setup = match flow(spec) {
-            LoginFlow::Browser => {
+        info.setup = match (flow(spec), info.key) {
+            (_, true) => format!(
+                "run `summonr login {name}` to sign in with {} or paste a key",
+                info.plan
+            ),
+            (LoginFlow::Browser, false) => {
                 format!("run `summonr login {name}` to sign in through the browser")
             }
-            _ => format!("run `summonr login {name}` for device authentication"),
+            (LoginFlow::Device | LoginFlow::Key, false) => {
+                format!("run `summonr login {name}` for device authentication")
+            }
         };
         info.configured = match logged_in(spec, name) {
             Ok(ready) => ready,
@@ -41,8 +54,31 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
     Ok(info)
 }
 
+fn offered_login(name: &str, endpoint: &Endpoint) -> Option<crate::config::OAuth> {
+    endpoint
+        .oauth
+        .clone()
+        .or_else(|| builtin(name).and_then(|row| row.oauth))
+        .or_else(|| {
+            config::file()
+                .ok()
+                .and_then(|file| file.endpoint.get(name).and_then(|row| row.auth.clone()))
+        })
+}
+
+pub fn login_seat(name: &str) -> Result<Endpoint> {
+    let mut endpoint = resolve(Some(name), None, Need::Config)?;
+    if endpoint.oauth.is_none() {
+        endpoint.oauth = offered_login(name, &endpoint);
+        endpoint.api_key = None;
+        endpoint.source = None;
+    }
+    Ok(endpoint)
+}
+
 pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
-    if resolve(Some(name), None, Need::Config)?.oauth.is_some() {
+    let info = auth_info(name)?;
+    if info.login.signs_in() && !info.key {
         return Err(Error::Config(format!(
             "{name} uses a login token, not an API key — run `summonr login {name}` without --key"
         )));
@@ -52,6 +88,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
         return Err(Error::Config("API key cannot be empty".to_string()));
     }
     let source = secret::set(name, key)?;
+    secret::forget(&crate::credentials::login_slot(name))?;
     config::remove_key(&config::path()?, name)?;
     Ok(source)
 }
@@ -60,6 +97,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     let mut endpoint = resolve(Some(name), None, Need::Config)?;
     endpoint.api_key = Some(key.trim().to_string());
     endpoint.source = None;
+    endpoint.oauth = None;
     if let Err(error) = crate::provider::Client::discover(&endpoint).await
         && crate::provider::Client::state(&error) == State::KeyRejected
     {
@@ -73,7 +111,7 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
 
 pub(crate) fn forget_key(name: &str) -> Result<bool> {
     let stored = secret::forget(name)?;
-    let token = secret::forget(&format!("oauth:{name}"))?;
+    let token = secret::forget(&crate::credentials::login_slot(name))?;
     let config = config::remove_key(&config::path()?, name)?;
     Ok(stored || token || config)
 }

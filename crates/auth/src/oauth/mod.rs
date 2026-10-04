@@ -75,6 +75,8 @@ pub struct Spec {
     pub pkce: bool,
     #[serde(default)]
     pub claim_headers: BTreeMap<String, String>,
+    #[serde(default)]
+    pub required_scope: Option<String>,
 }
 
 impl Spec {

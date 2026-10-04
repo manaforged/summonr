@@ -8,25 +8,30 @@ use crate::secret;
 
 struct Keeper;
 
+pub(crate) fn login_slot(name: &str) -> String {
+    format!("oauth:{name}")
+}
+
 impl Store for Keeper {
     fn get(&self, name: &str) -> summonr_auth::Result<Option<String>> {
-        secret::get(name)
+        secret::get(&login_slot(name))
             .map(|found| found.map(|(secret, _)| secret))
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
     fn set(&self, name: &str, secret: &str) -> summonr_auth::Result<()> {
-        secret::set(name, secret)
+        secret::set(&login_slot(name), secret)
             .map(|_source| ())
             .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
     fn forget(&self, name: &str) -> summonr_auth::Result<bool> {
-        secret::forget(name).map_err(|error| summonr_auth::Error::Config(error.to_string()))
+        secret::forget(&login_slot(name))
+            .map_err(|error| summonr_auth::Error::Config(error.to_string()))
     }
 
     fn claim(&self, name: &str) -> summonr_auth::Result<Box<dyn Send>> {
-        let safe: String = name
+        let safe: String = login_slot(name)
             .chars()
             .map(|c| {
                 if c.is_ascii_alphanumeric() || c == '-' {
@@ -85,6 +90,7 @@ pub(crate) fn spec(row: &crate::config::OAuth) -> Result<Spec> {
         },
         pkce: row.pkce,
         claim_headers: row.claim_headers.clone(),
+        required_scope: row.required_scope.clone(),
     };
     spec.check()
         .map_err(|error| Error::Config(error.to_string()))?;

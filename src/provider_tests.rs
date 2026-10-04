@@ -126,3 +126,35 @@ fn an_ineligible_plan_user_is_not_asked_to_sign_in_again() {
         "a 403 for eligibility must not read as a rejected key"
     );
 }
+
+#[test]
+fn a_plan_cap_in_the_stream_keeps_its_message() {
+    let error = crate::provider::wire::failed(
+        None,
+        "subscription_sharing_usage_limit_exceeded",
+        "weekly cap reached",
+    );
+    let failure = error.provider_failure().unwrap();
+    assert_eq!(failure.kind, ProviderFailureKind::RateLimited);
+    assert!(
+        failure.message.contains("weekly cap reached"),
+        "the provider's words survive the stream path, got {}",
+        failure.message
+    );
+}
+
+#[test]
+fn a_plan_permission_failure_does_not_read_as_a_rejected_key() {
+    for code in [
+        "chatpass_v2_scope_not_authorized",
+        "chatpass_v2_invalid_authorization_context",
+    ] {
+        let text = format!(r#"{{"error":{{"code":"{code}","message":"no"}}}}"#);
+        let error = response_failure(403, &text, None);
+        assert_eq!(
+            error.provider_failure().unwrap().kind,
+            ProviderFailureKind::Http,
+            "{code} must not start a login loop"
+        );
+    }
+}

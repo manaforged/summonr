@@ -114,7 +114,7 @@ pub(super) fn print_login_catalog() -> Result<()> {
         if row.catalog_heading() != heading {
             heading = row.catalog_heading();
             if heading == "Coding plans" {
-                println!("\n{heading}  (Claude Pro/Max, Copilot, Kimi, GLM/Z.AI, OpenCode)");
+                println!("\n{heading}");
             } else if heading == "Decisions" {
                 println!("\n{heading}  (summonr classify / Jev)");
             } else if heading == "Local" {
@@ -125,8 +125,8 @@ pub(super) fn print_login_catalog() -> Result<()> {
         }
         println!("  {}", row.catalog_line());
     }
-    println!("\nsummonr login NAME     store a key (or device login)");
-    println!("summonr login NAME --key   force the key prompt");
+    println!("\nsummonr login NAME     sign in or store a key");
+    println!("summonr login NAME --key   skip the question and store a key");
     Ok(())
 }
 
@@ -151,12 +151,8 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
         );
         return Ok(());
     }
-    let endpoint = summonr::resolve_endpoint(
-        args.endpoint.as_deref(),
-        args.model.as_deref(),
-        summonr::Need::Seat,
-    )?;
-    let flow = summonr::auth_info(name)?.flow;
+    let endpoint = summonr::login_seat(name)?;
+    let flow = summonr::auth_info(name)?.login;
     match flow {
         summonr::LoginFlow::Browser => {
             println!("signing in to {} through the browser", endpoint.name)
@@ -180,5 +176,15 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
 }
 
 fn key_login(name: &str, force: bool) -> Result<bool> {
-    Ok(force || !summonr::auth_info(name)?.flow.signs_in())
+    if force {
+        return Ok(true);
+    }
+    let info = summonr::auth_info(name)?;
+    if !info.dual() {
+        return Ok(!info.login.signs_in());
+    }
+    eprintln!("1  sign in with {}", info.plan);
+    eprintln!("2  paste an API key");
+    let picked = read_line("1 or 2").unwrap_or_default();
+    Ok(picked.trim() == "2")
 }

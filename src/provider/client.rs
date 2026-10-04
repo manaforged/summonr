@@ -194,15 +194,25 @@ impl Client {
             .filter(|_| completions)
             .map(|encoded| encoded.sorted.as_slice());
         let mut body = Body::new(wired.head, wired.slot, messages, tools);
-        if self.prompt_cache_key {
+        self.extend_body(&mut body, request);
+        Ok(body)
+    }
+
+    fn extend_body(&self, body: &mut Body<'_>, request: &CompletionRequest<'_>) {
+        if self.prompt_cache_key && !self.auth.is_login() {
             body.set("prompt_cache_key", json!(request.prefix_hash()));
+        }
+        if self.wire == Wire::Responses
+            && self.auth.is_login()
+            && let Some(tools) = body.take("tools")
+        {
+            body.set("tools", json!([wire::responses::namespace(tools)]));
         }
         if let Some(Value::Object(extra)) = &self.body {
             for (key, value) in extra {
                 body.set(key, value.clone());
             }
         }
-        Ok(body)
     }
 
     #[cfg(test)]

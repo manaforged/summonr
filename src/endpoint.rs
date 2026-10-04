@@ -28,6 +28,7 @@ const CHATGPT_AUTHORIZE: &str = "https://auth.openai.com/api/accounts/authorize"
 const CHATGPT_TOKEN: &str = "https://auth.openai.com/api/accounts/oauth/token";
 const CHATGPT_CLIENT: &str = "dynamic_agent_client";
 const CHATGPT_REDIRECT: &str = "http://127.0.0.1:0/auth/callback";
+const CHATGPT_PLAN_SCOPE: &str = "chatgpt.tokens.use.direct";
 const CHATGPT_SCOPES: &str =
     "openid profile email offline_access resource.invoke chatgpt.tokens.use.direct";
 const XAI_DEVICE: &str = "https://auth.x.ai/oauth2/device/code";
@@ -204,6 +205,9 @@ impl LoginFlow {
 pub struct AuthInfo {
     pub name: String,
     pub flow: LoginFlow,
+    pub login: LoginFlow,
+    pub key: bool,
+    pub plan: String,
     pub configured: bool,
     pub source: Option<Source>,
     pub setup: String,
@@ -231,6 +235,11 @@ impl LoginGroup {
 }
 
 impl AuthInfo {
+    #[must_use]
+    pub fn dual(&self) -> bool {
+        self.key && self.login.signs_in()
+    }
+
     #[must_use]
     pub fn status(&self) -> String {
         format!("{}: {} — {}", self.name, self.state(), self.setup)
@@ -341,7 +350,7 @@ mod resolve;
 
 #[cfg(test)]
 pub(crate) use auth::catalog;
-pub use auth::{adopt_keys, auth_info, check_key, first_classify, logout};
+pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_seat, logout};
 pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub(crate) use keys::peer_token;

@@ -36,6 +36,10 @@ impl<'a> Body<'a> {
         }
     }
 
+    pub(super) fn take(&mut self, key: &str) -> Option<Value> {
+        self.head.remove(key)
+    }
+
     pub(super) fn set(&mut self, key: &str, value: Value) {
         if key == self.slot.key() {
             self.messages = None;

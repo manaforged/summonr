@@ -75,17 +75,26 @@ Set `SUMMONR_NO_BROWSER=1` to print the link instead of opening it.
 seat is off: Anthropic's terms do not allow a third-party app to sign in
 with a Claude Pro or Max plan.
 
-`chatgpt` signs in with ChatGPT (Plus or Pro) and runs on the plan's
-usage through the Responses API. The first sign-in registers Summonr
-with OpenAI and stores the issued client id; `~/.summonr/host-id` holds
-the install id that OpenAI asks for on every sign-in. OpenAI caps each
-app per week in ChatGPT settings → Usage; when the cap is reached, the
-error names that page after the standard retry policy. The plan path rejects
-`max_output_tokens`, sampling fields, and hosted tools.
+A row can offer both a sign-in and a key. `summonr login NAME` then asks
+which one; `--key` skips the question. A stored sign-in wins over any
+key, and `summonr logout NAME` returns the row to its key. `auth.label`
+names the plan in that question.
 
-`supergrok` signs in with a SuperGrok or X Premium+ plan through the
-device flow at `auth.x.ai` and sends requests to `api.x.ai` as a bearer
-token. `grok` stays the metered key (`XAI_API_KEY`).
+`openai` offers Sign in with ChatGPT (Plus or Pro) next to
+`OPENAI_API_KEY`, and runs on the plan's usage through the Responses
+API. The first sign-in registers Summonr with OpenAI and stores the
+issued client id; `~/.summonr/host-id` holds the install id that OpenAI
+asks for on every sign-in. OpenAI caps each app per week in ChatGPT
+settings → Usage; when the cap is reached, the error names that page
+after the standard retry policy. The plan path rejects
+`max_output_tokens`, sampling fields, and hosted tools; on a plan token
+Summonr sends no `prompt_cache_key` and groups its tools in one
+`namespace`, as that route requires. A sign-in that does not grant
+`chatgpt.tokens.use.direct` is refused, so the row never shows signed in
+without plan usage.
+
+`grok` offers a SuperGrok or X Premium+ sign-in next to `XAI_API_KEY`,
+through the device flow at `auth.x.ai`.
 
 Keys live in `~/.summonr/credentials.toml`, a sealed ChaCha20-Poly1305
 blob (mode 0600, written through a rename). The wrapping key is a
@@ -93,7 +102,8 @@ blob (mode 0600, written through a rename). The wrapping key is a
 shows ciphertext. File mode also needs that keychain item: if the
 keychain is locked, Summonr reports an error and keeps `config.toml`
 untouched. The key prompt disables echo and stores the key;
-`summonr login NAME --key` forces it for a device-login endpoint.
+`summonr login NAME --key` skips the method question on a row that
+offers both, and storing a key signs that row out of its plan.
 `summonr logout NAME` forgets the key and any login
 token, and names the key that applies next. A plaintext `api_key` in
 `config.toml` is moved into that file the first time Summonr runs, and
@@ -101,7 +111,7 @@ it says so once. Resolution order is the host's environment variable,
 the store, peer stores, `api_key` in `config.toml`, then the built-in
 default. An endpoint with no key fails with the missing-key message;
 only local and keyless endpoints run without one. `--key` is refused on
-a login endpoint, so it cannot replace the login token.
+a row that only signs in, such as `copilot`.
 
 Peer stores are read live: OpenCode's
 `~/.local/share/opencode/auth.json` lends `type: "api"` keys, plus
@@ -123,10 +133,10 @@ A locked keychain is reported, never worked around with a file, and
 the two modes never fall back to each other.
 
 Built-ins: chat/completions seats `zai`, `zai-cn`, `glm`, `glm-intl`,
-`ollama`, `deepseek`, `kimi`, `grok`, `supergrok`, `copilot`, `openai`, `openrouter`, `together`,
+`ollama`, `deepseek`, `kimi`, `grok`, `copilot`, `openrouter`, `together`,
 `groq`, `cerebras`, `mistral`, `muse`, `zen`, `go`, `opencode`,
 `fireworks`, `deepinfra`, `minimax`, `minimax-cn`; the Responses seat
-`chatgpt`; native wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
+`openai`; native wires `anthropic` (Messages) and `gemini`. No classify seat ships: add an
 `[endpoint.NAME]` row with `wire = "decisions"` to use `summonr classify`. OpenRouter is a
 chat seat (`OPENROUTER_API_KEY`); `/model` lists its catalog the same
 way it lists OpenCode. `together`, `groq`, `cerebras`,
@@ -234,6 +244,8 @@ Keys on an `[endpoint.NAME]` row:
 | `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
+| `auth.label` | Name of the plan shown when a row offers both a sign-in and a key. |
+| `auth.required_scope` | A scope the token reply must grant, or the sign-in fails. |
 | `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
 
 ### Environment variables
@@ -522,6 +534,7 @@ command output shows it as `[secret]`.
 | `pgup` `pgdn` | scroll the transcript a page | same |
 | `home` `end` | on an empty draft, jump to the top or the latest reply | same |
 | `alt+d` | in the sessions picker, twice deletes the selected session; in `/login`, signs out; in `/model`, sets the default | |
+| `alt+k` | in `/login`, pastes a key on a row that also offers a sign-in | |
 | `alt+p` | in `/model`, adds or removes the selected model from favorites | |
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
@@ -560,7 +573,7 @@ command output shows it as `[secret]`.
 | `/model [NAME] [LEVEL]` | choose the model; LEVEL sets the effort |
 | `/effort [LEVEL]` | set the reasoning effort; no LEVEL opens a slider |
 | `/workflow [NAME]` | choose models for plan, work, and review |
-| `/login [NAME]` | sign in to a provider or store its key |
+| `/login [NAME]` | sign in to a provider or store its key. Rows sit under `ready`, `needs attention`, and `not set up`; at 96 columns or more a detail pane shows the row's key, sign-in, models, and actions |
 | `/plan` | enter plan mode: read and plan, no edits |
 | `/plan accept` | run the saved plan |
 | `/plan reject` | leave plan mode without running the plan |

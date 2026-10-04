@@ -54,7 +54,11 @@ const PLAN_USAGE: &[(&str, ProviderFailureKind)] = &[
     ),
     (
         "chatpass_v2_scope_not_authorized",
-        ProviderFailureKind::Authentication,
+        ProviderFailureKind::Http,
+    ),
+    (
+        "chatpass_v2_invalid_authorization_context",
+        ProviderFailureKind::Http,
     ),
 ];
 
@@ -223,6 +227,7 @@ impl Client {
     pub async fn discover(endpoint: &crate::Endpoint) -> Result<Vec<Model>> {
         let client = Self::connect(endpoint)?;
         let covered = match crate::endpoint::auth_info(&endpoint.name) {
+            _ if endpoint.oauth.is_some() => Cost::Plan,
             Ok(info) if info.catalog_heading() == "Coding plans" => Cost::Plan,
             Ok(info) if info.keyless() => Cost::Free,
             Ok(_) | Err(_) => Cost::Unknown,

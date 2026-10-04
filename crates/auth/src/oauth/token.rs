@@ -134,6 +134,10 @@ pub(crate) fn stamped(spec: &Spec, issued: &Issued) -> Vec<(String, String)> {
         .collect()
 }
 
+pub(super) fn claim(token: &str, name: &str) -> Option<String> {
+    payload(token).and_then(|body| dig(&body, name))
+}
+
 fn payload(token: &str) -> Option<Value> {
     let middle = token.split('.').nth(1)?;
     let raw = URL_SAFE_NO_PAD.decode(middle).ok()?;

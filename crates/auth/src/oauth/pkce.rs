@@ -30,7 +30,10 @@ pub(super) async fn login(
     let client = issued.as_deref().unwrap_or(&parts.spec.client_id);
     let verifier = random(32)?;
     let state = random(16)?;
-    let asked = target(authorize, parts, client, &redirect, &verifier, &state)?;
+    let nonce = random(16)?;
+    let asked = target(
+        authorize, parts, client, &redirect, &verifier, &state, &nonce,
+    )?;
 
     prompt.notice(&format!("open {asked}"));
     if let Err(error) = crate::open::external(asked.as_str()) {
@@ -40,16 +43,38 @@ pub(super) async fn login(
     }
 
     let back = returned(listener.as_ref(), prompt, &state).await?;
+    same_client(issued.as_deref(), back.client.as_deref())?;
     let carried = listener.is_none().then_some(state.as_str());
     let client = back.client.as_deref().unwrap_or(client).to_string();
     let mut grant = redeemed(
         parts, http, &client, &redirect, &verifier, &back.code, carried,
     )
     .await?;
+    nonce_matches(grant.identity.as_deref(), &nonce)?;
     grant.client = Some(client).filter(|used| *used != parts.spec.client_id);
     save(parts, store, grant.clone())?;
     let chat = exchange(parts.spec, http, grant).await?;
     keep(parts, chat)
+}
+
+fn same_client(kept: Option<&str>, sent: Option<&str>) -> Result<()> {
+    match (kept, sent) {
+        (Some(kept), Some(sent)) if kept != sent => Err(Error::Denied(
+            "the redirect named a different client than the one on file; run `summonr logout` first"
+                .to_string(),
+        )),
+        (Some(_) | None, Some(_) | None) => Ok(()),
+    }
+}
+
+fn nonce_matches(identity: Option<&str>, nonce: &str) -> Result<()> {
+    let got = identity.and_then(|token| super::token::claim(token, "nonce"));
+    match got {
+        Some(got) if got != nonce => Err(Error::Denied(
+            "the sign-in reply carried the wrong nonce; start the login again".to_string(),
+        )),
+        Some(_) | None => Ok(()),
+    }
 }
 
 async fn listen(wanted: Option<&str>) -> Result<(Option<TcpListener>, String)> {
@@ -87,6 +112,7 @@ fn target(
     redirect: &str,
     verifier: &str,
     state: &str,
+    nonce: &str,
 ) -> Result<Url> {
     let mut asked =
         Url::parse(authorize).map_err(|error| Error::Config(format!("authorize_url: {error}")))?;
@@ -98,7 +124,7 @@ fn target(
         query.append_pair("code_challenge", &challenge(verifier));
         query.append_pair("code_challenge_method", "S256");
         query.append_pair("state", state);
-        query.append_pair("nonce", &random(16)?);
+        query.append_pair("nonce", nonce);
         if let Some(scope) = &parts.spec.scope {
             query.append_pair("scope", scope);
         }
@@ -144,6 +170,17 @@ async fn redeemed(
         return Err(Error::Denied(format!(
             "the token exchange failed: HTTP {status} {said}"
         )));
+    }
+    if let Some(needed) = parts.spec.required_scope.as_deref() {
+        let granted = body
+            .get("scope")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if !granted.split_whitespace().any(|scope| scope == needed) {
+            return Err(Error::Denied(format!(
+                "the sign-in did not grant `{needed}`; approve plan usage in the browser and try again"
+            )));
+        }
     }
     minted(&body)
 }

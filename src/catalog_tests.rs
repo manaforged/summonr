@@ -86,9 +86,35 @@ fn a_model_the_plan_hides_is_not_listed() {
         {"id": "gpt-internal", "visibility": "hidden"},
         {"id": "gpt-4o"}
     ]});
-    let ids: Vec<String> = super::listing::parse(&value, super::Cost::Plan)
-        .into_iter()
-        .map(|model| model.id)
-        .collect();
-    assert_eq!(ids, ["gpt-6.1-sol", "gpt-4o"]);
+    let ids = |value: &serde_json::Value| -> Vec<String> {
+        super::listing::parse(value, super::Cost::Plan)
+            .into_iter()
+            .map(|model| model.id)
+            .collect()
+    };
+    assert_eq!(
+        ids(&value),
+        ["gpt-6.1-sol"],
+        "a curated listing keeps only listed rows"
+    );
+    let other = serde_json::json!({"data": [
+        {"id": "a", "visibility": "public"},
+        {"id": "b"}
+    ]});
+    assert_eq!(
+        ids(&other),
+        ["a", "b"],
+        "another host's visibility words are not a filter"
+    );
+}
+
+#[test]
+fn a_plan_listing_names_models_by_slug() {
+    let value = serde_json::json!({"models": [
+        {"slug": "gpt-6.1-sol", "display_name": "GPT-6.1 Sol", "visibility": "list"}
+    ]});
+    let rows = super::listing::parse(&value, super::Cost::Plan);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, "gpt-6.1-sol");
+    assert_eq!(rows[0].display.as_deref(), Some("GPT-6.1 Sol"));
 }

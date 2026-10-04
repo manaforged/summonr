@@ -13,7 +13,7 @@ use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, alt, group,
 mod detail;
 
 const SPLIT_COLS: u16 = 96;
-const LIST_CELLS: f32 = 40.0;
+const LIST_CELLS: f32 = 54.0;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     let mut bindings = alt("d", |app, event| {

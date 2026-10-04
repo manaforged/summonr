@@ -45,6 +45,9 @@ pub(super) fn pane(app: &App, choice: &AuthInfo, state: &str, rows: usize) -> Ve
 }
 
 fn key_line(choice: &AuthInfo, state: &str) -> String {
+    if choice.keyless() {
+        return "none needed".to_string();
+    }
     if !choice.key {
         return "not offered".to_string();
     }
@@ -73,6 +76,9 @@ fn login_line(choice: &AuthInfo) -> String {
 fn primary(choice: &AuthInfo, state: &str) -> String {
     if choice.login.signs_in() {
         return format!("sign in with {}", choice.plan);
+    }
+    if choice.keyless() {
+        return "no key needed · set one if the server asks".to_string();
     }
     match choice.env {
         Some(env) => format!("key comes from ${env}"),

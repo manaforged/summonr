@@ -59,6 +59,7 @@ First public release.
 
 ### Changed
 
+- Sign-in tokens are stored apart from API keys, so signing in no longer overwrites a key. A sign-in made with an earlier build is not read; sign in again once.
 - Every dialog, inline prompt, and key hint is built from one UI kit:
   dialogs share one frame and always end in their key hints, approval and
   form prompts look the same in the terminal and the desktop window, and
@@ -180,6 +181,7 @@ First public release.
 - MCP: a timed-out call no longer corrupts the next one, server start
   waits at most 60 seconds, remote servers reconnect after their session
   expires, and Ctrl-C stops servers and commands.
+- Providers dialog: probe results regroup the list and fill each row's models without opening Models first; Enter works on a keyless row, and a local row such as `ollama` reads "none needed" for its key instead of asking for one; a login or logout on the active seat applies at once; a key pasted on `openai` is checked against the API, not the ChatGPT sign-in; a stream failure keeps its error message.
 - A stream that sends only keep-alives fails after the idle timeout and
   is retried, instead of holding the turn.
 - A hook that writes more than 64 KB no longer stalls the tool call.
@@ -189,6 +191,7 @@ First public release.
 
 ### Security
 
+- A plan sign-in must return the nonce summonr sent and grant plan access, and a redirect that names a different client than the one on file is refused.
 - A workspace `SYSTEM.md` loads only when the workspace is trusted.
 - `~/.summonr` is created with mode `0700`, and existing directories are
   tightened to it.

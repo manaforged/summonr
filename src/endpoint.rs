@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::credentials::{flow, logged_in};

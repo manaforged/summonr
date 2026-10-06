@@ -329,7 +329,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
             return true;
         }
     }
-    let Some(home) = paths::home() else {
+    let Some(home) = crate::config::home_dir() else {
         return false;
     };
     [".ssh", ".gnupg", ".summonr"]
@@ -345,7 +345,7 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     {
         return true;
     }
-    let Some(home) = paths::home() else {
+    let Some(home) = crate::config::home_dir() else {
         return false;
     };
     [".ssh", ".gnupg"]

@@ -84,7 +84,7 @@ impl<P: Provider> Loop<P> {
         }
     }
 
-    pub(crate) fn mail_heartbeat(&mut self, status: &str) {
+    pub(crate) fn mail_heartbeat(&mut self, status: crate::mail::Presence) {
         if let Some(mailbox) = &mut self.mailbox {
             mailbox.heartbeat(&self.model.clone(), &self.workspace.clone(), status);
         }

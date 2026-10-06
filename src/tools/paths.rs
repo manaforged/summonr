@@ -287,10 +287,8 @@ fn existing(path: &Path) -> PathBuf {
 
 fn clean_path(path: &str) -> Cow<'_, str> {
     let expanded = if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
-        std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
+        crate::config::home_dir()
             .map(|home| {
-                let home = PathBuf::from(home);
                 if path == "~" {
                     home.to_string_lossy().into_owned()
                 } else {

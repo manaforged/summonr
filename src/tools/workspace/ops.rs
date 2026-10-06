@@ -6,94 +6,19 @@ use crate::hashline::resolve_span;
 use super::edit::Patch;
 use super::object_string;
 
+mod nested;
+
+use nested::nested_patch;
+
 const OP_REPLACE_TEXT: &str = "replace_text";
 const OP_INSERT_AFTER: &str = "insert_after";
 
 pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
-    if let Some(tag) = op.get(OP_REPLACE_TEXT).and_then(Value::as_str) {
-        return replace_text_patch(
-            text,
-            Some(tag),
-            object_string(op, "old")?,
-            object_string(op, "new")?,
-            replace_all(op),
-        );
+    if let Some(patch) = flat_patch(text, op)? {
+        return Ok(patch);
     }
-    if op.get("old").is_some() && op.get("new").is_some() {
-        return replace_text_patch(
-            text,
-            optional_tag(op)?,
-            object_string(op, "old")?,
-            object_string(op, "new")?,
-            replace_all(op),
-        );
-    }
-    if op.get("tag").is_some() {
-        let tag = object_string(op, "tag")?;
-        if op.get("new").is_some() {
-            return replace_patch(
-                text,
-                tag,
-                op.get("end_tag").and_then(Value::as_str),
-                object_string(op, "new")?,
-            );
-        }
-        if op.get("text").is_some() {
-            return insert_patch(text, tag, object_string(op, "text")?);
-        }
-        if op.get("op").and_then(Value::as_str) == Some("delete") {
-            return delete_patch(text, tag, op.get("end_tag").and_then(Value::as_str));
-        }
-    }
-    if let Some(replace) = op.get("replace") {
-        if !replace.is_object() {
-            return Err(Error::Tool(
-                "replace must be an object with tag, new, and optional end_tag; use replace_text with old and new for exact text"
-                    .to_string(),
-            ));
-        }
-        let tag = object_string(replace, "tag")?;
-        let new = replace
-            .get("new")
-            .or_else(|| replace.get("text"))
-            .and_then(Value::as_str)
-            .ok_or_else(|| Error::Tool("replace requires new".to_string()))?;
-        let end = replace.get("end_tag").and_then(Value::as_str);
-        return replace_patch(text, tag, end, new);
-    }
-    if let Some(replace) = op.get(OP_REPLACE_TEXT) {
-        if !replace.is_object() {
-            return Err(Error::Tool(
-                "replace_text must be an object with old, new, and optional tag".to_string(),
-            ));
-        }
-        return replace_text_patch(
-            text,
-            optional_tag(replace)?,
-            object_string(replace, "old")?,
-            object_string(replace, "new")?,
-            replace_all(replace),
-        );
-    }
-    if let Some(insert) = op.get(OP_INSERT_AFTER) {
-        if !insert.is_object() {
-            return Err(Error::Tool(
-                "insert_after must be an object with tag and text".to_string(),
-            ));
-        }
-        let tag = object_string(insert, "tag")?;
-        let body = object_string(insert, "text")?;
-        return insert_patch(text, tag, body);
-    }
-    if let Some(delete) = op.get("delete") {
-        if !delete.is_object() {
-            return Err(Error::Tool(
-                "delete must be an object with tag and optional end_tag".to_string(),
-            ));
-        }
-        let tag = object_string(delete, "tag")?;
-        let end = delete.get("end_tag").and_then(Value::as_str);
-        return delete_patch(text, tag, end);
+    if let Some(patch) = nested_patch(text, op)? {
+        return Ok(patch);
     }
     let keys = op
         .as_object()
@@ -102,6 +27,53 @@ pub(super) fn parse_patch(text: &str, op: &Value) -> Result<Patch> {
     Err(Error::Tool(format!(
         "edit got keys [{keys}]; it takes old+new, tag+new, tag+text, op=delete, or edits"
     )))
+}
+
+fn flat_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
+    if let Some(tag) = op.get(OP_REPLACE_TEXT).and_then(Value::as_str) {
+        return replace_text_patch(
+            text,
+            Some(tag),
+            object_string(op, "old")?,
+            object_string(op, "new")?,
+            replace_all(op),
+        )
+        .map(Some);
+    }
+    if op.get("old").is_some() && op.get("new").is_some() {
+        return replace_text_patch(
+            text,
+            optional_tag(op)?,
+            object_string(op, "old")?,
+            object_string(op, "new")?,
+            replace_all(op),
+        )
+        .map(Some);
+    }
+    if op.get("tag").is_some() {
+        return tag_patch(text, op);
+    }
+    Ok(None)
+}
+
+fn tag_patch(text: &str, op: &Value) -> Result<Option<Patch>> {
+    let tag = object_string(op, "tag")?;
+    if op.get("new").is_some() {
+        return replace_patch(
+            text,
+            tag,
+            op.get("end_tag").and_then(Value::as_str),
+            object_string(op, "new")?,
+        )
+        .map(Some);
+    }
+    if op.get("text").is_some() {
+        return insert_patch(text, tag, object_string(op, "text")?).map(Some);
+    }
+    if op.get("op").and_then(Value::as_str) == Some("delete") {
+        return delete_patch(text, tag, op.get("end_tag").and_then(Value::as_str)).map(Some);
+    }
+    Ok(None)
 }
 
 fn optional_tag(value: &Value) -> Result<Option<&str>> {

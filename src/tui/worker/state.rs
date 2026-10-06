@@ -116,7 +116,7 @@ impl Worker {
         for event in self.loop_.child_events() {
             drop(self.ui.send(Msg::Event(event)));
         }
-        self.loop_.mail_heartbeat("idle");
+        self.loop_.mail_heartbeat(crate::mail::Presence::Idle);
         self.peers();
         let mail = match self.loop_.mail_poll() {
             Ok(mail) => {

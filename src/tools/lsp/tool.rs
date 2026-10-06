@@ -32,7 +32,7 @@ impl ToolRegistry {
         let path = nonempty_path(&args, "diagnostics")?;
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
-        let text = self
+        let (text, _) = self
             .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
@@ -105,7 +105,7 @@ impl ToolRegistry {
             return None;
         }
         let request_path = dest.to_path_buf();
-        let text = self
+        let (text, errors) = self
             .with_lsp(dest, Scope::Edit, LSP_CHECK, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
@@ -113,7 +113,7 @@ impl ToolRegistry {
             .ok()?;
         Some(ToolOutput {
             text: format!("diagnostics: {text}"),
-            success: !text.starts_with("error "),
+            success: !errors,
             mutated: false,
             grant: None,
             images: Vec::new(),

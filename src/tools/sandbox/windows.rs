@@ -65,9 +65,11 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
 };
 
 mod acl;
+mod launch;
 mod proc;
 
 use acl::*;
+use launch::*;
 use proc::*;
 pub(crate) use proc::{stop, wait};
 pub fn entry(args: &[OsString]) -> crate::Result<i32> {
@@ -82,146 +84,106 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
         ));
     }
     let job = job(std::process::id())?;
-    let parent = args[5]
-        .to_str()
-        .and_then(|value| value.parse::<u32>().ok())
-        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid sandbox parent"))?;
-    let parent = if std::env::var_os("SUMMONR_SANDBOX_DETACHED").is_some() {
-        None
-    } else {
-        // SAFETY: The parent PID is supplied by the launcher; the returned handle is only waited on.
-        let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, parent) };
-        if raw.is_null() {
-            return Err(Error::last_os_error());
-        }
-        // SAFETY: OpenProcess returned an exclusively owned process handle.
-        Some(unsafe { OwnedHandle::from_raw_handle(raw) })
-    };
+    let parent = parent_process(&args[5])?;
     let workspace = Path::new(&args[0]).canonicalize()?;
     let cwd = Path::new(&args[1]).canonicalize()?;
     let readonly = flag(&args[2])?;
     let deny_network = flag(&args[3])?;
-    let write: Vec<PathBuf> = args[4]
-        .to_string_lossy()
-        .split(';')
-        .filter(|path| !path.is_empty())
-        .map(|path| Path::new(path).canonicalize())
-        .collect::<io::Result<_>>()?;
+    let write = write_paths(&args[4])?;
     let executable = Path::new(&args[6]);
     let temp = tempfile::Builder::new()
         .prefix("summonr-sandbox-")
         .tempdir()?;
-    let name = format!(
-        "summonr.{}.{}",
-        std::process::id(),
-        temp.path()
-            .file_name()
-            .unwrap_or_default()
-            .to_string_lossy()
-    );
-    let mut profile = Profile::create(&name)?;
-    profile.grant(&workspace, if readonly { READ } else { MODIFY })?;
-    profile.grant(temp.path(), MODIFY)?;
-    for path in &write {
-        profile.grant(path, MODIFY)?;
-    }
+    let name = sandbox_name(temp.path());
+    let profile = sandbox_profile(&name, &workspace, readonly, temp.path(), &write)?;
     let desktop = Desktop::create(&profile, &name)
         .map_err(|error| Error::other(format!("sandbox desktop: {error}")))?;
-    let streams = [
+    let streams = std_streams()?;
+    let handles: Vec<HANDLE> = streams.iter().map(AsRawHandle::as_raw_handle).collect();
+    let process = launch(&Launch {
+        profile: &profile,
+        desktop: &desktop,
+        handles: &handles,
+        job: &job,
+        deny_network,
+        executable,
+        temp: temp.path(),
+        workspace: &workspace,
+        cwd: &cwd,
+        args: &args[7..],
+    })?;
+    let code = wait_exit(&process, parent.as_ref(), &job)?;
+    drop(job);
+    Ok(code as i32)
+}
+
+fn parent_process(arg: &OsStr) -> io::Result<Option<OwnedHandle>> {
+    let parent = arg
+        .to_str()
+        .and_then(|value| value.parse::<u32>().ok())
+        .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "invalid sandbox parent"))?;
+    if std::env::var_os("SUMMONR_SANDBOX_DETACHED").is_some() {
+        return Ok(None);
+    }
+    // SAFETY: The parent PID is supplied by the launcher; the returned handle is only waited on.
+    let raw = unsafe { OpenProcess(PROCESS_SYNCHRONIZE, 0, parent) };
+    if raw.is_null() {
+        return Err(Error::last_os_error());
+    }
+    // SAFETY: OpenProcess returned an exclusively owned process handle.
+    Ok(Some(unsafe { OwnedHandle::from_raw_handle(raw) }))
+}
+
+fn write_paths(arg: &OsStr) -> io::Result<Vec<PathBuf>> {
+    arg.to_string_lossy()
+        .split(';')
+        .filter(|path| !path.is_empty())
+        .map(|path| Path::new(path).canonicalize())
+        .collect()
+}
+
+fn sandbox_name(temp: &Path) -> String {
+    format!(
+        "summonr.{}.{}",
+        std::process::id(),
+        temp.file_name().unwrap_or_default().to_string_lossy()
+    )
+}
+
+fn sandbox_profile(
+    name: &str,
+    workspace: &Path,
+    readonly: bool,
+    temp: &Path,
+    write: &[PathBuf],
+) -> io::Result<Profile> {
+    let mut profile = Profile::create(name)?;
+    profile.grant(workspace, if readonly { READ } else { MODIFY })?;
+    profile.grant(temp, MODIFY)?;
+    for path in write {
+        profile.grant(path, MODIFY)?;
+    }
+    Ok(profile)
+}
+
+fn std_streams() -> io::Result<[OwnedHandle; 3]> {
+    Ok([
         stdio(STD_INPUT_HANDLE)?,
         stdio(STD_OUTPUT_HANDLE)?,
         stdio(STD_ERROR_HANDLE)?,
-    ];
-    let handles: Vec<HANDLE> = streams.iter().map(AsRawHandle::as_raw_handle).collect();
-    let mut network = network(deny_network)?;
-    let mut capabilities: Vec<SID_AND_ATTRIBUTES> = network
-        .iter_mut()
-        .map(|sid| SID_AND_ATTRIBUTES {
-            Sid: sid.as_mut_ptr().cast(),
-            Attributes: SE_GROUP_ENABLED as u32,
-        })
-        .collect();
-    let security = SECURITY_CAPABILITIES {
-        AppContainerSid: profile.sid,
-        Capabilities: if capabilities.is_empty() {
-            null_mut()
-        } else {
-            capabilities.as_mut_ptr()
-        },
-        CapabilityCount: capabilities.len() as u32,
-        Reserved: 0,
-    };
-    let mut attributes = Attributes::new()?;
-    let jobs = [job.as_raw_handle()];
-    let mut startup = STARTUPINFOEXW::default();
-    startup.StartupInfo.cb = size_of::<STARTUPINFOEXW>() as u32;
-    startup.StartupInfo.lpDesktop = desktop.name.as_ptr().cast_mut();
-    startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
-    startup.StartupInfo.hStdInput = handles[0];
-    startup.StartupInfo.hStdOutput = handles[1];
-    startup.StartupInfo.hStdError = handles[2];
-    let mut process = PROCESS_INFORMATION::default();
-    let exe = wide(executable)?;
-    let environment = environment(temp.path(), &workspace, &cwd)?;
-    let cwd = wide(&cwd)?;
-    let mut command = command(executable.as_os_str(), &args[7..])?;
-    // SAFETY: Every attribute value, string, stream handle, and the job outlive CreateProcessW; JOB_LIST assigns containment before child code runs.
-    unsafe {
-        for (kind, pointer, size) in [
-            (
-                PROC_THREAD_ATTRIBUTE_SECURITY_CAPABILITIES,
-                (&security as *const SECURITY_CAPABILITIES).cast(),
-                size_of::<SECURITY_CAPABILITIES>(),
-            ),
-            (
-                PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
-                handles.as_ptr().cast(),
-                handles.len() * size_of::<HANDLE>(),
-            ),
-            (
-                PROC_THREAD_ATTRIBUTE_JOB_LIST,
-                jobs.as_ptr().cast(),
-                size_of::<HANDLE>(),
-            ),
-        ] {
-            boolean(UpdateProcThreadAttribute(
-                attributes.pointer(),
-                0,
-                kind as usize,
-                pointer,
-                size,
-                null_mut(),
-                null(),
-            ))?;
-        }
-        startup.lpAttributeList = attributes.pointer();
-        let created = CreateProcessW(
-            exe.as_ptr(),
-            command.as_mut_ptr(),
-            null(),
-            null(),
-            1,
-            EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT,
-            environment.as_ptr().cast(),
-            cwd.as_ptr(),
-            &startup.StartupInfo,
-            &mut process,
-        );
-        boolean(created).map_err(|error| Error::other(format!("CreateProcessW: {error}")))?;
-    }
-    // SAFETY: A successful CreateProcessW transfers these two distinct handles to the caller.
-    let (process, thread) = unsafe {
-        (
-            OwnedHandle::from_raw_handle(process.hProcess),
-            OwnedHandle::from_raw_handle(process.hThread),
-        )
-    };
-    drop(thread);
+    ])
+}
+
+fn wait_exit(
+    process: &OwnedHandle,
+    parent: Option<&OwnedHandle>,
+    job: &OwnedHandle,
+) -> io::Result<u32> {
     let mut code = 0;
     // SAFETY: The process guard owns a live handle, and code is a valid output pointer.
     unsafe {
         let mut handles = vec![process.as_raw_handle()];
-        if let Some(parent) = &parent {
+        if let Some(parent) = parent {
             handles.push(parent.as_raw_handle());
         }
         let result = WaitForMultipleObjects(handles.len() as u32, handles.as_ptr(), 0, u32::MAX);
@@ -237,8 +199,7 @@ fn execute(args: &[OsString]) -> io::Result<i32> {
         }
         boolean(GetExitCodeProcess(process.as_raw_handle(), &mut code))?;
     }
-    drop(job);
-    Ok(code as i32)
+    Ok(code)
 }
 
 fn flag(value: &OsStr) -> io::Result<bool> {

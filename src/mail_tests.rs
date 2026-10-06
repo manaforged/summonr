@@ -19,7 +19,7 @@ fn clear_refuses_the_inbox_of_a_live_session() {
         model: "model".to_string(),
         cwd: "/work".to_string(),
         pid: 1,
-        status: "idle".to_string(),
+        status: Presence::Idle,
         last_seen: now(),
     };
     std::fs::write(

@@ -11,7 +11,7 @@ pub fn summonr_home() -> Result<PathBuf> {
         }
         return Ok(PathBuf::from(path));
     }
-    let home = user_home().ok_or_else(|| {
+    let home = crate::config::home_dir().ok_or_else(|| {
         Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
     })?;
     let dir = home.join(".summonr");
@@ -150,16 +150,10 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     parts.join("\n\n")
 }
 
-fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
 fn instructions(parts: &mut Vec<String>, workspace: &Path) {
     let mut seen = std::collections::HashSet::new();
     let mut sections = std::collections::HashSet::new();
-    if let Some(home) = user_home() {
+    if let Some(home) = crate::config::home_dir() {
         for rel in [
             ".agents/AGENTS.md",
             ".claude/CLAUDE.md",

@@ -2,7 +2,7 @@
 
 A terminal coding agent written in Rust that works until your test command passes, and loads no third-party code into its process.
 
-![summonr fixing two bugs in calc.py and running pytest, captured from a real session](docs/guide/assets/summonr-session.png)
+![summonr fixing two bugs in calc.py and running pytest, captured from a session](docs/guide/assets/summonr-session.png)
 
 ## Install
 

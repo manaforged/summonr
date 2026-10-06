@@ -84,20 +84,44 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
     resolve_endpoint(Some(&name), args.model.as_deref(), summonr::Need::Seat)
 }
 
+type Questions = std::collections::BTreeMap<String, summonr::classify::Question>;
+
 pub(super) async fn run_classify(args: &Args) -> Result<i32> {
-    let mut questions: std::collections::BTreeMap<String, summonr::classify::Question> =
-        match args.questions.as_deref() {
-            Some(source) => {
-                let text = match source.strip_prefix('@') {
-                    Some(path) => std::fs::read_to_string(path).map_err(|error| {
-                        summonr::Error::Config(format!("cannot read {path}: {error}"))
-                    })?,
-                    None => source.to_string(),
-                };
-                serde_json::from_str(&text)?
-            }
-            None => std::collections::BTreeMap::new(),
-        };
+    let questions = classify_questions(args)?;
+    let floor = args.gate.unwrap_or(0.7);
+    if args.review_diff {
+        return run_diff_review(args, &questions, floor).await;
+    }
+    if let Some(path) = args.eval.as_deref() {
+        return run_eval(args, &questions, path, floor).await;
+    }
+    let state = classify_state(args)?;
+    if state.trim().is_empty() {
+        return Err(summonr::Error::Config(
+            "give it some state, as arguments, on stdin, or with --session".to_string(),
+        ));
+    }
+    if questions.is_empty() {
+        return Err(summonr::Error::Config(
+            "ask something: --review, --noul, or --questions".to_string(),
+        ));
+    }
+    run_sweep(args, &questions, state).await
+}
+
+fn classify_questions(args: &Args) -> Result<Questions> {
+    let mut questions: Questions = match args.questions.as_deref() {
+        Some(source) => {
+            let text = match source.strip_prefix('@') {
+                Some(path) => std::fs::read_to_string(path).map_err(|error| {
+                    summonr::Error::Config(format!("cannot read {path}: {error}"))
+                })?,
+                None => source.to_string(),
+            };
+            serde_json::from_str(&text)?
+        }
+        None => std::collections::BTreeMap::new(),
+    };
     if args.review {
         questions.extend(summonr::classify::sets::review());
     }
@@ -116,42 +140,34 @@ pub(super) async fn run_classify(args: &Args) -> Result<i32> {
             summonr::classify::Question::noul(text.clone()),
         );
     }
-    let floor = args.gate.unwrap_or(0.7);
-    if args.review_diff {
-        return run_diff_review(args, &questions, floor).await;
-    }
-    if let Some(path) = args.eval.as_deref() {
-        return run_eval(args, &questions, path, floor).await;
-    }
-    let state = if args.session.is_some() || args.review {
+    Ok(questions)
+}
+
+fn classify_state(args: &Args) -> Result<String> {
+    if args.session.is_some() || args.review {
         let path = match args.session.as_deref() {
             Some(id) => resolve_session(id)?,
             None => session_path(args)?,
         };
-        summonr::classify::digest::digest(&summonr::export_session(&path)?)
-    } else if args.prompt.is_empty() {
+        return Ok(summonr::classify::digest::digest(&summonr::export_session(
+            &path,
+        )?));
+    }
+    if args.prompt.is_empty() {
         let mut input = String::new();
         std::io::Read::read_to_string(&mut std::io::stdin(), &mut input)?;
-        input
-    } else {
-        args.prompt.join(" ")
-    };
-    if state.trim().is_empty() {
-        return Err(summonr::Error::Config(
-            "give it some state, as arguments, on stdin, or with --session".to_string(),
-        ));
+        return Ok(input);
     }
-    if questions.is_empty() {
-        return Err(summonr::Error::Config(
-            "ask something: --review, --noul, or --questions".to_string(),
-        ));
-    }
+    Ok(args.prompt.join(" "))
+}
+
+async fn run_sweep(args: &Args, questions: &Questions, state: String) -> Result<i32> {
     let endpoint = classify_endpoint(args)?;
-    let budget = summonr::classify::budget(&endpoint, &questions);
+    let budget = summonr::classify::budget(&endpoint, questions);
     let (decision, windows) = summonr::classify::sweep::sweep(
         &endpoint,
         &serde_json::Value::from(state),
-        &questions,
+        questions,
         budget,
     )
     .await?;

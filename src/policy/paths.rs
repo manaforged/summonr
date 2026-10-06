@@ -133,7 +133,7 @@ pub(super) fn is_outside(
     if matches!(word, "/dev/null" | "/dev/stdout" | "/dev/stderr") {
         return false;
     }
-    if let Some(target) = expand_home(word) {
+    if let Some(target) = crate::config::expand_tilde(word) {
         return !is_inside(&target, workspace, extra);
     }
     if word.starts_with('~') {
@@ -171,7 +171,7 @@ pub(super) fn is_outside(
 }
 
 pub(crate) fn expand_path(word: &str) -> PathBuf {
-    remap_volume(expand_home(word).unwrap_or_else(|| PathBuf::from(word)))
+    remap_volume(crate::config::expand_tilde(word).unwrap_or_else(|| PathBuf::from(word)))
 }
 
 pub(super) fn remap_volume(path: PathBuf) -> PathBuf {
@@ -228,19 +228,6 @@ pub(super) fn remap_volume(path: PathBuf) -> PathBuf {
         out.push(rest);
     }
     out
-}
-
-pub(super) fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
-pub(super) fn expand_home(word: &str) -> Option<PathBuf> {
-    let rest = word
-        .strip_prefix("~/")
-        .or_else(|| word.strip_prefix("$HOME/"))?;
-    Some(home()?.join(rest))
 }
 
 pub(super) fn resolved(path: &Path) -> PathBuf {

@@ -9,11 +9,11 @@ fn peer() -> crate::mail::Agent {
     crate::mail::Agent {
         id: "0123456789abcdef0123456789abcdef".to_string(),
         name: "summonr-2".to_string(),
-        kind: "summonr".to_string(),
+        kind: crate::mail::KIND.to_string(),
         model: "stub-model".to_string(),
         cwd: "/work/summonr".to_string(),
         pid: 1,
-        status: "idle".to_string(),
+        status: crate::mail::Presence::Idle,
         last_seen: 0,
     }
 }

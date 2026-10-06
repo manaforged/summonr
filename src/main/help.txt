@@ -1,4 +1,4 @@
-summonr — a small agent harness
+summonr: a terminal coding agent
 
 Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
   summonr grok                start on an endpoint (same as -e grok)

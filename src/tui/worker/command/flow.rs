@@ -60,76 +60,92 @@ impl Worker {
                 return Some(true);
             }
         };
-        let handled = match crate::parse_command(line) {
-            Some(crate::SlashCommand::Exit) => {
+        match crate::parse_command(line) {
+            Some(command) => self.slash(command, line, argument).await,
+            None if line.starts_with('/') => Some(self.unknown(line).unwrap_or(true)),
+            None => None,
+        }
+    }
+
+    async fn slash(
+        &mut self,
+        command: crate::SlashCommand,
+        line: &str,
+        argument: Option<&str>,
+    ) -> Option<bool> {
+        match command {
+            crate::SlashCommand::Exit => {
                 drop(self.ui.send(Msg::Bye));
-                return Some(false);
+                Some(false)
             }
-            Some(crate::SlashCommand::Help) => {
+            crate::SlashCommand::Login => {
+                let name = argument.unwrap_or(&self.endpoint).to_string();
+                Some(self.login(&name).await)
+            }
+            crate::SlashCommand::Compact => self.compact().await.then_some(true),
+            crate::SlashCommand::PlanAccept => Some(self.accept_plan().await),
+            crate::SlashCommand::Goal => Some(self.goal(argument.unwrap_or_default()).await),
+            crate::SlashCommand::Retry => Some(self.retry().await),
+            crate::SlashCommand::Steps => Some(self.steps(argument.unwrap_or_default()).await),
+            crate::SlashCommand::Plan => {
+                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Plan);
+                Some(true)
+            }
+            crate::SlashCommand::Auto => {
+                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
+                Some(true)
+            }
+            other => self.local(other, line, argument).then_some(true),
+        }
+    }
+
+    fn local(&mut self, command: crate::SlashCommand, line: &str, argument: Option<&str>) -> bool {
+        match command {
+            crate::SlashCommand::Help => {
                 drop(self.ui.send(Msg::OpenHelp));
                 true
             }
-            Some(crate::SlashCommand::Login) => {
-                let name = argument.unwrap_or(&self.endpoint).to_string();
-                return Some(self.login(&name).await);
-            }
-            Some(crate::SlashCommand::Workflow) => {
+            crate::SlashCommand::Workflow => {
                 self.workflow(argument);
                 true
             }
-            Some(crate::SlashCommand::Clear) => self.clear(),
-            Some(crate::SlashCommand::Compact) => self.compact().await,
-            Some(crate::SlashCommand::PlanAccept) => return Some(self.accept_plan().await),
-            Some(crate::SlashCommand::PlanReject) => self.reject_plan(),
-            Some(crate::SlashCommand::Plan) => {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Plan);
-                true
-            }
-            Some(crate::SlashCommand::Auto) => {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
-                true
-            }
-            Some(crate::SlashCommand::Goal) => {
-                return Some(self.goal(argument.unwrap_or_default()).await);
-            }
-            Some(crate::SlashCommand::Status) => self.session(),
-            Some(crate::SlashCommand::Usage) => {
-                match argument {
-                    Some("session") => match crate::profile(crate::ProfileScope::Session(
-                        self.loop_.session_path(),
-                    )) {
-                        Ok(report) => self.system(report.trim_end()),
-                        Err(error) => self.fail(&error.to_string()),
-                    },
-                    Some(other) => self.fail(&format!("/usage takes `session`, not `{other}`")),
-                    None => {}
-                }
-                true
-            }
-            Some(crate::SlashCommand::Resume) => self.resume(argument),
-            Some(crate::SlashCommand::Retry) => return Some(self.retry().await),
-            Some(crate::SlashCommand::Name) => self.name(argument),
-            Some(crate::SlashCommand::Steps) => {
-                return Some(self.steps(argument.unwrap_or_default()).await);
-            }
-            Some(crate::SlashCommand::Permissions) => self.permissions(argument),
-            Some(crate::SlashCommand::Fork) => self.fork(),
-            Some(crate::SlashCommand::Undo) => {
-                match argument.map(|text| text.strip_prefix("files")) {
-                    None => self.undo(),
-                    Some(Some(turn)) => self.rollback(Some(turn)),
-                    Some(None) => {
-                        self.fail("/undo takes `files` or `files N`");
-                        true
-                    }
+            crate::SlashCommand::Clear => self.clear(),
+            crate::SlashCommand::PlanReject => self.reject_plan(),
+            crate::SlashCommand::Status => self.session(),
+            crate::SlashCommand::Usage => self.usage(argument),
+            crate::SlashCommand::Resume => self.resume(argument),
+            crate::SlashCommand::Name => self.name(argument),
+            crate::SlashCommand::Permissions => self.permissions(argument),
+            crate::SlashCommand::Fork => self.fork(),
+            crate::SlashCommand::Undo => self.undo_command(argument),
+            crate::SlashCommand::Agents => self.agents(),
+            _ => self.unknown(line).unwrap_or(true),
+        }
+    }
+
+    fn usage(&mut self, argument: Option<&str>) -> bool {
+        match argument {
+            Some("session") => {
+                match crate::profile(crate::ProfileScope::Session(self.loop_.session_path())) {
+                    Ok(report) => self.system(report.trim_end()),
+                    Err(error) => self.fail(&error.to_string()),
                 }
             }
-            Some(crate::SlashCommand::Agents) => self.agents(),
-            Some(_) => self.unknown(line).unwrap_or(true),
-            None if line.starts_with('/') => self.unknown(line).unwrap_or(true),
-            _ => false,
-        };
-        handled.then_some(true)
+            Some(other) => self.fail(&format!("/usage takes `session`, not `{other}`")),
+            None => {}
+        }
+        true
+    }
+
+    fn undo_command(&mut self, argument: Option<&str>) -> bool {
+        match argument.map(|text| text.strip_prefix("files")) {
+            None => self.undo(),
+            Some(Some(turn)) => self.rollback(Some(turn)),
+            Some(None) => {
+                self.fail("/undo takes `files` or `files N`");
+                true
+            }
+        }
     }
 
     pub(in crate::tui::worker) fn clear(&mut self) -> bool {

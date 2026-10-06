@@ -66,18 +66,39 @@ pub(super) fn decode_wrap_bytes(bytes: &[u8]) -> Result<[u8; KEY_LEN]> {
 }
 
 pub(super) fn find(tool: &Path, account: &str) -> Result<Option<String>> {
-    match security(
+    match run(
         tool,
         &["find-generic-password", "-s", SERVICE, "-a", account, "-w"],
         None,
-    ) {
+    )? {
         Ok(text) => Ok(Some(text)),
-        Err(Error::Config(message)) if message.starts_with("security exit 44") => Ok(None),
-        Err(error) => Err(error),
+        Err(exit) if exit.code == ITEM_NOT_FOUND => Ok(None),
+        Err(exit) => Err(exit.into()),
+    }
+}
+
+const ITEM_NOT_FOUND: i32 = 44;
+
+pub(super) struct SecurityExit {
+    code: i32,
+    reason: String,
+}
+
+impl From<SecurityExit> for Error {
+    fn from(exit: SecurityExit) -> Self {
+        Error::Config(format!("security exit {}: {}", exit.code, exit.reason))
     }
 }
 
 pub(super) fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Result<String> {
+    run(tool, args, stdin)?.map_err(Error::from)
+}
+
+fn run(
+    tool: &Path,
+    args: &[&str],
+    stdin: Option<String>,
+) -> Result<std::result::Result<String, SecurityExit>> {
     let mut child = Command::new(tool)
         .args(args)
         .stdin(if stdin.is_some() {
@@ -114,15 +135,16 @@ pub(super) fn security(tool: &Path, args: &[&str], stdin: Option<String>) -> Res
         drop(stdout.read_to_string(&mut out));
     }
     if status.success() {
-        return Ok(out.trim_end_matches(['\n', '\r']).to_string());
+        return Ok(Ok(out.trim_end_matches(['\n', '\r']).to_string()));
     }
     let mut err = String::new();
     if let Some(mut stderr) = child.stderr.take() {
         drop(stderr.read_to_string(&mut err));
     }
-    let code = status.code().unwrap_or(-1);
-    let reason = err.lines().next().unwrap_or("").trim();
-    Err(Error::Config(format!("security exit {code}: {reason}")))
+    Ok(Err(SecurityExit {
+        code: status.code().unwrap_or(-1),
+        reason: err.lines().next().unwrap_or("").trim().to_string(),
+    }))
 }
 
 pub(super) fn lookup(document: &DocumentMut, name: &str) -> Option<String> {

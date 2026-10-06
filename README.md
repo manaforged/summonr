@@ -121,15 +121,15 @@ Optional capabilities are compiled modules; `summonr modules` lists them. You ex
 
 Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Runs `tb21-zai-1002d` (summonr, pi), `tb21-zai-1002f` (OpenCode, Hermes), and `tb21-zai-1003a` (OMP), 2026-10-02 to 2026-10-03; arms from different runs did not run side by side.
 
-| Harness | Version | Tasks solved | Mean memory | Median input tokens / solved task | Time / solved task |
-| --- | --- | ---: | ---: | ---: | ---: |
-| summonr | 0.1.0-rc.1 | 63 | 24 MB | 95,271 | 219 s |
-| pi | 1.0.0 | 62 | 134 MB | 240,762 | 368 s |
-| OMP | 18.4.12 | 59 | 387 MB | 218,939 | 294 s |
-| OpenCode | 2.0.22 | 58 | 394 MB | 228,578 | 341 s |
-| Hermes | v2026.9.24 | 49 | 202 MB | 225,215 | 335 s |
+| Harness | Version | Tasks solved | Mean memory | Median input tokens, solved tasks | Median input tokens, all tasks | Median time, solved tasks |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| summonr | 0.1.0-rc.1 | 63 | 24 MB | 95,271 | 194,193 | 219 s |
+| pi | 1.0.0 | 62 | 134 MB | 240,762 | 212,337 | 368 s |
+| OMP | 18.4.12 | 59 | 387 MB | 218,939 | 294,356 | 294 s |
+| OpenCode | 2.0.22 | 58 | 394 MB | 228,578 | 253,726 | 341 s |
+| Hermes | v2026.9.24 | 49 | 202 MB | 225,215 | 272,086 | 335 s |
 
-Mean memory counts the harness and every helper it started without a shell, where the harness has helpers.
+Mean memory counts the harness and every helper it started without a shell, where the harness has helpers. The solved-tasks columns count only the tasks that harness solved; the all-tasks column counts all 86, solved and failed. summonr's failed tasks ran long, so its lead is smaller across all tasks than on solved ones. The lead in tasks solved over pi, OMP, and OpenCode is inside the 95% interval.
 
 Method and limits: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks.html).
 

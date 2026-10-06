@@ -145,7 +145,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
 - There is no in-process package loader, `dlopen`, or guest scripting. Write a skill, an MCP server, a hook, or a CLI.
 - Repository search is `read` with `pattern` or `glob`, or `rg` through `run_command`. There is no built-in code graph.
-- There is no automatic memory between sessions unless you add the memory skill.
+- There is no memory between sessions.
 - Config is under `~/.summonr`.
 - On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.
 

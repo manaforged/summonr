@@ -137,14 +137,6 @@ skipped.
 `summonr uninstall NAME` deletes one. `[plugins] off = ["NAME"]` in
 `~/.summonr/config.toml` keeps one installed but unloaded.
 
-## Keep memory across sessions
-
-Memory is a skill that reads labeled notes. It isn't a built-in store.
-
-1. Copy `skills/memory/SKILL.md` from this repository to
-   `~/.summonr/skills/memory/SKILL.md`.
-2. Keep the notes in `notes/` beside that file.
-
 ## Related
 
 - The [reference](reference.md#extend) has the table of what the model

@@ -997,8 +997,6 @@ When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude
 
 `SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it.
 
-Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
-
 Intent permissions: a `pre_tool` hook that exits nonzero blocks the call. Keep argv policy in `policy.toml`; do not add a second classifier unless it is a compiled module row.
 
 Remote TUI: `summonr acp`, or `ssh` and the terminal. There is no HTTP control plane.

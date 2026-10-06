@@ -55,16 +55,27 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn copy_chat(&self, scope: Option<&str>) {
         let text = match scope {
-            None => self
-                .model
-                .get()
-                .entries
-                .iter()
-                .rev()
-                .find_map(|entry| match entry {
-                    Entry::Assistant { text, .. } if !text.trim().is_empty() => Some(text.clone()),
+            None => {
+                let model = self.model.get();
+                let found = model.entries.iter().rev().find_map(|entry| match entry {
+                    Entry::Image { .. } => Some(None),
+                    Entry::Assistant { text, .. } if !text.trim().is_empty() => {
+                        Some(Some(text.clone()))
+                    }
                     _ => None,
-                }),
+                });
+                match found {
+                    Some(None) => {
+                        self.push_entry(Entry::System(
+                            "the picture stays in the session".to_string(),
+                        ));
+                        self.refresh();
+                        return;
+                    }
+                    Some(Some(text)) => Some(text),
+                    None => None,
+                }
+            }
             Some("all") => Some(self.model.get().transcript()),
             Some(_) => {
                 self.push_entry(Entry::System("usage: /copy [all]".to_string()));

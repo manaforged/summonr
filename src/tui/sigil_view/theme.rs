@@ -176,28 +176,48 @@ pub(super) fn set(palette: Palette) {
     ACTIVE.with(|active| active.set(palette));
 }
 
-pub(super) fn install(prefs: &Prefs, workspace: &Path, config: Option<&Path>) {
+#[must_use]
+pub(super) fn install(prefs: &Prefs, workspace: &Path, config: Option<&Path>) -> Vec<String> {
     let mut palette = Palette::named(&prefs.theme);
+    let mut problems = Vec::new();
     if let Some(dir) = config.and_then(Path::parent) {
-        overlay(&mut palette, &dir.join("theme.toml"));
+        overlay(&mut palette, &dir.join("theme.toml"), &mut problems);
     }
-    overlay(&mut palette, &workspace.join(".summonr/theme.toml"));
+    overlay(
+        &mut palette,
+        &workspace.join(".summonr/theme.toml"),
+        &mut problems,
+    );
     if prefs.background == Background::Terminal {
         palette.base.a = 0;
     }
     set(palette);
+    problems
 }
 
-fn overlay(palette: &mut Palette, path: &Path) {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return;
+fn overlay(palette: &mut Palette, path: &Path, problems: &mut Vec<String>) {
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            problems.push(format!("cannot read {}: {error}", path.display()));
+            return;
+        }
     };
-    let Ok(rows) = toml::from_str::<BTreeMap<String, String>>(&text) else {
-        return;
+    let rows = match toml::from_str::<BTreeMap<String, String>>(&text) {
+        Ok(rows) => rows,
+        Err(error) => {
+            problems.push(format!("{}: {error}", path.display()));
+            return;
+        }
     };
+    let file = path.display();
     for (key, value) in rows {
-        if let Ok(color) = hex(&value) {
-            palette.set(key.trim(), color);
+        let key = key.trim();
+        match hex(&value) {
+            Ok(color) if palette.set(key, color) => {}
+            Ok(_) => problems.push(format!("{file}: unknown theme key `{key}`")),
+            Err(error) => problems.push(format!("{file}: {error}")),
         }
     }
 }

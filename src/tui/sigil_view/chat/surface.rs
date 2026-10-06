@@ -40,8 +40,20 @@ pub(in crate::tui::sigil_view) fn layer(
                 .gap(0.0),
         )
         .child(node(move || {
-            let empty = || empty_state("Summonr", "ask anything · /login · @file · !cmd · /help");
-            transcript(transcript_app, (canvas::GUTTER, canvas::cell().h), empty)
+            let hint_app = transcript_app.clone();
+            transcript(
+                transcript_app,
+                (canvas::GUTTER, canvas::cell().h),
+                move || {
+                    let _redraw = hint_app.model.get();
+                    let hint = if hint_app.unseated() {
+                        "ask anything · /login · @file · !cmd · /help"
+                    } else {
+                        "ask anything · @file · !cmd · /help"
+                    };
+                    empty_state("Summonr", hint)
+                },
+            )
         }))
         .child(canvas::gutter(panels::agents(app.clone(), width)))
         .child(todos::widget(app.clone(), cols))
@@ -116,16 +128,85 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
     if canvas::is_window() {
         return super::super::desktop::entry::row(app, index, spacing);
     }
-    let model = app.model;
-    let version = sigil::reactive::derived(move || {
-        model.with(|model| {
-            let live = model.busy_since.is_some() && index + 1 == model.entries.len();
-            model
+    let probe = app.clone();
+    let current = sigil::reactive::derived(move || {
+        probe.model.with(|model| {
+            let at = entry::slot(&model.entries, index);
+            let range = match &at {
+                entry::Slot::Lead(range) => range.clone(),
+                entry::Slot::Single => index..index + 1,
+                entry::Slot::Member => index..index,
+            };
+            let last = model.entries.len();
+            let live = model.busy_since.is_some();
+            let mark: Vec<_> = model
                 .entries
-                .get(index)
-                .map(|entry| content(entry, live, &model.prefs))
+                .get(range.clone())
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .map(|(offset, item)| {
+                    content(item, live && range.start + offset + 1 == last, &model.prefs)
+                })
+                .collect();
+            (at, mark)
         })
     });
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
+        .children_reactive(move || {
+            let (at, _) = current.get();
+            untrack(|| match at {
+                entry::Slot::Member => vec![
+                    container().layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0)),
+                ],
+                entry::Slot::Lead(range) if range.end - range.start > 1 => {
+                    let rows = app.model.with(|model| {
+                        let last = model.entries.len();
+                        let prefs = model.prefs.clone();
+                        let live_turn = model.busy_since.is_some();
+                        range
+                            .map(|at| {
+                                (
+                                    at,
+                                    model.entries.get(at).cloned(),
+                                    live_turn && at + 1 == last,
+                                    prefs.clone(),
+                                )
+                            })
+                            .collect::<Vec<_>>()
+                    });
+                    let mut column = container().layout(
+                        LayoutStyle::flex_column()
+                            .fill_width()
+                            .min_size(0.0, 0.0)
+                            .gap(0.0),
+                    );
+                    for (at, item, live, prefs) in rows {
+                        if let Some(item) = item {
+                            column = column.child(entry::row(item, live, &prefs, &app, at));
+                        }
+                    }
+                    vec![inset(column, spacing)]
+                }
+                entry::Slot::Lead(_) | entry::Slot::Single => {
+                    let (item, live, prefs) = app.model.with(|model| {
+                        (
+                            model.entries.get(index).cloned(),
+                            model.busy_since.is_some() && index + 1 == model.entries.len(),
+                            model.prefs.clone(),
+                        )
+                    });
+                    item.map(|item| {
+                        vec![inset(entry::row(item, live, &prefs, &app, index), spacing)]
+                    })
+                    .unwrap_or_default()
+                }
+            })
+        })
+}
+
+fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_column()
@@ -134,27 +215,13 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
                 .padding_x(spacing.0)
                 .padding_bottom(spacing.1),
         )
-        .children_reactive(move || {
-            version.with(|_| ());
-            untrack(|| {
-                let (entry, live, prefs) = model.with(|model| {
-                    (
-                        model.entries.get(index).cloned(),
-                        model.busy_since.is_some() && index + 1 == model.entries.len(),
-                        model.prefs.clone(),
-                    )
-                });
-                entry
-                    .map(|entry| vec![entry::row(entry, live, &prefs, &app, index)])
-                    .unwrap_or_default()
-            })
-        })
+        .child(node)
 }
 
 pub(in crate::tui::sigil_view) fn transcript(
     app: App,
     spacing: (f32, f32),
-    empty: fn() -> NodeBuilder,
+    empty: impl Fn() -> NodeBuilder + 'static,
 ) -> NodeBuilder {
     let model = app.model;
     let keys = sigil::reactive::derived(move || {
@@ -188,9 +255,11 @@ pub(in crate::tui::sigil_view) fn transcript(
             }
             jump.set(keys.peek().len().saturating_sub(1));
             let live = app.clone();
+            let copied = app.clone();
             vec![
                 container()
                     .selectable_text(true)
+                    .on_selection_copy(move |text, result| copied.copy_notice(text, result))
                     .layout(
                         LayoutStyle::flex_column()
                             .fill_width()

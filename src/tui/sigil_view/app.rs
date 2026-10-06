@@ -85,6 +85,18 @@ pub(super) enum Overlay {
     Usage,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum NoticeKind {
+    Copied,
+    Failed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) struct Notice {
+    pub(in crate::tui::sigil_view) text: String,
+    pub(in crate::tui::sigil_view) kind: NoticeKind,
+}
+
 #[derive(Clone)]
 pub(super) struct App {
     pub(super) inline: bool,
@@ -108,6 +120,7 @@ pub(super) struct App {
     cleared: Signal<Option<String>>,
     pub(super) header: Signal<String>,
     pub(super) status: Signal<String>,
+    pub(super) notice: Signal<Option<Notice>>,
     pub(super) settings: Signal<String>,
     pub(super) facts: Signal<String>,
     pub(super) settings_open: Signal<bool>,
@@ -205,7 +218,6 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        theme::install(&info.prefs, &workspace, info.config.as_deref());
         let model = Model::new(&info);
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
@@ -227,6 +239,7 @@ impl App {
             cleared: signal(None),
             header: signal(String::new()),
             status: signal(String::new()),
+            notice: signal(None),
             settings: signal(String::new()),
             facts: signal(String::new()),
             settings_open: signal(false),
@@ -312,6 +325,7 @@ impl App {
             info,
         };
         app.cancel_secret_on_close();
+        app.apply_theme();
         drop(app.cmd.send(Cmd::Offers));
         app
     }

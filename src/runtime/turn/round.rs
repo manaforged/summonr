@@ -220,7 +220,7 @@ impl<P: Provider> Loop<P> {
                     events,
                     emit,
                     Event::Note {
-                        text: "plan written before execution".to_string(),
+                        text: plan::note(&text),
                     },
                 )?;
             }

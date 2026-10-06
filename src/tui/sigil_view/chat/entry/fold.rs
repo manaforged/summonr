@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::ops::Range;
 
 use sigil::prelude::{
@@ -6,11 +7,11 @@ use sigil::prelude::{
 };
 
 use super::super::App;
-use super::meta::{Step, StepVerb, chip, step_meta};
+use super::tools::{call_output, flip, glyph, workspace_relative};
+use super::tree::label;
+use super::verb::{Step, StepVerb, chip, step_meta};
+use super::{patch_of, preview};
 use crate::tui::ToolState;
-use crate::tui::sigil_view::chat::entry::{
-    call_output, flip, glyph, label, patch_of, preview, workspace_relative,
-};
 use crate::tui::sigil_view::look::Look;
 use crate::tui::sigil_view::model::{Call, Entry};
 
@@ -68,7 +69,7 @@ fn flatten(entries: &[Entry], start: usize) -> Vec<Step> {
 
 struct Totals {
     steps: usize,
-    edited: Vec<String>,
+    edited: HashSet<String>,
     adds: usize,
     dels: usize,
     running: bool,
@@ -77,7 +78,7 @@ struct Totals {
 fn totals(steps: &[Step], roots: &[String]) -> Totals {
     let mut sum = Totals {
         steps: steps.len(),
-        edited: Vec::new(),
+        edited: HashSet::new(),
         adds: 0,
         dels: 0,
         running: false,
@@ -88,9 +89,7 @@ fn totals(steps: &[Step], roots: &[String]) -> Totals {
             continue;
         }
         let path = workspace_relative(&step.call.arg, roots);
-        if !sum.edited.contains(&path) {
-            sum.edited.push(path);
-        }
+        sum.edited.insert(path);
         if let Some((adds, dels)) = step.counts() {
             sum.adds += adds;
             sum.dels += dels;
@@ -193,7 +192,7 @@ fn step_row(step: &Step, app: &App, layout: crate::prefs::DiffLayout) -> NodeBui
     }
 }
 
-pub(super) fn card(
+pub(in crate::tui::sigil_view) fn card(
     app: &App,
     range: Range<usize>,
     unfolded: Option<bool>,
@@ -247,5 +246,5 @@ pub(super) fn patch_counts(call: &Call) -> Option<(usize, usize)> {
     call.patch
         .clone()
         .or_else(|| patch_of(&preview::plain(&call.output)))
-        .map(|patch| crate::tui::sigil_view::chat::entry::counts(&patch))
+        .map(|patch| super::steps::counts(&patch))
 }

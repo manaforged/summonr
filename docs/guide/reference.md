@@ -1026,7 +1026,7 @@ code_bg = "#1e202a"
 
 Copy [`theme.example.toml`](../../theme.example.toml) to `~/.summonr/theme.toml`, or to
 `<workspace>/.summonr/theme.toml` for one project. Unset tokens keep the preset.
-Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`; malformed values are ignored.
+Values are `#rgb`, `#rrggbb`, or `#rrggbbaa`. A file that does not parse, an unknown token, or a bad color is reported, and that token keeps the preset.
 Both files apply on top of the chosen theme. The tokens are
 `base`/`background`, `text`/`foreground`, `gray`, `dim`, `thought`, `accent`,
 `green`, `red`, `error`, `yellow`, `cyan`, `black`, `user_bg`, `tool_bg`,

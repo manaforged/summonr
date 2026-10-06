@@ -353,7 +353,7 @@ fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeB
     let clock = app.clone();
     let owner = name.to_string();
     nodes.push(container().children_reactive(move || {
-        let spin = sigil::prelude::spinner_frame(clock.ticks.get());
+        let spin = sigil::widgets::spinner_frame(clock.ticks.get());
         let seconds = clock
             .model
             .peek()

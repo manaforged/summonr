@@ -8,13 +8,9 @@ use crate::tools::Event;
 
 use super::{Msg, Worker};
 
-const CHARGED: &str = "Restored token usage. Historical reasoning tokens and cost are unavailable.";
-
 impl Worker {
     pub(super) fn replay(&self) {
-        if self.restore() {
-            self.system(CHARGED);
-        }
+        self.restore();
     }
 
     pub(super) fn reshow(&self) {
@@ -23,12 +19,11 @@ impl Worker {
         drop(self.ui.send(Msg::Replayed));
     }
 
-    fn restore(&self) -> bool {
-        let charged = journal(self.loop_.session_path(), &self.ui);
+    fn restore(&self) {
+        journal(self.loop_.session_path(), &self.ui);
         drop(self.ui.send(Msg::Event(Event::Unreported {
             tokens: self.loop_.unreported_tokens(),
         })));
-        charged
     }
 }
 
@@ -38,21 +33,17 @@ pub(super) fn reshow_running(path: &Path, session: &str, ui: &UnboundedSender<Ms
     drop(ui.send(Msg::Replayed));
 }
 
-fn journal(path: &Path, ui: &UnboundedSender<Msg>) -> bool {
+fn journal(path: &Path, ui: &UnboundedSender<Msg>) {
     let lines = match log::read(path) {
         Ok(lines) => lines,
         Err(error) => {
             drop(ui.send(Msg::System(format!("cannot load conversation: {error}"))));
-            return false;
+            return;
         }
     };
-    let charged = lines
-        .iter()
-        .any(|line| matches!(line, Line::Assistant { .. } | Line::Charge { .. }));
     for line in lines {
         restore_line(line, ui);
     }
-    charged
 }
 
 fn restore_line(line: Line, ui: &UnboundedSender<Msg>) {

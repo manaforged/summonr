@@ -27,17 +27,19 @@ use crate::prefs::{DiffLayout, Prefs, Visibility};
 use crate::tui::sigil_view::look::Look;
 
 mod children;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) mod fold;
 pub(in crate::tui::sigil_view) mod preview;
-#[cfg(any(feature = "gui", test))]
 mod steps;
 mod tools;
 #[cfg(feature = "gui")]
+mod verb;
+#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use super::surface::{Content, content};
+pub(in crate::tui::sigil_view) use steps::{Slot, slot};
 #[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use steps::{Slot, counts, slot};
+pub(in crate::tui::sigil_view) use tools::glyph;
 pub(in crate::tui::sigil_view) use tools::workspace_relative;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use tools::{call_output, flip, glyph, searched};
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) use tree::label;
 mod tree;

@@ -12,6 +12,42 @@ fn paste_png(app: &App) {
 }
 
 #[test]
+fn copying_after_an_image_says_the_picture_stays() {
+    use crate::tui::sigil_view::model::Entry;
+
+    Runtime::scope("copy-image", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.model_mut(|model| {
+            model.entries.push(Entry::Assistant {
+                text: "older reply".to_string(),
+                done: true,
+            });
+            model.entries.push(Entry::Image {
+                source: sigil::prelude::ImageSource::from_rgba8(1, 1, vec![0, 0, 0, 255])
+                    .expect("1x1 rgba"),
+                bytes: std::rc::Rc::from([0_u8, 0, 0, 255].as_slice()),
+                label: "shot".to_string(),
+            });
+        });
+        app.copy_chat(None);
+        let note = app
+            .model
+            .get()
+            .entries
+            .iter()
+            .rev()
+            .find_map(|entry| match entry {
+                Entry::System(text) => Some(text.clone()),
+                _ => None,
+            });
+        assert_eq!(note.as_deref(), Some("the picture stays in the session"));
+        assert!(app.copy.get().is_none());
+    });
+}
+
+#[test]
 fn an_image_pasted_during_a_turn_shows_as_attached() {
     let lines = frame_with(busy_info(), 110, 34, State::Busy, |app| {
         paste_png(app);

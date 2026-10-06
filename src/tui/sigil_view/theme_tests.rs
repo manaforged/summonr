@@ -6,12 +6,25 @@ use sigil::terminal::Ink;
 fn the_terminal_background_leaves_the_base_unpainted() {
     let dir = tempfile::tempdir().unwrap();
     let mut prefs = Prefs::default();
-    install(&prefs, dir.path(), None);
+    drop(install(&prefs, dir.path(), None));
     assert!(matches!(ink(palette().base), Ink::Exact(_)));
     prefs.background = Background::Terminal;
-    install(&prefs, dir.path(), None);
+    drop(install(&prefs, dir.path(), None));
     assert_eq!(ink(palette().base), Ink::Bare);
     assert_eq!(palette().text, Palette::SPACE.text);
+}
+
+#[test]
+fn a_bad_theme_color_is_reported() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("theme.toml"), "accent = \"nope\"\n").unwrap();
+    let config = dir.path().join("config.toml");
+    let problems = install(&Prefs::default(), dir.path(), Some(&config));
+    let text = problems.join("\n");
+    assert!(
+        text.contains("theme color") && text.contains("nope"),
+        "{text}"
+    );
 }
 
 #[test]

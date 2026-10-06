@@ -332,6 +332,7 @@ impl App {
         &self,
         name: &str,
         result: std::result::Result<String, String>,
+        rejected: bool,
     ) {
         let mut groups = self.picker.groups.peek();
         match result {
@@ -363,7 +364,7 @@ impl App {
             Err(text) if text.is_empty() => {}
             Err(text) if !self.auth.open.peek() => self.push_entry(Entry::Error(text)),
             Err(text) => {
-                if text.ends_with("rejected the key") {
+                if rejected {
                     groups.insert(name.to_string(), State::KeyRejected);
                     self.picker.groups.set(groups);
                 }

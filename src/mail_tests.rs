@@ -79,25 +79,49 @@ fn mail_to_a_name_arrives_under_the_senders_name() {
 }
 
 #[test]
-fn a_poll_against_a_held_inbox_lock_yields_nothing_and_keeps_the_mail() {
+fn a_held_inbox_lock_does_not_hide_delivered_mail() {
     let dir = tempfile::tempdir().unwrap();
     let cwd = Path::new("/work/summonr");
     let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
     let mut receiver = Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
     deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "hold on").unwrap();
     let held = crate::durable::store::lock(&inbox_path(dir.path(), "s2"), true).unwrap();
-    assert!(
-        receiver.poll().unwrap().is_empty(),
-        "a busy inbox is no mail this round"
-    );
+    assert_eq!(receiver.poll().unwrap().len(), 1);
     drop(held);
-    assert_eq!(
-        receiver.poll().unwrap().len(),
-        1,
-        "the mail is still there next round"
-    );
     assert!(
         receiver.poll().unwrap().is_empty(),
         "an unchanged inbox is not reread"
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn mail_arrives_while_other_threads_start_processes() {
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let spawners: Vec<_> = (0..4)
+        .map(|_| {
+            let stop = std::sync::Arc::clone(&stop);
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    drop(std::process::Command::new("true").status());
+                }
+            })
+        })
+        .collect();
+    let cwd = Path::new("/work/summonr");
+    let missed = (0..100)
+        .filter(|_| {
+            let dir = tempfile::tempdir().unwrap();
+            let _sender = Mailbox::open(dir.path(), "s1", None, "summonr", "model", cwd).unwrap();
+            let mut receiver =
+                Mailbox::open(dir.path(), "s2", None, "summonr", "model", cwd).unwrap();
+            deliver_in(dir.path(), "s1", &["summonr-2".to_string()], "ping").unwrap();
+            receiver.poll().unwrap().is_empty()
+        })
+        .count();
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    spawners
+        .into_iter()
+        .for_each(|spawner| spawner.join().unwrap());
+    assert_eq!(missed, 0);
 }

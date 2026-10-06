@@ -311,9 +311,6 @@ impl Mailbox {
 
     fn read_new(&mut self, path: &Path) -> Result<Option<Vec<u8>>> {
         use std::io::{Read as _, Seek as _, SeekFrom};
-        let Some(_lock) = store::lock(path, false)? else {
-            return Ok(None);
-        };
         let mut file = match std::fs::File::open(path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {

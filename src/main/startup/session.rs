@@ -214,7 +214,7 @@ fn candidates(workspace: &Path) -> Vec<(PathBuf, String)> {
     paths
         .into_iter()
         .map(|path| {
-            let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let canonical = dunce::canonicalize(&path).unwrap_or_else(|_| path.clone());
             (path, canonical.display().to_string())
         })
         .collect()

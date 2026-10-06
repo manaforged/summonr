@@ -131,9 +131,7 @@ impl<P: Provider> Loop<P> {
             turn_started: 0,
             accepted: false,
             summary_wait: 0,
-            workspace: workspace
-                .canonicalize()
-                .unwrap_or_else(|_| workspace.to_path_buf()),
+            workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
             mailbox: None,
             mail_module: false,
             mcp: None,

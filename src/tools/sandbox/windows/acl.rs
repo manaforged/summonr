@@ -1,8 +1,8 @@
 use super::*;
 
-const READ: u32 = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
-const MODIFY: u32 = READ | FILE_GENERIC_WRITE | DELETE;
-const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
+pub(super) const READ: u32 = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
+pub(super) const MODIFY: u32 = READ | FILE_GENERIC_WRITE | DELETE;
+pub(super) const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
     | DESKTOP_READOBJECTS
     | DESKTOP_CREATEWINDOW
     | DESKTOP_CREATEMENU
@@ -13,7 +13,7 @@ const DESKTOP_ALL: u32 = STANDARD_RIGHTS_REQUIRED
     | DESKTOP_WRITEOBJECTS
     | DESKTOP_SWITCHDESKTOP;
 
-struct Local(*mut c_void);
+pub(super) struct Local(*mut c_void);
 
 impl Drop for Local {
     fn drop(&mut self) {
@@ -22,14 +22,14 @@ impl Drop for Local {
     }
 }
 
-struct Profile {
+pub(super) struct Profile {
     name: Vec<u16>,
-    sid: PSID,
+    pub(super) sid: PSID,
     grants: Vec<PathBuf>,
 }
 
 impl Profile {
-    fn create(name: &str) -> io::Result<Self> {
+    pub(super) fn create(name: &str) -> io::Result<Self> {
         let name = wide(name)?;
         let mut sid = null_mut();
         // SAFETY: The name buffers are terminated, and sid is a valid output pointer.
@@ -55,7 +55,7 @@ impl Profile {
         })
     }
 
-    fn grant(&mut self, path: &Path, mask: u32) -> io::Result<()> {
+    pub(super) fn grant(&mut self, path: &Path, mask: u32) -> io::Result<()> {
         if self.grants.iter().any(|granted| granted == path) {
             return Ok(());
         }
@@ -91,7 +91,7 @@ impl Drop for Profile {
     }
 }
 
-fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result<()> {
+pub(super) fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result<()> {
     let _lock = Lock::acquire()?;
     let path = wide(path)?;
     let mut descriptor = null_mut();
@@ -138,15 +138,15 @@ fn acl(path: &Path, sid: PSID, mask: u32, revoke: bool) -> io::Result<()> {
     })
 }
 
-struct Desktop {
+pub(super) struct Desktop {
     station: HWINSTA,
     desktop: HDESK,
-    name: Vec<u16>,
+    pub(super) name: Vec<u16>,
     sid: PSID,
 }
 
 impl Desktop {
-    fn create(profile: &Profile, name: &str) -> io::Result<Self> {
+    pub(super) fn create(profile: &Profile, name: &str) -> io::Result<Self> {
         let mut text = null_mut();
         // SAFETY: profile owns its SID, and text receives a LocalAlloc string.
         boolean(unsafe { ConvertSidToStringSidW(profile.sid, &mut text) })?;
@@ -248,7 +248,7 @@ impl Drop for Desktop {
     }
 }
 
-fn station_acl(station: HWINSTA, sid: PSID, revoke: bool) -> io::Result<()> {
+pub(super) fn station_acl(station: HWINSTA, sid: PSID, revoke: bool) -> io::Result<()> {
     let _lock = Lock::acquire()?;
     let mut descriptor = null_mut();
     let mut old = null_mut();

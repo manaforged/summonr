@@ -228,6 +228,11 @@ impl<P: Provider> Loop<P> {
                 .map_err(|_elapsed| ()),
             None => Ok(turn.await),
         };
+        if result.is_err()
+            && let Some(hub) = &self.mcp
+        {
+            hub.cancel_inflight().await;
+        }
         let accounted = self.session.elapsed_millis().saturating_sub(before);
         let millis = super::elapsed_millis(started).saturating_sub(accounted);
         if millis > 0 {

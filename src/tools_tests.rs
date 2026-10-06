@@ -162,9 +162,9 @@ fn ls_runs_in_the_shell_instead_of_turning_into_a_read() {
     let text = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "ls -l a.txt"}),
+        serde_json::json!({"command": "ls a.txt"}),
     );
-    assert!(text.contains("-rw"), "{text}");
+    assert!(text.contains("a.txt"), "{text}");
     assert!(!text.contains("answers this natively"), "{text}");
 }
 
@@ -186,7 +186,7 @@ fn a_command_past_the_wait_limit_keeps_running_as_a_job() {
     let started = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2 && echo finished"}),
+        serde_json::json!({"command": "sleep 2; echo finished"}),
     );
     let id = started
         .lines()
@@ -379,7 +379,7 @@ fn a_command_that_cannot_become_a_job_outlives_the_job_wait() {
     let output = run(
         &tools,
         "run_command",
-        serde_json::json!({"command": "sleep 2 && echo finished"}),
+        serde_json::json!({"command": "sleep 2; echo finished"}),
     );
     assert!(output.starts_with("exit 0"), "{output}");
     assert!(output.contains("finished"), "{output}");

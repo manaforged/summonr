@@ -3,20 +3,15 @@ use std::path::Path;
 
 use super::*;
 
-fn fake_herdr(dir: &Path) -> (OsString, std::path::PathBuf) {
-    let log = dir.join("calls.log");
-    let bin = dir.join("herdr");
-    std::fs::write(
-        &bin,
-        format!("#!/bin/sh\nprintf '%s\\n' \"$*\" >> '{}'\n", log.display()),
-    )
-    .unwrap();
-    std::fs::set_permissions(&bin, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    (bin.into_os_string(), log)
+fn fake_herdr() -> OsString {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/herdr")
+        .into_os_string()
 }
 
 fn target_in(dir: &Path, session: &str) -> Target {
-    let (bin, _) = fake_herdr(dir);
+    let bin = fake_herdr();
+    let log: OsString = dir.join("calls.log").into_os_string();
     super::target(
         session,
         Path::new("/work/app"),
@@ -25,7 +20,7 @@ fn target_in(dir: &Path, session: &str) -> Target {
         |key| match key {
             "HERDR_ENV" => Some("1".into()),
             "HERDR_PANE_ID" => Some("pane-7".into()),
-            "HERDR_SOCKET_PATH" => Some("/tmp/herdr.sock".into()),
+            "HERDR_SOCKET_PATH" => Some(log.clone()),
             "HERDR_BIN_PATH" => Some(bin.clone()),
             _ => None,
         },

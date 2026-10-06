@@ -325,13 +325,18 @@ impl Drop for Pending {
             return;
         };
         drop(runtime.spawn(async move {
-            let Some(link) = link.upgrade() else {
-                return;
-            };
-            if let Some(conn) = link.conn.lock().await.as_mut() {
-                conn.cancel_inflight().await;
+            if let Some(link) = link.upgrade() {
+                link.cancel_inflight().await;
             }
         }));
+    }
+}
+
+impl Link {
+    pub(super) async fn cancel_inflight(&self) {
+        if let Some(conn) = self.conn.lock().await.as_mut() {
+            conn.cancel_inflight().await;
+        }
     }
 }
 

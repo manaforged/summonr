@@ -115,6 +115,7 @@ pub(crate) enum Msg {
     LoginDone {
         name: String,
         result: std::result::Result<String, String>,
+        rejected: bool,
     },
     Bye,
 }

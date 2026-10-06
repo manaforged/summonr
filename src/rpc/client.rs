@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use tokio::time::Instant;
 
-use futures::FutureExt;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
@@ -15,7 +14,7 @@ use super::{
     request, response,
 };
 use crate::error::{Error, Result};
-use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_TAIL};
+use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_TAIL};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
 
@@ -129,15 +128,39 @@ impl Client {
         self.write(&notification(method, params)).await
     }
 
-    pub(crate) fn cancel_inflight(&mut self) {
+    pub(crate) async fn cancel_inflight(&mut self) {
         for id in std::mem::take(&mut self.inflight) {
-            let cancel = notification(
-                "notifications/cancelled",
-                json!({"requestId": id, "reason": "the user stopped the call"}),
-            );
-            drop(self.write(&cancel).now_or_never());
+            self.cancel(&id, "the user stopped the call").await;
             self.abandoned.push(id);
         }
+    }
+
+    async fn cancel(&mut self, id: &Value, reason: &str) {
+        let cancel = notification(
+            "notifications/cancelled",
+            json!({"requestId": id, "reason": reason}),
+        );
+        let Ok(line) = frame_line(&cancel) else {
+            return;
+        };
+        if !matches!(
+            self.send(&line, Instant::now() + MCP_CANCEL_WRITE).await,
+            Ok(Ok(()))
+        ) {
+            self.broken = true;
+        }
+    }
+
+    async fn send(
+        &mut self,
+        line: &str,
+        deadline: Instant,
+    ) -> std::result::Result<std::io::Result<()>, tokio::time::error::Elapsed> {
+        tokio::time::timeout_at(deadline, async {
+            self.stdin.write_all(line.as_bytes()).await?;
+            self.stdin.flush().await
+        })
+        .await
     }
 
     pub(crate) async fn call(
@@ -151,7 +174,7 @@ impl Client {
                 "`{method}` was not sent: an earlier request was cut off"
             )));
         }
-        self.cancel_inflight();
+        self.cancel_inflight().await;
         let id = json!(self.next);
         self.next += 1;
         if method == "tools/call"
@@ -163,11 +186,7 @@ impl Client {
         let wait = self.wait;
         let deadline = Instant::now() + wait;
         self.inflight.push(id.clone());
-        let written = tokio::time::timeout_at(deadline, async {
-            self.stdin.write_all(line.as_bytes()).await?;
-            self.stdin.flush().await
-        })
-        .await;
+        let written = self.send(&line, deadline).await;
         let result = match written {
             Ok(Ok(())) => self.reply(&id, method, deadline, &mut on_note).await,
             Ok(Err(error)) => Err(error.into()),
@@ -190,7 +209,7 @@ impl Client {
         let mut hard = Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH);
         loop {
             let Ok(read) = tokio::time::timeout_at(deadline, self.frame()).await else {
-                return Err(self.give_up(id, method));
+                return Err(self.give_up(id, method).await);
             };
             let line = match read? {
                 Read::Line(line) => line,
@@ -267,15 +286,11 @@ impl Client {
         }
     }
 
-    fn give_up(&mut self, id: &Value, method: &str) -> Error {
+    async fn give_up(&mut self, id: &Value, method: &str) -> Error {
         self.inflight.retain(|pending| pending != id);
         self.abandoned.push(id.clone());
         if method != "initialize" {
-            let cancel = notification(
-                "notifications/cancelled",
-                json!({"requestId": id, "reason": "no reply in time"}),
-            );
-            drop(self.write(&cancel).now_or_never());
+            self.cancel(id, "no reply in time").await;
         }
         no_reply(method, self.wait)
     }

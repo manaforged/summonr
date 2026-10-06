@@ -78,8 +78,9 @@ impl Entry {
                 )));
             }
         }
+        let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
         let key = crate::text::fnv64(
-            &serde_json::to_vec(&(workspace, &name, &self.command, &self.args, &self.url))
+            &serde_json::to_vec(&(root, &name, &self.command, &self.args, &self.url))
                 .unwrap_or_default(),
         );
         let allow = self.tools.clone();

@@ -70,6 +70,7 @@ unicode-normalization = "0.1"
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 chacha20poly1305 = "0.10"
 libc = "0.2"
+dunce = "1.0"
 
 [patch.crates-io]
 crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e35d24a2f643c61760e1eb05b8ca9e63" }
@@ -91,7 +92,6 @@ libc = "0.2"
 keyring = { version = "3", features = ["windows-native", "sync-secret-service", "crypto-rust", "vendored"] }
 
 [target.'cfg(windows)'.dependencies]
-dunce = "1.0"
 process-wrap = { version = "9.1", default-features = false, features = ["job-object", "tokio1"] }
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_Security", "Win32_Security_Authorization", "Win32_Security_Isolation", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_JobObjects", "Win32_System_Memory", "Win32_System_StationsAndDesktops", "Win32_System_SystemServices", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 

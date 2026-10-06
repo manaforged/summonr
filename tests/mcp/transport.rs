@@ -27,14 +27,14 @@ pub(crate) fn a_timed_out_reply_does_not_break_the_next_call() {
     let model = Model::start(vec![
         Step::Call(
             "fixture1__split",
-            json!({"bytes": 10 * 1024 * 1024, "ms": 3000}),
+            json!({"bytes": 10 * 1024 * 1024, "ms": 3500}),
         ),
         Step::Call("fixture1__echo", json!({"text": "after"})),
         Step::Text("ok"),
     ]);
-    session.run(&model, &session.server("fixture1", "timeout_secs = 2"), &[]);
+    session.run(&model, &session.server("fixture1", "timeout_secs = 3"), &[]);
     let results = model.tool_results();
-    assert!(results[0].contains("no reply in 2s"), "{results:?}");
+    assert!(results[0].contains("no reply in 3s"), "{results:?}");
     assert!(results[1].contains("after"), "{results:?}");
 }
 

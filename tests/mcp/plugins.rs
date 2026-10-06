@@ -16,10 +16,9 @@ fn write(path: &Path, text: &str) {
 }
 
 #[cfg(unix)]
-fn executable(path: &Path, text: &str) {
-    use std::os::unix::fs::PermissionsExt;
-    write(path, text);
-    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+fn executable(path: &Path, target: &Path) {
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::os::unix::fs::symlink(target, path).unwrap();
 }
 
 #[cfg(unix)]
@@ -42,10 +41,7 @@ fn plugin_with(session: &Session, hooks: &Value, env: &Value, manifest: &str) ->
         "env": env
     }}});
     write(&dir.join(".mcp.json"), &servers.to_string());
-    executable(
-        &dir.join("bin/serve"),
-        &format!("#!/bin/sh\nexec '{}' \"$@\"\n", fixture().display()),
-    );
+    executable(&dir.join("bin/serve"), &fixture());
     write(
         &dir.join("skills/greet/SKILL.md"),
         "---\nname: greet\ndescription: say hello politely\n---\nSay hello.\n",
@@ -143,12 +139,24 @@ pub(crate) fn a_claude_hook_blocks_only_on_exit_two_or_a_deny() {
     assert!(results[1].contains("denied by json"), "{results:?}");
 }
 
+#[cfg(unix)]
+const APPEND_ONE: &str = "echo one >> '{0}'";
+#[cfg(unix)]
+const APPEND_TWO: &str = "echo two >> '{0}'";
+#[cfg(windows)]
+const APPEND_ONE: &str = "[IO.File]::AppendAllText('{0}', 'one' + [char]10)";
+#[cfg(windows)]
+const APPEND_TWO: &str = "[IO.File]::AppendAllText('{0}', 'two' + [char]10)";
+
 pub(crate) fn two_pre_tool_hooks_both_run_in_order() {
     let session = Session::new();
     let trail = session.file("trail.txt");
+    let path = trail.display().to_string();
+    let quoted = |hook: &str| serde_json::to_string(&hook.replace("{0}", &path)).unwrap();
     let config = format!(
-        "[hooks]\npre_tool = [\"echo one >> '{0}'\", \"echo two >> '{0}'\"]\n",
-        trail.display()
+        "[hooks]\npre_tool = [{}, {}]\n",
+        quoted(APPEND_ONE),
+        quoted(APPEND_TWO)
     );
     let model = Model::start(vec![
         Step::Call("run_command", json!({"command": "true"})),

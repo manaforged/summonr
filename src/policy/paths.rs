@@ -230,20 +230,25 @@ pub(super) fn remap_volume(path: PathBuf) -> PathBuf {
     out
 }
 
+pub(super) fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
 pub(super) fn expand_home(word: &str) -> Option<PathBuf> {
     let rest = word
         .strip_prefix("~/")
         .or_else(|| word.strip_prefix("$HOME/"))?;
-    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
-    Some(PathBuf::from(home).join(rest))
+    Some(home()?.join(rest))
 }
 
 pub(super) fn resolved(path: &Path) -> PathBuf {
-    if let Ok(canonical) = path.canonicalize() {
+    if let Ok(canonical) = dunce::canonicalize(path) {
         return canonical;
     }
     path.parent()
-        .and_then(|parent| parent.canonicalize().ok())
+        .and_then(|parent| dunce::canonicalize(parent).ok())
         .map_or_else(
             || path.to_path_buf(),
             |parent| match path.file_name() {

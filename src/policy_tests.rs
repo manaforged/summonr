@@ -57,6 +57,33 @@ fn cleanup_inside_the_workspace_or_scratch_runs_after_a_cd() {
 }
 
 #[test]
+fn a_powershell_recursive_delete_follows_the_rm_rule() {
+    let workspace = Path::new("/app");
+    for command in [
+        "Remove-Item -Recurse -Force /usr/lib",
+        "remove-item -r ~/projects",
+        "ri -Recurse /app",
+        "del -Recurse -Force /tmp",
+        "erase -r /app/*",
+        "rd -Recurse ~",
+    ] {
+        assert!(
+            super::danger(command, workspace, workspace, Gate::Risky).is_some(),
+            "{command}"
+        );
+    }
+    assert_eq!(
+        super::danger(
+            "Remove-Item -Recurse -Force out",
+            workspace,
+            workspace,
+            Gate::Risky
+        ),
+        None
+    );
+}
+
+#[test]
 fn a_recursive_delete_that_leaves_the_workspace_still_asks() {
     let workspace = Path::new("/app");
     for command in [

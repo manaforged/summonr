@@ -69,6 +69,7 @@ mod proc;
 
 use acl::*;
 use proc::*;
+pub(crate) use proc::{stop, wait};
 pub fn entry(args: &[OsString]) -> crate::Result<i32> {
     execute(args).map_err(|error| crate::Error::Tool(format!("Windows sandbox: {error}")))
 }

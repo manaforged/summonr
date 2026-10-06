@@ -37,6 +37,7 @@ pub(crate) const MCP_OPEN: Duration = Duration::from_secs(60);
 pub(crate) const MCP_CALL: Duration = Duration::from_secs(300);
 pub(crate) const MCP_IDLE: Duration = Duration::from_secs(120);
 pub(crate) const MCP_PROGRESS_STRETCH: u32 = 4;
+pub(crate) const MCP_CANCEL_WRITE: Duration = Duration::from_secs(1);
 pub(crate) const MCP_LOG_MAX: u64 = 1024 * 1024;
 pub(crate) const MCP_FRAME_MAX: usize = 4 * 1024 * 1024;
 pub(crate) const MCP_STDERR_TAIL: usize = 2 * 1024;

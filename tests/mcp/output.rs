@@ -55,7 +55,11 @@ pub(crate) fn output_that_cannot_be_saved_is_still_cut_and_returned() {
         Step::Text("ok"),
     ]);
     let options = Options {
-        env: &[("TMPDIR", "/nonexistent/summonr-proof")],
+        env: &[
+            ("TMPDIR", "/nonexistent/summonr-proof"),
+            ("TMP", "/nonexistent/summonr-proof"),
+            ("TEMP", "/nonexistent/summonr-proof"),
+        ],
         ..Options::default()
     };
     session.run_with(&model, &session.server("fixture1", ""), &[], &options);

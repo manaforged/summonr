@@ -148,7 +148,7 @@ fn sent(prepare: impl FnOnce(&App), act: impl FnOnce(&App)) -> Vec<Cmd> {
     })
 }
 
-fn select(app: &App, endpoint: &str) {
+pub(super) fn select(app: &App, endpoint: &str) {
     let at = app
         .picker
         .shown
@@ -159,7 +159,7 @@ fn select(app: &App, endpoint: &str) {
     app.picker.sel.set(at);
 }
 
-fn rejected_openai(app: &App) {
+pub(super) fn rejected_openai(app: &App) {
     open(
         app,
         vec![

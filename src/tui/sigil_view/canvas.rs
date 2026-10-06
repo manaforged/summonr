@@ -111,6 +111,14 @@ pub(super) fn page_rows(rows: u16) -> u16 {
     rows.saturating_sub(PAGE_CHROME).max(8)
 }
 
+pub(super) fn list_rows(rows: u16, chrome: u16) -> usize {
+    if WINDOW.load(Ordering::Relaxed) {
+        8
+    } else {
+        usize::from(page_rows(rows).saturating_sub(chrome)).max(1)
+    }
+}
+
 pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
     overlay_room(count, rows, DIALOG_CHROME)
 }

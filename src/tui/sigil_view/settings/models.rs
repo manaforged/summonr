@@ -18,7 +18,7 @@ mod row;
 mod rows;
 
 const LIST_CHROME: u16 = 6;
-const SPLIT_COLS: u16 = 110;
+const SPLIT_COLS: u16 = 140;
 
 use list::View;
 use row::Grid;
@@ -120,9 +120,7 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     let (cols, term_rows) = paint.viewport.get();
     let span = (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize;
     let wide = split(cols);
-    let visible =
-        usize::from(canvas::page_rows(term_rows).saturating_sub(LIST_CHROME + u16::from(!wide)))
-            .max(1);
+    let visible = canvas::list_rows(term_rows, LIST_CHROME + u16::from(!wide));
     let grid = Grid::new(span, wide);
     let rows = view.rows();
     let fixing = rows
@@ -138,24 +136,21 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
     };
     let height = (visible + 1) as f32 * canvas::cell().h;
     let column = |layout: LayoutStyle| container().layout(layout);
-    let rows = column(
-        LayoutStyle::flex_column()
-            .height(height)
-            .shrink(0.0)
-            .width(if wide {
-                grid.cells() * canvas::cell().w
-            } else {
-                f32::from(cols) * canvas::cell().w
-            }),
-    )
-    .child(grid.header())
-    .child(list);
+    let frame = LayoutStyle::flex_column().height(height).shrink(0.0);
     if !wide {
-        return vec![
-            rows,
-            strip(paint, &view, seat.as_ref(), span.saturating_sub(10)),
-        ];
+        let narrow = span.saturating_sub(10);
+        let rows = if paint.auth.open.get() {
+            super::auth::step_pane(paint, narrow, visible)
+                .into_iter()
+                .fold(column(frame.fill_width()), |node, child| node.child(child))
+        } else {
+            column(frame.fill_width()).child(grid.header()).child(list)
+        };
+        return vec![rows, strip(paint, &view, seat.as_ref(), narrow)];
     }
+    let rows = column(frame.width(grid.cells() * canvas::cell().w))
+        .child(grid.header())
+        .child(list);
     let width = span.saturating_sub(grid.cells() as usize + 6);
     let pane = side(paint, seat.as_ref(), fixing, (width, visible));
     vec![
@@ -214,9 +209,7 @@ fn side(
 
 fn strip(paint: &App, view: &View, seat: Option<&Seat>, width: usize) -> NodeBuilder {
     if paint.auth.open.get() {
-        return super::auth::step_pane(paint, width, 1)
-            .into_iter()
-            .fold(container(), |node, child| node.child(child));
+        return group("");
     }
     let error = paint.picker.error.get();
     let note = paint.picker.note.get();

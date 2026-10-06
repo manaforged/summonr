@@ -156,7 +156,7 @@ fn choosable(app: &App, node: NodeBuilder, index: usize) -> NodeBuilder {
     let choose = app.clone();
     let follow = app.clone();
     node.pointer_move(move |_| {
-        if follow.picker.sel.peek() != index {
+        if !follow.auth.open.peek() && follow.picker.sel.peek() != index {
             follow.picker.sel.set(index);
         }
     })

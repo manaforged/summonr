@@ -188,7 +188,7 @@ impl State {
     }
 
     #[must_use]
-    pub const fn blocked(self) -> bool {
+    pub(crate) const fn blocked(self) -> bool {
         matches!(
             self,
             Self::SignIn

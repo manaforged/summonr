@@ -3,19 +3,35 @@ use sigil::prelude::{
 };
 
 use super::super::{App, canvas};
-use crate::tui::sigil_view::app::Login;
+use crate::tui::sigil_view::app::{Login, Note};
 use crate::tui::sigil_view::ui::{group, notice};
 
-pub(super) const SEARCH: &str = "Search providers";
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Input {
+    Search,
+    Key,
+    Code,
+}
 
-pub(super) fn form(app: &App) -> Vec<NodeBuilder> {
+impl Input {
+    const fn placeholder(self) -> &'static str {
+        match self {
+            Self::Search => "Search providers",
+            Self::Key => "paste or type the api key",
+            Self::Code => "Paste the code if the browser shows one",
+        }
+    }
+}
+
+pub(super) fn form(app: &App, width: usize) -> Vec<NodeBuilder> {
+    let width = width.min(form_cells(app));
     let name = app
         .auth_choice()
         .map(|choice| choice.name)
         .unwrap_or_default();
     let form = match app.auth.step.get() {
         Login::List(_) => return Vec::new(),
-        Login::Key(note) => entering(app, &note),
+        Login::Key(note) => entering(app, &note, width),
         Login::Checking => vec![line("Checking…")],
         Login::SignIn {
             text,
@@ -23,14 +39,14 @@ pub(super) fn form(app: &App) -> Vec<NodeBuilder> {
             code,
             asking,
             note,
-        } => signing(app, &name, [text, url, code, note], asking),
+        } => signing(app, &name, [text, url, code, note], (asking, width)),
         Login::Confirm => vec![line(format!("Sign out of {name}?"))],
     };
     vec![
         form.into_iter().fold(
             container().layout(
                 LayoutStyle::flex_column()
-                    .width(form_cells(app) as f32 * canvas::cell().w)
+                    .width(width as f32 * canvas::cell().w)
                     .gap(canvas::overlay_gap()),
             ),
             |node, child| node.child(child),
@@ -69,33 +85,28 @@ fn form_cells(app: &App) -> usize {
         .saturating_sub(2)
 }
 
-pub(super) fn notes(note: &str, width: usize) -> Vec<NodeBuilder> {
-    let tone = if note.starts_with('✗') {
+pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {
+    let tone = if note.failed {
         Tone::Error
     } else {
         Tone::Neutral
     };
-    wrapped(note, width)
+    wrapped(&note.text, width)
         .into_iter()
         .map(|part| notice(part, tone))
         .collect()
 }
 
-pub(super) fn field(
-    app: &App,
-    placeholder: &'static str,
-    secret: bool,
-    focus: bool,
-) -> NodeBuilder {
+pub(super) fn field(app: &App, input: Input, focus: bool) -> NodeBuilder {
     let typing = app.clone();
     let save = app.clone();
-    let filter = placeholder == SEARCH;
+    let filter = input == Input::Search;
     let value = if filter {
         app.auth.filter
     } else {
         app.auth.key
     };
-    let field = text_field(value).placeholder(placeholder);
+    let field = text_field(value).placeholder(input.placeholder());
     let field = if focus {
         field.focus_when(app.auth.focus).autofocus()
     } else {
@@ -111,16 +122,20 @@ pub(super) fn field(
         })
         .submit(move |_| save.commit_auth())
         .height(canvas::overlay_field());
-    container().child(if secret { field.password() } else { field })
+    container().child(if input == Input::Key {
+        field.password()
+    } else {
+        field
+    })
 }
 
-fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
+fn entering(app: &App, note: &str, width: usize) -> Vec<NodeBuilder> {
     let choice = app.auth_choice();
     let name = choice.as_ref().map(|choice| choice.name.clone());
-    let width = form_cells(app).saturating_sub(8);
+    let width = width.saturating_sub(2);
     let mut nodes = vec![
         line(format!("Paste the {} API key.", name.unwrap_or_default())),
-        field(app, "paste or type the api key", true, true),
+        field(app, Input::Key, true),
     ];
     nodes.extend(
         wrapped(note, width)
@@ -130,9 +145,14 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
     nodes
 }
 
-fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
+fn signing(
+    app: &App,
+    name: &str,
+    lines: [String; 4],
+    (asking, width): (bool, usize),
+) -> Vec<NodeBuilder> {
     let [text, url, code, note] = lines;
-    let wide = form_cells(app).saturating_sub(8);
+    let wide = width.saturating_sub(2);
     let width = wide.saturating_sub(16);
     let mut nodes = vec![group(format!("Sign in to {name}"))];
     if !url.is_empty() {
@@ -146,12 +166,7 @@ fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeB
     }
     nodes.extend(wrapped(&text, wide).into_iter().map(line));
     if asking {
-        nodes.push(field(
-            app,
-            "Paste the code if the browser shows one",
-            false,
-            true,
-        ));
+        nodes.push(field(app, Input::Code, true));
     }
     if !note.is_empty() {
         nodes.extend(

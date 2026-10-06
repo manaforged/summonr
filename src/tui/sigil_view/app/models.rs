@@ -191,6 +191,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn commit_model_edit(&self) {
+        if self.auth.open.peek() {
+            return;
+        }
         let draft = self.picker.draft.peek().trim().to_string();
         let current = self.model.peek().snapshot.endpoint.clone();
         let groups = self.picker.groups.peek();

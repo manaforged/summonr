@@ -102,7 +102,7 @@ impl AuthDialog {
             open: signal(false),
             choices: signal(Vec::new()),
             sel: signal(0),
-            step: signal(Login::List(String::new())),
+            step: signal(Login::List(super::auth::Note::default())),
             filter: signal(String::new()),
             seat: signal(None),
             focus: signal(0),

@@ -25,7 +25,7 @@ fn the_usage_page_shows_totals_trend_models_and_workspaces() {
         app.submit();
         app.update(Msg::Usage(Ok(vec![
             spend("glm-5.3-flash", "/w/summonr", 2_000_000),
-            spend("deepseek-v4-flash", "/w/website", 500_000),
+            spend("deepseek-v4-flash", "/w/webshop", 500_000),
         ])));
     })
     .join("\n");
@@ -37,7 +37,7 @@ fn the_usage_page_shows_totals_trend_models_and_workspaces() {
         "Models",
         "glm-5.3-flash",
         "Workspaces",
-        "website",
+        "webshop",
     ] {
         assert!(shown.contains(part), "missing {part:?}:\n{shown}");
     }

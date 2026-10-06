@@ -13,7 +13,6 @@ const SERVICE: &str = "summoner";
 const ACCOUNT: &str = "credentials";
 const SEAL: &str = "seal";
 const MAGIC: &[u8] = b"SMNR1";
-const MAGIC_LEGACY: &[u8] = b"MAGE1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
@@ -209,7 +208,7 @@ impl Store {
         tighten(&self.file)?;
         match std::fs::read(&self.file) {
             Ok(bytes) => {
-                let sealed = bytes.starts_with(MAGIC) || bytes.starts_with(MAGIC_LEGACY);
+                let sealed = bytes.starts_with(MAGIC);
                 let key = sealed.then(|| self.wrap(false)).transpose()?;
                 let document = open_file(key.as_ref(), &bytes).map_err(|error| {
                     Error::Config(format!(

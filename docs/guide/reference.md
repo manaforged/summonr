@@ -974,9 +974,6 @@ source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables
 background commands; file tools still use the list.
 
-- Home is still `~/.summonr`. Env is still `SUMMONR_*`.
-- An older `mage` binary may still be on `PATH`. Use `summonr`.
-
 ## Extend
 
 The built-in modules are the binary (modules above). What you add lives in files and other

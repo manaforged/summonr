@@ -49,7 +49,6 @@ pub(super) fn inner_cols(cols: usize) -> usize {
 
 static WINDOW: AtomicBool = AtomicBool::new(false);
 
-#[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) fn is_window() -> bool {
     WINDOW.load(Ordering::Relaxed)
 }
@@ -72,7 +71,6 @@ pub(super) fn cell() -> Metrics {
 }
 
 pub(super) const DIALOG_CELLS: f32 = 72.0;
-pub(super) const WIDE_DIALOG_CELLS: f32 = 120.0;
 
 pub(super) fn dialog_width(cols: u16, max_cells: f32) -> f32 {
     if WINDOW.load(Ordering::Relaxed) {
@@ -107,10 +105,22 @@ pub(super) fn overlay_list_row() -> f32 {
 }
 
 pub(super) const DIALOG_CHROME: u16 = 16;
-const DIALOG_LIST_CAP: usize = 14;
+const PAGE_CHROME: u16 = 5;
+
+pub(super) fn page_rows(rows: u16) -> u16 {
+    rows.saturating_sub(PAGE_CHROME).max(8)
+}
+
+pub(super) fn list_rows(rows: u16, chrome: u16) -> usize {
+    if WINDOW.load(Ordering::Relaxed) {
+        8
+    } else {
+        usize::from(page_rows(rows).saturating_sub(chrome)).max(1)
+    }
+}
 
 pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
-    overlay_room(count, rows, DIALOG_CHROME).min(DIALOG_LIST_CAP)
+    overlay_room(count, rows, DIALOG_CHROME)
 }
 
 pub(super) fn overlay_room(count: usize, rows: u16, used: u16) -> usize {

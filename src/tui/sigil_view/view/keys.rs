@@ -189,11 +189,11 @@ fn panes() -> Vec<(Shortcut, Handler)> {
         }),
         (Shortcut::ctrl(Key::ArrowLeft), |app, event| {
             event.stop_propagation();
-            app.focus_pane(false);
+            app.tab_or_pane(false);
         }),
         (Shortcut::ctrl(Key::ArrowRight), |app, event| {
             event.stop_propagation();
-            app.focus_pane(true);
+            app.tab_or_pane(true);
         }),
         (
             Shortcut::new(

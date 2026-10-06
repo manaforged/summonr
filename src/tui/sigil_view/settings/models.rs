@@ -1,116 +1,29 @@
+use std::rc::Rc;
+
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
-    text_field, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, Tone, WidgetLayoutExt, container, text_field,
 };
 
 use super::{App, canvas};
-use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
 use crate::tui::sigil_view::ui::{
-    Bindings, Dialog, Hints, Key, KeyAction, Size, alt, group, notice, slotted,
+    Bindings, Dialog, Hints, Key, KeyAction, Size, Tab, alt, group, notice, tab_strip,
 };
 
+mod detail;
+mod facets;
+mod list;
 mod row;
+mod rows;
 
-const EXTRA_ROWS: u16 = 2;
+const LIST_CHROME: u16 = 6;
+const SPLIT_COLS: u16 = 140;
 
-use row::{Grid, Shown};
-
-enum ModelRow {
-    Header(String),
-    Provider(String, usize),
-    Seat(usize),
-    Older(usize),
-}
-
-fn list_rows(
-    choices: &[Seat],
-    counts: [usize; 3],
-    groups: &std::collections::BTreeMap<String, State>,
-    aged: usize,
-) -> Vec<ModelRow> {
-    let mut rows = Vec::with_capacity(choices.len() + 8);
-    let mut unavailable = Vec::new();
-    let mut start = 0;
-    for (title, count) in ["current", "favorites", "recent"].into_iter().zip(counts) {
-        let end = (start + count).min(choices.len());
-        if end > start {
-            rows.push(ModelRow::Header(title.to_string()));
-            rows.extend((start..end).map(ModelRow::Seat));
-        }
-        start = end;
-    }
-    let mut heading = "";
-    for (index, choice) in choices.iter().enumerate().skip(start) {
-        let name = choice.endpoint.as_str();
-        if groups.get(name).copied().is_some_and(row::blocked) {
-            unavailable.push(ModelRow::Seat(index));
-            continue;
-        }
-        if name != heading {
-            heading = name;
-            let count = choices[index..]
-                .iter()
-                .take_while(|seat| seat.endpoint == name)
-                .count();
-            rows.push(ModelRow::Provider(name.to_string(), count));
-        }
-        rows.push(ModelRow::Seat(index));
-    }
-    if aged > 0 {
-        rows.push(ModelRow::Older(aged));
-    }
-    if !unavailable.is_empty() {
-        rows.push(ModelRow::Header("unavailable".to_string()));
-        rows.extend(unavailable);
-    }
-    rows
-}
-
-fn label<'a>(seat: &'a Seat, facts: &'a std::collections::BTreeMap<Seat, Model>) -> &'a str {
-    facts.get(seat).map_or(seat.model.as_str(), Model::label)
-}
-
-fn names(choices: &[Seat], facts: &std::collections::BTreeMap<Seat, Model>) -> Vec<String> {
-    let mut seen: std::collections::BTreeMap<(&str, &str), usize> =
-        std::collections::BTreeMap::new();
-    for seat in choices {
-        *seen
-            .entry((seat.endpoint.as_str(), label(seat, facts)))
-            .or_default() += 1;
-    }
-    choices
-        .iter()
-        .map(|seat| {
-            let name = label(seat, facts);
-            if seen
-                .get(&(seat.endpoint.as_str(), name))
-                .copied()
-                .unwrap_or(0)
-                > 1
-            {
-                seat.model.clone()
-            } else {
-                name.to_string()
-            }
-        })
-        .collect()
-}
-
-fn fix(name: &str, state: State, cause: Option<&String>) -> Option<String> {
-    let cause = cause.and_then(|cause| cause.lines().next());
-    Some(match state {
-        State::NeedsKey => format!("↵ add a key for {name}"),
-        State::NeedsModel => format!("{name} needs a model in config.toml"),
-        State::SignIn => format!("↵ sign in to {name}"),
-        State::KeyRejected => format!("{name} rejected the key. ↵ replaces the key"),
-        State::RateLimited => format!("{name} is rate limited. Models still usable; F5 retries"),
-        State::Offline => format!("{name} did not answer. F5 retries"),
-        State::Error => format!("{name}: {}", cause.unwrap_or(state.word())),
-        State::Ready | State::NoKey | State::Checking | State::Loading => return None,
-    })
-}
+use list::View;
+use row::Grid;
+pub(in crate::tui::sigil_view::settings) use row::{price, tone};
+use rows::{ModelRow, fix, names};
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     let mut bindings = vec![(
@@ -143,29 +56,33 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let typing = app.clone();
     let count = app.clone();
+    let chips = app.clone();
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
-    Dialog::new(Size::Wide, "Models", Hints::new())
-        .live_hints(move || hints(&count))
+    let (cols, rows) = app.viewport.peek();
+    Dialog::new(Size::Page, "Models", Hints::new())
+        .header(Some(tab_strip(&app, Tab::Models)))
+        .fixed(rows)
+        .live_hints(move || {
+            if count.auth.open.get() {
+                super::auth::hints(&count)
+            } else {
+                hints(&count)
+            }
+        })
         .child(
             container().child(
                 text_field(app.picker.draft)
-                    .placeholder("Search models")
+                    .placeholder("Search models, providers, or type a model id")
                     .focus_when(app.picker.focus)
+                    .autofocus()
                     .change(move |draft| typing.replace_model_draft(draft.to_string()))
                     .submit(|_| {})
                     .height(canvas::overlay_field()),
             ),
         )
-        .child(
-            container()
-                .layout(
-                    LayoutStyle::flex_column()
-                        .fill_width()
-                        .gap(canvas::overlay_gap()),
-                )
-                .children_reactive(move || body(&paint)),
-        )
-        .build(app.picker.open, app.viewport.peek().0, &hotkeys)
+        .child(container().children_reactive(move || vec![facets::chips(&chips)]))
+        .child(container().children_reactive(move || body(&paint)))
+        .build(app.picker.open, cols, &hotkeys)
 }
 
 fn hints(app: &App) -> Hints {
@@ -184,169 +101,130 @@ fn hints(app: &App) -> Hints {
     if app.picker.target.get().is_none() {
         hints = hints.key(Key::Fixed("alt+d"), "default");
     }
-    hints.key(Key::Fixed("F5"), "refresh").right(
-        match (app.picker.loading.get() && checking > 0, total) {
+    hints
+        .key(Key::Fixed("alt+o"), "older")
+        .key(Key::Fixed("F5"), "refresh")
+        .right(match (app.picker.loading.get() && checking > 0, total) {
             (true, _) => format!("checking {checking}…"),
             (false, 0) => "0 / 0".to_string(),
             (false, total) => format!("{} / {total}", selected + 1),
-        },
-    )
+        })
+}
+
+fn split(cols: u16) -> bool {
+    cols >= SPLIT_COLS && !canvas::is_window()
 }
 
 fn body(paint: &App) -> Vec<NodeBuilder> {
-    let sections = paint.picker.draft.get().is_empty();
-    let choices = paint.picker.shown.get();
-    let all = paint.picker.choices.get();
-    let counts = paint.picker.recent.get();
-    let groups = paint.picker.groups.get();
-    let causes = paint.picker.causes.get();
-    let facts = paint.picker.facts.get();
+    let view = Rc::new(View::read(paint));
     let (cols, term_rows) = paint.viewport.get();
-    let span = (canvas::dialog_width(cols, canvas::WIDE_DIALOG_CELLS) / canvas::cell().w) as usize;
-    let listed: usize = counts.iter().sum();
-    let older = paint.picker.older.get();
-    let aged = if sections {
-        paint.picker.hidden.get()
-    } else {
-        0
+    let span = (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize;
+    let wide = split(cols);
+    let visible = canvas::list_rows(term_rows, LIST_CHROME + u16::from(!wide));
+    let grid = Grid::new(span, wide);
+    let rows = view.rows();
+    let fixing = rows
+        .iter()
+        .any(|row| matches!(row, ModelRow::Fix(at) if *at == view.selected));
+    let seat = view.seat().cloned();
+    let list = match seat {
+        Some(_) => {
+            let labels = names(&view.choices, &view.facts);
+            list::list(paint, Rc::clone(&view), grid, labels, (rows, visible))
+        }
+        None => empty(paint),
     };
-    let rows = if sections {
-        list_rows(&choices, counts, &groups, aged)
+    let height = (visible + 1) as f32 * canvas::cell().h;
+    let column = |layout: LayoutStyle| container().layout(layout);
+    let frame = LayoutStyle::flex_column().height(height).shrink(0.0);
+    if !wide {
+        let narrow = span.saturating_sub(10);
+        let rows = if paint.auth.open.get() {
+            super::auth::step_pane(paint, narrow, visible)
+                .into_iter()
+                .fold(column(frame.fill_width()), |node, child| node.child(child))
+        } else {
+            column(frame.fill_width()).child(grid.header()).child(list)
+        };
+        return vec![rows, strip(paint, &view, seat.as_ref(), narrow)];
+    }
+    let rows = column(frame.width(grid.cells() * canvas::cell().w))
+        .child(grid.header())
+        .child(list);
+    let width = span.saturating_sub(grid.cells() as usize + 6);
+    let pane = side(paint, seat.as_ref(), fixing, (width, visible));
+    vec![
+        column(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(canvas::cell().w * 3.0),
+        )
+        .child(rows)
+        .child(
+            pane.into_iter().fold(
+                column(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .gap(canvas::overlay_gap()),
+                ),
+                |node, child| node.child(child),
+            ),
+        ),
+    ]
+}
+
+fn empty(paint: &App) -> NodeBuilder {
+    let draft = paint.picker.draft.peek().trim().to_string();
+    if paint.picker.loading.get() {
+        group("loading models…")
+    } else if draft.is_empty() {
+        group("no models match — tab changes the filter, /login adds a provider")
     } else {
-        (0..choices.len()).map(ModelRow::Seat).collect()
-    };
-    let mut items = Vec::new();
+        group(format!("no match · ↵ uses \"{draft}\" as the model id"))
+    }
+}
+
+fn side(
+    paint: &App,
+    seat: Option<&Seat>,
+    fixing: bool,
+    (width, visible): (usize, usize),
+) -> Vec<NodeBuilder> {
+    let mut nodes = Vec::new();
     let error = paint.picker.error.get();
     if !error.is_empty() {
-        items.push(notice(
-            crate::text::ellipsize(&error, span.saturating_sub(10)),
-            Tone::Error,
-        ));
+        nodes.push(notice(crate::text::ellipsize(&error, width), Tone::Error));
     }
     let note = paint.picker.note.get();
-    let used = canvas::DIALOG_CHROME + EXTRA_ROWS + items.len() as u16;
-    let visible = canvas::overlay_room(rows.len(), term_rows, used);
-    let selected = paint.picker.sel.get().min(choices.len().saturating_sub(1));
-    if choices.is_empty() && paint.picker.loading.get() {
-        items.push(group("loading models…"));
-    } else if choices.is_empty() {
-        let draft = paint.picker.draft.peek().trim().to_string();
-        items.push(notice(
-            if draft.is_empty() {
-                "no models — /login adds a provider".to_string()
-            } else {
-                format!("no match · ↵ uses \"{draft}\" as the model id")
-            },
-            Tone::Neutral,
-        ));
-    } else {
-        let top = rows
-            .iter()
-            .position(|row| matches!(row, ModelRow::Seat(index) if *index == selected))
-            .map_or(0, |at| (at + 1).saturating_sub(visible));
-        let source = paint.clone();
-        let expand = paint.clone();
-        let default = paint.picker.default.get();
-        let current = all.first().filter(|_| counts[0] > 0).cloned();
-        let pins: Vec<Seat> = all
-            .iter()
-            .skip(counts[0])
-            .take(counts[1])
-            .cloned()
-            .collect();
-        let labels = names(&choices, &facts);
-        let grid = Grid::new(
-            span,
-            labels
-                .iter()
-                .map(|name| sigil::app::cell_width(name))
-                .max()
-                .unwrap_or(0),
-        );
-        items.push(grid.header());
-        let (shown, known, states) = (choices.clone(), facts.clone(), groups.clone());
-        let headings = groups.clone();
-        let line = move |index: usize| {
-            let choice = &shown[index];
-            let mark = if current.as_ref() == Some(choice) {
-                "●"
-            } else if default.as_ref() == Some(choice) {
-                "◆"
-            } else if pins.contains(choice) {
-                "★"
-            } else {
-                " "
-            };
-            let fact = known.get(choice);
-            let state = states.get(&choice.endpoint).copied();
-            let slots = grid.row(
-                choice,
-                fact,
-                Shown {
-                    provider: !sections || index < listed || state.is_some_and(row::blocked),
-                    state,
-                },
-            );
-            (mark, labels[index].clone(), slots)
-        };
-        items.push(
-            container().layout(LayoutStyle::block().fill_width()).child(
-                virtual_list(rows, move |_, row: &ModelRow| match row {
-                    ModelRow::Header(name) => row::section_heading(name),
-                    ModelRow::Provider(name, count) => {
-                        row::provider_heading(name, headings.get(name).copied(), *count)
-                    }
-                    ModelRow::Older(count) => {
-                        let toggle = expand.clone();
-                        let noun = if *count == 1 { "model" } else { "models" };
-                        group(if older {
-                            format!("▾ hide {count} older {noun} · alt+o")
-                        } else {
-                            format!("▸ show {count} older {noun} · alt+o")
-                        })
-                        .pointer_down(move |event| {
-                            toggle.toggle_older_models();
-                            event.stop_propagation();
-                        })
-                    }
-                    ModelRow::Seat(index) => {
-                        let (mark, name, slots) = line(*index);
-                        let choose = source.clone();
-                        let follow = source.clone();
-                        let index = *index;
-                        slotted(index == selected, Some(mark), name, slots)
-                            .pointer_move(move |_| {
-                                if follow.picker.sel.peek() != index {
-                                    follow.picker.sel.set(index);
-                                }
-                            })
-                            .pointer_down(move |event| {
-                                choose.picker.sel.set(index);
-                                choose.commit_model_edit();
-                                event.stop_propagation();
-                            })
-                    }
-                })
-                .row_height(canvas::overlay_list_row())
-                .height(canvas::overlay_list_row() * visible as f32)
-                .viewport_height(canvas::overlay_list_row() * visible as f32)
-                .scroll_into_view(top),
-            ),
-        );
+    if !note.is_empty() {
+        nodes.push(group(crate::text::ellipsize(&note, width)));
     }
-    let detail = choices
-        .get(selected)
-        .filter(|_| note.is_empty())
-        .map_or(note, |choice| {
-            let name = choice.endpoint.as_str();
-            let state = groups.get(name).copied();
-            state
-                .and_then(|state| fix(name, state, causes.get(name)))
-                .unwrap_or_else(|| row::detail(choice, facts.get(choice), state))
-        });
-    items.push(group(crate::text::ellipsize(
-        &detail,
-        span.saturating_sub(10),
-    )));
-    items
+    if paint.auth.open.get() {
+        nodes.extend(super::auth::step_pane(paint, width, visible));
+    } else if let Some(seat) = seat {
+        nodes.extend(detail::pane(paint, seat, fixing, width));
+    }
+    nodes
+}
+
+fn strip(paint: &App, view: &View, seat: Option<&Seat>, width: usize) -> NodeBuilder {
+    if paint.auth.open.get() {
+        return group("");
+    }
+    let error = paint.picker.error.get();
+    let note = paint.picker.note.get();
+    let causes = paint.picker.causes.get();
+    let text = if !error.is_empty() {
+        error
+    } else if !note.is_empty() {
+        note
+    } else if let Some(seat) = seat {
+        let state = view.groups.get(&seat.endpoint).copied();
+        state
+            .and_then(|state| fix(&seat.endpoint, state, causes.get(&seat.endpoint)))
+            .unwrap_or_else(|| row::detail(seat, view.facts.get(seat), state))
+    } else {
+        String::new()
+    };
+    group(crate::text::ellipsize(&text, width))
 }

@@ -195,7 +195,9 @@ impl App {
         if self.unseated() {
             self.auth.sel.set(0);
         }
-        self.auth.step.set(Login::List(note));
+        self.auth
+            .step
+            .set(Login::List(super::auth::Note::plain(note)));
     }
 
     fn prompts_loaded(

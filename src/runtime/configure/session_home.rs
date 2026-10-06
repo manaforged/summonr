@@ -58,9 +58,14 @@ pub(super) fn ephemeral() -> Option<&'static Path> {
     static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
     DIR.get_or_init(|| {
         let dir = std::env::temp_dir().join(format!("summonr-{}", uuid::Uuid::now_v7().simple()));
-        let mut builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        let builder = {
+            let mut builder = std::fs::DirBuilder::new();
+            std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+            builder
+        };
+        #[cfg(not(unix))]
+        let builder = std::fs::DirBuilder::new();
         builder.create(&dir).is_ok().then_some(dir)
     })
     .as_deref()

@@ -377,7 +377,7 @@ pub(crate) use git::guarded_git_paths;
 #[cfg(any(target_os = "macos", test))]
 pub(crate) use git::guarded_git_regex;
 pub(crate) use paths::{expand_path, split_segments};
-#[cfg(test)]
+#[cfg(all(test, unix))]
 pub(crate) use shell::running_as_root;
 pub(crate) use verbs::*;
 

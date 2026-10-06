@@ -1,8 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
-use serde_json::{Value, json};
+#[cfg(unix)]
+use serde_json::Value;
+use serde_json::json;
 
-use crate::support::{Model, Session, Step, advertised, fixture};
+use crate::support::{Model, Session, Step};
+#[cfg(unix)]
+use crate::support::{advertised, fixture};
 
 fn write(path: &Path, text: &str) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();

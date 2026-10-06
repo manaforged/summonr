@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Tone, container,
-    list_row_with, notice_band, section_label,
+    AlignItems, LayoutBuilderExt, LayoutStyle, ListRowSlots, NodeBuilder, Paint, Token, Tone,
+    container, list_row_with, notice_band, section_label,
 };
 
 use crate::tui::sigil_view::canvas;
@@ -68,4 +68,25 @@ pub(in crate::tui) fn notice(text: impl Into<String>, tone: Tone) -> NodeBuilder
     notice_band(text.into(), tone)
         .layout(row(8.0))
         .bg(canvas::blend(canvas::palette().base, color, 0.14))
+}
+
+const FIELD_KEY: usize = 11;
+
+pub(in crate::tui) fn part(value: impl Into<String>, color: Token) -> (String, Look) {
+    (value.into(), Look::sm(color))
+}
+
+pub(in crate::tui) fn field(key: &str, value: impl Into<String>, color: Token) -> NodeBuilder {
+    heading(vec![
+        part(format!("{key:<FIELD_KEY$}"), Token::Gray10),
+        part(value, color),
+    ])
+}
+
+pub(in crate::tui) fn blank() -> NodeBuilder {
+    heading(vec![part("", Token::Gray10)])
+}
+
+pub(in crate::tui) const fn field_width(width: usize) -> usize {
+    width.saturating_sub(FIELD_KEY)
 }

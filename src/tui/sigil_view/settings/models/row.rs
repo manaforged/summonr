@@ -13,9 +13,10 @@ use crate::tui::sigil_view::ui::{heading, slotted};
 
 const NAME_MIN: usize = 16;
 const NAME_MAX: usize = 44;
+const NAME_SPLIT: usize = 34;
 const PROVIDER: f32 = 14.0;
-const CONTEXT: f32 = 7.0;
-const PRICE: f32 = 5.0;
+const CONTEXT: f32 = 9.0;
+const PRICE: f32 = 16.0;
 const RELEASED: f32 = 11.0;
 const CAN: f32 = 14.0;
 
@@ -27,12 +28,28 @@ pub(super) struct Grid {
 }
 
 impl Grid {
-    pub(super) fn new(span: usize, longest: usize) -> Self {
-        Self {
-            name: (longest + 2).clamp(NAME_MIN, NAME_MAX),
-            released: span >= 64,
-            can: span >= 80,
+    pub(super) fn new(span: usize, split: bool) -> Self {
+        let released = !split && span >= 72;
+        let can = !split && span >= 90;
+        let mut grid = Self {
+            name: NAME_SPLIT,
+            released,
+            can,
+        };
+        if !split {
+            let taken = grid.cells() as usize - NAME_SPLIT;
+            grid.name = span.saturating_sub(taken + 10).clamp(NAME_MIN, NAME_MAX);
         }
+        grid
+    }
+
+    pub(super) fn cells(self) -> f32 {
+        let columns = CONTEXT
+            + PRICE
+            + PROVIDER
+            + if self.released { RELEASED } else { 0.0 }
+            + if self.can { CAN } else { 0.0 };
+        self.name as f32 + columns + 8.0
     }
 
     fn slots(self, cells: [String; 5], tone: RowTone) -> ListRowSlots {
@@ -58,7 +75,7 @@ impl Grid {
     }
 
     pub(super) fn header(self) -> NodeBuilder {
-        let labels = ["CONTEXT", "PRICE", "RELEASED", "CAN", "PROVIDER"].map(str::to_string);
+        let labels = ["CONTEXT", "$/1M IN/OUT", "RELEASED", "CAN", "PROVIDER"].map(str::to_string);
         slotted(
             false,
             Some(" "),
@@ -81,12 +98,7 @@ impl Grid {
             }
         };
         let context = dash(fact.map(Model::window).unwrap_or_default());
-        let price = match fact.map_or(Cost::Unknown, |fact| fact.cost) {
-            Cost::Free => "free",
-            Cost::Plan => "plan",
-            Cost::Metered => "paid",
-            Cost::Unknown => "—",
-        };
+        let price = price(fact);
         let released = dash(
             fact.and_then(Model::released)
                 .map_or_else(String::new, |month| {
@@ -98,7 +110,7 @@ impl Grid {
                 }),
         );
         let can = match (shown.state, fact) {
-            (Some(state), _) if blocked(state) => state.word().to_string(),
+            (Some(state), _) if state.blocked() => state.word().to_string(),
             (Some(State::Ready), None) => "not listed".to_string(),
             (_, Some(fact)) => [(fact.reasoning, "think"), (fact.vision, "vision")]
                 .into_iter()
@@ -107,12 +119,12 @@ impl Grid {
                 .join(" "),
             (_, None) => String::new(),
         };
-        let tone = if shown.state.is_some_and(blocked) {
+        let tone = if shown.state.is_some_and(State::blocked) {
             RowTone::Muted
         } else {
             RowTone::Normal
         };
-        self.slots([context, price.to_string(), released, can, provider], tone)
+        self.slots([context, price, released, can, provider], tone)
     }
 }
 
@@ -122,16 +134,27 @@ pub(super) struct Shown {
     pub(super) state: Option<State>,
 }
 
-pub(super) const fn blocked(state: State) -> bool {
-    matches!(
-        state,
-        State::SignIn
-            | State::NeedsKey
-            | State::NeedsModel
-            | State::KeyRejected
-            | State::Offline
-            | State::Error
-    )
+pub(in crate::tui::sigil_view::settings) fn price(fact: Option<&Model>) -> String {
+    match fact.map(|fact| (fact.cost, fact.price)) {
+        Some((Cost::Free, _)) => "free".to_string(),
+        Some((Cost::Plan, _)) => "plan".to_string(),
+        Some((Cost::Metered, Some(price))) => format!(
+            "{}/{}",
+            crate::provider::dollars(price.input),
+            crate::provider::dollars(price.output)
+        ),
+        Some((Cost::Metered, None)) => "paid".to_string(),
+        Some((Cost::Unknown, _)) | None => "—".to_string(),
+    }
+}
+
+pub(in crate::tui::sigil_view::settings) fn tone(state: State) -> Token {
+    match state {
+        State::Ready | State::NoKey => Token::Success11,
+        State::Checking | State::Loading => Token::Gray10,
+        State::RateLimited | State::SignIn | State::NeedsKey | State::NeedsModel => Token::Warn11,
+        State::KeyRejected | State::Offline | State::Error => Token::Error11,
+    }
 }
 
 pub(super) fn section_heading(title: &str) -> NodeBuilder {
@@ -141,15 +164,7 @@ pub(super) fn section_heading(title: &str) -> NodeBuilder {
 pub(super) fn provider_heading(name: &str, state: Option<State>, count: usize) -> NodeBuilder {
     let mut parts = vec![(name.to_string(), Look::xs(Token::Gray12).bold())];
     if let Some(state) = state {
-        let tone = match state {
-            State::Ready | State::NoKey => Look::xs(Token::Success11),
-            State::Checking | State::Loading => Look::xs(Token::Gray10),
-            State::RateLimited | State::SignIn | State::NeedsKey | State::NeedsModel => {
-                Look::xs(Token::Warn11)
-            }
-            State::KeyRejected | State::Offline | State::Error => Look::xs(Token::Error11),
-        };
-        parts.push((format!(" · {}", state.word()), tone));
+        parts.push((format!(" · {}", state.word()), Look::xs(tone(state))));
     }
     parts.push((format!(" · {count}"), Look::xs(Token::Gray10)));
     heading(parts)
@@ -161,7 +176,7 @@ pub(super) fn detail(seat: &Seat, fact: Option<&Model>, state: Option<State>) ->
         if let Some(day) = fact.released_on() {
             parts.push(format!("released {day}"));
         }
-        if let Some(price) = fact.price {
+        if let Some(price) = fact.price.filter(|_| fact.cost == Cost::Metered) {
             parts.push(format!(
                 "{} in · {} out per 1M tokens",
                 crate::provider::dollars(price.input),

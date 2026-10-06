@@ -120,13 +120,16 @@ fn a_model_without_a_release_date_stays_in_the_picker() {
 }
 
 #[test]
-fn the_wide_picker_shows_the_release_month() {
-    let screen = picker(140, |app| open(app, &[("leap-model", Some(19_782))], 1));
+fn the_wide_picker_shows_the_release_day_of_the_selected_model() {
+    let screen = picker(140, |app| {
+        open(app, &[("leap-model", Some(19_782))], 1);
+        app.overlay_move(1);
+    });
     let row = screen
         .lines()
-        .find(|line| line.contains("leap-model"))
+        .find(|line| line.contains("released"))
         .unwrap_or_else(|| panic!("{screen}"));
-    assert!(row.contains("2024-02"), "{screen}");
+    assert!(row.contains("2024-02-29"), "{screen}");
 }
 
 #[test]

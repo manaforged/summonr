@@ -24,6 +24,17 @@ First public release.
   up`, and on a wide terminal shows a detail pane with the row's key,
   sign-in, models, and actions. `alt+k` pastes a key on a row that also
   signs in.
+- `/model`, `/login`, and `/usage` fill the terminal and share a tab
+  row; `ctrl+←` and `ctrl+→` switch between them. The frame keeps one
+  size while models load, and a key or sign-in step opens in the side
+  pane beside the list instead of a new dialog. Typing after `/model`
+  or `/login` goes straight into the search field. `/login` lists every
+  provider and each provider's full model list. On a wide terminal
+  `/model` shows the selected model's context, price per 1M tokens,
+  release date, abilities, and the other providers that serve it. Prices
+  are dollar amounts, `tab` filters by ready, favorites, plan, free,
+  think, vision, or a 1M-token context, and a provider that is not ready
+  is one row with its fix; `↵` on an offline provider retries it.
 - The `claude-pro` seat is off. Anthropic's terms do not allow a
   third-party app to sign in with a Claude Pro or Max plan.
 - Windows x86_64 release binary and a PowerShell installer

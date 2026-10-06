@@ -1,19 +1,25 @@
-use sigil::prelude::Paint;
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, Tone, WidgetLayoutExt, container,
-    text_field, virtual_list,
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, WidgetLayoutExt, container,
+    virtual_list,
 };
 
 use super::{App, canvas};
 use crate::AuthInfo;
 use crate::endpoint::State;
-use crate::tui::sigil_view::app::{Login, matching, section};
-use crate::tui::sigil_view::ui::{Bindings, Dialog, Hints, Key, Size, alt, group, notice, pick};
+use crate::tui::sigil_view::app::{Login, Note, matching, section};
+use crate::tui::sigil_view::ui::{
+    Bindings, Dialog, Hints, Key, Size, Tab, alt, group, pick, tab_strip,
+};
 
 mod detail;
+mod form;
 
-const SPLIT_COLS: u16 = 96;
-const LIST_CELLS: f32 = 54.0;
+use form::{Input, field, form, notes};
+
+const SPLIT_COLS: u16 = 110;
+const LIST_CELLS: f32 = 58.0;
+const LIST_CHROME: u16 = 5;
+const NARROW_NOTE_ROWS: usize = 2;
 
 pub(in crate::tui::sigil_view) fn keys() -> Bindings {
     let mut bindings = alt("d", |app, event| {
@@ -28,23 +34,17 @@ pub(in crate::tui::sigil_view) fn keys() -> Bindings {
 }
 
 fn split(app: &App) -> bool {
-    app.viewport.get().0 >= SPLIT_COLS && !app.picker.open.peek()
+    app.viewport.get().0 >= SPLIT_COLS && !canvas::is_window()
 }
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     let paint = app.clone();
     let state = app.clone();
-    let title = match app.auth_choice() {
-        Some(choice) if app.picker.open.peek() => format!("Models › {}", choice.name),
-        Some(_) | None => "Providers".to_string(),
-    };
     let hotkeys = app.model.peek().prefs.hotkeys.clone();
-    let size = if split(&app) {
-        Size::Wide
-    } else {
-        Size::Normal
-    };
-    Dialog::new(size, title, Hints::new())
+    let (cols, rows) = app.viewport.peek();
+    Dialog::new(Size::Page, "Providers", Hints::new())
+        .header(Some(tab_strip(&app, Tab::Providers)))
+        .fixed(rows)
         .live_hints(move || hints(&state))
         .child(
             container()
@@ -53,30 +53,30 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
                         .fill_width()
                         .gap(canvas::overlay_gap()),
                 )
-                .children_reactive(move || {
-                    let name = paint
-                        .auth_choice()
-                        .map(|choice| choice.name)
-                        .unwrap_or_default();
-                    match paint.auth.step.get() {
-                        Login::List(note) => choices(&paint, &note),
-                        Login::Key(note) => entering(&paint, &note),
-                        Login::Checking => vec![line("Checking…")],
-                        Login::SignIn {
-                            text,
-                            url,
-                            code,
-                            asking,
-                            note,
-                        } => signing(&paint, &name, [text, url, code, note], asking),
-                        Login::Confirm => vec![line(format!("Sign out of {name}?"))],
-                    }
-                }),
+                .children_reactive(move || body(&paint)),
         )
-        .build(app.auth.open, app.viewport.peek().0, &hotkeys)
+        .build(app.auth.open, cols, &hotkeys)
 }
 
-fn hints(app: &App) -> Hints {
+fn body(app: &App) -> Vec<NodeBuilder> {
+    let listing_app = app.clone();
+    let listing = matches!(app.auth.step.get(), Login::List(_));
+    if !listing && !split(app) {
+        return form(app, span(app));
+    }
+    vec![
+        field(app, Input::Search, listing),
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .gap(canvas::overlay_gap()),
+            )
+            .children_reactive(move || self::listing(&listing_app)),
+    ]
+}
+
+pub(super) fn hints(app: &App) -> Hints {
     match app.auth.step.get() {
         Login::List(_) => listing_hints(app),
         Login::Key(_) => Hints::new()
@@ -104,7 +104,12 @@ fn listing_hints(app: &App) -> Hints {
     let Some(choice) = rows.get(selected) else {
         return Hints::new().key(Key::Esc, "close").right("0 / 0");
     };
-    let mut hints = Hints::new().key(Key::UpDown, "move").key(
+    let stacked = app.picker.open.get();
+    let mut hints = Hints::new();
+    if !stacked {
+        hints = hints.key(Key::UpDown, "move");
+    }
+    hints = hints.key(
         Key::Enter,
         if choice.login.signs_in() {
             "sign in"
@@ -120,76 +125,23 @@ fn listing_hints(app: &App) -> Hints {
     if choice.stored() {
         hints = hints.key(Key::Fixed("alt+d"), "sign out");
     }
+    if stacked {
+        return hints.key(Key::Esc, "back");
+    }
     hints
         .key(Key::Esc, "close")
         .right(format!("{} / {}", selected + 1, rows.len()))
 }
 
-pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
-    container().child(
-        sigil::kernel::text(text.into())
-            .nowrap()
-            .text_color(sigil::prelude::Token::OnSurface)
-            .font_size(14.0),
-    )
-}
-
-fn wrapped(text: &str, width: usize) -> Vec<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for word in text.split_whitespace() {
-        match parts.last_mut() {
-            Some(last)
-                if sigil::app::cell_width(last) + 1 + sigil::app::cell_width(word) <= width =>
-            {
-                last.push(' ');
-                last.push_str(word);
-            }
-            Some(_) | None => parts.push(crate::text::ellipsize(word, width)),
-        }
-    }
-    parts
-}
-
 fn span(app: &App) -> usize {
     let (cols, _) = app.viewport.get();
-    let cells = if split(app) {
-        canvas::WIDE_DIALOG_CELLS
-    } else {
-        canvas::DIALOG_CELLS
-    };
-    (canvas::dialog_width(cols, cells) / canvas::cell().w) as usize
+    (canvas::dialog_width(cols, f32::from(cols)) / canvas::cell().w) as usize
 }
 
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
     state
         .filter(|state| state.failed())
         .map_or_else(|| choice.state(), ToString::to_string)
-}
-
-const SEARCH: &str = "Search providers";
-
-fn choices(app: &App, note: &str) -> Vec<NodeBuilder> {
-    let paint = app.clone();
-    let tone = if note.starts_with('✗') {
-        Tone::Error
-    } else {
-        Tone::Neutral
-    };
-    let mut nodes: Vec<NodeBuilder> = wrapped(note, span(app).saturating_sub(10))
-        .into_iter()
-        .map(|part| notice(part, tone))
-        .collect();
-    nodes.push(field(app, SEARCH, false));
-    nodes.push(
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .gap(canvas::overlay_gap()),
-            )
-            .children_reactive(move || listing(&paint)),
-    );
-    nodes
 }
 
 fn listing(app: &App) -> Vec<NodeBuilder> {
@@ -200,27 +152,14 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         return vec![group("No providers match.")];
     };
     let states = app.picker.groups.get();
-    let mut lookup: Vec<(String, String, Option<usize>)> = Vec::new();
-    let (mut shown, mut header) = (0, 0);
-    for (index, row) in rows.iter().enumerate() {
-        let tier = section(row, &states);
-        if index == 0 || tier != section(&rows[index - 1], &states) {
-            lookup.push((tier.title().to_string(), String::new(), None));
-        }
-        if index == selected {
-            shown = lookup.len();
-            header = lookup
-                .iter()
-                .rposition(|(_, _, index)| index.is_none())
-                .unwrap_or(0);
-        }
-        lookup.push((
-            row.name.clone(),
-            chip(row, states.get(&row.name)),
-            Some(index),
-        ));
-    }
-    let visible = canvas::overlay_shown(lookup.len() + 3, app.viewport.get().1).saturating_sub(3);
+    let (lookup, shown, header) = sections(&rows, &states, selected);
+    let chrome = LIST_CHROME
+        + if split(app) {
+            0
+        } else {
+            NARROW_NOTE_ROWS as u16
+        };
+    let visible = canvas::list_rows(app.viewport.get().1, chrome);
     let anchor = if shown < visible {
         0
     } else if shown - header < visible {
@@ -243,26 +182,33 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
         .scroll_into_view(anchor),
     );
     if !split(app) {
-        return vec![
-            list,
-            group(crate::text::ellipsize(
+        let wide = span(app).saturating_sub(10);
+        let note = match app.auth.step.get() {
+            Login::List(note) => note,
+            Login::Key(_) | Login::Checking | Login::SignIn { .. } | Login::Confirm => {
+                Note::default()
+            }
+        };
+        let mut below = notes(&note, wide);
+        if below.is_empty() {
+            below.push(group(crate::text::ellipsize(
                 &detail::summary(choice, &state),
-                span(app).saturating_sub(10),
-            )),
-        ];
+                wide,
+            )));
+        }
+        let mut nodes = vec![list];
+        nodes.extend(below.into_iter().take(NARROW_NOTE_ROWS));
+        return nodes;
     }
-    let pane = container()
-        .layout(
+    let width = span(app).saturating_sub(LIST_CELLS as usize + 12);
+    let pane = step_pane(app, width, visible).into_iter().fold(
+        container().layout(
             LayoutStyle::flex_column()
                 .fill_width()
                 .gap(canvas::overlay_gap()),
-        )
-        .children_reactive({
-            let app = app.clone();
-            let choice = choice.clone();
-            let state = state.clone();
-            move || detail::pane(&app, &choice, &state, visible)
-        });
+        ),
+        |node, child| node.child(child),
+    );
     vec![
         container()
             .layout(LayoutStyle::flex_row().fill_width().gap(16.0))
@@ -275,95 +221,61 @@ fn listing(app: &App) -> Vec<NodeBuilder> {
     ]
 }
 
+pub(super) fn step_pane(app: &App, width: usize, rows: usize) -> Vec<NodeBuilder> {
+    let Login::List(note) = app.auth.step.get() else {
+        return form(app, width);
+    };
+    let Some(choice) = app.auth_choice() else {
+        return Vec::new();
+    };
+    let states = app.picker.groups.get();
+    let tier = states.get(&choice.name).copied();
+    let state = chip(&choice, states.get(&choice.name));
+    let mut nodes = notes(&note, width);
+    nodes.extend(detail::pane(
+        app,
+        &choice,
+        (state.as_str(), tier),
+        rows,
+        width,
+    ));
+    nodes
+}
+
+type Row = (String, String, Option<usize>);
+
+fn sections(
+    rows: &[AuthInfo],
+    states: &std::collections::BTreeMap<String, State>,
+    selected: usize,
+) -> (Vec<Row>, usize, usize) {
+    let mut lookup: Vec<Row> = Vec::new();
+    let (mut shown, mut header) = (0, 0);
+    for (index, row) in rows.iter().enumerate() {
+        let tier = section(row, states);
+        if index == 0 || tier != section(&rows[index - 1], states) {
+            lookup.push((tier.title().to_string(), String::new(), None));
+        }
+        if index == selected {
+            shown = lookup.len();
+            header = lookup
+                .iter()
+                .rposition(|(_, _, index)| index.is_none())
+                .unwrap_or(0);
+        }
+        lookup.push((
+            row.name.clone(),
+            chip(row, states.get(&row.name)),
+            Some(index),
+        ));
+    }
+    (lookup, shown, header)
+}
+
 fn entry(app: App, name: &str, chip: &str, index: usize, active: bool) -> NodeBuilder {
     let choose = app.clone();
     pick(active, name.to_string(), chip.to_string()).pointer_down(move |event| {
-        choose.auth.sel.set(index);
-        choose.commit_auth();
+        choose.pick_auth(index);
         event.stop_propagation();
     })
-}
-
-fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
-    let typing = app.clone();
-    let save = app.clone();
-    let filter = placeholder == SEARCH;
-    let value = if filter {
-        app.auth.filter
-    } else {
-        app.auth.key
-    };
-    let field = text_field(value)
-        .placeholder(placeholder)
-        .focus_when(app.auth.focus)
-        .change(move |text| {
-            if filter {
-                typing.replace_auth_filter(text.to_string());
-            } else {
-                typing.replace_auth_key(text.to_string());
-            }
-        })
-        .submit(move |_| save.commit_auth())
-        .height(canvas::overlay_field());
-    container().child(if secret { field.password() } else { field })
-}
-
-fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
-    let choice = app.auth_choice();
-    let name = choice.as_ref().map(|choice| choice.name.clone());
-    let width = span(app).saturating_sub(10);
-    let mut nodes = vec![
-        line(format!("Paste the {} API key.", name.unwrap_or_default())),
-        field(app, "paste or type the api key", true),
-    ];
-    nodes.extend(
-        wrapped(note, width)
-            .into_iter()
-            .map(|part| notice(part, Tone::Error)),
-    );
-    nodes
-}
-
-fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
-    let [text, url, code, note] = lines;
-    let wide = span(app).saturating_sub(10);
-    let width = wide.saturating_sub(16);
-    let mut nodes = vec![group(format!("Sign in to {name}"))];
-    if !url.is_empty() {
-        nodes.push(line(format!(
-            "1. Open         {}",
-            crate::text::ellipsize(&url, width)
-        )));
-    }
-    if !code.is_empty() {
-        nodes.push(line(format!("2. Enter code   {code}")));
-    }
-    nodes.extend(wrapped(&text, wide).into_iter().map(line));
-    if asking {
-        nodes.push(field(app, "Paste the code if the browser shows one", false));
-    }
-    if !note.is_empty() {
-        nodes.extend(
-            wrapped(&note, wide)
-                .into_iter()
-                .map(|part| notice(part, Tone::Error)),
-        );
-        return nodes;
-    }
-    let clock = app.clone();
-    let owner = name.to_string();
-    nodes.push(container().children_reactive(move || {
-        let spin = sigil::widgets::spinner_frame(clock.ticks.get());
-        let seconds = clock
-            .model
-            .peek()
-            .busy_since
-            .map_or(0, |(_, since)| since.elapsed().as_secs());
-        vec![line(format!(
-            "{spin} Waiting for {owner}…  {}:{:02}",
-            seconds / 60,
-            seconds % 60
-        ))]
-    }));
-    nodes
 }

@@ -68,10 +68,7 @@ impl App {
             }
             Some(crate::SlashCommand::Resume) if argument.is_none() => self.open_sessions(false),
             Some(crate::SlashCommand::New) => self.open_session(crate::tui::hub::Open::New),
-            Some(crate::SlashCommand::Usage) if argument.is_none() => {
-                self.usage.start();
-                drop(self.cmd.send(Cmd::ListUsage));
-            }
+            Some(crate::SlashCommand::Usage) if argument.is_none() => self.open_usage(),
             settings => return self.local_settings(settings, argument),
         }
         true

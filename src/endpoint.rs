@@ -186,6 +186,19 @@ impl State {
     pub const fn setup(self) -> bool {
         matches!(self, Self::SignIn | Self::NeedsKey)
     }
+
+    #[must_use]
+    pub(crate) const fn blocked(self) -> bool {
+        matches!(
+            self,
+            Self::SignIn
+                | Self::NeedsKey
+                | Self::NeedsModel
+                | Self::KeyRejected
+                | Self::Offline
+                | Self::Error
+        )
+    }
 }
 
 impl std::fmt::Display for State {

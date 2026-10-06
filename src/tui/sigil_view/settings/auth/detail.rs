@@ -1,58 +1,119 @@
-use sigil::prelude::{NodeBuilder, container};
+use sigil::prelude::{NodeBuilder, Token};
 
-use super::{App, line};
+use super::super::models::{price, tone};
+use super::App;
 use crate::AuthInfo;
-use crate::catalog::Cost;
 use crate::endpoint::State;
+use crate::tui::sigil_view::look::Look;
+use crate::tui::sigil_view::ui::{blank, field as kv, heading, part as text};
 
-const MODEL_ROWS: usize = 6;
+const CONTEXT: usize = 8;
+const PRICE: usize = 16;
+const NAME: usize = 44;
 
 pub(super) fn summary(choice: &AuthInfo, state: &str) -> String {
     format!("{} — {}", choice.name, primary(choice, state))
 }
 
-pub(super) fn pane(app: &App, choice: &AuthInfo, state: &str, rows: usize) -> Vec<NodeBuilder> {
+pub(super) fn pane(
+    app: &App,
+    choice: &AuthInfo,
+    (state, tier): (&str, Option<State>),
+    rows: usize,
+    width: usize,
+) -> Vec<NodeBuilder> {
+    let color = match tier {
+        Some(tier) => tone(tier),
+        None if choice.configured || choice.keyless() => Token::Success11,
+        None => Token::Gray10,
+    };
     let mut nodes = vec![
-        line(choice.name.clone()),
-        line(format!("key       {}", key_line(choice, state))),
-        line(format!("sign-in   {}", login_line(choice))),
+        heading(vec![
+            (choice.name.clone(), Look::sm(Token::OnSurface).bold()),
+            text("   ", Token::Gray10),
+            text(state, color),
+        ]),
+        blank(),
     ];
+    let key = key_line(choice, state);
+    if let Some(key) = key {
+        let rejected = tier == Some(State::KeyRejected);
+        nodes.push(kv(
+            "key",
+            key,
+            if rejected {
+                Token::Error11
+            } else {
+                Token::OnSurface
+            },
+        ));
+    }
+    if choice.login.signs_in() {
+        nodes.push(kv("sign-in", login_line(choice), Token::OnSurface));
+    }
     let models = models(app, &choice.name);
     if !models.is_empty() {
-        nodes.push(line(String::new()));
-        nodes.push(line("models"));
-        let shown = models.len().min(MODEL_ROWS).min(rows.saturating_sub(7));
-        nodes.extend(
-            models
-                .iter()
-                .take(shown)
-                .map(|row| line(format!("  {row}"))),
-        );
+        let name = width.saturating_sub(CONTEXT + PRICE + 2).min(NAME);
+        nodes.push(blank());
+        nodes.push(heading(vec![
+            text(
+                format!("{:<name$}", format!("models  {}", models.len())),
+                Token::Gray10,
+            ),
+            text(format!("{:>CONTEXT$}  ", "CONTEXT"), Token::Gray9),
+            text("$/1M IN/OUT", Token::Gray9),
+        ]));
+        let room = rows.saturating_sub(nodes.len() + 5);
+        let shown = models.len().min(room);
+        nodes.extend(models.iter().take(shown).map(|(id, context, cost)| {
+            heading(vec![
+                text(
+                    format!(
+                        "  {:<name$}",
+                        crate::text::ellipsize(id, name.saturating_sub(2))
+                    ),
+                    Token::Gray12,
+                ),
+                text(format!("{context:>CONTEXT$}  "), Token::Gray11),
+                text(cost.clone(), Token::Gray11),
+            ])
+        }));
         if models.len() > shown {
-            nodes.push(line(format!("  … {} more", models.len() - shown)));
+            nodes.push(heading(vec![text(
+                format!("  ▸ {} more", models.len() - shown),
+                Token::Accent11,
+            )]));
         }
     }
-    nodes.push(line(String::new()));
-    nodes.push(line(format!("↵         {}", primary(choice, state))));
+    nodes.push(blank());
+    nodes.push(heading(vec![
+        text("↵ ", Token::Accent11),
+        text(primary(choice, state), Token::OnSurface),
+    ]));
     if choice.dual() && choice.env.is_none() {
-        nodes.push(line("alt+k     paste an API key"));
+        nodes.push(heading(vec![
+            text("alt+k ", Token::Accent11),
+            text("paste an API key", Token::OnSurface),
+        ]));
     }
     if choice.stored() {
-        nodes.push(line("alt+d     sign out"));
+        nodes.push(heading(vec![
+            text("alt+d ", Token::Accent11),
+            text("sign out", Token::OnSurface),
+        ]));
     }
-    nodes.push(container());
     nodes
 }
 
-fn key_line(choice: &AuthInfo, state: &str) -> String {
+fn key_line(choice: &AuthInfo, state: &str) -> Option<String> {
     if choice.keyless() {
-        return "none needed".to_string();
+        return Some("none needed".to_string());
     }
     if !choice.key {
-        return "not offered".to_string();
+        return None;
     }
     let signed_in = choice.flow.signs_in() && choice.configured;
-    match (choice.env, choice.configured && !signed_in) {
+    Some(match (choice.env, choice.configured && !signed_in) {
         (Some(env), _) if state == State::KeyRejected.word() => format!("${env} · rejected"),
         (Some(env), _) => format!("${env}"),
         (None, true) if state == State::KeyRejected.word() => "stored · rejected".to_string(),
@@ -60,13 +121,10 @@ fn key_line(choice: &AuthInfo, state: &str) -> String {
             .source
             .map_or_else(|| "stored".to_string(), |source| source.label().to_string()),
         (None, false) => "none".to_string(),
-    }
+    })
 }
 
 fn login_line(choice: &AuthInfo) -> String {
-    if !choice.login.signs_in() {
-        return "not offered".to_string();
-    }
     if choice.flow.signs_in() && choice.configured {
         return format!("signed in · {}", choice.plan);
     }
@@ -88,17 +146,17 @@ fn primary(choice: &AuthInfo, state: &str) -> String {
     }
 }
 
-fn models(app: &App, name: &str) -> Vec<String> {
+fn models(app: &App, name: &str) -> Vec<(String, String, String)> {
     let facts = app.picker.facts.get();
     app.picker
         .choices
         .get()
         .iter()
         .filter(|seat| seat.endpoint == name)
-        .map(|seat| match facts.get(seat).map(|model| model.cost) {
-            Some(Cost::Plan) => format!("{} · plan", seat.model),
-            Some(Cost::Free) => format!("{} · free", seat.model),
-            Some(Cost::Unknown | Cost::Metered) | None => seat.model.clone(),
+        .map(|seat| {
+            let fact = facts.get(seat);
+            let context = fact.map(crate::catalog::Model::window).unwrap_or_default();
+            (seat.model.clone(), context, price(fact))
         })
         .collect()
 }

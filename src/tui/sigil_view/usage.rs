@@ -5,7 +5,7 @@ use sigil::prelude::{
 
 use super::app::App;
 use super::canvas::{self, palette};
-use super::ui::{Dialog, Hints, Key, Size};
+use super::ui::{Dialog, Hints, Key, Size, Tab, tab_strip};
 use crate::mail::now;
 use crate::session::Spend;
 
@@ -86,6 +86,8 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Enter, "this workspace/all")
         .key(Key::Esc, "close");
     Dialog::new(Size::Page, "Usage", hints)
+        .header(Some(tab_strip(&app, Tab::Usage)))
+        .fixed(rows)
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().height(height))

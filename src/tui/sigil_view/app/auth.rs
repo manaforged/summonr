@@ -1,8 +1,9 @@
+pub(in crate::tui::sigil_view) use super::note::Note;
 use super::*;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(in crate::tui::sigil_view) enum Login {
-    List(String),
+    List(Note),
     Key(String),
     Checking,
     SignIn {
@@ -116,7 +117,7 @@ impl App {
         self.auth.seat.set(None);
         self.auth.focus.set(self.auth.focus.peek() + 1);
         self.auth.sel.set(selected);
-        self.auth.step.set(Login::List(String::new()));
+        self.auth.step.set(Login::List(Note::default()));
         self.replace_auth_key(String::new());
         self.auth.open.set(true);
         if named {
@@ -149,7 +150,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn move_auth(&self, delta: isize) {
-        if !matches!(self.auth.step.peek(), Login::List(_)) {
+        if !self.auth_listing() || self.picker.open.peek() {
             return;
         }
         let last = self.filtered_auth().len().saturating_sub(1);
@@ -188,8 +189,19 @@ impl App {
         matching(self.auth.choices.peek(), &self.auth.filter.peek())
     }
 
+    pub(in crate::tui::sigil_view) fn auth_listing(&self) -> bool {
+        matches!(self.auth.step.peek(), Login::List(_))
+    }
+
+    pub(in crate::tui::sigil_view) fn pick_auth(&self, index: usize) {
+        if self.auth_listing() && !self.picker.open.peek() {
+            self.auth.sel.set(index);
+            self.commit_auth();
+        }
+    }
+
     pub(in crate::tui::sigil_view) fn replace_auth_filter(&self, filter: String) {
-        if self.auth.filter.peek() != filter {
+        if self.auth_listing() && self.auth.filter.peek() != filter {
             self.auth.filter.set(filter);
             self.auth.sel.set(0);
         }
@@ -258,9 +270,9 @@ impl App {
         let Some(env) = choice.env else {
             return false;
         };
-        self.auth.step.set(Login::List(format!(
+        self.auth.step.set(Login::List(Note::plain(format!(
             "key comes from ${env} — unset it to sign out"
-        )));
+        ))));
         self.auth.focus.set(self.auth.focus.peek() + 1);
         true
     }
@@ -285,7 +297,7 @@ impl App {
             self.refresh();
         }
         self.auth.focus.set(self.auth.focus.peek() + 1);
-        self.auth.step.set(Login::List(String::new()));
+        self.auth.step.set(Login::List(Note::default()));
     }
 
     pub(in crate::tui::sigil_view) fn auth_progress(
@@ -345,7 +357,7 @@ impl App {
                     .iter()
                     .position(|choice| choice.name == name);
                 self.auth.sel.set(found.unwrap_or_default());
-                self.auth.step.set(Login::List(text));
+                self.auth.step.set(Login::List(Note::plain(text)));
                 self.auth.focus.set(self.auth.focus.peek() + 1);
             }
             Err(text) if text.is_empty() => {}
@@ -370,7 +382,7 @@ impl App {
                     },
                     Login::Checking if !self.auth.key.peek().is_empty() => Login::Key(text),
                     Login::List(_) | Login::Key(_) | Login::Checking | Login::Confirm => {
-                        Login::List(text)
+                        Login::List(Note::failed(text))
                     }
                 };
                 self.auth.step.set(step);

@@ -98,7 +98,7 @@ impl<P: Provider> Loop<P> {
         let mut note = String::new();
         if let Some(reason) = self.session.last_close_reason() {
             note.push_str(&format!(
-                "Harness: the previous turn stopped early ({reason}) — address the user's \
+                "Harness: the previous turn stopped early ({reason}). Address the user's \
                  message directly before resuming tool work.\n\n"
             ));
         }

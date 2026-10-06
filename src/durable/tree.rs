@@ -275,6 +275,6 @@ fn device_of(_: &Metadata) -> Option<u64> {
     None
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 #[path = "tree_tests.rs"]
 mod tests;

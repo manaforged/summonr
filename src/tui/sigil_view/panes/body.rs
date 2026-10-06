@@ -183,7 +183,7 @@ fn trees(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     if trees.is_empty() {
         return column.child(
-            sigil::kernel::text("no worktrees — summonr --worktree, --goal, or --steps")
+            sigil::kernel::text("no worktrees; summonr --worktree, --goal, or --steps")
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)

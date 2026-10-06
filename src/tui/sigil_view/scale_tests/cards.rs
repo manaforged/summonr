@@ -301,6 +301,7 @@ fn hidden_tool_output_keeps_only_the_call_line() {
 
 #[test]
 fn tool_lines_show_workspace_paths_relative() {
+    let lead = std::cell::Cell::new(' ');
     let shown = card(110, |app| {
         let inside = app.workspace.join("src/calc.py").display().to_string();
         let arguments = serde_json::json!({ "path": inside }).to_string();
@@ -319,13 +320,18 @@ fn tool_lines_show_workspace_paths_relative() {
             "exit 0\nok",
         );
         let root = app.workspace.display().to_string();
-        let copy = format!("cp {root}/x /backup{root}/x");
+        lead.set(root.chars().next().unwrap_or(' '));
+        let sep = std::path::MAIN_SEPARATOR;
+        let copy = format!("cp {root}{sep}x /backup{root}{sep}x");
         let arguments = serde_json::json!({ "command": copy }).to_string();
         tool(app, "run_command", &arguments, true, "exit 0");
     });
     assert!(shown.contains("● Read src/calc.py"), "{shown}");
     assert!(shown.contains("cat /etc/hosts"), "{shown}");
-    assert!(shown.contains("Run cp x /backup/"), "{shown}");
+    assert!(
+        shown.contains(&format!("Run cp x /backup{}", lead.get())),
+        "{shown}"
+    );
 }
 
 #[test]

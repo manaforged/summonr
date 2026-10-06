@@ -9,6 +9,13 @@ fn main() {
     if os == "macos" || os == "linux" || (os == "windows" && windows) {
         println!("cargo:rustc-cfg=sandboxed");
     }
+    if os == "windows" {
+        let flag = match std::env::var("CARGO_CFG_TARGET_ENV").as_deref() {
+            Ok("msvc") => format!("/STACK:{MAIN_STACK}"),
+            _ => format!("-Wl,--stack,{MAIN_STACK}"),
+        };
+        println!("cargo:rustc-link-arg-bins={flag}");
+    }
     if let Some(head) = git_path("HEAD") {
         println!("cargo:rerun-if-changed={head}");
         if let Some(reference) = std::fs::read_to_string(&head)
@@ -29,6 +36,7 @@ fn main() {
     }
 }
 
+const MAIN_STACK: u32 = 8 * 1024 * 1024;
 const REVISION_ENV: &str = "SUMMONR_REVISION";
 const CI_SHA_ENV: &str = "GITHUB_SHA";
 const SHORT_LEN: usize = 12;

@@ -12,7 +12,7 @@ const PRICE: usize = 16;
 const NAME: usize = 44;
 
 pub(super) fn summary(choice: &AuthInfo, state: &str) -> String {
-    format!("{} — {}", choice.name, primary(choice, state))
+    format!("{}: {}", choice.name, primary(choice, state))
 }
 
 pub(super) fn pane(

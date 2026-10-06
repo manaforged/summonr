@@ -32,7 +32,7 @@ impl ToolRegistry {
         let path = nonempty_path(&args, "diagnostics")?;
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
-        let text = self
+        let (text, _) = self
             .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
@@ -49,7 +49,7 @@ impl ToolRegistry {
             Some(character) => character.max(1) as u32,
             None if args.get("line").is_some() => {
                 return Err(Error::Tool(format!(
-                    "definition at line {line} needs `character` — use the column a read search hit prints (path:line:col)"
+                    "definition at line {line} needs `character`; use the column a read search hit prints (path:line:col)"
                 )));
             }
             None => 1,
@@ -62,7 +62,7 @@ impl ToolRegistry {
         if let Some(new_name) = new_name {
             if self.policy.is_read_only() {
                 return Err(Error::Denied(
-                    "plan mode is read-only — no rename".to_string(),
+                    "plan mode is read-only; no rename".to_string(),
                 ));
             }
             let name = new_name.to_string();
@@ -105,7 +105,7 @@ impl ToolRegistry {
             return None;
         }
         let request_path = dest.to_path_buf();
-        let text = self
+        let (text, errors) = self
             .with_lsp(dest, Scope::Edit, LSP_CHECK, move |conn| {
                 Box::pin(async move { conn.diagnostics(&request_path).await })
             })
@@ -113,7 +113,7 @@ impl ToolRegistry {
             .ok()?;
         Some(ToolOutput {
             text: format!("diagnostics: {text}"),
-            success: !text.starts_with("error "),
+            success: !errors,
             mutated: false,
             grant: None,
             images: Vec::new(),

@@ -87,7 +87,7 @@ pub(super) fn print_sessions() -> Result<()> {
 pub(super) fn print_workflows() -> Result<()> {
     let names = workflow::names()?;
     if names.is_empty() {
-        println!("no workflows — add [workflows.NAME] to ~/.summonr/config.toml");
+        println!("no workflows; add [workflows.NAME] to ~/.summonr/config.toml");
         return Ok(());
     }
     let default = workflow::default_name()?;
@@ -169,7 +169,7 @@ fn turn_paths(cwd: &Path, turn: &str) -> Result<Vec<String>> {
         .and_then(|index| turns.get(index).cloned())
         .ok_or_else(|| {
             summonr::Error::Config(format!(
-                "no turn `{turn}` — the session has {} turn{}",
+                "no turn `{turn}`; the session has {} turn{}",
                 turns.len(),
                 if turns.len() == 1 { "" } else { "s" }
             ))

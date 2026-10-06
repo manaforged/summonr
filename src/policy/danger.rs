@@ -1,4 +1,4 @@
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 
 use super::shell::{WRAPPERS, interpreter, shell};
 use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
@@ -134,11 +134,13 @@ const ROOTS: &[&str] = &[
 
 fn narrow(args: &[String], workspace: &Path, cwd: Option<&Path>) -> bool {
     let targets = found_roots(args);
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = crate::config::home_dir().map(|home| super::paths::resolved(&home));
+    let workspace = super::paths::resolved(workspace);
+    let workspace = workspace.as_path();
     !targets.is_empty()
         && targets.iter().all(|target| {
             cwd.and_then(|cwd| resolve(target, cwd))
-                .map(|path| std::fs::canonicalize(&path).unwrap_or(path))
+                .map(|path| super::paths::resolved(&path))
                 .is_some_and(|path| !broad(&path, workspace, home.as_deref()))
         })
 }

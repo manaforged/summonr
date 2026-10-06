@@ -91,9 +91,7 @@ pub(crate) struct Sandbox {
 
 impl Sandbox {
     pub(crate) fn paths(&self) -> Vec<PathBuf> {
-        let home = std::env::var_os("HOME")
-            .or_else(|| std::env::var_os("USERPROFILE"))
-            .map(PathBuf::from);
+        let home = home_dir();
         self.write
             .iter()
             .map(|path| match (path.strip_prefix("~/"), &home) {
@@ -289,6 +287,20 @@ mod decode;
 mod edit;
 use decode::{decode, validate, warn_unknown};
 pub use edit::tilde;
+
+pub(crate) fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
+    let rest = word
+        .strip_prefix("~/")
+        .or_else(|| word.strip_prefix("$HOME/"))?;
+    Some(home_dir()?.join(rest))
+}
+
 pub(crate) fn save_last_endpoint(path: &Path, name: &str) -> Result<bool> {
     update(path, |document| {
         if document

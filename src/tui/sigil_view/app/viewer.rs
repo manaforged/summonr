@@ -41,7 +41,7 @@ impl App {
                 .key(Key::Fixed("ctrl+s"), "save")
                 .key(Key::Esc, "again discard")
                 .text(&self.model.peek().prefs.hotkeys);
-            self.push_entry(Entry::System(format!("unsaved edits — {keys}")));
+            self.push_entry(Entry::System(format!("unsaved edits: {keys}")));
             self.refresh();
             return true;
         }

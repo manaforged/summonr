@@ -5,11 +5,11 @@ impl Worker {
         match argument.map(str::trim) {
             None | Some("") => {
                 let state = if !self.loop_.has_sandbox() {
-                    "sandbox off — commands already have network"
+                    "sandbox off; commands already have network"
                 } else if self.loop_.denies_network() {
-                    "network denied in the sandbox — /permissions net on, or net once"
+                    "network denied in the sandbox: /permissions net on, or net once"
                 } else {
-                    "network allowed for this session — /permissions net off denies it again"
+                    "network allowed for this session; /permissions net off denies it again"
                 };
                 self.system(state);
             }
@@ -83,15 +83,16 @@ impl Worker {
 
     pub(in crate::tui::worker) async fn set_key(&mut self, name: &str, key: &str) -> bool {
         let outcome = attend(self.inbox(None), checked(name, key)).await;
-        let result = match outcome {
-            Attended::Done(result) => result,
-            Attended::Cancelled => Err(String::new()),
+        let (result, rejected) = match outcome {
+            Attended::Done(Ok(text)) => (Ok(text), false),
+            Attended::Done(Err((text, rejected))) => (Err(text), rejected),
+            Attended::Cancelled => (Err(String::new()), false),
             Attended::Quit => return false,
         };
         if result.is_ok() && name == self.endpoint {
             self.set_endpoint(name).await;
         }
-        self.done(name, result);
+        self.report(name, result, rejected);
         true
     }
 
@@ -104,9 +105,14 @@ impl Worker {
     }
 
     fn done(&self, name: &str, result: std::result::Result<String, String>) {
+        self.report(name, result, false);
+    }
+
+    fn report(&self, name: &str, result: std::result::Result<String, String>, rejected: bool) {
         drop(self.ui.send(Msg::LoginDone {
             name: name.to_string(),
             result,
+            rejected,
         }));
     }
 
@@ -153,12 +159,15 @@ fn step(line: &str, asking: bool) -> Msg {
     }
 }
 
-async fn checked(name: &str, key: &str) -> std::result::Result<String, String> {
+async fn checked(name: &str, key: &str) -> std::result::Result<String, (String, bool)> {
     let source = crate::endpoint::check_key(name, key)
         .await
         .map_err(|error| match error.provider_failure() {
-            Some(failure) => format!("✗ {failure}"),
-            None => format!("✗ {error}"),
+            Some(failure) => (
+                format!("✗ {failure}"),
+                failure.kind == crate::error::ProviderFailureKind::Authentication,
+            ),
+            None => (format!("✗ {error}"), false),
         })?;
     let store = match source {
         crate::secret::Source::Keychain => "the keychain",

@@ -137,7 +137,7 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
     let name = args.endpoint.as_deref().unwrap_or_default();
     if !args.prompt.is_empty() {
         return Err(summonr::Error::Config(
-            "do not put credentials on the command line — `summonr login NAME` asks for them"
+            "do not put credentials on the command line; `summonr login NAME` asks for them"
                 .to_string(),
         ));
     }

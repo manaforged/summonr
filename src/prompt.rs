@@ -11,7 +11,7 @@ pub fn summonr_home() -> Result<PathBuf> {
         }
         return Ok(PathBuf::from(path));
     }
-    let home = user_home().ok_or_else(|| {
+    let home = crate::config::home_dir().ok_or_else(|| {
         Error::Config("set SUMMONR_HOME because the home directory is unknown".to_string())
     })?;
     let dir = home.join(".summonr");
@@ -150,16 +150,10 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     parts.join("\n\n")
 }
 
-fn user_home() -> Option<PathBuf> {
-    std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-}
-
 fn instructions(parts: &mut Vec<String>, workspace: &Path) {
     let mut seen = std::collections::HashSet::new();
     let mut sections = std::collections::HashSet::new();
-    if let Some(home) = user_home() {
+    if let Some(home) = crate::config::home_dir() {
         for rel in [
             ".agents/AGENTS.md",
             ".claude/CLAUDE.md",
@@ -247,7 +241,7 @@ fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Opti
 const DEFAULT: &str = "You are an expert coding assistant running inside summonr, a terminal coding harness. You read files, run commands, edit code, and write files.
 
 <rules>
-- Use read for files, directories, and content search (honors ignore rules); run_command covers the rest — builds, tests, git, ls, grep
+- Use read for files, directories, and content search (honors ignore rules); run_command covers the rest: builds, tests, git, ls, grep
 - Unsure of a tool's options? call it with op=help for the full reference
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites

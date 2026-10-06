@@ -3,7 +3,9 @@ use std::time::{Duration, SystemTime};
 use super::{changed, snapshot, walk};
 
 fn backdate(path: &std::path::Path, by: Duration) {
-    std::fs::File::open(path)
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
         .unwrap()
         .set_modified(SystemTime::now() - by)
         .unwrap();

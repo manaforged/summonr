@@ -116,6 +116,12 @@ impl Hub {
             .map(|(_, error)| (McpState::Failed, Some(error.clone())))
     }
 
+    pub(crate) async fn cancel_inflight(&self) {
+        for link in &self.links {
+            link.cancel_inflight().await;
+        }
+    }
+
     pub(crate) fn owns(&self, name: &str) -> bool {
         name == SEARCH_TOOL || self.find(name).is_some()
     }

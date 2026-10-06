@@ -53,7 +53,7 @@ impl Search {
         out.extend(body.chars().take(OUT_MAX));
         out.push_str("\n… truncated");
         out.push_str(&match self.keep(body) {
-            Ok(path) => format!("\n[full text: {} — {} bytes]", path.display(), body.len()),
+            Ok(path) => format!("\n[full text: {} ({} bytes)]", path.display(), body.len()),
             Err(error) => format!("\n[full text not kept: {error}]"),
         });
         out

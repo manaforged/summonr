@@ -232,6 +232,31 @@ pub(super) const VERBS: &[Verb] = &[
         ..DESTROYS
     },
     Verb {
+        name: "remove-item",
+        hazard: Hazard::Args(RM),
+        ..DESTROYS
+    },
+    Verb {
+        name: "ri",
+        hazard: Hazard::Args(RM),
+        ..DESTROYS
+    },
+    Verb {
+        name: "del",
+        hazard: Hazard::Args(RM),
+        ..DESTROYS
+    },
+    Verb {
+        name: "erase",
+        hazard: Hazard::Args(RM),
+        ..DESTROYS
+    },
+    Verb {
+        name: "rd",
+        hazard: Hazard::Args(RM),
+        ..DESTROYS
+    },
+    Verb {
         name: "unlink",
         ..DESTROYS
     },

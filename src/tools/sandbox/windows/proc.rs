@@ -1,9 +1,9 @@
 use super::*;
 
-struct Attributes(Vec<usize>);
+pub(super) struct Attributes(Vec<usize>);
 
 impl Attributes {
-    fn new() -> io::Result<Self> {
+    pub(super) fn new() -> io::Result<Self> {
         let mut size = 0;
         // SAFETY: The first call only obtains a size; the second receives aligned, owned storage.
         unsafe {
@@ -22,7 +22,7 @@ impl Attributes {
         }
     }
 
-    fn pointer(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
+    pub(super) fn pointer(&mut self) -> LPPROC_THREAD_ATTRIBUTE_LIST {
         self.0.as_mut_ptr().cast()
     }
 }
@@ -34,10 +34,10 @@ impl Drop for Attributes {
     }
 }
 
-struct Lock(OwnedHandle);
+pub(super) struct Lock(OwnedHandle);
 
 impl Lock {
-    fn acquire() -> io::Result<Self> {
+    pub(super) fn acquire() -> io::Result<Self> {
         let name = wide("Local\\Summonr.Sandbox.Acl")?;
         // SAFETY: This mutex serializes ACL read-modify-write operations across helpers.
         let raw = unsafe { CreateMutexW(null(), 0, name.as_ptr()) };
@@ -65,7 +65,7 @@ impl Drop for Lock {
     }
 }
 
-fn job(pid: u32) -> io::Result<OwnedHandle> {
+pub(super) fn job(pid: u32) -> io::Result<OwnedHandle> {
     let name = wide(format!("Local\\Summonr.Sandbox.{pid}"))?;
     // SAFETY: The terminated name identifies the helper's command job; this handle is owned.
     let raw = unsafe { CreateJobObjectW(null(), name.as_ptr()) };
@@ -137,7 +137,7 @@ pub(crate) fn wait(process: &OwnedHandle) -> io::Result<()> {
     }
 }
 
-fn stdio(kind: u32) -> io::Result<OwnedHandle> {
+pub(super) fn stdio(kind: u32) -> io::Result<OwnedHandle> {
     let mut duplicate = null_mut();
     // SAFETY: The pseudo handle is borrowed; DuplicateHandle makes an owned copy of one stream, and only these copies enter the child's handle allowlist.
     unsafe {
@@ -155,7 +155,7 @@ fn stdio(kind: u32) -> io::Result<OwnedHandle> {
     }
 }
 
-fn network(deny: bool) -> io::Result<Vec<Vec<u32>>> {
+pub(super) fn network(deny: bool) -> io::Result<Vec<Vec<u32>>> {
     if deny {
         return Ok(Vec::new());
     }

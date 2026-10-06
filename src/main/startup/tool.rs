@@ -6,7 +6,7 @@ use crate::cli::Args;
 pub(super) async fn run(args: &Args, tool: &[String]) -> Result<i32> {
     let Some(name) = tool.first() else {
         return Err(summonr::Error::Config(
-            "summonr tool NAME [JSON] — invoke a tool directly".to_string(),
+            "summonr tool NAME [JSON]: invoke a tool directly".to_string(),
         ));
     };
     let arguments = match tool.get(1..) {

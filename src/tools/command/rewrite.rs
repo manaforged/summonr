@@ -92,7 +92,7 @@ pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: 
                 "\nnote: the OS sandbox denied this command (network is off, or the write is outside the writable roots).\n"
                     .to_string()
             } else {
-                "\nnote: the OS sandbox denied a write outside the writable roots — add the directory to [sandbox] write in ~/.summonr/config.toml.\n"
+                "\nnote: the OS sandbox denied a write outside the writable roots; add the directory to [sandbox] write in ~/.summonr/config.toml.\n"
                     .to_string()
             }
         }

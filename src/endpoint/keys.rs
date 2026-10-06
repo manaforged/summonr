@@ -77,7 +77,7 @@ fn fallback_key(
         .filter(|text| !text.is_empty())
         .unwrap_or("run `summonr login NAME` or set api_key in ~/.summonr/config.toml");
     Err(Error::Config(format!(
-        "{} has no key — {}",
+        "{} has no key: {}",
         endpoint.name,
         missing.replace("NAME", &endpoint.name)
     )))
@@ -109,8 +109,8 @@ pub(crate) fn peer_token(name: &str) -> Option<String> {
 }
 
 fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let path = Path::new(&home).join(".local/share/opencode/auth.json");
+    let home = crate::config::home_dir()?;
+    let path = home.join(".local/share/opencode/auth.json");
     let store: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     ids.iter().find_map(|id| {
@@ -182,8 +182,8 @@ pub(super) fn named_model(endpoint: &str, model: &str) -> String {
 }
 
 pub(super) fn kimi_cli_token() -> Option<String> {
-    let home = std::env::var_os("HOME")?;
-    let path = Path::new(&home).join(".kimi-code/credentials/kimi-code.json");
+    let home = crate::config::home_dir()?;
+    let path = home.join(".kimi-code/credentials/kimi-code.json");
     let value: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
     let expires = value

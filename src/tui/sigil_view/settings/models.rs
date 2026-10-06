@@ -178,7 +178,7 @@ fn empty(paint: &App) -> NodeBuilder {
     if paint.picker.loading.get() {
         group("loading models…")
     } else if draft.is_empty() {
-        group("no models match — tab changes the filter, /login adds a provider")
+        group("no models match; tab changes the filter, /login adds a provider")
     } else {
         group(format!("no match · ↵ uses \"{draft}\" as the model id"))
     }

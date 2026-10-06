@@ -98,7 +98,7 @@ impl App {
             && !choices.iter().any(|choice| choice.name == name)
         {
             self.push_entry(Entry::Error(format!(
-                "provider `{name}` is unavailable — /login chooses a provider"
+                "provider `{name}` is unavailable; /login chooses a provider"
             )));
             self.splash.set(false);
             self.refresh();
@@ -271,7 +271,7 @@ impl App {
             return false;
         };
         self.auth.step.set(Login::List(Note::plain(format!(
-            "key comes from ${env} — unset it to sign out"
+            "key comes from ${env}; unset it to sign out"
         ))));
         self.auth.focus.set(self.auth.focus.peek() + 1);
         true
@@ -291,7 +291,7 @@ impl App {
         }
         if matches!(step, Login::List(_)) && !self.picker.open.peek() && self.unseated() {
             self.push_entry(Entry::System(
-                "no provider is set up — /login adds one".to_string(),
+                "no provider is set up; /login adds one".to_string(),
             ));
             self.splash.set(false);
             self.refresh();
@@ -332,6 +332,7 @@ impl App {
         &self,
         name: &str,
         result: std::result::Result<String, String>,
+        rejected: bool,
     ) {
         let mut groups = self.picker.groups.peek();
         match result {
@@ -363,7 +364,7 @@ impl App {
             Err(text) if text.is_empty() => {}
             Err(text) if !self.auth.open.peek() => self.push_entry(Entry::Error(text)),
             Err(text) => {
-                if text.ends_with("rejected the key") {
+                if rejected {
                     groups.insert(name.to_string(), State::KeyRejected);
                     self.picker.groups.set(groups);
                 }

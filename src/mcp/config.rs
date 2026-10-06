@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use serde::Deserialize;
@@ -78,8 +78,9 @@ impl Entry {
                 )));
             }
         }
+        let root = dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf());
         let key = crate::text::fnv64(
-            &serde_json::to_vec(&(workspace, &name, &self.command, &self.args, &self.url))
+            &serde_json::to_vec(&(root, &name, &self.command, &self.args, &self.url))
                 .unwrap_or_default(),
         );
         let allow = self.tools.clone();
@@ -171,7 +172,7 @@ pub(crate) fn servers(workspace: &Path) -> Result<Found> {
 type Layers = (Vec<BTreeMap<String, Entry>>, Vec<String>);
 
 fn layers(workspace: &Path) -> Result<Layers> {
-    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let home = config::home_dir();
     let mut layers = Vec::new();
     let mut approved = BTreeSet::new();
     let mut all = false;

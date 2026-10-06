@@ -7,6 +7,11 @@ fn session(workspace: &Path, home: &Path) -> Loop<Client> {
     Loop::open(client, "m", workspace, "system", driver).unwrap()
 }
 
+#[cfg(unix)]
+const DELETE: &str = "rm -rf";
+#[cfg(windows)]
+const DELETE: &str = "Remove-Item -Recurse -Force";
+
 fn command(text: &str) -> ToolCall {
     ToolCall {
         id: "t1".to_string(),
@@ -29,7 +34,7 @@ async fn delete_outside(answer: Option<&str>) -> (bool, String, Vec<Event>) {
         let queue = VecDeque::from([UserInput::from(answer.to_string())]);
         loop_.steer_with(Arc::new(Steering::from(queue)));
     }
-    let call = command(&format!("rm -rf {}", target.display()));
+    let call = command(&format!("{DELETE} {}", target.display()));
     let output = loop_.tools.execute_outcome(&call).await;
     let mut events = Vec::new();
     let output = loop_
@@ -47,11 +52,12 @@ async fn a_destructive_command_asks_the_user_first() {
     assert!(
         events
             .iter()
-            .any(|event| matches!(event, Event::Approval { detail: Some(detail), .. } if detail.contains("rm -rf"))),
+            .any(|event| matches!(event, Event::Approval { detail: Some(detail), .. } if detail.contains(DELETE))),
         "{events:?}"
     );
 }
 
+#[cfg(unix)]
 #[tokio::test]
 async fn a_confirmed_destructive_command_runs() {
     let (exists, text, _) = delete_outside(Some("y")).await;

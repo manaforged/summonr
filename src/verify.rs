@@ -267,7 +267,7 @@ fn render(receipt: &Receipt) -> String {
         let at = text.find("\n- Changed:").unwrap_or(text.len());
         text.insert_str(
             at,
-            &format!("\n- Failed: {} — {shown}", receipt.failures.len()),
+            &format!("\n- Failed: {}; {shown}", receipt.failures.len()),
         );
     }
     text

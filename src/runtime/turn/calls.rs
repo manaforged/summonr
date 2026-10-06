@@ -285,7 +285,7 @@ impl<P: Provider> Loop<P> {
                 passed: status.state == jobs::JobState::Exited(0),
                 output: if running_now {
                     format!(
-                        "still running after {JOB_WAIT_SECS}s — wait for it or kill it\n{}",
+                        "still running after {JOB_WAIT_SECS}s; wait for it or kill it\n{}",
                         status.text
                     )
                 } else {

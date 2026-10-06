@@ -44,7 +44,7 @@ impl Worker {
         }
         drop(self.ui.send(Msg::Busy(None)));
         match outcome {
-            Attended::Done(Ok(true)) => self.system("context compacted — earlier turns summarized"),
+            Attended::Done(Ok(true)) => self.system("context compacted: earlier turns summarized"),
             Attended::Done(Ok(false)) => self.system("nothing to compact yet"),
             Attended::Done(Err(error)) => self.fail(&error.to_string()),
             Attended::Cancelled => {
@@ -58,7 +58,7 @@ impl Worker {
     pub(in crate::tui::worker) async fn steps(&mut self, plan_path: &str) -> bool {
         if plan_path.is_empty() {
             self.system(
-                "/steps PLAN.md — run each numbered item under `## Steps`; /steps clear ends it",
+                "/steps PLAN.md: run each numbered item under `## Steps`; /steps clear ends it",
             );
             return true;
         }
@@ -117,21 +117,21 @@ impl Worker {
             }
             match self.last_turn.take() {
                 None => {
-                    self.system("steps paused — cancelled by user; /steps PLAN.md resumes");
+                    self.system("steps paused: cancelled by user; /steps PLAN.md resumes");
                     return true;
                 }
                 Some(turn) if turn.aborted => {
                     if let Err(error) = self.loop_.abandon_work("step execution aborted") {
                         self.fail(&error.to_string());
                     }
-                    self.system(&format!("steps stopped — the turn aborted: {}", turn.text));
+                    self.system(&format!("steps stopped; the turn aborted: {}", turn.text));
                     return true;
                 }
                 Some(_) => {}
             }
         };
         match code {
-            0 => self.system(&format!("steps complete — {total} of {total}")),
+            0 => self.system(&format!("steps complete: {total} of {total}")),
             code => {
                 let reason = self
                     .loop_
@@ -139,7 +139,7 @@ impl Worker {
                     .ok()
                     .and_then(|progress| progress.reason)
                     .unwrap_or_default();
-                self.system(&format!("steps stopped (exit {code}) — {reason}"));
+                self.system(&format!("steps stopped (exit {code}): {reason}"));
             }
         }
         true
@@ -156,7 +156,7 @@ impl Worker {
                     if let Err(error) = self.loop_.abandon_work("goal cleared by user") {
                         self.fail(&error.to_string());
                     } else {
-                        self.system(&format!("goal cleared — {objective}"));
+                        self.system(&format!("goal cleared: {objective}"));
                     }
                 }
                 None => self.system("no active goal"),
@@ -183,7 +183,7 @@ impl Worker {
                 if let Err(error) = self.loop_.abandon_work("goal cleared by user") {
                     self.fail(&error.to_string());
                 }
-                self.system(&format!("goal cleared — {objective}"));
+                self.system(&format!("goal cleared: {objective}"));
                 return true;
             }
             let prompt = crate::goal::prompt(objective, &gates, progress.rounds);
@@ -192,14 +192,14 @@ impl Worker {
             }
             match self.last_turn.take() {
                 None => {
-                    self.system("goal paused — cancelled by user");
+                    self.system("goal paused: cancelled by user");
                     return true;
                 }
                 Some(turn) if turn.aborted => {
                     if let Err(error) = self.loop_.abandon_work("goal execution aborted") {
                         self.fail(&error.to_string());
                     }
-                    self.system(&format!("goal stopped — the turn aborted: {}", turn.text));
+                    self.system(&format!("goal stopped; the turn aborted: {}", turn.text));
                     return true;
                 }
                 Some(_) => {}
@@ -214,7 +214,7 @@ impl Worker {
                     .ok()
                     .and_then(|progress| progress.reason)
                     .unwrap_or_else(|| "resume with `summonr --goal`".to_string());
-                self.system(&format!("goal stopped (exit {code}) — {reason}"));
+                self.system(&format!("goal stopped (exit {code}): {reason}"));
             }
         }
         true
@@ -225,7 +225,7 @@ impl Worker {
             self.system(&status);
         } else {
             self.system(
-                "/goal <objective> — work toward it across turns; gates come from .summonr/check.toml; /goal clear ends it",
+                "/goal <objective>: work toward it across turns; gates come from .summonr/check.toml; /goal clear ends it",
             );
         }
         true

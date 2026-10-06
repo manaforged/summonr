@@ -95,7 +95,7 @@ fn parse_tag(tag: &str) -> Result<Tag> {
         return Ok(Tag::Hash(tag.to_string()));
     }
     Err(Error::Tool(format!(
-        "`{tag}` is not a tag — pass N:hash exactly as read_file printed it"
+        "`{tag}` is not a tag; pass N:hash exactly as read_file printed it"
     )))
 }
 
@@ -130,12 +130,12 @@ fn stale(content: &str, tag: &str, parsed: &Tag) -> Error {
         Some(number) if content.lines().count() > 0 => {
             let first = number.saturating_sub(4).saturating_sub(1);
             Error::Tool(format!(
-                "stale tag `{tag}` — that line changed. Current lines there:\n{}",
+                "stale tag `{tag}`: that line changed. Current lines there:\n{}",
                 tagged_span(&content.lines().collect::<Vec<_>>(), first, number + 3)
             ))
         }
         _ => Error::Tool(format!(
-            "stale or unknown tag `{tag}` — the line changed; use a tag from the latest edit result or read_file"
+            "stale or unknown tag `{tag}`; the line changed; use a tag from the latest edit result or read_file"
         )),
     }
 }
@@ -151,7 +151,7 @@ fn ambiguous(content: &str, tag: &str, found: &[usize]) -> Error {
         })
         .collect();
     Error::Tool(format!(
-        "tag `{tag}` matches {} lines — use one of:\n{}",
+        "tag `{tag}` matches {} lines: use one of:\n{}",
         found.len(),
         options.join("\n")
     ))
@@ -177,7 +177,7 @@ fn span(content: &str, tag: &str, end_tag: Option<&str>) -> Result<(usize, usize
     let end = locate(content, end_tag)?;
     if end < start {
         return Err(Error::Tool(
-            "end_tag is before tag — check the tags in the latest edit result".to_string(),
+            "end_tag is before tag; check the tags in the latest edit result".to_string(),
         ));
     }
     Ok((start, end))

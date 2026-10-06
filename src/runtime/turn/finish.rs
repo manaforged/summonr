@@ -77,7 +77,7 @@ impl<P: Provider> Loop<P> {
         }
         if !running.is_empty() {
             let running = running.join("; ");
-            let note = format!("[summon: background work still running — {running}]");
+            let note = format!("[summon: background work still running: {running}]");
             if self
                 .session
                 .defer(&note, unsettled)
@@ -266,7 +266,7 @@ impl<P: Provider> Loop<P> {
             ),
             Ending::Deferred(running) => (
                 Some(format!(
-                    "turn deferred — background work still running: {running}"
+                    "turn deferred; background work still running: {running}"
                 )),
                 Vec::new(),
             ),
@@ -317,7 +317,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "round output limit reached — continuing with the same context".to_string(),
+                text: "round output limit reached; continuing with the same context".to_string(),
             },
         )
     }

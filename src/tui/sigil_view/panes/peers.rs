@@ -24,12 +24,12 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
     for (index, agent) in model.peers.iter().enumerate() {
         let menu = app.clone();
         let pick = app.clone();
-        let tone = if agent.status == "working" {
+        let tone = if agent.status == crate::mail::Presence::Working {
             Tone::Info
         } else {
             Tone::Neutral
         };
-        let kind = if agent.kind.is_empty() || agent.kind == "summonr" {
+        let kind = if agent.kind.is_empty() || agent.kind == crate::mail::KIND {
             String::new()
         } else {
             agent.kind.clone()
@@ -49,7 +49,7 @@ pub(super) fn peers(app: App, mut column: NodeBuilder) -> NodeBuilder {
                     .collect::<Vec<_>>()
                     .join(" · "),
             )
-            .child(chip(agent.status.clone(), tone))
+            .child(chip(agent.status.to_string(), tone))
             .pointer_down(move |event| {
                 if event.button == Some(MouseButton::Right) {
                     menu.context_row(index);

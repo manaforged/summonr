@@ -52,7 +52,7 @@ impl ToolRegistry {
             };
         }
         Ok(ToolOutput::ok(format!(
-            "{path} shown to the user ({media}, {width}x{height}); the model does not receive it — attach it with @{path} if the model accepts image input"
+            "{path} shown to the user ({media}, {width}x{height}); the model does not receive it; attach it with @{path} if the model accepts image input"
         )))
     }
 

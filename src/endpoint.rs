@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
 use crate::config::{self, Endpoint as FileEndpoint, File};
 use crate::credentials::{flow, logged_in};
@@ -255,7 +254,7 @@ impl AuthInfo {
 
     #[must_use]
     pub fn status(&self) -> String {
-        format!("{}: {} — {}", self.name, self.state(), self.setup)
+        format!("{}: {}; {}", self.name, self.state(), self.setup)
     }
 
     #[must_use]
@@ -275,7 +274,7 @@ impl AuthInfo {
 
     #[must_use]
     pub fn catalog_line(&self) -> String {
-        format!("{:<14} {} — {}", self.name, self.state(), self.setup)
+        format!("{:<14} {}: {}", self.name, self.state(), self.setup)
     }
 
     #[must_use]

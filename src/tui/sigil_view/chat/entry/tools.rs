@@ -35,7 +35,7 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
                 .iter()
                 .find_map(|root| {
                     let rest = path.strip_prefix(root.as_str())?;
-                    match rest.strip_prefix('/') {
+                    match rest.strip_prefix(['/', std::path::MAIN_SEPARATOR]) {
                         Some(inner) => Some(format!("{lead}{inner}")),
                         None if rest.is_empty() || rest.starts_with(['"', '\'']) => {
                             Some(format!("{lead}.{rest}"))

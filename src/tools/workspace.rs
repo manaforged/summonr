@@ -209,7 +209,7 @@ impl ToolRegistry {
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         if raw.is_empty() {
             return Err(Error::Tool(format!(
-                "`{path}` is empty — there is no line to anchor an edit; use write"
+                "`{path}` is empty: there is no line to anchor an edit; use write"
             )));
         }
         let endings = edit::terminators(&raw);
@@ -220,7 +220,7 @@ impl ToolRegistry {
         let mut out = format!("edited {path}\n{}", written.preview);
         if relaxed {
             out.push_str(
-                "\nnote: old matched only with whitespace normalized — check the edit above",
+                "\nnote: old matched only with whitespace normalized; check the edit above",
             );
         }
         Ok((dest, out, written.patch))

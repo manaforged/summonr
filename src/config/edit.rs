@@ -129,9 +129,7 @@ pub(crate) fn save_default_seat(path: &Path, seat: Option<(&str, &str)>) -> Resu
 }
 
 pub fn tilde(path: &Path) -> String {
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from);
+    let home = super::home_dir();
     if let Some(home) = home
         && let Ok(rest) = path.strip_prefix(&home)
     {

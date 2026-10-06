@@ -178,7 +178,7 @@ impl Policy {
             }
             Some(Block::Outside(path)) => {
                 return Err(Error::Denied(format!(
-                    "`{path}` is outside the workspace — {}",
+                    "`{path}` is outside the workspace: {}",
                     outside_hint(&path)
                 )));
             }
@@ -205,7 +205,7 @@ impl Policy {
                 || danger(command, workspace, start, Gate::Risky).is_some())
         {
             return Err(Error::Denied(format!(
-                "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"
+                "blocked command `{command}`; strict mode never runs it; run it yourself in another terminal"
             )));
         }
         for pattern in &self.deny {
@@ -329,10 +329,7 @@ pub(crate) fn protected_write(path: &Path) -> bool {
             return true;
         }
     }
-    let Some(home) = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-    else {
+    let Some(home) = crate::config::home_dir() else {
         return false;
     };
     [".ssh", ".gnupg", ".summonr"]
@@ -348,10 +345,7 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     {
         return true;
     }
-    let Some(home) = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-    else {
+    let Some(home) = crate::config::home_dir() else {
         return false;
     };
     [".ssh", ".gnupg"]

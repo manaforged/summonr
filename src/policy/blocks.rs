@@ -7,7 +7,7 @@ pub(super) enum Block {
 }
 
 pub(super) fn locate(word: &str, workspace: &Path) -> PathBuf {
-    expand_home(word).unwrap_or_else(|| {
+    crate::config::expand_tilde(word).unwrap_or_else(|| {
         let path = Path::new(word);
         if path.has_root() {
             path.to_path_buf()
@@ -81,7 +81,7 @@ fn write_directory(path: &str) -> PathBuf {
 pub(crate) fn write_denied(path: &str) -> String {
     let dir = write_directory(path);
     format!(
-        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
+        "write to `{path}` is outside the writable roots; add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
         dir.display(),
         dir.display()
     )
@@ -155,9 +155,7 @@ const IMPLICIT_WRITES: &[(&str, WriteRoot)] = &[
 #[must_use]
 pub(crate) fn implicit_write(command: &str) -> Option<PathBuf> {
     let verb = first_verb(command)?;
-    let home = std::env::var_os("HOME")
-        .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(PathBuf::from)?;
+    let home = crate::config::home_dir()?;
     let (_, root) = IMPLICIT_WRITES.iter().find(|(name, _)| *name == verb)?;
     let dir = match root {
         WriteRoot::CargoHome => home.join(".cargo"),

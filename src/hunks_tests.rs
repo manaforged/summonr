@@ -95,6 +95,7 @@ fn reject_reverts_one_hunk_in_a_real_repo() {
         assert!(output.status.success(), "{args:?}: {:?}", output.stderr);
     };
     git(&["init", "-q"]);
+    git(&["config", "core.autocrlf", "false"]);
     git(&["config", "user.email", "t@t"]);
     git(&["config", "user.name", "t"]);
     std::fs::write(root.join("f.txt"), "one\ntwo\nthree\n").unwrap();
@@ -130,6 +131,7 @@ fn reject_reports_a_stale_hunk() {
         assert!(output.status.success(), "{args:?}: {:?}", output.stderr);
     };
     git(&["init", "-q"]);
+    git(&["config", "core.autocrlf", "false"]);
     git(&["config", "user.email", "t@t"]);
     git(&["config", "user.name", "t"]);
     std::fs::write(root.join("f.txt"), "one\n").unwrap();

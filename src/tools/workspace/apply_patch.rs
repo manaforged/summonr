@@ -70,7 +70,7 @@ pub(super) async fn run(registry: &ToolRegistry, patch: &str) -> Result<ToolOutp
                     .map_or_else(|| dest.exists(), |content| content.is_some())
                 {
                     return Err(Error::Tool(format!(
-                        "*** Add File: `{path}` already exists — use Update File"
+                        "*** Add File: `{path}` already exists; use Update File"
                     )));
                 }
                 let content = format!("{}\n", lines.join("\n"));
@@ -143,7 +143,7 @@ fn hunk_patch(text: &str, hunk: &Hunk) -> Result<Patch> {
             .collect();
         let [line] = found.as_slice() else {
             return Err(Error::Tool(format!(
-                "@@ anchor `{anchor}` matches {} lines — add context lines to pin it",
+                "@@ anchor `{anchor}` matches {} lines; add context lines to pin it",
                 found.len()
             )));
         };

@@ -100,7 +100,7 @@ pub(super) fn apply_patches(original: &str, mut patches: Vec<Patch>) -> Result<(
     let relaxed = patches.iter().any(|patch| patch.relaxed);
     if overlaps(&mut patches) {
         return Err(Error::Tool(
-            "edits overlap — merge them into one replace".to_string(),
+            "edits overlap; merge them into one replace".to_string(),
         ));
     }
     patches.sort_by_key(|patch| (patch.start, patch.start != patch.end));

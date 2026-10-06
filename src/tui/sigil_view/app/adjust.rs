@@ -140,19 +140,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn route_hotkey(&self, key: char) -> bool {
         if self.hotkeys.recording.peek() {
-            if !crate::prefs::available(key) {
-                self.hotkeys.note.set(format!("ctrl+{key} is reserved"));
-                return true;
-            }
-            let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
-            self.model_mut(|model| {
-                let _ = model.prefs.hotkeys.assign(action, key);
-            });
-            let prefs = self.model.peek().prefs.clone();
-            self.hotkeys.recording.set(false);
-            self.hotkeys.note.set(String::new());
-            self.persist(&prefs);
-            self.refresh();
+            self.record_hotkey(key);
             return true;
         }
         let action = self.model.get().prefs.hotkeys.action(key);
@@ -162,6 +150,29 @@ impl App {
         if action != Hotkey::Options && self.options_active() {
             return true;
         }
+        self.run_hotkey(action)
+    }
+
+    fn record_hotkey(&self, key: char) {
+        let action = Hotkey::ALL[self.hotkeys.sel.peek().min(Hotkey::ALL.len() - 1)];
+        let mut assigned = false;
+        if crate::prefs::available(key) {
+            self.model_mut(|model| {
+                assigned = model.prefs.hotkeys.assign(action, key);
+            });
+        }
+        if !assigned {
+            self.hotkeys.note.set(format!("ctrl+{key} is reserved"));
+            return;
+        }
+        let prefs = self.model.peek().prefs.clone();
+        self.hotkeys.recording.set(false);
+        self.hotkeys.note.set(String::new());
+        self.persist(&prefs);
+        self.refresh();
+    }
+
+    fn run_hotkey(&self, action: Hotkey) -> bool {
         match action {
             Hotkey::Options => self.toggle_options(),
             Hotkey::Newline => return false,

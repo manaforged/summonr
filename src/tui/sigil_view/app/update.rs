@@ -11,7 +11,11 @@ impl App {
                 code,
                 asking,
             } => self.auth_progress(text, url, code, asking),
-            Msg::LoginDone { name, result } => self.auth_done(&name, result),
+            Msg::LoginDone {
+                name,
+                result,
+                rejected,
+            } => self.auth_done(&name, result, rejected),
             Msg::OpenHelp => self.help.show(),
             Msg::OpenLogin(note) => self.login_opened(note),
             Msg::Prompts { session, result } => self.prompts_loaded(session, result),

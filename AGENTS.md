@@ -1,26 +1,80 @@
-# Summonr
+# summonr for coding agents
 
-Build, check, and test commands are in [CONTRIBUTING.md](CONTRIBUTING.md).
+Point your coding agent at this file when it sets up summonr, runs it from a script or CI, or extends it. summonr is a terminal coding agent that works until your check command passes.
 
-## Architecture invariants
+## Install
 
-- Shared API: `docs/guide/internals/module-api.md`. See [API](#api).
-- Goal: the leanest, easiest-to-use open-source agent harness. Line growth, command sprawl, and first-run friction are defects.
-- Summonr never refuses to start or edit. No live-checkout guard, no process-list gate, no escape-hatch variable.
-- No cap on provider rounds, tool calls, or reasoning. Only a token or wall-clock budget that the user sets ends a turn.
-- Never print an API key or token fragment: no prefix, suffix, or masked form. Name a secret by location and type only.
-- UI comes from Sigil. Fix a UI defect in Sigil, not here.
+```sh
+curl -fsSL https://summonr.dev/install.sh | sh
+```
 
-## API
+On Windows, run `irm https://summonr.dev/install.ps1 | iex` in PowerShell. From source: `cargo install --git https://github.com/manaforged/summonr --locked`.
 
-Locked. `docs/guide/internals/module-api.md` is the menu: one name per job, and a
-"Names we delete" table. A new shared helper is a row on that page in
-the same change, or it stays private. `python3 scripts/api-census.py
---check` must print `api-census deny: clean`.
+## Give it a key
 
-Official extras are compiled built-in modules. User extras are
-skills, MCP servers, hooks, and CLIs via `run_command`. Do not add an
-in-process plugin host, `dlopen`, Wasmtime, or a marketplace. Do not
-add a model-facing tool when `skill` or `run_command` already does the
-job. A new compiled module needs a `module-api.md` row and an RSS /
-prefix review.
+Set the provider's environment variable and name the endpoint:
+
+```sh
+export ANTHROPIC_API_KEY=...
+summonr anthropic -p "say hi"
+```
+
+`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists every endpoint with its key status. Any OpenAI-compatible server is one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
+
+## Drive it from a script
+
+Read [docs/api.md](https://raw.githubusercontent.com/manaforged/summonr/main/docs/api.md) first. It lists the supported commands, flags, exit codes, and JSON event shapes. Do not link against the `summonr` Rust crate; the CLI is the interface.
+
+One prompt, with one JSON event per line on stdout:
+
+```sh
+summonr anthropic -p --json "why does cargo test fail?"
+```
+
+Work until a check passes, inside a time budget:
+
+```sh
+mkdir -p .summonr
+echo 'check = "cargo test"' > .summonr/check.toml
+summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
+```
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | Done. In goal and step modes, the work completed. |
+| 1 | Harness error: bad arguments, config, or an internal failure. |
+| 2 | The check failed. |
+| 3 | Stopped short: budget, stall, or aborted turn. |
+
+Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+
+## Give it project instructions
+
+When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A `SYSTEM.md` replaces the built-in preamble. `--no-trust` ignores all three.
+
+## Extend it
+
+summonr loads no third-party code into its process. Add capability from outside:
+
+| Add | How |
+| --- | --- |
+| A skill | `~/.summonr/skills/NAME/SKILL.md` |
+| An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
+| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command that reads JSON on stdin |
+| A CLI | Any program on `PATH`; the model calls it through `run_command` |
+| A plugin | `summonr install PATH` for a plugin in the Claude Code layout |
+
+[Extending summonr](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/extending.md) has the details. The [reference](https://raw.githubusercontent.com/manaforged/summonr/main/docs/guide/reference.md) lists every flag, slash command, config key, and environment variable.
+
+## Files
+
+| Path | Holds |
+| --- | --- |
+| `~/.summonr/config.toml` | Endpoints, modules, MCP servers, hooks, sandbox, workflows |
+| `~/.summonr/policy.toml` | Command and write policy |
+| `~/.summonr/credentials.toml` | Stored keys |
+| `~/.summonr/sessions/ID/` | Session logs |
+| `.summonr/check.toml` | The workspace check: `check = "CMD"` or `checks = [...]` |
+| `.summonr/policy.toml` | A workspace policy that can narrow the user policy, never widen it |
+
+Set `SUMMONR_HOME` to move `~/.summonr`.

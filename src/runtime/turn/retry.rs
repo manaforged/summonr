@@ -148,7 +148,7 @@ impl<P: Provider> Loop<P> {
                         emit,
                         Event::Note {
                             text: format!(
-                                "stream failed — retrying once: {}",
+                                "stream failed; retrying once: {}",
                                 text.lines().next().unwrap_or("unknown")
                             ),
                         },
@@ -211,7 +211,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "malformed tool-call JSON — requesting a repaired call".to_string(),
+                text: "malformed tool-call JSON; requesting a repaired call".to_string(),
             },
         )
     }
@@ -237,7 +237,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "context overflow — compacted old tool results, retrying".to_string(),
+                text: "context overflow; compacted old tool results, retrying".to_string(),
             },
         )
     }
@@ -259,7 +259,7 @@ impl<P: Provider> Loop<P> {
             emit,
             Event::Note {
                 text: format!(
-                    "{from} failed: {} — falling back to {}",
+                    "{from} failed: {}; falling back to {}",
                     text.lines().next().unwrap_or("unknown"),
                     self.model
                 ),

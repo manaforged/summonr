@@ -128,7 +128,7 @@ impl Conn {
         Ok(())
     }
 
-    pub(super) async fn diagnostics(&mut self, path: &Path) -> Result<String> {
+    pub(super) async fn diagnostics(&mut self, path: &Path) -> Result<(String, bool)> {
         self.did_open(path).await?;
         let uri = file_uri(path)?;
         let result = self
@@ -139,9 +139,9 @@ impl Conn {
             .await?;
         let items = diagnostic_items(&result);
         if items.is_empty() {
-            return Ok("no diagnostics".to_string());
+            return Ok(("no diagnostics".to_string(), false));
         }
-        Ok(items.join("\n"))
+        Ok((items.join("\n"), has_error(&result)))
     }
 
     pub(super) async fn definition(

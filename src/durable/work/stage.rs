@@ -154,7 +154,7 @@ impl Work {
                 self.status = Status::Active(Stage::Execute);
                 self.rebase();
                 self.pending.push(format!(
-                    "[summon goal: the objective is not complete — {reason}]"
+                    "[summon goal: the objective is not complete; {reason}]"
                 ));
             }
             (Policy::Goal { .. }, Decision::Automatic) => {

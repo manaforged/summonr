@@ -82,7 +82,12 @@ pub(super) struct Registry {
 
 pub(super) fn snapshot() -> Arc<Registry> {
     static PARSED: OnceLock<Arc<Registry>> = OnceLock::new();
-    Arc::clone(PARSED.get_or_init(|| Arc::new(serde_json::from_str(SNAPSHOT).unwrap_or_default())))
+    Arc::clone(PARSED.get_or_init(|| {
+        Arc::new(
+            serde_json::from_str(SNAPSHOT)
+                .expect("bundled provider registry snapshot must parse as a Registry"),
+        )
+    }))
 }
 
 pub(super) fn current() -> Arc<Registry> {

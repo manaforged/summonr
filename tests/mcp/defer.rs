@@ -50,12 +50,18 @@ pub(crate) fn a_large_server_is_found_and_called_through_the_mcp_tool() {
     assert_eq!(sent[0]["params"]["arguments"], json!({"text": "deep"}));
 }
 
+#[cfg(unix)]
+const CAPTURE: &str = "cat > '{0}'";
+#[cfg(windows)]
+const CAPTURE: &str = "[IO.File]::WriteAllText('{0}', [Console]::In.ReadToEnd())";
+
 pub(crate) fn a_hook_sees_the_tool_behind_the_mcp_tool() {
     let session = Session::new();
     let seen = session.file("pre-tool.json");
+    let hook = CAPTURE.replace("{0}", &seen.display().to_string());
     let config = format!(
-        "[hooks]\npre_tool = \"cat > '{}'\"\n{}",
-        seen.display(),
+        "[hooks]\npre_tool = {}\n{}",
+        serde_json::to_string(&hook).unwrap(),
         large(&session)
     );
     let model = Model::start(vec![

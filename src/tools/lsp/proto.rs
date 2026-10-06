@@ -6,14 +6,34 @@ pub(super) fn file_uri(path: &Path) -> Result<String> {
         .map_err(|()| Error::Tool(format!("cannot convert {} to a file URI", path.display())))
 }
 
-pub(super) fn diagnostic_items(value: &Value) -> Vec<String> {
-    let items = value
+const SEVERITY_ERROR: u64 = 1;
+
+fn entries(value: &Value) -> Vec<Value> {
+    value
         .get("items")
         .and_then(Value::as_array)
         .cloned()
         .or_else(|| value.as_array().cloned())
-        .unwrap_or_default();
-    items.iter().filter_map(format_diagnostic).collect()
+        .unwrap_or_default()
+}
+
+fn severity(item: &Value) -> u64 {
+    item.get("severity")
+        .and_then(Value::as_u64)
+        .unwrap_or(SEVERITY_ERROR)
+}
+
+pub(super) fn diagnostic_items(value: &Value) -> Vec<String> {
+    entries(value)
+        .iter()
+        .filter_map(format_diagnostic)
+        .collect()
+}
+
+pub(super) fn has_error(value: &Value) -> bool {
+    entries(value)
+        .iter()
+        .any(|item| severity(item) == SEVERITY_ERROR && format_diagnostic(item).is_some())
 }
 
 pub(super) fn format_diagnostic(item: &Value) -> Option<String> {
@@ -21,8 +41,8 @@ pub(super) fn format_diagnostic(item: &Value) -> Option<String> {
     if message.is_empty() {
         return None;
     }
-    let severity = match item.get("severity").and_then(Value::as_u64).unwrap_or(1) {
-        1 => "error",
+    let severity = match severity(item) {
+        SEVERITY_ERROR => "error",
         2 => "warning",
         3 => "info",
         _ => "hint",
@@ -189,7 +209,7 @@ pub(super) fn apply_text_edits(text: &str, edits: &[TextEdit]) -> Result<String>
         let right = pair[1];
         if (left.end_line, left.end_col) > (right.start_line, right.start_col) {
             return Err(Error::Tool(
-                "lsp rename edits overlap — apply them one at a time".to_string(),
+                "lsp rename edits overlap; apply them one at a time".to_string(),
             ));
         }
     }
@@ -313,3 +333,7 @@ pub(super) async fn read_msg(reader: &mut BufReader<impl AsyncRead + Unpin>) -> 
         .map_err(|error| Error::Tool(format!("lsp read: {error}")))?;
     serde_json::from_slice(&body).map_err(|error| Error::Tool(format!("lsp json: {error}")))
 }
+
+#[cfg(test)]
+#[path = "proto_tests.rs"]
+mod tests;

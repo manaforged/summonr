@@ -54,7 +54,7 @@ impl Worker {
             },
             None => match self.loop_.name() {
                 Some(name) => self.system(&format!("session name: {name}")),
-                None => self.system("this session has no name — /name TEXT"),
+                None => self.system("this session has no name; /name TEXT"),
             },
         }
         true

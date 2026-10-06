@@ -205,4 +205,4 @@ Ranked from the census, by job.
   it in the same change that adds a row.
 - File size: the same gate counts the source files over 400 lines (0 today)
   and denies a rise.
-- `AGENTS.md` § API binds agents working in this repo to this page.
+- [CONTRIBUTING.md](../../../CONTRIBUTING.md) § Shared API sends contributors to this page.

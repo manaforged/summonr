@@ -13,7 +13,6 @@ use super::hints::Hints;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(in crate::tui) enum Size {
     Normal,
-    Wide,
     Page,
 }
 
@@ -21,7 +20,6 @@ impl Size {
     fn width(self, cols: u16) -> f32 {
         let cells = match self {
             Self::Normal => canvas::DIALOG_CELLS,
-            Self::Wide => canvas::WIDE_DIALOG_CELLS,
             Self::Page => f32::from(cols),
         };
         canvas::dialog_width(cols, cells)
@@ -31,6 +29,7 @@ impl Size {
 pub(in crate::tui) struct Dialog {
     size: Size,
     title: String,
+    header: Option<NodeBuilder>,
     body: NodeBuilder,
     hints: Rc<dyn Fn() -> Hints>,
 }
@@ -41,6 +40,7 @@ impl Dialog {
         Self {
             size,
             title: title.into(),
+            header: None,
             body: container().layout(
                 LayoutStyle::flex_column()
                     .fill_width()
@@ -55,6 +55,12 @@ impl Dialog {
     #[must_use]
     pub(in crate::tui) fn live_hints(mut self, hints: impl Fn() -> Hints + 'static) -> Self {
         self.hints = Rc::new(hints);
+        self
+    }
+
+    #[must_use]
+    pub(in crate::tui) fn header(mut self, header: Option<NodeBuilder>) -> Self {
+        self.header = header;
         self
     }
 
@@ -80,13 +86,21 @@ impl Dialog {
                 .layout(LayoutStyle::flex_column().fill_width())
                 .children_reactive(move || vec![hints().bar(&keys)]),
         );
-        container().layout(LayoutStyle::block()).child(
-            modal(open)
+        let shell = modal(open)
+            .trap(true)
+            .width(width)
+            .border_w(canvas::cell().h as i16);
+        let shell = match self.header {
+            Some(header) => shell.child(
+                container()
+                    .layout(LayoutStyle::flex_column().fill_width())
+                    .child(header)
+                    .child(body.rounded(sigil::prelude::Radius::Base)),
+            ),
+            None => shell
                 .title(self.title)
-                .trap(true)
-                .width(width)
-                .border_w(canvas::cell().h as i16)
                 .child(body.rounded(sigil::prelude::Radius::Base)),
-        )
+        };
+        container().layout(LayoutStyle::block()).child(shell)
     }
 }

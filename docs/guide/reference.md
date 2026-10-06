@@ -526,7 +526,7 @@ command output shows it as `[secret]`.
 | Key | Idle composer | During a turn |
 | --- | --- | --- |
 | `enter` | send | queue for the next turn; on an empty composer, send the queue into the running turn after the current tool calls |
-| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri` | the same |
+| `tab` | complete a `/command`, its argument, `@path`, a `/server:prompt`, or an `@server:uri`; in `/model`, cycle the filter: all, ready, ★, plan, free, think, vision, ≥1M | the same |
 | `↑` | recall earlier prompts; with input queued, pull it back into the editor | |
 | `esc` | dismiss; twice within two seconds opens the session tree | cancel the turn |
 | `ctrl+c` | clear the draft; on an empty draft, twice within two seconds quits | cancel the turn |
@@ -538,6 +538,7 @@ command output shows it as `[secret]`.
 | `alt+p` | in `/model`, adds or removes the selected model from favorites | |
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
+| `ctrl+←` `ctrl+→` | in `/model`, `/login`, and `/usage`, switch between the Models, Providers, and Usage tabs | |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
 | `shift+tab` | cycle reasoning effort: none, minimal, low, medium, high, xhigh, max | takes effect when the turn ends |

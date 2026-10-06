@@ -22,6 +22,7 @@ mod form;
 mod gutter;
 mod mcp;
 mod mention;
+mod modals;
 mod mode;
 mod picker;
 mod secret;

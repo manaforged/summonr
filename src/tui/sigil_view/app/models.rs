@@ -26,6 +26,7 @@ impl App {
         self.picker.default.set(crate::endpoint::default_seat());
         self.picker.recent.set([0; 3]);
         self.picker.older.set(false);
+        self.picker.facet.set(super::facet::Facet::All);
         self.picker.open.set(true);
         self.list_models(None);
     }
@@ -176,12 +177,8 @@ impl App {
                     |(name, id)| Seat::new(name, id),
                 ),
         };
-        if matches!(
-            groups.get(&picked.endpoint),
-            Some(state) if state.setup() || *state == State::KeyRejected
-        ) {
-            self.begin_auth(Some(&picked.endpoint));
-            self.auth.seat.set(Some((picked.endpoint, picked.model)));
+        if let Some(state) = groups.get(&picked.endpoint).filter(|state| state.blocked()) {
+            self.unblock(*state, picked);
             return;
         }
         let target = self.picker.target.peek();
@@ -195,6 +192,15 @@ impl App {
                     None => Cmd::SetSeat(endpoint, model),
                 }),
         );
+    }
+
+    fn unblock(&self, state: State, picked: Seat) {
+        if state.setup() || state == State::KeyRejected {
+            self.begin_auth(Some(&picked.endpoint));
+            self.auth.seat.set(Some((picked.endpoint, picked.model)));
+        } else {
+            self.list_models(Some(picked.endpoint));
+        }
     }
 
     pub(in crate::tui::sigil_view) fn cancel_model_edit(&self) {
@@ -217,7 +223,7 @@ impl App {
         );
     }
 
-    fn picker_rows(&self, older: bool) -> (Vec<Seat>, usize) {
+    pub(super) fn picker_rows(&self, older: bool, collapse: bool) -> (Vec<Seat>, usize) {
         let listed: usize = self.picker.recent.peek().iter().sum();
         let facts = self.picker.facts.peek();
         let choices = self.picker.choices.peek();
@@ -232,16 +238,27 @@ impl App {
             .filter_map(|(seat, fact)| Some((seat.endpoint.as_str(), (*fact)?)))
             .collect();
         let mut current = crate::catalog::current(&shelf).into_iter();
+        let groups = self.picker.groups.peek();
+        let mut fixes = std::collections::BTreeSet::new();
         let mut hidden = 0;
-        let kept: Vec<Seat> = served
-            .iter()
-            .filter(|(_, fact)| {
-                let now = fact.is_none() || current.next().unwrap_or(true);
-                hidden += usize::from(!now);
-                older || now
-            })
-            .map(|(seat, _)| (*seat).clone())
-            .collect();
+        let mut kept = Vec::new();
+        for (seat, fact) in &served {
+            let now = fact.is_none() || current.next().unwrap_or(true);
+            if collapse
+                && groups
+                    .get(&seat.endpoint)
+                    .is_some_and(|state| state.blocked())
+            {
+                if fixes.insert(seat.endpoint.as_str()) {
+                    kept.push((*seat).clone());
+                }
+                continue;
+            }
+            hidden += usize::from(!now);
+            if older || now {
+                kept.push((*seat).clone());
+            }
+        }
         (held.iter().cloned().chain(kept).collect(), hidden)
     }
 
@@ -263,13 +280,15 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn rank(&self) {
         let query = self.picker.draft.peek().to_lowercase();
+        let facet = self.picker.facet.peek();
         if query.trim().is_empty() {
-            let (rows, hidden) = self.picker_rows(self.picker.older.peek());
+            let (rows, hidden) = self.picker_rows(self.picker.older.peek(), true);
             self.picker.hidden.set(hidden);
-            self.picker.shown.set(Rc::new(rows));
+            self.picker.shown.set(Rc::new(self.faceted(rows, facet)));
             return;
         }
-        let (choices, _) = self.picker_rows(true);
+        let (choices, _) = self.picker_rows(true, false);
+        let choices = self.faceted(choices, facet);
         let words: Vec<&str> = query.split_whitespace().collect();
         let facts = self.picker.facts.peek();
         let mut ranked: Vec<(usize, &Seat)> = choices

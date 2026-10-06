@@ -43,9 +43,9 @@ impl Overlay {
             Self::Hotkeys => settings::hotkeys_keys(),
             Self::Settings => settings::settings_keys(),
             Self::Secret
+            | Self::Usage
             | Self::Help
             | Self::Search
-            | Self::Usage
             | Self::Effort
             | Self::Context
             | Self::Cache => Vec::new(),
@@ -105,15 +105,13 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn overlay_tab(&self, delta: isize) -> bool {
-        if self.overlay() == Some(Overlay::Sessions) {
-            self.sessions.scope();
-            return true;
+        match self.overlay() {
+            Some(Overlay::Sessions) => self.sessions.scope(),
+            Some(Overlay::Usage) => self.usage.metric(),
+            Some(Overlay::Model) => self.cycle_facet(delta),
+            Some(_) | None => return self.overlay_move(delta),
         }
-        if self.overlay() == Some(Overlay::Usage) {
-            self.usage.metric();
-            return true;
-        }
-        self.overlay_move(delta)
+        true
     }
 
     pub(in crate::tui::sigil_view) fn overlay_enter(&self) -> bool {

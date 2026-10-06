@@ -7,25 +7,12 @@ use super::rows::{action, fix};
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State;
 use crate::recent::Seat;
-use crate::tui::sigil_view::app::App;
+use crate::tui::sigil_view::app::{App, Mark};
 use crate::tui::sigil_view::look::Look;
-use crate::tui::sigil_view::ui::heading;
-
-const KEY: usize = 11;
-
-fn text(value: impl Into<String>, color: Token) -> (String, Look) {
-    (value.into(), Look::sm(color))
-}
+use crate::tui::sigil_view::ui::{blank, field, field_width, heading, part as text};
 
 fn kv(key: &str, value: impl Into<String>) -> NodeBuilder {
-    heading(vec![
-        text(format!("{key:<KEY$}"), Token::Gray10),
-        text(value, Token::OnSurface),
-    ])
-}
-
-fn blank() -> NodeBuilder {
-    heading(vec![text("", Token::Gray10)])
+    field(key, value, Token::OnSurface)
 }
 
 pub(super) fn pane(app: &App, seat: &Seat, fixing: bool, width: usize) -> Vec<NodeBuilder> {
@@ -38,16 +25,16 @@ pub(super) fn pane(app: &App, seat: &Seat, fixing: bool, width: usize) -> Vec<No
         return provider(seat, state, causes.get(&seat.endpoint), &all, width);
     }
     let fact = facts.get(seat);
-    let [current, pins, _] = app.picker.recent.get();
-    let mark = if current > 0 && all.first() == Some(seat) {
-        text("● current", Token::Success11)
-    } else if app.picker.default.get().as_ref() == Some(seat) {
-        text("◆ default", Token::Accent11)
-    } else if all.iter().skip(current).take(pins).any(|pin| pin == seat) {
-        text("★ favorite", Token::Warn11)
-    } else {
-        text("", Token::Gray10)
-    };
+    let mark = app.mark(seat);
+    let mark = text(
+        mark.word(),
+        match mark {
+            Mark::Current => Token::Success11,
+            Mark::Default => Token::Accent11,
+            Mark::Favorite => Token::Warn11,
+            Mark::None => Token::Gray10,
+        },
+    );
     let name = fact.map_or(seat.model.as_str(), Model::label).to_string();
     let mut nodes = vec![
         heading(vec![
@@ -126,7 +113,7 @@ fn facts_lines(fact: Option<&Model>, width: usize) -> Vec<NodeBuilder> {
     if let Some(about) = fact.about.as_deref() {
         nodes.push(kv(
             "about",
-            crate::text::ellipsize(about, width.saturating_sub(KEY)),
+            crate::text::ellipsize(about, field_width(width)),
         ));
     }
     nodes
@@ -204,7 +191,7 @@ fn provider(
     if let Some(cause) = cause.and_then(|cause| cause.lines().next()) {
         nodes.push(kv(
             "reason",
-            crate::text::ellipsize(cause, width.saturating_sub(KEY)),
+            crate::text::ellipsize(cause, field_width(width)),
         ));
     }
     nodes.push(blank());

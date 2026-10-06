@@ -12,16 +12,15 @@ use super::rows::{ModelRow, action, list_rows};
 use crate::catalog::Model;
 use crate::endpoint::State;
 use crate::recent::Seat;
-use crate::tui::sigil_view::app::Facet;
+use crate::tui::sigil_view::app::{Facet, Mark};
 use crate::tui::sigil_view::ui::{group, slotted};
 
 pub(super) struct View {
     pub(super) choices: Rc<Vec<Seat>>,
-    all: Rc<Vec<Seat>>,
+    marks: Vec<Mark>,
     counts: [usize; 3],
     pub(super) groups: BTreeMap<String, State>,
     pub(super) facts: Rc<BTreeMap<Seat, Model>>,
-    default: Option<Seat>,
     sections: bool,
     older: bool,
     aged: usize,
@@ -35,11 +34,10 @@ impl View {
         let choices = picker.shown.get();
         let selected = picker.sel.get().min(choices.len().saturating_sub(1));
         Self {
-            all: picker.choices.get(),
+            marks: choices.iter().map(|seat| app.mark(seat)).collect(),
             counts: picker.recent.get(),
             groups: picker.groups.get(),
             facts: picker.facts.get(),
-            default: picker.default.get(),
             older: picker.older.get(),
             aged: if sections { picker.hidden.get() } else { 0 },
             sections,
@@ -58,25 +56,6 @@ impl View {
 
     pub(super) fn seat(&self) -> Option<&Seat> {
         self.choices.get(self.selected)
-    }
-
-    fn mark(&self, seat: &Seat) -> &'static str {
-        let [current, pins, _] = self.counts;
-        if current > 0 && self.all.first() == Some(seat) {
-            "●"
-        } else if self.default.as_ref() == Some(seat) {
-            "◆"
-        } else if self
-            .all
-            .iter()
-            .skip(current)
-            .take(pins)
-            .any(|pin| pin == seat)
-        {
-            "★"
-        } else {
-            " "
-        }
     }
 
     fn seat_slots(&self, grid: Grid, index: usize) -> ListRowSlots {
@@ -133,9 +112,8 @@ pub(super) fn list(
     view: Rc<View>,
     grid: Grid,
     labels: Vec<String>,
-    visible: usize,
+    (rows, visible): (Vec<ModelRow>, usize),
 ) -> NodeBuilder {
-    let rows = view.rows();
     let selected = view.selected;
     let top = rows
         .iter()
@@ -152,7 +130,7 @@ pub(super) fn list(
             ModelRow::Older(count) => view.older_row(&source, *count),
             ModelRow::Seat(index) => {
                 let slots = view.seat_slots(grid, *index);
-                let mark = view.mark(&view.choices[*index]);
+                let mark = view.marks[*index].glyph();
                 let row = slotted(
                     *index == selected,
                     Some(mark),

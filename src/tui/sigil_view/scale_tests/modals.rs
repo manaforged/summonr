@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
-use super::super::app::{App, Facet};
+use super::super::app::{App, Facet, Login};
 use super::{State, busy_info, frame_with};
 use crate::catalog::{Cost, Model};
 use crate::endpoint::State as Reach;
@@ -135,41 +135,152 @@ fn ctrl_right_from_models_opens_providers() {
     assert!(!screen.contains("Search models"), "{screen}");
 }
 
-#[test]
-fn enter_on_an_offline_provider_retries_it_instead_of_seating_it() {
+fn sent(prepare: impl FnOnce(&App), act: impl FnOnce(&App)) -> Vec<Cmd> {
     Runtime::scope("summonr-modals", || {
         let workspace = tempfile::tempdir().expect("workspace");
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
         app.resize(160, 40);
-        open(
-            &app,
-            vec![(
-                Seat::new("ollama", "gpt-oss:20b"),
-                Model::named("gpt-oss:20b"),
-            )],
-            &[("ollama", Reach::Offline)],
-        );
-        let offline = app
-            .picker
-            .shown
-            .peek()
-            .iter()
-            .position(|seat| seat.endpoint == "ollama")
-            .expect("offline row");
-        app.picker.sel.set(offline);
+        prepare(&app);
         while sent.try_recv().is_ok() {}
-        app.commit_model_edit();
-        let mut retried = None;
-        while let Ok(command) = sent.try_recv() {
-            assert!(
-                !matches!(command, Cmd::SetSeat(..) | Cmd::SetModel(..)),
-                "seated an offline provider"
+        act(&app);
+        std::iter::from_fn(|| sent.try_recv().ok()).collect()
+    })
+}
+
+fn select(app: &App, endpoint: &str) {
+    let at = app
+        .picker
+        .shown
+        .peek()
+        .iter()
+        .position(|seat| seat.endpoint == endpoint)
+        .expect("row");
+    app.picker.sel.set(at);
+}
+
+fn rejected_openai(app: &App) {
+    open(
+        app,
+        vec![
+            (Seat::new("openai", "gpt-alpha"), Model::named("gpt-alpha")),
+            (Seat::new("openai", "gpt-beta"), Model::named("gpt-beta")),
+            (Seat::new("deepseek", "ds-flash"), Model::named("ds-flash")),
+        ],
+        &[("openai", Reach::KeyRejected), ("deepseek", Reach::Ready)],
+    );
+}
+
+#[test]
+fn enter_on_an_offline_provider_retries_it_instead_of_seating_it() {
+    let sent = sent(
+        |app| {
+            open(
+                app,
+                vec![(
+                    Seat::new("ollama", "gpt-oss:20b"),
+                    Model::named("gpt-oss:20b"),
+                )],
+                &[("ollama", Reach::Offline)],
             );
-            if let Cmd::ListModels { only, .. } = command {
-                retried = only;
-            }
-        }
-        assert_eq!(retried.as_deref(), Some("ollama"));
+            select(app, "ollama");
+        },
+        App::commit_model_edit,
+    );
+    assert!(
+        !sent
+            .iter()
+            .any(|command| matches!(command, Cmd::SetSeat(..) | Cmd::SetModel(..))),
+        "seated an offline provider"
+    );
+    assert!(sent.iter().any(
+        |command| matches!(command, Cmd::ListModels { only: Some(name), .. } if name == "ollama")
+    ));
+}
+
+#[test]
+fn a_typed_model_id_on_a_provider_that_needs_a_model_is_seated() {
+    let sent = sent(
+        |app| {
+            open(app, vec![], &[("custom", Reach::NeedsModel)]);
+            app.replace_model_draft("custom/my-model".to_owned());
+        },
+        App::commit_model_edit,
+    );
+    assert!(sent.iter().any(
+        |command| matches!(command, Cmd::SetSeat(name, model) if name == "custom" && model == "my-model")
+    ));
+}
+
+#[test]
+fn favoriting_a_provider_fix_row_pins_nothing() {
+    let sent = sent(
+        |app| {
+            rejected_openai(app);
+            select(app, "openai");
+        },
+        App::pin_model,
+    );
+    assert!(
+        !sent.iter().any(|command| matches!(command, Cmd::Pin(..))),
+        "pinned a model behind a fix row"
+    );
+}
+
+#[test]
+fn a_filter_chip_counts_the_rows_it_shows() {
+    Runtime::scope("summonr-modals", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, _sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        rejected_openai(&app);
+        let counts = app.facet_counts();
+        let all = counts
+            .iter()
+            .find(|(facet, _)| *facet == Facet::All)
+            .expect("all");
+        assert_eq!(all.1, app.picker.shown.peek().len());
     });
+}
+
+#[test]
+fn a_large_price_fits_its_column() {
+    let screen = screen(160, 40, |app| {
+        let fact = model("frontier", |model| {
+            model.cost = Cost::Metered;
+            model.price = Some(Price {
+                input: 150.0,
+                output: 600.0,
+                cached: 0.0,
+                cache_write: None,
+            });
+        });
+        open(
+            app,
+            vec![(Seat::new("deepseek", "frontier"), fact)],
+            &[("deepseek", Reach::Ready)],
+        );
+    });
+    assert!(screen.contains("$150.00/$600.00"), "{screen}");
+}
+
+#[test]
+fn a_long_sign_in_url_is_shortened_to_the_form() {
+    let url = format!("https://auth.example.com/device?{}", "q".repeat(80));
+    let screen = screen(200, 50, |app| {
+        app.replace("/login".to_owned());
+        app.submit();
+        app.auth.step.set(Login::SignIn {
+            text: String::new(),
+            url: url.clone(),
+            code: "ABCD-1234".to_owned(),
+            asking: false,
+            note: String::new(),
+        });
+    });
+    let line = screen
+        .lines()
+        .find(|line| line.contains("1. Open"))
+        .unwrap_or_else(|| panic!("{screen}"));
+    assert!(line.contains('…'), "{screen}");
 }

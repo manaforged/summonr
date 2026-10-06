@@ -5,30 +5,14 @@ use super::App;
 use crate::AuthInfo;
 use crate::endpoint::State;
 use crate::tui::sigil_view::look::Look;
-use crate::tui::sigil_view::ui::heading;
+use crate::tui::sigil_view::ui::{blank, field as kv, heading, part as text};
 
-const KEY: usize = 11;
 const CONTEXT: usize = 8;
 const PRICE: usize = 16;
 const NAME: usize = 44;
 
 pub(super) fn summary(choice: &AuthInfo, state: &str) -> String {
     format!("{} — {}", choice.name, primary(choice, state))
-}
-
-fn text(value: impl Into<String>, color: Token) -> (String, Look) {
-    (value.into(), Look::sm(color))
-}
-
-fn kv(key: &str, value: impl Into<String>, color: Token) -> NodeBuilder {
-    heading(vec![
-        text(format!("{key:<KEY$}"), Token::Gray10),
-        text(value, color),
-    ])
-}
-
-fn blank() -> NodeBuilder {
-    heading(vec![text("", Token::Gray10)])
 }
 
 pub(super) fn pane(
@@ -38,14 +22,11 @@ pub(super) fn pane(
     rows: usize,
     width: usize,
 ) -> Vec<NodeBuilder> {
-    let color = tier.map_or(
-        if state.starts_with("ready") || state.starts_with("signed in") {
-            Token::Success11
-        } else {
-            Token::Gray10
-        },
-        tone,
-    );
+    let color = match tier {
+        Some(tier) => tone(tier),
+        None if choice.configured || choice.keyless() => Token::Success11,
+        None => Token::Gray10,
+    };
     let mut nodes = vec![
         heading(vec![
             (choice.name.clone(), Look::sm(Token::OnSurface).bold()),
@@ -56,7 +37,7 @@ pub(super) fn pane(
     ];
     let key = key_line(choice, state);
     if let Some(key) = key {
-        let rejected = key.ends_with("rejected");
+        let rejected = tier == Some(State::KeyRejected);
         nodes.push(kv(
             "key",
             key,

@@ -15,7 +15,7 @@ const NAME_MIN: usize = 16;
 const NAME_MAX: usize = 44;
 const PROVIDER: f32 = 14.0;
 const CONTEXT: f32 = 9.0;
-const PRICE: f32 = 14.0;
+const PRICE: f32 = 16.0;
 const RELEASED: f32 = 11.0;
 const CAN: f32 = 14.0;
 

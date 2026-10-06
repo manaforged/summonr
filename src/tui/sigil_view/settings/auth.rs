@@ -90,7 +90,7 @@ fn step(app: &App) -> Vec<NodeBuilder> {
         form.into_iter().fold(
             container().layout(
                 LayoutStyle::flex_column()
-                    .width(canvas::DIALOG_CELLS * canvas::cell().w)
+                    .width(form_cells(app) as f32 * canvas::cell().w)
                     .gap(canvas::overlay_gap()),
             ),
             |node, child| node.child(child),
@@ -180,6 +180,12 @@ fn span(app: &App) -> usize {
         f32::from(cols)
     };
     (canvas::dialog_width(cols, cells) / canvas::cell().w) as usize
+}
+
+fn form_cells(app: &App) -> usize {
+    let (cols, _) = app.viewport.get();
+    ((canvas::dialog_width(cols, canvas::DIALOG_CELLS) / canvas::cell().w) as usize)
+        .saturating_sub(2)
 }
 
 fn chip(choice: &AuthInfo, state: Option<&State>) -> String {
@@ -335,7 +341,7 @@ fn field(app: &App, placeholder: &'static str, secret: bool) -> NodeBuilder {
 fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
     let choice = app.auth_choice();
     let name = choice.as_ref().map(|choice| choice.name.clone());
-    let width = span(app).saturating_sub(10);
+    let width = form_cells(app).saturating_sub(8);
     let mut nodes = vec![
         line(format!("Paste the {} API key.", name.unwrap_or_default())),
         field(app, "paste or type the api key", true),
@@ -350,7 +356,7 @@ fn entering(app: &App, note: &str) -> Vec<NodeBuilder> {
 
 fn signing(app: &App, name: &str, lines: [String; 4], asking: bool) -> Vec<NodeBuilder> {
     let [text, url, code, note] = lines;
-    let wide = span(app).saturating_sub(10);
+    let wide = form_cells(app).saturating_sub(8);
     let width = wide.saturating_sub(16);
     let mut nodes = vec![group(format!("Sign in to {name}"))];
     if !url.is_empty() {

@@ -29,6 +29,11 @@ impl App {
         }
     }
 
+    pub(in crate::tui::sigil_view) fn open_usage(&self) {
+        self.usage.start();
+        drop(self.cmd.send(Cmd::ListUsage));
+    }
+
     pub(in crate::tui::sigil_view) fn show_tab(&self, tab: Tab) {
         let Some(from) = self.tab().filter(|from| *from != tab) else {
             return;
@@ -41,10 +46,7 @@ impl App {
         match tab {
             Tab::Models => self.begin_model_edit(),
             Tab::Providers => self.begin_auth(None),
-            Tab::Usage => {
-                self.usage.start();
-                drop(self.cmd.send(Cmd::ListUsage));
-            }
+            Tab::Usage => self.open_usage(),
         }
     }
 }

@@ -44,6 +44,7 @@ mod elicit;
 mod facet;
 pub(super) use elicit::{FormState, Reply, Stage};
 pub(super) use facet::Facet;
+pub(super) use models::Mark;
 mod files;
 mod frame;
 mod history;

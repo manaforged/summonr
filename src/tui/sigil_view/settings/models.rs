@@ -140,12 +140,12 @@ fn body(paint: &App) -> Vec<NodeBuilder> {
         .max()
         .unwrap_or(0);
     let grid = Grid::new(span, longest, wide);
-    let fixing = view
-        .rows()
+    let rows = view.rows();
+    let fixing = rows
         .iter()
         .any(|row| matches!(row, ModelRow::Fix(at) if *at == view.selected));
     let note = paint.picker.note.get();
-    let rows = list::list(paint, Rc::clone(&view), grid, labels, visible);
+    let rows = list::list(paint, Rc::clone(&view), grid, labels, (rows, visible));
     if wide {
         items.push(beside(paint, grid, rows, (&seat, fixing), note, span));
     } else {

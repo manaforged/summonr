@@ -75,10 +75,9 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn facet_counts(&self) -> Vec<(Facet, usize)> {
-        let (rows, _) = self.picker_rows(self.picker.older.peek(), false);
         Facet::ALL
             .into_iter()
-            .map(|facet| (facet, self.faceted(rows.clone(), facet).len()))
+            .map(|facet| (facet, self.ranked(facet).0.len()))
             .collect()
     }
 
@@ -86,9 +85,6 @@ impl App {
         if facet == Facet::All {
             return rows;
         }
-        let [current, pins, _] = self.picker.recent.peek();
-        let choices = self.picker.choices.peek();
-        let favorites = choices.iter().skip(current).take(pins).collect::<Vec<_>>();
         let facts = self.picker.facts.peek();
         let groups = self.picker.groups.peek();
         let mut seen = std::collections::BTreeSet::new();
@@ -97,7 +93,7 @@ impl App {
                 facet.keeps(
                     facts.get(seat),
                     groups.get(&seat.endpoint).copied(),
-                    favorites.contains(&seat),
+                    self.favorite(seat),
                 ) && seen.insert(seat.clone())
             })
             .collect()

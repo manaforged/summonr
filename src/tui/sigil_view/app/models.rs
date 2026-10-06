@@ -2,6 +2,34 @@ use sigil::prelude::fuzzy_score;
 
 use super::*;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::tui::sigil_view) enum Mark {
+    Current,
+    Default,
+    Favorite,
+    None,
+}
+
+impl Mark {
+    pub(in crate::tui::sigil_view) const fn glyph(self) -> &'static str {
+        match self {
+            Self::Current => "●",
+            Self::Default => "◆",
+            Self::Favorite => "★",
+            Self::None => " ",
+        }
+    }
+
+    pub(in crate::tui::sigil_view) const fn word(self) -> &'static str {
+        match self {
+            Self::Current => "● current",
+            Self::Default => "◆ default",
+            Self::Favorite => "★ favorite",
+            Self::None => "",
+        }
+    }
+}
+
 fn score(query: &str, row: &Seat, display: &str) -> Option<usize> {
     let query = match query.split_once('/') {
         Some((want, rest)) if row.endpoint.to_lowercase().starts_with(want) => rest,
@@ -70,7 +98,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn pin_model(&self) {
-        let Some(row) = self.picked_model() else {
+        let Some(row) = self.picked_model().filter(|_| !self.fixing()) else {
             return;
         };
         let [current, mut pins, mut recent] = self.picker.recent.peek();
@@ -133,7 +161,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn default_model(&self) {
-        let Some(row) = self.picked_model() else {
+        let Some(row) = self.picked_model().filter(|_| !self.fixing()) else {
             return;
         };
         let clear = self.picker.default.peek().as_ref() == Some(&row);
@@ -177,8 +205,7 @@ impl App {
                     |(name, id)| Seat::new(name, id),
                 ),
         };
-        if let Some(state) = groups.get(&picked.endpoint).filter(|state| state.blocked()) {
-            self.unblock(*state, picked);
+        if self.unblock(&groups, &picked) {
             return;
         }
         let target = self.picker.target.peek();
@@ -194,12 +221,62 @@ impl App {
         );
     }
 
-    fn unblock(&self, state: State, picked: Seat) {
+    fn unblock(&self, groups: &std::collections::BTreeMap<String, State>, picked: &Seat) -> bool {
+        let Some(state) = groups.get(&picked.endpoint).copied() else {
+            return false;
+        };
         if state.setup() || state == State::KeyRejected {
             self.begin_auth(Some(&picked.endpoint));
-            self.auth.seat.set(Some((picked.endpoint, picked.model)));
+            self.auth
+                .seat
+                .set(Some((picked.endpoint.clone(), picked.model.clone())));
+            return true;
+        }
+        if self.fixing() {
+            self.list_models(Some(picked.endpoint.clone()));
+            return true;
+        }
+        false
+    }
+
+    pub(in crate::tui::sigil_view) fn fixing(&self) -> bool {
+        let listed: usize = self.picker.recent.peek().iter().sum();
+        let shown = self.picker.shown.peek();
+        let at = self.picker.sel.peek().min(shown.len().saturating_sub(1));
+        self.picker.draft.peek().trim().is_empty()
+            && self.picker.facet.peek() == super::facet::Facet::All
+            && at >= listed
+            && shown.get(at).is_some_and(|seat| {
+                self.picker
+                    .groups
+                    .peek()
+                    .get(&seat.endpoint)
+                    .is_some_and(|state| state.blocked())
+            })
+    }
+
+    pub(in crate::tui::sigil_view) fn favorite(&self, seat: &Seat) -> bool {
+        let [current, pins, _] = self.picker.recent.get();
+        self.picker
+            .choices
+            .get()
+            .iter()
+            .skip(current)
+            .take(pins)
+            .any(|pin| pin == seat)
+    }
+
+    pub(in crate::tui::sigil_view) fn mark(&self, seat: &Seat) -> Mark {
+        let [current, _, _] = self.picker.recent.get();
+        let choices = self.picker.choices.get();
+        if current > 0 && choices.first() == Some(seat) {
+            Mark::Current
+        } else if self.picker.default.get().as_ref() == Some(seat) {
+            Mark::Default
+        } else if self.favorite(seat) {
+            Mark::Favorite
         } else {
-            self.list_models(Some(picked.endpoint));
+            Mark::None
         }
     }
 
@@ -279,13 +356,17 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn rank(&self) {
+        let (rows, hidden) = self.ranked(self.picker.facet.peek());
+        self.picker.hidden.set(hidden);
+        self.picker.shown.set(Rc::new(rows));
+    }
+
+    pub(super) fn ranked(&self, facet: super::facet::Facet) -> (Vec<Seat>, usize) {
         let query = self.picker.draft.peek().to_lowercase();
-        let facet = self.picker.facet.peek();
         if query.trim().is_empty() {
-            let (rows, hidden) = self.picker_rows(self.picker.older.peek(), true);
-            self.picker.hidden.set(hidden);
-            self.picker.shown.set(Rc::new(self.faceted(rows, facet)));
-            return;
+            let collapse = facet == super::facet::Facet::All;
+            let (rows, hidden) = self.picker_rows(self.picker.older.peek(), collapse);
+            return (self.faceted(rows, facet), hidden);
         }
         let (choices, _) = self.picker_rows(true, false);
         let choices = self.faceted(choices, facet);
@@ -303,8 +384,6 @@ impl App {
             })
             .collect();
         ranked.sort_by_key(|(rank, _)| *rank);
-        self.picker.shown.set(Rc::new(
-            ranked.into_iter().map(|(_, row)| row.clone()).collect(),
-        ));
+        (ranked.into_iter().map(|(_, row)| row.clone()).collect(), 0)
     }
 }

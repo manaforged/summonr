@@ -27,6 +27,7 @@ pub(crate) fn read_or_empty(path: &Path) -> io::Result<String> {
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn scratch(path: &Path, bytes: impl AsRef<[u8]>) -> io::Result<()> {
     OpenOptions::new()
         .create(true)

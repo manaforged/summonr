@@ -121,7 +121,7 @@ fn changed_at(metadata: &Metadata) -> (i64, i64) {
 }
 
 #[cfg(not(unix))]
-fn changed_at(metadata: &Metadata) -> (i64, i64) {
+fn changed_at(_: &Metadata) -> (i64, i64) {
     (0, 0)
 }
 

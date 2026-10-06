@@ -40,12 +40,14 @@ impl CommandChild {
     }
 
     fn start_kill(&mut self) -> std::io::Result<()> {
+        #[cfg(sandboxed)]
         if self.sandbox {
-            return self
-                .child
-                .id()
-                .map_or(Ok(()), |pid| super::sandbox::windows::stop(pid).map(drop));
+            return self.child.id().map_or(Ok(()), |pid| {
+                crate::tools::sandbox::windows::stop(pid).map(drop)
+            });
         }
+        #[cfg(not(sandboxed))]
+        let _ = self.sandbox;
         self.child.start_kill()
     }
 }
@@ -231,14 +233,14 @@ fn command_env() -> Vec<(String, String)> {
 }
 
 pub(in crate::tools) fn kill_group(pid: u32, sandbox: bool) {
-    #[cfg(windows)]
+    #[cfg(all(windows, sandboxed))]
     if sandbox {
-        if let Err(error) = super::sandbox::windows::stop(pid) {
+        if let Err(error) = crate::tools::sandbox::windows::stop(pid) {
             eprintln!("sandbox cleanup failed: {error}");
         }
         return;
     }
-    #[cfg(not(windows))]
+    #[cfg(not(all(windows, sandboxed)))]
     let _ = sandbox;
     #[cfg(unix)]
     if signal(pid, libc::SIGTERM) {
@@ -304,15 +306,15 @@ pub(super) async fn wait_shell(
 pub(super) fn stop_job(workspace: &std::path::Path, record: &crate::jobs::Record) -> Result<()> {
     let exit = crate::jobs::exit_path(workspace, &record.id);
     if crate::jobs::alive_since(record.pid, record.started) {
-        #[cfg(windows)]
+        #[cfg(all(windows, sandboxed))]
         if record.sandbox {
-            if let Some(helper) = super::sandbox::windows::stop(record.pid)? {
-                super::sandbox::windows::wait(&helper)?;
+            if let Some(helper) = crate::tools::sandbox::windows::stop(record.pid)? {
+                crate::tools::sandbox::windows::wait(&helper)?;
             }
         } else {
             kill_group(record.pid, false);
         }
-        #[cfg(not(windows))]
+        #[cfg(not(all(windows, sandboxed)))]
         kill_group(record.pid, record.sandbox);
     }
     if !exit.is_file() {

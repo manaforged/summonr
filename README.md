@@ -165,11 +165,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-712 public items (72 types, 97 functions, 113 methods, 250 fields, 176 variants, 4 constants) at 712 paths; 0 are re-export aliases. 363 trait impl lines, 31 inherent impl lines. 23 modules, 0 re-export only.
+717 public items (72 types, 98 functions, 114 methods, 253 fields, 176 variants, 4 constants) at 717 paths; 0 are re-export aliases. 363 trait impl lines, 31 inherent impl lines. 23 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 470 | 40 | 46 | 93 | 0 |
+| `summonr` | 475 | 40 | 47 | 94 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |

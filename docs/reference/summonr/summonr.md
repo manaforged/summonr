@@ -66,6 +66,7 @@
 | [`list_worktrees`](#list_worktrees) | fn |  |
 | [`live_jobs`](#live_jobs) | fn |  |
 | [`lock_file`](#lock_file) | fn |  |
+| [`login_seat`](#login_seat) | fn |  |
 | [`logout`](#logout) | fn |  |
 | [`mcp_add`](#mcp_add) | fn |  |
 | [`mcp_remove`](#mcp_remove) | fn |  |
@@ -100,6 +101,7 @@
 | <code>catalog_heading(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>catalog_line(&amp;self) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
+| <code>dual(&amp;self) -&gt; bool</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
 | <code>state(&amp;self) -&gt; String</code> |  |
 | <code>status(&amp;self) -&gt; String</code> |  |
@@ -112,7 +114,10 @@
 | <code>configured: bool</code> |  |
 | <code>env: Option&lt;&amp;'static str&gt;</code> |  |
 | <code>flow: <a href="#loginflow">LoginFlow</a></code> |  |
+| <code>key: bool</code> |  |
+| <code>login: <a href="#loginflow">LoginFlow</a></code> |  |
 | <code>name: String</code> |  |
+| <code>plan: String</code> |  |
 | <code>setup: String</code> |  |
 | <code>source: Option&lt;<a href="summonr-secret.html#source">Source</a>&gt;</code> |  |
 
@@ -1098,6 +1103,11 @@
 ### `lock_file`
 
 <pre>pub fn <a href="#lock_file">lock_file</a>(path: &amp;Path, wait: bool) -&gt; Result&lt;Option&lt;File&gt;&gt;</pre>
+
+
+### `login_seat`
+
+<pre>pub fn <a href="#login_seat">login_seat</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;<a href="#endpoint">Endpoint</a>&gt;</pre>
 
 
 ### `logout`

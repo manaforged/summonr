@@ -68,7 +68,7 @@ fn fit<S: Borrow<str>>(lines: &[S]) -> String {
     let head = fits(lines.iter(), head_room);
     let tail = fits(lines[head..].iter().rev(), SHAPED_BUDGET - head_room);
     format!(
-        "{}\n[{} middle lines omitted — read the full output at the path above]\n{}",
+        "{}\n[{} middle lines omitted; read the full output at the path above]\n{}",
         lines[..head].join("\n"),
         lines.len() - head - tail,
         lines[lines.len() - tail..].join("\n")

@@ -15,7 +15,7 @@ pub(super) fn jobs(app: App, mut column: NodeBuilder) -> NodeBuilder {
     ));
     if model.jobs.is_empty() {
         return column.child(
-            sigil::kernel::text("no background commands — run_command background:true starts one")
+            sigil::kernel::text("no background commands; run_command background:true starts one")
                 .nowrap()
                 .text_color(sigil::prelude::Token::OnSurface)
                 .font_size(12.0)

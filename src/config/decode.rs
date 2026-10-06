@@ -27,7 +27,7 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
         bad(
             path,
             &format!(
-                "line {line}: {} — fix that line, or move the file aside to start fresh",
+                "line {line}: {}; fix that line, or move the file aside to start fresh",
                 error.message().trim().replace('\n', "; ")
             ),
         )
@@ -53,7 +53,7 @@ pub(super) fn warn_unknown(path: &Path, file: &File) {
         .collect();
     if !unknown.is_empty() && !WARNED.swap(true, std::sync::atomic::Ordering::Relaxed) {
         eprintln!(
-            "summonr: {} has unknown key{} {} — check the spelling; summonr ignores {}",
+            "summonr: {} has unknown key{} {}. Check the spelling; summonr ignores {}",
             tilde(path),
             if unknown.len() == 1 { "" } else { "s" },
             unknown.join(", "),

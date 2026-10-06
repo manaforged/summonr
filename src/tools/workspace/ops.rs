@@ -167,7 +167,7 @@ pub(super) fn replace_text_patch(
                     String::new()
                 };
                 return Err(Error::Tool(format!(
-                    "old occurs {global_matches} times — pass tag to anchor one edit, or replace_all true to change them all. Matches start on lines {}{more}",
+                    "old occurs {global_matches} times; pass tag to anchor one edit, or replace_all true to change them all. Matches start on lines {}{more}",
                     lines_list.join(", ")
                 )));
             }

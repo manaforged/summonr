@@ -49,7 +49,7 @@ impl ToolRegistry {
             Some(character) => character.max(1) as u32,
             None if args.get("line").is_some() => {
                 return Err(Error::Tool(format!(
-                    "definition at line {line} needs `character` — use the column a read search hit prints (path:line:col)"
+                    "definition at line {line} needs `character`; use the column a read search hit prints (path:line:col)"
                 )));
             }
             None => 1,
@@ -62,7 +62,7 @@ impl ToolRegistry {
         if let Some(new_name) = new_name {
             if self.policy.is_read_only() {
                 return Err(Error::Denied(
-                    "plan mode is read-only — no rename".to_string(),
+                    "plan mode is read-only; no rename".to_string(),
                 ));
             }
             let name = new_name.to_string();

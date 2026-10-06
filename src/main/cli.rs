@@ -202,7 +202,7 @@ fn unknown(name: &str, tail: &str) -> Error {
     let hint = summonr::closest_endpoint(name, &names)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
     Error::Config(format!(
-        "unknown endpoint `{name}` — {hint}`summonr endpoints` lists them{tail}"
+        "unknown endpoint `{name}`: {hint}`summonr endpoints` lists them{tail}"
     ))
 }
 

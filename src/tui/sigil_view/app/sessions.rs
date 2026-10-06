@@ -30,7 +30,7 @@ impl App {
         self.replace(text);
         self.caret.set(position);
         self.push_entry(Entry::System(
-            "pending input restored — edit it, then enter sends".to_string(),
+            "pending input restored; edit it, then enter sends".to_string(),
         ));
     }
 

@@ -214,7 +214,7 @@ impl ToolRegistry {
         if matches!(wait, Wait::Detach(_)) {
             match self.register(command, &started) {
                 Ok(job) => return self.detach(started, command, seconds, (job, group)),
-                Err(error) => detail = format!(" ({error} — could not continue it as a job)"),
+                Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
             }
         }
         let headline = format!("command timed out after {seconds}s{detail}");
@@ -286,7 +286,7 @@ impl ToolRegistry {
             crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES).unwrap_or_default());
         let shown = digest(command, &raw);
         let text = format!(
-            "command still running after {seconds}s — it continues as a background job\n{}\n{}",
+            "command still running after {seconds}s; it continues as a background job\n{}\n{}",
             job_text(&job.id, pid, &log_path),
             shown.text
         );

@@ -172,7 +172,7 @@ fn configure(
     if loop_.policy_inert() {
         eprintln!(
             "summonr: a policy.toml sets command or write rules, but this session is \
-             uncontained — pass --sandbox or --strict to enforce it"
+             uncontained; pass --sandbox or --strict to enforce it"
         );
     }
     if let Some(check) = check {
@@ -319,7 +319,7 @@ fn note_active(local: &[Local<'_>]) {
         .find_map(|hit| Some((hit, Loop::<Client>::job_at(&hit.path, hit.root)?)))
     {
         eprintln!(
-            "note: an interrupted {kind:?} run is still active in session {} — {} — rerun it unchanged or `--session {}` to resume it",
+            "note: an interrupted {kind:?} run is still active in session {} ({}); rerun it unchanged or `--session {}` to resume it",
             hit.id,
             objective.lines().next().unwrap_or_default(),
             hit.id

@@ -209,7 +209,7 @@ pub(super) fn apply_text_edits(text: &str, edits: &[TextEdit]) -> Result<String>
         let right = pair[1];
         if (left.end_line, left.end_col) > (right.start_line, right.start_col) {
             return Err(Error::Tool(
-                "lsp rename edits overlap — apply them one at a time".to_string(),
+                "lsp rename edits overlap; apply them one at a time".to_string(),
             ));
         }
     }

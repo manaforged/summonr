@@ -88,7 +88,7 @@ impl ToolRegistry {
         {
             return Ok(Some(ToolOutput {
                 text: format!(
-                    "summonr: not run — `{command}` needs the user's approval because {reason}"
+                    "summonr: not run; `{command}` needs the user's approval because {reason}"
                 ),
                 success: false,
                 mutated: false,

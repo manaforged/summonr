@@ -248,7 +248,7 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
     };
     if tally.truncated {
         out.push_str(&format!(
-            "; limit {} reached — narrow with path, glob, or a more specific pattern",
+            "; limit {} reached: narrow with path, glob, or a more specific pattern",
             spec.limit
         ));
     }

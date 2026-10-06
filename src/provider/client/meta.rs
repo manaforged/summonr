@@ -151,7 +151,7 @@ impl Client {
         let host = crate::splash::host_of(Some(&self.base)).unwrap_or(&self.base);
         Error::provider(
             ProviderFailureKind::Transport,
-            format!("cannot reach {host} — check the network or the base_url ({error})"),
+            format!("cannot reach {host}: check the network or the base_url ({error})"),
         )
     }
 
@@ -176,13 +176,13 @@ impl Client {
         let lower = failure.message.to_lowercase();
         let advice = match (failure.kind, model) {
             (ProviderFailureKind::RateLimited, _) if lower.contains(PLAN_USAGE_CAP) => format!(
-                "{name} reached this app's cap on your ChatGPT plan — open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
+                "{name} reached this app's cap on your ChatGPT plan; open Manage usage at {PLAN_USAGE_SETTINGS} to raise it, or pick another model with /model"
             ),
             (ProviderFailureKind::Authentication, _) => {
-                format!("{name} rejected the key — run `summonr login {name}` to replace it")
+                format!("{name} rejected the key; run `summonr login {name}` to replace it")
             }
             (ProviderFailureKind::RateLimited, _) => format!(
-                "{name} is rate limiting this key — wait{} and retry, or pick another model with /model",
+                "{name} is rate limiting this key; wait{} and retry, or pick another model with /model",
                 failure
                     .retry_after
                     .map_or_else(String::new, |seconds| format!(" {seconds}s"))
@@ -206,9 +206,7 @@ impl Client {
                     .unwrap_or_default();
                 let hint = crate::endpoint::closest(model, &known)
                     .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
-                format!(
-                    "{name} has no model `{model}` — {hint}`summonr endpoints` lists its models"
-                )
+                format!("{name} has no model `{model}`: {hint}`summonr endpoints` lists its models")
             }
             (
                 ProviderFailureKind::Server

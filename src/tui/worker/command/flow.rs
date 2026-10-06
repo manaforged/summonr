@@ -161,7 +161,7 @@ impl Worker {
             None | Some("") => {
                 let roots = self.loop_.write_roots();
                 let list = if roots.is_empty() {
-                    "no extra write paths — /permissions write PATH persists to [sandbox] write"
+                    "no extra write paths; /permissions write PATH persists to [sandbox] write"
                         .to_string()
                 } else {
                     roots.join(" · ")
@@ -250,7 +250,7 @@ impl Worker {
     pub(in crate::tui::worker) fn unknown(&self, line: &str) -> Option<bool> {
         let head = line.split_whitespace().next().unwrap_or(line);
         self.fail(&format!(
-            "unknown command `{head}` — /help lists them, tab completes"
+            "unknown command `{head}`; /help lists them, tab completes"
         ));
         Some(true)
     }

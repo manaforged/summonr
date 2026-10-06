@@ -124,7 +124,7 @@ pub(crate) fn apply(root: &Path, path: &str, hunk: &str, op: Op) -> Result<Marks
             let patch = diff::patch(root, Some(path))?;
             let Some(target) = split(path, &patch).into_iter().find(|item| item.id == hunk) else {
                 return Err(Error::Config(format!(
-                    "the hunk is gone — {path} changed since it was loaded"
+                    "the hunk is gone; {path} changed since it was loaded"
                 )));
             };
             diff::git_output(
@@ -160,7 +160,7 @@ pub(crate) fn drain(root: &Path) -> Option<String> {
     prune(&mut marks);
     drop(save(root, &marks));
     Some(format!(
-        "[review notes left on the diff pane — address each or say why not]\n{}",
+        "[review notes on the diff pane: address each one or say why not]\n{}",
         lines.join("\n")
     ))
 }

@@ -77,7 +77,7 @@ fn classify_endpoint(args: &Args) -> Result<summonr::Endpoint> {
         Some(name) => name.to_string(),
         None => summonr::classify_endpoint().ok_or_else(|| {
             summonr::Error::Config(
-                "no classify endpoint is set up — add an [endpoint.NAME] row with base_url and wire = \"decisions\" to ~/.summonr/config.toml, then `summonr login NAME`".to_string(),
+                "no classify endpoint is set up; add an [endpoint.NAME] row with base_url and wire = \"decisions\" to ~/.summonr/config.toml, then `summonr login NAME`".to_string(),
             )
         })?,
     };
@@ -128,7 +128,7 @@ fn classify_questions(args: &Args) -> Result<Questions> {
     if let Some(name) = args.set.as_deref() {
         let set = summonr::classify::sets::by_name(name).ok_or_else(|| {
             summonr::Error::Config(format!(
-                "unknown question set `{name}` — try one of: {}",
+                "unknown question set `{name}`; try one of: {}",
                 summonr::classify::sets::NAMES.join(", ")
             ))
         })?;

@@ -222,7 +222,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
     .collect();
     if !big.is_empty() {
         return Err(Error::Config(format!(
-            "files over {COMMIT_MAX} bytes on {}: {} — remove them from the branch before it can merge",
+            "files over {COMMIT_MAX} bytes on {}: {}; remove them from the branch before it can merge",
             tree.branch,
             big.join(", ")
         )));

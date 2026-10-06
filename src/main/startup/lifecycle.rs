@@ -110,7 +110,7 @@ fn seat(args: &Args, adopted: &[String]) -> Result<Endpoint> {
         && !adopted.contains(&endpoint.name)
     {
         eprintln!(
-            "the key for {} is plaintext in config.toml — `summonr login {} --key` moves it into the credential store",
+            "the key for {} is plaintext in config.toml; `summonr login {} --key` moves it into the credential store",
             endpoint.name, endpoint.name
         );
     }
@@ -156,7 +156,7 @@ fn land(
 ) -> i32 {
     if code != 0 {
         eprintln!(
-            "worktree kept {} ({}) — the run's files are there, uncommitted",
+            "worktree kept {} ({}): the run's files are there, uncommitted",
             tree.path.display(),
             tree.branch
         );
@@ -165,7 +165,7 @@ fn land(
     let live = summonr::live_jobs(&tree.path);
     if !live.is_empty() {
         eprintln!(
-            "worktree kept {} ({}): background job{} still running — {}",
+            "worktree kept {} ({}): background job{} still running; {}",
             tree.path.display(),
             tree.branch,
             if live.len() == 1 { "" } else { "s" },

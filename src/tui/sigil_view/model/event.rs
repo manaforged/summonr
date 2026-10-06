@@ -176,7 +176,7 @@ impl Model {
             ))),
             Event::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Event::Note { text } => {
-                if text.starts_with("stream failed — retrying once")
+                if text.starts_with("stream failed; retrying once")
                     && let Some(at) = self
                         .entries
                         .iter()

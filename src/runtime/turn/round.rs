@@ -140,7 +140,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "plan accepted — starting implementation".to_string(),
+                text: "plan accepted; starting implementation".to_string(),
             },
         )
     }
@@ -233,7 +233,7 @@ impl<P: Provider> Loop<P> {
                     emit,
                     Event::Note {
                         text: format!(
-                            "planning unavailable — executing without a written plan: {error}"
+                            "planning unavailable; executing without a written plan: {error}"
                         ),
                     },
                 )?;
@@ -267,7 +267,7 @@ impl<P: Provider> Loop<P> {
                     events,
                     emit,
                     Event::Note {
-                        text: format!("scout skipped — {error}"),
+                        text: format!("scout skipped: {error}"),
                     },
                 );
             }

@@ -77,7 +77,7 @@ fn fallback_key(
         .filter(|text| !text.is_empty())
         .unwrap_or("run `summonr login NAME` or set api_key in ~/.summonr/config.toml");
     Err(Error::Config(format!(
-        "{} has no key — {}",
+        "{} has no key: {}",
         endpoint.name,
         missing.replace("NAME", &endpoint.name)
     )))

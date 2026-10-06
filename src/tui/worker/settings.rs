@@ -8,7 +8,7 @@ use crate::workflow::{self, Role, Seat, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
 
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
-clear ROLE | save NAME | default NAME] — roles: scout plan implement review judge summary";
+clear ROLE | save NAME | default NAME]; roles: scout plan implement review judge summary";
 
 impl Worker {
     pub(super) fn set_verify(&mut self, on: bool) {
@@ -133,7 +133,7 @@ impl Worker {
         }
         self.workflow = Workflow::default();
         match self.loop_.set_workflow(None) {
-            Ok(()) => self.system("workflow off — every role on the driving seat"),
+            Ok(()) => self.system("workflow off: every role on the driving seat"),
             Err(error) => self.fail(&error.to_string()),
         }
         self.send_workflow();
@@ -237,7 +237,7 @@ impl Worker {
         let active = self.loop_.workflow();
         match workflow::names() {
             Ok(names) if names.is_empty() => {
-                self.system("no workflows — add [workflows.NAME] to ~/.summonr/config.toml");
+                self.system("no workflows; add [workflows.NAME] to ~/.summonr/config.toml");
             }
             Ok(names) => {
                 let rows = names
@@ -349,15 +349,15 @@ pub(super) fn set_run_mode(
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
     let text = if requested == crate::RunMode::Work && mode == crate::RunMode::Plan {
-        "Work needs a plan. Plan mode — write one, then /plan accept."
+        "Work needs a plan. Plan mode: write one, then /plan accept."
     } else {
         match mode {
-            crate::RunMode::Plan => "plan mode — read-only; the reply is saved to .summonr/plan.md",
+            crate::RunMode::Plan => "plan mode: read-only; the reply is saved to .summonr/plan.md",
             crate::RunMode::Work => {
-                "work mode — execute the accepted plan; verify at the end of the turn"
+                "work mode: execute the accepted plan; verify at the end of the turn"
             }
-            crate::RunMode::Goal => "goal mode — keep going until the objective is met",
-            crate::RunMode::Auto => "auto mode — full tools",
+            crate::RunMode::Goal => "goal mode: keep going until the objective is met",
+            crate::RunMode::Auto => "auto mode: full tools",
         }
     };
     drop(ui.send(Msg::System(text.to_string())));

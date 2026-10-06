@@ -9,9 +9,9 @@ use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
-const MODE_LATER: &str = "mode switches when the current turn ends — esc cancels now";
+const MODE_LATER: &str = "mode switches when the current turn ends; esc cancels now";
 const SENT_NOW: &str = "sent to the running turn";
-const SETTINGS_LATER: &str = "settings apply when the current turn ends — esc cancels now";
+const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
 enum Input {
     User(UserInput),
@@ -140,7 +140,7 @@ impl MidTurn<'_> {
     fn later(&mut self, command: Cmd) -> Outcome {
         let note = match &command {
             Cmd::Command(line) => format!(
-                "{} runs when the current turn ends — esc cancels now",
+                "{} runs when the current turn ends; esc cancels now",
                 line.split_whitespace().next().unwrap_or(line)
             ),
             _ => SETTINGS_LATER.to_string(),

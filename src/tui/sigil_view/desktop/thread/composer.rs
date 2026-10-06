@@ -1,8 +1,8 @@
 use super::*;
 use sigil::prelude::{Radius, signal};
 
-const PLACEHOLDER: &str = "Ask anything — @ attaches a file, / runs a command";
-const EDITING: &str = "Editing the file — ctrl+s saves, esc leaves";
+const PLACEHOLDER: &str = "Ask anything; @ attaches a file, / runs a command";
+const EDITING: &str = "Editing the file: ctrl+s saves, esc leaves";
 
 pub(super) fn composer(app: App, editing: bool) -> NodeBuilder {
     let submit = app.clone();

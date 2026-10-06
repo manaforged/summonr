@@ -81,7 +81,7 @@ fn write_directory(path: &str) -> PathBuf {
 pub(crate) fn write_denied(path: &str) -> String {
     let dir = write_directory(path);
     format!(
-        "write to `{path}` is outside the writable roots — add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
+        "write to `{path}` is outside the writable roots; add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
         dir.display(),
         dir.display()
     )

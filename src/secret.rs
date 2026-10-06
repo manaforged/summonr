@@ -17,7 +17,7 @@ const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
 use crate::limits::KEYCHAIN as TIMEOUT;
-const LOCKED: &str = "the keychain did not answer — unlock it";
+const LOCKED: &str = "the keychain did not answer; unlock it";
 #[cfg_attr(
     test,
     expect(
@@ -212,7 +212,7 @@ impl Store {
                 let key = sealed.then(|| self.wrap(false)).transpose()?;
                 let document = open_file(key.as_ref(), &bytes).map_err(|error| {
                     Error::Config(format!(
-                        "{error} — fix or remove {} and log in again",
+                        "{error}; fix or remove {} and log in again",
                         self.file.display()
                     ))
                 })?;

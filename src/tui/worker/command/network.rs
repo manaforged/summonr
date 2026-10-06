@@ -5,11 +5,11 @@ impl Worker {
         match argument.map(str::trim) {
             None | Some("") => {
                 let state = if !self.loop_.has_sandbox() {
-                    "sandbox off — commands already have network"
+                    "sandbox off; commands already have network"
                 } else if self.loop_.denies_network() {
-                    "network denied in the sandbox — /permissions net on, or net once"
+                    "network denied in the sandbox: /permissions net on, or net once"
                 } else {
-                    "network allowed for this session — /permissions net off denies it again"
+                    "network allowed for this session; /permissions net off denies it again"
                 };
                 self.system(state);
             }

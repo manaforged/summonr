@@ -294,7 +294,7 @@ fn skill() -> ToolDefinition {
 fn lsp() -> ToolDefinition {
     tool(
         "lsp",
-        "Language server — prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a read search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics.",
+        "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a read search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics.",
         serde_json::json!({
             "type": "object",
             "properties": {

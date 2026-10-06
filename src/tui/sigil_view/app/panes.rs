@@ -10,7 +10,7 @@ impl App {
                     .key(Key::Esc, "leave")
                     .text(&self.model.peek().prefs.hotkeys);
                 self.push_entry(Entry::Error(format!(
-                    "unsaved edits in the view pane — {keys}"
+                    "unsaved edits in the view pane: {keys}"
                 )));
                 self.refresh();
                 return;
@@ -345,7 +345,7 @@ impl App {
                 (_, Some(preset)) => self.set_layout(preset),
                 (Some(_) | None, None) => {
                     self.push_entry(Entry::Error(format!(
-                        "no pane or layout `{name}` — files, ledger, diff, worktrees, jobs, mcp, peers, off, focus, run, review, or `chat | ledger 40%`"
+                        "no pane or layout `{name}`: files, ledger, diff, worktrees, jobs, mcp, peers, off, focus, run, review, or `chat | ledger 40%`"
                     )));
                     self.refresh();
                 }

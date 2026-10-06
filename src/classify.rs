@@ -194,7 +194,7 @@ pub async fn ask(
 fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result<()> {
     if endpoint.wire != Wire::Decisions {
         return Err(Error::Config(format!(
-            "`{}` is not a classify endpoint — see `summonr endpoints`",
+            "`{}` is not a classify endpoint; see `summonr endpoints`",
             endpoint.name
         )));
     }
@@ -221,7 +221,7 @@ fn target(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> Result
         && endpoint.oauth.is_none()
     {
         return Err(Error::Config(format!(
-            "no key for `{}` — set its environment variable, or `summonr login {}`",
+            "no key for `{}`; set its environment variable, or `summonr login {}`",
             endpoint.name, endpoint.name
         )));
     }

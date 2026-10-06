@@ -7,8 +7,8 @@ const REPAIRS: usize = 2;
 
 const JUDGE_SYSTEM: &str = "You judge whether a coding objective is complete. Reply with one \
 line of JSON: {\"verdict\": \"done\"|\"continue\"|\"stalled\"|\"impossible\", \"reason\": \
-\"<one sentence>\"}. `done` only when the response shows concrete evidence — a command result, \
-file, or test output — that the objective is met. `continue` when work remains; name what \
+\"<one sentence>\"}. `done` only when the response shows concrete evidence (a command result, \
+file, or test output) that the objective is met. `continue` when work remains; name what \
 remains. `stalled` when the response reports no concrete action on the objective. \
 `impossible` when the objective cannot be met in this workspace; name the blocker.";
 
@@ -55,7 +55,7 @@ pub fn prompt(objective: &str, gates: &[String], round: u32) -> String {
         return "[summon goal: continue the active Work]".to_string();
     }
     let mut text = format!(
-        "Work toward this objective. Keep going until it is fully met — do not stop halfway or \
+        "Work toward this objective. Keep going until it is fully met. Do not stop halfway or \
 ask questions you can resolve yourself:\n\n{objective}\n"
     );
     if !gates.is_empty() {

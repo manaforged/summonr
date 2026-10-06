@@ -173,7 +173,7 @@ async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
         panic!("{closing:?}");
     };
     assert!(
-        text.starts_with("turn deferred — background work still running: "),
+        text.starts_with("turn deferred; background work still running: "),
         "{text}"
     );
     assert_eq!(reply, "started it");

@@ -32,7 +32,7 @@ pub(super) fn file_wrap(credentials: &Path, create: bool) -> Result<[u8; KEY_LEN
             }
             if !create {
                 return Err(Error::Config(
-                    "credential store: missing wrap key — set SUMMONR_SECRETS=file and retry"
+                    "credential store: missing wrap key; set SUMMONR_SECRETS=file and retry"
                         .to_string(),
                 ));
             }
@@ -281,7 +281,7 @@ pub(super) fn os_wrap_key(create: bool, tool: Option<&Path>) -> Result<[u8; KEY_
                 Ok(key)
             }
             None => Err(Error::Config(
-                "credential store: missing wrap key — unlock the keychain or log in again"
+                "credential store: missing wrap key; unlock the keychain or log in again"
                     .to_string(),
             )),
         }
@@ -300,7 +300,7 @@ pub(super) fn wrap_via_security(tool: &Path, create: bool) -> Result<[u8; KEY_LE
             Ok(key)
         }
         None => Err(Error::Config(
-            "credential store: missing wrap key — unlock the keychain or log in again".to_string(),
+            "credential store: missing wrap key; unlock the keychain or log in again".to_string(),
         )),
     }
 }

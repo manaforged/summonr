@@ -5,7 +5,7 @@ use super::App;
 use super::body::{detail, header};
 use crate::mcp::{McpState, McpTransport, ServerStatus};
 
-const EMPTY: &str = "no mcp servers — summonr mcp add configures one";
+const EMPTY: &str = "no mcp servers; summonr mcp add configures one";
 
 pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let model = app.model.get();

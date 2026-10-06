@@ -63,7 +63,7 @@ impl Log {
             && !noted.contains(&latest)
         {
             eprintln!(
-                "summonr: a previous run ended without an exit record — `summonr doctor --logs` shows it"
+                "summonr: a previous run ended without an exit record; `summonr doctor --logs` shows it"
             );
             if let Err(error) = append(&seen, &json!(latest), true) {
                 eprintln!("summonr: cannot record the crash note: {error}");

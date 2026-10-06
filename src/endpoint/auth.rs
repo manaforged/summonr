@@ -80,7 +80,7 @@ pub(crate) fn save_key(name: &str, key: &str) -> Result<Source> {
     let info = auth_info(name)?;
     if info.login.signs_in() && !info.key {
         return Err(Error::Config(format!(
-            "{name} uses a login token, not an API key — run `summonr login {name}` without --key"
+            "{name} uses a login token, not an API key; run `summonr login {name}` without --key"
         )));
     }
     let key = key.trim();

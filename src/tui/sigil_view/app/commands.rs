@@ -56,7 +56,7 @@ impl App {
             Some(crate::SlashCommand::Help) => self.help.show(),
             Some(crate::SlashCommand::Plan) if !self.model.get().prefs.plan_mode => {
                 self.push_entry(Entry::Error(
-                    "plan mode is off — turn it on in /settings".to_string(),
+                    "plan mode is off; turn it on in /settings".to_string(),
                 ));
                 self.refresh();
             }

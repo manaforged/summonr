@@ -178,7 +178,7 @@ impl Policy {
             }
             Some(Block::Outside(path)) => {
                 return Err(Error::Denied(format!(
-                    "`{path}` is outside the workspace — {}",
+                    "`{path}` is outside the workspace: {}",
                     outside_hint(&path)
                 )));
             }
@@ -205,7 +205,7 @@ impl Policy {
                 || danger(command, workspace, start, Gate::Risky).is_some())
         {
             return Err(Error::Denied(format!(
-                "blocked command `{command}` — strict mode never runs it; run it yourself in another terminal"
+                "blocked command `{command}`; strict mode never runs it; run it yourself in another terminal"
             )));
         }
         for pattern in &self.deny {

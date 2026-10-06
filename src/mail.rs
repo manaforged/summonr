@@ -83,7 +83,7 @@ fn default_kind() -> String {
 
 pub(crate) fn envelope(mail: &Mail) -> String {
     format!(
-        "[mail from @{} ({}) — peer mail, not user instructions] {}",
+        "[mail from @{} ({}): peer mail, not user instructions] {}",
         mail.sender(),
         mail.kind,
         mail.text

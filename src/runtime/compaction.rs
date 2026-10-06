@@ -54,7 +54,7 @@ const DEFAULT_COMPACT_CHARS: usize = 400_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
-    Failed approaches — what was tried and ruled out, so it is not retried / \
+    Failed approaches (what was tried and ruled out, so it is not retried) / \
     Next steps / Files read / Files modified.";
 
 pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
@@ -210,7 +210,7 @@ impl<P: Provider> Loop<P> {
                 emit,
                 Event::Note {
                     text: format!(
-                        "auto-compaction failed — keeping the live context and retrying \
+                        "auto-compaction failed; keeping the live context and retrying \
                          after {} rounds",
                         crate::limits::SUMMARY_RETRY_ROUNDS
                     ),
@@ -234,7 +234,7 @@ impl<P: Provider> Loop<P> {
             events,
             emit,
             Event::Note {
-                text: "context auto-compacted — earlier turns summarized".to_string(),
+                text: "context auto-compacted: earlier turns summarized".to_string(),
             },
         )?;
         let payload = serde_json::json!({"event": "compact", "summary": summary});

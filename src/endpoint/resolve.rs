@@ -148,7 +148,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         let hint = closest(&chosen, &names)
             .map_or_else(String::new, |name| format!("did you mean `{name}`? "));
         Error::Config(format!(
-            "unknown endpoint `{chosen}` — {hint}`summonr endpoints` lists them"
+            "unknown endpoint `{chosen}`: {hint}`summonr endpoints` lists them"
         ))
     })?;
 

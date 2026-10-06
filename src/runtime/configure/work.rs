@@ -14,7 +14,7 @@ impl<P: Provider> Loop<P> {
         let (objective, progress) = self.active_goal().ok().flatten()?;
         let round = progress.rounds;
         let mut text = format!(
-            "goal active — {}\nround {round} · {} tokens · {}",
+            "goal active: {}\nround {round} · {} tokens · {}",
             crate::text::ellipsize(objective.lines().next().unwrap_or_default(), 80),
             self.spent_tokens(),
             progress.phase,

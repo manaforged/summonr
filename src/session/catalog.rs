@@ -116,7 +116,7 @@ pub(crate) fn resolve_in(home: &Path, id: &str) -> Result<PathBuf> {
         [only] => Ok(only.clone()),
         [] => Err(Error::Config(format!("no session `{id}`"))),
         _ => Err(Error::Config(format!(
-            "session id `{id}` is ambiguous — pass more of the id"
+            "session id `{id}` is ambiguous; pass more of the id"
         ))),
     }
 }
@@ -144,7 +144,7 @@ pub(crate) fn remove_in(home: &Path, id: &str) -> Result<String> {
             [] => return Err(Error::Config(format!("no session `{id}`"))),
             _ => {
                 return Err(Error::Config(format!(
-                    "session id `{id}` is ambiguous — pass more of the id"
+                    "session id `{id}` is ambiguous; pass more of the id"
                 )));
             }
         }

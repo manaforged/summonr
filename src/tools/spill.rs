@@ -87,8 +87,8 @@ pub(super) fn full_output_note(log_path: &Path, cut: bool) -> String {
         return String::new();
     }
     if let Ok(Some(lines)) = crate::diff::line_count(log_path) {
-        return format!("\n[full output: {} — {lines} lines]", log_path.display());
+        return format!("\n[full output: {} ({lines} lines)]", log_path.display());
     }
     let size = std::fs::metadata(log_path).map_or(0, |meta| meta.len());
-    format!("\n[full output: {} — {size} bytes]", log_path.display())
+    format!("\n[full output: {} ({size} bytes)]", log_path.display())
 }

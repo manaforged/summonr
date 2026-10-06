@@ -325,7 +325,7 @@ impl Client {
     ) -> Result<crate::classify::Decision> {
         if self.wire != Wire::Decisions {
             return Err(Error::Config(
-                "this endpoint does not classify — see `summonr endpoints`".to_string(),
+                "this endpoint does not classify; see `summonr endpoints`".to_string(),
             ));
         }
         let body = wire::decisions::body(model, state, questions);

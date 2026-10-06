@@ -26,13 +26,13 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
     rows.sort();
     rows.dedup_by(|left, right| left.0 == right.0);
     let mut out = String::from(
-        "Skills (load with the skill tool, then follow the file). Catalog only — bodies stay on disk:",
+        "Skills (load with the skill tool, then follow the file). Catalog only; bodies stay on disk:",
     );
     for (name, summary) in rows {
         out.push_str("\n- ");
         out.push_str(&name);
         if !summary.is_empty() {
-            out.push_str(" — ");
+            out.push_str(": ");
             out.push_str(&summary);
         }
     }

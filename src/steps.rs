@@ -151,7 +151,7 @@ fn checks_in(text: &str) -> Vec<String> {
 #[must_use]
 pub fn prompt(step: &Step, total: usize, plan_path: &str) -> String {
     let mut text = format!(
-        "Step {} of {} from {plan_path}. Do this step only; the earlier steps are done and the later ones are not yours yet. Implement exactly what it names — no extra flags, defaults, or features — and use the names it gives.\n\n{}\n",
+        "Step {} of {} from {plan_path}. Do this step only; the earlier steps are done and the later ones are not yours yet. Implement exactly what it names. Add no extra flags, defaults, or features. Use the names it gives.\n\n{}\n",
         step.index, total, step.text
     );
     if !step.checks.is_empty() {

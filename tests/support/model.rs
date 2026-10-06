@@ -23,7 +23,12 @@ fn kept_sizes(body: &Value) -> Vec<(String, u64)> {
     body.to_string()
         .split("[full output: ")
         .skip(1)
-        .filter_map(|rest| rest.split(" — ").next())
+        .filter_map(|rest| {
+            rest.split(']')
+                .next()?
+                .rsplit_once(" (")
+                .map(|(path, _)| path)
+        })
         .map(|path| path.replace("\\\\", "\\"))
         .map(|path| {
             let size = std::fs::metadata(&path).map_or(0, |meta| meta.len());

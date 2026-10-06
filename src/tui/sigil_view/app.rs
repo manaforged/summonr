@@ -205,7 +205,6 @@ impl Attachment {
 
 impl App {
     pub(super) fn new(info: Info, workspace: PathBuf, cmd: UnboundedSender<Cmd>) -> Self {
-        theme::install(&info.prefs, &workspace, info.config.as_deref());
         let model = Model::new(&info);
         let git_branch = read_git_branch(&workspace);
         let draft = signal(String::new());
@@ -312,6 +311,7 @@ impl App {
             info,
         };
         app.cancel_secret_on_close();
+        app.apply_theme();
         drop(app.cmd.send(Cmd::Offers));
         app
     }

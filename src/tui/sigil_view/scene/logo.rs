@@ -109,8 +109,10 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
         ("model", shown_model),
         ("session", crate::session::short(&model.session).to_string()),
         ("workdir", app.info.workspace.clone()),
-        ("setup", "/login · /model · /help".to_string()),
     ];
+    if app.unseated() {
+        facts.push(("setup", "/login · /model · /help".to_string()));
+    }
     if model.snapshot.plan {
         facts.push(("mode", "plan · read-only".to_string()));
     }

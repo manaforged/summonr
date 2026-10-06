@@ -269,12 +269,15 @@ impl<P: Provider> Loop<P> {
     }
 }
 
+#[cfg(test)]
+#[path = "retry_tests.rs"]
+mod tests;
+
 fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
-    failure.kind == ProviderFailureKind::Authentication
-        || (failure.partial_output
-            && failure.status.is_none()
-            && matches!(
-                failure.kind,
-                ProviderFailureKind::Transport | ProviderFailureKind::Server
-            ))
+    failure.partial_output
+        && failure.status.is_none()
+        && matches!(
+            failure.kind,
+            ProviderFailureKind::Transport | ProviderFailureKind::Server
+        )
 }

@@ -1,9 +1,11 @@
 use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, Token, container};
 
-use super::steps::patch_counts;
+use super::fold::patch_counts;
+use super::preview;
+use super::tools::{searched, workspace_relative};
+use super::tree::label;
 use crate::tools::Builtin;
 use crate::tui::ToolState;
-use crate::tui::sigil_view::chat::entry::{label, preview, searched, workspace_relative};
 use crate::tui::sigil_view::look::Look;
 use crate::tui::sigil_view::model::Call;
 

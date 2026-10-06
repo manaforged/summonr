@@ -11,8 +11,6 @@ use crate::tui::sigil_view::model::Entry;
 
 mod child;
 mod message;
-mod meta;
-mod steps;
 
 type Version = (Slot, Vec<Content>, bool);
 
@@ -64,7 +62,10 @@ pub(in crate::tui::sigil_view) fn row(app: App, index: usize, spacing: (f32, f32
             let unfolded = open.get();
             untrack(|| match at {
                 Slot::Member => Vec::new(),
-                Slot::Lead(range) => vec![pad(steps::card(&app, range, unfolded, open), spacing.1)],
+                Slot::Lead(range) => vec![pad(
+                    crate::tui::sigil_view::chat::entry::fold::card(&app, range, unfolded, open),
+                    spacing.1,
+                )],
                 Slot::Single => single(&app, index)
                     .map(|node| vec![pad(node, spacing.1)])
                     .unwrap_or_default(),

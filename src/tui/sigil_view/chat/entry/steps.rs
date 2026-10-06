@@ -42,6 +42,7 @@ pub(in crate::tui::sigil_view) fn slot(entries: &[Entry], index: usize) -> Slot 
     Slot::Lead(index..end)
 }
 
+#[cfg(any(feature = "gui", test))]
 pub(in crate::tui::sigil_view) fn counts(patch: &str) -> (usize, usize) {
     patch
         .lines()

@@ -1,4 +1,4 @@
-use super::{SlashCommand, argument, parse_command, renamed};
+use super::{SlashCommand, argument, command_specs, parse_command, renamed};
 
 #[test]
 fn an_old_command_name_runs_its_replacement_and_says_so() {
@@ -12,6 +12,18 @@ fn an_old_command_name_runs_its_replacement_and_says_so() {
 fn a_current_command_is_not_rewritten() {
     assert!(renamed("/undo").is_none());
     assert_eq!(parse_command("/login"), Some(SlashCommand::Login));
+}
+
+#[test]
+fn approve_is_not_a_command() {
+    assert_eq!(parse_command("/approve"), None);
+    assert!(renamed("/approve").is_none());
+    let permissions = command_specs()
+        .iter()
+        .find(|spec| spec.name == "/permissions")
+        .expect("permissions");
+    assert_eq!(permissions.usage, "[net|write]");
+    assert_eq!(permissions.description, "sandbox network and write paths");
 }
 
 #[test]

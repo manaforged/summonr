@@ -192,7 +192,7 @@ impl App {
             model.entries.invalidate();
         });
         let prefs = self.model.peek().prefs.clone();
-        theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        self.apply_theme();
         self.persist(&prefs);
         self.refresh();
     }
@@ -203,9 +203,16 @@ impl App {
             model.entries.invalidate();
         });
         let prefs = self.model.peek().prefs.clone();
-        theme::install(&prefs, &self.workspace, self.info.config.as_deref());
+        self.apply_theme();
         self.persist(&prefs);
         self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn apply_theme(&self) {
+        let prefs = self.model.peek().prefs.clone();
+        for problem in theme::install(&prefs, &self.workspace, self.info.config.as_deref()) {
+            self.push_entry(Entry::System(problem));
+        }
     }
 
     pub(in crate::tui::sigil_view) fn toggle_agents(&self) {

@@ -312,7 +312,6 @@ First public release.
 | `/profile` | `/usage session` |
 | `/net` | `/permissions net` |
 | `/write` | `/permissions write` |
-| `/approve` | `/permissions approve` |
 | `/layout` | `/pane` |
 | `/theme`, `/tools`, `/reasoning`, `/receipts`, `/bus`, `/modules` | `/settings` |
 

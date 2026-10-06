@@ -87,6 +87,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .key(Key::Esc, "close");
     Dialog::new(Size::Page, "Usage", hints)
         .header(Some(tab_strip(&app, Tab::Usage)))
+        .fixed(rows)
         .child(
             container()
                 .layout(LayoutStyle::block().fill_width().height(height))

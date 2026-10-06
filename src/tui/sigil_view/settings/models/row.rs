@@ -13,6 +13,7 @@ use crate::tui::sigil_view::ui::{heading, slotted};
 
 const NAME_MIN: usize = 16;
 const NAME_MAX: usize = 44;
+const NAME_SPLIT: usize = 34;
 const PROVIDER: f32 = 14.0;
 const CONTEXT: f32 = 9.0;
 const PRICE: f32 = 16.0;
@@ -27,12 +28,19 @@ pub(super) struct Grid {
 }
 
 impl Grid {
-    pub(super) fn new(span: usize, longest: usize, split: bool) -> Self {
-        Self {
-            name: (longest + 2).clamp(NAME_MIN, NAME_MAX),
-            released: !split && span >= 72,
-            can: !split && span >= 90,
+    pub(super) fn new(span: usize, split: bool) -> Self {
+        let released = !split && span >= 72;
+        let can = !split && span >= 90;
+        let mut grid = Self {
+            name: NAME_SPLIT,
+            released,
+            can,
+        };
+        if !split {
+            let taken = grid.cells() as usize - NAME_SPLIT;
+            grid.name = span.saturating_sub(taken + 10).clamp(NAME_MIN, NAME_MAX);
         }
+        grid
     }
 
     pub(super) fn cells(self) -> f32 {

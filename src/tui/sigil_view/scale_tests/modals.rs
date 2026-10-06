@@ -284,3 +284,57 @@ fn a_long_sign_in_url_is_shortened_to_the_form() {
         .unwrap_or_else(|| panic!("{screen}"));
     assert!(line.contains('…'), "{screen}");
 }
+
+fn frame_rows(screen: &str) -> (Option<usize>, Option<usize>) {
+    let top = screen.lines().position(|line| line.contains('┏'));
+    let bottom = screen.lines().position(|line| line.contains('┗'));
+    (top, bottom)
+}
+
+#[test]
+fn the_model_dialog_keeps_its_frame_while_models_load() {
+    let loading = screen(160, 40, |app| {
+        app.replace("/model".to_owned());
+        app.submit();
+    });
+    let loaded = screen(160, 40, |app| {
+        open(
+            app,
+            vec![(Seat::new("deepseek", "ds-flash"), Model::named("ds-flash"))],
+            &[("deepseek", Reach::Ready)],
+        );
+    });
+    assert!(loading.contains("loading models"), "{loading}");
+    assert_eq!(
+        frame_rows(&loading),
+        frame_rows(&loaded),
+        "{loading}\n{loaded}"
+    );
+}
+
+#[test]
+fn the_key_step_keeps_the_providers_frame_and_list() {
+    let list = screen(160, 40, |app| {
+        app.replace("/login".to_owned());
+        app.submit();
+    });
+    let key = screen(160, 40, |app| {
+        app.replace("/login".to_owned());
+        app.submit();
+        app.auth.step.set(Login::Key(String::new()));
+    });
+    assert!(key.contains("paste or type the api key"), "{key}");
+    assert!(key.contains("Search providers"), "{key}");
+    assert_eq!(frame_rows(&list), frame_rows(&key), "{list}\n{key}");
+}
+
+#[test]
+fn a_rejected_key_from_the_model_picker_opens_in_its_pane() {
+    let screen = screen(160, 40, |app| {
+        rejected_openai(app);
+        select(app, "openai");
+        app.commit_model_edit();
+    });
+    assert!(screen.contains("Search models"), "{screen}");
+    assert!(screen.contains("API key"), "{screen}");
+}

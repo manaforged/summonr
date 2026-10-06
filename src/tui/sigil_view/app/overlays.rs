@@ -61,6 +61,7 @@ impl Overlay {
             Self::Search => super::super::search::layer(app),
             Self::Sessions => super::super::sessions::layer(app),
             Self::Usage => super::super::usage::layer(app),
+            Self::Auth if app.picker.open.peek() => settings::model_picker_layer(app),
             Self::Auth => settings::auth_layer(app),
             Self::Model => settings::model_picker_layer(app),
             Self::Effort => super::super::effort::layer(app),

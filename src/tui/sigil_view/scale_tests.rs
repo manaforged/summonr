@@ -28,6 +28,7 @@ mod picker;
 mod secret;
 mod settings;
 mod typeahead;
+mod typing;
 mod usage;
 
 const SIZES: [(u16, u16); 5] = [(40, 12), (60, 20), (80, 24), (110, 34), (200, 60)];

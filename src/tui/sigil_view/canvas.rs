@@ -105,6 +105,11 @@ pub(super) fn overlay_list_row() -> f32 {
 }
 
 pub(super) const DIALOG_CHROME: u16 = 16;
+const PAGE_CHROME: u16 = 5;
+
+pub(super) fn page_rows(rows: u16) -> u16 {
+    rows.saturating_sub(PAGE_CHROME).max(8)
+}
 
 pub(super) fn overlay_shown(count: usize, rows: u16) -> usize {
     overlay_room(count, rows, DIALOG_CHROME)

@@ -30,6 +30,7 @@ pub(in crate::tui) struct Dialog {
     size: Size,
     title: String,
     header: Option<NodeBuilder>,
+    rows: Option<u16>,
     body: NodeBuilder,
     hints: Rc<dyn Fn() -> Hints>,
 }
@@ -41,6 +42,7 @@ impl Dialog {
             size,
             title: title.into(),
             header: None,
+            rows: None,
             body: container().layout(
                 LayoutStyle::flex_column()
                     .fill_width()
@@ -65,6 +67,12 @@ impl Dialog {
     }
 
     #[must_use]
+    pub(in crate::tui) fn fixed(mut self, rows: u16) -> Self {
+        self.rows = (!canvas::is_window()).then_some(rows);
+        self
+    }
+
+    #[must_use]
     pub(in crate::tui) fn child(mut self, node: impl IntoNode + 'static) -> Self {
         self.body = self.body.child(node);
         self
@@ -78,14 +86,23 @@ impl Dialog {
         keys: &Hotkeys,
     ) -> NodeBuilder {
         let width = self.size.width(cols);
-        let mut body = self.body;
         let hints = self.hints;
         let keys = keys.clone();
-        body = body.child(
-            container()
-                .layout(LayoutStyle::flex_column().fill_width())
-                .children_reactive(move || vec![hints().bar(&keys)]),
-        );
+        let bar = container()
+            .layout(LayoutStyle::flex_column().fill_width())
+            .children_reactive(move || vec![hints().bar(&keys)]);
+        let body = match self.rows {
+            Some(rows) => container()
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .height(f32::from(canvas::page_rows(rows)) * canvas::cell().h),
+                )
+                .child(self.body)
+                .child(container().layout(LayoutStyle::flex_column().grow(1.0)))
+                .child(bar),
+            None => self.body.child(bar),
+        };
         let shell = modal(open)
             .trap(true)
             .width(width)

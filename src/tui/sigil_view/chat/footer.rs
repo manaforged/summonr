@@ -20,6 +20,7 @@ pub(in crate::tui::sigil_view) enum Target {
 }
 
 type FooterView = (
+    Option<super::super::app::Notice>,
     Option<String>,
     Option<(String, bool)>,
     u64,
@@ -42,6 +43,7 @@ fn footer_view(app: &App) -> FooterView {
         None
     };
     (
+        app.notice.get(),
         spend,
         elsewhere(&model.live),
         chrome::context_percent(&model),
@@ -81,7 +83,7 @@ pub(super) fn footer_bar(app: App, width: usize) -> NodeBuilder {
 }
 
 fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
-    let (spend, elsewhere, context_pct, cache_pct, open) = view;
+    let (notice, spend, elsewhere, context_pct, cache_pct, open) = view;
     let taken = 42
         + elsewhere
             .as_ref()
@@ -90,7 +92,8 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
             .git_branch
             .as_deref()
             .map_or(0, |branch| cell_width(branch) + 4)
-        + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2);
+        + spend.as_deref().map_or(0, |cost| cell_width(cost) + 2)
+        + notice.as_ref().map_or(0, |note| cell_width(&note.text) + 2);
     let place = crate::text::ellipsize(&app.info.workspace, width.saturating_sub(taken));
     let mut row = container().layout(
         LayoutStyle::flex_row()
@@ -133,6 +136,18 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
         );
     }
     row = row.child(spacer());
+    if let Some(note) = notice {
+        let tone = match note.kind {
+            super::super::app::NoticeKind::Copied => sigil::prelude::Token::Success11,
+            super::super::app::NoticeKind::Failed => sigil::prelude::Token::Error11,
+        };
+        row = row.child(
+            sigil::kernel::text(note.text)
+                .nowrap()
+                .font_size(12.0)
+                .text_color(tone),
+        );
+    }
     if let Some((note, waiting)) = elsewhere {
         row = row.child(
             sigil::kernel::text(note)

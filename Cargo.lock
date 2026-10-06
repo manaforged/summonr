@@ -3790,12 +3790,12 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "sigil-fonts"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=624e92c6eb8de7693d0b2393e0ce2c7fc2e216f8#624e92c6eb8de7693d0b2393e0ce2c7fc2e216f8"
+source = "git+https://github.com/manaforged/sigil.git?rev=834ad8dc638ef32889f3b27bc1908f1bac100b54#834ad8dc638ef32889f3b27bc1908f1bac100b54"
 
 [[package]]
 name = "sigil-ui"
 version = "0.1.0"
-source = "git+https://github.com/manaforged/sigil.git?rev=624e92c6eb8de7693d0b2393e0ce2c7fc2e216f8#624e92c6eb8de7693d0b2393e0ce2c7fc2e216f8"
+source = "git+https://github.com/manaforged/sigil.git?rev=834ad8dc638ef32889f3b27bc1908f1bac100b54#834ad8dc638ef32889f3b27bc1908f1bac100b54"
 dependencies = [
  "accesskit",
  "accesskit_winit",

@@ -255,9 +255,11 @@ pub(in crate::tui::sigil_view) fn transcript(
             }
             jump.set(keys.peek().len().saturating_sub(1));
             let live = app.clone();
+            let copied = app.clone();
             vec![
                 container()
                     .selectable_text(true)
+                    .on_selection_copy(move |text, result| copied.copy_notice(text, result))
                     .layout(
                         LayoutStyle::flex_column()
                             .fill_width()

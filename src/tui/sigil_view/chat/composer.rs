@@ -33,7 +33,7 @@ pub(in crate::tui::sigil_view) fn busy_status(model: &Model, tick: u64) -> Optio
             .unwrap_or_default();
         format!(
             "{} {doing} · {}{speed}{waiting}",
-            sigil::prelude::spinner_frame(tick),
+            sigil::widgets::spinner_frame(tick),
             crate::text::duration(since.elapsed().as_secs())
         )
     })

@@ -56,6 +56,7 @@ pub(crate) const SPINNER: Duration = Duration::from_millis(100);
 pub(crate) const SPLASH_REVEAL_MS: u128 = 760;
 pub(crate) const STATUS_REFRESH: Duration = Duration::from_secs(1);
 pub(crate) const BEAT: Duration = Duration::from_secs(2);
+pub(crate) const NOTICE: Duration = Duration::from_secs(2);
 #[cfg(feature = "gui")]
 pub(crate) const WORKER_STOP: Duration = Duration::from_secs(2);
 pub(crate) const REPEAT_WINDOW: Duration = Duration::from_secs(2);

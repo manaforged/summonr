@@ -1,7 +1,7 @@
 use sigil::prelude::{effect, interval};
 
 use super::*;
-use crate::limits::{ANIMATION, BEAT, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
+use crate::limits::{ANIMATION, BEAT, NOTICE, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
 
 impl App {
     pub(in crate::tui::sigil_view) fn refresh(&self) {
@@ -56,6 +56,33 @@ impl App {
             }
         });
         self.poll();
+        let app = self.clone();
+        effect(move || {
+            if app.notice.get().is_some() {
+                let clear = app.clone();
+                interval(NOTICE, move || clear.notice.set(None));
+            }
+        });
+    }
+
+    pub(in crate::tui::sigil_view) fn copy_notice(
+        &self,
+        text: &str,
+        result: &sigil::AppResult<sigil::clipboard::Delivery>,
+    ) {
+        let lines = text.lines().count().max(1);
+        let plural = if lines == 1 { "" } else { "s" };
+        let (text, kind) = match result {
+            Ok(sigil::clipboard::Delivery::Confirmed) => {
+                (format!("copied {lines} line{plural}"), NoticeKind::Copied)
+            }
+            Ok(sigil::clipboard::Delivery::Requested) => (
+                format!("sent {lines} line{plural} to the terminal clipboard"),
+                NoticeKind::Copied,
+            ),
+            Err(error) => (format!("copy failed: {error}"), NoticeKind::Failed),
+        };
+        self.notice.set(Some(Notice { text, kind }));
     }
 
     fn poll(&self) {

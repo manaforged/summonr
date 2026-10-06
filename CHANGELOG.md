@@ -137,6 +137,13 @@ First public release.
 
 ### Fixed
 
+- Dragging across the transcript in a terminal copies exactly the text
+  crossed, in either direction, and the footer says "copied N lines".
+  Before, the first character was dropped, a drag toward the start
+  copied nothing, and nothing confirmed the copy.
+- Links in replies open on click, a dropped file lands only in the pane
+  under the pointer, and loading older messages keeps the message you
+  were reading in place.
 - Review follow-ups: `xargs -I {} sh -c {}` is seen by the ask gate; a
   failed attempt's partial reply is no longer sent back as the last
   message; the password dialog names the program that really asked;

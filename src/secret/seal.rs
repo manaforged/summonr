@@ -173,14 +173,10 @@ pub(super) fn tighten_dir(_: &Path) -> Result<()> {
 }
 
 pub(super) fn open_file(key: Option<&[u8; KEY_LEN]>, bytes: &[u8]) -> Result<DocumentMut> {
-    let magic = [MAGIC, MAGIC_LEGACY]
-        .into_iter()
-        .find(|magic| bytes.starts_with(magic));
-    if let Some(magic) = magic {
+    if let Some(rest) = bytes.strip_prefix(MAGIC) {
         let key = key.ok_or_else(|| {
             Error::Config("credential store: sealed file has no wrapping key".to_string())
         })?;
-        let rest = &bytes[magic.len()..];
         if rest.len() < NONCE_LEN {
             return Err(Error::Config(
                 "credential store: sealed file is truncated".to_string(),

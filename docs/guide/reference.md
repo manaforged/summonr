@@ -974,9 +974,6 @@ source edits and builds are refused.
 A restricted write list makes contained shell commands read-only and disables
 background commands; file tools still use the list.
 
-- Home is still `~/.summonr`. Env is still `SUMMONR_*`.
-- An older `mage` binary may still be on `PATH`. Use `summonr`.
-
 ## Extend
 
 The built-in modules are the binary (modules above). What you add lives in files and other
@@ -999,8 +996,6 @@ After the first `prefix_hash`, advertised tools and skill catalog names stay fro
 When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
 
 `SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it.
-
-Memory: `~/.summonr/skills/memory/SKILL.md` should tell the model to read and write labeled notes under a directory named in that file (default `~/.summonr/skills/memory/notes/`). Do not put notes in the system paragraph.
 
 Intent permissions: a `pre_tool` hook that exits nonzero blocks the call. Keep argv policy in `policy.toml`; do not add a second classifier unless it is a compiled module row.
 

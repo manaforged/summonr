@@ -145,7 +145,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
 - There is no in-process package loader, `dlopen`, or guest scripting. Write a skill, an MCP server, a hook, or a CLI.
 - Repository search is `read` with `pattern` or `glob`, or `rg` through `run_command`. There is no built-in code graph.
-- There is no automatic memory between sessions unless you add the memory skill.
+- There is no memory between sessions.
 - Config is under `~/.summonr`.
 - On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.
 
@@ -165,11 +165,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-712 public items (72 types, 97 functions, 113 methods, 250 fields, 176 variants, 4 constants) at 712 paths; 0 are re-export aliases. 363 trait impl lines, 31 inherent impl lines. 23 modules, 0 re-export only.
+717 public items (72 types, 98 functions, 114 methods, 253 fields, 176 variants, 4 constants) at 717 paths; 0 are re-export aliases. 363 trait impl lines, 31 inherent impl lines. 23 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 470 | 40 | 46 | 93 | 0 |
+| `summonr` | 475 | 40 | 47 | 94 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |

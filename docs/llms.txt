@@ -4,18 +4,18 @@
 
 ## summonr-auth 0.1.0-rc.1
 
-- [Every public item, one per line](reference/summonr-auth/api.txt): 111 lines
+- [Every public item, one per line](reference/summonr-auth/api.txt): 112 lines
 - [API overview](reference/summonr-auth/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr-auth/changes.html)
-- [summonr_auth](reference/summonr-auth/summonr_auth.html): 66 items
+- [summonr_auth](reference/summonr-auth/summonr_auth.html): 67 items
 - [summonr_auth::open](reference/summonr-auth/summonr_auth-open.html): 2 items
 
 ## summonr 0.1.0-rc.1
 
-- [Every public item, one per line](reference/summonr/api.txt): 1129 lines
+- [Every public item, one per line](reference/summonr/api.txt): 1134 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr/changes.html)
-- [summonr](reference/summonr/summonr.html): 470 items
+- [summonr](reference/summonr/summonr.html): 475 items
 - [summonr::acp](reference/summonr/summonr-acp.html): 1 items
 - [summonr::askpass](reference/summonr/summonr-askpass.html): 5 items
 - [summonr::catalog](reference/summonr/summonr-catalog.html): 24 items

@@ -88,6 +88,7 @@ pub summonr_auth::Spec::grant: summonr_auth::Grant
 pub summonr_auth::Spec::pkce: bool
 pub summonr_auth::Spec::redirect_uri: core::option::Option<alloc::string::String>
 pub summonr_auth::Spec::refresh_token: core::option::Option<alloc::string::String>
+pub summonr_auth::Spec::required_scope: core::option::Option<alloc::string::String>
 pub summonr_auth::Spec::scope: core::option::Option<alloc::string::String>
 pub summonr_auth::Spec::token_params: alloc::collections::btree::map::BTreeMap<alloc::string::String, alloc::string::String>
 pub summonr_auth::Spec::token_style: summonr_auth::TokenStyle

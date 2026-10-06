@@ -84,10 +84,10 @@ fn state_may_be_an_object_because_the_api_takes_one() {
 fn a_request_carries_the_headers_the_endpoint_declares() {
     let mut seat = endpoint("vendor", Wire::Decisions);
     seat.headers
-        .insert("X-Vendor-Project".to_string(), "website".to_string());
+        .insert("X-Vendor-Project".to_string(), "webshop".to_string());
     assert_eq!(
         seat.headers.get("X-Vendor-Project").map(String::as_str),
-        Some("website"),
+        Some("webshop"),
         "a provider that needs a header must be configurable without code"
     );
 }

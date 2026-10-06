@@ -72,6 +72,7 @@
 | <code>pkce: bool</code> |  |
 | <code>redirect_uri: Option&lt;String&gt;</code> |  |
 | <code>refresh_token: Option&lt;String&gt;</code> |  |
+| <code>required_scope: Option&lt;String&gt;</code> |  |
 | <code>scope: Option&lt;String&gt;</code> |  |
 | <code>token_params: BTreeMap&lt;String, String&gt;</code> |  |
 | <code>token_style: <a href="#tokenstyle">TokenStyle</a></code> |  |

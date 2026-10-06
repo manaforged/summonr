@@ -23,10 +23,6 @@ pub fn summonr_home() -> Result<PathBuf> {
     {
         return Ok(dir);
     }
-    let legacy = dir.with_file_name(".mage");
-    if !dir.exists() && legacy.is_dir() {
-        drop(std::fs::rename(&legacy, &dir));
-    }
     if !dir.is_dir() {
         std::fs::create_dir_all(&dir)?;
     }

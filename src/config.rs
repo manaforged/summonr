@@ -125,6 +125,7 @@ pub(crate) struct Lsp {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub(crate) struct Endpoint {
     pub base_url: Option<String>,
+    pub models_url: Option<String>,
     pub model: Option<String>,
     pub api_key: Option<String>,
     pub auth: Option<OAuth>,

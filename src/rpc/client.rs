@@ -11,7 +11,7 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_STDERR_SETTLE, MCP_STDERR_TAIL};
+use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_STDERR_TAIL};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
 
@@ -211,9 +211,14 @@ impl Client {
     }
 
     async fn frame(&mut self) -> Result<Read> {
+        if self.broken {
+            self.settle_stderr().await?;
+            return Ok(Read::Closed);
+        }
         loop {
             let chunk = self.reader.fill_buf().await?;
             if chunk.is_empty() {
+                self.broken = true;
                 return Ok(Read::Closed);
             }
             let (take, done) = chunk
@@ -251,11 +256,19 @@ impl Client {
         !self.broken && matches!(self.child.try_wait(), Ok(None))
     }
 
-    async fn settled_stderr_note(&mut self) -> String {
-        if let Some(drain) = self.drain.take() {
-            drop(tokio::time::timeout(MCP_STDERR_SETTLE, drain).await);
+    async fn settle_stderr(&mut self) -> Result<()> {
+        if let Some(drain) = self.drain.as_mut()
+            && let Err(error) = drain.await
+            && !error.is_cancelled()
+        {
+            self.drain = None;
+            return Err(Error::Tool(format!(
+                "the child exited; stderr capture failed: {error}{}",
+                self.stderr_note()
+            )));
         }
-        self.stderr_note()
+        self.drain = None;
+        Ok(())
     }
 
     fn stderr_note(&self) -> String {
@@ -275,6 +288,14 @@ impl Client {
                 )
             })
             .unwrap_or_default()
+    }
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        if let Some(drain) = &self.drain {
+            drain.abort();
+        }
     }
 }
 

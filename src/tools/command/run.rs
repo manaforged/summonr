@@ -6,6 +6,7 @@ use crate::tools::sandbox::Sandbox;
 use crate::tools::spill::full_output_note;
 use crate::tools::{ToolOutput, ToolRegistry};
 
+use super::Approval;
 use super::digest::digest;
 use super::proc::{
     CommandChild, ProcessGroup, StartedCommand, job_text, spawn_command, stop_command, wait_shell,
@@ -59,7 +60,7 @@ impl ToolRegistry {
         command: &str,
         background: bool,
         read_only: bool,
-        approved: bool,
+        approval: Option<Approval>,
         cwd: PathBuf,
     ) -> Result<StartedCommand> {
         let files = self.command_files(background)?;
@@ -67,7 +68,7 @@ impl ToolRegistry {
             Some(job) => crate::shell::wrap(command, &job.exit_path, &cwd),
             None => command.to_string(),
         };
-        let sandbox = self.command_sandbox(approved)?;
+        let sandbox = self.command_sandbox(approval)?;
         let child = spawn_command(
             &self.env,
             sandbox.as_ref(),
@@ -110,12 +111,12 @@ impl ToolRegistry {
         })
     }
 
-    fn command_sandbox(&self, approved: bool) -> Result<Option<Sandbox>> {
+    fn command_sandbox(&self, approval: Option<Approval>) -> Result<Option<Sandbox>> {
         let one_shot = self.sandbox.is_some()
             && self
                 .network_once
                 .swap(false, std::sync::atomic::Ordering::SeqCst);
-        if approved {
+        if matches!(approval, Some(Approval::Uncontained)) {
             return Ok(None);
         }
         if one_shot {

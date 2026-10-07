@@ -83,6 +83,10 @@ fn main() {
         policy::a_server_runs_inside_the_sandbox,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_server_restarts_when_the_sandbox_changes,
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        policy::a_sandboxed_command_cannot_write_outside_roots_without_approval,
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        policy::a_no_network_session_does_not_enable_shell_networking,
         protocol::the_client_offers_the_current_spec_with_roots,
         protocol::a_server_on_an_unknown_version_is_refused,
         protocol::the_server_can_ask_for_the_workspace_roots,

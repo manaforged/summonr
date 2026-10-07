@@ -133,6 +133,7 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
     Endpoint {
         name: ENV_ENDPOINT.to_string(),
         base_url: Some(trim_slash(base)),
+        models_url: None,
         model: model
             .map(str::to_string)
             .or_else(|| std::env::var("SUMMONR_MODEL").ok())
@@ -247,6 +248,7 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         name: chosen.to_string(),
         model: row.model.clone().unwrap_or_default(),
         base_url: row.base_url.as_deref().map(trim_slash),
+        models_url: row.models_url.clone(),
         api_key: row.api_key.clone().filter(|key| !key.trim().is_empty()),
         source: None,
         oauth: row.auth.clone(),
@@ -272,7 +274,7 @@ pub(super) fn hosted(base: &str) -> Option<&'static super::preset::Preset> {
     let base = trim_slash(base);
     presets()
         .filter(|preset| {
-            base.strip_prefix(&trim_slash(preset.base_url))
+            base.strip_prefix(&trim_slash(&preset.base_url))
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         })
         .reduce(|best, next| {
@@ -297,6 +299,9 @@ pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
 fn overlay_connection(endpoint: &mut Endpoint, row: &FileEndpoint) {
     if let Some(base) = &row.base_url {
         endpoint.base_url = Some(trim_slash(base));
+    }
+    if let Some(url) = &row.models_url {
+        endpoint.models_url = Some(trim_slash(url));
     }
     if let Some(model) = &row.model {
         endpoint.model.clone_from(model);

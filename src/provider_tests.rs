@@ -102,6 +102,19 @@ fn a_hosted_model_window_comes_from_local_data_without_a_request() {
 }
 
 #[test]
+fn a_client_lists_models_from_the_models_base_not_the_chat_base() {
+    let mut endpoint =
+        crate::endpoint::resolve(Some("perplexity"), None, crate::Need::Config).unwrap();
+    endpoint.api_key = Some("k".to_string());
+    let client = Client::connect(&endpoint).unwrap();
+    assert_eq!(client.base.as_str(), "https://api.perplexity.ai");
+    assert_eq!(client.models_base.as_str(), "https://api.perplexity.ai/v1");
+    endpoint.models_url = None;
+    let plain = Client::connect(&endpoint).unwrap();
+    assert_eq!(plain.models_base.as_str(), plain.base.as_str());
+}
+
+#[test]
 fn a_plan_cap_is_a_rate_limit_that_names_its_code() {
     let text = r#"{"error":{"code":"subscription_sharing_usage_limit_exceeded","message":"cap"}}"#;
     let error = response_failure(429, text, None);

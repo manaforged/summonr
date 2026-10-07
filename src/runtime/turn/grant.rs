@@ -1,4 +1,5 @@
 use super::*;
+use crate::tools::command::Approval;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn verdict(
@@ -86,7 +87,7 @@ impl<P: Provider> Loop<P> {
             if self.grant_blocked(&grant, &asked) {
                 break;
             }
-            if !matches!(grant, Grant::Danger(_)) {
+            if matches!(grant, Grant::Write(_) | Grant::Guarded(_) | Grant::Edit(_)) {
                 self.apply_grant(&grant, false, events, emit)?;
                 output = self.tools.execute_outcome(call).await;
                 continue;
@@ -135,7 +136,7 @@ impl<P: Provider> Loop<P> {
         let text = match grant {
             Grant::Write(path) | Grant::Guarded(path) => self.grant_write(path, standing)?,
             Grant::Danger(_) => {
-                self.tools.approve_once();
+                self.tools.approve_once(Approval::Policy)?;
                 return Ok(());
             }
             Grant::Edit(setting) => {
@@ -143,7 +144,7 @@ impl<P: Provider> Loop<P> {
                 format!("{setting} allowed for this task")
             }
             Grant::Command(command) => {
-                self.tools.approve_once();
+                self.tools.approve_once(Approval::Uncontained)?;
                 format!("running this command without the sandbox: {command}")
             }
             Grant::Network => {

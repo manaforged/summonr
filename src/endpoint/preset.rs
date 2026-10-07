@@ -1,19 +1,23 @@
-mod head;
-mod tail;
+use std::collections::BTreeMap;
+use std::sync::OnceLock;
+
+use serde::Deserialize;
 
 use super::*;
-use crate::provider::Spec;
+use crate::provider::levels::STANDARD;
+use crate::provider::{Effort, EffortField, Off, Scale, Spec};
 
 pub(super) struct Preset {
-    pub(super) name: &'static str,
-    pub(super) base_url: &'static str,
-    pub(super) model: &'static str,
+    pub(super) name: String,
+    pub(super) base_url: String,
+    pub(super) models_url: Option<&'static str>,
+    pub(super) model: String,
     pub(super) env_keys: &'static [&'static str],
     pub(super) default_key: Option<&'static str>,
-    pub(super) missing: &'static str,
-    pub(super) aliases: &'static [(&'static str, &'static str)],
+    pub(super) missing: String,
+    pub(super) aliases: &'static [(String, String)],
     pub(super) oauth: Option<fn() -> crate::config::OAuth>,
-    pub(super) headers: &'static [(&'static str, &'static str)],
+    pub(super) headers: &'static [(String, String)],
     pub(super) wire: Wire,
     pub(super) reasoning: Spec,
     pub(super) context_window: Option<u32>,
@@ -23,6 +27,8 @@ pub(super) struct Preset {
     pub(super) opencode_oauth: bool,
     pub(super) env_default: bool,
     pub(super) plan: bool,
+    pub(super) off: bool,
+    pub(super) opencode_ids: &'static [&'static str],
 }
 
 pub(super) struct CliToken {
@@ -116,68 +122,245 @@ fn copilot_oauth() -> crate::config::OAuth {
     }
 }
 
-const OFF: &[&str] = &["claude-pro"];
+fn login(name: &str) -> Option<fn() -> crate::config::OAuth> {
+    [
+        ("claude", claude_oauth as fn() -> crate::config::OAuth),
+        ("chatgpt", chatgpt_oauth),
+        ("supergrok", supergrok_oauth),
+        ("copilot", copilot_oauth),
+    ]
+    .into_iter()
+    .find(|(known, _)| *known == name)
+    .map(|(_, make)| make)
+}
+
+fn cli_token(name: &str) -> Option<CliToken> {
+    (name == "kimi-code").then_some(KIMI_CLI)
+}
+
+fn wire(value: &str) -> std::result::Result<Wire, String> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "completions" => Ok(Wire::Completions),
+        "responses" => Ok(Wire::Responses),
+        "anthropic" => Ok(Wire::Anthropic),
+        "gemini" => Ok(Wire::Gemini),
+        other => Err(format!("unknown wire `{other}`")),
+    }
+}
+
+#[derive(Deserialize)]
+struct File {
+    preset: Vec<Row>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Row {
+    name: String,
+    base_url: String,
+    #[serde(default)]
+    models_url: Option<String>,
+    #[serde(default)]
+    model: String,
+    #[serde(default)]
+    env_keys: Vec<String>,
+    #[serde(default)]
+    default_key: Option<String>,
+    #[serde(default)]
+    missing: Option<String>,
+    #[serde(default)]
+    aliases: BTreeMap<String, String>,
+    #[serde(default)]
+    oauth: Option<String>,
+    #[serde(default)]
+    headers: BTreeMap<String, String>,
+    #[serde(default)]
+    wire: Option<String>,
+    #[serde(default)]
+    reasoning: ReasoningRow,
+    #[serde(default)]
+    context_window: Option<u32>,
+    #[serde(default)]
+    opencode: bool,
+    #[serde(default)]
+    prompt_cache_key: bool,
+    #[serde(default)]
+    cli_token: Option<String>,
+    #[serde(default = "yes")]
+    opencode_oauth: bool,
+    #[serde(default)]
+    env_default: bool,
+    #[serde(default)]
+    plan: bool,
+    #[serde(default)]
+    off: bool,
+    #[serde(default)]
+    opencode_ids: Vec<String>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ReasoningRow {
+    #[serde(default)]
+    field: Option<String>,
+    #[serde(default)]
+    levels: Option<Vec<Effort>>,
+    #[serde(default)]
+    off: Option<Off>,
+    #[serde(default)]
+    host_only: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
+    let file: File = toml::from_str(text).map_err(|error| error.to_string())?;
+    let mut seen: Vec<String> = Vec::new();
+    let mut rows = Vec::new();
+    for row in file.preset {
+        let name = row.name.trim().to_string();
+        let base_url = row.base_url.trim().to_string();
+        if name.is_empty() || base_url.is_empty() {
+            return Err("every preset needs a name and a base_url".to_string());
+        }
+        if seen.contains(&name) {
+            return Err(format!("preset `{name}` is listed twice"));
+        }
+        seen.push(name.clone());
+        let oauth = match row.oauth.as_deref() {
+            None => None,
+            Some(named) => Some(
+                login(named).ok_or_else(|| format!("`{name}` names unknown login `{named}`"))?,
+            ),
+        };
+        let cli_token = match row.cli_token.as_deref() {
+            None => None,
+            Some(named) => Some(
+                cli_token(named)
+                    .ok_or_else(|| format!("`{name}` names unknown cli token `{named}`"))?,
+            ),
+        };
+        let wire = match row.wire.as_deref() {
+            None => Wire::Completions,
+            Some(named) => {
+                wire(named).map_err(|error| format!("`{name}` has an invalid wire: {error}"))?
+            }
+        };
+        for key in &row.env_keys {
+            if !key
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                || key.is_empty()
+            {
+                return Err(format!("`{name}` lists env key `{key}`"));
+            }
+        }
+        let reasoning = {
+            let field = match row.reasoning.field.as_deref() {
+                None | Some("reasoning_effort") => EffortField::ReasoningEffort,
+                Some("reasoning_object") => EffortField::ReasoningObject,
+                Some(other) => {
+                    return Err(format!("`{name}` names unknown effort field `{other}`"));
+                }
+            };
+            let mut levels = row.reasoning.levels.unwrap_or_else(|| STANDARD.to_vec());
+            levels.sort();
+            levels.dedup();
+            let off = row.reasoning.off.unwrap_or(Off::Omit);
+            Spec {
+                field,
+                scale: Scale::new(Box::leak(levels.into_boxed_slice()), off),
+                by_model: !row.reasoning.host_only,
+            }
+        };
+        let missing = row.missing.clone().unwrap_or_else(|| {
+            if row.env_keys.is_empty() {
+                format!("run `summonr login {name}`")
+            } else {
+                format!("run `summonr login {name}` or set {}", row.env_keys[0])
+            }
+        });
+        let leak = |values: &[String]| -> &'static [&'static str] {
+            let kept: Vec<&'static str> = values
+                .iter()
+                .map(|value| Box::leak(value.clone().into_boxed_str()) as &'static str)
+                .collect();
+            Box::leak(kept.into_boxed_slice())
+        };
+        rows.push(Preset {
+            name,
+            base_url,
+            models_url: row
+                .models_url
+                .as_deref()
+                .map(|url| Box::leak(url.to_string().into_boxed_str()) as &'static str),
+            model: row.model,
+            env_keys: leak(&row.env_keys),
+            default_key: row
+                .default_key
+                .as_deref()
+                .map(|key| Box::leak(key.to_string().into_boxed_str()) as &'static str),
+            missing,
+            aliases: Box::leak(
+                row.aliases
+                    .into_iter()
+                    .collect::<Vec<(String, String)>>()
+                    .into_boxed_slice(),
+            ),
+            oauth,
+            headers: Box::leak(
+                row.headers
+                    .into_iter()
+                    .collect::<Vec<(String, String)>>()
+                    .into_boxed_slice(),
+            ),
+            wire,
+            reasoning,
+            context_window: row.context_window,
+            opencode: row.opencode,
+            prompt_cache_key: row.prompt_cache_key,
+            cli_token,
+            opencode_oauth: row.opencode_oauth,
+            env_default: row.env_default,
+            plan: row.plan,
+            off: row.off,
+            opencode_ids: leak(&row.opencode_ids),
+        });
+    }
+    Ok(rows)
+}
+
+const PRESETS: &str = include_str!("presets.toml");
+
+pub(super) fn listed() -> &'static [Preset] {
+    static ROWS: OnceLock<Vec<Preset>> = OnceLock::new();
+    ROWS.get_or_init(|| match table(PRESETS) {
+        Ok(rows) => rows,
+        Err(error) => panic!("the built-in provider table is invalid: {error}"),
+    })
+}
 
 pub(super) fn presets() -> impl Iterator<Item = &'static Preset> {
-    HEAD.iter()
-        .chain(TAIL)
-        .filter(|preset| !OFF.contains(&preset.name))
+    listed().iter().filter(|preset| !preset.off)
 }
 
 pub(super) fn preset(name: &str) -> Option<&'static Preset> {
     presets().find(|preset| preset.name == name)
 }
 
-const PROVIDER_IDS: &[(&str, &[&str])] = &[
-    ("zai", &["zai-coding-plan", "zai"]),
-    ("zai-cn", &["zhipuai-coding-plan", "zhipuai"]),
-    (
-        "glm",
-        &["zhipuai-coding-plan", "zhipuai", "zai-coding-plan", "zai"],
-    ),
-    ("glm-intl", &["zai-coding-plan", "zai"]),
-    ("deepseek", &["deepseek"]),
-    (
-        "kimi",
-        &[
-            "kimi-code-plan-global",
-            "kimi-code-plan-cn",
-            "moonshotai",
-            "moonshotai-cn",
-        ],
-    ),
-    ("grok", &["xai"]),
-    ("openai", &["openai"]),
-    ("openrouter", &["openrouter"]),
-    ("together", &["togetherai"]),
-    ("groq", &["groq"]),
-    ("cerebras", &["cerebras"]),
-    ("mistral", &["mistral"]),
-    ("anthropic", &["anthropic"]),
-    ("claude-pro", &["anthropic"]),
-    ("gemini", &["google"]),
-    ("muse", &["meta"]),
-    ("zen", &["opencode"]),
-    ("go", &["opencode-go"]),
-    ("opencode", &["opencode"]),
-    ("fireworks", &["fireworks-ai"]),
-    ("deepinfra", &["deepinfra"]),
-    ("minimax", &["minimax-coding-plan", "minimax"]),
-    ("minimax-cn", &["minimax-cn-coding-plan", "minimax-cn"]),
-    ("copilot", &["github-copilot"]),
-];
-
 pub(crate) fn catalog_providers() -> impl Iterator<Item = &'static str> {
-    PROVIDER_IDS.iter().flat_map(|(_, ids)| ids.iter().copied())
+    listed()
+        .iter()
+        .filter(|preset| !preset.off)
+        .flat_map(|preset| preset.opencode_ids.iter().copied())
 }
 
 #[must_use]
 pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
-    PROVIDER_IDS
+    listed()
         .iter()
-        .find_map(|(row, ids)| (*row == name).then_some(*ids))
-        .unwrap_or_default()
+        .find(|preset| preset.name == name && !preset.off)
+        .map_or(&[], |preset| preset.opencode_ids)
 }
-
-use head::HEAD;
-use tail::TAIL;

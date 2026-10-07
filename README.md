@@ -106,7 +106,7 @@ Next commands:
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `ollama`, `openrouter`, `kimi`, `copilot`, `together`, `fireworks`, `deepinfra`, and `minimax`. Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
+Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `qwen-plan`, `dashscope`, `kimi`, `minimax-plan`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more: every coding plan and inference host is one row in the provider table (`src/endpoint/presets.toml`). Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]

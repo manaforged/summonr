@@ -39,6 +39,7 @@ pub struct Client {
     pub(super) http: leyline::Session,
     pub(super) auth_http: leyline::Session,
     pub(super) base: String,
+    pub(super) models_base: String,
     pub(super) auth: Auth,
     pub(super) body: Option<Value>,
     pub(super) headers: Vec<(String, String)>,
@@ -58,6 +59,7 @@ pub struct Client {
 pub(super) struct Opts {
     pub wire: Wire,
     pub opencode: bool,
+    pub models_base: Option<String>,
     pub prompt_cache_key: bool,
     pub idle_timeout: Option<Duration>,
 }
@@ -96,6 +98,7 @@ impl Client {
             Opts {
                 wire: endpoint.wire,
                 opencode: endpoint.opencode,
+                models_base: endpoint.models_url.clone(),
                 prompt_cache_key: endpoint.prompt_cache_key,
                 idle_timeout,
             },

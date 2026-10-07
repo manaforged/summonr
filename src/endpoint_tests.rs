@@ -35,6 +35,20 @@ fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
 }
 
 #[test]
+fn a_custom_row_can_point_model_listings_elsewhere() {
+    let file: crate::config::File = toml::from_str(
+        "[endpoint.odd]\nbase_url = \"https://odd.example\"\nmodels_url = \"https://odd.example/v1\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
+    let endpoint = from_file(&file, "odd").unwrap();
+    assert_eq!(endpoint.base_url.as_deref(), Some("https://odd.example"));
+    assert_eq!(
+        endpoint.models_url.as_deref(),
+        Some("https://odd.example/v1")
+    );
+}
+
+#[test]
 fn a_misspelled_endpoint_suggests_the_closest_name() {
     let names = vec![
         "anthropic".to_string(),
@@ -77,4 +91,102 @@ fn openai_and_grok_offer_a_sign_in_and_a_key() {
         super::keys::builtin("openai").unwrap().wire,
         super::Wire::Responses
     );
+}
+
+#[test]
+fn the_provider_table_rejects_rows_it_cannot_honor() {
+    let base = "[[preset]]\nname = \"x\"\nbase_url = \"https://x.example/v1\"\n";
+    for (label, broken) in [
+        ("unknown login", format!("{base}oauth = \"nope\"\n")),
+        ("unknown wire", format!("{base}wire = \"carrier-pigeon\"\n")),
+        (
+            "duplicate row",
+            format!("{base}\n[[preset]]\nname = \"x\"\nbase_url = \"https://y.example/v1\"\n"),
+        ),
+        (
+            "lowercase env key",
+            format!("{base}env_keys = [\"x_api_key\"]\n"),
+        ),
+        (
+            "unknown effort field",
+            format!("{base}[preset.reasoning]\nfield = \"vibes\"\n"),
+        ),
+    ] {
+        assert!(
+            super::preset::table(&broken).is_err(),
+            "{label} should be rejected"
+        );
+    }
+}
+
+#[test]
+fn an_off_row_is_listed_but_hidden() {
+    assert!(super::preset::preset("claude-pro").is_none());
+    assert!(!super::preset::presets().any(|row| row.name == "claude-pro"));
+    assert!(
+        super::preset::listed()
+            .iter()
+            .any(|row| row.name == "claude-pro" && row.off),
+        "claude-pro stays in the table with off = true"
+    );
+}
+
+#[test]
+fn coding_plans_join_the_plan_group() {
+    for name in [
+        "qwen-plan",
+        "qwen-plan-cn",
+        "minimax-plan",
+        "minimax-cn-plan",
+        "tencent-plan",
+        "volcengine-plan",
+    ] {
+        let endpoint = super::keys::builtin(name).unwrap_or_else(|| panic!("{name} missing"));
+        assert!(
+            matches!(super::login_group(name, &endpoint), super::LoginGroup::Plan),
+            "{name} should sit in the coding-plan group"
+        );
+    }
+}
+
+#[test]
+fn the_new_endpoints_point_at_their_hosts() {
+    let qwen = super::keys::builtin("qwen-plan").unwrap();
+    assert_eq!(
+        qwen.base_url.as_deref(),
+        Some("https://coding-intl.dashscope.aliyuncs.com/v1")
+    );
+    assert_eq!(qwen.wire, super::Wire::Completions);
+    let minimax = super::keys::builtin("minimax-plan").unwrap();
+    assert_eq!(
+        minimax.base_url.as_deref(),
+        Some("https://api.minimax.io/anthropic/v1")
+    );
+    assert_eq!(minimax.wire, super::Wire::Anthropic);
+    let perplexity = super::keys::builtin("perplexity").unwrap();
+    assert_eq!(
+        perplexity.base_url.as_deref(),
+        Some("https://api.perplexity.ai")
+    );
+    assert_eq!(
+        perplexity.models_url.as_deref(),
+        Some("https://api.perplexity.ai/v1"),
+        "perplexity serves its model list under /v1 and chat without it"
+    );
+    let lmstudio = super::keys::builtin("lmstudio").unwrap();
+    assert!(lmstudio.keyless(), "lmstudio is a local server");
+    assert!(super::keys::builtin("ollama-cloud").is_some());
+}
+
+#[test]
+fn opencode_peer_ids_follow_the_table() {
+    assert_eq!(
+        super::preset::provider_ids("qwen-plan"),
+        ["alibaba-coding-plan"]
+    );
+    assert_eq!(
+        super::preset::provider_ids("volcengine-plan"),
+        ["volcengine-coding-plan"]
+    );
+    assert!(super::preset::catalog_providers().any(|known| known == "tencent-coding-plan"));
 }

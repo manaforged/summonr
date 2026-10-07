@@ -3,7 +3,7 @@ use tokio::time::Instant;
 
 use super::{Client, Read};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH};
+use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_SETTLE};
 use crate::rpc::{Ask, Frame, Notice, Reply, ask, failure, notice, outcome, parse, response};
 
 struct Clock {
@@ -24,10 +24,22 @@ impl Client {
             hard: Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH),
         };
         loop {
-            let Ok(read) = tokio::time::timeout_at(clock.deadline, self.frame()).await else {
-                return Err(self.give_up(id, method).await);
+            let read = match tokio::time::timeout_at(clock.deadline, self.frame()).await {
+                Ok(read) => read?,
+                Err(_elapsed) if self.broken => {
+                    if let Some(drain) = &self.drain {
+                        drain.abort();
+                    }
+                    self.settle_stderr().await?;
+                    Read::Closed
+                }
+                Err(_elapsed) => return Err(self.give_up(id, method).await),
             };
-            let Some(line) = self.line(read?, method).await? else {
+            if matches!(read, Read::Closed) && self.drain.is_some() {
+                clock.deadline = clock.deadline.min(Instant::now() + MCP_STDERR_SETTLE);
+                continue;
+            }
+            let Some(line) = self.line(read, method)? else {
                 continue;
             };
             if line.trim().is_empty() {
@@ -66,7 +78,7 @@ impl Client {
         }
     }
 
-    async fn line(&mut self, read: Read, method: &str) -> Result<Option<String>> {
+    fn line(&mut self, read: Read, method: &str) -> Result<Option<String>> {
         match read {
             Read::Line(line) => Ok(Some(line)),
             Read::Oversize if !self.abandoned.is_empty() => {
@@ -79,7 +91,7 @@ impl Client {
             ))),
             Read::Closed => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",
-                self.settled_stderr_note().await
+                self.stderr_note()
             ))),
         }
     }

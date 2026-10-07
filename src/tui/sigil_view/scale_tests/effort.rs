@@ -77,6 +77,19 @@ fn slash_effort_with_a_level_sets_it_without_the_strip() {
 }
 
 #[test]
+fn effort_suggestions_follow_the_seated_model() {
+    let shown = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        seat(app, &[Effort::Minimal, Effort::Low]);
+        app.replace("/effort ".to_owned());
+        seat(app, &[Effort::XHigh]);
+        app.replace("/effort ".to_owned());
+    })
+    .join("\n");
+    assert!(shown.contains("1 / 1"), "{shown}");
+    assert!(shown.contains("xhigh"), "{shown}");
+}
+
+#[test]
 fn a_model_without_effort_levels_shows_a_note() {
     let screen = screen(|app| {
         seat(app, &[]);

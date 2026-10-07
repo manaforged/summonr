@@ -17,7 +17,7 @@ pub(super) struct Picker {
     cursor: Signal<usize>,
     hidden: Signal<bool>,
     query: Signal<String>,
-    args: Signal<std::rc::Rc<(String, Rows)>>,
+    args: Signal<std::rc::Rc<(String, Vec<crate::provider::Effort>, Rows)>>,
 }
 
 impl Picker {
@@ -41,9 +41,10 @@ impl Picker {
         self.hidden.set(false);
         self.query.set(draft.to_string());
         let head = draft.split_once(' ').map_or("", |(head, _)| head);
-        if self.args.peek().0 != head {
+        if self.args.peek().0 != head || self.args.peek().1 != levels {
             let rows = arguments(head, endpoint, levels, facts);
-            self.args.set(std::rc::Rc::new((head.to_string(), rows)));
+            self.args
+                .set(std::rc::Rc::new((head.to_string(), levels.to_vec(), rows)));
         }
     }
 
@@ -109,7 +110,11 @@ impl Picker {
                 &model.snapshot.levels,
                 facts,
             );
-            self.args.set(std::rc::Rc::new((draft.to_string(), rows)));
+            self.args.set(std::rc::Rc::new((
+                draft.to_string(),
+                model.snapshot.levels.clone(),
+                rows,
+            )));
             return Some(format!("{draft} "));
         }
         if rows[cursor].0 == draft && rows.len() > 1 {
@@ -122,7 +127,7 @@ impl Picker {
     fn head(self, draft: &str) -> Option<&str> {
         let (head, typed) = draft.split_once(' ')?;
         let held = self.args.get();
-        (held.0 == head && !held.1.is_empty() && !typed.contains(char::is_whitespace))
+        (held.0 == head && !held.2.is_empty() && !typed.contains(char::is_whitespace))
             .then_some(head)
     }
 
@@ -172,7 +177,7 @@ impl Picker {
             let mut ranked: Vec<_> = self
                 .args
                 .get()
-                .1
+                .2
                 .iter()
                 .filter_map(|(value, about)| {
                     let score = sigil::prelude::fuzzy_score(&typed, value)?.score;

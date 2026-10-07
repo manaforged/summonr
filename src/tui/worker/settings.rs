@@ -299,13 +299,14 @@ impl Worker {
         self.loop_.set_context_window(endpoint.context_window);
         self.loop_.set_compact_tokens(endpoint.compact_tokens);
         self.loop_.set_env(endpoint.env);
-        self.loop_.set_effort(
-            self.dial
-                .or(endpoint.effort)
-                .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model)),
-        );
-        self.loop_.set_price(endpoint.price);
         self.levels = endpoint.reasoning.levels_for(&endpoint.model);
+        let effort = self
+            .dial
+            .or(endpoint.effort)
+            .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model))
+            .map(|effort| effort.clamp(&self.levels));
+        self.loop_.set_effort(effort);
+        self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
     }

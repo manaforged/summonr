@@ -1,0 +1,438 @@
+[[preset]]
+name = "zai"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3-flash"
+env_keys = ["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"]
+missing = "run `summonr login NAME` or set ZAI_API_KEY"
+opencode_ids = ["zai-coding-plan", "zai"]
+plan = true
+
+[preset.reasoning]
+levels = []
+off = "disabled"
+
+[[preset]]
+name = "zai-cn"
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+model = "glm-5.3-flash"
+env_keys = ["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
+missing = "run `summonr login NAME` or set ZAI_CODING_CN_API_KEY"
+opencode_ids = ["zhipuai-coding-plan", "zhipuai"]
+plan = true
+
+[preset.reasoning]
+levels = []
+off = "disabled"
+
+[[preset]]
+name = "glm"
+base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
+model = "glm-5.3"
+env_keys = [
+    "ZAI_CODING_API_KEY",
+    "GLM_CODING_API_KEY",
+    "ZAI_API_KEY",
+    "GLM_API_KEY",
+]
+missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+opencode_ids = ["zhipuai-coding-plan", "zhipuai", "zai-coding-plan", "zai"]
+plan = true
+
+[[preset]]
+name = "glm-intl"
+base_url = "https://api.z.ai/api/coding/paas/v4"
+model = "glm-5.3"
+env_keys = [
+    "ZAI_CODING_API_KEY",
+    "GLM_CODING_API_KEY",
+    "ZAI_API_KEY",
+    "GLM_API_KEY",
+]
+missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+opencode_ids = ["zai-coding-plan", "zai"]
+env_default = true
+plan = true
+
+[preset.reasoning]
+levels = []
+off = "disabled"
+
+[[preset]]
+name = "qwen-plan"
+base_url = "https://coding-intl.dashscope.aliyuncs.com/v1"
+model = "qwen3-coder-next"
+env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
+opencode_ids = ["alibaba-coding-plan"]
+plan = true
+
+[preset.reasoning]
+off = "chat_template_kwargs"
+
+[[preset]]
+name = "qwen-plan-cn"
+base_url = "https://coding.dashscope.aliyuncs.com/v1"
+model = "qwen3-coder-next"
+env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
+opencode_ids = ["alibaba-coding-plan-cn"]
+plan = true
+
+[preset.reasoning]
+off = "chat_template_kwargs"
+
+[[preset]]
+name = "dashscope"
+base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+model = "qwen3-coder-plus"
+env_keys = ["DASHSCOPE_API_KEY"]
+opencode_ids = ["alibaba"]
+
+[preset.reasoning]
+off = "chat_template_kwargs"
+
+[[preset]]
+name = "dashscope-cn"
+base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+model = "qwen3-coder-plus"
+env_keys = ["DASHSCOPE_API_KEY"]
+opencode_ids = ["alibaba-cn"]
+
+[preset.reasoning]
+off = "chat_template_kwargs"
+
+[[preset]]
+name = "kimi"
+base_url = "https://api.kimi.com/coding/v1"
+model = "k3"
+env_keys = ["KIMI_CODING_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY"]
+missing = "run `summonr login NAME`, set KIMI_CODING_API_KEY, or sign in with Kimi Code"
+aliases = { "kimi-k3" = "k3", "k3" = "k3", "kimi-for-coding" = "k3", "kimi-code" = "k3", "kimi-coding" = "k3" }
+cli_token = "kimi-code"
+opencode_ids = [
+    "kimi-code-plan-global",
+    "kimi-code-plan-cn",
+    "moonshotai",
+    "moonshotai-cn",
+]
+plan = true
+
+[preset.reasoning]
+levels = ["low", "high", "max"]
+off = "unsupported"
+
+[[preset]]
+name = "grok"
+base_url = "https://api.x.ai/v1"
+model = "grok-4.6"
+env_keys = ["XAI_API_KEY", "GROK_API_KEY"]
+missing = "run `summonr login NAME` to sign in with SuperGrok or paste a key, or set XAI_API_KEY"
+aliases = { "grok" = "grok-4.6", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
+oauth = "supergrok"
+opencode_ids = ["xai"]
+
+[preset.reasoning]
+off = "unsupported"
+
+[[preset]]
+name = "deepseek"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-v4-flash"
+env_keys = ["DEEPSEEK_API_KEY"]
+opencode_ids = ["deepseek"]
+
+[preset.reasoning]
+levels = ["low", "high", "max"]
+off = "disabled"
+
+[[preset]]
+name = "copilot"
+base_url = "https://api.githubcopilot.com"
+model = "gpt-4o"
+missing = "run `summonr login copilot`"
+oauth = "copilot"
+headers = { "Editor-Version" = "vscode/1.95.3", "Editor-Plugin-Version" = "copilot-chat/0.24.1", "Copilot-Integration-Id" = "vscode-chat" }
+opencode_ids = ["github-copilot"]
+plan = true
+
+[preset.reasoning]
+host_only = true
+
+[[preset]]
+name = "openai"
+base_url = "https://api.openai.com/v1"
+model = "gpt-4o"
+env_keys = ["OPENAI_API_KEY"]
+missing = "run `summonr login NAME` to sign in with ChatGPT or paste a key, or set OPENAI_API_KEY"
+oauth = "chatgpt"
+opencode_oauth = false
+opencode_ids = ["openai"]
+prompt_cache_key = true
+wire = "responses"
+
+[preset.reasoning]
+off = "unsupported"
+
+[[preset]]
+name = "openrouter"
+base_url = "https://openrouter.ai/api/v1"
+model = "openai/gpt-4o"
+env_keys = ["OPENROUTER_API_KEY", "OPEN_ROUTER_API_KEY"]
+opencode_ids = ["openrouter"]
+
+[preset.reasoning]
+field = "reasoning_object"
+levels = ["minimal", "low", "medium", "high", "xhigh"]
+off = "none"
+host_only = true
+
+[[preset]]
+name = "anthropic"
+base_url = "https://api.anthropic.com/v1/"
+model = "claude-sonnet-5"
+env_keys = ["ANTHROPIC_API_KEY"]
+aliases = { "sonnet" = "claude-sonnet-5", "claude" = "claude-sonnet-5" }
+opencode_ids = ["anthropic"]
+wire = "anthropic"
+
+[[preset]]
+name = "claude-pro"
+base_url = "https://api.anthropic.com/v1/"
+model = "claude-sonnet-5"
+missing = "run `summonr login claude-pro` to sign in with a Claude Pro or Max plan"
+aliases = { "sonnet" = "claude-sonnet-5", "opus" = "claude-opus-5-5" }
+oauth = "claude"
+headers = { "anthropic-beta" = "oauth-2025-04-20,interleaved-thinking-2025-05-14" }
+opencode_ids = ["anthropic"]
+plan = true
+off = true
+wire = "anthropic"
+
+[[preset]]
+name = "gemini"
+base_url = "https://generativelanguage.googleapis.com/v1beta/"
+model = "gemini-2.5-flash"
+env_keys = ["GEMINI_API_KEY", "GOOGLE_API_KEY"]
+missing = "run `summonr login NAME` or set GEMINI_API_KEY or GOOGLE_API_KEY"
+aliases = { "flash" = "gemini-2.5-flash", "pro" = "gemini-2.5-pro" }
+opencode_ids = ["google"]
+wire = "gemini"
+
+[[preset]]
+name = "minimax"
+base_url = "https://api.minimax.io/v1"
+model = "MiniMax-M3"
+env_keys = ["MINIMAX_API_KEY", "MINIMAX_CODE_API_KEY"]
+opencode_ids = ["minimax-coding-plan", "minimax"]
+
+[preset.reasoning]
+levels = []
+off = "disabled"
+
+[[preset]]
+name = "minimax-cn"
+base_url = "https://api.minimax.cn/v1"
+model = "MiniMax-M3"
+env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_CODE_CN_API_KEY"]
+opencode_ids = ["minimax-cn-coding-plan", "minimax-cn"]
+
+[preset.reasoning]
+levels = []
+off = "disabled"
+
+[[preset]]
+name = "minimax-plan"
+base_url = "https://api.minimax.io/anthropic/v1"
+model = "MiniMax-M3"
+env_keys = ["MINIMAX_API_KEY"]
+opencode_ids = ["minimax-coding-plan"]
+plan = true
+wire = "anthropic"
+
+[[preset]]
+name = "minimax-cn-plan"
+base_url = "https://api.minimax.cn/anthropic/v1"
+model = "MiniMax-M3"
+env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
+opencode_ids = ["minimax-cn-coding-plan"]
+plan = true
+wire = "anthropic"
+
+[[preset]]
+name = "tencent-plan"
+base_url = "https://api.lkeap.cloud.tencent.com/coding/v3"
+model = "hunyuan-2.0-thinking"
+env_keys = ["TENCENT_CODING_PLAN_API_KEY"]
+opencode_ids = ["tencent-coding-plan"]
+plan = true
+
+[[preset]]
+name = "volcengine-plan"
+base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
+model = "doubao-seed-2.1-turbo"
+env_keys = ["ARK_CODING_PLAN_API_KEY"]
+opencode_ids = ["volcengine-coding-plan"]
+plan = true
+
+[[preset]]
+name = "ollama"
+base_url = "http://127.0.0.1:11434/v1"
+model = ""
+default_key = "ollama"
+missing = ""
+
+[preset.reasoning]
+off = "none"
+host_only = true
+
+[[preset]]
+name = "lmstudio"
+base_url = "http://127.0.0.1:1234/v1"
+model = ""
+default_key = "lm-studio"
+missing = ""
+opencode_ids = ["lmstudio"]
+
+[preset.reasoning]
+off = "none"
+host_only = true
+
+[[preset]]
+name = "ollama-cloud"
+base_url = "https://ollama.com/v1"
+model = ""
+env_keys = ["OLLAMA_API_KEY"]
+opencode_ids = ["ollama-cloud"]
+
+[[preset]]
+name = "together"
+base_url = "https://api.together.ai/v1"
+model = ""
+env_keys = ["TOGETHER_API_KEY"]
+opencode_ids = ["togetherai"]
+
+[[preset]]
+name = "groq"
+base_url = "https://api.groq.com/openai/v1"
+model = ""
+env_keys = ["GROQ_API_KEY"]
+opencode_ids = ["groq"]
+
+[[preset]]
+name = "cerebras"
+base_url = "https://api.cerebras.ai/v1"
+model = ""
+env_keys = ["CEREBRAS_API_KEY"]
+opencode_ids = ["cerebras"]
+
+[preset.reasoning]
+off = "none"
+
+[[preset]]
+name = "mistral"
+base_url = "https://api.mistral.ai/v1"
+model = ""
+env_keys = ["MISTRAL_API_KEY"]
+opencode_ids = ["mistral"]
+
+[preset.reasoning]
+levels = ["high"]
+off = "none"
+
+[[preset]]
+name = "fireworks"
+base_url = "https://api.fireworks.ai/inference/v1"
+model = ""
+env_keys = ["FIREWORKS_API_KEY"]
+opencode_ids = ["fireworks-ai"]
+
+[[preset]]
+name = "deepinfra"
+base_url = "https://api.deepinfra.com/v1/openai"
+model = ""
+env_keys = ["DEEPINFRA_API_KEY", "DEEPINFRA_TOKEN"]
+opencode_ids = ["deepinfra"]
+
+[preset.reasoning]
+off = "none"
+
+[[preset]]
+name = "siliconflow"
+base_url = "https://api.siliconflow.com/v1"
+model = ""
+env_keys = ["SILICONFLOW_API_KEY"]
+opencode_ids = ["siliconflow"]
+
+[[preset]]
+name = "siliconflow-cn"
+base_url = "https://api.siliconflow.cn/v1"
+model = ""
+env_keys = ["SILICONFLOW_CN_API_KEY"]
+opencode_ids = ["siliconflow-cn"]
+
+[[preset]]
+name = "nvidia"
+base_url = "https://integrate.api.nvidia.com/v1"
+model = ""
+env_keys = ["NVIDIA_API_KEY"]
+opencode_ids = ["nvidia"]
+
+[[preset]]
+name = "huggingface"
+base_url = "https://router.huggingface.co/v1"
+model = ""
+env_keys = ["HF_TOKEN"]
+opencode_ids = ["huggingface"]
+
+[[preset]]
+name = "cohere"
+base_url = "https://api.cohere.ai/compatibility/v1"
+model = "north-mini-code-1-0"
+env_keys = ["COHERE_API_KEY"]
+opencode_ids = ["cohere"]
+
+[[preset]]
+name = "perplexity"
+base_url = "https://api.perplexity.ai"
+model = "sonar-pro"
+env_keys = ["PERPLEXITY_API_KEY"]
+opencode_ids = ["perplexity"]
+
+[[preset]]
+name = "muse"
+base_url = "https://api.meta.ai/v1"
+model = "muse-spark-1.3"
+env_keys = ["META_API_KEY", "MODEL_API_KEY"]
+opencode_ids = ["meta"]
+
+[preset.reasoning]
+levels = ["minimal", "low", "medium", "high", "xhigh"]
+off = "unsupported"
+
+[[preset]]
+name = "zen"
+base_url = "https://opencode.ai/zen/v1"
+model = "glm-5.3-flash"
+env_keys = ["OPENCODE_API_KEY"]
+missing = "run `summonr login zen`, set OPENCODE_API_KEY, or `opencode auth login`"
+opencode = true
+opencode_ids = ["opencode"]
+plan = true
+
+[[preset]]
+name = "go"
+base_url = "https://opencode.ai/zen/go/v1"
+model = "glm-5.3-flash"
+env_keys = ["OPENCODE_GO_API_KEY", "OPENCODE_API_KEY"]
+missing = "run `summonr login go`, set OPENCODE_GO_API_KEY, or `opencode auth login`"
+opencode = true
+opencode_ids = ["opencode-go"]
+plan = true
+
+[[preset]]
+name = "opencode"
+base_url = "https://opencode.ai/zen/v1"
+model = "glm-5.3-flash"
+env_keys = ["OPENCODE_API_KEY"]
+missing = "run `summonr login opencode`, set OPENCODE_API_KEY, or `opencode auth login`"
+opencode = true
+opencode_ids = ["opencode"]
+plan = true

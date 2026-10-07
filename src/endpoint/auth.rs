@@ -219,12 +219,12 @@ pub(crate) fn catalog(wire: Wire) -> Vec<String> {
         if row.wire != wire {
             continue;
         }
-        if !models.iter().any(|model| model == row.model) {
-            models.push(row.model.to_string());
+        if !models.contains(&row.model) {
+            models.push(row.model.clone());
         }
         for (_, canon) in row.aliases {
-            if !models.iter().any(|model| model == *canon) {
-                models.push((*canon).to_string());
+            if !models.contains(canon) {
+                models.push(canon.clone());
             }
         }
     }

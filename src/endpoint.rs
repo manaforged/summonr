@@ -8,14 +8,6 @@ use crate::secret::{self, Source};
 
 pub(crate) const ENV_ENDPOINT: &str = "env";
 const PLAN_PATH_MARKER: &str = "/coding/";
-const GLM_CN: &str = "https://open.bigmodel.cn/api/coding/paas/v4";
-const GLM_INTL: &str = "https://api.z.ai/api/coding/paas/v4";
-const KIMI: &str = "https://api.kimi.com/coding/v1";
-const GROK: &str = "https://api.x.ai/v1";
-const MUSE: &str = "https://api.meta.ai/v1";
-const ZEN: &str = "https://opencode.ai/zen/v1";
-const GO: &str = "https://opencode.ai/zen/go/v1";
-const COPILOT: &str = "https://api.githubcopilot.com";
 const GITHUB_DEVICE: &str = "https://github.com/login/device/code";
 const GITHUB_TOKEN: &str = "https://github.com/login/oauth/access_token";
 const COPILOT_CLIENT: &str = "Iv1.b507a08c87ecfe98";

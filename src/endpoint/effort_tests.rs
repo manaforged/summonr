@@ -59,6 +59,20 @@ fn openrouter_sends_effort_inside_a_reasoning_object() {
 }
 
 #[test]
+fn qwen_plan_turns_thinking_off_the_dashscope_way() {
+    let sent = body("qwen-plan", "qwen3-coder-next", Some(Effort::None));
+    assert_eq!(sent["chat_template_kwargs"]["enable_thinking"], false);
+    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+}
+
+#[test]
+fn minimax_plan_sends_no_effort_field_when_none_is_asked_for() {
+    let sent = body("minimax-plan", "MiniMax-M3", Some(Effort::None));
+    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+    assert!(sent.get("thinking").is_none(), "{sent}");
+}
+
+#[test]
 fn grok_never_gets_none() {
     assert_eq!(
         body("grok", "grok-4.5", Some(Effort::None))["reasoning_effort"],

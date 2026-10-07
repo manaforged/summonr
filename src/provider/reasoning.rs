@@ -29,13 +29,6 @@ pub(crate) mod levels {
         Effort::XHigh,
         Effort::Max,
     ];
-    pub(crate) const MINIMAL_XHIGH: &[Effort] = &[
-        Effort::Minimal,
-        Effort::Low,
-        Effort::Medium,
-        Effort::High,
-        Effort::XHigh,
-    ];
     pub(crate) const LOW_HIGH: &[Effort] = &[Effort::Low, Effort::High];
     pub(crate) const LOW_HIGH_MAX: &[Effort] = &[Effort::Low, Effort::High, Effort::Max];
     pub(crate) const MEDIUM_UP: &[Effort] = &[Effort::Medium, Effort::High, Effort::XHigh];
@@ -70,7 +63,8 @@ impl Off {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
 pub(crate) enum EffortField {
     ReasoningEffort,
     ReasoningObject,
@@ -101,13 +95,6 @@ impl Spec {
             field,
             scale: Scale::new(levels, off),
             by_model: true,
-        }
-    }
-
-    pub(crate) const fn host_only(self) -> Self {
-        Self {
-            by_model: false,
-            ..self
         }
     }
 }

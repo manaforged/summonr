@@ -272,7 +272,7 @@ pub(super) fn hosted(base: &str) -> Option<&'static super::preset::Preset> {
     let base = trim_slash(base);
     presets()
         .filter(|preset| {
-            base.strip_prefix(&trim_slash(preset.base_url))
+            base.strip_prefix(&trim_slash(&preset.base_url))
                 .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
         })
         .reduce(|best, next| {

@@ -73,7 +73,7 @@ fn fallback_key(
         return Ok(endpoint);
     }
     let missing = row
-        .map(|row| row.missing)
+        .map(|row| row.missing.as_str())
         .filter(|text| !text.is_empty())
         .unwrap_or("run `summonr login NAME` or set api_key in ~/.summonr/config.toml");
     Err(Error::Config(format!(
@@ -87,7 +87,7 @@ fn own_base(endpoint: &Endpoint, row: &super::preset::Preset) -> bool {
     endpoint
         .base_url
         .as_deref()
-        .is_some_and(|base| trim_slash(base) == trim_slash(row.base_url))
+        .is_some_and(|base| trim_slash(base) == trim_slash(&row.base_url))
 }
 
 fn peer_key(endpoint: &Endpoint, row: Option<&super::preset::Preset>) -> Option<(String, Source)> {
@@ -98,7 +98,7 @@ fn peer_key(endpoint: &Endpoint, row: Option<&super::preset::Preset>) -> Option<
         return Some((token, Source::Peer(cli.label)));
     }
     let bearer = row.opencode_oauth && !matches!(endpoint.wire, Wire::Anthropic | Wire::Gemini);
-    opencode_peer(provider_ids(row.name), bearer).map(|key| (key, Source::Peer("opencode")))
+    opencode_peer(provider_ids(&row.name), bearer).map(|key| (key, Source::Peer("opencode")))
 }
 
 pub(crate) fn peer_token(name: &str) -> Option<String> {
@@ -137,9 +137,9 @@ fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {
 pub(super) fn builtin(name: &str) -> Option<Endpoint> {
     let row = preset(name)?;
     Some(Endpoint {
-        name: row.name.into(),
-        base_url: Some(row.base_url.into()),
-        model: row.model.into(),
+        name: row.name.clone(),
+        base_url: Some(row.base_url.clone()),
+        model: row.model.clone(),
         api_key: None,
         source: None,
         oauth: row.oauth.map(|make| make()),

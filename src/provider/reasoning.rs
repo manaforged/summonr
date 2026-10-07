@@ -127,6 +127,12 @@ pub(crate) struct Plan<'a> {
 }
 
 impl Reasoning {
+    pub(crate) fn levels_for(&self, model: &str) -> Vec<Effort> {
+        self.plan(super::wire::traits::traits(model))
+            .levels
+            .to_vec()
+    }
+
     pub(crate) fn plan(&self, traits: Traits) -> Plan<'_> {
         let row = traits.scale.filter(|_| self.spec.by_model);
         Plan {

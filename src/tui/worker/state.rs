@@ -41,6 +41,7 @@ impl Worker {
             last_peers: None,
             workflow: info.workflow.unwrap_or_default(),
             dial: None,
+            levels: Vec::new(),
         }
     }
 

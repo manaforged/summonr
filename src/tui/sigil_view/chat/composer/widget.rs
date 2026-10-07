@@ -78,6 +78,7 @@ pub(in crate::tui::sigil_view::chat) fn widget<E: IntoNode + 'static>(
                 .gap(0.0),
         )
         .child(suggest::widget(app.clone(), width))
+        .child(crate::tui::sigil_view::effort::strip(app.clone()))
         .child(
             container()
                 .layout(

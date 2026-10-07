@@ -87,6 +87,7 @@ fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
 struct Board {
     rows: Vec<Seat>,
     top: usize,
+    sorted: bool,
     facts: BTreeMap<Seat, Model>,
     groups: BTreeMap<String, State>,
     causes: BTreeMap<String, String>,
@@ -103,6 +104,7 @@ impl Board {
         }
         Self {
             top: rows.len(),
+            sorted: false,
             rows,
             facts: BTreeMap::new(),
             groups: BTreeMap::new(),
@@ -148,7 +150,10 @@ impl Board {
         errors: &[String],
     ) -> Msg {
         let top = self.top;
-        order(&mut self.rows[top..], &self.facts, &self.groups);
+        if !self.sorted {
+            order(&mut self.rows[top..], &self.facts, &self.groups);
+            self.sorted = true;
+        }
         let mut sent: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
         sent.retain(|row| self.rows.contains(row));
         let pinned = sent.len();
@@ -172,20 +177,13 @@ impl Board {
         }
     }
 
-    fn discovered(&mut self, name: String, models: Vec<Model>) {
-        let fresh: Vec<Seat> = models
-            .iter()
-            .map(|model| Seat::new(&name, &model.id))
-            .collect();
-        let facts = &self.facts;
-        let gone =
-            |row: &Seat| row.endpoint == name && facts.contains_key(row) && !fresh.contains(row);
-        let tail: Vec<Seat> = self.rows.split_off(self.top);
-        let kept: Vec<Seat> = tail.into_iter().filter(|row| !gone(row)).collect();
-        self.rows.extend(kept);
-        self.facts
-            .retain(|row, _| row.endpoint != name || fresh.contains(row));
-        for (row, model) in fresh.into_iter().zip(models) {
+    fn discovered(&mut self, name: String, mut models: Vec<Model>) {
+        models.sort_by_cached_key(|model| {
+            let row = Seat::new(&name, &model.id);
+            (model.cost.rank(), std::cmp::Reverse(model.release), row)
+        });
+        for model in models {
+            let row = Seat::new(&name, &model.id);
             self.facts.insert(row.clone(), model);
             add(&mut self.rows, row);
         }
@@ -245,5 +243,39 @@ impl Reader {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Board;
+    use crate::catalog::{Cost, Model};
+    use crate::tui::Msg;
+
+    fn model(id: &str, cost: Cost) -> Model {
+        let mut model = Model::named(id);
+        model.cost = cost;
+        model
+    }
+
+    #[test]
+    fn discovered_batches_land_in_rank_order() {
+        let mut board = Board::seed(None, &["p"]);
+        drop(board.snapshot(1, None, false, &[]));
+        board.discovered(
+            "p".to_string(),
+            vec![
+                model("metered", Cost::Metered),
+                model("free", Cost::Free),
+                model("unknown", Cost::Unknown),
+                model("plan", Cost::Plan),
+            ],
+        );
+        let msg = board.snapshot(2, None, false, &[]);
+        let Msg::Models { rows, .. } = msg else {
+            panic!("models message");
+        };
+        let ids: Vec<&str> = rows.iter().map(|row| row.model.as_str()).collect();
+        assert_eq!(ids, ["free", "plan", "unknown", "metered"]);
     }
 }

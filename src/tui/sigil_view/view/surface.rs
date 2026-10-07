@@ -76,8 +76,11 @@ fn editor_layout(rows: u16) -> LayoutStyle {
         .shrink(0.0)
 }
 
-pub(super) fn theme(_name: &str) -> Theme {
-    let palette = canvas::palette();
+pub(super) fn theme(_name: &str, background: crate::prefs::Background) -> Theme {
+    let mut palette = canvas::palette();
+    if background == crate::prefs::Background::Terminal {
+        palette.base.a = 0;
+    }
     let mut theme = Theme::dark();
     for (token, color) in tokens(palette) {
         theme.register_token(token, ThemeValue::Color(color));

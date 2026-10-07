@@ -42,8 +42,8 @@ pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .keyboard_shortcut(tab.clone())
                 .key(tab, move |event| {
                     event.stop_propagation();
-                    if !complete.overlay_tab(1) {
-                        complete.complete();
+                    if !complete.overlay_tab(1) && !complete.complete() {
+                        complete.cycle_effort(1);
                     }
                 }),
         )
@@ -53,7 +53,7 @@ pub(super) fn tab_shortcuts(app: &App) -> NodeBuilder {
                 .key(shift_tab, move |event| {
                     event.stop_propagation();
                     if !mode.overlay_tab(-1) {
-                        mode.cycle_effort();
+                        mode.cycle_effort(-1);
                     }
                 }),
         )

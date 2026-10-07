@@ -64,11 +64,10 @@ impl Overlay {
             Self::Auth if app.picker.open.peek() => settings::model_picker_layer(app),
             Self::Auth => settings::auth_layer(app),
             Self::Model => settings::model_picker_layer(app),
-            Self::Effort => super::super::effort::layer(app),
             Self::Workflow => settings::workflow_layer(app),
             Self::Hotkeys => settings::hotkeys_layer(app),
             Self::Settings => settings::settings_layer(app),
-            Self::Context | Self::Cache => return None,
+            Self::Effort | Self::Context | Self::Cache => return None,
         };
         Some(super::super::ui::keyed(node, &owner, keys))
     }
@@ -95,7 +94,9 @@ impl App {
             Some(Overlay::Sessions) => self.sessions.shift(delta),
             Some(Overlay::Auth) => self.move_auth(delta),
             Some(Overlay::Model) => self.move_model(delta),
-            Some(Overlay::Effort) => self.effort.shift(delta),
+            Some(Overlay::Effort) => {
+                self.effort.shift(&self.model.get().snapshot.levels, delta);
+            }
             Some(Overlay::Workflow) => self.move_workflow(delta),
             Some(Overlay::Hotkeys) => self.move_hotkey(delta),
             Some(Overlay::Settings) => self.move_setting(delta),
@@ -215,7 +216,9 @@ impl App {
             }
             Some(Overlay::Settings) => self.adjust_setting(),
             Some(Overlay::Usage) => self.usage.shift(delta),
-            Some(Overlay::Effort) => self.effort.shift(delta),
+            Some(Overlay::Effort) => {
+                self.effort.shift(&self.model.get().snapshot.levels, delta);
+            }
             _ => return false,
         }
         true

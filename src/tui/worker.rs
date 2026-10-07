@@ -53,6 +53,7 @@ struct Worker {
     mail_error: Option<String>,
     workflow: Workflow,
     dial: Option<crate::Effort>,
+    levels: Vec<crate::Effort>,
     home: Option<std::path::PathBuf>,
     last_diff: Option<crate::diff::Diff>,
     last_peers: Option<Vec<crate::mail::Agent>>,

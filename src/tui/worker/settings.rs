@@ -299,11 +299,13 @@ impl Worker {
         self.loop_.set_context_window(endpoint.context_window);
         self.loop_.set_compact_tokens(endpoint.compact_tokens);
         self.loop_.set_env(endpoint.env);
-        self.loop_.set_effort(
-            self.dial
-                .or(endpoint.effort)
-                .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model)),
-        );
+        self.levels = endpoint.reasoning.levels_for(&endpoint.model);
+        let effort = self
+            .dial
+            .or(endpoint.effort)
+            .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model))
+            .map(|effort| effort.clamp(&self.levels));
+        self.loop_.set_effort(effort);
         self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
@@ -324,6 +326,7 @@ impl Worker {
             work: self.loop_.is_work(),
             goal: self.loop_.is_goal(),
             effort: self.loop_.effort(),
+            levels: self.levels.clone(),
             pending_plan: self.loop_.pending_plan(),
             verify: verify_display(self.loop_.verify_commands()),
             strict: self.loop_.is_strict(),

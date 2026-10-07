@@ -17,7 +17,7 @@ pub(super) struct Picker {
     cursor: Signal<usize>,
     hidden: Signal<bool>,
     query: Signal<String>,
-    args: Signal<std::rc::Rc<(String, Rows)>>,
+    args: Signal<std::rc::Rc<(String, Vec<crate::provider::Effort>, Rows)>>,
 }
 
 impl Picker {
@@ -30,14 +30,21 @@ impl Picker {
         }
     }
 
-    pub(super) fn change(self, draft: &str, endpoint: &str, facts: &Facts) {
+    pub(super) fn change(
+        self,
+        draft: &str,
+        levels: &[crate::provider::Effort],
+        endpoint: &str,
+        facts: &Facts,
+    ) {
         self.cursor.set(0);
         self.hidden.set(false);
         self.query.set(draft.to_string());
         let head = draft.split_once(' ').map_or("", |(head, _)| head);
-        if self.args.peek().0 != head {
-            let rows = arguments(head, endpoint, facts);
-            self.args.set(std::rc::Rc::new((head.to_string(), rows)));
+        if self.args.peek().0 != head || self.args.peek().1 != levels {
+            let rows = arguments(head, endpoint, levels, facts);
+            self.args
+                .set(std::rc::Rc::new((head.to_string(), levels.to_vec(), rows)));
         }
     }
 
@@ -97,8 +104,17 @@ impl Picker {
         }
         let mut cursor = self.cursor.peek().min(rows.len() - 1);
         if rows[cursor].0 == draft && !usage(draft).is_empty() {
-            let rows = arguments(draft, &model.snapshot.endpoint, facts);
-            self.args.set(std::rc::Rc::new((draft.to_string(), rows)));
+            let rows = arguments(
+                draft,
+                &model.snapshot.endpoint,
+                &model.snapshot.levels,
+                facts,
+            );
+            self.args.set(std::rc::Rc::new((
+                draft.to_string(),
+                model.snapshot.levels.clone(),
+                rows,
+            )));
             return Some(format!("{draft} "));
         }
         if rows[cursor].0 == draft && rows.len() > 1 {
@@ -111,7 +127,7 @@ impl Picker {
     fn head(self, draft: &str) -> Option<&str> {
         let (head, typed) = draft.split_once(' ')?;
         let held = self.args.get();
-        (held.0 == head && !held.1.is_empty() && !typed.contains(char::is_whitespace))
+        (held.0 == head && !held.2.is_empty() && !typed.contains(char::is_whitespace))
             .then_some(head)
     }
 
@@ -161,7 +177,7 @@ impl Picker {
             let mut ranked: Vec<_> = self
                 .args
                 .get()
-                .1
+                .2
                 .iter()
                 .filter_map(|(value, about)| {
                     let score = sigil::prelude::fuzzy_score(&typed, value)?.score;
@@ -242,7 +258,12 @@ fn usage(name: &str) -> &'static str {
         .map_or("", |spec| spec.usage)
 }
 
-fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
+fn arguments(
+    head: &str,
+    endpoint: &str,
+    levels: &[crate::provider::Effort],
+    facts: &Facts,
+) -> Rows {
     let plain = |names: Vec<String>| {
         names
             .into_iter()
@@ -282,7 +303,7 @@ fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
         }
         Some(SlashCommand::Login) => plain(crate::endpoint::names().unwrap_or_default()),
         Some(SlashCommand::Effort) => plain(
-            crate::provider::Effort::ALL
+            levels
                 .iter()
                 .map(|level| level.as_str().to_string())
                 .collect(),

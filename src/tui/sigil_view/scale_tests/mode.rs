@@ -12,9 +12,18 @@ fn shift_tab_cycles_reasoning_effort() {
         let workspace = tempfile::tempdir().unwrap();
         let (commands, mut sent) = unbounded_channel();
         let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        let mut snapshot = app.model.peek().snapshot.clone();
+        snapshot.levels = vec![
+            Effort::Low,
+            Effort::Medium,
+            Effort::High,
+            Effort::XHigh,
+            Effort::Max,
+        ];
+        app.update(crate::tui::Msg::Settings(snapshot));
         let mut stops = Vec::new();
         for _ in 0..4 {
-            app.cycle_effort();
+            app.cycle_effort(1);
             stops.push(app.model.get().snapshot.effort);
         }
         let mut last = None;
@@ -26,6 +35,26 @@ fn shift_tab_cycles_reasoning_effort() {
         let expected = [Effort::Low, Effort::Medium, Effort::High, Effort::XHigh];
         assert_eq!(stops, expected.map(Some));
         assert_eq!(last, Some(Effort::XHigh));
+    });
+}
+
+#[test]
+fn tab_cycles_back_to_the_lowest_supported_level() {
+    Runtime::scope("tab-effort-wrap", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        let mut snapshot = app.model.peek().snapshot.clone();
+        snapshot.levels = vec![Effort::Low, Effort::Medium, Effort::High];
+        app.update(crate::tui::Msg::Settings(snapshot));
+        for _ in 0..3 {
+            app.cycle_effort(1);
+        }
+        assert_eq!(app.model.get().snapshot.effort, Some(Effort::High));
+        app.cycle_effort(1);
+        assert_eq!(app.model.get().snapshot.effort, Some(Effort::Low));
+        app.cycle_effort(-1);
+        assert_eq!(app.model.get().snapshot.effort, Some(Effort::High));
     });
 }
 

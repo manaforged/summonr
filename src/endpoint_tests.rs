@@ -190,3 +190,13 @@ fn opencode_peer_ids_follow_the_table() {
     );
     assert!(super::preset::catalog_providers().any(|known| known == "tencent-coding-plan"));
 }
+
+#[test]
+fn hosts_that_route_caches_per_conversation_opt_into_the_cache_key() {
+    assert!(
+        hosted("https://api.x.ai/v1")
+            .expect("xai preset")
+            .prompt_cache_key,
+        "xai stores cache entries per server and routes on the cache key"
+    );
+}

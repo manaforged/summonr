@@ -1,95 +1,155 @@
 use sigil::prelude::{
-    LayoutBuilderExt, LayoutStyle, NodeBuilder, Signal, container, signal, slider,
+    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
+    Signal, Token, container, signal,
 };
 
 use super::app::App;
 use super::canvas;
-use super::ui::{Dialog, Hints, Key, Size, group};
+use super::look::Look;
 use crate::provider::Effort;
 
 #[derive(Clone, Copy)]
-pub(super) struct Slider {
+pub(super) struct Strip {
     pub(super) open: Signal<bool>,
-    level: Signal<f32>,
+    cursor: Signal<Effort>,
 }
 
-#[expect(clippy::cast_precision_loss, reason = "seven effort levels")]
-fn position(level: usize) -> f32 {
-    level as f32
-}
-
-impl Slider {
+impl Strip {
     pub(super) fn new() -> Self {
         Self {
             open: signal(false),
-            level: signal(0.0),
+            cursor: signal(Effort::None),
         }
     }
 
-    pub(super) fn show(self, current: Option<Effort>) {
-        let current = current.unwrap_or(Effort::None);
-        let at = Effort::ALL
-            .iter()
-            .position(|level| *level == current)
-            .unwrap_or(0);
-        self.level.set(position(at));
+    pub(super) fn show(self, current: Option<Effort>, levels: &[Effort]) {
+        self.cursor.set(
+            current
+                .map(|level| level.clamp(levels))
+                .unwrap_or(levels.first().copied().unwrap_or(Effort::None)),
+        );
         self.open.set(true);
     }
 
-    fn index(self) -> usize {
-        (0..Effort::ALL.len())
-            .min_by(|a, b| {
-                (position(*a) - self.level.peek())
-                    .abs()
-                    .total_cmp(&(position(*b) - self.level.peek()).abs())
-            })
-            .unwrap_or(0)
+    pub(super) fn shift(self, levels: &[Effort], delta: isize) {
+        if levels.is_empty() {
+            return;
+        }
+        let at = self.cursor.peek().clamp(levels);
+        self.cursor.set(at.shifted(levels, delta));
     }
 
-    pub(super) fn shift(self, delta: isize) {
-        let last = Effort::ALL.len() - 1;
-        self.level.set(position(
-            self.index().saturating_add_signed(delta).min(last),
-        ));
+    pub(super) fn pick(self, level: Effort) {
+        self.cursor.set(level);
     }
 
     pub(super) fn picked(self) -> Effort {
-        Effort::ALL
-            .get(self.index())
-            .copied()
-            .unwrap_or(Effort::None)
+        self.cursor.peek()
     }
 }
 
-pub(super) fn layer(app: App) -> NodeBuilder {
-    let snapshot = app.model.peek().snapshot.clone();
-    let current = snapshot.effort.unwrap_or(Effort::None);
-    let reasons =
-        crate::catalog::known(&snapshot.endpoint, &snapshot.model).map(|known| known.reasoning);
-    let note = if reasons == Some(false) {
-        format!("{} does not reason; effort has no effect", snapshot.model)
+pub(super) fn strip(app: App) -> NodeBuilder {
+    let update = app.clone();
+    container()
+        .layout(LayoutStyle::flex_column().fill_width().shrink(0.0))
+        .children_reactive(move || {
+            if !update.effort.open.get() {
+                return Vec::new();
+            }
+            let model = update.model.get();
+            let endpoint = model.snapshot.endpoint.clone();
+            let reasons = crate::catalog::known(&endpoint, &model.snapshot.model)
+                .map(|known| known.reasoning);
+            vec![card(
+                update.clone(),
+                model.snapshot.model.clone(),
+                model.snapshot.effort,
+                model.snapshot.levels.clone(),
+                reasons,
+            )]
+        })
+}
+
+fn card(
+    app: App,
+    model: String,
+    current: Option<Effort>,
+    levels: Vec<Effort>,
+    reasons: Option<bool>,
+) -> NodeBuilder {
+    let mut row = container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .align_items(AlignItems::Center)
+                .padding_x(8.0)
+                .gap(8.0),
+        )
+        .child(label("effort", Token::Gray10, false));
+    if levels.is_empty() {
+        row = row.child(label(
+            &format!("{model} takes no effort level"),
+            Token::Gray11,
+            false,
+        ));
     } else {
-        format!("reasoning effort for {}", snapshot.model)
-    };
-    let cols = app.viewport.peek().0;
-    let width = canvas::dialog_width(cols, canvas::DIALOG_CELLS) - canvas::cell().w * 8.0;
-    let hints = Hints::new()
-        .key(Key::LeftRight, "move")
-        .key(Key::Enter, "set")
-        .key(Key::Esc, "close")
-        .right(format!("now {}", current.as_str()));
-    Dialog::new(Size::Normal, "Effort", hints)
-        .child(group(note))
+        if reasons == Some(false) {
+            row = row.child(label("no effect", Token::Gray11, false));
+        }
+        let cursor = app.effort.picked().clamp(&levels);
+        for level in levels {
+            let app = app.clone();
+            let chosen = level == cursor;
+            row = row.child(
+                container()
+                    .layout(
+                        LayoutStyle::flex_row()
+                            .shrink(0.0)
+                            .align_items(AlignItems::Center),
+                    )
+                    .child(label(
+                        level.as_str(),
+                        if chosen {
+                            Token::Accent11
+                        } else {
+                            Token::Gray10
+                        },
+                        chosen,
+                    ))
+                    .pointer_down(move |event| {
+                        if event.button == Some(MouseButton::Left) {
+                            app.effort.pick(level);
+                            app.commit_effort();
+                            event.stop_propagation();
+                        }
+                    }),
+            );
+        }
+        row = row.child(label(
+            &format!("now {}", current.map_or("off", Effort::as_str)),
+            Token::Gray9,
+            false,
+        ));
+    }
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .padding_x(8.0)
+                .padding_bottom(canvas::overlay_gap()),
+        )
         .child(
             container()
-                .layout(LayoutStyle::block().fill_width().padding_x(16.0))
-                .child(
-                    slider(app.effort.level, 0.0..=position(Effort::ALL.len() - 1))
-                        .step(1.0)
-                        .length(width)
-                        .label("Effort")
-                        .marks(Effort::ALL.map(Effort::as_str)),
-                ),
+                .layout(LayoutStyle::flex_row().fill_width())
+                .border_w(canvas::cell().h as i16)
+                .border_color(Token::Gray6)
+                .bg(canvas::palette().tool_bg)
+                .child(row),
         )
-        .build(app.effort.open, cols, &app.model.peek().prefs.hotkeys)
+}
+
+fn label(text: &str, color: Token, bold: bool) -> NodeBuilder {
+    let look = Look::sm(color);
+    let look = if bold { look.bold() } else { look };
+    container().child(look.on(sigil::kernel::text(text).nowrap()))
 }

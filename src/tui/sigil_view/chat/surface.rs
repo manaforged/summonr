@@ -1,16 +1,10 @@
 use std::rc::Rc;
 
 use sigil::prelude::IntoNode;
-use sigil::prelude::LayoutBuilderExt;
-use sigil::prelude::LayoutStyle;
-use sigil::prelude::NodeBuilder;
-use sigil::prelude::NodeEventsExt;
-use sigil::prelude::container;
-use sigil::prelude::effect;
-use sigil::prelude::empty_state;
-use sigil::prelude::node;
-use sigil::prelude::signal;
-use sigil::prelude::virtual_list;
+use sigil::prelude::{
+    LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, effect, empty_state,
+    fragment, node, signal, virtual_list,
+};
 use sigil::reactive::defer;
 use sigil::reactive::untrack;
 
@@ -55,11 +49,17 @@ pub(in crate::tui::sigil_view) fn layer(
                 },
             )
         }))
-        .child(canvas::gutter(panels::agents(app.clone(), width)))
-        .child(todos::widget(app.clone(), cols))
-        .child(canvas::gutter(panels::bands(app.clone(), width)))
-        .child(composer::widget(app.clone(), width, editor))
-        .child(canvas::gutter(footer::footer_bar(app, width)))
+        .child(pin(canvas::gutter(panels::agents(app.clone(), width))))
+        .child(pin(todos::widget(app.clone(), cols)))
+        .child(pin(canvas::gutter(panels::bands(app.clone(), width))))
+        .child(pin(composer::widget(app.clone(), width, editor)))
+        .child(pin(canvas::gutter(footer::footer_bar(app, width))))
+}
+
+fn pin(child: NodeBuilder) -> NodeBuilder {
+    container()
+        .layout(LayoutStyle::block().fill_width().shrink(0.0))
+        .child(child)
 }
 
 pub(in crate::tui::sigil_view) fn inline_layer(
@@ -245,45 +245,47 @@ pub(in crate::tui::sigil_view) fn transcript(
         }
     });
     let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
-    container()
-        .layout(
-            LayoutStyle::flex_column()
-                .fill_width()
-                .grow(1.0)
-                .min_size(0.0, 0.0),
-        )
-        .children_reactive(move || {
-            if empty_now.get() {
-                return vec![empty()];
-            }
-            jump.set(keys.peek().len().saturating_sub(1));
-            let live = app.clone();
-            let copied = app.clone();
-            vec![
+    fragment().children_reactive(move || {
+        if empty_now.get() {
+            return vec![
                 container()
-                    .selectable_text(true)
-                    .on_selection_copy(move |text, result| copied.copy_notice(text, result))
                     .layout(
                         LayoutStyle::flex_column()
                             .fill_width()
                             .grow(1.0)
                             .min_size(0.0, 0.0),
                     )
-                    .child(
-                        virtual_list(keys, move |index, _: &u64| {
-                            row(live.clone(), index, spacing)
-                        })
-                        .key_by(|_, key| *key)
-                        .measured()
-                        .estimate(canvas::cell().h * 2.0)
-                        .viewport_fill()
-                        .scroll_bind(app.scroll_y)
-                        .max_scroll_bind(app.max_scroll)
-                        .content_height_bind(app.content_height)
-                        .follow_end(true)
-                        .scrollbar(true)
-                        .follow_row(jump),
-                    ),
-            ]
-        })
+                    .child(empty()),
+            ];
+        }
+        jump.set(keys.peek().len().saturating_sub(1));
+        let live = app.clone();
+        let copied = app.clone();
+        vec![
+            container()
+                .selectable_text(true)
+                .on_selection_copy(move |text, result| copied.copy_notice(text, result))
+                .layout(
+                    LayoutStyle::flex_column()
+                        .fill_width()
+                        .grow(1.0)
+                        .min_size(0.0, 0.0),
+                )
+                .child(
+                    virtual_list(keys, move |index, _: &u64| {
+                        row(live.clone(), index, spacing)
+                    })
+                    .key_by(|_, key| *key)
+                    .measured()
+                    .estimate(canvas::cell().h * 2.0)
+                    .viewport_fill()
+                    .scroll_bind(app.scroll_y)
+                    .max_scroll_bind(app.max_scroll)
+                    .content_height_bind(app.content_height)
+                    .follow_end(true)
+                    .scrollbar(true)
+                    .follow_row(jump),
+                ),
+        ]
+    })
 }

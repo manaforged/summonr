@@ -99,7 +99,10 @@ impl App {
             Some(crate::SlashCommand::Model) => self.model_command(argument),
             Some(crate::SlashCommand::Effort) => match argument {
                 Some(level) => self.effort_command(level),
-                None => self.effort.show(self.model.peek().snapshot.effort),
+                None => {
+                    let snapshot = self.model.peek().snapshot.clone();
+                    self.effort.show(snapshot.effort, &snapshot.levels);
+                }
             },
             Some(crate::SlashCommand::Workflow) if argument.is_none() => {
                 self.open_workflow();
@@ -174,13 +177,16 @@ impl App {
         }
     }
 
-    pub(in crate::tui::sigil_view) fn cycle_effort(&self) {
-        let next = self
-            .model
-            .get()
-            .snapshot
-            .effort
-            .map_or(crate::provider::Effort::Low, crate::provider::Effort::next);
+    pub(in crate::tui::sigil_view) fn cycle_effort(&self, delta: isize) {
+        let levels = self.model.get().snapshot.levels.clone();
+        if levels.is_empty() {
+            return;
+        }
+        let next = match self.model.get().snapshot.effort.map(|at| at.clamp(&levels)) {
+            Some(at) => at.shifted(&levels, delta),
+            None if delta < 0 => levels[levels.len() - 1],
+            None => levels[0],
+        };
         self.model_mut(|model| model.snapshot.effort = Some(next));
         drop(self.cmd.send(Cmd::SetEffort(Some(next))));
         self.refresh();

@@ -186,13 +186,39 @@ fn context_file(
     if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
         return;
     }
-    let mut context = Vec::new();
-    push_file(&mut context, &path);
-    if let Some(text) = context.pop()
+    if let Some(text) = expanded(&path, seen)
         && let Some(text) = dedup_sections(&text, sections)
     {
         parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
     }
+}
+
+fn expanded(path: &Path, seen: &mut std::collections::HashSet<PathBuf>) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let Some(target) = include_target(line) else {
+            lines.push(line.to_string());
+            continue;
+        };
+        let dir = path.parent().unwrap_or(path).to_path_buf();
+        let target = dir.join(target);
+        if !seen.insert(target.canonicalize().unwrap_or_else(|_| target.clone())) {
+            continue;
+        }
+        match expanded(&target, seen) {
+            Some(text) => lines.push(text),
+            None => lines.push(line.to_string()),
+        }
+    }
+    let text = lines.join("\n");
+    (!text.trim().is_empty()).then_some(text)
+}
+
+fn include_target(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('@')?;
+    let token = rest.split_whitespace().next()?;
+    (!token.is_empty()).then_some(token)
 }
 
 fn push_file(parts: &mut Vec<String>, path: &Path) {

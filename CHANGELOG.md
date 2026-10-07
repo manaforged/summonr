@@ -22,6 +22,7 @@ First stable release.
 - `shift+tab` cycles reasoning effort from none to max. Each vendor and model sends the nearest level it accepts; `reasoning_levels` and `thinking_off` on an endpoint override this.
 - The provider table is data. Every built-in endpoint is one `[[preset]]` row in `src/endpoint/presets.toml` (base URL, env keys, wire, reasoning quirks, peer ids), and a row summonr cannot honor fails startup by name. New built-ins: the Qwen coding plans `qwen-plan` and `qwen-plan-cn` and the DashScope hosts `dashscope` and `dashscope-cn`; the MiniMax coding plans `minimax-plan` and `minimax-cn-plan` on the Anthropic wire; `tencent-plan` and `volcengine-plan`; `nvidia`, `huggingface`, `cohere`, `perplexity`, `siliconflow`, `siliconflow-cn`, `ollama-cloud`, and the local `lmstudio`. Coding-plan keys adopt from OpenCode's `auth.json` through their models.dev ids.
 - `plan_mode = true` turns on plan mode. It is off by default.
+- `AGENTS.md` and `CLAUDE.md` expand `@path` lines: the named file, relative to the one holding the line, joins the prompt in place. Files load once across user and project context, and a missing include stays as the literal line.
 - `/pane jobs` lists background commands with status, log, and kill. `/pane peers` lists live sessions you can mention with `@name`.
 - The diff pane reviews one hunk at a time: accept, revert, or add a note for the model. Marks persist in `.summonr/review.json`.
 - Inline terminal mode, grouped repeated tool calls, a transcript scrollbar, and images attached during a turn.

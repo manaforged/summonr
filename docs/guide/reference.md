@@ -525,7 +525,7 @@ The built-in modules are the binary (modules above). What you add lives in files
 
 After the first `prefix_hash`, advertised tools and skill catalog names stay frozen until process exit. A module switch in `/settings` persists for the next process and does not rebuild this session. Hub reconnects that would change aliases are ignored. Plan vs work may still drop `edit`/`write`, and a steps or goal run adds `todo`.
 
-When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once.
+When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude/CLAUDE.md`, and `~/.config/devin/AGENTS.md` as user context, then `AGENTS.md` and `CLAUDE.md` at the workspace root as project context. A file that resolves to one already loaded is skipped, and a section repeated across files is sent once. A line in one of these files that starts with `@` names another file relative to it, and its text joins the prompt in place; each file loads once, and a missing include stays as the literal line.
 
 `SYSTEM.md` replaces the built-in preamble: `~/.summonr/SYSTEM.md` always applies, and `<workspace>/SYSTEM.md` applies only when the workspace is trusted. If either file is present and nonempty, the stock preamble is dropped in favor of it.
 

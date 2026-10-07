@@ -16,6 +16,7 @@ impl App {
                 .set(settings_text(&model.snapshot, &model.prefs));
             self.facts.set(facts(&model, &self.info));
             self.theme_name.set(model.prefs.theme.clone());
+            self.backdrop.set(model.prefs.background);
         });
     }
 

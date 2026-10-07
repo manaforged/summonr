@@ -260,3 +260,13 @@ fn expanded_thinking_renders_in_full_live_and_after_the_turn() {
         );
     }
 }
+
+#[test]
+fn your_line_is_the_text_you_sent() {
+    let lines = frame(80, 24, State::Idle);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("Review the change"))
+        .expect("user text");
+    assert_eq!(row.trim(), "Review the change", "{row:?}");
+}

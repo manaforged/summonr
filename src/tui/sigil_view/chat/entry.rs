@@ -109,7 +109,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
             )
             .bg(sigil::prelude::Token::Gray5)
             .child(
-                text(format!("▌ {body}"))
+                text(body)
                     .font_size(14.0)
                     .text_color(sigil::prelude::Token::Gray12),
             ),

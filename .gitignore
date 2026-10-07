@@ -21,4 +21,5 @@ __pycache__/
 *.log
 .idea/
 .vscode/
+.wrangler/
 coverage/

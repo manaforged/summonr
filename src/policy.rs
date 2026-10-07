@@ -168,11 +168,8 @@ impl Policy {
         if self.unrestricted {
             return Ok(());
         }
-        match write_block(
-            &walk::walk(command, workspace, start, &self.roots),
-            workspace,
-            &self.roots,
-        ) {
+        let steps = walk::walk(command, workspace, start, &self.roots);
+        match write_block(&steps, workspace, &self.roots) {
             Some(Block::Protected(path)) => {
                 return Err(Error::Denied(format!("`{path}` is a protected path")));
             }
@@ -183,6 +180,9 @@ impl Policy {
                 )));
             }
             None => {}
+        }
+        if let Some(path) = read_block(&steps, workspace) {
+            return Err(Error::Denied(format!("`{path}` is a protected path")));
         }
         Ok(())
     }
@@ -341,6 +341,8 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
         && (name == ".env"
             || name.starts_with(".env.")
+            || name == "credentials"
+            || name == ".netrc"
             || (name.starts_with("credentials.") && crate::secret::is_store(path)))
     {
         return true;
@@ -348,7 +350,7 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     let Some(home) = crate::config::home_dir() else {
         return false;
     };
-    [".ssh", ".gnupg"]
+    [".ssh", ".gnupg", ".aws", ".summonr"]
         .into_iter()
         .any(|dir| path.starts_with(home.join(dir)))
 }

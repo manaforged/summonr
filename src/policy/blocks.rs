@@ -17,12 +17,29 @@ pub(super) fn locate(word: &str, workspace: &Path) -> PathBuf {
     })
 }
 
+pub(super) fn path_word(word: &str) -> &str {
+    let Some((name, value)) = word.split_once('=') else {
+        return word;
+    };
+    if name.is_empty()
+        || value.is_empty()
+        || !name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
+        return word;
+    }
+    let rooted = value.starts_with(['/', '~', '\\']) || value.as_bytes().get(1) == Some(&b':');
+    if rooted { value } else { word }
+}
+
 pub(super) fn block_target(
     word: &str,
     workspace: &Path,
     outside_cwd: bool,
     roots: &[PathBuf],
 ) -> Option<Block> {
+    let word = path_word(word);
     if protected_write(&locate(word, workspace)) {
         return Some(Block::Protected(word.to_string()));
     }
@@ -30,6 +47,19 @@ pub(super) fn block_target(
         return Some(Block::Outside(word.to_string()));
     }
     None
+}
+
+pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
+    steps.iter().find_map(|step| {
+        let row = verb_row(&step.verb()?)?;
+        if !matches!(row.read, Read::Always) {
+            return None;
+        }
+        step.operands().into_iter().find_map(|word| {
+            let target = path_word(word);
+            protected_read(&locate(target, workspace)).then(|| target.to_string())
+        })
+    })
 }
 
 pub(super) fn write_block(steps: &[Step], workspace: &Path, roots: &[PathBuf]) -> Option<Block> {

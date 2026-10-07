@@ -1,4 +1,4 @@
-use super::{Candidate, Policy, StepState, Work};
+use super::{Candidate, Decision, Policy, StepState, Work};
 use crate::durable::tree::snapshot;
 
 #[test]
@@ -79,4 +79,19 @@ fn an_empty_tree_pair_writes_no_sidecar_and_clears_a_stale_one() {
         !sidecar.exists(),
         "an emptied map removes the stale sidecar"
     );
+}
+
+#[test]
+fn a_goal_stops_after_three_failed_checks() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    let shot = snapshot(dir.path(), None, None).unwrap();
+    let mut work = Work::new("make the check pass", Policy::Goal {});
+    work.plan = Some("plan".to_string());
+    work.execute(shot.clone()).unwrap();
+    for _ in 0..3 {
+        work.verify(shot.clone()).unwrap();
+        work.verdict(false, Decision::Automatic).unwrap();
+    }
+    assert_eq!(work.progress().exit_code(), Some(2));
 }

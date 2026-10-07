@@ -1,8 +1,8 @@
 use std::net::{IpAddr, ToSocketAddrs};
 use std::path::PathBuf;
 
-use leyline::Response;
 use leyline::http::StatusCode;
+use leyline::{Response, Session};
 use url::Url;
 
 use super::{Format, Search};
@@ -17,15 +17,16 @@ impl Search {
     pub(crate) async fn fetch(&self, raw: &str, format: Format) -> Result<String> {
         let url = check_url(raw)?;
         let host = url.host_str().unwrap_or("").to_string();
-        if tokio::task::spawn_blocking(move || resolves_blocked(&host))
-            .await
-            .unwrap_or(true)
-        {
-            return Err(Error::Tool(
-                "web_fetch: that host is not allowed".to_string(),
-            ));
-        }
-        let response = self.request(&url).await?;
+        let lookup = {
+            let host = host.clone();
+            tokio::task::spawn_blocking(move || super::fetch_targets(&host))
+                .await
+                .unwrap_or(Err(()))
+        };
+        let addrs =
+            lookup.map_err(|()| Error::Tool("web_fetch: that host is not allowed".to_string()))?;
+        let session = super::pinned_session(&host, &addrs)?;
+        let response = Self::request(&session, &url).await?;
         let ctype = response
             .header("content-type")
             .unwrap_or("")
@@ -76,8 +77,8 @@ impl Search {
         )?)
     }
 
-    async fn request(&self, url: &Url) -> Result<Response> {
-        self.http()?
+    async fn request(session: &Session, url: &Url) -> Result<Response> {
+        session
             .get(url.as_str())
             .timeout(TIMEOUT)
             .header(
@@ -164,11 +165,12 @@ pub(super) fn host_blocked(host: &str) -> bool {
     false
 }
 
-fn ip_blocked(ip: IpAddr) -> bool {
+pub(super) fn ip_blocked(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             let oct = v4.octets();
-            v4.is_loopback()
+            oct[0] == 0
+                || v4.is_loopback()
                 || v4.is_private()
                 || v4.is_link_local()
                 || v4.is_unspecified()

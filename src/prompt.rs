@@ -62,18 +62,14 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     {
         return prompt;
     }
-    let mut preamble = Vec::new();
-    if let Some(home) = home {
-        push_file(&mut preamble, &home.join("SYSTEM.md"));
+    let mut parts = Vec::new();
+    let replaced = home.is_some_and(|home| push_file(&mut parts, &home.join("SYSTEM.md")));
+    if !replaced {
+        parts.push(DEFAULT.to_string());
     }
     if trust {
-        push_file(&mut preamble, &workspace.join("SYSTEM.md"));
+        push_file(&mut parts, &workspace.join("SYSTEM.md"));
     }
-    let mut parts = if preamble.is_empty() {
-        vec![DEFAULT.to_string()]
-    } else {
-        preamble
-    };
     if trust {
         instructions(&mut parts, workspace);
     }
@@ -140,7 +136,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     }
     if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
         parts.push(
-            "Spawn a child only for disjoint paths. The parent runs the completion check."
+            "Spawn a child only for disjoint paths. An implement child gets an isolated checkout that shares the parent build cache. The parent runs the completion check."
                 .to_string(),
         );
     }
@@ -186,21 +182,49 @@ fn context_file(
     if !seen.insert(path.canonicalize().unwrap_or_else(|_| path.clone())) {
         return;
     }
-    let mut context = Vec::new();
-    push_file(&mut context, &path);
-    if let Some(text) = context.pop()
+    if let Some(text) = expanded(&path, seen)
         && let Some(text) = dedup_sections(&text, sections)
     {
         parts.push(format!("<{tag} path=\"{rel}\">\n{text}\n</{tag}>"));
     }
 }
 
-fn push_file(parts: &mut Vec<String>, path: &Path) {
+fn expanded(path: &Path, seen: &mut std::collections::HashSet<PathBuf>) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines = Vec::new();
+    for line in text.lines() {
+        let Some(target) = include_target(line) else {
+            lines.push(line.to_string());
+            continue;
+        };
+        let dir = path.parent().unwrap_or(path).to_path_buf();
+        let target = dir.join(target);
+        if !seen.insert(target.canonicalize().unwrap_or_else(|_| target.clone())) {
+            continue;
+        }
+        match expanded(&target, seen) {
+            Some(text) => lines.push(text),
+            None => lines.push(line.to_string()),
+        }
+    }
+    let text = lines.join("\n");
+    (!text.trim().is_empty()).then_some(text)
+}
+
+fn include_target(line: &str) -> Option<&str> {
+    let rest = line.trim_start().strip_prefix('@')?;
+    let token = rest.split_whitespace().next()?;
+    (!token.is_empty()).then_some(token)
+}
+
+fn push_file(parts: &mut Vec<String>, path: &Path) -> bool {
     if let Ok(text) = std::fs::read_to_string(path)
         && !text.trim().is_empty()
     {
         parts.push(text);
+        return true;
     }
+    false
 }
 
 fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Option<String> {
@@ -243,6 +267,8 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 <rules>
 - Use read for files, directories, and content search (honors ignore rules); run_command covers the rest: builds, tests, git, ls, grep
 - Unsure of a tool's options? call it with op=help for the full reference
+- Tool schemas are the full callable surface; modules add more when on: web (search, fetch), mail (agents, send, inbox, board), MCP servers, skills, LSP, background jobs, child tasks
+- A capability you lack is usually a module that is off: run `summonr modules` to list them and ask the user to enable it rather than a shell workaround
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses

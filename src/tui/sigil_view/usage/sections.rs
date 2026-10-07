@@ -1,22 +1,20 @@
 use sigil::prelude::Paint;
 use sigil::prelude::{
-    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone, WidgetLayoutExt,
-    chart, container, heatmap, panel, progress, signal, sparkline,
+    AlignItems, FlexWrap, IntoNode, LayoutBuilderExt, LayoutStyle, NodeBuilder, Rgba8, Tone,
+    container, heatmap, panel, progress, signal, sparkline,
 };
 
-use super::super::canvas::{blend, palette};
+use super::super::canvas::{self, blend, palette};
 use super::report::{Metric, Report, hit, turn_secs};
 
-const SHOWN: usize = 5;
 use crate::provider::{compact, dollars};
-use crate::session::{DAY, HOUR, Total};
+use crate::session::Total;
 
-const TICKS: usize = 6;
-const BAR_CELLS: usize = 16;
 const MODEL_ROWS: usize = 8;
 const PLACE_CELLS: usize = 26;
 const PLACE_NAME_CELLS: usize = 20;
 const NAME_CELLS: usize = 24;
+const NUMBER_CELLS: usize = 48;
 
 fn inks() -> [Rgba8; 6] {
     let palette = palette();
@@ -58,18 +56,27 @@ fn row(children: Vec<NodeBuilder>) -> NodeBuilder {
     children.into_iter().fold(
         container().layout(
             LayoutStyle::flex_row()
-                .fill_width()
                 .gap(8.0)
-                .align_items(AlignItems::Center)
-                .min_size(0.0, 0.0),
+                .align_items(AlignItems::Center),
         ),
         NodeBuilder::child,
     )
 }
 
+fn wrapped(value: impl Into<String>, color: Rgba8) -> NodeBuilder {
+    container()
+        .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
+        .child(
+            sigil::kernel::text(value.into())
+                .wrap()
+                .text_color(sigil::prelude::Token::OnSurface)
+                .text_color(color),
+        )
+}
+
 fn column(children: Vec<NodeBuilder>) -> NodeBuilder {
     children.into_iter().fold(
-        container().layout(LayoutStyle::flex_column().fill_width().gap(0.0)),
+        container().layout(LayoutStyle::flex_column().gap(2.0)),
         NodeBuilder::child,
     )
 }
@@ -84,17 +91,23 @@ pub(super) fn amount(value: f64, metric: Metric) -> String {
 
 fn card(title: &str, value: String, visual: Option<NodeBuilder>, note: String) -> NodeBuilder {
     let palette = palette();
-    let mut body = vec![strong(value)];
-    body.push(visual.unwrap_or_else(|| colored(" ", palette.dim)));
-    body.push(colored(note, palette.dim));
+    let body = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(4.0))
+        .child(strong(value))
+        .child(visual.unwrap_or_else(|| colored(" ", palette.dim)))
+        .child(wrapped(note, palette.dim));
     container()
-        .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-        .child(panel().title(title).padding(8.0).child(column(body)))
+        .layout(
+            LayoutStyle::block()
+                .grow(1.0)
+                .shrink(1.0)
+                .min_size(0.0, 0.0),
+        )
+        .child(panel().title(title).padding(16.0).child(body))
 }
 
 pub(super) fn cards(report: &Report) -> NodeBuilder {
     let total = &report.total;
-    let palette = palette();
     let trend = sparkline(
         report
             .columns
@@ -111,18 +124,28 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
     } else {
         "no prices for these models"
     };
-    row(vec![
-        card(
+    container()
+        .layout(
+            LayoutStyle::flex_row()
+                .fill_width()
+                .gap(12.0)
+                .align_items(AlignItems::Stretch),
+        )
+        .child(card(
             "tokens",
             compact(total.input + total.output),
-            Some(container().child(trend)),
+            Some(
+                container()
+                    .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
+                    .child(trend),
+            ),
             format!(
                 "{} in · {} out",
                 compact(total.input),
                 compact(total.output)
             ),
-        ),
-        card(
+        ))
+        .child(card(
             "cache hit",
             format!("{:.1}%", report.cache_hit()),
             Some(
@@ -131,17 +154,15 @@ pub(super) fn cards(report: &Report) -> NodeBuilder {
                     .child(cache),
             ),
             format!("{} tokens reused", compact(total.cached)),
-        ),
-        card(
+        ))
+        .child(card(
             "sessions",
             group(total.sessions),
             None,
             crate::text::plural(usize::try_from(total.turns).unwrap_or(usize::MAX), "turn")
                 .replacen(&total.turns.to_string(), &group(total.turns), 1),
-        ),
-        card("cost", cost, None, priced.to_string()),
-    ])
-    .child(colored("", palette.dim))
+        ))
+        .child(card("cost", cost, None, priced.to_string()))
 }
 
 fn group(value: u64) -> String {
@@ -156,127 +177,68 @@ fn group(value: u64) -> String {
     out
 }
 
-fn tick(span: u64, back: usize) -> String {
-    let ago = span * back as u64;
-    if ago < DAY {
-        format!("{}h", ago / HOUR)
-    } else {
-        format!("{}d", ago / DAY)
-    }
+fn name_cells(width: f32) -> usize {
+    let cells = (width / canvas::cell().w).floor() as usize;
+    cells.saturating_sub(NUMBER_CELLS).clamp(8, NAME_CELLS)
 }
 
-pub(super) fn trend(report: &Report, metric: Metric, width: f32) -> NodeBuilder {
-    let count = report.columns.len();
-    let every = count.div_ceil(TICKS).max(1);
-    let peak = report.columns.iter().copied().fold(0.0_f64, f64::max);
-    let (scale, unit) = scale(peak, metric);
-    let plot = chart(
-        report
-            .columns
-            .iter()
-            .map(|value| (value / scale) as f32)
-            .collect::<Vec<f32>>(),
-    )
-    .tone(Tone::Primary)
-    .bar()
-    .labels((0..count).map(|at| {
-        if at % every == 0 {
-            tick(report.span, count - at)
-        } else {
-            String::new()
-        }
-    }))
-    .height(220.0)
-    .width(width);
-    column(vec![
-        row(vec![
-            strong(format!("{} per {}", title(metric), period(report.span))),
-            colored(format!("· {unit} · since {}", report.first), palette().dim),
-        ]),
-        container().child(plot),
-    ])
-}
-
-fn period(span: u64) -> String {
-    match span {
-        HOUR => "hour".to_string(),
-        DAY => "day".to_string(),
-        span if span % DAY == 0 => format!("{} days", span / DAY),
-        span => format!("{} hours", span / HOUR),
-    }
-}
-
-fn title(metric: Metric) -> &'static str {
-    match metric {
-        Metric::Tokens => "Tokens",
-        Metric::Cost => "Cost",
-    }
-}
-
-fn scale(peak: f64, metric: Metric) -> (f64, &'static str) {
-    if metric.cost() {
-        (1.0, "dollars")
-    } else if peak >= 1e9 {
-        (1e9, "billions")
-    } else if peak >= 1e6 {
-        (1e6, "millions")
-    } else if peak >= 1e3 {
-        (1e3, "thousands")
-    } else {
-        (1.0, "tokens")
-    }
-}
-
-fn bar(share: f64, cells: usize) -> String {
-    "█".repeat(((share * cells as f64).round() as usize).max(1))
-}
-
-fn model_line(at: usize, name: &str, model: &Total, whole: f64, metric: Metric) -> NodeBuilder {
-    let share = model.value(metric.cost()) / whole;
-    let tint = ink(at.min(SHOWN));
-    let short = crate::text::ellipsize(name, NAME_CELLS - 1);
+fn model_line(
+    at: usize,
+    name: &str,
+    model: &Total,
+    whole: f64,
+    metric: Metric,
+    name_cells: usize,
+) -> NodeBuilder {
+    let share = model.value(metric.cost()) / whole * 100.0;
+    let tint = ink(at);
+    let short = crate::text::ellipsize(name, name_cells);
     let short = format!(
         "{short}{}",
-        " ".repeat(NAME_CELLS.saturating_sub(sigil::app::cell_width(&short)))
+        " ".repeat(name_cells.saturating_sub(sigil::app::cell_width(&short)))
     );
     row(vec![
         colored("●", tint),
         colored(
             format!(
-                "{short}{:>9}{:>8.0}%{:>9}{:>8.1}s",
+                "{short}{:>9}{:>8.0}%{:>9}{:>8.1}s{:>6.0}%",
                 compact(model.input),
                 hit(model),
                 compact(model.output),
                 turn_secs(model),
+                share,
             ),
-            palette().text,
+            tint,
         ),
-        colored(bar(share, BAR_CELLS), tint),
-        colored(format!("{:.0}%", share * 100.0), palette().dim),
     ])
 }
 
-pub(super) fn models(report: &Report, metric: Metric) -> NodeBuilder {
+pub(super) fn models(report: &Report, metric: Metric, width: f32) -> NodeBuilder {
     let whole = report
         .models
         .iter()
         .map(|(_, model)| model.value(metric.cost()))
         .sum::<f64>()
         .max(f64::MIN_POSITIVE);
+    let name_cells = name_cells(width);
     let mut lines = vec![
         strong("Models"),
-        colored(
-            format!(
-                "  {:<width$}{:>9}{:>9}{:>9}{:>9}  share",
-                "model",
-                "input",
-                "hit",
-                "output",
-                "turn",
-                width = NAME_CELLS,
+        row(vec![
+            colored(" ", palette().code_comment),
+            colored(
+                format!(
+                    "{:<width$}{:>9}{:>9}{:>9}{:>9}{:>7}",
+                    "model",
+                    "input",
+                    "hit",
+                    "output",
+                    "turn",
+                    "share",
+                    width = name_cells,
+                ),
+                palette().code_comment,
             ),
-            palette().code_comment,
-        ),
+        ]),
     ];
     lines.extend(
         report
@@ -284,7 +246,7 @@ pub(super) fn models(report: &Report, metric: Metric) -> NodeBuilder {
             .iter()
             .take(MODEL_ROWS)
             .enumerate()
-            .map(|(at, (name, model))| model_line(at, name, model, whole, metric)),
+            .map(|(at, (name, model))| model_line(at, name, model, whole, metric, name_cells)),
     );
     column(lines)
 }
@@ -330,27 +292,28 @@ pub(super) fn hours(report: &Report) -> NodeBuilder {
     ])
 }
 
-pub(super) fn bottom(report: &Report, metric: Metric) -> NodeBuilder {
+pub(super) fn bottom(report: &Report, metric: Metric, width: f32) -> NodeBuilder {
     container()
         .layout(
             LayoutStyle::flex_row()
+                .flex_wrap(FlexWrap::Wrap)
                 .fill_width()
-                .gap(32.0)
+                .gap(24.0)
                 .align_items(AlignItems::Start),
-        )
-        .child(
-            container()
-                .layout(LayoutStyle::block().grow(3.0).min_size(0.0, 0.0))
-                .child(models(report, metric)),
         )
         .child(
             container()
                 .layout(
                     LayoutStyle::flex_column()
-                        .grow(2.0)
-                        .gap(16.0)
-                        .min_size(0.0, 0.0),
+                        .shrink(0.0)
+                        .gap(4.0)
+                        .padding_right(8.0),
                 )
+                .child(models(report, metric, width)),
+        )
+        .child(
+            container()
+                .layout(LayoutStyle::flex_column().shrink(0.0).gap(16.0))
                 .child(places(report, metric))
                 .child(hours(report)),
         )

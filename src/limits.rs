@@ -28,6 +28,7 @@ pub(crate) const MODEL_PROBE: Duration = Duration::from_secs(8);
 pub(crate) const WEB_SEARCH: Duration = Duration::from_secs(15);
 pub(crate) const WEB_CONNECT: Duration = Duration::from_secs(8);
 pub(crate) const WEB_FETCH: Duration = Duration::from_secs(20);
+pub(crate) const WEB_BODY: usize = 1024 * 1024;
 #[cfg(not(test))]
 pub(crate) const KEYCHAIN: Duration = Duration::from_secs(5);
 #[cfg(test)]
@@ -63,6 +64,7 @@ pub(crate) const NOTICE: Duration = Duration::from_secs(2);
 pub(crate) const WORKER_STOP: Duration = Duration::from_secs(2);
 pub(crate) const REPEAT_WINDOW: Duration = Duration::from_secs(2);
 pub(crate) const RETRY_LIMIT: usize = 3;
+pub(crate) const STEP_ATTEMPTS: u16 = 3;
 pub(crate) const REPAIR_LIMIT: usize = 6;
 pub(crate) const EDIT_HUNK_ROWS: usize = 80;
 pub(crate) const DISPLAY_PATCH_LINES: usize = 1_000;

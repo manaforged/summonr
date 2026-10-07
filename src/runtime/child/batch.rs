@@ -1,4 +1,5 @@
 use super::record::*;
+use super::spawn::child_tree;
 use super::*;
 
 impl<P: Provider> Loop<P> {
@@ -109,7 +110,11 @@ impl<P: Provider> Loop<P> {
         let mut runs = Vec::with_capacity(count);
         for args in args {
             let access = args.access;
-            runs.push((access, self.task_start(args, &budget, None)));
+            let started = match child_tree(&self.workspace, access) {
+                Ok(tree) => self.task_start(args, &budget, tree),
+                Err(error) => Err(error),
+            };
+            runs.push((access, started));
         }
         let sender = self.events.0.clone();
         let mut runs: FuturesUnordered<_> = runs

@@ -33,11 +33,12 @@ impl Tool {
                 .get("inputSchema")
                 .cloned()
                 .unwrap_or_else(|| json!({"type": "object"})),
-            readonly: item
-                .pointer("/annotations/readOnlyHint")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            readonly: false,
             name,
         })
     }
 }
+
+#[cfg(test)]
+#[path = "tool_tests.rs"]
+mod tests;

@@ -50,7 +50,9 @@ Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell command
 
 ## Give it project instructions
 
-When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A `SYSTEM.md` replaces the built-in preamble. `--no-trust` ignores all three.
+When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files.
+
+An implement child works in `<repo>-deltas/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
 
 ## Extend it
 

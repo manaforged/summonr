@@ -1,6 +1,10 @@
+use std::net::ToSocketAddrs;
 use std::sync::{Arc, Mutex};
 
-use leyline::{Browser, Family, RedirectAction, RedirectPolicy, Session, TimeoutConfig};
+use leyline::{
+    Browser, CompressionConfig, DnsConfig, Family, RedirectAction, RedirectPolicy, Session,
+    TimeoutConfig,
+};
 use url::Url;
 
 use crate::config;
@@ -161,14 +165,15 @@ impl Search {
     }
 }
 
-fn client() -> Result<Session> {
-    let builder = Session::builder()
+fn http_builder() -> leyline::SessionBuilder {
+    Session::builder()
         .browser(Browser::latest(Family::Chrome))
         .timeout(
             TimeoutConfig::new()
                 .total(SEARCH_TIMEOUT)
                 .connect(crate::limits::WEB_CONNECT),
         )
+        .compression(CompressionConfig::new().max_body_size(crate::limits::WEB_BODY))
         .redirect(RedirectPolicy::custom(|attempt| {
             if attempt.previous.len() >= crate::limits::WEB_REDIRECT_MAX
                 || !safe_redirect(attempt.url)
@@ -177,8 +182,31 @@ fn client() -> Result<Session> {
             } else {
                 RedirectAction::Follow
             }
-        }));
-    crate::credentials::session(builder)
+        }))
+}
+
+fn client() -> Result<Session> {
+    crate::credentials::session(http_builder())
+}
+
+pub(super) fn fetch_targets(host: &str) -> std::result::Result<Vec<std::net::SocketAddr>, ()> {
+    let addrs = match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => vec![std::net::SocketAddr::new(ip, 443)],
+        Err(_) => match (host, 443).to_socket_addrs() {
+            Ok(addrs) => addrs.collect::<Vec<_>>(),
+            Err(_) => return Err(()),
+        },
+    };
+    if addrs.is_empty() || addrs.iter().any(|addr| fetch::ip_blocked(addr.ip())) {
+        return Err(());
+    }
+    Ok(addrs)
+}
+
+pub(super) fn pinned_session(host: &str, addrs: &[std::net::SocketAddr]) -> Result<Session> {
+    crate::credentials::session(
+        http_builder().dns(DnsConfig::new().resolve_host(host, addrs.iter().copied())),
+    )
 }
 
 fn safe_redirect(url: &Url) -> bool {

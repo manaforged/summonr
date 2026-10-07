@@ -80,6 +80,7 @@
 | [`run_tool`](#run_tool) | fn |  |
 | [`sandbox_on`](#sandbox_on) | fn |  |
 | [`short`](#short) | fn |  |
+| [`stop_children`](#stop_children) | fn |  |
 | [`summonr_home`](#summonr_home) | fn |  |
 | [`sweep_worktrees`](#sweep_worktrees) | fn |  |
 | [`system_prompt`](#system_prompt) | fn |  |
@@ -187,6 +188,7 @@
 | <code>images: Option&lt;bool&gt;</code> |  |
 | <code>keep_reasoning: bool</code> |  |
 | <code>model: String</code> |  |
+| <code>models_url: Option&lt;String&gt;</code> |  |
 | <code>name: String</code> |  |
 | <code>oauth: Option&lt;config::OAuth&gt;</code> |  |
 | <code>opencode: bool</code> |  |
@@ -406,6 +408,7 @@
 | <code>branch: String</code> |  |
 | <code>path: PathBuf</code> |  |
 | <code>primary: PathBuf</code> |  |
+| <code>snapshot: Option&lt;String&gt;</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
 
@@ -1173,6 +1176,11 @@
 ### `short`
 
 <pre>pub fn <a href="#short">short</a>(id: &amp;str) -&gt; &amp;str</pre>
+
+
+### `stop_children`
+
+<pre>pub fn <a href="#stop_children">stop_children</a>()</pre>
 
 
 ### `summonr_home`

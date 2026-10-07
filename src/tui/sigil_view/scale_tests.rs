@@ -55,13 +55,13 @@ fn busy_info() -> Info {
     }
 }
 
-fn frame_with(
+fn paint(
     base: Info,
     cols: u16,
     rows: u16,
     state: State,
     setup: impl FnOnce(&App),
-) -> Vec<String> {
+) -> sigil::terminal::Grid {
     Runtime::scope("summonr-scale", || {
         let workspace = tempfile::tempdir().expect("workspace");
         std::fs::create_dir(workspace.path().join(".git")).expect("git dir");
@@ -103,11 +103,25 @@ fn frame_with(
                 .frame(&mut host, &mut router, [], (cols, rows))
                 .expect("frame");
         }
-        let grid = screen
+        screen
             .frame(&mut host, &mut router, [], (cols, rows))
-            .expect("frame");
-        grid.text().lines().map(str::to_owned).collect()
+            .expect("frame")
+            .clone()
     })
+}
+
+fn frame_with(
+    base: Info,
+    cols: u16,
+    rows: u16,
+    state: State,
+    setup: impl FnOnce(&App),
+) -> Vec<String> {
+    paint(base, cols, rows, state, setup)
+        .text()
+        .lines()
+        .map(str::to_owned)
+        .collect()
 }
 
 fn find(lines: &[String], needle: &str) -> Option<usize> {
@@ -259,4 +273,14 @@ fn expanded_thinking_renders_in_full_live_and_after_the_turn() {
             "{frame}"
         );
     }
+}
+
+#[test]
+fn your_line_is_the_text_you_sent() {
+    let lines = frame(80, 24, State::Idle);
+    let row = lines
+        .iter()
+        .find(|line| line.contains("Review the change"))
+        .expect("user text");
+    assert_eq!(row.trim(), "Review the change", "{row:?}");
 }

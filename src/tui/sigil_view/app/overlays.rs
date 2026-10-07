@@ -94,9 +94,7 @@ impl App {
             Some(Overlay::Sessions) => self.sessions.shift(delta),
             Some(Overlay::Auth) => self.move_auth(delta),
             Some(Overlay::Model) => self.move_model(delta),
-            Some(Overlay::Effort) => {
-                self.effort.shift(&self.model.get().snapshot.levels, delta);
-            }
+            Some(Overlay::Effort) => self.effort.shift(&self.model.get().snapshot.levels, delta),
             Some(Overlay::Workflow) => self.move_workflow(delta),
             Some(Overlay::Hotkeys) => self.move_hotkey(delta),
             Some(Overlay::Settings) => self.move_setting(delta),
@@ -216,9 +214,7 @@ impl App {
             }
             Some(Overlay::Settings) => self.adjust_setting(),
             Some(Overlay::Usage) => self.usage.shift(delta),
-            Some(Overlay::Effort) => {
-                self.effort.shift(&self.model.get().snapshot.levels, delta);
-            }
+            Some(Overlay::Effort) => self.effort.shift(&self.model.get().snapshot.levels, delta),
             _ => return false,
         }
         true

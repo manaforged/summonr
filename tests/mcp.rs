@@ -82,7 +82,7 @@ fn main() {
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_server_runs_inside_the_sandbox,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
-        policy::a_server_restarts_when_the_sandbox_changes,
+        policy::a_headless_sandbox_refuses_a_write_outside_its_roots,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_sandboxed_command_cannot_write_outside_roots_without_approval,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

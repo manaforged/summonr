@@ -1,5 +1,5 @@
 use super::logo::{cover, facts, layout};
-use super::space::{SCRIM, set};
+use super::space::{PLATE, SCRIM, set};
 use super::*;
 
 pub(in crate::tui::sigil_view) const ROW_MS: u64 = 70;
@@ -44,7 +44,11 @@ pub(in crate::tui::sigil_view) fn dim_rect(
                     reset
                 };
                 cell.fg = ink(blend(fg, SCRIM, 0.55));
-                cell.bg = ink(blend(bg, SCRIM, 0.55));
+                cell.bg = if reset_background {
+                    ink(PLATE)
+                } else {
+                    ink(blend(bg, SCRIM, 0.55))
+                };
             }
         }
     }
@@ -149,6 +153,23 @@ pub(in crate::tui::sigil_view) fn prompt(
     );
     write(cells, cols, x + width.saturating_sub(1), y + 1, "╮", border);
     write(cells, cols, x, y + 2, "│", border);
+    let interior = usize::from(width.saturating_sub(2));
+    for col in 1..interior + 1 {
+        set(
+            cells,
+            cols,
+            x + col as u16,
+            y + 2,
+            Cell {
+                text: " ".into(),
+                fg: ink(palette().text),
+                bg: ink(SCRIM),
+                bold: false,
+                italic: false,
+                ..Cell::blank()
+            },
+        );
+    }
     if visible && app.view_edit.peek() {
         let path = app
             .model
@@ -174,13 +195,13 @@ pub(in crate::tui::sigil_view) fn prompt(
     } else if visible {
         write(cells, cols, x + 3, y + 2, "❯ ", mode_color);
         let caret = if (ticks / 6).is_multiple_of(2) {
-            '▌'
+            '│'
         } else {
             ' '
         };
         let input = super::chat::draft_view(
-            &app.draft.peek(),
-            app.caret.peek(),
+            &app.draft.get(),
+            app.caret.get(),
             usize::from(width.saturating_sub(8)),
             caret,
         );
@@ -240,3 +261,7 @@ pub(in crate::tui::sigil_view) fn write(
         color,
     );
 }
+
+#[cfg(test)]
+#[path = "input_tests.rs"]
+mod tests;

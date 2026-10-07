@@ -31,10 +31,85 @@ pub(super) fn shell(program: &str) -> bool {
     )
 }
 
-pub(super) const WRAPPERS: [&str; 16] = [
+pub(super) const WRAPPERS: [&str; 20] = [
     "env", "sudo", "doas", "nice", "nohup", "exec", "command", "builtin", "time", "xargs",
-    "timeout", "stdbuf", "setsid", "flock", "chronic", "eval",
+    "timeout", "stdbuf", "setsid", "flock", "chronic", "eval", "then", "do", "else", "elif",
 ];
+
+const WRAPPER_ARGS: &[(&str, &[&str])] = &[
+    ("env", &["-u", "-C", "--unset", "--chdir"]),
+    ("sudo", &["-u", "-g", "-h", "-p", "-C", "-T"]),
+    ("timeout", &["-k", "--kill-after"]),
+    ("nice", &["-n"]),
+    ("stdbuf", &["-i", "-o", "-e"]),
+    ("flock", &["-w"]),
+    (
+        "xargs",
+        &["-I", "-J", "-L", "-n", "-P", "-d", "-E", "-s", "-a"],
+    ),
+];
+
+pub(super) fn command_pieces(segment: &str) -> Vec<String> {
+    let Some(body) = arm_body(segment.trim()) else {
+        return vec![segment.to_string()];
+    };
+    let body = body.trim();
+    if body.is_empty() || body == "esac" {
+        Vec::new()
+    } else {
+        vec![body.to_string()]
+    }
+}
+
+fn arm_body(segment: &str) -> Option<&str> {
+    let (before, after) = segment.split_once(')')?;
+    let pattern = before.trim();
+    if pattern.is_empty() {
+        return None;
+    }
+    let mut words = pattern.split_whitespace();
+    let head = words.next().unwrap_or("");
+    let name = head
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(head)
+        .to_ascii_lowercase();
+    if name == "case" {
+        return Some(after);
+    }
+    if words.next().is_some() || pattern.contains(['$', '`', '(']) {
+        return None;
+    }
+    Some(after)
+}
+
+pub(super) fn skip_wrapper_args<'a>(wrapper: &str, mut text: &'a str) -> &'a str {
+    loop {
+        let (word, rest) = text.split_once([' ', '\t']).unwrap_or((text, ""));
+        if word.is_empty()
+            || !(word.starts_with('-')
+                || word.contains('=')
+                || word.chars().all(|c| c.is_ascii_digit()))
+        {
+            return text;
+        }
+        text = rest.trim_start();
+        let (flag, attached) = word
+            .split_once('=')
+            .map_or((word, false), |(flag, _)| (flag, true));
+        if !attached && wrapper_takes_value(wrapper, flag) {
+            let (_value, rest) = text.split_once([' ', '\t']).unwrap_or((text, ""));
+            text = rest.trim_start();
+        }
+    }
+}
+
+fn wrapper_takes_value(wrapper: &str, flag: &str) -> bool {
+    let Some((_, flags)) = WRAPPER_ARGS.iter().find(|(name, _)| *name == wrapper) else {
+        return false;
+    };
+    flags.contains(&flag)
+}
 
 const XARGS: &str = "xargs";
 const XARGS_REPLACE: &[&str] = &["-I", "-J", "--replace=", "-i"];

@@ -58,6 +58,10 @@ mod verify;
 mod web;
 mod worktree;
 
+pub fn stop_children() {
+    tools::command::stop_groups();
+}
+
 pub mod mail;
 pub mod prefs;
 pub mod splash;

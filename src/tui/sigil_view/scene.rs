@@ -11,6 +11,7 @@ use sigil::layout::Position;
 use sigil::prelude::LayoutBuilderExt;
 use sigil::prelude::LayoutStyle;
 use sigil::prelude::NodeBuilder;
+use sigil::prelude::Paint;
 use sigil::prelude::Rgba8;
 use sigil::prelude::container;
 
@@ -18,13 +19,14 @@ pub(in crate::tui::sigil_view) use input::prompt_area;
 
 mod logo;
 pub(in crate::tui::sigil_view) use logo::{compose, scene_row};
-pub(in crate::tui::sigil_view) use space::space;
+pub(in crate::tui::sigil_view) use space::{SCRIM, space};
 
 mod input;
 mod space;
 
 pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
     container()
+        .bg(SCRIM)
         .layout(
             LayoutStyle::flex_column()
                 .position(Position::Absolute)
@@ -37,6 +39,8 @@ pub(in crate::tui::sigil_view) fn layer(app: App) -> NodeBuilder {
             let (cols, rows) = app.viewport.get();
             drop(app.theme_name.get());
             let _backdrop = app.backdrop.get();
+            let _draft = app.draft.get();
+            let _caret = app.caret.get();
             let ticks = app.ticks.get();
             let ticks = if app.model.get().prefs.animations {
                 ticks

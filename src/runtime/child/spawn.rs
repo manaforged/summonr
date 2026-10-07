@@ -3,7 +3,8 @@ use super::*;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn task_spawn(&mut self, args: Args, budget: &Budget) -> Result<Execution> {
-        let run = self.task_start(args, budget, None)?;
+        let tree = child_tree(&self.workspace, args.access)?;
+        let run = self.task_start(args, budget, tree)?;
         let record = run.record.clone();
         let path = run.child.session.path().to_path_buf();
         let id = record.id.to_string();
@@ -75,11 +76,14 @@ impl<P: Provider> Loop<P> {
             Some(self.session.id()),
         )
         .map_err(super::session_err)?;
-        let instruction = match args.access {
-            Access::Implement => {
+        let instruction = match (args.access, tree.is_some()) {
+            (Access::Implement, true) => {
+                "You are in an isolated checkout of the parent workspace. It shares the parent build cache. Do not commit. Do not delete target or node_modules. The parent applies your edits when you finish, even if another child fails. Background commands stay with the parent."
+            }
+            (Access::Implement, false) => {
                 "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
             }
-            Access::Research => "This assignment is read-only. Do not change the workspace.",
+            (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
         };
         let mut child = Self::with_parts(
             provider,
@@ -140,36 +144,47 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn task_reconcile(&self, done: &mut [(Access, Result<Done>)]) {
-        if implement_failed(done) {
-            for done in implemented(done) {
-                if matches!(done.record.state, ChildState::Completed(_)) {
-                    fail_record(
-                        &mut done.record,
-                        "writable child changes were not reconciled because another implement child did not complete; the worktree was kept",
-                    );
-                }
+        for (_, result) in done.iter_mut() {
+            let Ok(done) = result else {
+                continue;
+            };
+            if done.record.access != Access::Implement {
+                continue;
             }
+            if matches!(done.record.state, ChildState::Completed(_)) {
+                continue;
+            }
+            release_unfinished(done);
+        }
+        let mut picked = Vec::new();
+        for (index, (access, result)) in done.iter().enumerate() {
+            if *access != Access::Implement {
+                continue;
+            }
+            let Ok(done) = result else {
+                continue;
+            };
+            if !matches!(done.record.state, ChildState::Completed(_)) {
+                continue;
+            }
+            let Some(tree) = done.tree.clone() else {
+                continue;
+            };
+            picked.push((index, tree, done.paths.clone()));
+        }
+        if picked.is_empty() {
             return;
         }
-        let children = done
+        let children = picked
             .iter()
-            .filter_map(|(access, done)| {
-                if *access != Access::Implement {
-                    return None;
-                }
-                let done = done.as_ref().ok()?;
-                Some((done.tree.clone()?, done.paths.clone()))
-            })
+            .map(|(_, tree, paths)| (tree.clone(), paths.clone()))
             .collect::<Vec<_>>();
-        if children.is_empty() {
-            return;
-        }
         match worktree::reconcile_children(&self.workspace, &children) {
-            Ok(warnings) if warnings.is_empty() => {}
-            Ok(warnings) => {
-                let warning = warnings.join("; ");
-                for done in implemented(done) {
-                    note_record(&mut done.record, &warning);
+            Ok(landings) => {
+                for ((index, _, _), landing) in picked.into_iter().zip(landings) {
+                    if let Ok(done) = done[index].1.as_mut() {
+                        record_landing(&mut done.record, landing);
+                    }
                 }
             }
             Err(error) => {
@@ -257,14 +272,51 @@ impl<P: Provider> Loop<P> {
     }
 }
 
-fn implement_failed(done: &[(Access, Result<Done>)]) -> bool {
-    done.iter().any(|(access, done)| {
-        *access == Access::Implement
-            && match done {
-                Ok(done) => !matches!(done.record.state, ChildState::Completed(_)),
-                Err(_) => true,
-            }
-    })
+pub(super) fn child_tree(workspace: &Path, access: Access) -> Result<Option<Tree>> {
+    if access != Access::Implement || !worktree::in_git(workspace) {
+        return Ok(None);
+    }
+    worktree::open_delta(workspace).map(Some)
+}
+
+fn release_unfinished(done: &mut Done) {
+    let Some(tree) = done.tree.clone() else {
+        return;
+    };
+    if tree.snapshot.is_none() {
+        return;
+    }
+    if worktree::unchanged(&tree).unwrap_or(false) {
+        drop(worktree::remove_child(&tree));
+        done.tree = None;
+        return;
+    }
+    let note = format!(
+        "the delta at {} holds changes and was kept",
+        tree.path.display()
+    );
+    let Some(result) = result_mut(&mut done.record.state) else {
+        return;
+    };
+    result.diagnostic = Some(match result.diagnostic.take() {
+        Some(existing) => format!("{existing}; {note}"),
+        None => note,
+    });
+}
+
+fn record_landing(record: &mut ChildRecord, landing: worktree::Landing) {
+    if let Some(kept) = landing.kept {
+        if landing.paths.is_empty() {
+            fail_record(record, &kept);
+            return;
+        }
+        note_record(record, &kept);
+    }
+    let Some(result) = result_mut(&mut record.state) else {
+        return;
+    };
+    result.changed_paths_total = landing.paths.len();
+    result.changed_paths = landing.paths;
 }
 
 fn implemented(done: &mut [(Access, Result<Done>)]) -> impl Iterator<Item = &mut Done> {

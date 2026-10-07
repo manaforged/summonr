@@ -31,6 +31,7 @@ pub(super) struct Report {
     pub(super) total: Total,
     pub(super) models: Vec<(String, Total)>,
     pub(super) columns: Vec<f64>,
+    pub(super) series: Vec<Vec<f64>>,
     pub(super) span: u64,
     pub(super) first: &'static str,
     pub(super) places: Vec<(String, f64)>,
@@ -48,6 +49,7 @@ impl Report {
         let mut places: BTreeMap<String, f64> = BTreeMap::new();
         let mut hours = [0.0; 24];
         let mut columns = vec![0.0; count];
+        let mut by_model: BTreeMap<&str, Vec<f64>> = BTreeMap::new();
         for row in rows.iter().filter(|row| row.hour + HOUR > start) {
             let value = Total::of(row).value(cost);
             total.add(row);
@@ -55,13 +57,25 @@ impl Report {
             *places.entry(place(&row.workspace)).or_default() += value;
             hours[((row.hour % DAY) / HOUR) as usize] += value;
             let at = (row.hour.saturating_sub(start) / span) as usize;
-            columns[at.min(count - 1)] += value;
+            let at = at.min(count - 1);
+            columns[at] += value;
+            by_model
+                .entry(row.model.as_str())
+                .or_insert_with(|| vec![0.0; count])[at] += value;
         }
         let mut models: Vec<(String, Total)> = models
             .into_iter()
             .map(|(name, total)| (name.to_string(), total))
             .collect();
         models.sort_by(|a, b| b.1.value(cost).total_cmp(&a.1.value(cost)));
+        let series = models
+            .iter()
+            .map(|(name, _)| {
+                by_model
+                    .remove(name.as_str())
+                    .unwrap_or_else(|| vec![0.0; count])
+            })
+            .collect();
         let mut places: Vec<(String, f64)> = places.into_iter().collect();
         places.sort_by(|a, b| b.1.total_cmp(&a.1));
         places.truncate(PLACES);
@@ -69,6 +83,7 @@ impl Report {
             total,
             models,
             columns,
+            series,
             span,
             first,
             places,

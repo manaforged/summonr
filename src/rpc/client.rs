@@ -64,8 +64,11 @@ impl Client {
         };
         #[cfg(unix)]
         command.process_group(0);
+        command
+            .env_clear()
+            .envs(crate::tools::command::command_env())
+            .envs(launch.env.iter().map(|(key, value)| (key, value)));
         let mut child = command
-            .envs(launch.env.iter().map(|(key, value)| (key, value)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

@@ -1,10 +1,12 @@
 use super::*;
+use sigil::prelude::Paint;
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let submit = app.clone();
     let changed = app.clone();
     let surface = app.clone();
     container()
+        .bg(scene::SCRIM)
         .layout(LayoutStyle::block().fill_width().fill_height())
         .child(
             text_edit(app.draft)

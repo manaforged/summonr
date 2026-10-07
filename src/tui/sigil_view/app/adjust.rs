@@ -268,6 +268,11 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn commit_effort(&self) {
+        if self.model.peek().snapshot.levels.is_empty() {
+            self.effort.open.set(false);
+            self.refresh();
+            return;
+        }
         let level = self.effort.picked();
         self.effort.open.set(false);
         self.effort_command(level.as_str());
@@ -275,7 +280,7 @@ impl App {
 
     pub(in crate::tui::sigil_view) fn effort_command(&self, level: &str) {
         let next = match crate::provider::Effort::parse(level) {
-            Some(effort) => effort,
+            Some(effort) => effort.clamp(&self.model.peek().snapshot.levels),
             None => {
                 self.push_entry(Entry::Error(format!(
                     "effort {}",

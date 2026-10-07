@@ -305,6 +305,7 @@ impl Worker {
                 .or_else(|| crate::recent::default_effort(&self.endpoint, &endpoint.model)),
         );
         self.loop_.set_price(endpoint.price);
+        self.levels = endpoint.reasoning.levels_for(&endpoint.model);
         self.loop_.set_provider(provider, endpoint.model);
         self.remember_seat();
     }
@@ -324,6 +325,7 @@ impl Worker {
             work: self.loop_.is_work(),
             goal: self.loop_.is_goal(),
             effort: self.loop_.effort(),
+            levels: self.levels.clone(),
             pending_plan: self.loop_.pending_plan(),
             verify: verify_display(self.loop_.verify_commands()),
             strict: self.loop_.is_strict(),

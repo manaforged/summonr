@@ -36,6 +36,7 @@ impl App {
         }
         self.commands.change(
             draft,
+            &self.model.peek().snapshot.levels,
             &self.model.peek().snapshot.endpoint,
             &self.picker.facts.peek(),
         );

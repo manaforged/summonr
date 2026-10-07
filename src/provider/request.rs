@@ -103,6 +103,13 @@ impl Effort {
             .min_by_key(|level| ((*level as u8).abs_diff(self as u8), *level))
             .unwrap_or(self)
     }
+
+    #[must_use]
+    pub(crate) fn shifted(self, levels: &[Self], delta: isize) -> Self {
+        let at = levels.iter().position(|level| *level == self).unwrap_or(0);
+        let next = (at as isize + delta).rem_euclid(levels.len() as isize);
+        levels.get(next as usize).copied().unwrap_or(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]

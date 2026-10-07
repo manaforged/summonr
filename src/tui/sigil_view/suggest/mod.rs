@@ -30,13 +30,19 @@ impl Picker {
         }
     }
 
-    pub(super) fn change(self, draft: &str, endpoint: &str, facts: &Facts) {
+    pub(super) fn change(
+        self,
+        draft: &str,
+        levels: &[crate::provider::Effort],
+        endpoint: &str,
+        facts: &Facts,
+    ) {
         self.cursor.set(0);
         self.hidden.set(false);
         self.query.set(draft.to_string());
         let head = draft.split_once(' ').map_or("", |(head, _)| head);
         if self.args.peek().0 != head {
-            let rows = arguments(head, endpoint, facts);
+            let rows = arguments(head, endpoint, levels, facts);
             self.args.set(std::rc::Rc::new((head.to_string(), rows)));
         }
     }
@@ -97,7 +103,12 @@ impl Picker {
         }
         let mut cursor = self.cursor.peek().min(rows.len() - 1);
         if rows[cursor].0 == draft && !usage(draft).is_empty() {
-            let rows = arguments(draft, &model.snapshot.endpoint, facts);
+            let rows = arguments(
+                draft,
+                &model.snapshot.endpoint,
+                &model.snapshot.levels,
+                facts,
+            );
             self.args.set(std::rc::Rc::new((draft.to_string(), rows)));
             return Some(format!("{draft} "));
         }
@@ -242,7 +253,12 @@ fn usage(name: &str) -> &'static str {
         .map_or("", |spec| spec.usage)
 }
 
-fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
+fn arguments(
+    head: &str,
+    endpoint: &str,
+    levels: &[crate::provider::Effort],
+    facts: &Facts,
+) -> Rows {
     let plain = |names: Vec<String>| {
         names
             .into_iter()
@@ -282,7 +298,7 @@ fn arguments(head: &str, endpoint: &str, facts: &Facts) -> Rows {
         }
         Some(SlashCommand::Login) => plain(crate::endpoint::names().unwrap_or_default()),
         Some(SlashCommand::Effort) => plain(
-            crate::provider::Effort::ALL
+            levels
                 .iter()
                 .map(|level| level.as_str().to_string())
                 .collect(),

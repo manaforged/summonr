@@ -232,6 +232,7 @@ pub(crate) struct Snapshot {
     pub work: bool,
     pub goal: bool,
     pub effort: Option<crate::provider::Effort>,
+    pub levels: Vec<crate::provider::Effort>,
     pub pending_plan: bool,
     pub verify: Option<String>,
     pub strict: bool,

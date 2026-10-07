@@ -87,6 +87,7 @@ fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
 struct Board {
     rows: Vec<Seat>,
     top: usize,
+    sorted: bool,
     facts: BTreeMap<Seat, Model>,
     groups: BTreeMap<String, State>,
     causes: BTreeMap<String, String>,
@@ -103,6 +104,7 @@ impl Board {
         }
         Self {
             top: rows.len(),
+            sorted: false,
             rows,
             facts: BTreeMap::new(),
             groups: BTreeMap::new(),
@@ -148,7 +150,10 @@ impl Board {
         errors: &[String],
     ) -> Msg {
         let top = self.top;
-        order(&mut self.rows[top..], &self.facts, &self.groups);
+        if !self.sorted {
+            order(&mut self.rows[top..], &self.facts, &self.groups);
+            self.sorted = true;
+        }
         let mut sent: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
         sent.retain(|row| self.rows.contains(row));
         let pinned = sent.len();
@@ -173,19 +178,8 @@ impl Board {
     }
 
     fn discovered(&mut self, name: String, models: Vec<Model>) {
-        let fresh: Vec<Seat> = models
-            .iter()
-            .map(|model| Seat::new(&name, &model.id))
-            .collect();
-        let facts = &self.facts;
-        let gone =
-            |row: &Seat| row.endpoint == name && facts.contains_key(row) && !fresh.contains(row);
-        let tail: Vec<Seat> = self.rows.split_off(self.top);
-        let kept: Vec<Seat> = tail.into_iter().filter(|row| !gone(row)).collect();
-        self.rows.extend(kept);
-        self.facts
-            .retain(|row, _| row.endpoint != name || fresh.contains(row));
-        for (row, model) in fresh.into_iter().zip(models) {
+        for model in models {
+            let row = Seat::new(&name, &model.id);
             self.facts.insert(row.clone(), model);
             add(&mut self.rows, row);
         }

@@ -406,6 +406,7 @@
 | <code>branch: String</code> |  |
 | <code>path: PathBuf</code> |  |
 | <code>primary: PathBuf</code> |  |
+| <code>snapshot: Option&lt;String&gt;</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>StructuralPartialEq</code>
 

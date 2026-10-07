@@ -10,7 +10,7 @@ pub(super) async fn killed(spawned: Spawned, parent: &Path, reason: &str) -> Res
     if record.access == Access::Implement && record.workspace != parent && record.workspace.exists()
     {
         diagnostic.push_str(&format!(
-            "; the worktree at {} holds changes and was kept",
+            "; the delta at {} holds changes and was kept",
             record.workspace.display()
         ));
     }

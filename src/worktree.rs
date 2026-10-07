@@ -4,10 +4,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::durable::store;
 use crate::error::{Error, Result};
 
+mod delta;
 mod land;
 
 pub use land::finish;
-pub(crate) use land::{reconcile_children, remove_child};
+pub(crate) use land::{Landing, reconcile_children, remove_child};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 
@@ -23,6 +24,7 @@ pub struct Tree {
     pub path: PathBuf,
     pub branch: String,
     pub base: String,
+    pub snapshot: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -148,6 +150,7 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
         path,
         branch,
         base: base.to_string(),
+        snapshot: None,
     };
     let recorded = (|| {
         let record = base_record(&tree.primary, &id)?;
@@ -236,6 +239,10 @@ fn base_record(primary: &Path, id: &str) -> Result<PathBuf> {
 }
 
 fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
+    checkout_dir(primary, "worktrees", id)
+}
+
+fn checkout_dir(primary: &Path, kind: &str, id: &str) -> Result<PathBuf> {
     let name = primary
         .file_name()
         .ok_or_else(|| Error::Config("repository path has no name".to_string()))?;
@@ -243,9 +250,32 @@ fn worktree_dir(primary: &Path, id: &str) -> Result<PathBuf> {
         .parent()
         .ok_or_else(|| Error::Config("repository path has no parent".to_string()))?;
     let mut dir = parent.to_path_buf();
-    dir.push(format!("{}-worktrees", name.to_string_lossy()));
+    dir.push(format!("{}-{kind}", name.to_string_lossy()));
     dir.push(id);
     Ok(dir)
+}
+
+pub(crate) fn open_delta(primary: &Path) -> Result<Tree> {
+    delta::open(primary)
+}
+
+pub(crate) fn unchanged(tree: &Tree) -> Result<bool> {
+    if !tree.path.exists() {
+        return Ok(true);
+    }
+    let Some(snapshot) = &tree.snapshot else {
+        return Ok(!dirty(&tree.path)?);
+    };
+    let diff = crate::diff::git_env(&tree.path, &[], &["diff", "--name-only", snapshot])?;
+    if !diff.is_empty() {
+        return Ok(false);
+    }
+    let untracked = crate::diff::git_env(
+        &tree.path,
+        &[],
+        &["ls-files", "--others", "--exclude-standard"],
+    )?;
+    Ok(untracked.is_empty())
 }
 
 pub(crate) fn dirty(path: &Path) -> Result<bool> {
@@ -267,6 +297,7 @@ fn parse_list(primary: &Path, base: &str, text: &str) -> Vec<Tree> {
                     path,
                     branch,
                     base: base.to_string(),
+                    snapshot: None,
                 });
             }
             continue;
@@ -289,3 +320,7 @@ fn new_id() -> String {
         .as_nanos();
     format!("{nanos:x}")
 }
+
+#[cfg(test)]
+#[path = "worktree_tests.rs"]
+mod tests;

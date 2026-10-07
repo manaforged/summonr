@@ -23,7 +23,7 @@ impl Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         if let Some(tree) = self.tree.take()
-            && worktree::dirty(&tree.path).is_ok_and(|dirty| !dirty)
+            && worktree::unchanged(&tree).is_ok_and(|same| same)
         {
             drop(worktree::remove_child(&tree));
         }

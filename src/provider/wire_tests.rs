@@ -115,7 +115,15 @@ fn a_turn_that_reasoned_carries_what_it_needs_to_be_replayed() {
 
 #[test]
 fn hosts_that_cache_on_reasoning_content_replay_it() {
-    for model in ["grok-4.7", "grok-4.6", "grok-4.5", "deepseek-v4-flash"] {
+    for model in [
+        "grok-4.7",
+        "grok-4-7",
+        "grok-4.6",
+        "grok-4-6",
+        "grok-4.5",
+        "grok-4-5",
+        "deepseek-v4-flash",
+    ] {
         assert!(
             crate::provider::wire::traits::traits(model).replay,
             "{model} drops reasoning_content from history; the host calls \

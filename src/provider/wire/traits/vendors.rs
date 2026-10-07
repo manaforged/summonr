@@ -11,7 +11,10 @@ pub(super) const ROWS: &[Row] = &[
     scaled(&["k2.6"], NO_EFFORT, ThinkingDisabled),
     scaled(&["kimi-k2"], NO_EFFORT, Omit),
     replayed(scaled(&["grok-4.7"], EXTENDED, Unsupported)),
+    replayed(scaled(&["grok-4-7"], EXTENDED, Unsupported)),
     replayed(scaled(&["grok-4.6"], EXTENDED, Unsupported)),
+    replayed(scaled(&["grok-4-6"], EXTENDED, Unsupported)),
     replayed(scaled(&["grok-4.5"], STANDARD, Unsupported)),
+    replayed(scaled(&["grok-4-5"], STANDARD, Unsupported)),
     scaled(&["gpt-oss"], STANDARD, Unsupported),
 ];

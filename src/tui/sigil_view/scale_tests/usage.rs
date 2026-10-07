@@ -87,10 +87,9 @@ fn a_narrow_usage_page_keeps_a_model_off_the_workspace_row() {
             spend("deepseek-v4-flash", "/w/webshop", 1_000_000),
         ])));
     });
-    let row = lines
-        .iter()
-        .find(|line| line.contains("glm-5.3-flash"))
-        .expect(&lines.join("\n"));
+    let Some(row) = lines.iter().find(|line| line.contains("glm-5.3-flash")) else {
+        panic!("{}", lines.join("\n"));
+    };
     assert!(
         !row.contains("webshop"),
         "model row ran into the workspace:\n{row}"

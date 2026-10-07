@@ -336,5 +336,5 @@ fn a_rejected_key_from_the_model_picker_opens_in_its_pane() {
         app.commit_model_edit();
     });
     assert!(screen.contains("Search models"), "{screen}");
-    assert!(screen.contains("API key"), "{screen}");
+    assert!(screen.contains("sign in with"), "{screen}");
 }

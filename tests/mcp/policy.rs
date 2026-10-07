@@ -41,9 +41,12 @@ pub(crate) fn strict_mode_without_an_allow_entry_refuses_a_tool_that_changes_sta
         results[0].contains("not on every configured allow list"),
         "{results:?}"
     );
-    assert!(results[1].contains("read"), "{results:?}");
+    assert!(
+        results[1].contains("not on every configured allow list"),
+        "{results:?}"
+    );
     let received = session.received("fixture1");
-    assert_eq!(calls(&received, "tools/call").len(), 1, "{received:?}");
+    assert!(calls(&received, "tools/call").is_empty(), "{received:?}");
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -133,7 +136,7 @@ pub(crate) fn a_server_runs_inside_the_sandbox() {
 }
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-pub(crate) fn a_server_restarts_when_the_sandbox_changes() {
+pub(crate) fn a_headless_sandbox_refuses_a_write_outside_its_roots() {
     let session = Session::new();
     let outside = session.file("granted.txt");
     let model = Model::start(vec![
@@ -147,15 +150,20 @@ pub(crate) fn a_server_restarts_when_the_sandbox_changes() {
     ]);
     session.run(&model, &session.server("fixture1", ""), &["--sandbox"]);
     let results = model.tool_results();
+    assert!(results[0].contains("before"), "{results:?}");
+    assert!(
+        results[1].contains("outside the writable roots"),
+        "{results:?}"
+    );
     assert!(results[2].contains("after"), "{results:?}");
     assert!(
-        outside.exists(),
-        "the write grant did not apply: {results:?}"
+        !outside.exists(),
+        "a headless sandbox wrote outside its roots: {results:?}"
     );
     assert_eq!(
         session.starts("fixture1"),
-        3,
-        "list, first call, call after the grant"
+        2,
+        "a denied write restarted the server"
     );
 }
 

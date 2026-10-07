@@ -262,7 +262,7 @@ impl Client {
     }
 
     async fn catalog(&self, fallback: Cost) -> Result<Vec<Model>> {
-        let base = &self.base;
+        let base = &self.models_base;
         let mut url = format!("{base}/models");
         let mut models = Vec::new();
         loop {

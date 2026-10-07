@@ -139,6 +139,7 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
     Some(Endpoint {
         name: row.name.clone(),
         base_url: Some(row.base_url.clone()),
+        models_url: row.models_url.map(str::to_string),
         model: row.model.clone(),
         api_key: None,
         source: None,

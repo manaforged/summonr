@@ -10,6 +10,7 @@ use crate::provider::{Effort, EffortField, Off, Scale, Spec};
 pub(super) struct Preset {
     pub(super) name: String,
     pub(super) base_url: String,
+    pub(super) models_url: Option<&'static str>,
     pub(super) model: String,
     pub(super) env_keys: &'static [&'static str],
     pub(super) default_key: Option<&'static str>,
@@ -122,20 +123,19 @@ fn copilot_oauth() -> crate::config::OAuth {
 }
 
 fn login(name: &str) -> Option<fn() -> crate::config::OAuth> {
-    match name {
-        "claude" => Some(claude_oauth),
-        "chatgpt" => Some(chatgpt_oauth),
-        "supergrok" => Some(supergrok_oauth),
-        "copilot" => Some(copilot_oauth),
-        _ => None,
-    }
+    [
+        ("claude", claude_oauth as fn() -> crate::config::OAuth),
+        ("chatgpt", chatgpt_oauth),
+        ("supergrok", supergrok_oauth),
+        ("copilot", copilot_oauth),
+    ]
+    .into_iter()
+    .find(|(known, _)| *known == name)
+    .map(|(_, make)| make)
 }
 
 fn cli_token(name: &str) -> Option<CliToken> {
-    match name {
-        "kimi-code" => Some(KIMI_CLI),
-        _ => None,
-    }
+    (name == "kimi-code").then_some(KIMI_CLI)
 }
 
 fn wire(value: &str) -> std::result::Result<Wire, String> {
@@ -158,6 +158,8 @@ struct File {
 struct Row {
     name: String,
     base_url: String,
+    #[serde(default)]
+    models_url: Option<String>,
     #[serde(default)]
     model: String,
     #[serde(default)]
@@ -290,6 +292,10 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
         rows.push(Preset {
             name,
             base_url,
+            models_url: row
+                .models_url
+                .as_deref()
+                .map(|url| Box::leak(url.to_string().into_boxed_str()) as &'static str),
             model: row.model,
             env_keys: leak(&row.env_keys),
             default_key: row

@@ -26,6 +26,7 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         name: name.to_string(),
         model: "jev-latest".to_string(),
         base_url: Some("https://api.typesafe.ai/v1/systemone".to_string()),
+        models_url: None,
         api_key: Some("k".to_string()),
         source: None,
         reasoning: crate::provider::Reasoning::default(),

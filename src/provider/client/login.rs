@@ -55,6 +55,9 @@ impl Client {
             http,
             auth_http: crate::credentials::http()?,
             base: base.trim_end_matches('/').to_string(),
+            models_base: opts
+                .models_base
+                .unwrap_or_else(|| base.trim_end_matches('/').to_string()),
             auth,
             body,
             headers,

@@ -388,6 +388,7 @@ opencode_ids = ["cohere"]
 [[preset]]
 name = "perplexity"
 base_url = "https://api.perplexity.ai"
+models_url = "https://api.perplexity.ai/v1"
 model = "sonar-pro"
 env_keys = ["PERPLEXITY_API_KEY"]
 opencode_ids = ["perplexity"]

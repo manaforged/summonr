@@ -32,6 +32,7 @@ pub struct Endpoint {
     pub name: String,
     pub model: String,
     pub base_url: Option<String>,
+    pub models_url: Option<String>,
     pub api_key: Option<String>,
     pub source: Option<Source>,
     pub oauth: Option<crate::config::OAuth>,
@@ -59,6 +60,7 @@ impl std::fmt::Debug for Endpoint {
             .field("name", &self.name)
             .field("model", &self.model)
             .field("base_url", &self.base_url)
+            .field("models_url", &self.models_url)
             .field("api_key", &self.api_key.is_some())
             .field("source", &self.source)
             .field("oauth", &self.oauth.is_some())

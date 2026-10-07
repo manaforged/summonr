@@ -35,6 +35,20 @@ fn a_custom_row_matches_the_preset_with_the_longest_base_url() {
 }
 
 #[test]
+fn a_custom_row_can_point_model_listings_elsewhere() {
+    let file: crate::config::File = toml::from_str(
+        "[endpoint.odd]\nbase_url = \"https://odd.example\"\nmodels_url = \"https://odd.example/v1\"\nmodel = \"m\"\n",
+    )
+    .unwrap();
+    let endpoint = from_file(&file, "odd").unwrap();
+    assert_eq!(endpoint.base_url.as_deref(), Some("https://odd.example"));
+    assert_eq!(
+        endpoint.models_url.as_deref(),
+        Some("https://odd.example/v1")
+    );
+}
+
+#[test]
 fn a_misspelled_endpoint_suggests_the_closest_name() {
     let names = vec![
         "anthropic".to_string(),
@@ -153,6 +167,11 @@ fn the_new_endpoints_point_at_their_hosts() {
     assert_eq!(
         perplexity.base_url.as_deref(),
         Some("https://api.perplexity.ai")
+    );
+    assert_eq!(
+        perplexity.models_url.as_deref(),
+        Some("https://api.perplexity.ai/v1"),
+        "perplexity serves its model list under /v1 and chat without it"
     );
     let lmstudio = super::keys::builtin("lmstudio").unwrap();
     assert!(lmstudio.keyless(), "lmstudio is a local server");

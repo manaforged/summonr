@@ -1,7 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::durable::log::{self, Line};
+use crate::durable::log::{self, Line, Usage};
 use crate::error::Result;
+use crate::provider::ToolCall;
 
 use super::fmt::{count, line, secs, share};
 use super::health::Health;
@@ -13,71 +14,62 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
         let skip = sessions.len().saturating_sub(last);
         sessions.drain(..skip);
     }
-    let mut read_sessions = 0_usize;
-    let mut skipped = 0_usize;
-    let mut calls = 0_usize;
-    let mut failed = 0_usize;
-    let mut millis = 0_u64;
-    let mut chars = 0_u64;
-    let mut input = 0_u64;
-    let mut output = 0_u64;
-    let mut cached = 0_u64;
-    let mut warm_input = 0_u64;
-    let mut warm_cached = 0_u64;
-    let mut health = Health::default();
-    let mut first_edit: Vec<usize> = Vec::new();
-    let mut rss: Vec<u64> = Vec::new();
+    let mut totals = Totals::default();
     for session in &sessions {
-        let mut pending: BTreeMap<String, (String, String)> = BTreeMap::new();
-        let mut index = 0_usize;
-        let mut edited = false;
-        let mut first = true;
         let lines = match log::read(&session.path) {
             Ok(lines) => lines,
             Err(_) => {
-                skipped += 1;
+                totals.skipped += 1;
                 continue;
             }
         };
-        read_sessions += 1;
+        totals.read_sessions += 1;
+        totals.add_session(lines);
+    }
+    Ok(totals.render())
+}
+
+#[derive(Default)]
+struct Totals {
+    read_sessions: usize,
+    skipped: usize,
+    calls: usize,
+    failed: usize,
+    millis: u64,
+    chars: u64,
+    input: u64,
+    output: u64,
+    cached: u64,
+    warm_input: u64,
+    warm_cached: u64,
+    health: Health,
+    first_edit: Vec<usize>,
+    rss: Vec<u64>,
+}
+
+#[derive(Default)]
+struct SessionScan {
+    pending: BTreeMap<String, (String, String)>,
+    index: usize,
+    edited: bool,
+    warm: bool,
+}
+
+impl Totals {
+    fn add_session(&mut self, lines: Vec<Line>) {
+        let mut scan = SessionScan::default();
         for line in lines {
             match line {
                 Line::Assistant {
                     tool_calls, usage, ..
-                } => {
-                    input = input.saturating_add(usage.input);
-                    output = output.saturating_add(usage.output);
-                    cached = cached.saturating_add(usage.cached);
-                    if first {
-                        first = false;
-                    } else {
-                        warm_input = warm_input.saturating_add(usage.input);
-                        warm_cached = warm_cached.saturating_add(usage.cached);
-                    }
-                    for call in tool_calls {
-                        pending.insert(call.id, (call.function.name, call.function.arguments));
-                    }
-                }
+                } => self.add_assistant(&mut scan, tool_calls, &usage),
                 Line::Tool {
                     call,
                     text,
                     success,
-                    millis: ms,
+                    millis,
                     ..
-                } => {
-                    index += 1;
-                    calls += 1;
-                    if !success {
-                        failed += 1;
-                    }
-                    millis = millis.saturating_add(ms);
-                    chars = chars.saturating_add(text.chars().count() as u64);
-                    let (name, arguments) = pending.remove(&call).unwrap_or_default();
-                    if health.add(&name, &arguments, success) && !edited {
-                        edited = true;
-                        first_edit.push(index);
-                    }
-                }
+                } => self.add_tool(&mut scan, &call, &text, success, millis),
                 Line::Tools { .. }
                 | Line::Session { .. }
                 | Line::User { .. }
@@ -90,76 +82,114 @@ pub(super) fn profile_all(last: Option<usize>) -> Result<String> {
                 | Line::Summary { .. }
                 | Line::Rewrite { .. }
                 | Line::Clear => {}
-                Line::Close { footprint_kb, .. } => {
-                    if let Some(kb) = footprint_kb {
-                        rss.push(kb);
-                    }
-                }
+                Line::Close { footprint_kb, .. } => self.rss.extend(footprint_kb),
             }
         }
     }
-    let mut out = String::new();
-    line(
-        &mut out,
-        format!(
-            "{} sessions ({} skipped unreadable) · {calls} tool calls · {} failed ({}) · {} tool time",
-            read_sessions,
-            skipped,
-            failed,
-            share(failed as u64, calls as u64),
-            secs(millis),
-        ),
-    );
-    line(
-        &mut out,
-        format!(
-            "tokens  in {} ({} cached · cold {} hit · warm {} hit · uncached {}) · out {}",
-            count(input),
-            share(cached, input),
-            share(
-                cached.saturating_sub(warm_cached),
-                input.saturating_sub(warm_input)
-            ),
-            share(warm_cached, warm_input),
-            count(input.saturating_sub(cached)),
-            count(output)
-        ),
-    );
-    for text in health.lines() {
-        line(&mut out, text);
+
+    fn add_assistant(&mut self, scan: &mut SessionScan, tool_calls: Vec<ToolCall>, usage: &Usage) {
+        self.input = self.input.saturating_add(usage.input);
+        self.output = self.output.saturating_add(usage.output);
+        self.cached = self.cached.saturating_add(usage.cached);
+        if scan.warm {
+            self.warm_input = self.warm_input.saturating_add(usage.input);
+            self.warm_cached = self.warm_cached.saturating_add(usage.cached);
+        } else {
+            scan.warm = true;
+        }
+        for call in tool_calls {
+            scan.pending
+                .insert(call.id, (call.function.name, call.function.arguments));
+        }
     }
-    if calls > 0 {
+
+    fn add_tool(
+        &mut self,
+        scan: &mut SessionScan,
+        call: &str,
+        text: &str,
+        success: bool,
+        millis: u64,
+    ) {
+        scan.index += 1;
+        self.calls += 1;
+        if !success {
+            self.failed += 1;
+        }
+        self.millis = self.millis.saturating_add(millis);
+        self.chars = self.chars.saturating_add(text.chars().count() as u64);
+        let (name, arguments) = scan.pending.remove(call).unwrap_or_default();
+        if self.health.add(&name, &arguments, success) && !scan.edited {
+            scan.edited = true;
+            self.first_edit.push(scan.index);
+        }
+    }
+
+    fn render(mut self) -> String {
+        let mut out = String::new();
         line(
             &mut out,
             format!(
-                "size     {} chars per tool call",
-                count(chars / calls as u64)
+                "{} sessions ({} skipped unreadable) · {} tool calls · {} failed ({}) · {} tool time",
+                self.read_sessions,
+                self.skipped,
+                self.calls,
+                self.failed,
+                share(self.failed as u64, self.calls as u64),
+                secs(self.millis),
             ),
         );
-    }
-    rss.sort_unstable();
-    if !rss.is_empty() {
-        let median = rss[rss.len() / 2];
-        let max = rss[rss.len() - 1];
         line(
             &mut out,
             format!(
-                "mem      median {:.0} MB · max {:.0} MB",
-                median as f64 / 1024.0,
-                max as f64 / 1024.0
+                "tokens  in {} ({} cached · cold {} hit · warm {} hit · uncached {}) · out {}",
+                count(self.input),
+                share(self.cached, self.input),
+                share(
+                    self.cached.saturating_sub(self.warm_cached),
+                    self.input.saturating_sub(self.warm_input)
+                ),
+                share(self.warm_cached, self.warm_input),
+                count(self.input.saturating_sub(self.cached)),
+                count(self.output)
             ),
         );
+        for text in self.health.lines() {
+            line(&mut out, text);
+        }
+        if self.calls > 0 {
+            line(
+                &mut out,
+                format!(
+                    "size     {} chars per tool call",
+                    count(self.chars / self.calls as u64)
+                ),
+            );
+        }
+        self.rss.sort_unstable();
+        if !self.rss.is_empty() {
+            let median = self.rss[self.rss.len() / 2];
+            let max = self.rss[self.rss.len() - 1];
+            line(
+                &mut out,
+                format!(
+                    "mem      median {:.0} MB · max {:.0} MB",
+                    median as f64 / 1024.0,
+                    max as f64 / 1024.0
+                ),
+            );
+        }
+        self.first_edit.sort_unstable();
+        if !self.first_edit.is_empty() {
+            let median = self.first_edit[self.first_edit.len() / 2];
+            line(
+                &mut out,
+                format!(
+                    "edits    {} sessions edited · median first edit at call {median}",
+                    self.first_edit.len()
+                ),
+            );
+        }
+        out
     }
-    first_edit.sort_unstable();
-    if !first_edit.is_empty() {
-        let median = first_edit[first_edit.len() / 2];
-        line(
-            &mut out,
-            format!(
-                "edits    {} sessions edited · median first edit at call {median}",
-                first_edit.len()
-            ),
-        );
-    }
-    Ok(out)
 }

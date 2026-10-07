@@ -156,27 +156,8 @@ impl Pump {
         }
         let busy = app.model.get().busy_since.is_some();
         let notify = app.model.get().prefs.notify;
-        if self.busy != Some(busy) {
-            drop(set_title(&title(&app, busy)));
-            if self.busy == Some(true) && !busy && !focused() && notify.turns() {
-                drop(bell(Some(&format!(
-                    "summonr · {}: {}",
-                    place(&app),
-                    ending(&app)
-                ))));
-            }
-            self.busy = Some(busy);
-        }
-        let asking = app.approval.peek().is_some();
-        if !asking {
-            self.asking = false;
-        } else if !self.asking && !focused() && notify.approvals() {
-            drop(bell(Some(&format!(
-                "summonr · {}: approval needed",
-                place(&app)
-            ))));
-            self.asking = true;
-        }
+        self.track_busy(&app, busy, notify);
+        self.track_asking(&app, notify);
         if !events.is_empty() {
             app.refresh();
         }
@@ -188,6 +169,34 @@ impl Pump {
         commit(&app);
         open_out(&app);
         copy_out(&app);
+    }
+
+    fn track_busy(&mut self, app: &App, busy: bool, notify: crate::prefs::Notify) {
+        if self.busy == Some(busy) {
+            return;
+        }
+        drop(set_title(&title(app, busy)));
+        if self.busy == Some(true) && !busy && !focused() && notify.turns() {
+            drop(bell(Some(&format!(
+                "summonr · {}: {}",
+                place(app),
+                ending(app)
+            ))));
+        }
+        self.busy = Some(busy);
+    }
+
+    fn track_asking(&mut self, app: &App, notify: crate::prefs::Notify) {
+        let asking = app.approval.peek().is_some();
+        if !asking {
+            self.asking = false;
+        } else if !self.asking && !focused() && notify.approvals() {
+            drop(bell(Some(&format!(
+                "summonr · {}: approval needed",
+                place(app)
+            ))));
+            self.asking = true;
+        }
     }
 
     fn finish(&mut self, app: &App, exit: i32) {

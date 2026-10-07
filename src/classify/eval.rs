@@ -120,6 +120,21 @@ pub(crate) fn judge(answer: &Answer, wanted: &serde_json::Value) -> Option<Verdi
     (0.0..=1.0).contains(&verdict.certainty).then_some(verdict)
 }
 
+impl Tally {
+    fn count(&mut self, verdict: &Verdict, floor: f64) {
+        self.asked += 1;
+        if verdict.right {
+            self.right += 1;
+        }
+        if verdict.certainty >= floor {
+            self.acted += 1;
+            if verdict.right {
+                self.acted_right += 1;
+            }
+        }
+    }
+}
+
 pub fn score(
     examples: &[Example],
     decided: &[Decision],
@@ -156,17 +171,10 @@ pub fn score(
             let verdict = judge(answer, wanted).ok_or_else(|| {
                 Error::Config(format!("{label}: invalid answer or label for `{question}`"))
             })?;
-            let tally = tallies.entry(question.clone()).or_default();
-            tally.asked += 1;
-            if verdict.right {
-                tally.right += 1;
-            }
-            if verdict.certainty >= floor {
-                tally.acted += 1;
-                if verdict.right {
-                    tally.acted_right += 1;
-                }
-            }
+            tallies
+                .entry(question.clone())
+                .or_default()
+                .count(&verdict, floor);
             if !verdict.right {
                 misses.push(Miss {
                     example: label.clone(),

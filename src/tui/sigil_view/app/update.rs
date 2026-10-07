@@ -18,6 +18,12 @@ impl App {
             } => self.auth_done(&name, result, rejected),
             Msg::OpenHelp => self.help.show(),
             Msg::OpenLogin(note) => self.login_opened(note),
+            msg => self.update_loaded(msg),
+        }
+    }
+
+    fn update_loaded(&self, msg: Msg) {
+        match msg {
             Msg::Prompts { session, result } => self.prompts_loaded(session, result),
             Msg::Restored(inputs) => self.restore(inputs),
             Msg::Saved { file, text, result } => self.save_done(file, text, result),

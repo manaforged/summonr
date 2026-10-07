@@ -39,7 +39,31 @@ impl<P: Provider> Run<P> {
                 event: Box::new(event.clone()),
             }));
         };
-        let outcome = match self.deadline {
+        let outcome = self.drive(emit).await;
+        let access = self.record.access;
+        let (state, usage) = self.outcome_state(outcome, access);
+        self.record.state = state;
+        let usage = self.reported_usage(usage);
+        let paths = match access {
+            Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
+            Access::Research => Vec::new(),
+        };
+        Done {
+            record: self.record,
+            tree: self.guard.disarm(),
+            paths,
+            usage,
+            billed: self.child.session.spent_tokens(),
+            settled: false,
+            millis: super::elapsed_millis(self.started),
+        }
+    }
+
+    async fn drive(
+        &mut self,
+        emit: impl FnMut(&Event),
+    ) -> std::result::Result<Result<Turn>, tokio::time::error::Elapsed> {
+        match self.deadline {
             Some(deadline) => {
                 tokio::time::timeout(
                     deadline,
@@ -48,9 +72,15 @@ impl<P: Provider> Run<P> {
                 .await
             }
             None => Ok(self.child.turn_with(self.assignment.as_str(), emit).await),
-        };
-        let access = self.record.access;
-        let (state, mut usage) = match outcome {
+        }
+    }
+
+    fn outcome_state(
+        &mut self,
+        outcome: std::result::Result<Result<Turn>, tokio::time::error::Elapsed>,
+        access: Access,
+    ) -> (ChildState, Usage) {
+        match outcome {
             Ok(Ok(turn)) => {
                 let state = if turn.aborted {
                     ChildState::Aborted(self.child.result(
@@ -87,51 +117,39 @@ impl<P: Provider> Run<P> {
                     Usage::default(),
                 )
             }
-            Err(_) => {
-                let reason = self.deadline.map_or_else(
-                    || "child deadline reached".to_string(),
-                    |deadline| format!("child deadline reached after {}s", deadline.as_secs()),
-                );
-                let diagnostic = match self.child.abort_note(&reason) {
-                    Ok(()) => reason,
-                    Err(error) => format!("{reason}; cannot close child turn: {error}"),
-                };
-                (
-                    ChildState::Aborted(self.child.result(
-                        "",
-                        0,
-                        Usage::default(),
-                        Some(&diagnostic),
-                        access,
-                    )),
-                    Usage::default(),
-                )
-            }
+            Err(_) => (
+                ChildState::Aborted(self.deadline_result(access)),
+                Usage::default(),
+            ),
+        }
+    }
+
+    fn deadline_result(&mut self, access: Access) -> ChildResult {
+        let reason = self.deadline.map_or_else(
+            || "child deadline reached".to_string(),
+            |deadline| format!("child deadline reached after {}s", deadline.as_secs()),
+        );
+        let diagnostic = match self.child.abort_note(&reason) {
+            Ok(()) => reason,
+            Err(error) => format!("{reason}; cannot close child turn: {error}"),
         };
-        self.record.state = state;
-        if !matches!(self.record.state, ChildState::Completed(_)) {
-            match accounting_at(self.child.session.path()) {
-                Ok((_, reported)) => {
-                    usage = reported;
-                    if let Some(result) = result_mut(&mut self.record.state) {
-                        result.usage.clone_from(&usage);
-                    }
+        self.child
+            .result("", 0, Usage::default(), Some(&diagnostic), access)
+    }
+
+    fn reported_usage(&mut self, mut usage: Usage) -> Usage {
+        if matches!(self.record.state, ChildState::Completed(_)) {
+            return usage;
+        }
+        match accounting_at(self.child.session.path()) {
+            Ok((_, reported)) => {
+                usage = reported;
+                if let Some(result) = result_mut(&mut self.record.state) {
+                    result.usage.clone_from(&usage);
                 }
-                Err(error) => fail_record(&mut self.record, &error.to_string()),
             }
+            Err(error) => fail_record(&mut self.record, &error.to_string()),
         }
-        let paths = match access {
-            Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
-            Access::Research => Vec::new(),
-        };
-        Done {
-            record: self.record,
-            tree: self.guard.disarm(),
-            paths,
-            usage,
-            billed: self.child.session.spent_tokens(),
-            settled: false,
-            millis: super::elapsed_millis(self.started),
-        }
+        usage
     }
 }

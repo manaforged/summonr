@@ -154,26 +154,30 @@ impl Reader {
             } => self.review(root, path, hunk, op),
             Cmd::Trees => self.trees(),
             Cmd::Offers => self.offers(),
-            Cmd::Save(file, text) => {
-                let result = crate::durable::store::stage(&file, text.as_bytes(), true)
-                    .and_then(crate::durable::store::Staged::commit)
-                    .map_err(|error| error.to_string());
-                self.send(Msg::Saved { file, text, result });
-            }
-            Cmd::View(root, path) => {
-                let root = root.as_deref().unwrap_or(&self.workspace);
-                match view(root, &path) {
-                    Ok((text, added, image)) => self.send(Msg::View {
-                        file: root.join(&path),
-                        path,
-                        text,
-                        added,
-                        image,
-                    }),
-                    Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
-                }
-            }
+            Cmd::Save(file, text) => self.save(file, text),
+            Cmd::View(root, path) => self.show(root.as_deref(), path),
             _command => unreachable!("serve routes only pane commands"),
+        }
+    }
+
+    fn save(&self, file: PathBuf, text: String) {
+        let result = crate::durable::store::stage(&file, text.as_bytes(), true)
+            .and_then(crate::durable::store::Staged::commit)
+            .map_err(|error| error.to_string());
+        self.send(Msg::Saved { file, text, result });
+    }
+
+    fn show(&self, root: Option<&Path>, path: String) {
+        let root = root.unwrap_or(&self.workspace);
+        match view(root, &path) {
+            Ok((text, added, image)) => self.send(Msg::View {
+                file: root.join(&path),
+                path,
+                text,
+                added,
+                image,
+            }),
+            Err(error) => self.send(Msg::System(format!("cannot view {path}: {error}"))),
         }
     }
 

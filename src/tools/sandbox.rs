@@ -5,13 +5,17 @@ use std::process::Stdio;
 
 use tokio::process::Command;
 
-use crate::error::{Error, Result};
+#[cfg(sandboxed)]
+use crate::error::Error;
+use crate::error::Result;
 
 #[cfg(all(windows, sandboxed))]
 pub(crate) mod windows;
 
 #[cfg(target_os = "macos")]
 mod macos;
+
+mod discover;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Sandbox {
@@ -57,98 +61,7 @@ impl Network {
 
 impl Sandbox {
     pub(crate) fn discover(workspace: &Path, network: Network, write: &[PathBuf]) -> Result<Self> {
-        let deny_network = network == Network::Denied;
-        #[cfg(not(sandboxed))]
-        {
-            let _ = (workspace, deny_network, write);
-            Err(Error::Config(
-                "--sandbox needs macOS Seatbelt, Linux bubblewrap, or a windows-sandbox build"
-                    .to_string(),
-            ))
-        }
-
-        #[cfg(sandboxed)]
-        {
-            let workspace = workspace.canonicalize().map_err(|error| {
-                Error::Config(format!("cannot open sandbox workspace: {error}"))
-            })?;
-            let write = write
-                .iter()
-                .map(|path| path.canonicalize().unwrap_or_else(|_| path.clone()))
-                .collect::<Vec<PathBuf>>();
-            #[cfg(any(target_os = "macos", target_os = "linux"))]
-            let temp = std::env::temp_dir().canonicalize().map_err(|error| {
-                Error::Config(format!(
-                    "cannot open the system temp directory for sandbox: {error}"
-                ))
-            })?;
-
-            #[cfg(all(windows, sandboxed))]
-            {
-                let executable = std::env::current_exe()?;
-                #[cfg(test)]
-                let executable = executable
-                    .parent()
-                    .and_then(Path::parent)
-                    .ok_or_else(|| {
-                        Error::Config("cannot locate the sandbox test executable".to_string())
-                    })?
-                    .join("summonr.exe");
-                let sandbox = Self {
-                    backend: Backend::Windows { executable },
-                    workspace,
-                    deny_network,
-                    write,
-                };
-                sandbox.probe()?;
-                Ok(sandbox)
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let executable = find_in_path("sandbox-exec").ok_or_else(|| {
-                    Error::Config(
-                        "--sandbox requires macOS sandbox-exec (Seatbelt), but it is not available"
-                            .to_string(),
-                    )
-                })?;
-                let profile = macos::profile(&workspace, &temp, &write, deny_network, false)?;
-                let read_profile = macos::profile(&workspace, &temp, &write, deny_network, true)?;
-                let sandbox = Self {
-                    backend: Backend::Mac {
-                        executable,
-                        profile,
-                        read_profile,
-                    },
-                    workspace,
-                    deny_network,
-                    write,
-                };
-                sandbox.probe()?;
-                Ok(sandbox)
-            }
-
-            #[cfg(target_os = "linux")]
-            {
-                let executable = find_in_path("bwrap")
-                    .or_else(|| find_in_path("bubblewrap"))
-                    .ok_or_else(|| {
-                        Error::Config(
-                            "--sandbox requires Linux bubblewrap (bwrap), but it is not available"
-                                .to_string(),
-                        )
-                    })?;
-                let sandbox = Self {
-                    backend: Backend::Linux { executable },
-                    workspace,
-                    temp,
-                    deny_network,
-                    write,
-                };
-                sandbox.probe()?;
-                Ok(sandbox)
-            }
-        }
+        discover::discover(workspace, network == Network::Denied, write)
     }
 
     pub(crate) fn at(&self, workspace: &Path) -> Result<Self> {

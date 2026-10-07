@@ -184,33 +184,8 @@ fn tally(events: &[Event], receipt: &mut Receipt) {
                 arguments,
             } => {
                 calls.insert(id.as_str(), name.as_str());
-                let kind = crate::tools::Builtin::of(name);
-                let read = kind == Some(crate::tools::Builtin::Read);
-                let op = crate::tools::retired_op(name);
-                if kind == Some(crate::tools::Builtin::Web)
-                    || (read && matches!(op, Some("search" | "list")))
-                {
-                    receipt.searches += 1;
-                } else if kind == Some(crate::tools::Builtin::RunCommand) {
-                    receipt.commands += 1;
-                } else if read
-                    && matches!(op, None | Some("file"))
-                    && let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments)
-                {
-                    let pattern = value
-                        .get("pattern")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|pattern| !pattern.is_empty());
-                    let glob = value
-                        .get("glob")
-                        .and_then(serde_json::Value::as_str)
-                        .is_some_and(|glob| !glob.trim().is_empty());
-                    if pattern || glob {
-                        receipt.searches += 1;
-                    } else if let Some(path) = value.get("path").and_then(serde_json::Value::as_str)
-                    {
-                        read_calls.insert(id.as_str(), path.to_string());
-                    }
+                if let Some(path) = tally_call(name, arguments, receipt) {
+                    read_calls.insert(id.as_str(), path);
                 }
             }
             Event::ToolResult {
@@ -238,6 +213,42 @@ fn tally(events: &[Event], receipt: &mut Receipt) {
         }
     }
     receipt.reads = reads.len();
+}
+
+fn tally_call(name: &str, arguments: &str, receipt: &mut Receipt) -> Option<String> {
+    let kind = crate::tools::Builtin::of(name);
+    let read = kind == Some(crate::tools::Builtin::Read);
+    let op = crate::tools::retired_op(name);
+    if kind == Some(crate::tools::Builtin::Web) || (read && matches!(op, Some("search" | "list"))) {
+        receipt.searches += 1;
+    } else if kind == Some(crate::tools::Builtin::RunCommand) {
+        receipt.commands += 1;
+    } else if read
+        && matches!(op, None | Some("file"))
+        && let Ok(value) = serde_json::from_str::<serde_json::Value>(arguments)
+    {
+        return tally_read(&value, receipt);
+    }
+    None
+}
+
+fn tally_read(value: &serde_json::Value, receipt: &mut Receipt) -> Option<String> {
+    let pattern = value
+        .get("pattern")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|pattern| !pattern.is_empty());
+    let glob = value
+        .get("glob")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|glob| !glob.trim().is_empty());
+    if pattern || glob {
+        receipt.searches += 1;
+        return None;
+    }
+    value
+        .get("path")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
 }
 
 fn render(receipt: &Receipt) -> String {

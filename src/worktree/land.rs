@@ -11,6 +11,13 @@ pub(crate) fn reconcile_children(
     if children.is_empty() {
         return Ok(Vec::new());
     }
+    let start = children_base(target, children)?;
+    let combined = combine_children(children)?;
+    apply_combined(target, &start, &combined)?;
+    Ok(remove_children(children))
+}
+
+fn children_base(target: &Path, children: &[(Tree, Vec<String>)]) -> Result<String> {
     let start = crate::diff::git_env(target, &[], &["rev-parse", "HEAD"])?;
     let dirty = crate::diff::git_env(
         target,
@@ -32,7 +39,10 @@ pub(crate) fn reconcile_children(
             )));
         }
     }
+    Ok(start)
+}
 
+fn combine_children(children: &[(Tree, Vec<String>)]) -> Result<Vec<u8>> {
     let patches = children
         .iter()
         .map(|(tree, paths)| patch(&tree.path, paths))
@@ -52,8 +62,10 @@ pub(crate) fn reconcile_children(
         .collect::<Vec<_>>();
     paths.sort();
     paths.dedup();
-    let combined = patch(integration, &paths)?;
+    patch(integration, &paths)
+}
 
+fn apply_combined(target: &Path, start: &str, combined: &[u8]) -> Result<()> {
     let current = crate::diff::git_env(target, &[], &["rev-parse", "HEAD"])?;
     let dirty = crate::diff::git_env(
         target,
@@ -67,14 +79,17 @@ pub(crate) fn reconcile_children(
         ));
     }
     if !combined.is_empty() {
-        apply(target, &combined).map_err(|error| {
+        apply(target, combined).map_err(|error| {
             Error::Config(format!(
                 "cannot apply writable child changes to {}: {error}",
                 target.display()
             ))
         })?;
     }
+    Ok(())
+}
 
+fn remove_children(children: &[(Tree, Vec<String>)]) -> Vec<String> {
     let mut warnings = Vec::new();
     for (tree, _) in children {
         if let Err(error) = remove_child(tree) {
@@ -84,7 +99,7 @@ pub(crate) fn reconcile_children(
             ));
         }
     }
-    Ok(warnings)
+    warnings
 }
 
 fn patch(tree: &Path, paths: &[String]) -> Result<Vec<u8>> {

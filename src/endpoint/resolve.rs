@@ -95,39 +95,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         && !base.trim().is_empty()
         && matches!(name, None | Some(ENV_ENDPOINT))
     {
-        return Ok(Endpoint {
-            name: ENV_ENDPOINT.to_string(),
-            base_url: Some(trim_slash(&base)),
-            model: model
-                .map(str::to_string)
-                .or_else(|| std::env::var("SUMMONR_MODEL").ok())
-                .filter(|value| !value.trim().is_empty())
-                .or_else(|| super::preset::env_default().map(|preset| preset.model.to_string()))
-                .unwrap_or_default(),
-            api_key: env_key(&["SUMMONR_API_KEY"]).or_else(|| {
-                super::preset::env_default().and_then(|preset| env_key(preset.env_keys))
-            }),
-            source: None,
-            oauth: None,
-            body: std::env::var("SUMMONR_MAX_TOKENS")
-                .ok()
-                .and_then(|value| value.trim().parse::<u32>().ok())
-                .map(|tokens| serde_json::json!({ "max_tokens": tokens })),
-            context_window: None,
-            idle_timeout_secs: None,
-            effort: None,
-            price: None,
-            env: BTreeMap::new(),
-            headers: BTreeMap::new(),
-            wire: Wire::Completions,
-            fallback: Vec::new(),
-            compact_tokens: None,
-            images: None,
-            keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
-            opencode: hosted(&base).is_some_and(|preset| preset.opencode),
-            prompt_cache_key: hosted(&base).is_some_and(|preset| preset.prompt_cache_key),
-            reasoning: reasoning::from_preset(hosted(&base)),
-        });
+        return Ok(env_endpoint(&base, model));
     }
 
     let file = config::file()?;
@@ -135,22 +103,9 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
 
     let chosen = match chosen {
         Some(chosen) => chosen,
-        None => match first_ready(&file) {
-            Some(name) => name,
-            None if need.key() => return Err(Error::Setup(no_seat())),
-            None => presets()
-                .next()
-                .map_or_else(String::new, |row| row.name.to_string()),
-        },
+        None => unchosen(&file, need)?,
     };
-    let mut endpoint = seat(&file, &chosen).ok_or_else(|| {
-        let names = names().unwrap_or_default();
-        let hint = closest(&chosen, &names)
-            .map_or_else(String::new, |name| format!("did you mean `{name}`? "));
-        Error::Config(format!(
-            "unknown endpoint `{chosen}`: {hint}`summonr endpoints` lists them"
-        ))
-    })?;
+    let mut endpoint = seat(&file, &chosen).ok_or_else(|| unknown(&chosen))?;
 
     if let Some(model) = model_flag {
         endpoint.model = named_model(&endpoint.name, &model);
@@ -172,6 +127,60 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
     }
 
     fill_key(endpoint, need.key())
+}
+
+fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
+    Endpoint {
+        name: ENV_ENDPOINT.to_string(),
+        base_url: Some(trim_slash(base)),
+        model: model
+            .map(str::to_string)
+            .or_else(|| std::env::var("SUMMONR_MODEL").ok())
+            .filter(|value| !value.trim().is_empty())
+            .or_else(|| super::preset::env_default().map(|preset| preset.model.to_string()))
+            .unwrap_or_default(),
+        api_key: env_key(&["SUMMONR_API_KEY"])
+            .or_else(|| super::preset::env_default().and_then(|preset| env_key(preset.env_keys))),
+        source: None,
+        oauth: None,
+        body: std::env::var("SUMMONR_MAX_TOKENS")
+            .ok()
+            .and_then(|value| value.trim().parse::<u32>().ok())
+            .map(|tokens| serde_json::json!({ "max_tokens": tokens })),
+        context_window: None,
+        idle_timeout_secs: None,
+        effort: None,
+        price: None,
+        env: BTreeMap::new(),
+        headers: BTreeMap::new(),
+        wire: Wire::Completions,
+        fallback: Vec::new(),
+        compact_tokens: None,
+        images: None,
+        keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
+        opencode: hosted(base).is_some_and(|preset| preset.opencode),
+        prompt_cache_key: hosted(base).is_some_and(|preset| preset.prompt_cache_key),
+        reasoning: reasoning::from_preset(hosted(base)),
+    }
+}
+
+fn unchosen(file: &File, need: Need) -> Result<String> {
+    match first_ready(file) {
+        Some(name) => Ok(name),
+        None if need.key() => Err(Error::Setup(no_seat())),
+        None => Ok(presets()
+            .next()
+            .map_or_else(String::new, |row| row.name.to_string())),
+    }
+}
+
+fn unknown(chosen: &str) -> Error {
+    let names = names().unwrap_or_default();
+    let hint =
+        closest(chosen, &names).map_or_else(String::new, |name| format!("did you mean `{name}`? "));
+    Error::Config(format!(
+        "unknown endpoint `{chosen}`: {hint}`summonr endpoints` lists them"
+    ))
 }
 
 fn first_ready(file: &File) -> Option<String> {

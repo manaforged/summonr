@@ -126,26 +126,7 @@ pub(super) fn replace_text_patch(
         )
     } else {
         match tag {
-            Some(tag) => {
-                let line_index = resolve_span(text, tag, None)
-                    .or_else(|error| relocate_exact_anchor(text, tag).ok_or(error))?
-                    .0;
-                let line_start = line_byte(text, line_index);
-                let line_end = text[line_start..]
-                    .find('\n')
-                    .map_or(text.len(), |offset| line_start + offset);
-                let matches = text
-                    .match_indices(old)
-                    .filter(|(byte, _)| *byte >= line_start && *byte <= line_end)
-                    .collect::<Vec<_>>();
-                if matches.len() != 1 {
-                    return Err(Error::Tool(format!(
-                        "replace_text.old must start exactly once on the anchored line; found {}",
-                        matches.len()
-                    )));
-                }
-                (matches[0].0, line_index)
-            }
+            Some(tag) => tagged_match(text, tag, old)?,
             None => {
                 if global_matches == 0 {
                     if let Some(patch) = relaxed_patch(text, old, new) {
@@ -153,26 +134,55 @@ pub(super) fn replace_text_patch(
                     }
                     return Err(no_match(text, old));
                 }
-                let mut places = text.match_indices(old).map(|(byte, _)| {
-                    text[..byte].bytes().filter(|byte| *byte == b'\n').count() + 1
-                });
-                let mut lines_list = Vec::new();
-                for _ in 0..10 {
-                    let Some(line) = places.next() else { break };
-                    lines_list.push(line.to_string());
-                }
-                let more = if global_matches > 10 {
-                    format!(" and {} more", global_matches - 10)
-                } else {
-                    String::new()
-                };
-                return Err(Error::Tool(format!(
-                    "old occurs {global_matches} times; pass tag to anchor one edit, or replace_all true to change them all. Matches start on lines {}{more}",
-                    lines_list.join(", ")
-                )));
+                return Err(ambiguous(text, old, global_matches));
             }
         }
     };
+    Ok(span_patch(text, old, new, byte, line_index))
+}
+
+fn tagged_match(text: &str, tag: &str, old: &str) -> Result<(usize, usize)> {
+    let line_index = resolve_span(text, tag, None)
+        .or_else(|error| relocate_exact_anchor(text, tag).ok_or(error))?
+        .0;
+    let line_start = line_byte(text, line_index);
+    let line_end = text[line_start..]
+        .find('\n')
+        .map_or(text.len(), |offset| line_start + offset);
+    let matches = text
+        .match_indices(old)
+        .filter(|(byte, _)| *byte >= line_start && *byte <= line_end)
+        .collect::<Vec<_>>();
+    if matches.len() != 1 {
+        return Err(Error::Tool(format!(
+            "replace_text.old must start exactly once on the anchored line; found {}",
+            matches.len()
+        )));
+    }
+    Ok((matches[0].0, line_index))
+}
+
+fn ambiguous(text: &str, old: &str, global_matches: usize) -> Error {
+    let mut places = text
+        .match_indices(old)
+        .map(|(byte, _)| text[..byte].bytes().filter(|byte| *byte == b'\n').count() + 1);
+    let mut lines_list = Vec::new();
+    for _ in 0..10 {
+        let Some(line) = places.next() else { break };
+        lines_list.push(line.to_string());
+    }
+    let more = if global_matches > 10 {
+        format!(" and {} more", global_matches - 10)
+    } else {
+        String::new()
+    };
+    Error::Tool(format!(
+        "old occurs {global_matches} times; pass tag to anchor one edit, or replace_all true to change them all. Matches start on lines {}{more}",
+        lines_list.join(", ")
+    ))
+}
+
+fn span_patch(text: &str, old: &str, new: &str, byte: usize, line_index: usize) -> Patch {
     let end_byte = byte + old.len();
     let end_line = text.as_bytes()[..end_byte]
         .iter()
@@ -184,7 +194,7 @@ pub(super) fn replace_text_patch(
         .map_or(text.len(), |offset| end_byte + offset);
     let suffix = &text[end_byte..line_end];
     let replacement = format!("{}{new}{suffix}", &text[start_byte..byte]);
-    Ok(Patch {
+    Patch {
         start: line_index,
         end: end_line + 1,
         anchor_start: line_index,
@@ -195,7 +205,7 @@ pub(super) fn replace_text_patch(
             lines(&replacement)
         },
         relaxed: false,
-    })
+    }
 }
 
 fn relaxed_patch(text: &str, old: &str, new: &str) -> Option<Patch> {

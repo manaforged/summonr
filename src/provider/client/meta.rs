@@ -96,28 +96,27 @@ fn failure_kind(code: u16, lower: &str) -> ProviderFailureKind {
     match code {
         401 | 403 => ProviderFailureKind::Authentication,
         429 => ProviderFailureKind::RateLimited,
-        400 | 500..=599
-            if lower.contains("tool call")
-                && lower.contains("arguments")
-                && lower.contains("json")
-                && (lower.contains("parse")
-                    || lower.contains("invalid")
-                    || lower.contains("valid")) =>
-        {
-            ProviderFailureKind::MalformedToolCall
-        }
+        400 | 500..=599 if malformed_tool_call(lower) => ProviderFailureKind::MalformedToolCall,
         500..=599 => ProviderFailureKind::Server,
-        400 if (lower.contains("context")
-            && ["window", "length", "too long", "exceed"]
-                .iter()
-                .any(|word| lower.contains(word)))
-            || lower.contains("maximum allowed length")
-            || (lower.contains("input length") && lower.contains("exceed")) =>
-        {
-            ProviderFailureKind::ContextOverflow
-        }
+        400 if context_overflow(lower) => ProviderFailureKind::ContextOverflow,
         _ => ProviderFailureKind::Http,
     }
+}
+
+fn malformed_tool_call(lower: &str) -> bool {
+    lower.contains("tool call")
+        && lower.contains("arguments")
+        && lower.contains("json")
+        && (lower.contains("parse") || lower.contains("invalid") || lower.contains("valid"))
+}
+
+fn context_overflow(lower: &str) -> bool {
+    (lower.contains("context")
+        && ["window", "length", "too long", "exceed"]
+            .iter()
+            .any(|word| lower.contains(word)))
+        || lower.contains("maximum allowed length")
+        || (lower.contains("input length") && lower.contains("exceed"))
 }
 
 fn retry_delay(text: &str) -> Option<u64> {

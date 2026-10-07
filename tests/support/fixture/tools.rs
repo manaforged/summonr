@@ -10,6 +10,7 @@ use super::Out;
 const PNG_1X1: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==";
 const LINE_WIDTH: usize = 99;
 const EXIT_CODE: i32 = 3;
+const LEAK_DELAY: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Copy)]
 pub(super) enum Tool {
@@ -165,7 +166,7 @@ pub(super) const TOOLS: &[Row] = &[
     Row {
         tool: Tool::Leak,
         name: "leak",
-        description: "Print MCP_FIXTURE_SECRET to stderr, then exit.",
+        description: "Close stdout, then print MCP_FIXTURE_SECRET to stderr and exit.",
         read_only: true,
         arg: None,
     },
@@ -251,6 +252,8 @@ pub(super) fn run(tool: Tool, args: &Value) -> Option<Value> {
         }
         Tool::Exit => process::exit(EXIT_CODE),
         Tool::Leak => {
+            close_stdout();
+            wait(LEAK_DELAY);
             eprintln!(
                 "token {}",
                 env::var("MCP_FIXTURE_SECRET").unwrap_or_default()
@@ -341,3 +344,13 @@ pub(super) fn converse(tool: Tool, out: &Out, id: &Value, params: &Value) {
         | Tool::Leak => {}
     }
 }
+
+#[cfg(unix)]
+#[expect(unsafe_code, reason = "std cannot close the process's stdout")]
+fn close_stdout() {
+    // SAFETY: fd 1 is this process's stdout and nothing writes to it after the close.
+    unsafe { libc::close(1) };
+}
+
+#[cfg(not(unix))]
+fn close_stdout() {}

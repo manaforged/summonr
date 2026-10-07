@@ -19,7 +19,7 @@ use super::entry;
 use super::footer;
 use super::panels;
 use super::todos;
-use super::{App, Entry, canvas};
+use super::{App, Entry, Model, canvas};
 use crate::prefs::Prefs;
 use crate::tui::ToolState;
 
@@ -129,29 +129,8 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
         return super::super::desktop::entry::row(app, index, spacing);
     }
     let probe = app.clone();
-    let current = sigil::reactive::derived(move || {
-        probe.model.with(|model| {
-            let at = entry::slot(&model.entries, index);
-            let range = match &at {
-                entry::Slot::Lead(range) => range.clone(),
-                entry::Slot::Single => index..index + 1,
-                entry::Slot::Member => index..index,
-            };
-            let last = model.entries.len();
-            let live = model.busy_since.is_some();
-            let mark: Vec<_> = model
-                .entries
-                .get(range.clone())
-                .unwrap_or_default()
-                .iter()
-                .enumerate()
-                .map(|(offset, item)| {
-                    content(item, live && range.start + offset + 1 == last, &model.prefs)
-                })
-                .collect();
-            (at, mark)
-        })
-    });
+    let current =
+        sigil::reactive::derived(move || probe.model.with(|model| slot_marks(model, index)));
     container()
         .layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0))
         .children_reactive(move || {
@@ -161,49 +140,73 @@ fn row(app: App, index: usize, spacing: (f32, f32)) -> NodeBuilder {
                     container().layout(LayoutStyle::flex_column().fill_width().min_size(0.0, 0.0)),
                 ],
                 entry::Slot::Lead(range) if range.end - range.start > 1 => {
-                    let rows = app.model.with(|model| {
-                        let last = model.entries.len();
-                        let prefs = model.prefs.clone();
-                        let live_turn = model.busy_since.is_some();
-                        range
-                            .map(|at| {
-                                (
-                                    at,
-                                    model.entries.get(at).cloned(),
-                                    live_turn && at + 1 == last,
-                                    prefs.clone(),
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                    });
-                    let mut column = container().layout(
-                        LayoutStyle::flex_column()
-                            .fill_width()
-                            .min_size(0.0, 0.0)
-                            .gap(0.0),
-                    );
-                    for (at, item, live, prefs) in rows {
-                        if let Some(item) = item {
-                            column = column.child(entry::row(item, live, &prefs, &app, at));
-                        }
-                    }
-                    vec![inset(column, spacing)]
+                    vec![inset(group(&app, range), spacing)]
                 }
-                entry::Slot::Lead(_) | entry::Slot::Single => {
-                    let (item, live, prefs) = app.model.with(|model| {
-                        (
-                            model.entries.get(index).cloned(),
-                            model.busy_since.is_some() && index + 1 == model.entries.len(),
-                            model.prefs.clone(),
-                        )
-                    });
-                    item.map(|item| {
-                        vec![inset(entry::row(item, live, &prefs, &app, index), spacing)]
-                    })
-                    .unwrap_or_default()
-                }
+                entry::Slot::Lead(_) | entry::Slot::Single => single(&app, index, spacing),
             })
         })
+}
+
+fn slot_marks(model: &Model, index: usize) -> (entry::Slot, Vec<Content>) {
+    let at = entry::slot(&model.entries, index);
+    let range = match &at {
+        entry::Slot::Lead(range) => range.clone(),
+        entry::Slot::Single => index..index + 1,
+        entry::Slot::Member => index..index,
+    };
+    let last = model.entries.len();
+    let live = model.busy_since.is_some();
+    let mark: Vec<_> = model
+        .entries
+        .get(range.clone())
+        .unwrap_or_default()
+        .iter()
+        .enumerate()
+        .map(|(offset, item)| content(item, live && range.start + offset + 1 == last, &model.prefs))
+        .collect();
+    (at, mark)
+}
+
+fn group(app: &App, range: std::ops::Range<usize>) -> NodeBuilder {
+    let rows = app.model.with(|model| {
+        let last = model.entries.len();
+        let prefs = model.prefs.clone();
+        let live_turn = model.busy_since.is_some();
+        range
+            .map(|at| {
+                (
+                    at,
+                    model.entries.get(at).cloned(),
+                    live_turn && at + 1 == last,
+                    prefs.clone(),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    let mut column = container().layout(
+        LayoutStyle::flex_column()
+            .fill_width()
+            .min_size(0.0, 0.0)
+            .gap(0.0),
+    );
+    for (at, item, live, prefs) in rows {
+        if let Some(item) = item {
+            column = column.child(entry::row(item, live, &prefs, app, at));
+        }
+    }
+    column
+}
+
+fn single(app: &App, index: usize, spacing: (f32, f32)) -> Vec<NodeBuilder> {
+    let (item, live, prefs) = app.model.with(|model| {
+        (
+            model.entries.get(index).cloned(),
+            model.busy_since.is_some() && index + 1 == model.entries.len(),
+            model.prefs.clone(),
+        )
+    });
+    item.map(|item| vec![inset(entry::row(item, live, &prefs, app, index), spacing)])
+        .unwrap_or_default()
 }
 
 fn inset(node: NodeBuilder, spacing: (f32, f32)) -> NodeBuilder {

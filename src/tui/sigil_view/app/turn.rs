@@ -11,43 +11,12 @@ impl App {
         if self.view_edit.peek() {
             return;
         }
-        let mut text = self.expand_pastes(&self.draft.peek());
-        if let Some((line, note)) = crate::command::renamed(&text) {
-            if let Some(note) = note {
-                self.push_entry(Entry::System(note));
-            }
-            text = line;
-        }
+        let text = self.submit_text();
         if text.trim().is_empty() && self.attachments.borrow().is_empty() {
             self.steer_queued();
             return;
         }
-        let argument = match argument(&text) {
-            Ok(argument) => argument,
-            Err(error) => {
-                self.push_entry(Entry::Error(error));
-                self.splash.set(false);
-                self.refresh();
-                return;
-            }
-        };
-        if self.local(&text, argument) {
-            self.replace(String::new());
-            return;
-        }
-        if text.trim_start().starts_with('/') && !crate::command::server_prompt(&text) {
-            self.replace(String::new());
-            self.scroll_y.set(self.max_scroll.peek());
-            drop(self.cmd.send(Cmd::Command(text)));
-            return;
-        }
-        let peers = super::suggest::peers(&text, &self.model.get());
-        if !peers.is_empty() {
-            self.replace(String::new());
-            self.splash.set(false);
-            self.push_entry(Entry::User(text.clone()));
-            drop(self.cmd.send(Cmd::Send(peers, text)));
-            self.refresh();
+        if self.dispatch_line(&text) {
             return;
         }
         let Some(mut input) = self.attach(&text) else {
@@ -60,8 +29,59 @@ impl App {
             return;
         }
         self.splash.set(false);
+        self.record_user(&text, pending, &mut input);
+        let command = self.queue_command(input);
+        drop(self.cmd.send(command));
+        self.scroll_y.set(self.max_scroll.peek());
+        self.refresh();
+    }
+
+    fn submit_text(&self) -> String {
+        let mut text = self.expand_pastes(&self.draft.peek());
+        if let Some((line, note)) = crate::command::renamed(&text) {
+            if let Some(note) = note {
+                self.push_entry(Entry::System(note));
+            }
+            text = line;
+        }
+        text
+    }
+
+    fn dispatch_line(&self, text: &str) -> bool {
+        let argument = match argument(text) {
+            Ok(argument) => argument,
+            Err(error) => {
+                self.push_entry(Entry::Error(error));
+                self.splash.set(false);
+                self.refresh();
+                return true;
+            }
+        };
+        if self.local(text, argument) {
+            self.replace(String::new());
+            return true;
+        }
+        if text.trim_start().starts_with('/') && !crate::command::server_prompt(text) {
+            self.replace(String::new());
+            self.scroll_y.set(self.max_scroll.peek());
+            drop(self.cmd.send(Cmd::Command(text.to_owned())));
+            return true;
+        }
+        let peers = super::suggest::peers(text, &self.model.get());
+        if !peers.is_empty() {
+            self.replace(String::new());
+            self.splash.set(false);
+            self.push_entry(Entry::User(text.to_owned()));
+            drop(self.cmd.send(Cmd::Send(peers, text.to_owned())));
+            self.refresh();
+            return true;
+        }
+        false
+    }
+
+    fn record_user(&self, text: &str, pending: Vec<Attachment>, input: &mut UserInput) {
         self.model_mut(|model| {
-            model.entries.push(Entry::User(text.clone()));
+            model.entries.push(Entry::User(text.to_owned()));
             for attachment in pending {
                 if let Some(source) = attachment.source {
                     model.entries.push(Entry::Image {
@@ -73,8 +93,11 @@ impl App {
                 input.images.push(attachment.image);
             }
         });
+    }
+
+    fn queue_command(&self, input: UserInput) -> Cmd {
         let activity = self.model.get().busy_since.map(|(activity, _)| activity);
-        let command = match activity {
+        match activity {
             Some(Activity::Turn) => {
                 self.push_entry(Entry::System(QUEUED_NOW.to_string()));
                 self.model_mut(|model| model.queued.1 += 1);
@@ -85,10 +108,7 @@ impl App {
                 Cmd::Queue(input)
             }
             None => Cmd::Submit(input),
-        };
-        drop(self.cmd.send(command));
-        self.scroll_y.set(self.max_scroll.peek());
-        self.refresh();
+        }
     }
 
     fn steer_queued(&self) {

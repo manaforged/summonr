@@ -224,6 +224,21 @@ impl SessionDriver {
                 "external Work requires Steps or Goal policy".to_string(),
             ));
         }
+        self.adopt_external_work(text, policy)?;
+        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
+        if work.plan.is_none() {
+            work.select(text, commands)?;
+        }
+        let expected = crate::durable::work::checks(text, policy, commands)?;
+        if work.plan.as_deref() != Some(text) || work.checks != expected {
+            return Err(DriverError::State(
+                "the plan or completion checks changed while Work was active".to_string(),
+            ));
+        }
+        self.resume_external_work()
+    }
+
+    fn adopt_external_work(&mut self, text: &str, policy: Policy) -> Result<(), DriverError> {
         match self.active() {
             Some(work)
                 if std::mem::discriminant(&work.policy) != std::mem::discriminant(&policy) =>
@@ -240,17 +255,12 @@ impl SessionDriver {
             Some(_) => {}
             None => self.set_work(text, policy)?,
         }
-        let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
-        if work.plan.is_none() {
-            work.select(text, commands)?;
-        }
-        let expected = crate::durable::work::checks(text, policy, commands)?;
-        if work.plan.as_deref() != Some(text) || work.checks != expected {
-            return Err(DriverError::State(
-                "the plan or completion checks changed while Work was active".to_string(),
-            ));
-        }
-        match work.stage() {
+        Ok(())
+    }
+
+    fn resume_external_work(&mut self) -> Result<(), DriverError> {
+        let stage = self.work.as_ref().ok_or(DriverError::NoWork)?.stage();
+        match stage {
             Some(Stage::Plan) => {
                 self.checkpoint()?;
                 self.execute()

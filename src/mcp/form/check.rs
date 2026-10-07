@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::{Field, FieldKind, TextFormat};
+use super::{Choice, Field, FieldKind, TextFormat};
 
 impl Field {
     pub fn check(&self, value: &Value) -> Result<(), String> {
@@ -15,43 +15,15 @@ impl Field {
                 let text = value
                     .as_str()
                     .ok_or_else(|| format!("{title} takes text"))?;
-                let length = text.chars().count();
-                if let Some(min) = min_length.filter(|min| length < *min) {
-                    return Err(format!("{title} is shorter than {min} characters"));
-                }
-                if let Some(max) = max_length.filter(|max| length > *max) {
-                    return Err(format!("{title} is longer than {max} characters"));
-                }
-                if let Some(pattern) = pattern
-                    && regex::Regex::new(pattern).is_ok_and(|pattern| !pattern.is_match(text))
-                {
-                    return Err(format!("{title} does not match {pattern}"));
-                }
-                match format {
-                    Some(format) if !format.accepts(text) => {
-                        Err(format!("{title} is not a valid {}", format.label()))
-                    }
-                    Some(_) | None => Ok(()),
-                }
+                check_length(title, text, *min_length, *max_length)?;
+                check_pattern(title, text, pattern.as_deref())?;
+                check_format(title, text, *format)
             }
             FieldKind::Number {
                 integer,
                 minimum,
                 maximum,
-            } => {
-                let number = value
-                    .as_f64()
-                    .ok_or_else(|| format!("{title} takes a number"))?;
-                if *integer && number.fract() != 0.0 {
-                    return Err(format!("{title} takes a whole number"));
-                }
-                if minimum.is_some_and(|min| number < min)
-                    || maximum.is_some_and(|max| number > max)
-                {
-                    return Err(format!("{title} is out of range"));
-                }
-                Ok(())
-            }
+            } => check_number(title, value, *integer, *minimum, *maximum),
             FieldKind::Boolean => value
                 .is_boolean()
                 .then_some(())
@@ -68,27 +40,88 @@ impl Field {
                 options,
                 min_items,
                 max_items,
-            } => {
-                let items = value
-                    .as_array()
-                    .ok_or_else(|| format!("{title} takes a list"))?;
-                if min_items.is_some_and(|min| items.len() < min)
-                    || max_items.is_some_and(|max| items.len() > max)
-                {
-                    return Err(format!("{title} has the wrong number of choices"));
-                }
-                items
-                    .iter()
-                    .all(|item| {
-                        options
-                            .iter()
-                            .any(|option| item.as_str() == Some(option.value.as_str()))
-                    })
-                    .then_some(())
-                    .ok_or_else(|| format!("{title} has a choice that is not offered"))
-            }
+            } => check_choices(title, value, options, *min_items, *max_items),
         }
     }
+}
+
+fn check_length(
+    title: &str,
+    text: &str,
+    min_length: Option<usize>,
+    max_length: Option<usize>,
+) -> Result<(), String> {
+    let length = text.chars().count();
+    if let Some(min) = min_length.filter(|min| length < *min) {
+        return Err(format!("{title} is shorter than {min} characters"));
+    }
+    if let Some(max) = max_length.filter(|max| length > *max) {
+        return Err(format!("{title} is longer than {max} characters"));
+    }
+    Ok(())
+}
+
+fn check_pattern(title: &str, text: &str, pattern: Option<&str>) -> Result<(), String> {
+    if let Some(pattern) = pattern
+        && regex::Regex::new(pattern).is_ok_and(|pattern| !pattern.is_match(text))
+    {
+        return Err(format!("{title} does not match {pattern}"));
+    }
+    Ok(())
+}
+
+fn check_format(title: &str, text: &str, format: Option<TextFormat>) -> Result<(), String> {
+    match format {
+        Some(format) if !format.accepts(text) => {
+            Err(format!("{title} is not a valid {}", format.label()))
+        }
+        Some(_) | None => Ok(()),
+    }
+}
+
+fn check_number(
+    title: &str,
+    value: &Value,
+    integer: bool,
+    minimum: Option<f64>,
+    maximum: Option<f64>,
+) -> Result<(), String> {
+    let number = value
+        .as_f64()
+        .ok_or_else(|| format!("{title} takes a number"))?;
+    if integer && number.fract() != 0.0 {
+        return Err(format!("{title} takes a whole number"));
+    }
+    if minimum.is_some_and(|min| number < min) || maximum.is_some_and(|max| number > max) {
+        return Err(format!("{title} is out of range"));
+    }
+    Ok(())
+}
+
+fn check_choices(
+    title: &str,
+    value: &Value,
+    options: &[Choice],
+    min_items: Option<usize>,
+    max_items: Option<usize>,
+) -> Result<(), String> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("{title} takes a list"))?;
+    if min_items.is_some_and(|min| items.len() < min)
+        || max_items.is_some_and(|max| items.len() > max)
+    {
+        return Err(format!("{title} has the wrong number of choices"));
+    }
+    items
+        .iter()
+        .all(|item| {
+            options
+                .iter()
+                .any(|option| item.as_str() == Some(option.value.as_str()))
+        })
+        .then_some(())
+        .ok_or_else(|| format!("{title} has a choice that is not offered"))
 }
 
 impl TextFormat {

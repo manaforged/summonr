@@ -82,6 +82,20 @@ impl Default for Hotkeys {
 
 impl Hotkeys {
     pub(crate) fn configured(rows: &BTreeMap<String, String>) -> Result<Self> {
+        let mut hotkeys = Self::assigned(rows)?;
+        if hotkeys.keys.iter().filter(|key| **key == 'y').count() > 1 {
+            return Err(Error::Config(
+                "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
+            ));
+        }
+        for action in Hotkey::ALL {
+            hotkeys.settle(action, rows)?;
+        }
+        hotkeys.unique()?;
+        Ok(hotkeys)
+    }
+
+    fn assigned(rows: &BTreeMap<String, String>) -> Result<Self> {
         let mut hotkeys = Self::default();
         for (name, binding) in rows {
             let action = Hotkey::named(name)
@@ -93,43 +107,42 @@ impl Hotkeys {
             })?;
             hotkeys.keys[action.index()] = key;
         }
-        if hotkeys.keys.iter().filter(|key| **key == 'y').count() > 1 {
-            return Err(Error::Config(
-                "config.toml: hotkey ctrl+y is assigned more than once".to_string(),
-            ));
+        Ok(hotkeys)
+    }
+
+    fn settle(&mut self, action: Hotkey, rows: &BTreeMap<String, String>) -> Result<()> {
+        let index = action.index();
+        let inherited = matches!(
+            action,
+            Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
+        ) && !rows.contains_key(action.name());
+        if self.keys[index] == 'y' || inherited && self.shared(index) {
+            self.keys[index] = Self::default()
+                .keys
+                .into_iter()
+                .chain('a'..='z')
+                .find(|key| available(*key) && !self.keys.contains(key))
+                .ok_or_else(|| Error::Config(format!("no available {} hotkey", action.name())))?;
         }
-        for action in Hotkey::ALL {
-            let index = action.index();
-            let inherited = matches!(
-                action,
-                Hotkey::Copy | Hotkey::Search | Hotkey::History | Hotkey::Fold
-            ) && !rows.contains_key(action.name());
-            if hotkeys.keys[index] == 'y'
-                || inherited
-                    && hotkeys
-                        .keys
-                        .iter()
-                        .enumerate()
-                        .any(|(other, key)| other != index && *key == hotkeys.keys[index])
-            {
-                hotkeys.keys[index] = Self::default()
-                    .keys
-                    .into_iter()
-                    .chain('a'..='z')
-                    .find(|key| available(*key) && !hotkeys.keys.contains(key))
-                    .ok_or_else(|| {
-                        Error::Config(format!("no available {} hotkey", action.name()))
-                    })?;
-            }
-        }
-        for (index, key) in hotkeys.keys.iter().enumerate() {
-            if hotkeys.keys[..index].contains(key) {
+        Ok(())
+    }
+
+    fn shared(&self, index: usize) -> bool {
+        self.keys
+            .iter()
+            .enumerate()
+            .any(|(other, key)| other != index && *key == self.keys[index])
+    }
+
+    fn unique(&self) -> Result<()> {
+        for (index, key) in self.keys.iter().enumerate() {
+            if self.keys[..index].contains(key) {
                 return Err(Error::Config(format!(
                     "config.toml: hotkey ctrl+{key} is assigned more than once"
                 )));
             }
         }
-        Ok(hotkeys)
+        Ok(())
     }
 
     #[must_use]

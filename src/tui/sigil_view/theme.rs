@@ -121,32 +121,40 @@ impl Palette {
     };
 
     fn set(&mut self, key: &str, value: Rgba8) -> bool {
-        match key {
-            "base" | "background" => self.base = value,
-            "text" | "foreground" => self.text = value,
-            "gray" => self.gray = value,
-            "dim" => self.dim = value,
-            "thought" => self.thought = value,
-            "green" => self.green = value,
-            "red" => self.red = value,
-            "cyan" => self.cyan = value,
-            "yellow" => self.yellow = value,
-            "error" => self.error = value,
-            "black" => self.black = value,
-            "user_bg" => self.user_bg = value,
-            "tool_bg" => self.tool_bg = value,
-            "code_bg" => self.code_bg = value,
-            "diff_add_bg" => self.diff_add_bg = value,
-            "diff_del_bg" => self.diff_del_bg = value,
-            "code_comment" => self.code_comment = value,
-            "code_string" => self.code_string = value,
-            "code_keyword" => self.code_keyword = value,
-            "accent" => self.accent = value,
-            _ => return false,
-        }
+        let Some((_, slot)) = SLOTS.iter().find(|(name, _)| *name == key) else {
+            return false;
+        };
+        *slot(self) = value;
         true
     }
 }
+
+type Slot = fn(&mut Palette) -> &mut Rgba8;
+
+const SLOTS: [(&str, Slot); 22] = [
+    ("base", |palette| &mut palette.base),
+    ("background", |palette| &mut palette.base),
+    ("text", |palette| &mut palette.text),
+    ("foreground", |palette| &mut palette.text),
+    ("gray", |palette| &mut palette.gray),
+    ("dim", |palette| &mut palette.dim),
+    ("thought", |palette| &mut palette.thought),
+    ("green", |palette| &mut palette.green),
+    ("red", |palette| &mut palette.red),
+    ("cyan", |palette| &mut palette.cyan),
+    ("yellow", |palette| &mut palette.yellow),
+    ("error", |palette| &mut palette.error),
+    ("black", |palette| &mut palette.black),
+    ("user_bg", |palette| &mut palette.user_bg),
+    ("tool_bg", |palette| &mut palette.tool_bg),
+    ("code_bg", |palette| &mut palette.code_bg),
+    ("diff_add_bg", |palette| &mut palette.diff_add_bg),
+    ("diff_del_bg", |palette| &mut palette.diff_del_bg),
+    ("code_comment", |palette| &mut palette.code_comment),
+    ("code_string", |palette| &mut palette.code_string),
+    ("code_keyword", |palette| &mut palette.code_keyword),
+    ("accent", |palette| &mut palette.accent),
+];
 
 thread_local! {
     static ACTIVE: Cell<Palette> = const { Cell::new(Palette::SPACE) };

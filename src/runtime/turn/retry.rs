@@ -2,6 +2,21 @@ use super::*;
 
 const MAIL_PER_ROUND: usize = 5;
 
+#[derive(Default)]
+struct RetryState {
+    retried: bool,
+    repairs: usize,
+    overflows: usize,
+    usage: Usage,
+}
+
+struct Failed {
+    error: Error,
+    attempt: Attempt,
+    started: Instant,
+    role: workflow::Role,
+}
+
 impl<P: Provider> Loop<P> {
     pub(super) fn take_mail(
         &mut self,
@@ -52,10 +67,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<Option<(AssistantMessage, String, usize, Attempt, u64)>> {
         let role = self.round_role();
-        let mut retried = false;
-        let mut repairs = 0_usize;
-        let mut overflows = 0_usize;
-        let mut usage = Usage::default();
+        let mut state = RetryState::default();
         loop {
             let request = self.request_with(role, messages, tools);
             let prefix_hash = request.prefix_hash();
@@ -95,67 +107,102 @@ impl<P: Provider> Loop<P> {
                     return Ok(None);
                 }
                 Err(WaitError::Provider(error)) => {
-                    let failure = error.provider_failure();
-                    let retryable = !retried && failure.is_some_and(retryable_failure);
-                    let kind = failure.map(|failure| failure.kind);
-                    self.record_failure(
-                        durable_attempt,
-                        &error,
+                    let attempt = Failed {
+                        error,
+                        attempt: durable_attempt,
                         started,
-                        retryable,
-                        messages,
-                        events,
-                        emit,
-                    )?;
-                    if self.round_abort().is_some() {
+                        role,
+                    };
+                    if !self
+                        .provider_failed(attempt, &mut state, messages, tools, events, emit)
+                        .await?
+                    {
                         return Ok(None);
                     }
-                    let text = error.to_string();
-                    if kind == Some(ProviderFailureKind::MalformedToolCall) {
-                        if repairs >= REPAIR_LIMIT {
-                            return Err(error);
-                        }
-                        repairs += 1;
-                        self.repair_call(messages, events, emit)?;
-                        continue;
-                    }
-                    if kind == Some(ProviderFailureKind::ContextOverflow) {
-                        if overflows >= REPAIR_LIMIT {
-                            return Err(error);
-                        }
-                        overflows += 1;
-                        self.recover_overflow(
-                            &text,
-                            messages,
-                            tools.json.len(),
-                            &mut usage,
-                            events,
-                            emit,
-                        )
-                        .await?;
-                        continue;
-                    }
-                    if !retryable {
-                        if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {
-                            return Err(error);
-                        }
-                        retried = false;
-                        continue;
-                    }
-                    retried = true;
-                    self.push_event(
-                        events,
-                        emit,
-                        Event::Note {
-                            text: format!(
-                                "stream failed; retrying once: {}",
-                                text.lines().next().unwrap_or("unknown")
-                            ),
-                        },
-                    )?;
                 }
             }
         }
+    }
+
+    async fn provider_failed(
+        &mut self,
+        failed: Failed,
+        state: &mut RetryState,
+        messages: &mut Vec<Message>,
+        tools: &super::super::mail::Advertised,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<bool> {
+        let Failed {
+            error,
+            attempt,
+            started,
+            role,
+        } = failed;
+        let failure = error.provider_failure();
+        let retryable = !state.retried && failure.is_some_and(retryable_failure);
+        let kind = failure.map(|failure| failure.kind);
+        self.record_failure(attempt, &error, started, retryable, messages, events, emit)?;
+        if self.round_abort().is_some() {
+            return Ok(false);
+        }
+        let text = error.to_string();
+        if kind == Some(ProviderFailureKind::MalformedToolCall) {
+            if state.repairs >= REPAIR_LIMIT {
+                return Err(error);
+            }
+            state.repairs += 1;
+            self.repair_call(messages, events, emit)?;
+            return Ok(true);
+        }
+        if kind == Some(ProviderFailureKind::ContextOverflow) {
+            if state.overflows >= REPAIR_LIMIT {
+                return Err(error);
+            }
+            state.overflows += 1;
+            self.recover_overflow(
+                &text,
+                messages,
+                tools.json.len(),
+                &mut state.usage,
+                events,
+                emit,
+            )
+            .await?;
+            return Ok(true);
+        }
+        self.retry_or_fall_back(error, retryable, role, state, events, emit)?;
+        Ok(true)
+    }
+
+    fn retry_or_fall_back(
+        &mut self,
+        error: Error,
+        retryable: bool,
+        role: workflow::Role,
+        state: &mut RetryState,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<()> {
+        let text = error.to_string();
+        if !retryable {
+            if self.seats.contains_key(&role) || !self.fall_back(&text, events, emit)? {
+                return Err(error);
+            }
+            state.retried = false;
+            return Ok(());
+        }
+        state.retried = true;
+        self.push_event(
+            events,
+            emit,
+            Event::Note {
+                text: format!(
+                    "stream failed; retrying once: {}",
+                    text.lines().next().unwrap_or("unknown")
+                ),
+            },
+        )
     }
 
     #[expect(

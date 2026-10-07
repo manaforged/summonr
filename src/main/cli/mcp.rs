@@ -70,33 +70,56 @@ fn add(input: &mut Input) -> Result<McpCommand> {
     let name = input
         .next_if(|next| !next.starts_with('-'))
         .ok_or_else(|| usage(ADD_USAGE))?;
-    let mut env = Vec::new();
-    let mut headers = Vec::new();
-    let mut url = None;
-    let mut command = Vec::new();
-    while let Some(arg) = input.next() {
-        match arg.as_str() {
-            "--env" => env.push(pair(&value(input, "--env", "KEY=VALUE")?)?),
-            "--header" => headers.push(pair(&value(input, "--header", "KEY=VALUE")?)?),
-            "--url" if url.is_none() => url = Some(value(input, "--url", "a URL")?),
-            "--" => command.extend(input.by_ref()),
-            unknown => return Err(usage(&format!("unexpected `{unknown}`; {ADD_USAGE}"))),
+    let launch = AddFlags::read(input)?.launch()?;
+    Ok(McpCommand::Add { name, launch })
+}
+
+#[derive(Default)]
+struct AddFlags {
+    env: Vec<(String, String)>,
+    headers: Vec<(String, String)>,
+    url: Option<String>,
+    command: Vec<String>,
+}
+
+impl AddFlags {
+    fn read(input: &mut Input) -> Result<Self> {
+        let mut flags = Self::default();
+        while let Some(arg) = input.next() {
+            match arg.as_str() {
+                "--env" => flags.env.push(pair(&value(input, "--env", "KEY=VALUE")?)?),
+                "--header" => flags
+                    .headers
+                    .push(pair(&value(input, "--header", "KEY=VALUE")?)?),
+                "--url" if flags.url.is_none() => {
+                    flags.url = Some(value(input, "--url", "a URL")?);
+                }
+                "--" => flags.command.extend(input.by_ref()),
+                unknown => return Err(usage(&format!("unexpected `{unknown}`; {ADD_USAGE}"))),
+            }
+        }
+        Ok(flags)
+    }
+
+    fn launch(self) -> Result<McpLaunch> {
+        let Self {
+            env,
+            headers,
+            url,
+            command,
+        } = self;
+        match (url, command.split_first()) {
+            (Some(url), None) if env.is_empty() => Ok(McpLaunch::Url { url, headers }),
+            (None, Some((command, args))) if headers.is_empty() => Ok(McpLaunch::Command {
+                command: command.clone(),
+                args: args.to_vec(),
+                env,
+            }),
+            (Some(_) | None, Some(_) | None) => Err(usage(&format!(
+                "give a command after `--` or `--url`, not both; {ADD_USAGE}"
+            ))),
         }
     }
-    let launch = match (url, command.split_first()) {
-        (Some(url), None) if env.is_empty() => McpLaunch::Url { url, headers },
-        (None, Some((command, args))) if headers.is_empty() => McpLaunch::Command {
-            command: command.clone(),
-            args: args.to_vec(),
-            env,
-        },
-        (Some(_) | None, Some(_) | None) => {
-            return Err(usage(&format!(
-                "give a command after `--` or `--url`, not both; {ADD_USAGE}"
-            )));
-        }
-    };
-    Ok(McpCommand::Add { name, launch })
 }
 
 fn pair(raw: &str) -> Result<(String, String)> {

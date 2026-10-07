@@ -140,19 +140,9 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn task_reconcile(&self, done: &mut [(Access, Result<Done>)]) {
-        let failed = done.iter().any(|(access, done)| {
-            *access == Access::Implement
-                && match done {
-                    Ok(done) => !matches!(done.record.state, ChildState::Completed(_)),
-                    Err(_) => true,
-                }
-        });
-        if failed {
-            for (access, done) in done {
-                if *access == Access::Implement
-                    && let Ok(done) = done
-                    && matches!(done.record.state, ChildState::Completed(_))
-                {
+        if implement_failed(done) {
+            for done in implemented(done) {
+                if matches!(done.record.state, ChildState::Completed(_)) {
                     fail_record(
                         &mut done.record,
                         "writable child changes were not reconciled because another implement child did not complete; the worktree was kept",
@@ -178,22 +168,14 @@ impl<P: Provider> Loop<P> {
             Ok(warnings) if warnings.is_empty() => {}
             Ok(warnings) => {
                 let warning = warnings.join("; ");
-                for (access, done) in done {
-                    if *access == Access::Implement
-                        && let Ok(done) = done
-                    {
-                        note_record(&mut done.record, &warning);
-                    }
+                for done in implemented(done) {
+                    note_record(&mut done.record, &warning);
                 }
             }
             Err(error) => {
                 let diagnostic = error.to_string();
-                for (access, done) in done {
-                    if *access == Access::Implement
-                        && let Ok(done) = done
-                    {
-                        fail_record(&mut done.record, &diagnostic);
-                    }
+                for done in implemented(done) {
+                    fail_record(&mut done.record, &diagnostic);
                 }
             }
         }
@@ -273,4 +255,20 @@ impl<P: Provider> Loop<P> {
             diagnostic: diagnostic.map(str::to_string),
         }
     }
+}
+
+fn implement_failed(done: &[(Access, Result<Done>)]) -> bool {
+    done.iter().any(|(access, done)| {
+        *access == Access::Implement
+            && match done {
+                Ok(done) => !matches!(done.record.state, ChildState::Completed(_)),
+                Err(_) => true,
+            }
+    })
+}
+
+fn implemented(done: &mut [(Access, Result<Done>)]) -> impl Iterator<Item = &mut Done> {
+    done.iter_mut()
+        .filter(|(access, _)| *access == Access::Implement)
+        .filter_map(|(_, done)| done.as_mut().ok())
 }

@@ -99,29 +99,9 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
         if let Some(path) = path.as_deref()
             && !path.is_empty()
         {
-            let full = workspace.join(path);
-            if !full.is_file() {
-                if !word.starts_with("@\"") {
-                    continue;
-                }
-                return Err(Error::Tool(format!(
-                    "attachment `{path}` is not a readable file; check the path or remove the @ reference"
-                )));
-            }
-            let root = workspace
-                .canonicalize()
-                .map_err(|error| Error::Tool(format!("cannot open workspace: {error}")))?;
-            let canonical = full.canonicalize().map_err(|error| {
-                Error::Tool(format!("cannot open attachment `{path}`: {error}"))
-            })?;
-            if !canonical.starts_with(&root) {
-                return Err(Error::Tool(format!(
-                    "attachment `{path}` is outside the workspace"
-                )));
-            }
-            let bytes = std::fs::read(&canonical).map_err(|error| {
-                Error::Tool(format!("cannot read attachment `{path}`: {error}"))
-            })?;
+            let Some(bytes) = read_attachment(workspace, word, path)? else {
+                continue;
+            };
             if let Some(media_type) = image_type(&bytes) {
                 image_bytes = image_bytes.saturating_add(bytes.len());
                 if image_bytes > IMAGES_MAX_BYTES {
@@ -155,6 +135,32 @@ pub(crate) fn attach(workspace: &Path, line: &str) -> Result<UserInput> {
         images,
         source,
     })
+}
+
+fn read_attachment(workspace: &Path, word: &str, path: &str) -> Result<Option<Vec<u8>>> {
+    let full = workspace.join(path);
+    if !full.is_file() {
+        if !word.starts_with("@\"") {
+            return Ok(None);
+        }
+        return Err(Error::Tool(format!(
+            "attachment `{path}` is not a readable file; check the path or remove the @ reference"
+        )));
+    }
+    let root = workspace
+        .canonicalize()
+        .map_err(|error| Error::Tool(format!("cannot open workspace: {error}")))?;
+    let canonical = full
+        .canonicalize()
+        .map_err(|error| Error::Tool(format!("cannot open attachment `{path}`: {error}")))?;
+    if !canonical.starts_with(&root) {
+        return Err(Error::Tool(format!(
+            "attachment `{path}` is outside the workspace"
+        )));
+    }
+    std::fs::read(&canonical)
+        .map(Some)
+        .map_err(|error| Error::Tool(format!("cannot read attachment `{path}`: {error}")))
 }
 
 fn words(mut line: &str) -> Vec<&str> {

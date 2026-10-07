@@ -157,35 +157,7 @@ impl Picker {
     pub(super) fn rows(self, model: &Model) -> Result<Vec<(usize, String)>, String> {
         let pattern = self.pattern()?;
         if self.is_history() {
-            let saved = self.saved.get()?;
-            let mut seen = HashSet::new();
-            return Ok(saved
-                .iter()
-                .enumerate()
-                .filter_map(|(index, prompt)| {
-                    if self.is_branch() && (!prompt.closed || prompt.session.id != model.session) {
-                        return None;
-                    }
-                    if prompt.text.is_empty() && !self.is_branch() {
-                        return None;
-                    }
-                    let context = format!(
-                        "{} {} {}",
-                        prompt.session.name.as_deref().unwrap_or(""),
-                        prompt.session.id,
-                        prompt.session.cwd.as_deref().unwrap_or("")
-                    );
-                    let preview = snippet(&pattern, &prompt.text)
-                        .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
-                    let preview = if prompt.text.is_empty() {
-                        format!("{} attached", crate::text::plural(prompt.images, "image"))
-                    } else {
-                        preview
-                    };
-                    (self.is_branch() || seen.insert(prompt.text.as_str()))
-                        .then_some((index, preview))
-                })
-                .collect());
+            return self.history_rows(model, &pattern);
         }
         let hidden = model.prefs.reasoning == crate::prefs::Visibility::Off;
         Ok(model
@@ -204,6 +176,41 @@ impl Picker {
                 snippet(&pattern, &text).map(|preview| (index, preview))
             })
             .collect())
+    }
+
+    fn history_rows(self, model: &Model, pattern: &Regex) -> Result<Vec<(usize, String)>, String> {
+        let saved = self.saved.get()?;
+        let mut seen = HashSet::new();
+        Ok(saved
+            .iter()
+            .enumerate()
+            .filter_map(|(index, prompt)| {
+                let preview = self.history_preview(model, pattern, prompt)?;
+                (self.is_branch() || seen.insert(prompt.text.as_str())).then_some((index, preview))
+            })
+            .collect())
+    }
+
+    fn history_preview(self, model: &Model, pattern: &Regex, prompt: &Prompt) -> Option<String> {
+        if self.is_branch() && (!prompt.closed || prompt.session.id != model.session) {
+            return None;
+        }
+        if prompt.text.is_empty() && !self.is_branch() {
+            return None;
+        }
+        let context = format!(
+            "{} {} {}",
+            prompt.session.name.as_deref().unwrap_or(""),
+            prompt.session.id,
+            prompt.session.cwd.as_deref().unwrap_or("")
+        );
+        let preview = snippet(pattern, &prompt.text)
+            .or_else(|| pattern.is_match(&context).then(|| one_line(&prompt.text)))?;
+        Some(if prompt.text.is_empty() {
+            format!("{} attached", crate::text::plural(prompt.images, "image"))
+        } else {
+            preview
+        })
     }
 
     pub(super) fn shift(self, model: &Model, delta: isize) {

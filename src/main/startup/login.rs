@@ -59,7 +59,7 @@ fn read_line(prompt: &str) -> Option<String> {
 }
 
 fn read_secret(prompt: &str) -> Result<String> {
-    use std::io::{Read as _, Write as _};
+    use std::io::Write as _;
     if !std::io::stdin().is_terminal() {
         let mut key = String::new();
         std::io::stdin().read_line(&mut key)?;
@@ -69,14 +69,22 @@ fn read_secret(prompt: &str) -> Result<String> {
     std::io::stderr().flush()?;
     let raw = Raw::enter()?;
     let mut key = String::new();
+    let outcome = masked(&mut key)?;
+    drop(raw);
+    eprintln!();
+    outcome.map(|()| key)
+}
+
+fn masked(key: &mut String) -> Result<Result<()>> {
+    use std::io::Read as _;
     let mut byte = [0_u8; 1];
-    let outcome = loop {
+    loop {
         if std::io::stdin().read(&mut byte)? == 0 {
-            break Ok(());
+            return Ok(Ok(()));
         }
         match byte[0] {
-            b'\r' | b'\n' => break Ok(()),
-            0x03 | 0x04 => break Err(summonr::Error::Config("cancelled".to_string())),
+            b'\r' | b'\n' => return Ok(Ok(())),
+            0x03 | 0x04 => return Ok(Err(summonr::Error::Config("cancelled".to_string()))),
             0x7f | 0x08 => {
                 if key.pop().is_some() {
                     unmask_one()?;
@@ -89,10 +97,7 @@ fn read_secret(prompt: &str) -> Result<String> {
             }
             _ => {}
         }
-    };
-    drop(raw);
-    eprintln!();
-    outcome.map(|()| key)
+    }
 }
 
 pub(super) fn print_login_catalog() -> Result<()> {

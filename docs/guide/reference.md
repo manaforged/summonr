@@ -196,13 +196,13 @@ Other built-in endpoints:
 | `mistral` | `high` | sends `none` |
 | `cerebras`, `deepinfra`, `ollama` | `low`, `medium`, `high` | sends `none` |
 | `openrouter` | `minimal` to `xhigh`, sent as `reasoning` with an `effort` key | sends `none` |
-| `qwen-plan`, `qwen-plan-cn`, `dashscope`, `dashscope-cn` | `low`, `medium`, `high` | `enable_thinking: false` in `chat_template_kwargs` |
+| `qwen-plan`, `qwen-plan-cn`, `dashscope`, `dashscope-cn` | `low`, `medium`, `high` | sends nothing |
 | `together`, `groq`, `copilot`, `zen`, `go`, `opencode`, `fireworks` | `low`, `medium`, `high` | sends nothing |
 | `minimax`, `minimax-cn` | no effort setting | `thinking` type `disabled` |
 | `minimax-plan`, `minimax-cn-plan` | `low`, `medium`, `high` | sends nothing |
-| `tencent-plan`, `volcengine-plan`, `siliconflow`, `siliconflow-cn`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama-cloud`, `lmstudio` | `low`, `medium`, `high` | sends nothing |
+| `tencent-plan`, `volcengine-plan`, `siliconflow`, `siliconflow-cn`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama-cloud`, `lmstudio` | `tencent-plan` and `volcengine-plan`: no effort setting. Others: `low`, `medium`, `high` | sends nothing |
 
-summonr matches the model id against these model rows on every endpoint except `copilot`, `openrouter`, `ollama`, and `lmstudio`, which pass any model through and use the endpoint's own levels. A model that matches no row uses the endpoint's levels. An endpoint with no built-in host uses `low`, `medium`, and `high`, and sends nothing for `none`.
+summonr matches the model id against these model rows on every endpoint except `copilot`, `openrouter`, `ollama`, `lmstudio`, `tencent-plan`, and `volcengine-plan`, which pass any model through and use the endpoint's own levels. A model that matches no row uses the endpoint's levels. An endpoint with no built-in host uses `low`, `medium`, and `high`, and sends nothing for `none`.
 
 Set the levels or the `none` style on an endpoint to replace the built-in behavior. A `[endpoint.NAME.models.ID]` row replaces it for one model.
 

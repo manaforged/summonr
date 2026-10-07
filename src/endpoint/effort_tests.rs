@@ -59,10 +59,28 @@ fn openrouter_sends_effort_inside_a_reasoning_object() {
 }
 
 #[test]
-fn qwen_plan_turns_thinking_off_the_dashscope_way() {
-    let sent = body("qwen-plan", "qwen3-coder-next", Some(Effort::None));
-    assert_eq!(sent["chat_template_kwargs"]["enable_thinking"], false);
-    assert!(sent.get("reasoning_effort").is_none(), "{sent}");
+fn qwen_plan_sends_the_documented_effort_field_and_nothing_for_none() {
+    let off = body("qwen-plan", "qwen3-coder-next", Some(Effort::None));
+    assert!(off.get("reasoning_effort").is_none(), "{off}");
+    assert!(off.get("chat_template_kwargs").is_none(), "{off}");
+    assert!(off.get("enable_thinking").is_none(), "{off}");
+    let up = body("qwen-plan", "qwen3.5-plus", Some(Effort::High));
+    assert_eq!(up["reasoning_effort"], "high");
+}
+
+#[test]
+fn unverified_plan_hosts_send_no_effort_field_at_all() {
+    for (name, model) in [
+        ("tencent-plan", "hunyuan-2.0-thinking"),
+        ("volcengine-plan", "doubao-seed-2.1-turbo"),
+    ] {
+        for effort in [None, Some(Effort::None), Some(Effort::High)] {
+            let sent = body(name, model, effort);
+            assert!(sent.get("reasoning_effort").is_none(), "{name}: {sent}");
+            assert!(sent.get("thinking").is_none(), "{name}: {sent}");
+            assert!(sent.get("chat_template_kwargs").is_none(), "{name}: {sent}");
+        }
+    }
 }
 
 #[test]

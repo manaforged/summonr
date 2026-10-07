@@ -65,9 +65,6 @@ env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan"]
 plan = true
 
-[preset.reasoning]
-off = "chat_template_kwargs"
-
 [[preset]]
 name = "qwen-plan-cn"
 base_url = "https://coding.dashscope.aliyuncs.com/v1"
@@ -76,9 +73,6 @@ env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
 opencode_ids = ["alibaba-coding-plan-cn"]
 plan = true
 
-[preset.reasoning]
-off = "chat_template_kwargs"
-
 [[preset]]
 name = "dashscope"
 base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
@@ -86,18 +80,12 @@ model = "qwen3-coder-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba"]
 
-[preset.reasoning]
-off = "chat_template_kwargs"
-
 [[preset]]
 name = "dashscope-cn"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 model = "qwen3-coder-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
 opencode_ids = ["alibaba-cn"]
-
-[preset.reasoning]
-off = "chat_template_kwargs"
 
 [[preset]]
 name = "kimi"
@@ -264,6 +252,10 @@ env_keys = ["TENCENT_CODING_PLAN_API_KEY"]
 opencode_ids = ["tencent-coding-plan"]
 plan = true
 
+[preset.reasoning]
+levels = []
+host_only = true
+
 [[preset]]
 name = "volcengine-plan"
 base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
@@ -271,6 +263,10 @@ model = "doubao-seed-2.1-turbo"
 env_keys = ["ARK_CODING_PLAN_API_KEY"]
 opencode_ids = ["volcengine-coding-plan"]
 plan = true
+
+[preset.reasoning]
+levels = []
+host_only = true
 
 [[preset]]
 name = "ollama"

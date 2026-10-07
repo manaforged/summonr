@@ -15,6 +15,19 @@ fn the_default_prompt_does_not_steer_the_model() {
 }
 
 #[test]
+fn the_default_prompt_names_the_module_surface() {
+    let workspace = tempfile::tempdir().unwrap();
+    let prompt = compose(workspace.path(), None, Sources::default());
+    for capability in [
+        "web (search, fetch)",
+        "mail (agents, send, inbox, board)",
+        "`summonr modules`",
+    ] {
+        assert!(prompt.contains(capability), "{capability}: {prompt}");
+    }
+}
+
+#[test]
 fn an_at_include_pulls_the_referenced_file_in_once() {
     let workspace = tempfile::tempdir().unwrap();
     std::fs::write(workspace.path().join("AGENTS.md"), "AGENTS RULE").unwrap();

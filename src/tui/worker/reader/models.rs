@@ -177,7 +177,11 @@ impl Board {
         }
     }
 
-    fn discovered(&mut self, name: String, models: Vec<Model>) {
+    fn discovered(&mut self, name: String, mut models: Vec<Model>) {
+        models.sort_by_cached_key(|model| {
+            let row = Seat::new(&name, &model.id);
+            (model.cost.rank(), std::cmp::Reverse(model.release), row)
+        });
         for model in models {
             let row = Seat::new(&name, &model.id);
             self.facts.insert(row.clone(), model);
@@ -239,5 +243,39 @@ impl Reader {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Board;
+    use crate::catalog::{Cost, Model};
+    use crate::tui::Msg;
+
+    fn model(id: &str, cost: Cost) -> Model {
+        let mut model = Model::named(id);
+        model.cost = cost;
+        model
+    }
+
+    #[test]
+    fn discovered_batches_land_in_rank_order() {
+        let mut board = Board::seed(None, &["p"]);
+        drop(board.snapshot(1, None, false, &[]));
+        board.discovered(
+            "p".to_string(),
+            vec![
+                model("metered", Cost::Metered),
+                model("free", Cost::Free),
+                model("unknown", Cost::Unknown),
+                model("plan", Cost::Plan),
+            ],
+        );
+        let msg = board.snapshot(2, None, false, &[]);
+        let Msg::Models { rows, .. } = msg else {
+            panic!("models message");
+        };
+        let ids: Vec<&str> = rows.iter().map(|row| row.model.as_str()).collect();
+        assert_eq!(ids, ["free", "plan", "unknown", "metered"]);
     }
 }

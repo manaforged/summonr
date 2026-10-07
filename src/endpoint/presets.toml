@@ -116,6 +116,7 @@ missing = "run `summonr login NAME` to sign in with SuperGrok or paste a key, or
 aliases = { "grok" = "grok-4.6", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6" }
 oauth = "supergrok"
 opencode_ids = ["xai"]
+prompt_cache_key = true
 
 [preset.reasoning]
 off = "unsupported"

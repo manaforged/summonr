@@ -148,7 +148,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, or a list run in order, that reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. Plugin hooks follow the Claude Code rules instead (see the extending guide).
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
-- The sandbox is off by default. `--plan` denies writes.
+- The sandbox is off by default. `--plan` denies writes. In a noninteractive run, sandbox escape and network grants are denied; `--no-net` stays in force after a command failure. Auto mode still grants additional write roots for the session.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A workspace `SYSTEM.md` replaces the built-in preamble.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

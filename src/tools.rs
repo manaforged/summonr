@@ -64,7 +64,7 @@ pub(crate) struct ToolRegistry {
     launches: lsp::Launches,
     roots: Vec<paths::Root>,
     network_once: std::sync::atomic::AtomicBool,
-    approved_once: std::sync::atomic::AtomicBool,
+    approved_once: std::sync::Mutex<Option<command::Approval>>,
     allowed_edits: Vec<&'static str>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
@@ -133,7 +133,7 @@ impl ToolRegistry {
             spill_dir: std::sync::OnceLock::new(),
             launches: lsp::Launches::default(),
             network_once: std::sync::atomic::AtomicBool::new(false),
-            approved_once: std::sync::atomic::AtomicBool::new(false),
+            approved_once: std::sync::Mutex::new(None),
             allowed_edits: Vec::new(),
             model_images: false,
             vision: None,
@@ -191,14 +191,21 @@ impl ToolRegistry {
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
-    pub(crate) fn approve_once(&self) {
-        self.approved_once
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+    pub(crate) fn approve_once(&self, approval: command::Approval) -> Result<()> {
+        *self
+            .approved_once
+            .lock()
+            .map_err(|error| Error::Tool(format!("cannot record command approval: {error}")))? =
+            Some(approval);
+        Ok(())
     }
 
-    pub(crate) fn take_approval(&self) -> bool {
-        self.approved_once
-            .swap(false, std::sync::atomic::Ordering::SeqCst)
+    pub(crate) fn take_approval(&self) -> Result<Option<command::Approval>> {
+        Ok(self
+            .approved_once
+            .lock()
+            .map_err(|error| Error::Tool(format!("cannot consume command approval: {error}")))?
+            .take())
     }
 
     pub(crate) fn has_sandbox(&self) -> bool {

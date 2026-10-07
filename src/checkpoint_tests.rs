@@ -21,3 +21,30 @@ fn a_new_session_index_starts_from_the_repository_index() {
         std::fs::read(workspace.join(".git/index")).unwrap()
     );
 }
+
+#[test]
+fn restoring_a_turn_removes_unicode_additions_and_preserves_the_user_index() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    git_env(workspace, &[], &["config", "core.quotepath", "true"])?;
+    git_env(workspace, &[], &["config", "core.autocrlf", "false"])?;
+    let original = workspace.join("original.txt");
+    std::fs::write(&original, "staged\n")?;
+    git_env(workspace, &[], &["add", "original.txt"])?;
+    let index = std::fs::read(workspace.join(".git/index"))?;
+    std::fs::write(&original, "before\n")?;
+    let checkpoints =
+        Checkpoints::open(workspace, "restore").expect("a Git workspace supports checkpoints");
+    checkpoints.capture()?;
+    let added = workspace.join("café.txt");
+    std::fs::write(&added, "added\n")?;
+    std::fs::write(&original, "after\n")?;
+
+    checkpoints.restore(1)?;
+
+    assert!(!added.exists(), "undo left the added Unicode file behind");
+    assert_eq!(std::fs::read_to_string(original)?, "before\n");
+    assert_eq!(std::fs::read(workspace.join(".git/index"))?, index);
+    Ok(())
+}

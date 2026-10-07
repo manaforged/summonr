@@ -1,7 +1,7 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use crate::diff::git_env;
+use crate::diff::{git_env, git_output};
 use crate::durable::store;
 use crate::error::{Error, Result};
 
@@ -52,9 +52,7 @@ impl Checkpoints {
                 ))
             })?;
         let current = self.tree()?;
-        let top = git_env(&self.root, &[], &["rev-parse", "--show-toplevel"])?;
-        let top = Path::new(top.trim());
-        let changes = git_env(
+        let changes = git_output(
             &self.root,
             &[],
             &[
@@ -62,23 +60,25 @@ impl Checkpoints {
                 "-r",
                 "--no-renames",
                 "--name-status",
+                "-z",
                 target,
                 &current,
             ],
+            None,
         )?;
         let mut paths = Vec::new();
-        for line in changes.lines() {
-            let Some((status, path)) = line.split_once('\t') else {
-                continue;
-            };
-            if status == "A" {
-                std::fs::remove_file(top.join(path))?;
-            }
-            paths.push(path.to_string());
+        let mut records = changes.split(|byte| *byte == 0);
+        while let Some(status) = records.next().filter(|status| !status.is_empty()) {
+            let path = records.next().ok_or_else(|| {
+                Error::Config(format!(
+                    "git diff-tree returned an incomplete path for {}",
+                    String::from_utf8_lossy(status)
+                ))
+            })?;
+            paths.push(String::from_utf8_lossy(path).into_owned());
         }
         let env = self.env();
-        git_env(top, &env, &["read-tree", target])?;
-        git_env(top, &env, &["checkout-index", "-a", "-f"])?;
+        git_env(&self.root, &env, &["read-tree", "--reset", "-u", target])?;
         Ok(paths)
     }
 

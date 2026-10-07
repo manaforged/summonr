@@ -17,6 +17,12 @@ pub(crate) use proc::ProcessGroup;
 use proc::{background_result, stop_job};
 use run::Wait;
 
+#[derive(Clone, Copy)]
+pub(crate) enum Approval {
+    Policy,
+    Uncontained,
+}
+
 pub(crate) fn exit_code(output: &str) -> Option<i32> {
     output
         .lines()
@@ -58,21 +64,28 @@ impl ToolRegistry {
         if !workdir && let Some(output) = self.read_natively(command)? {
             return Ok(output);
         }
-        let approved = self.take_approval();
+        let approval = self.take_approval()?;
+        let approved = approval.is_some();
         let cwd = self.command_dir(args)?;
         if let Some(output) = self.gate_command(command, &cwd, approved)? {
             return Ok(output);
         }
         let background = object_bool(args, "background");
         self.check_launch(plan, restricted, background)?;
-        let started = self.start_command(command, background, read_only, approved, cwd)?;
+        let started = self.start_command(command, background, read_only, approval, cwd)?;
         if background {
             return Ok(background_result(started));
         }
         let explicit = object_usize(args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
         let wait = Wait::chosen(explicit, self.can_detach(read_only));
-        self.wait_command(started, command, wait, read_only, !approved)
-            .await
+        self.wait_command(
+            started,
+            command,
+            wait,
+            read_only,
+            !matches!(approval, Some(Approval::Uncontained)),
+        )
+        .await
     }
 
     fn gate_command(

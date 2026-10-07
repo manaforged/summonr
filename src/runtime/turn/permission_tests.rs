@@ -70,6 +70,40 @@ async fn a_destructive_command_never_runs_without_a_user() {
     assert!(exists, "{text}");
 }
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[tokio::test]
+async fn approving_a_destructive_command_keeps_the_sandbox() -> Result<()> {
+    let workspace = tempfile::tempdir()?;
+    let home = tempfile::tempdir()?;
+    let outside = tempfile::tempdir_in(std::env::current_dir()?)?;
+    let target = outside.path().join("keep");
+    std::fs::create_dir(&target)?;
+    std::fs::write(target.join("sentinel"), "keep\n")?;
+    let mut loop_ = session(workspace.path(), home.path()).with_sandbox(crate::Network::Allowed)?;
+    let answers = VecDeque::from([UserInput::from("y"), UserInput::from("n")]);
+    loop_.steer_with(Arc::new(Steering::from(answers)));
+    let call = command(&format!(
+        "{DELETE} ./*; python3 -c \"from pathlib import Path; Path('{}').unlink()\"",
+        target.join("sentinel").display()
+    ));
+    let output = loop_.tools.execute_outcome(&call).await;
+    let mut events = Vec::new();
+
+    let output = loop_
+        .with_grant(output, &call, &mut events, &mut |_| {})
+        .await??;
+
+    assert!(
+        events.iter().any(|event| matches!(event,
+            Event::Approval { detail: Some(detail), .. } if detail.contains(DELETE)
+        )),
+        "the command never requested approval: {events:?}"
+    );
+    assert_eq!(std::fs::read_to_string(target.join("sentinel"))?, "keep\n");
+    assert!(!output.success, "the outside deletion escaped containment");
+    Ok(())
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn leaving_plan_drops_the_sandbox_plan_turned_on() {

@@ -11,9 +11,11 @@ use crate::session::Spend;
 
 mod report;
 mod sections;
+mod trend;
 
 use report::{METRICS, Metric, Report};
-use sections::{bottom, cards, colored, spacer, trend};
+use sections::{bottom, cards, colored, spacer};
+use trend::trend;
 
 const RANGES: [&str; 4] = ["24h", "7d", "30d", "all"];
 const CHROME_ROWS: u16 = 8;
@@ -121,7 +123,7 @@ fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
     }
     nodes.push(cards(&report));
     nodes.push(trend(&report, metric, width));
-    nodes.push(bottom(&report, metric));
+    nodes.push(bottom(&report, metric, width));
     nodes
 }
 

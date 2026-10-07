@@ -39,3 +39,30 @@ fn a_report_ranks_models_and_workspaces_and_places_each_hour() {
     assert!((report.cache_hit() - 1345.0 * 100.0 / 1570.0).abs() < 1e-9);
     assert!((turn_secs(&report.total) - 1.5).abs() < 1e-9);
 }
+
+#[test]
+fn each_model_keeps_the_day_it_ran() {
+    let now = 40 * DAY;
+    let rows = [
+        spend("alpha", "/w/one", now - 2 * DAY, 100, 0),
+        spend("beta", "/w/two", now - 2 * DAY, 40, 0),
+        spend("alpha", "/w/one", now - 5 * DAY, 10, 0),
+    ];
+    let refs: Vec<&Spend> = rows.iter().collect();
+    let report = Report::build(&refs, 2, Metric::Tokens, now);
+    assert_eq!(report.models[0].0, "alpha");
+    assert_eq!(report.models[1].0, "beta");
+    assert_eq!(report.series.len(), 2);
+    assert_eq!(report.series[0][28], 110.0);
+    assert_eq!(report.series[0][25], 20.0);
+    assert_eq!(report.series[1][28], 50.0);
+    assert_eq!(
+        report.series[1]
+            .iter()
+            .filter(|value| **value > 0.0)
+            .count(),
+        1
+    );
+    assert_eq!(report.columns[28], 160.0);
+    assert_eq!(report.columns[25], 20.0);
+}

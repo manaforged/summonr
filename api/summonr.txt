@@ -854,6 +854,7 @@ pub summonr::Endpoint::idle_timeout_secs: core::option::Option<u64>
 pub summonr::Endpoint::images: core::option::Option<bool>
 pub summonr::Endpoint::keep_reasoning: bool
 pub summonr::Endpoint::model: alloc::string::String
+pub summonr::Endpoint::models_url: core::option::Option<alloc::string::String>
 pub summonr::Endpoint::name: alloc::string::String
 pub summonr::Endpoint::oauth: core::option::Option<summonr::config::OAuth>
 pub summonr::Endpoint::opencode: bool
@@ -1016,6 +1017,7 @@ pub summonr::Tree::base: alloc::string::String
 pub summonr::Tree::branch: alloc::string::String
 pub summonr::Tree::path: std::path::PathBuf
 pub summonr::Tree::primary: std::path::PathBuf
+pub summonr::Tree::snapshot: core::option::Option<alloc::string::String>
 impl core::clone::Clone for summonr::Tree
 impl core::cmp::Eq for summonr::Tree
 impl core::cmp::PartialEq for summonr::Tree
@@ -1123,6 +1125,7 @@ pub fn summonr::revision() -> &'static str
 pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str, sandbox: core::option::Option<summonr::Network>) -> summonr::Result<summonr::ToolResult>
 pub fn summonr::sandbox_on() -> summonr::Result<bool>
 pub fn summonr::short(id: &str) -> &str
+pub fn summonr::stop_children()
 pub fn summonr::summonr_home() -> summonr::Result<std::path::PathBuf>
 pub fn summonr::sweep_worktrees(cwd: &std::path::Path) -> summonr::Result<alloc::vec::Vec<std::path::PathBuf>>
 pub fn summonr::system_prompt(workspace: &std::path::Path, sources: summonr::Sources) -> alloc::string::String

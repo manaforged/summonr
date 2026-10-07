@@ -15,6 +15,7 @@ use crate::error::{Error, Result};
 use crate::language;
 use crate::rpc;
 
+use super::command::ProcessGroup;
 use super::command::proc::kill_group;
 use super::{ToolOutput, ToolRegistry, nonempty_path, object_bool, object_usize, parse_args};
 
@@ -33,6 +34,7 @@ pub(super) struct Conn {
     options: Value,
     server: String,
     key: String,
+    group: Option<ProcessGroup>,
 }
 
 #[derive(Debug)]
@@ -83,6 +85,7 @@ impl Conn {
                 }
             }
         });
+        let group = child.id().map(|pid| ProcessGroup::new(pid, false));
         let mut conn = Self {
             child: Some(child),
             inbox,
@@ -95,6 +98,7 @@ impl Conn {
             options: launch.options.clone(),
             server: launch.argv[0].clone(),
             key: launch.key.clone(),
+            group,
         };
         conn.handshake(&launch.options).await?;
         Ok(conn)
@@ -350,6 +354,7 @@ impl Conn {
 
     fn kill(&mut self) {
         self.reader.abort();
+        drop(self.group.take());
         if let Some(child) = self.child.as_mut() {
             if let Some(pid) = child.id() {
                 kill_group(pid, false);

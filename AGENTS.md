@@ -50,7 +50,7 @@ Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell command
 
 ## Give it project instructions
 
-When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A `SYSTEM.md` replaces the built-in preamble. `--no-trust` ignores all three.
+When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files.
 
 ## Extend it
 

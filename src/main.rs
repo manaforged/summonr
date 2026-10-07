@@ -40,7 +40,10 @@ fn main() {
         }
     };
     match runtime.block_on(session) {
-        Ok(code) => std::process::exit(code),
+        Ok(code) => {
+            summonr::stop_children();
+            std::process::exit(code);
+        }
         Err(error) => fail(&error),
     }
 }
@@ -85,5 +88,6 @@ fn fail(error: &dyn std::fmt::Display) -> ! {
         "{}: {error}",
         option_env!("CARGO_BIN_NAME").unwrap_or("summonr")
     );
+    summonr::stop_children();
     std::process::exit(1)
 }

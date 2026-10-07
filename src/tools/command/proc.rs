@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 use std::process::Stdio;
+use std::sync::Mutex;
 
 #[cfg(windows)]
 use process_wrap::tokio::{ChildWrapper, CommandWrap, JobObject};
@@ -69,8 +70,21 @@ pub(crate) struct ProcessGroup {
     sandbox: bool,
 }
 
+fn live_groups() -> &'static Mutex<Vec<(u32, bool)>> {
+    static GROUPS: Mutex<Vec<(u32, bool)>> = Mutex::new(Vec::new());
+    &GROUPS
+}
+
+fn with_groups(mut apply: impl FnMut(&mut Vec<(u32, bool)>)) {
+    match live_groups().lock() {
+        Ok(mut groups) => apply(&mut groups),
+        Err(poisoned) => apply(&mut poisoned.into_inner()),
+    }
+}
+
 impl ProcessGroup {
     pub(crate) fn new(pid: u32, sandbox: bool) -> Self {
+        with_groups(|groups| groups.push((pid, sandbox)));
         Self {
             pid,
             armed: true,
@@ -85,9 +99,25 @@ impl ProcessGroup {
 
 impl Drop for ProcessGroup {
     fn drop(&mut self) {
+        let pid = self.pid;
+        with_groups(|groups| {
+            if let Some(at) = groups.iter().position(|group| group.0 == pid) {
+                groups.swap_remove(at);
+            }
+        });
         if self.armed {
             kill_group(self.pid, self.sandbox);
         }
+    }
+}
+
+pub(crate) fn stop_groups() {
+    let taken = match live_groups().lock() {
+        Ok(mut groups) => std::mem::take(&mut *groups),
+        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+    };
+    for (pid, sandbox) in taken {
+        kill_group(pid, sandbox);
     }
 }
 
@@ -183,7 +213,7 @@ pub(super) fn job_text(id: &str, pid: u32, log_path: &std::path::Path) -> String
     )
 }
 
-fn command_env() -> Vec<(String, String)> {
+pub(crate) fn command_env() -> Vec<(String, String)> {
     const KEEP: &[&str] = &[
         "PATH",
         "HOME",

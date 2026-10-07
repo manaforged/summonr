@@ -276,6 +276,8 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
     let program = crate::shell::program().map_err(|error| error.to_string())?;
     let mut command = Command::new(program);
     command
+        .env_clear()
+        .envs(crate::tools::command::command_env())
         .args(crate::shell::arguments(&hook.command, workspace))
         .current_dir(workspace)
         .env("CLAUDE_PROJECT_DIR", workspace)
@@ -301,7 +303,9 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
     let mut child = command
         .spawn()
         .map_err(|error| format!("hook `{}` did not start: {error}", hook.command))?;
-    let pid = child.id();
+    let group = child
+        .id()
+        .map(|pid| crate::tools::command::ProcessGroup::new(pid, false));
     let text = body.to_string();
     let work = async move {
         let stdin = child.stdin.take();
@@ -323,11 +327,7 @@ async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome,
         })
     };
     let finished = tokio::time::timeout(JOB_WAIT, work).await;
-    if finished.is_err()
-        && let Some(pid) = pid
-    {
-        drop(crate::tools::command::ProcessGroup::new(pid, false));
-    }
+    drop(group);
     finished
         .map_err(|_elapsed| format!("hook `{}` ran past {}s", hook.command, JOB_WAIT.as_secs()))?
         .map_err(|error| format!("hook `{}` failed: {error}", hook.command))

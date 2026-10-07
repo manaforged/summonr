@@ -87,7 +87,7 @@ impl<P: Provider> Loop<P> {
             if self.grant_blocked(&grant, &asked) {
                 break;
             }
-            if matches!(grant, Grant::Write(_) | Grant::Guarded(_) | Grant::Edit(_)) {
+            if matches!(grant, Grant::Edit(_)) {
                 self.apply_grant(&grant, false, events, emit)?;
                 output = self.tools.execute_outcome(call).await;
                 continue;

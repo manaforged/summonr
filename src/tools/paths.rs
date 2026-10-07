@@ -121,8 +121,13 @@ impl ToolRegistry {
         } else {
             self.resolve_existing(path)?
         };
-        if !self.policy.is_unrestricted() && crate::policy::protected_read(&opened) {
-            return Err(Error::Denied(format!("`{path}` is a protected path")));
+        if !self.policy.is_unrestricted() {
+            if crate::policy::protected_read(&opened) {
+                return Err(Error::Denied(format!("`{path}` is a protected path")));
+            }
+            if !self.inside_fence(&opened) {
+                return Err(Error::Denied(format!("`{path}` is outside the workspace")));
+            }
         }
         Ok(opened)
     }

@@ -209,34 +209,38 @@ fn strict_refuses_an_allowed_verb_that_destroys_work() {
 }
 
 #[test]
-fn submodule_hooks_and_config_are_protected_but_git_data_is_not() {
+fn git_metadata_is_protected_and_objects_are_not() {
     for path in [
         ".git/hooks/pre-commit",
         ".git/config",
         ".git/commondir",
+        ".git/HEAD",
+        ".git/index",
+        ".git/refs/heads/main",
+        ".git/packed-refs",
+        ".git/logs/HEAD",
         ".git/modules/lib/hooks/post-checkout",
         ".git/modules/lib/config",
+        ".git/modules/lib/HEAD",
+        ".git/modules/lib/index",
+        ".git/modules/lib/refs/heads/main",
+        ".git/modules/lib/logs/HEAD",
         ".git/modules/a/b/modules/c/hooks/pre-push",
     ] {
         assert!(protected_write(Path::new(path)), "{path}");
     }
     for path in [
         ".git/objects/ab/cdef",
-        ".git/refs/heads/main",
-        ".git/index",
-        ".git/HEAD",
         ".git/index.lock",
-        ".git/packed-refs",
         ".git/FETCH_HEAD",
         ".git/COMMIT_EDITMSG",
-        ".git/modules/lib/index",
         ".git/modules/lib/objects/ab/cd",
     ] {
         assert!(!protected_write(Path::new(path)), "{path}");
     }
     assert_eq!(
         guarded_git_regex("/w.s"),
-        "^/w\\.s/\\.git/(modules/.+/)?(hooks|config|commondir)(/.*)?$"
+        "^/w\\.s/\\.git/(modules/.+/)?(hooks|config|commondir|HEAD|index|refs|packed-refs|logs)(/.*)?$"
     );
 }
 
@@ -314,4 +318,60 @@ fn confirm_risky_in_policy_toml_opts_into_asking_before_routine_hazards() {
     policy.overlay_file(&quiet).unwrap();
     assert_eq!(policy.confirm(), Gate::Risky);
     assert!(super::danger("sudo true", workspace, workspace, policy.confirm()).is_some());
+}
+
+fn refusal(command: &str) -> String {
+    let workspace = Path::new("/app");
+    Policy::builtin()
+        .command(command, workspace, workspace)
+        .unwrap_err()
+        .to_string()
+}
+
+#[test]
+fn an_assignment_operand_outside_the_workspace_is_refused() {
+    let error = refusal("dd of=/etc/hosts");
+    assert!(
+        error.contains("`/etc/hosts` is outside the workspace"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_wrapper_value_does_not_hide_the_real_command() {
+    let error = refusal("env -u FOO rm /etc/hosts");
+    assert!(
+        error.contains("`/etc/hosts` is outside the workspace"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_case_arm_does_not_hide_the_real_command() {
+    let error = refusal("case x in a) rm /etc/hosts ;; esac");
+    assert!(
+        error.contains("`/etc/hosts` is outside the workspace"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_pushd_makes_a_relative_redirect_leave_the_workspace() {
+    let error = refusal("pushd /tmp; echo hi > secret");
+    assert!(
+        error.contains("`secret` is outside the workspace"),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_command_read_of_env_is_refused() {
+    let error = refusal("cat .env");
+    assert!(error.contains("`.env` is a protected path"), "{error}");
+}
+
+#[test]
+fn a_write_to_git_head_is_refused() {
+    let error = refusal("echo x > .git/HEAD");
+    assert!(error.contains("`.git/HEAD` is a protected path"), "{error}");
 }

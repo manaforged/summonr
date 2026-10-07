@@ -62,18 +62,14 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     {
         return prompt;
     }
-    let mut preamble = Vec::new();
-    if let Some(home) = home {
-        push_file(&mut preamble, &home.join("SYSTEM.md"));
+    let mut parts = Vec::new();
+    let replaced = home.is_some_and(|home| push_file(&mut parts, &home.join("SYSTEM.md")));
+    if !replaced {
+        parts.push(DEFAULT.to_string());
     }
     if trust {
-        push_file(&mut preamble, &workspace.join("SYSTEM.md"));
+        push_file(&mut parts, &workspace.join("SYSTEM.md"));
     }
-    let mut parts = if preamble.is_empty() {
-        vec![DEFAULT.to_string()]
-    } else {
-        preamble
-    };
     if trust {
         instructions(&mut parts, workspace);
     }
@@ -140,7 +136,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     }
     if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {
         parts.push(
-            "Spawn a child only for disjoint paths. The parent runs the completion check."
+            "Spawn a child only for disjoint paths. An implement child gets an isolated checkout that shares the parent build cache. The parent runs the completion check."
                 .to_string(),
         );
     }
@@ -221,12 +217,14 @@ fn include_target(line: &str) -> Option<&str> {
     (!token.is_empty()).then_some(token)
 }
 
-fn push_file(parts: &mut Vec<String>, path: &Path) {
+fn push_file(parts: &mut Vec<String>, path: &Path) -> bool {
     if let Ok(text) = std::fs::read_to_string(path)
         && !text.trim().is_empty()
     {
         parts.push(text);
+        return true;
     }
+    false
 }
 
 fn dedup_sections(text: &str, seen: &mut std::collections::HashSet<u64>) -> Option<String> {

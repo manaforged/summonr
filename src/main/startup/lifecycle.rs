@@ -76,6 +76,13 @@ fn assemble(
     } else {
         summonr::check_commands(workspace)?
     };
+    if !args.json
+        && let Some(list) = &checks
+    {
+        for check in list {
+            eprintln!("summonr: workspace check: {check}");
+        }
+    }
     let (check, goal_checks) = route_checks(args.goal.is_some(), checks);
     let mut loop_ = build(args, endpoint, provider, workspace, check, action)?;
     let (fallbacks, skipped) = summonr::endpoint_fallbacks(endpoint, |fallback| {

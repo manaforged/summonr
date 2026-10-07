@@ -87,7 +87,10 @@ pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathB
                     cwd = cwd.as_deref().and_then(|cwd| resolve(target, cwd));
                     outside |= is_outside(target, workspace, outside, roots);
                 }
-                None => cwd = None,
+                None => {
+                    cwd = None;
+                    outside = true;
+                }
             }
         }
         steps.push(step);
@@ -128,14 +131,9 @@ pub(crate) fn argv(segment: &str) -> Vec<String> {
 }
 
 pub(crate) fn verb(words: &[String]) -> Option<String> {
-    Some(
-        words
-            .first()?
-            .rsplit('/')
-            .next()?
-            .replace('\\', "")
-            .to_ascii_lowercase(),
-    )
+    let name = words.first()?.rsplit('/').next()?.replace('\\', "");
+    let name = name.to_ascii_lowercase();
+    Some(name.strip_suffix(".exe").unwrap_or(&name).to_string())
 }
 
 fn is_assignment(word: &str) -> bool {

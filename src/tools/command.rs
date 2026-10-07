@@ -13,7 +13,7 @@ mod run;
 
 pub(crate) use digest::searchish;
 pub(crate) use native::native_read_args;
-pub(crate) use proc::ProcessGroup;
+pub(crate) use proc::{ProcessGroup, command_env, stop_groups};
 use proc::{background_result, stop_job};
 use run::Wait;
 
@@ -61,13 +61,13 @@ impl ToolRegistry {
             .get("workdir")
             .and_then(serde_json::Value::as_str)
             .is_some_and(|dir| !dir.trim().is_empty());
-        if !workdir && let Some(output) = self.read_natively(command)? {
-            return Ok(output);
-        }
         let approval = self.take_approval()?;
         let approved = approval.is_some();
         let cwd = self.command_dir(args)?;
         if let Some(output) = self.gate_command(command, &cwd, approved)? {
+            return Ok(output);
+        }
+        if !workdir && let Some(output) = self.read_natively(command)? {
             return Ok(output);
         }
         let background = object_bool(args, "background");

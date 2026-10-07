@@ -3,7 +3,16 @@ use std::path::{Path, PathBuf};
 
 pub(crate) const GIT_DIR: &str = ".git";
 pub(crate) const GIT_MODULES: &str = "modules";
-pub(crate) const GIT_GUARDS: &[&str] = &["hooks", "config", "commondir"];
+pub(crate) const GIT_GUARDS: &[&str] = &[
+    "hooks",
+    "config",
+    "commondir",
+    "HEAD",
+    "index",
+    "refs",
+    "packed-refs",
+    "logs",
+];
 #[cfg(any(target_os = "linux", test))]
 const GIT_DATA: &[&str] = &["objects", "refs", "logs", "lfs"];
 

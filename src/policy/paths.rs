@@ -1,17 +1,19 @@
-use super::shell::WRAPPERS;
+use super::shell::{WRAPPERS, command_pieces, skip_wrapper_args};
 use super::*;
 
 pub(crate) fn split_segments(command: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for segment in unquoted(command, &["&&", "||", "|", ";", "\n", "&"]) {
-        let segment = unwrap_segment(&segment);
-        if segment.is_empty() {
-            continue;
+    for segment in unquoted(command, &["&&", "||", "|", ";;", ";", "\n", "&"]) {
+        for piece in command_pieces(&segment) {
+            let segment = unwrap_segment(&piece);
+            if segment.is_empty() {
+                continue;
+            }
+            if let Some(script) = inline_script(&segment) {
+                out.extend(split_segments(&script));
+            }
+            out.push(segment);
         }
-        if let Some(script) = inline_script(&segment) {
-            out.extend(split_segments(&script));
-        }
-        out.push(segment);
     }
     out
 }
@@ -28,18 +30,7 @@ pub(super) fn unwrap_segment(segment: &str) -> String {
         if !WRAPPERS.contains(&name) {
             return text.trim_start_matches('\\').to_string();
         }
-        text = tail.trim_start();
-        loop {
-            let (word, rest) = text.split_once([' ', '\t']).unwrap_or((text, ""));
-            if word.is_empty()
-                || !(word.starts_with('-')
-                    || word.contains('=')
-                    || word.chars().all(|c| c.is_ascii_digit()))
-            {
-                break;
-            }
-            text = rest.trim_start();
-        }
+        text = skip_wrapper_args(name, tail.trim_start());
     }
 }
 

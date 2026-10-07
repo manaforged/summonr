@@ -71,3 +71,22 @@ fn at_include_cycles_terminate() {
         "{prompt}"
     );
 }
+
+#[test]
+fn a_workspace_system_file_keeps_the_preamble() {
+    let workspace = tempfile::tempdir().unwrap();
+    std::fs::write(workspace.path().join("SYSTEM.md"), "WORKSPACE RULE").unwrap();
+    let prompt = compose(
+        workspace.path(),
+        None,
+        Sources {
+            trust: true,
+            ..Sources::default()
+        },
+    );
+    assert!(
+        prompt.contains("You are an expert coding assistant running inside summonr"),
+        "{prompt}"
+    );
+    assert!(prompt.contains("WORKSPACE RULE"), "{prompt}");
+}

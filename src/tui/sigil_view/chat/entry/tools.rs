@@ -174,7 +174,16 @@ pub(in crate::tui::sigil_view) fn call_output(
     } else {
         view.path(patch_path(output).unwrap_or_else(|| call.arg.clone()))
     };
-    Some(container().child(view))
+    Some(
+        container()
+            .layout(
+                LayoutStyle::flex_column()
+                    .fill_width()
+                    .min_size(0.0, 0.0)
+                    .padding_bottom(crate::tui::sigil_view::canvas::GUTTER),
+            )
+            .child(view),
+    )
 }
 
 pub(super) fn tool_card(

@@ -168,52 +168,49 @@ impl Worker {
                 };
                 self.system(&format!("write paths: {list}"));
             }
-            Some(path) => {
-                let (persist, path) = match path.strip_prefix("--session ") {
-                    Some(rest) => (false, rest.trim()),
-                    None => (true, path),
-                };
-                if path.is_empty() {
-                    self.system("/permissions write [--session] PATH");
-                    return true;
-                }
-                let protected = crate::policy::protected_write(&crate::policy::expand_path(path));
-                match self.loop_.allow_path(path) {
-                    Ok(()) => {
-                        if persist && !protected {
-                            match crate::config::path() {
-                                Ok(config) => {
-                                    match crate::config::save_sandbox_write(
-                                        &config,
-                                        &crate::config::sandbox_entry(
-                                            &crate::policy::expand_path(path),
-                                        ),
-                                    ) {
-                                        Ok(()) => self.system(&format!(
-                                            "writes allowed under {path} and saved to [sandbox] write"
-                                        )),
-                                        Err(error) => self.system(&format!(
-                                            "writes allowed under {path} for this session; standing grant not saved: {error}"
-                                        )),
-                                    }
-                                }
-                                Err(error) => self.system(&format!(
-                                    "writes allowed under {path} for this session; standing grant not saved: {error}"
-                                )),
-                            }
-                        } else if protected {
-                            self.system(&format!(
-                                "writes allowed under {path} for this session; a protected path is never saved to [sandbox] write"
-                            ));
-                        } else {
-                            self.system(&format!("writes allowed under {path} for this session"));
-                        }
-                    }
-                    Err(error) => self.fail(&error.to_string()),
-                }
-            }
+            Some(path) => self.grant(path),
         }
         true
+    }
+
+    fn grant(&mut self, path: &str) {
+        let (persist, path) = match path.strip_prefix("--session ") {
+            Some(rest) => (false, rest.trim()),
+            None => (true, path),
+        };
+        if path.is_empty() {
+            self.system("/permissions write [--session] PATH");
+            return;
+        }
+        let protected = crate::policy::protected_write(&crate::policy::expand_path(path));
+        if let Err(error) = self.loop_.allow_path(path) {
+            self.fail(&error.to_string());
+        } else if persist && !protected {
+            self.persist_grant(path);
+        } else if protected {
+            self.system(&format!(
+                "writes allowed under {path} for this session; a protected path is never saved to [sandbox] write"
+            ));
+        } else {
+            self.system(&format!("writes allowed under {path} for this session"));
+        }
+    }
+
+    fn persist_grant(&self, path: &str) {
+        let saved = crate::config::path().and_then(|config| {
+            crate::config::save_sandbox_write(
+                &config,
+                &crate::config::sandbox_entry(&crate::policy::expand_path(path)),
+            )
+        });
+        match saved {
+            Ok(()) => self.system(&format!(
+                "writes allowed under {path} and saved to [sandbox] write"
+            )),
+            Err(error) => self.system(&format!(
+                "writes allowed under {path} for this session; standing grant not saved: {error}"
+            )),
+        }
     }
 
     pub(in crate::tui::worker) async fn retry(&mut self) -> bool {

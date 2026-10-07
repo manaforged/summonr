@@ -9,8 +9,8 @@ use url::Url;
 
 use crate::{Error, Parts, Prompt, Result, Store};
 
-use super::store::{keep, save, stored};
-use super::token::{exchange, minted, post};
+use super::store::stored;
+use super::token::{minted, post, settle};
 
 use crate::LOGIN_WAIT as WAIT;
 const HEAD_CEILING: usize = 8192;
@@ -52,9 +52,7 @@ pub(super) async fn login(
     .await?;
     nonce_matches(grant.identity.as_deref(), &nonce)?;
     grant.client = Some(client).filter(|used| *used != parts.spec.client_id);
-    save(parts, store, grant.clone())?;
-    let chat = exchange(parts.spec, http, grant).await?;
-    keep(parts, chat)
+    settle(parts, http, store, grant).await
 }
 
 fn same_client(kept: Option<&str>, sent: Option<&str>) -> Result<()> {

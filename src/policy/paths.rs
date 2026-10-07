@@ -70,49 +70,73 @@ pub(super) fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
     let mut open: Vec<char> = Vec::new();
     let mut rest = command;
     while let Some(ch) = rest.chars().next() {
-        let mut take = ch.len_utf8();
-        match open.last() {
-            Some('\'') => {
-                if ch == '\'' {
-                    open.pop();
-                }
-            }
-            Some('"') => {
-                if ch == '\\' {
-                    take += rest[take..].chars().next().map_or(0, char::len_utf8);
-                } else if ch == '"' {
-                    open.pop();
-                } else if rest.starts_with("$(") {
-                    open.push('(');
-                    take = 2;
-                }
-            }
-            _ => {
-                if ch == '\\' {
-                    take += rest[take..].chars().next().map_or(0, char::len_utf8);
-                } else if ch == '\'' || ch == '"' {
-                    open.push(ch);
-                } else if rest.starts_with("$(") {
-                    open.push('(');
-                    take = 2;
-                } else if ch == ')' && open.last() == Some(&'(') {
-                    open.pop();
-                } else if let Some(delimiter) = delimiters.iter().find(|d| {
-                    rest.starts_with(*d)
-                        && !(**d == "&"
-                            && (current.ends_with(['>', '<']) || rest.starts_with("&>")))
-                }) {
+        let take = match open.last() {
+            Some('\'') => single_quoted(&mut open, ch),
+            Some('"') => double_quoted(&mut open, ch, rest),
+            _ => match bare(&mut open, ch, rest, &current, delimiters) {
+                Scan::Take(take) => take,
+                Scan::Split(len) => {
                     segments.push(std::mem::take(&mut current));
-                    rest = &rest[delimiter.len()..];
+                    rest = &rest[len..];
                     continue;
                 }
-            }
-        }
+            },
+        };
         current.push_str(&rest[..take]);
         rest = &rest[take..];
     }
     segments.push(current);
     segments
+}
+
+enum Scan {
+    Take(usize),
+    Split(usize),
+}
+
+fn escaped(ch: char, rest: &str) -> usize {
+    let take = ch.len_utf8();
+    take + rest[take..].chars().next().map_or(0, char::len_utf8)
+}
+
+fn single_quoted(open: &mut Vec<char>, ch: char) -> usize {
+    if ch == '\'' {
+        open.pop();
+    }
+    ch.len_utf8()
+}
+
+fn double_quoted(open: &mut Vec<char>, ch: char, rest: &str) -> usize {
+    if ch == '\\' {
+        return escaped(ch, rest);
+    }
+    if ch == '"' {
+        open.pop();
+    } else if rest.starts_with("$(") {
+        open.push('(');
+        return 2;
+    }
+    ch.len_utf8()
+}
+
+fn bare(open: &mut Vec<char>, ch: char, rest: &str, current: &str, delimiters: &[&str]) -> Scan {
+    if ch == '\\' {
+        return Scan::Take(escaped(ch, rest));
+    }
+    if ch == '\'' || ch == '"' {
+        open.push(ch);
+    } else if rest.starts_with("$(") {
+        open.push('(');
+        return Scan::Take(2);
+    } else if ch == ')' && open.last() == Some(&'(') {
+        open.pop();
+    } else if let Some(delimiter) = delimiters.iter().find(|d| {
+        rest.starts_with(*d)
+            && !(**d == "&" && (current.ends_with(['>', '<']) || rest.starts_with("&>")))
+    }) {
+        return Scan::Split(delimiter.len());
+    }
+    Scan::Take(ch.len_utf8())
 }
 
 pub(super) fn in_temp(word: &str) -> bool {

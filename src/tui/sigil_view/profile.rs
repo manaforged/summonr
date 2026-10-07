@@ -36,6 +36,17 @@ enum Scenario {
     Resize,
 }
 
+impl Scenario {
+    fn parse(name: &str) -> Result<Self> {
+        match name {
+            "idle" => Ok(Self::Idle),
+            "stream" => Ok(Self::Stream),
+            "resize" => Ok(Self::Resize),
+            unknown => Err(Error::Config(format!("unknown profile scenario {unknown}"))),
+        }
+    }
+}
+
 impl Options {
     fn parse(args: impl Iterator<Item = String>) -> Result<Self> {
         let mut args = args.peekable();
@@ -45,14 +56,7 @@ impl Options {
             String::from("idle")
         };
         let mut options = Self {
-            scenario: match scenario.as_str() {
-                "idle" => Scenario::Idle,
-                "stream" => Scenario::Stream,
-                "resize" => Scenario::Resize,
-                unknown => {
-                    return Err(Error::Config(format!("unknown profile scenario {unknown}")));
-                }
-            },
+            scenario: Scenario::parse(&scenario)?,
             frames: 120,
             history: 100,
             cols: 120,
@@ -66,32 +70,42 @@ impl Options {
             let value = args
                 .next()
                 .ok_or_else(|| Error::Config(format!("missing value for {name}")))?;
-            let number = || {
-                value
-                    .parse::<u16>()
-                    .map_err(|error| Error::Config(format!("invalid {name}: {error}")))
-            };
-            match name.as_str() {
-                "--frames" => options.frames = number()?,
-                "--history" => options.history = number()?,
-                "--cols" => options.cols = number()?,
-                "--rows" => options.rows = number()?,
-                "--fps" => options.fps = u32::from(number()?),
-                "--output" => options.output = value.into(),
-                unknown => return Err(Error::Config(format!("unknown profile option {unknown}"))),
-            }
+            options.set(&name, value)?;
         }
-        if !(1..=120).contains(&options.frames)
-            || options.history > 1000
-            || !(40..=512).contains(&options.cols)
-            || !(10..=200).contains(&options.rows)
-            || !(FPS_MIN..=FPS_MAX).contains(&options.fps)
+        options.validate()?;
+        Ok(options)
+    }
+
+    fn set(&mut self, name: &str, value: String) -> Result<()> {
+        let number = || {
+            value
+                .parse::<u16>()
+                .map_err(|error| Error::Config(format!("invalid {name}: {error}")))
+        };
+        match name {
+            "--frames" => self.frames = number()?,
+            "--history" => self.history = number()?,
+            "--cols" => self.cols = number()?,
+            "--rows" => self.rows = number()?,
+            "--fps" => self.fps = u32::from(number()?),
+            "--output" => self.output = value.into(),
+            unknown => return Err(Error::Config(format!("unknown profile option {unknown}"))),
+        }
+        Ok(())
+    }
+
+    fn validate(&self) -> Result<()> {
+        if !(1..=120).contains(&self.frames)
+            || self.history > 1000
+            || !(40..=512).contains(&self.cols)
+            || !(10..=200).contains(&self.rows)
+            || !(FPS_MIN..=FPS_MAX).contains(&self.fps)
         {
             return Err(Error::Config(format!(
                 "profile-tui: idle|stream|resize; frames 1..120, history 0..1000, cols 40..512, rows 10..200, fps {FPS_MIN}..{FPS_MAX}",
             )));
         }
-        Ok(options)
+        Ok(())
     }
 
     fn cause(&self) -> profile::Cause {

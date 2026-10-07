@@ -41,6 +41,7 @@ pub(crate) const MCP_CANCEL_WRITE: Duration = Duration::from_secs(1);
 pub(crate) const MCP_LOG_MAX: u64 = 1024 * 1024;
 pub(crate) const MCP_FRAME_MAX: usize = 4 * 1024 * 1024;
 pub(crate) const MCP_STDERR_TAIL: usize = 2 * 1024;
+pub(crate) const MCP_STDERR_SETTLE: Duration = Duration::from_secs(1);
 pub(crate) const MCP_DEFER_BYTES: usize = 8 * 1024;
 pub(crate) const MCP_FOUND_MAX: usize = 8;
 pub(crate) const LSP_START: Duration = Duration::from_secs(30);

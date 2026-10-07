@@ -3,9 +3,9 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use leyline::Session;
 use serde_json::Value;
 
-use crate::{Error, Issued, Parts, Result};
+use crate::{Error, Issued, Parts, Result, Store};
 
-use super::store::{from_unix, keep, lifetime};
+use super::store::{from_unix, keep, lifetime, save};
 use super::{Spec, TokenStyle};
 
 pub(super) async fn exchanged(parts: &Parts<'_>, http: &Session, grant: Issued) -> Result<String> {
@@ -13,6 +13,17 @@ pub(super) async fn exchanged(parts: &Parts<'_>, http: &Session, grant: Issued) 
     let access = chat.access.clone();
     keep(parts, chat)?;
     Ok(access)
+}
+
+pub(super) async fn settle(
+    parts: &Parts<'_>,
+    http: &Session,
+    store: &dyn Store,
+    grant: Issued,
+) -> Result<()> {
+    save(parts, store, grant.clone())?;
+    let chat = exchange(parts.spec, http, grant).await?;
+    keep(parts, chat)
 }
 
 pub(super) async fn exchange(spec: &Spec, http: &Session, grant: Issued) -> Result<Issued> {

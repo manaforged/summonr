@@ -1,6 +1,7 @@
 use std::path::{Component, Path};
 
 use super::shell::{WRAPPERS, interpreter, shell};
+use super::verbs::{Rule, SubRule};
 use super::walk::{Step, heredocs, resolve, walk, without_heredocs};
 use super::{
     Block, Gate, Hazard, INQUIRY_FLAGS, TEXT_HAZARDS, any_hit, builtin_deny, catastrophic,
@@ -82,27 +83,42 @@ fn risky(step: &Step, workspace: &Path, gate: Gate) -> Option<&'static str> {
     match verb_row(&verb)?.hazard {
         Hazard::None => None,
         Hazard::Args(_) if inquiry(args) => None,
-        Hazard::Args(rules) => rules
-            .iter()
-            .find(|rule| {
-                rule.gate <= gate
-                    && any_hit(rule.when, args)
-                    && !(rule.broad && narrow(args, workspace, cwd))
-            })
-            .map(|rule| rule.reason),
-        Hazard::Sub { skip, rules } => {
-            let (sub, rest) = subcommand(args, skip)?;
-            if inquiry(rest) {
-                return None;
-            }
-            rules
-                .iter()
-                .find(|rule| {
-                    rule.gate <= gate && rule.names.contains(&sub) && any_hit(rule.when, rest)
-                })
-                .map(|rule| rule.reason)
-        }
+        Hazard::Args(rules) => args_reason(rules, args, workspace, cwd, gate),
+        Hazard::Sub { skip, rules } => sub_reason(skip, rules, args, gate),
     }
+}
+
+fn args_reason(
+    rules: &[Rule],
+    args: &[String],
+    workspace: &Path,
+    cwd: Option<&Path>,
+    gate: Gate,
+) -> Option<&'static str> {
+    rules
+        .iter()
+        .find(|rule| {
+            rule.gate <= gate
+                && any_hit(rule.when, args)
+                && !(rule.broad && narrow(args, workspace, cwd))
+        })
+        .map(|rule| rule.reason)
+}
+
+fn sub_reason(
+    skip: &[&str],
+    rules: &[SubRule],
+    args: &[String],
+    gate: Gate,
+) -> Option<&'static str> {
+    let (sub, rest) = subcommand(args, skip)?;
+    if inquiry(rest) {
+        return None;
+    }
+    rules
+        .iter()
+        .find(|rule| rule.gate <= gate && rule.names.contains(&sub) && any_hit(rule.when, rest))
+        .map(|rule| rule.reason)
 }
 
 const ROOTS: &[&str] = &[

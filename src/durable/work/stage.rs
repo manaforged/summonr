@@ -93,21 +93,9 @@ impl Work {
         if !passed {
             return self.fail("Repair the failed completion check.".to_string());
         }
-        let active = match self.active.or_else(|| {
-            self.steps
-                .iter()
-                .position(|step| step.state == StepState::Active)
-                .or_else(|| {
-                    self.steps
-                        .iter()
-                        .position(|step| step.state == StepState::Pending)
-                })
-        }) {
-            Some(active) => active,
-            None => {
-                self.status = Status::Completed;
-                return Ok(());
-            }
+        let Some(active) = self.resume_index() else {
+            self.status = Status::Completed;
+            return Ok(());
         };
         self.active = Some(active);
         let policy = self.policy;
@@ -125,24 +113,7 @@ impl Work {
             }
             (Policy::Steps, _) => {
                 step.state = StepState::Completed;
-                match self
-                    .steps
-                    .iter()
-                    .position(|step| step.state == StepState::Pending)
-                {
-                    Some(next) => {
-                        if let Some(step) = self.steps.get_mut(next) {
-                            step.state = StepState::Active;
-                        }
-                        self.active = Some(next);
-                        self.status = Status::Active(Stage::Execute);
-                        self.rebase();
-                    }
-                    None => {
-                        self.active = None;
-                        self.status = Status::Completed;
-                    }
-                }
+                self.advance_step();
             }
             (Policy::Goal { .. }, Decision::GoalStop(reason)) => {
                 step.state = StepState::Blocked;
@@ -162,6 +133,40 @@ impl Work {
             }
         }
         Ok(())
+    }
+
+    fn resume_index(&self) -> Option<usize> {
+        self.active.or_else(|| {
+            self.steps
+                .iter()
+                .position(|step| step.state == StepState::Active)
+                .or_else(|| {
+                    self.steps
+                        .iter()
+                        .position(|step| step.state == StepState::Pending)
+                })
+        })
+    }
+
+    fn advance_step(&mut self) {
+        match self
+            .steps
+            .iter()
+            .position(|step| step.state == StepState::Pending)
+        {
+            Some(next) => {
+                if let Some(step) = self.steps.get_mut(next) {
+                    step.state = StepState::Active;
+                }
+                self.active = Some(next);
+                self.status = Status::Active(Stage::Execute);
+                self.rebase();
+            }
+            None => {
+                self.active = None;
+                self.status = Status::Completed;
+            }
+        }
     }
 
     pub(crate) fn defer(&mut self, note: String, jobs: Vec<String>) -> Result<bool, WorkError> {

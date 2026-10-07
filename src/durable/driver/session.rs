@@ -107,4 +107,50 @@ impl SessionDriver {
         self.interrupt_children("process stopped before the child finished")?;
         Ok(())
     }
+
+    pub(crate) fn fork(&self, turn: Option<usize>) -> Result<PathBuf, DriverError> {
+        if self.turn.is_some() {
+            return Err(DriverError::Busy);
+        }
+        let mut lines = log::read(self.log.path())?;
+        if let Some(turn) = turn {
+            truncate_to_turn(&mut lines, turn)?;
+        }
+        let home = log::home_of(self.log.path())
+            .ok_or_else(|| DriverError::State("session log has no home".to_string()))?;
+        let child = SessionId::new();
+        let path = log::session_path(home, child);
+        let mut log = Log::create(&path)?;
+        log.append(&Line::Session {
+            id: child,
+            model: self.state.model.clone(),
+            system: self.state.system.clone(),
+            workspace: self.state.workspace.clone(),
+            parent: self.state.id,
+            depth: 0,
+        })?;
+        for line in lines {
+            if !matches!(line, Line::Session { .. }) {
+                log.append(&line)?;
+            }
+        }
+        Ok(path)
+    }
+}
+
+fn truncate_to_turn(lines: &mut Vec<Line>, turn: usize) -> Result<(), DriverError> {
+    let start = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| matches!(line, Line::User { start: true, .. }))
+        .nth(turn)
+        .map(|(index, _)| index)
+        .ok_or_else(|| DriverError::State("Selected turn no longer exists".to_string()))?;
+    let close = lines[start + 1..]
+        .iter()
+        .take_while(|line| !matches!(line, Line::User { start: true, .. }))
+        .position(|line| matches!(line, Line::Close { .. }))
+        .ok_or_else(|| DriverError::State("Selected turn has not ended".to_string()))?;
+    lines.truncate(start + close + 2);
+    Ok(())
 }

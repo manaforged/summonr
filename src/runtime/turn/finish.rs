@@ -1,3 +1,4 @@
+use super::close::Answer;
 use super::*;
 
 impl<P: Provider> Loop<P> {
@@ -20,41 +21,21 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
         if message.content.trim().is_empty() {
-            self.session
-                .fail_provider(
-                    attempt,
-                    "assistant returned neither text nor a tool call",
-                    meter.millis,
-                    true,
-                )
-                .map_err(super::session_err)?;
-            self.emit_records(events, &mut emit)?;
-            return Err(Error::provider(
-                ProviderFailureKind::Malformed,
-                "assistant returned neither text nor a tool call",
-            ));
+            return self.reject_empty(attempt, meter.millis, events, &mut emit);
         }
+        let answer = Answer {
+            attempt,
+            text: &message.content,
+            reasoning: &reasoning,
+            meter,
+            meta,
+        };
         if self.is_plan() {
-            let receipt = Receipt::new(Vec::new(), Vec::new(), snapshot, events);
-            self.session
-                .finish_plan(
-                    attempt,
-                    &message.content,
-                    &reasoning,
-                    meter,
-                    meta,
-                    self.verify.as_deref().unwrap_or_default(),
-                    &receipt,
-                )
-                .map_err(super::session_err)?;
-            self.emit_records(events, &mut emit)?;
+            self.record_plan(answer, snapshot, events, &mut emit)?;
             return self.close_turn(Ending::Plan, message.content, events, emit, round, usage);
         }
-        self.session
-            .finish_provider(attempt, &message.content, &reasoning, meter, meta)
-            .map_err(super::session_err)?;
-        self.emit_records(events, &mut emit)?;
-        if self.session.stage() != Some(Stage::Execute) || !(self.is_work() || self.is_goal()) {
+        self.record_answer(answer, events, &mut emit)?;
+        if !self.executes_work() {
             self.session.close().map_err(super::session_err)?;
             return self.close_turn(
                 Ending::Done(Vec::new()),
@@ -66,40 +47,19 @@ impl<P: Provider> Loop<P> {
             );
         }
         let (checks, mut running, unsettled) = self.await_jobs(events, &mut emit).await?;
-        let before_children = self.spent_tokens;
-        running.extend(self.await_children(events, &mut emit, usage).await?);
-        if self.spent_tokens > before_children
-            && let Some(reason) = self.round_abort()
+        if let Some(reason) = self
+            .children_abort(&mut running, events, &mut emit, usage)
+            .await?
         {
             return self
                 .abort_turn(Some(reason), events, emit, usage, round, pre)
                 .await;
         }
-        if !running.is_empty() {
-            let running = running.join("; ");
-            let note = format!("[summon: background work still running: {running}]");
-            if self
-                .session
-                .defer(&note, unsettled)
-                .map_err(super::session_err)?
-            {
-                let ending = Ending::Deferred(running);
-                return self.close_turn(ending, message.content, events, emit, round, usage);
-            }
+        if let Some(running) = self.defer_running(&running, unsettled)? {
+            let ending = Ending::Deferred(running);
+            return self.close_turn(ending, message.content, events, emit, round, usage);
         }
-        let killed = self.kill_spawned("the parent turn ended", usage).await?;
-        if !killed.is_empty() {
-            self.push_event(
-                events,
-                &mut emit,
-                Event::Note {
-                    text: format!(
-                        "stopped {} background child(ren) the turn left running",
-                        killed.len()
-                    ),
-                },
-            )?;
-        }
+        self.stop_spawned(events, &mut emit, usage).await?;
         let checks = self
             .judge_work(&message.content, snapshot, checks, events, &mut emit, usage)
             .await?;

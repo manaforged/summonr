@@ -26,25 +26,33 @@ impl<P: Provider> Loop<P> {
         if self.depth != 0 {
             return rejected(calls.len(), "child sessions cannot delegate another task");
         }
-        let mut args = Vec::with_capacity(calls.len());
-        for call in calls {
-            match task_args(call) {
-                Ok(mut value) => {
-                    value.call.clone_from(&call.id);
-                    args.push(value);
-                }
-                Err(error) => return rejected(calls.len(), &error.to_string()),
-            }
-        }
+        let args = match batch_args(calls) {
+            Ok(args) => args,
+            Err(error) => return rejected(calls.len(), &error.to_string()),
+        };
         if args
             .iter()
             .all(|args| args.child.is_none() && !args.background)
         {
             return self.task_batch(args, events, emit).await;
         }
-        let mut background = Vec::new();
         let mut results: Vec<Option<Result<Execution>>> =
             std::iter::repeat_with(|| None).take(args.len()).collect();
+        let background = self.task_foreground(args, &mut results, events, emit).await;
+        if !background.is_empty() {
+            self.task_background(background, &mut results);
+        }
+        recorded(results)
+    }
+
+    async fn task_foreground(
+        &mut self,
+        args: Vec<Args>,
+        results: &mut [Option<Result<Execution>>],
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Vec<(usize, Args)> {
+        let mut background = Vec::new();
         for (index, args) in args.into_iter().enumerate() {
             if args.child.is_none() && args.background {
                 background.push((index, args));
@@ -64,36 +72,27 @@ impl<P: Provider> Loop<P> {
             };
             results[index] = Some(result);
         }
-        if !background.is_empty() {
-            let budget = match self.task_budget(background.len()) {
-                Ok(budget) => budget,
-                Err(error) => {
-                    let message = error.to_string();
-                    for (index, _) in background {
-                        results[index] = Some(Err(Error::Config(message.clone())));
-                    }
-                    return results
-                        .into_iter()
-                        .map(|result| {
-                            result.unwrap_or_else(|| {
-                                Err(Error::Config("task result was not recorded".to_string()))
-                            })
-                        })
-                        .collect();
+        background
+    }
+
+    fn task_background(
+        &mut self,
+        background: Vec<(usize, Args)>,
+        results: &mut [Option<Result<Execution>>],
+    ) {
+        match self.task_budget(background.len()) {
+            Ok(budget) => {
+                for (index, args) in background {
+                    results[index] = Some(self.task_spawn(args, &budget));
                 }
-            };
-            for (index, args) in background {
-                results[index] = Some(self.task_spawn(args, &budget));
+            }
+            Err(error) => {
+                let message = error.to_string();
+                for (index, _) in background {
+                    results[index] = Some(Err(Error::Config(message.clone())));
+                }
             }
         }
-        results
-            .into_iter()
-            .map(|result| {
-                result.unwrap_or_else(|| {
-                    Err(Error::Config("task result was not recorded".to_string()))
-                })
-            })
-            .collect()
     }
 
     pub(super) async fn task_batch(
@@ -193,4 +192,23 @@ impl<P: Provider> Loop<P> {
         done.settled = true;
         Ok(())
     }
+}
+
+fn batch_args(calls: &[ToolCall]) -> Result<Vec<Args>> {
+    let mut args = Vec::with_capacity(calls.len());
+    for call in calls {
+        let mut value = task_args(call)?;
+        value.call.clone_from(&call.id);
+        args.push(value);
+    }
+    Ok(args)
+}
+
+fn recorded(results: Vec<Option<Result<Execution>>>) -> Vec<Result<Execution>> {
+    results
+        .into_iter()
+        .map(|result| {
+            result.unwrap_or_else(|| Err(Error::Config("task result was not recorded".to_string())))
+        })
+        .collect()
 }

@@ -218,7 +218,13 @@ impl Field {
                 (None, false) => Ok(None),
             };
         }
-        let value = match &self.kind {
+        let value = self.typed_value(typed)?;
+        self.check(&value)?;
+        Ok(Some(value))
+    }
+
+    fn typed_value(&self, typed: &str) -> Result<Value, String> {
+        Ok(match &self.kind {
             FieldKind::Text { .. } => json!(typed),
             FieldKind::Number { integer: true, .. } => typed
                 .parse::<i64>()
@@ -240,9 +246,7 @@ impl Field {
                     .map(|part| pick(options, part.trim()))
                     .collect::<Result<Vec<_>, _>>()?
             ),
-        };
-        self.check(&value)?;
-        Ok(Some(value))
+        })
     }
 }
 

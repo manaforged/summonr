@@ -38,6 +38,14 @@ impl App {
             Setting::Model => self.begin_model_edit(),
             Setting::Reasoning => self.reasoning_command(None),
             Setting::Tools => self.toggle_tools(),
+            setting => self.adjust_display(setting),
+        }
+    }
+
+    fn adjust_display(&self, setting: super::settings::Setting) {
+        use super::settings::Setting;
+
+        match setting {
             Setting::DiffLayout => {
                 self.set_diff_layout(self.model.get().prefs.diff_layout.toggle());
             }
@@ -50,6 +58,14 @@ impl App {
             Setting::Hotkeys => self.open_hotkeys(),
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => self.toggle_motion(),
+            Setting::Mode
+            | Setting::PlanMode
+            | Setting::Verify
+            | Setting::Workflow
+            | Setting::Endpoint
+            | Setting::Model
+            | Setting::Reasoning
+            | Setting::Tools => {}
         }
     }
 

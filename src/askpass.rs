@@ -245,8 +245,43 @@ pub(crate) fn scrub_file(_path: &Path) -> bool {
 }
 
 #[cfg(unix)]
+fn scrub_window(
+    path: &Path,
+    buf: &[u8],
+    limit: usize,
+    offset: u64,
+    needles: &[&[u8]],
+    temp: &mut Option<tempfile::NamedTempFile>,
+) -> std::io::Result<usize> {
+    use std::io::Write;
+
+    let mut pos = 0;
+    while pos < limit {
+        match earliest(&buf[pos..], needles) {
+            Some((at, len)) if pos + at < limit => {
+                if temp.is_none() {
+                    *temp = Some(copied_prefix(path, offset + pos as u64)?);
+                }
+                if let Some(out) = temp.as_mut() {
+                    out.write_all(&buf[pos..pos + at])?;
+                    out.write_all(b"[secret]")?;
+                }
+                pos += at + len;
+            }
+            Some(_) | None => {
+                if let Some(out) = temp.as_mut() {
+                    out.write_all(&buf[pos..limit])?;
+                }
+                pos = limit;
+            }
+        }
+    }
+    Ok(pos)
+}
+
+#[cfg(unix)]
 fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<bool> {
-    use std::io::{Read, Write};
+    use std::io::Read;
 
     let keep = needles.iter().map(|needle| needle.len()).max().unwrap_or(1) - 1;
     let mut file = std::fs::File::open(path)?;
@@ -262,27 +297,7 @@ fn rewrite(path: &Path, needles: &[&[u8]]) -> std::io::Result<bool> {
         } else {
             buf.len().saturating_sub(keep)
         };
-        let mut pos = 0;
-        while pos < limit {
-            match earliest(&buf[pos..], needles) {
-                Some((at, len)) if pos + at < limit => {
-                    if temp.is_none() {
-                        temp = Some(copied_prefix(path, offset + pos as u64)?);
-                    }
-                    if let Some(out) = temp.as_mut() {
-                        out.write_all(&buf[pos..pos + at])?;
-                        out.write_all(b"[secret]")?;
-                    }
-                    pos += at + len;
-                }
-                Some(_) | None => {
-                    if let Some(out) = temp.as_mut() {
-                        out.write_all(&buf[pos..limit])?;
-                    }
-                    pos = limit;
-                }
-            }
-        }
+        let pos = scrub_window(path, &buf, limit, offset, needles, &mut temp)?;
         buf.drain(..pos);
         offset += pos as u64;
         if read == 0 {

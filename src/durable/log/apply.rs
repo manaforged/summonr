@@ -41,12 +41,7 @@ impl State {
                 continuation,
                 ..
             } => self.apply_assistant(text, reasoning, tool_calls, usage, continuation),
-            Line::Interrupted { text, .. } => {
-                self.history.extend((!text.is_empty()).then(|| Message {
-                    role: Role::Assistant,
-                    ..Message::system(text)
-                }));
-            }
+            Line::Interrupted { text, .. } => self.apply_interrupted(text),
             Line::Tool {
                 call,
                 text,
@@ -56,20 +51,31 @@ impl State {
             } => self.apply_tool(call, text, success, millis),
             Line::Charge {
                 usage, reported, ..
-            } => {
-                if !reported {
-                    self.unreported = self.unreported.saturating_add(usage.tokens());
-                }
-                self.charge(usage);
-            }
+            } => self.apply_charge(usage, reported),
             Line::Summary { text, tail } => self.apply_summary(text, &tail),
-            Line::Rewrite { mut edits } => {
-                edits.retain(|(index, _)| *index < self.history.len());
-                for (index, message) in edits {
-                    self.history[index] = message;
-                }
-            }
+            Line::Rewrite { edits } => self.apply_rewrite(edits),
             end @ (Line::Clear | Line::Close { .. }) => self.apply_end(&end),
+        }
+    }
+
+    fn apply_interrupted(&mut self, text: String) {
+        self.history.extend((!text.is_empty()).then(|| Message {
+            role: Role::Assistant,
+            ..Message::system(text)
+        }));
+    }
+
+    fn apply_charge(&mut self, usage: Usage, reported: bool) {
+        if !reported {
+            self.unreported = self.unreported.saturating_add(usage.tokens());
+        }
+        self.charge(usage);
+    }
+
+    fn apply_rewrite(&mut self, mut edits: Vec<(usize, Message)>) {
+        edits.retain(|(index, _)| *index < self.history.len());
+        for (index, message) in edits {
+            self.history[index] = message;
         }
     }
 

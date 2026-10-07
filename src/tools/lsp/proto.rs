@@ -101,67 +101,56 @@ pub(super) fn collect_changes(edit: &Value) -> Result<Vec<Change>> {
     }
     if let Some(docs) = edit.get("documentChanges").and_then(Value::as_array) {
         for item in docs {
-            match item.get("kind").and_then(Value::as_str) {
-                Some("create") => {
-                    let uri = item
-                        .get("uri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| Error::Tool("lsp create is missing a uri".to_string()))?;
-                    ops.push(Change::Create {
-                        uri: uri.to_string(),
-                    });
-                }
-                Some("rename") => {
-                    let from = item
-                        .get("oldUri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| Error::Tool("lsp rename is missing oldUri".to_string()))?;
-                    let to = item
-                        .get("newUri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| Error::Tool("lsp rename is missing newUri".to_string()))?;
-                    ops.push(Change::Rename {
-                        from: from.to_string(),
-                        to: to.to_string(),
-                    });
-                }
-                Some("delete") => {
-                    let uri = item
-                        .get("uri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| Error::Tool("lsp delete is missing a uri".to_string()))?;
-                    ops.push(Change::Delete {
-                        uri: uri.to_string(),
-                    });
-                }
-                Some(other) => {
-                    return Err(Error::Tool(format!(
-                        "lsp rename includes unsupported file operation `{other}`"
-                    )));
-                }
-                None => {
-                    let uri = item
-                        .pointer("/textDocument/uri")
-                        .and_then(Value::as_str)
-                        .ok_or_else(|| {
-                            Error::Tool("lsp rename is missing a document uri".to_string())
-                        })?;
-                    let edits = item
-                        .get("edits")
-                        .map(parse_edits)
-                        .transpose()?
-                        .unwrap_or_default();
-                    if !edits.is_empty() {
-                        ops.push(Change::Text {
-                            uri: uri.to_string(),
-                            edits,
-                        });
-                    }
-                }
+            if let Some(change) = document_change(item)? {
+                ops.push(change);
             }
         }
     }
     Ok(ops)
+}
+
+fn document_change(item: &Value) -> Result<Option<Change>> {
+    let change = match item.get("kind").and_then(Value::as_str) {
+        Some("create") => Change::Create {
+            uri: required(item, "/uri", "lsp create is missing a uri")?,
+        },
+        Some("rename") => Change::Rename {
+            from: required(item, "/oldUri", "lsp rename is missing oldUri")?,
+            to: required(item, "/newUri", "lsp rename is missing newUri")?,
+        },
+        Some("delete") => Change::Delete {
+            uri: required(item, "/uri", "lsp delete is missing a uri")?,
+        },
+        Some(other) => {
+            return Err(Error::Tool(format!(
+                "lsp rename includes unsupported file operation `{other}`"
+            )));
+        }
+        None => {
+            let uri = required(
+                item,
+                "/textDocument/uri",
+                "lsp rename is missing a document uri",
+            )?;
+            let edits = item
+                .get("edits")
+                .map(parse_edits)
+                .transpose()?
+                .unwrap_or_default();
+            if edits.is_empty() {
+                return Ok(None);
+            }
+            Change::Text { uri, edits }
+        }
+    };
+    Ok(Some(change))
+}
+
+fn required(item: &Value, pointer: &str, missing: &str) -> Result<String> {
+    item.pointer(pointer)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| Error::Tool(missing.to_string()))
 }
 
 pub(super) fn parse_edits(value: &Value) -> Result<Vec<TextEdit>> {

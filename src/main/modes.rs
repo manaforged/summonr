@@ -52,26 +52,30 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
             return Ok(3);
         }
         let after = loop_.work_progress()?;
-        if let Some(check) = turn
-            .checks
-            .iter()
-            .find(|check| !check.passed)
-            .or_else(|| turn.checks.last())
-        {
-            step_event(
-                args.json,
-                index,
-                total,
-                if check.passed {
-                    "check passed"
-                } else {
-                    "check failed"
-                },
-                Some(&check.command),
-            );
-        } else if after.current != Some(index) || after.terminal() {
-            step_event(args.json, index, total, "done", None);
-        }
+        step_outcome(args.json, index, total, &turn, &after);
+    }
+}
+
+fn step_outcome(json: bool, index: usize, total: usize, turn: &Turn, after: &WorkProgress) {
+    if let Some(check) = turn
+        .checks
+        .iter()
+        .find(|check| !check.passed)
+        .or_else(|| turn.checks.last())
+    {
+        step_event(
+            json,
+            index,
+            total,
+            if check.passed {
+                "check passed"
+            } else {
+                "check failed"
+            },
+            Some(&check.command),
+        );
+    } else if after.current != Some(index) || after.terminal() {
+        step_event(json, index, total, "done", None);
     }
 }
 

@@ -14,6 +14,22 @@ pub(super) enum SessionAction {
     Fork(PathBuf),
 }
 
+impl SessionAction {
+    fn open(
+        self,
+        provider: Client,
+        model: String,
+        workspace: &Path,
+        prompt: String,
+    ) -> Result<Loop<Client>> {
+        match self {
+            Self::Create => Loop::new(provider, model, workspace, prompt),
+            Self::Resume(path) => Loop::resume_path(provider, model, workspace, prompt, &path),
+            Self::Fork(path) => Loop::fork_path(provider, model, workspace, prompt, &path),
+        }
+    }
+}
+
 pub(super) fn workflow_name(args: &Args, loop_: &Loop<Client>) -> Result<Option<String>> {
     if let Some(name) = &args.workflow {
         return Ok(Some(name.clone()));
@@ -114,15 +130,7 @@ pub(super) fn build(
         },
     );
     let resumed = matches!(action, SessionAction::Resume(_) | SessionAction::Fork(_));
-    let mut loop_ = match action {
-        SessionAction::Create => Loop::new(provider, endpoint.model.clone(), workspace, prompt)?,
-        SessionAction::Resume(path) => {
-            Loop::resume_path(provider, endpoint.model.clone(), workspace, prompt, &path)?
-        }
-        SessionAction::Fork(path) => {
-            Loop::fork_path(provider, endpoint.model.clone(), workspace, prompt, &path)?
-        }
-    };
+    let mut loop_ = action.open(provider, endpoint.model.clone(), workspace, prompt)?;
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",

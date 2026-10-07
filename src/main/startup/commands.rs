@@ -189,30 +189,36 @@ pub(super) fn print_diff(args: &Args) -> Result<()> {
                 .as_ref()
                 .is_none_or(|only| only.iter().any(|file| file == candidate))
     };
-    if args.json {
+    if args.json || args.stat {
         let mut diff = summonr::diff::stats(&cwd)?;
         diff.files.retain(|stat| keep(&stat.path));
-        println!("{}", serde_json::to_string(&diff)?);
+        return print_stats(&diff, args.json);
+    }
+    print_patches(&cwd, path, only)
+}
+
+fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string(diff)?);
         return Ok(());
     }
-    if args.stat {
-        let mut diff = summonr::diff::stats(&cwd)?;
-        diff.files.retain(|stat| keep(&stat.path));
-        for stat in &diff.files {
-            let new = if stat.new { "  new" } else { "" };
-            println!("+{:<5} −{:<5} {}{new}", stat.added, stat.removed, stat.path);
-        }
-        println!("{}", diff.summary());
-        return Ok(());
+    for stat in &diff.files {
+        let new = if stat.new { "  new" } else { "" };
+        println!("+{:<5} −{:<5} {}{new}", stat.added, stat.removed, stat.path);
     }
+    println!("{}", diff.summary());
+    Ok(())
+}
+
+fn print_patches(cwd: &Path, path: Option<&str>, only: Option<Vec<String>>) -> Result<()> {
     match only {
-        None => print!("{}", summonr::diff::patch(&cwd, path)?),
+        None => print!("{}", summonr::diff::patch(cwd, path)?),
         Some(only) => {
             for file in only
                 .iter()
                 .filter(|file| path.is_none_or(|path| path == *file))
             {
-                print!("{}", summonr::diff::patch(&cwd, Some(file))?);
+                print!("{}", summonr::diff::patch(cwd, Some(file))?);
             }
         }
     }

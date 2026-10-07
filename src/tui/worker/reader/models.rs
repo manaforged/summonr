@@ -84,6 +84,116 @@ fn enrich(endpoints: &[endpoint::Endpoint], facts: &mut BTreeMap<Seat, Model>) {
     }
 }
 
+struct Board {
+    rows: Vec<Seat>,
+    top: usize,
+    facts: BTreeMap<Seat, Model>,
+    groups: BTreeMap<String, State>,
+    causes: BTreeMap<String, String>,
+}
+
+impl Board {
+    fn seed(home: Option<&std::path::Path>, names: &[&str]) -> Self {
+        let known = |row: &Seat| names.contains(&row.endpoint.as_str());
+        let mut rows: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
+        rows.retain(known);
+        let recents = home.map(recent::load).unwrap_or_default();
+        for row in recents.into_iter().filter(known).take(5) {
+            add(&mut rows, row);
+        }
+        Self {
+            top: rows.len(),
+            rows,
+            facts: BTreeMap::new(),
+            groups: BTreeMap::new(),
+            causes: BTreeMap::new(),
+        }
+    }
+
+    fn cached(&mut self, endpoints: &[endpoint::Endpoint], checked: impl Fn(&str) -> bool) {
+        let kept = crate::catalog::cached();
+        for endpoint in endpoints {
+            let listing = kept.get(&endpoint.name);
+            if checked(&endpoint.name) {
+                let state = if listing.is_some() {
+                    State::Checking
+                } else {
+                    State::Loading
+                };
+                self.groups.insert(endpoint.name.clone(), state);
+            }
+            if !endpoint.model.is_empty() {
+                add(&mut self.rows, Seat::new(&endpoint.name, &endpoint.model));
+            }
+            for model in listing.into_iter().flat_map(|listing| &listing.models) {
+                let row = Seat::new(&endpoint.name, &model.id);
+                self.facts.insert(row.clone(), model.clone());
+                add(&mut self.rows, row);
+            }
+        }
+    }
+
+    fn waiting(&mut self, setup: &[(String, String, State)]) {
+        for (name, model, state) in setup {
+            self.groups.insert(name.clone(), *state);
+            add(&mut self.rows, Seat::new(name, model));
+        }
+    }
+
+    fn snapshot(
+        &mut self,
+        request: u64,
+        home: Option<&std::path::Path>,
+        loading: bool,
+        errors: &[String],
+    ) -> Msg {
+        let top = self.top;
+        order(&mut self.rows[top..], &self.facts, &self.groups);
+        let mut sent: Vec<Seat> = home.map(recent::pinned).unwrap_or_default();
+        sent.retain(|row| self.rows.contains(row));
+        let pinned = sent.len();
+        for row in &self.rows[..top] {
+            add(&mut sent, row.clone());
+        }
+        let head = sent.len();
+        for row in &self.rows[top..] {
+            add(&mut sent, row.clone());
+        }
+        Msg::Models {
+            request,
+            pinned,
+            recent: head - pinned,
+            rows: sent,
+            facts: self.facts.clone(),
+            groups: self.groups.clone(),
+            causes: self.causes.clone(),
+            loading,
+            error: errors.join("; "),
+        }
+    }
+
+    fn discovered(&mut self, name: String, models: Vec<Model>) {
+        let fresh: Vec<Seat> = models
+            .iter()
+            .map(|model| Seat::new(&name, &model.id))
+            .collect();
+        let facts = &self.facts;
+        let gone =
+            |row: &Seat| row.endpoint == name && facts.contains_key(row) && !fresh.contains(row);
+        let tail: Vec<Seat> = self.rows.split_off(self.top);
+        let kept: Vec<Seat> = tail.into_iter().filter(|row| !gone(row)).collect();
+        self.rows.extend(kept);
+        self.facts
+            .retain(|row, _| row.endpoint != name || fresh.contains(row));
+        for (row, model) in fresh.into_iter().zip(models) {
+            self.facts.insert(row.clone(), model);
+            add(&mut self.rows, row);
+        }
+        self.causes.remove(&name);
+        self.groups.insert(name, State::Ready);
+    }
+}
+
 impl Reader {
     pub(super) async fn models(&self, request: u64, only: Option<String>) {
         let (endpoints, mut errors) = endpoint::ready(endpoint::Need::Key);
@@ -93,43 +203,11 @@ impl Reader {
             .map(|endpoint| endpoint.name.as_str())
             .chain(setup.iter().map(|(name, ..)| name.as_str()))
             .collect();
-        let known = |row: &Seat| names.contains(&row.endpoint.as_str());
         let home = summonr_home().ok();
-        let mut rows: Vec<Seat> = home.as_deref().map(recent::pinned).unwrap_or_default();
-        rows.retain(known);
-        let recents = home.as_deref().map(recent::load).unwrap_or_default();
-        for row in recents.into_iter().filter(known).take(5) {
-            add(&mut rows, row);
-        }
-        let top = rows.len();
-        let mut facts = BTreeMap::new();
-        let mut groups = BTreeMap::new();
-        let mut causes = BTreeMap::new();
-        let kept = crate::catalog::cached();
+        let mut board = Board::seed(home.as_deref(), &names);
         let checked = |name: &str| only.as_deref().is_none_or(|only| only == name);
-        for endpoint in &endpoints {
-            let listing = kept.get(&endpoint.name);
-            if checked(&endpoint.name) {
-                let state = if listing.is_some() {
-                    State::Checking
-                } else {
-                    State::Loading
-                };
-                groups.insert(endpoint.name.clone(), state);
-            }
-            if !endpoint.model.is_empty() {
-                add(&mut rows, Seat::new(&endpoint.name, &endpoint.model));
-            }
-            for model in listing.into_iter().flat_map(|listing| &listing.models) {
-                let row = Seat::new(&endpoint.name, &model.id);
-                facts.insert(row.clone(), model.clone());
-                add(&mut rows, row);
-            }
-        }
-        for (name, model, state) in &setup {
-            groups.insert(name.clone(), *state);
-            add(&mut rows, Seat::new(name, model));
-        }
+        board.cached(&endpoints, checked);
+        board.waiting(&setup);
         let mut registry = Some(tokio::spawn(crate::catalog::refresh_registry()));
         let mut pending: FuturesUnordered<_> = endpoints
             .iter()
@@ -139,28 +217,7 @@ impl Reader {
             )
             .collect();
         loop {
-            order(&mut rows[top..], &facts, &groups);
-            let mut sent: Vec<Seat> = home.as_deref().map(recent::pinned).unwrap_or_default();
-            sent.retain(|row| rows.contains(row));
-            let pinned = sent.len();
-            for row in &rows[..top] {
-                add(&mut sent, row.clone());
-            }
-            let head = sent.len();
-            for row in &rows[top..] {
-                add(&mut sent, row.clone());
-            }
-            self.send(Msg::Models {
-                request,
-                pinned,
-                recent: head - pinned,
-                rows: sent,
-                facts: facts.clone(),
-                groups: groups.clone(),
-                causes: causes.clone(),
-                loading: !pending.is_empty(),
-                error: errors.join("; "),
-            });
+            self.send(board.snapshot(request, home.as_deref(), !pending.is_empty(), &errors));
             let next = match registry.as_mut() {
                 Some(fetch) if pending.is_empty() => Err(fetch.await),
                 Some(fetch) => tokio::select! {
@@ -175,33 +232,16 @@ impl Reader {
                 Err(done) => {
                     registry = None;
                     if matches!(done, Ok(Ok(()))) {
-                        enrich(&endpoints, &mut facts);
+                        enrich(&endpoints, &mut board.facts);
                     }
                     continue;
                 }
             };
             match result {
-                Ok(models) => {
-                    let fresh: Vec<Seat> = models
-                        .iter()
-                        .map(|model| Seat::new(&name, &model.id))
-                        .collect();
-                    let gone = |row: &Seat| {
-                        row.endpoint == name && facts.contains_key(row) && !fresh.contains(row)
-                    };
-                    let tail: Vec<Seat> = rows.split_off(top);
-                    rows.extend(tail.into_iter().filter(|row| !gone(row)));
-                    facts.retain(|row, _| row.endpoint != name || fresh.contains(row));
-                    for (row, model) in fresh.into_iter().zip(models) {
-                        facts.insert(row.clone(), model);
-                        add(&mut rows, row);
-                    }
-                    causes.remove(&name);
-                    groups.insert(name, State::Ready);
-                }
+                Ok(models) => board.discovered(name, models),
                 Err(error) => {
-                    groups.insert(name.clone(), Client::state(&error));
-                    causes.insert(name, error.to_string());
+                    board.groups.insert(name.clone(), Client::state(&error));
+                    board.causes.insert(name, error.to_string());
                 }
             }
         }

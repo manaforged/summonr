@@ -9,14 +9,13 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
-use super::{
-    Ask, Frame, Notice, Reply, agreed, ask, failure, hello, notice, notification, outcome, parse,
-    request, response,
-};
+use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_TAIL};
+use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_STDERR_SETTLE, MCP_STDERR_TAIL};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
+
+mod reply;
 
 const SECRET_MIN: usize = 8;
 
@@ -32,6 +31,7 @@ pub(crate) struct Client {
     roots: Value,
     broken: bool,
     stderr: Arc<Mutex<Vec<u8>>>,
+    drain: Option<tokio::task::JoinHandle<()>>,
     secrets: Vec<String>,
     wait: Duration,
     next: i64,
@@ -81,9 +81,10 @@ impl Client {
             .take()
             .ok_or_else(|| Error::Tool("child has no stdout".to_string()))?;
         let stderr = Arc::new(Mutex::new(Vec::new()));
-        if let Some(pipe) = child.stderr.take() {
-            drop(tokio::spawn(tail(pipe, Arc::clone(&stderr))));
-        }
+        let drain = child
+            .stderr
+            .take()
+            .map(|pipe| tokio::spawn(tail(pipe, Arc::clone(&stderr))));
         let _group = child
             .id()
             .map(|pid| ProcessGroup::new(pid, launch.sandbox.is_some()));
@@ -99,6 +100,7 @@ impl Client {
             roots: roots(launch.cwd),
             broken: false,
             stderr,
+            drain,
             secrets: launch
                 .env
                 .iter()
@@ -199,93 +201,6 @@ impl Client {
         result
     }
 
-    async fn reply(
-        &mut self,
-        id: &Value,
-        method: &str,
-        mut deadline: Instant,
-        on_note: &mut impl FnMut(Notice<'_>),
-    ) -> Result<Value> {
-        let mut hard = Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH);
-        loop {
-            let Ok(read) = tokio::time::timeout_at(deadline, self.frame()).await else {
-                return Err(self.give_up(id, method).await);
-            };
-            let line = match read? {
-                Read::Line(line) => line,
-                Read::Oversize if !self.abandoned.is_empty() => {
-                    self.abandoned.remove(0);
-                    continue;
-                }
-                Read::Oversize => {
-                    return Err(Error::Tool(format!(
-                        "a reply to `{method}` was over {} MiB; summonr dropped it",
-                        MCP_FRAME_MAX / (1024 * 1024)
-                    )));
-                }
-                Read::Closed => {
-                    return Err(Error::Tool(format!(
-                        "the child exited during `{method}`{}",
-                        self.stderr_note()
-                    )));
-                }
-            };
-            if line.trim().is_empty() {
-                continue;
-            }
-            let parsed = parse(&line);
-            drop(line);
-            let Ok(frame) = parsed else {
-                continue;
-            };
-            match frame {
-                Frame::Response {
-                    id: got,
-                    result,
-                    error,
-                } if got == *id => return outcome(method, result, error),
-                Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
-                Frame::Notification { method, params } => {
-                    let notice = notice(&method, &params);
-                    if matches!(notice, Notice::Progress { token, .. } if token == id) {
-                        deadline = (Instant::now() + self.wait).min(hard);
-                    }
-                    on_note(notice);
-                }
-                Frame::Request {
-                    id: asked,
-                    method,
-                    params,
-                } => {
-                    let answer = match ask(&method) {
-                        Ask::Roots => response(&asked, json!({"roots": self.roots})),
-                        Ask::Ping => response(&asked, json!({})),
-                        Ask::Elicit => {
-                            let (sender, answered) = tokio::sync::oneshot::channel();
-                            on_note(Notice::Elicit {
-                                params: &params,
-                                answer: sender,
-                            });
-                            let reply = answered
-                                .await
-                                .unwrap_or_else(|_| Reply::Result(json!({"action": "cancel"})));
-                            deadline = Instant::now() + self.wait;
-                            hard = hard.max(deadline);
-                            match reply {
-                                Reply::Result(result) => response(&asked, result),
-                                Reply::Error(code, message) => failure(&asked, code, &message),
-                            }
-                        }
-                        Ask::Unsupported => {
-                            failure(&asked, -32601, &format!("{method} is not supported"))
-                        }
-                    };
-                    self.write(&answer).await?;
-                }
-            }
-        }
-    }
-
     async fn give_up(&mut self, id: &Value, method: &str) -> Error {
         self.inflight.retain(|pending| pending != id);
         self.abandoned.push(id.clone());
@@ -336,7 +251,14 @@ impl Client {
         !self.broken && matches!(self.child.try_wait(), Ok(None))
     }
 
-    pub(crate) fn stderr_note(&self) -> String {
+    async fn settled_stderr_note(&mut self) -> String {
+        if let Some(drain) = self.drain.take() {
+            drop(tokio::time::timeout(MCP_STDERR_SETTLE, drain).await);
+        }
+        self.stderr_note()
+    }
+
+    fn stderr_note(&self) -> String {
         let bytes = self
             .stderr
             .lock()

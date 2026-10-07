@@ -75,6 +75,7 @@ impl WaitError {
 
 mod calls;
 mod checks;
+mod close;
 mod elicit;
 pub(crate) use elicit::Steering;
 mod finish;

@@ -70,44 +70,6 @@ fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
     estimated_tokens.saturating_mul(100) >= (window as usize).saturating_mul(COMPACT_PERCENT)
 }
 
-fn text_only(message: &Message) -> Message {
-    match message.role {
-        Role::Assistant if !message.tool_calls.is_empty() => {
-            let mut lines = Vec::with_capacity(message.tool_calls.len() + 1);
-            if !message.content.is_empty() {
-                lines.push(message.content.clone());
-            }
-            lines.extend(message.tool_calls.iter().map(|call| {
-                format!(
-                    "[called {} {}]",
-                    call.function.name, call.function.arguments
-                )
-            }));
-            Message {
-                content: lines.join("\n"),
-                tool_calls: Vec::new(),
-                continuation: None,
-                ..message.clone()
-            }
-        }
-        Role::Tool => {
-            let label = if message.failed {
-                "tool error"
-            } else {
-                "tool result"
-            };
-            Message {
-                role: Role::User,
-                content: format!("[{label}]\n{}", message.content),
-                tool_call_id: None,
-                failed: false,
-                ..message.clone()
-            }
-        }
-        Role::System | Role::User | Role::Assistant => message.clone(),
-    }
-}
-
 impl<P: Provider> Loop<P> {
     pub(super) fn rewrite(
         &mut self,
@@ -133,19 +95,26 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Option<AssistantMessage>> {
         let mut request_messages = Vec::with_capacity(slice.len() + 2);
         request_messages.push(system.clone());
-        request_messages.extend(slice.iter().map(text_only));
+        request_messages.extend_from_slice(slice);
         request_messages.push(Message::user(SUMMARY_ASK.to_string()));
-        let request = self.request(workflow::Role::Summary, &request_messages, &[], false);
+        let advertised = self.advertised_tools();
+        let request = self
+            .request(
+                workflow::Role::Summary,
+                &request_messages,
+                &advertised.tools,
+                false,
+            )
+            .with_tools_json(&advertised.json);
         match self
             .complete_once(workflow::Role::Summary, &request)
             .await?
         {
             Ok(message)
-                if message.tool_calls.is_empty()
-                    && message
-                        .content
-                        .as_ref()
-                        .is_some_and(|text| !text.trim().is_empty()) =>
+                if message
+                    .content
+                    .as_ref()
+                    .is_some_and(|text| !text.trim().is_empty()) =>
             {
                 Ok(Some(message))
             }
@@ -161,9 +130,9 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if self.summary_wait > 0 {
-            return Ok(());
+            return Ok(false);
         }
         let keep = self.provider.keeps_reasoning();
         let chars: usize = messages.iter().map(|m| message_chars(m, keep)).sum();
@@ -176,7 +145,7 @@ impl<P: Provider> Loop<P> {
             under_pressure(estimated_tokens, window)
         });
         if !pressure || messages.len() < 8 {
-            return Ok(());
+            return Ok(false);
         }
         let tail_chars = window.map_or(DEFAULT_COMPACT_CHARS / 4, |window| {
             let tail_tokens = window
@@ -191,7 +160,7 @@ impl<P: Provider> Loop<P> {
         });
         let Some(keep_from) = compact_boundary(messages, tail_chars, keep, self.session.opener())
         else {
-            return Ok(());
+            return Ok(false);
         };
         self.push_event(
             events,
@@ -216,7 +185,7 @@ impl<P: Provider> Loop<P> {
                     ),
                 },
             )?;
-            return Ok(());
+            return Ok(false);
         };
         self.count_usage(&summary, usage);
         self.emit_records(events, emit)?;
@@ -251,7 +220,7 @@ impl<P: Provider> Loop<P> {
                 },
             )?;
         }
-        Ok(())
+        Ok(true)
     }
 
     pub async fn compact(&mut self) -> Result<bool> {

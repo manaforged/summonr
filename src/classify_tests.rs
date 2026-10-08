@@ -45,6 +45,8 @@ pub(crate) fn endpoint(name: &str, wire: Wire) -> Endpoint {
         keep_reasoning: false,
         opencode: false,
         prompt_cache_key: false,
+        cache_ttl: crate::endpoint::CacheTtl::default(),
+        cache_header: None,
     }
 }
 

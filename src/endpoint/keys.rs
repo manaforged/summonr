@@ -163,6 +163,8 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         keep_reasoning: false,
         opencode: row.opencode,
         prompt_cache_key: row.prompt_cache_key,
+        cache_ttl: row.cache_ttl,
+        cache_header: row.cache_header.clone(),
         reasoning: reasoning::from_preset(Some(row)),
     })
 }

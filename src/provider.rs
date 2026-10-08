@@ -81,6 +81,10 @@ pub(crate) use wire::decisions;
 mod tests;
 
 #[cfg(test)]
+#[path = "provider/cache_tests.rs"]
+mod cache_tests;
+
+#[cfg(test)]
 #[path = "provider/scripted.rs"]
 pub(crate) mod scripted;
 #[cfg(test)]

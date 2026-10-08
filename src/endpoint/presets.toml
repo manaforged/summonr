@@ -117,6 +117,7 @@ aliases = { "grok" = "grok-4.6", "grok-4-6" = "grok-4.6", "grok4.6" = "grok-4.6"
 oauth = "supergrok"
 opencode_ids = ["xai"]
 prompt_cache_key = true
+cache_header = "x-grok-conv-id"
 
 [preset.reasoning]
 off = "unsupported"
@@ -235,6 +236,7 @@ env_keys = ["MINIMAX_API_KEY"]
 opencode_ids = ["minimax-coding-plan"]
 plan = true
 wire = "anthropic"
+cache_ttl = "5m"
 
 [[preset]]
 name = "minimax-cn-plan"
@@ -244,6 +246,7 @@ env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
 opencode_ids = ["minimax-cn-coding-plan"]
 plan = true
 wire = "anthropic"
+cache_ttl = "5m"
 
 [[preset]]
 name = "tencent-plan"

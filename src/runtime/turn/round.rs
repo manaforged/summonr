@@ -204,10 +204,8 @@ impl<P: Provider> Loop<P> {
         let objective = self.session.objective().map_err(super::session_err)?;
         let before = usage.clone();
         self.tools.set_read_only(true);
-        self.schema = None;
         let drafted = plan::draft(self, &objective, usage).await;
         self.tools.set_read_only(self.is_plan());
-        self.schema = None;
         self.seat_usage(workflow::Role::Plan, &before, usage, events, emit)?;
         let commands = self.verify.clone().unwrap_or_default();
         match drafted {
@@ -289,9 +287,6 @@ impl<P: Provider> Loop<P> {
         }
         let child_read_only = self.depth > 0 && self.tools.is_read_only();
         let read_only = self.is_plan() || child_read_only;
-        if read_only != self.tools.is_read_only() {
-            self.schema = None;
-        }
         self.tools.set_read_only(read_only);
         if self.depth == 0 {
             self.tools.reset_edits();
@@ -362,6 +357,7 @@ impl<P: Provider> Loop<P> {
         self.take_mail(messages, events, emit)?;
         self.drain(events, emit);
         self.auto_compact(messages, tool_bytes, usage, events, emit)
-            .await
+            .await?;
+        Ok(())
     }
 }

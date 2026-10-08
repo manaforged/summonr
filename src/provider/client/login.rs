@@ -65,6 +65,8 @@ impl Client {
             keep_reasoning: false,
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,
+            cache_ttl: crate::endpoint::CacheTtl::default(),
+            cache_header: None,
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,

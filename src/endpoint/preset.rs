@@ -23,6 +23,8 @@ pub(super) struct Preset {
     pub(super) context_window: Option<u32>,
     pub(super) opencode: bool,
     pub(super) prompt_cache_key: bool,
+    pub(super) cache_ttl: CacheTtl,
+    pub(super) cache_header: Option<String>,
     pub(super) cli_token: Option<CliToken>,
     pub(super) opencode_oauth: bool,
     pub(super) env_default: bool,
@@ -185,6 +187,10 @@ struct Row {
     #[serde(default)]
     prompt_cache_key: bool,
     #[serde(default)]
+    cache_ttl: CacheTtl,
+    #[serde(default)]
+    cache_header: Option<String>,
+    #[serde(default)]
     cli_token: Option<String>,
     #[serde(default = "yes")]
     opencode_oauth: bool,
@@ -321,6 +327,8 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
             context_window: row.context_window,
             opencode: row.opencode,
             prompt_cache_key: row.prompt_cache_key,
+            cache_ttl: row.cache_ttl,
+            cache_header: row.cache_header,
             cli_token,
             opencode_oauth: row.opencode_oauth,
             env_default: row.env_default,

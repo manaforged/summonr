@@ -85,14 +85,16 @@ impl<P: Provider> Loop<P> {
             }
             (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
         };
+        let opener = format!(
+            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{}",
+            workspace.display(),
+            args.assignment
+        );
         let mut child = Self::with_parts(
             provider,
             model.clone(),
             &workspace,
-            format!(
-                "{}\n\nHarness: child. Finish only the assigned task. {instruction}",
-                self.system_prompt
-            ),
+            self.system_prompt.clone(),
             driver,
             Policy::builtin(),
             None,
@@ -101,6 +103,7 @@ impl<P: Provider> Loop<P> {
         if args.access == Access::Research {
             child.tools.contain_read_only();
         }
+        child.schema = Some(self.advertised_tools());
         child.depth = 1;
         child.mode = self.mode;
         child.context_window = self.context_window;
@@ -137,7 +140,7 @@ impl<P: Provider> Loop<P> {
             child,
             record,
             guard: Guard { tree },
-            assignment: args.assignment,
+            assignment: opener,
             deadline: budget.max_secs.map(crate::limits::seconds),
             started: Instant::now(),
         })
@@ -326,3 +329,7 @@ fn implemented(done: &mut [(Access, Result<Done>)]) -> impl Iterator<Item = &mut
         .filter(|(access, _)| *access == Access::Implement)
         .filter_map(|(_, done)| done.as_mut().ok())
 }
+
+#[cfg(test)]
+#[path = "spawn_tests.rs"]
+mod tests;

@@ -14,6 +14,7 @@ use serde_json::json;
 use crate::provider::{AssistantMessage, Message, Role, ToolCall, ToolFunction, ToolKind};
 
 mod body;
+
 mod event;
 mod part;
 mod stream;
@@ -36,9 +37,10 @@ impl Chat for Wire {
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,
+        cache: crate::endpoint::CacheTtl,
         stream: bool,
     ) -> crate::error::Result<Wired> {
-        body::body(call, reasoning, stream)
+        body::body(call, reasoning, cache, stream)
     }
 
     #[cfg(test)]
@@ -49,7 +51,13 @@ impl Chat for Wire {
 
 #[cfg(test)]
 pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::error::Result<Value> {
-    body::body(call, &call.reasoning, stream)?.value()
+    body::body(
+        call,
+        &call.reasoning,
+        crate::endpoint::CacheTtl::default(),
+        stream,
+    )?
+    .value()
 }
 
 #[cfg(test)]

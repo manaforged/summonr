@@ -98,3 +98,41 @@ fn outcome(tools: &ToolRegistry, command: &str) -> String {
         Err(error) => error.to_string(),
     }
 }
+
+fn names(tools: &ToolRegistry, work: crate::WorkKind) -> Vec<String> {
+    tools
+        .definitions(work)
+        .into_iter()
+        .map(|tool| tool.function.name)
+        .collect()
+}
+
+#[test]
+fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
+    let (_dir, mut tools) = workspace(&[("a.txt", "one\n")]);
+    let open = names(&tools, crate::WorkKind::Single);
+    tools.set_read_only(true);
+    assert_eq!(names(&tools, crate::WorkKind::Single), open);
+    let goal = names(&tools, crate::WorkKind::Goal);
+    assert_eq!(goal.last().map(String::as_str), Some("todo"));
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "write".to_string(),
+            arguments: serde_json::json!({ "path": "a.txt", "content": "two\n" }).to_string(),
+        },
+        continuation: None,
+    };
+    let refused = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call));
+    let text = match refused {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    };
+    assert!(text.contains("plan mode does not edit files"), "{text}");
+}

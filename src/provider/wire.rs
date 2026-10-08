@@ -230,11 +230,22 @@ pub(crate) trait Chat {
         None
     }
 
-    fn body(call: &CompletionRequest<'_>, reasoning: &Reasoning, stream: bool) -> Result<Wired>;
+    fn body(
+        call: &CompletionRequest<'_>,
+        reasoning: &Reasoning,
+        cache: crate::endpoint::CacheTtl,
+        stream: bool,
+    ) -> Result<Wired>;
 
     #[cfg(test)]
     fn request(call: &CompletionRequest<'_>, stream: bool) -> Result<Value> {
-        Self::body(call, &call.reasoning, stream)?.value()
+        Self::body(
+            call,
+            &call.reasoning,
+            crate::endpoint::CacheTtl::default(),
+            stream,
+        )?
+        .value()
     }
 
     #[cfg(test)]

@@ -22,6 +22,7 @@ impl Chat for Wire {
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,
+        _cache: crate::endpoint::CacheTtl,
         stream: bool,
     ) -> crate::error::Result<super::Wired> {
         body(call, reasoning, stream).map(super::Wired::head)

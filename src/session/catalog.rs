@@ -261,13 +261,7 @@ fn info(path: PathBuf) -> SessionInfo {
     }
 }
 
-type Peek = (
-    Option<String>,
-    Option<String>,
-    String,
-    Option<String>,
-    u8,
-);
+type Peek = (Option<String>, Option<String>, String, Option<String>, u8);
 
 fn peek(path: &Path) -> Peek {
     const PEEK_LINES: usize = 64;

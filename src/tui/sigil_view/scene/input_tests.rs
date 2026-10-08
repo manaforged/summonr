@@ -55,9 +55,8 @@ fn the_splash_card_covers_the_stars() {
             panic!("splash card missing");
         };
         assert!(x1 > x0 + 1 && y1 > y0 + 1, "splash card is a sliver");
-        let edge = |cell: &Cell| {
-            matches!(cell.fg, Ink::Exact(colour) if colour == super::palette().gray)
-        };
+        let edge =
+            |cell: &Cell| matches!(cell.fg, Ink::Exact(colour) if colour == super::palette().gray);
         let at = |col: usize, row: usize| &cells[row * usize::from(cols) + col];
         assert_eq!(at(x0, y0).text, "╭", "top left");
         assert_eq!(at(x1, y0).text, "╮", "top right");

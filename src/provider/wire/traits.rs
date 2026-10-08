@@ -15,8 +15,15 @@ pub(crate) enum Thinking {
     None,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Family {
+    Other,
+    Anthropic,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Traits {
+    pub(crate) family: Family,
     pub(crate) thinking: Thinking,
     pub(crate) skip_signature: bool,
     pub(crate) scale: Option<Scale>,
@@ -31,6 +38,7 @@ struct Row {
 }
 
 const NONE: Traits = Traits {
+    family: Family::Other,
     thinking: Thinking::None,
     skip_signature: false,
     scale: None,
@@ -48,6 +56,7 @@ const fn row(
     Row {
         parts,
         traits: Traits {
+            family: Family::Other,
             thinking,
             skip_signature: false,
             scale: Some(Scale::new(levels, off)),
@@ -67,6 +76,7 @@ const fn signed(
     Row {
         parts,
         traits: Traits {
+            family: Family::Other,
             thinking,
             skip_signature: true,
             scale: Some(Scale::new(levels, off)),
@@ -79,6 +89,16 @@ const fn signed(
 
 const fn scaled(parts: &'static [&'static str], levels: &'static [Effort], off: Off) -> Row {
     row(parts, Thinking::None, levels, off)
+}
+
+const fn claude(row: Row) -> Row {
+    Row {
+        parts: row.parts,
+        traits: Traits {
+            family: Family::Anthropic,
+            ..row.traits
+        },
+    }
 }
 
 const fn replayed(row: Row) -> Row {

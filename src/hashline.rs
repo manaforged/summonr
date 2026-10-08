@@ -110,12 +110,9 @@ fn hits(content: &str, parsed: &Tag) -> Vec<usize> {
     content
         .lines()
         .enumerate()
-        .filter(|(index, line)| {
-            let hash = line_hash(line);
-            match parsed {
-                Tag::Line { number, hash: want } => index + 1 == *number && hash == *want,
-                Tag::Hash(want) => hash == *want,
-            }
+        .filter(|(index, line)| match parsed {
+            Tag::Line { number, hash: want } => index + 1 == *number && line_hash(line) == *want,
+            Tag::Hash(want) => line_hash(line) == *want,
         })
         .map(|(index, _)| index)
         .collect()

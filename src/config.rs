@@ -145,6 +145,7 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
+    pub cache_ttl: Option<crate::endpoint::CacheTtl>,
     pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
     pub thinking_off: Option<crate::provider::Off>,
     #[serde(default)]

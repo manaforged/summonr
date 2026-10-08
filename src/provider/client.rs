@@ -1,6 +1,7 @@
 use super::*;
 use leyline::http::StatusCode;
 
+mod classify;
 mod encode;
 mod login;
 mod meta;
@@ -47,6 +48,8 @@ pub struct Client {
     pub(super) keep_reasoning: bool,
     pub(super) name: String,
     pub(super) prompt_cache_key: bool,
+    pub(super) cache_ttl: crate::endpoint::CacheTtl,
+    pub(super) cache_header: Option<String>,
     pub(super) wire: Wire,
     pub(super) reasoning: Reasoning,
     pub(super) idle: Option<Duration>,
@@ -106,6 +109,8 @@ impl Client {
         client.keep_reasoning =
             endpoint.keep_reasoning || wire::traits::traits(&endpoint.model).replay;
         client.name.clone_from(&endpoint.name);
+        client.cache_ttl = endpoint.cache_ttl;
+        client.cache_header.clone_from(&endpoint.cache_header);
         client.reasoning.clone_from(&endpoint.reasoning);
         Ok(client)
     }
@@ -166,16 +171,19 @@ impl Client {
         stream: bool,
     ) -> Result<Body<'a>> {
         let reasoning = &self.reasoning;
+        let cache = self.cache_ttl;
         let wired = match self.wire {
             Wire::Anthropic => {
-                <wire::anthropic::Wire as wire::Chat>::body(request, reasoning, stream)?
+                <wire::anthropic::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
             }
-            Wire::Gemini => <wire::gemini::Wire as wire::Chat>::body(request, reasoning, stream)?,
+            Wire::Gemini => {
+                <wire::gemini::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
+            }
             Wire::Responses => {
-                <wire::responses::Wire as wire::Chat>::body(request, reasoning, stream)?
+                <wire::responses::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
             }
             Wire::Completions => {
-                <wire::completions::Wire as wire::Chat>::body(request, reasoning, stream)?
+                <wire::completions::Wire as wire::Chat>::body(request, reasoning, cache, stream)?
             }
             Wire::Decisions => {
                 return Err(Error::Config(
@@ -188,6 +196,7 @@ impl Client {
             Some(serde_json::to_vec(&Messages {
                 list: request.messages,
                 keep_reasoning: self.keeps_reasoning(),
+                cached: request.traits.family == wire::traits::Family::Anthropic,
             })?)
         } else {
             wired.messages
@@ -288,9 +297,10 @@ impl Client {
         body: Vec<u8>,
         model: Option<&str>,
         session: &str,
+        route: Option<&str>,
         stream: bool,
     ) -> Result<leyline::Response> {
-        let response = self.post_json(url, body, session, stream).await?;
+        let response = self.post_json(url, body, session, route, stream).await?;
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -306,52 +316,22 @@ impl Client {
         url: &str,
         body: Vec<u8>,
         session: &str,
+        route: Option<&str>,
         stream: bool,
     ) -> Result<leyline::Response> {
         let token = self.token().await?;
-        let request = self
+        let mut request = self
             .attach(self.http.post(url), &token, Some(session))
-            .header("content-type", "application/json")
-            .body(body);
+            .header("content-type", "application/json");
+        if let (Some(name), Some(value)) = (&self.cache_header, route) {
+            request = request.header(name.as_str(), value);
+        }
+        let request = request.body(body);
         let request = if stream { request.stream() } else { request };
         request
             .send()
             .await
             .map_err(|error| self.unreachable(&error))
-    }
-
-    pub async fn classify(
-        &self,
-        model: &str,
-        state: &Value,
-        questions: &std::collections::BTreeMap<String, crate::classify::Question>,
-    ) -> Result<crate::classify::Decision> {
-        if self.wire != Wire::Decisions {
-            return Err(Error::Config(
-                "this endpoint does not classify; see `summonr endpoints`".to_string(),
-            ));
-        }
-        let body = wire::decisions::body(model, state, questions);
-        let sink = super::capture::Sink::open(self.wire, "classify");
-        if let Some(sink) = &sink {
-            sink.write("request", &body.to_string());
-        }
-        let text = self
-            .send(
-                &self.base,
-                serde_json::to_vec(&body)?,
-                Some(model),
-                "classify",
-                false,
-            )
-            .await?
-            .text()
-            .await
-            .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;
-        if let Some(sink) = &sink {
-            sink.write("response", &text);
-        }
-        wire::decisions::decision(&text)
     }
 }
 

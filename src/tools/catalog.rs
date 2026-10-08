@@ -11,35 +11,28 @@ impl ToolRegistry {
                 self.skills && crate::skills::catalog(&self.workspace).is_some(),
             )
         });
-        let writes = !self.policy.is_read_only();
-        let mut all = vec![read()];
-        if writes {
-            all.extend([edit(), write()]);
-        }
+        let mut all = vec![read(), edit(), write()];
         if skill_on {
             all.push(skill());
         }
-        if lsp_on && writes {
+        if lsp_on {
             all.push(lsp());
         }
-        if self.enabled(Builtin::RunCommand) {
-            all.push(run_command());
+        all.push(run_command());
+        if self.search.is_some() {
+            all.push(web());
         }
         if matches!(work, WorkKind::Steps | WorkKind::Goal) {
             all.push(todo());
-        }
-        if self.search.is_some() {
-            all.push(web());
         }
         all
     }
 
     pub(super) fn enabled(&self, kind: Builtin) -> bool {
         match kind {
-            Builtin::Read | Builtin::Todo => true,
+            Builtin::Read | Builtin::Todo | Builtin::Edit | Builtin::Write => true,
             Builtin::Skill => self.skills,
             Builtin::Lsp => self.language,
-            Builtin::Edit | Builtin::Write => !self.policy.is_read_only(),
             Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
             Builtin::Web => self.search.is_some(),
             Builtin::Task => false,

@@ -23,7 +23,7 @@ fn spend(model: &str, workspace: &str, input: u64) -> Spend {
 
 #[test]
 fn the_usage_page_shows_totals_trend_models_and_workspaces() {
-    let shown = frame_with(busy_info(), 160, 60, State::Idle, |app| {
+    let shown = frame_with(busy_info(), 160, 90, State::Idle, |app| {
         app.replace("/usage".to_owned());
         app.submit();
         app.update(Msg::Usage(Ok(vec![

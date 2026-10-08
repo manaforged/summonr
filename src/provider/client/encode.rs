@@ -84,6 +84,7 @@ impl<'a> Body<'a> {
 pub(crate) struct Messages<'a> {
     pub(super) list: &'a [Message],
     pub(super) keep_reasoning: bool,
+    pub(super) cached: bool,
 }
 
 impl Serialize for Messages<'_> {
@@ -91,14 +92,32 @@ impl Serialize for Messages<'_> {
         let (lead, prefix) = system_prefix(self.list);
         let mut seq = serializer.serialize_seq(None)?;
         if !prefix.is_empty() {
-            seq.serialize_element(&View::text(Role::System, &prefix, &[]))?;
+            let mut system = View::text(Role::System, &prefix, &[]);
+            system.cached = self.cached;
+            seq.serialize_element(&system)?;
         }
+        let trailing = self
+            .list
+            .iter()
+            .rev()
+            .take_while(|message| message.role == Role::Tool)
+            .any(|message| !message.images.is_empty());
+        let last = self.list.len().saturating_sub(1).max(lead);
         let mut attached: Vec<&Image> = Vec::new();
-        for message in &self.list[lead..] {
-            element(&mut seq, message, &mut attached, self.keep_reasoning)?;
+        for (index, message) in self.list.iter().enumerate().skip(lead) {
+            let cached = self.cached && !trailing && index == last;
+            element(
+                &mut seq,
+                message,
+                &mut attached,
+                self.keep_reasoning,
+                cached,
+            )?;
         }
         if !attached.is_empty() {
-            seq.serialize_element(&View::attachments(&attached))?;
+            let mut view = View::attachments(&attached);
+            view.cached = self.cached;
+            seq.serialize_element(&view)?;
         }
         seq.end()
     }
@@ -124,6 +143,7 @@ fn element<'a, Q: SerializeSeq>(
     message: &'a Message,
     attached: &mut Vec<&'a Image>,
     keep: bool,
+    cached: bool,
 ) -> std::result::Result<(), Q::Error> {
     if message.role != Role::Tool && !attached.is_empty() {
         seq.serialize_element(&View::attachments(attached))?;
@@ -134,10 +154,14 @@ fn element<'a, Q: SerializeSeq>(
         return seq.serialize_element(&View::of(message, &[], keep));
     }
     if message.role == Role::System {
-        return seq.serialize_element(&View::text(Role::User, &message.content, &[]));
+        let mut view = View::text(Role::User, &message.content, &[]);
+        view.cached = cached;
+        return seq.serialize_element(&view);
     }
     let images: Vec<&Image> = message.images.iter().collect();
-    seq.serialize_element(&View::of(message, &images, keep))
+    let mut view = View::of(message, &images, keep);
+    view.cached = cached;
+    seq.serialize_element(&view)
 }
 
 struct View<'a, 'b> {
@@ -148,6 +172,7 @@ struct View<'a, 'b> {
     tool_call_id: Option<&'a str>,
     reasoning: Option<&'a str>,
     keep_reasoning: bool,
+    cached: bool,
 }
 
 impl<'a, 'b> View<'a, 'b> {
@@ -160,6 +185,7 @@ impl<'a, 'b> View<'a, 'b> {
             tool_call_id: None,
             reasoning: None,
             keep_reasoning: false,
+            cached: false,
         }
     }
 
@@ -176,6 +202,7 @@ impl<'a, 'b> View<'a, 'b> {
             tool_call_id: message.tool_call_id.as_deref(),
             reasoning: message.reasoning.as_deref(),
             keep_reasoning,
+            cached: false,
         }
     }
 }
@@ -184,41 +211,61 @@ impl Serialize for View<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
         let mut map = serializer.serialize_map(None)?;
         map.serialize_entry("role", &self.role)?;
-        if self.images.is_empty() {
-            map.serialize_entry("content", self.content)?;
-        } else {
-            map.serialize_entry("content", &Parts(self.content, self.images))?;
-        }
+        self.content_entry(&mut map)?;
         if !self.tool_calls.is_empty() {
             map.serialize_entry("tool_calls", &Calls(self.tool_calls))?;
         }
         if let Some(id) = self.tool_call_id {
             map.serialize_entry("tool_call_id", id)?;
         }
-        match (self.role, self.keep_reasoning, self.reasoning) {
-            (Role::Assistant, true, reasoning) => {
-                map.serialize_entry("reasoning_content", reasoning.unwrap_or_default())?;
-            }
-            (Role::Assistant, false, _) | (_, _, None) => {}
-            (_, _, Some(reasoning)) => map.serialize_entry("reasoning_content", reasoning)?,
-        }
+        self.reasoning_entry(&mut map)?;
         map.end()
     }
 }
 
-struct Parts<'a, 'b>(&'a str, &'b [&'a Image]);
+impl View<'_, '_> {
+    fn content_entry<M: SerializeMap>(&self, map: &mut M) -> std::result::Result<(), M::Error> {
+        let cached = self.cached && (!self.content.is_empty() || !self.images.is_empty());
+        if self.images.is_empty() && !cached {
+            map.serialize_entry("content", self.content)
+        } else {
+            map.serialize_entry("content", &Parts(self.content, self.images, cached))
+        }
+    }
+
+    fn reasoning_entry<M: SerializeMap>(&self, map: &mut M) -> std::result::Result<(), M::Error> {
+        match (self.role, self.keep_reasoning, self.reasoning) {
+            (Role::Assistant, true, reasoning) => {
+                map.serialize_entry("reasoning_content", reasoning.unwrap_or_default())
+            }
+            (Role::Assistant, false, _) | (_, _, None) => Ok(()),
+            (_, _, Some(reasoning)) => map.serialize_entry("reasoning_content", reasoning),
+        }
+    }
+}
+
+struct Parts<'a, 'b>(&'a str, &'b [&'a Image], bool);
 
 impl Serialize for Parts<'_, '_> {
     fn serialize<S: Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
-        let mut seq = serializer.serialize_seq(None)?;
+        let mut parts = Vec::with_capacity(self.1.len() + 1);
         if !self.0.is_empty() {
-            seq.serialize_element(&json!({ "type": "text", "text": self.0 }))?;
+            parts.push(json!({ "type": "text", "text": self.0 }));
         }
         for image in self.1 {
-            seq.serialize_element(&json!({
+            parts.push(json!({
                 "type": "image_url",
                 "image_url": { "url": image.url() }
-            }))?;
+            }));
+        }
+        if self.2
+            && let Some(last) = parts.last_mut()
+        {
+            last["cache_control"] = json!({"type": "ephemeral"});
+        }
+        let mut seq = serializer.serialize_seq(Some(parts.len()))?;
+        for part in &parts {
+            seq.serialize_element(part)?;
         }
         seq.end()
     }

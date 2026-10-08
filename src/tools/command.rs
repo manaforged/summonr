@@ -96,8 +96,7 @@ impl ToolRegistry {
     ) -> Result<Option<ToolOutput>> {
         if !approved
             && !self.policy.is_strict()
-            && let Some(reason) =
-                crate::policy::danger(command, &self.workspace, cwd, self.policy.confirm())
+            && let Some(reason) = self.policy.needs_approval(command, &self.workspace, cwd)
         {
             return Ok(Some(ToolOutput {
                 text: format!(

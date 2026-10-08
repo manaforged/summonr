@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Turn an asciicast from tui-record.py into compact screen frames for a web player.
 
-usage: cast-frames.py RUN.cast OUT.json [--gap SECONDS] [--base RRGGBB] [--fg RRGGBB]
+usage: cast-frames.py RUN.cast OUT.json [--gap SECONDS] [--tick CELLS] [--fast FACTOR] [--fast-from SECONDS] [--base RRGGBB] [--fg RRGGBB]
 
 The cast is replayed through pyte. Output events that arrive within 40 ms
 are one frame. Each frame stores only the cells that changed, as runs of
 text that share a style; styles are listed once. Idle time between frames
-is capped at --gap seconds. Cells with no background take --base, and
-cells with the default foreground take --fg.
+is capped at --gap seconds, and a frame that changes no more than --tick
+cells, such as a spinner, plays --fast times quicker once the recording
+passes --fast-from seconds, so typing before then keeps its pace. Cells
+with no background take --base, and cells with the default foreground
+take --fg.
 """
 import argparse, json
 
@@ -65,6 +68,9 @@ def main():
     parser.add_argument("cast")
     parser.add_argument("out")
     parser.add_argument("--gap", type=float, default=1.2)
+    parser.add_argument("--tick", type=int, default=0)
+    parser.add_argument("--fast", type=float, default=1.0)
+    parser.add_argument("--fast-from", type=float, default=0.0)
     parser.add_argument("--base", default="0c0c14")
     parser.add_argument("--fg", default="e6e6e6")
     args = parser.parse_args()
@@ -80,7 +86,10 @@ def main():
             current = snapshot(screen, args.fg, args.base)
             changed = runs(previous, current, head["width"], styles, index)
             if changed:
-                clock += min(pending_at - last_time, args.gap)
+                cells = sum(len(run[3]) for run in changed)
+                step = min(pending_at - last_time, args.gap)
+                quick = cells <= args.tick and pending_at >= args.fast_from
+                clock += step / args.fast if quick else step
                 last_time = pending_at
                 frames.append([round(clock, 3), changed])
                 previous = current

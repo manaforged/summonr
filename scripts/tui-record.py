@@ -4,7 +4,7 @@
 usage: tui-record.py PLAN.json
 
 The plan names the working directory, the argv, and the steps. Each step
-may type text, send keys (escapes such as \\r or \\x1b), wait until the
+may type text (one character every "delay" seconds), send keys (escapes such as \\r or \\x1b), wait until the
 screen is quiet or the program exits, and dump the screen as the cell grid
 that render-splash.py draws:
 
@@ -87,10 +87,12 @@ class Session:
             elif not until_exit and time.time() - last > quiet:
                 return
 
-    def type(self, text):
+    def type(self, text, delay):
         for ch in text:
             send(self.fd, ch.encode())
-            self.read(0.03)
+            end = time.time() + delay
+            while time.time() < end:
+                self.read(0.01)
 
 
 def main():
@@ -100,7 +102,7 @@ def main():
     session.settle(3, 20, False)
     for step in plan["steps"]:
         if "type" in step:
-            session.type(step["type"])
+            session.type(step["type"], step.get("delay", 0.03))
         if "keys" in step:
             send(session.fd, step["keys"].encode().decode("unicode_escape").encode())
         session.settle(step.get("quiet", 3), step.get("limit", 30), step.get("until_exit", False))

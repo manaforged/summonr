@@ -12,7 +12,7 @@ impl<P: Provider> Loop<P> {
         let plan = self.is_plan();
         self.tools.set_read_only(true);
         let result = self
-            .aside_rounds(role, system, user, &advertised.tools)
+            .aside_rounds(role, system, user, &advertised.tools, &advertised.json)
             .await;
         self.tools.set_read_only(plan);
         result
@@ -24,6 +24,7 @@ impl<P: Provider> Loop<P> {
         system: &str,
         user: &str,
         tools: &[ToolDefinition],
+        json: &crate::provider::ToolsJson,
     ) -> Result<(String, Usage)> {
         let mut messages = vec![
             Message::system(system.to_string()),
@@ -34,7 +35,9 @@ impl<P: Provider> Loop<P> {
             if let Some(reason) = self.round_abort() {
                 return Err(Error::Config(reason));
             }
-            let request = self.request(role, &messages, tools, false);
+            let request = self
+                .request(role, &messages, tools, false)
+                .with_tools_json(json);
             self.freeze_catalog();
             let assistant = match self.complete_once(role, &request).await? {
                 Ok(assistant) => assistant,

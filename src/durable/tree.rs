@@ -19,12 +19,12 @@ pub(crate) struct Entry(u64, u64, u64);
 const WALK_LIMIT: usize = 20_000;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(transparent)]
 pub(crate) struct Snapshot {
+    #[serde(default)]
     files: BTreeMap<String, Entry>,
-    #[serde(skip)]
+    #[serde(default)]
     taken: u64,
-    #[serde(skip)]
+    #[serde(default)]
     stamps: BTreeMap<String, Stamp>,
 }
 
@@ -35,6 +35,16 @@ impl PartialEq for Snapshot {
 }
 
 impl Eq for Snapshot {}
+
+impl Snapshot {
+    pub(crate) fn from_files(files: BTreeMap<String, Entry>) -> Self {
+        Self {
+            files,
+            taken: 0,
+            stamps: BTreeMap::new(),
+        }
+    }
+}
 
 impl Hash for Snapshot {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -108,7 +118,7 @@ fn mark(
     Ok(Some((Entry(metadata.len(), modified, mark), stamp)))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
 struct Stamp {
     mode: u32,
     changed: (i64, i64),

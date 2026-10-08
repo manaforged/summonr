@@ -4,12 +4,17 @@
 | --- | --- | --- |
 | [`Splash`](#splash) | struct |  |
 | [`host_of`](#host_of) | fn |  |
-| [`interactive`](#interactive) | fn |  |
-| [`line`](#line) | fn |  |
 
 ## Structs
 
 ### `Splash`
+
+**Methods**
+
+| Method | Description |
+| --- | --- |
+| <code>pub fn <a href="#splash">Splash</a>&lt;'_&gt;::interactive(&amp;self, full: bool)</code> |  |
+| <code>pub fn <a href="#splash">Splash</a>&lt;'_&gt;::line(&amp;self)</code> |  |
 
 **Fields**
 
@@ -32,16 +37,6 @@
 ### `host_of`
 
 <pre>pub fn <a href="#host_of">host_of</a>(url: Option&lt;&amp;str&gt;) -&gt; Option&lt;&amp;str&gt;</pre>
-
-
-### `interactive`
-
-<pre>pub fn <a href="#interactive">interactive</a>(splash: &amp;<a href="#splash">Splash</a>&lt;'_&gt;, full: bool)</pre>
-
-
-### `line`
-
-<pre>pub fn <a href="#line">line</a>(splash: &amp;<a href="#splash">Splash</a>&lt;'_&gt;)</pre>
 
 
 ---

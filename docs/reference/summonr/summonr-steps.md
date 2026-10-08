@@ -6,13 +6,18 @@
 | [`Step`](#step) | struct |  |
 | [`Item`](#item) | enum |  |
 | [`exit_code`](#exit_code) | fn |  |
-| [`missing`](#missing) | fn |  |
 | [`parse`](#parse) | fn |  |
 | [`prompt`](#prompt) | fn |  |
 
 ## Structs
 
 ### `Contract`
+
+**Methods**
+
+| Method | Description |
+| --- | --- |
+| <code>missing(&amp;self, workspace: &amp;Path) -&gt; Vec&lt;String&gt;</code> |  |
 
 **Fields**
 
@@ -63,11 +68,6 @@
 ### `exit_code`
 
 <pre>pub fn <a href="#exit_code">exit_code</a>(output: &amp;str) -&gt; Option&lt;i32&gt;</pre>
-
-
-### `missing`
-
-<pre>pub fn <a href="#missing">missing</a>(contract: &amp;<a href="#contract">Contract</a>, workspace: &amp;Path) -&gt; Vec&lt;String&gt;</pre>
 
 
 ### `parse`

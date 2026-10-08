@@ -10,7 +10,6 @@ use sigil::prelude::Paint;
 use sigil::prelude::container;
 use sigil::prelude::spacer;
 
-use super::chrome;
 use super::{App, canvas, cell_width};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -36,9 +35,9 @@ fn footer_view(app: &App) -> FooterView {
     let model = app.model.get();
     let spend = model.spend().map(crate::dollars);
     let open = if hover == Some(Target::Context) || (hover.is_none() && context_open) {
-        Some((false, chrome::context_facts(&model)))
+        Some((false, model.context_facts()))
     } else if hover == Some(Target::Cache) || (hover.is_none() && cache_open) {
-        Some((true, chrome::cache_facts(&model)))
+        Some((true, model.cache_facts()))
     } else {
         None
     };
@@ -46,8 +45,8 @@ fn footer_view(app: &App) -> FooterView {
         app.notice.get(),
         spend,
         elsewhere(&model.live),
-        chrome::context_percent(&model),
-        chrome::cache_percent(&model),
+        model.context_percent(),
+        model.cache_percent(),
         open,
     )
 }

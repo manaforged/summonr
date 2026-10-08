@@ -249,13 +249,13 @@ async fn dispatch(
         trust: args.trust,
     };
     if let Some(plan_path) = args.steps.as_deref() {
-        splash::line(&splash);
+        splash.line();
         modes::steps(loop_, args, plan_path).await
     } else if let Some(objective) = args.goal.as_deref() {
-        splash::line(&splash);
+        splash.line();
         modes::goal(loop_, args, objective, goal_checks).await
     } else if args.print || !args.prompt.is_empty() {
-        splash::line(&splash);
+        splash.line();
         modes::print(loop_, args).await
     } else if let Some(ui_rx) = ui.1 {
         let prefs = summonr::prefs::load()?;
@@ -287,7 +287,7 @@ async fn dispatch(
         let opener = factory(args, endpoint, super::commands::workspace()?);
         summonr::tui::run(loop_, workspace, info, ui_tx, ui_rx, args.gui, opener)
     } else {
-        splash::line(&splash);
+        splash.line();
         modes::print(loop_, args).await
     }
 }

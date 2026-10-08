@@ -23,7 +23,7 @@ use crate::tui::hub::{Factory, Started, start};
 use crate::tui::{Cmd, Info, Msg};
 
 #[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use run::{copy_out, start_tick, stop};
+pub(in crate::tui::sigil_view) use run::{start_tick, stop};
 
 mod edit;
 mod intake;

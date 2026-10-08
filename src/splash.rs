@@ -54,26 +54,82 @@ pub(crate) fn logo_width() -> usize {
     LOGO_WIDTH
 }
 
-pub fn interactive(splash: &Splash, full: bool) {
-    if !full || !std::io::stderr().is_terminal() {
-        line(splash);
-        return;
+impl Splash<'_> {
+    pub fn interactive(&self, full: bool) {
+        if !full || !std::io::stderr().is_terminal() {
+            self.line();
+            return;
+        }
+        let palette = if colored() { &ANSI } else { &PLAIN };
+        eprintln!();
+        eprintln!("{}", self.render(palette));
     }
-    let palette = if colored() { &ANSI } else { &PLAIN };
-    eprintln!();
-    eprintln!("{}", render(splash, palette));
-}
 
-pub fn line(splash: &Splash) {
-    match splash.relay {
-        Some(relay) => eprintln!(
-            "summonr {} · {} @ {} · session {}",
-            splash.version, splash.model, relay, splash.session
-        ),
-        None => eprintln!(
-            "summonr {} · {} · session {}",
-            splash.version, splash.model, splash.session
-        ),
+    pub fn line(&self) {
+        match self.relay {
+            Some(relay) => eprintln!(
+                "summonr {} · {} @ {} · session {}",
+                self.version, self.model, relay, self.session
+            ),
+            None => eprintln!(
+                "summonr {} · {} · session {}",
+                self.version, self.model, self.session
+            ),
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn facts(&self) -> Vec<(&'static str, String)> {
+        let mut rows = vec![("summonr", self.version.to_string())];
+        let model = match self.relay {
+            Some(relay) => format!("{} · {relay}", self.model),
+            None => self.model.to_string(),
+        };
+        rows.push(("model", model));
+        let state = if self.resumed { "resumed" } else { "new" };
+        rows.push(("session", format!("{} · {state}", self.session)));
+        if self.resumed && self.history > 0 {
+            rows.push(("history", format!("{} messages", self.history)));
+        }
+        rows.push(("workdir", crate::config::tilde(self.workspace)));
+        if self.plan {
+            rows.push(("mode", "plan · read-only".to_string()));
+        }
+        if self.strict {
+            rows.push(("policy", "strict".to_string()));
+        }
+        if self.trust {
+            rows.push(("context", "AGENTS.md loaded".to_string()));
+        }
+        rows
+    }
+
+    fn render(&self, palette: &Palette) -> String {
+        let info = self.info_lines(palette);
+        let mut lines = Vec::new();
+        for row in LOGO {
+            lines.push(format!("{}{row}{}", palette.accent, palette.reset));
+        }
+        lines.push(String::new());
+        lines.extend(info.iter().map(|row| format!("  {row}")));
+        lines.push(String::new());
+        lines.push(format!(
+            "{}✦ /help · @file · /exit{}",
+            palette.dim, palette.reset
+        ));
+        lines.join("\n")
+    }
+
+    fn info_lines(&self, palette: &Palette) -> Vec<String> {
+        let mut rows = Vec::new();
+        for (index, (label, value)) in self.facts().into_iter().enumerate() {
+            if index == 0 {
+                rows.push(format!("{}summonr {value}{}", palette.bold, palette.reset));
+            } else {
+                rows.push(row(palette, label, &value));
+            }
+        }
+        rows
     }
 }
 
@@ -82,60 +138,6 @@ fn colored() -> bool {
         return false;
     }
     !matches!(std::env::var("TERM"), Ok(term) if term == "dumb")
-}
-
-#[must_use]
-pub(crate) fn facts(splash: &Splash) -> Vec<(&'static str, String)> {
-    let mut rows = vec![("summonr", splash.version.to_string())];
-    let model = match splash.relay {
-        Some(relay) => format!("{} · {relay}", splash.model),
-        None => splash.model.to_string(),
-    };
-    rows.push(("model", model));
-    let state = if splash.resumed { "resumed" } else { "new" };
-    rows.push(("session", format!("{} · {state}", splash.session)));
-    if splash.resumed && splash.history > 0 {
-        rows.push(("history", format!("{} messages", splash.history)));
-    }
-    rows.push(("workdir", crate::config::tilde(splash.workspace)));
-    if splash.plan {
-        rows.push(("mode", "plan · read-only".to_string()));
-    }
-    if splash.strict {
-        rows.push(("policy", "strict".to_string()));
-    }
-    if splash.trust {
-        rows.push(("context", "AGENTS.md loaded".to_string()));
-    }
-    rows
-}
-
-fn render(splash: &Splash, palette: &Palette) -> String {
-    let info = info_lines(splash, palette);
-    let mut lines = Vec::new();
-    for row in LOGO {
-        lines.push(format!("{}{row}{}", palette.accent, palette.reset));
-    }
-    lines.push(String::new());
-    lines.extend(info.iter().map(|row| format!("  {row}")));
-    lines.push(String::new());
-    lines.push(format!(
-        "{}✦ /help · @file · /exit{}",
-        palette.dim, palette.reset
-    ));
-    lines.join("\n")
-}
-
-fn info_lines(splash: &Splash, palette: &Palette) -> Vec<String> {
-    let mut rows = Vec::new();
-    for (index, (label, value)) in facts(splash).into_iter().enumerate() {
-        if index == 0 {
-            rows.push(format!("{}summonr {value}{}", palette.bold, palette.reset));
-        } else {
-            rows.push(row(palette, label, &value));
-        }
-    }
-    rows
 }
 
 fn row(palette: &Palette, label: &str, value: &str) -> String {

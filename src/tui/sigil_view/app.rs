@@ -71,7 +71,7 @@ mod state;
 
 pub(super) use state::{AuthDialog, HotkeyDialog, ModelPicker, WorkflowDialog};
 
-use presentation::{facts, header, settings_text, status};
+use presentation::settings_text;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Overlay {

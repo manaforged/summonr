@@ -24,7 +24,7 @@ impl<P: Provider> Loop<P> {
             output: ToolOutput {
                 text: format!(
                     "started child {id}\naccess: {}\nassignment: {}\nstate: running\npoll with task {{\"child\": \"{id}\"}}; stop with kill true",
-                    access_name(record.access),
+                    record.access.name(),
                     ellipsize(&record.assignment, LAST_CHARS)
                 ),
                 success: true,
@@ -183,14 +183,14 @@ impl<P: Provider> Loop<P> {
             Ok(landings) => {
                 for ((index, _, _), landing) in picked.into_iter().zip(landings) {
                     if let Ok(done) = done[index].1.as_mut() {
-                        record_landing(&mut done.record, landing);
+                        done.record.record_landing(landing);
                     }
                 }
             }
             Err(error) => {
                 let diagnostic = error.to_string();
                 for done in implemented(done) {
-                    fail_record(&mut done.record, &diagnostic);
+                    done.record.fail_record(&diagnostic);
                 }
             }
         }
@@ -204,7 +204,7 @@ impl<P: Provider> Loop<P> {
         let text = serde_json::to_string(&record)
             .map_err(|error| Error::Config(format!("cannot encode child receipt: {error}")))?;
         let success = matches!(record.state, ChildState::Completed(_));
-        let mutated = record_paths(&record) > 0;
+        let mutated = record.record_paths() > 0;
         Ok(Execution {
             output: ToolOutput {
                 text,
@@ -286,8 +286,8 @@ fn release_unfinished(done: &mut Done) {
     if tree.snapshot.is_none() {
         return;
     }
-    if worktree::unchanged(&tree).unwrap_or(false) {
-        drop(worktree::remove_child(&tree));
+    if tree.unchanged().unwrap_or(false) {
+        drop(tree.remove_child());
         done.tree = None;
         return;
     }
@@ -304,19 +304,21 @@ fn release_unfinished(done: &mut Done) {
     });
 }
 
-fn record_landing(record: &mut ChildRecord, landing: worktree::Landing) {
-    if let Some(kept) = landing.kept {
-        if landing.paths.is_empty() {
-            fail_record(record, &kept);
-            return;
+impl ChildRecord {
+    fn record_landing(&mut self, landing: worktree::Landing) {
+        if let Some(kept) = landing.kept {
+            if landing.paths.is_empty() {
+                self.fail_record(&kept);
+                return;
+            }
+            self.note_record(&kept);
         }
-        note_record(record, &kept);
+        let Some(result) = result_mut(&mut self.state) else {
+            return;
+        };
+        result.changed_paths_total = landing.paths.len();
+        result.changed_paths = landing.paths;
     }
-    let Some(result) = result_mut(&mut record.state) else {
-        return;
-    };
-    result.changed_paths_total = landing.paths.len();
-    result.changed_paths = landing.paths;
 }
 
 fn implemented(done: &mut [(Access, Result<Done>)]) -> impl Iterator<Item = &mut Done> {

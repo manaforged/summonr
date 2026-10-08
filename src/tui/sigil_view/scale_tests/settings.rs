@@ -58,7 +58,7 @@ fn the_window_title_drops_control_characters_from_the_workspace() {
             std::path::PathBuf::from("/tmp/odd\u{7}\u{1b}]0;x"),
             commands,
         );
-        let title = super::super::host::run::title(&app, false);
+        let title = app.title(false);
         assert!(!title.chars().any(char::is_control), "{title:?}");
     });
 }
@@ -68,10 +68,10 @@ fn the_turn_notification_names_how_the_turn_ended() {
     use crate::tui::Msg;
     let mut seen = Vec::new();
     let _ = frame_with(busy_info(), 110, 30, State::Idle, |app| {
-        seen.push(super::super::host::run::ending(app));
+        seen.push(app.ending());
         app.update(Msg::User("next".to_owned()));
         app.update(Msg::Failed("provider timed out".to_owned()));
-        seen.push(super::super::host::run::ending(app));
+        seen.push(app.ending());
     });
     assert_eq!(seen, ["turn finished", "turn failed"]);
 }

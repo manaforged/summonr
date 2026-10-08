@@ -3,55 +3,77 @@ use crate::tui::{Activity, Info, Round, Snapshot};
 
 use super::model::Model;
 
-pub(super) fn header(model: &Model) -> String {
-    let relay = model
-        .snapshot
-        .relay
-        .as_deref()
-        .map_or_else(String::new, |relay| format!(" · {relay}"));
-    let mode = model.snapshot.mode_name();
-    format!(
-        "summonr  {}{}   session {}   {mode}",
-        model.snapshot.model,
-        relay,
-        crate::session::short(&model.session),
-    )
-}
+impl Model {
+    pub(super) fn header(&self) -> String {
+        let relay = self
+            .snapshot
+            .relay
+            .as_deref()
+            .map_or_else(String::new, |relay| format!(" · {relay}"));
+        let mode = self.snapshot.mode_name();
+        format!(
+            "summonr  {}{}   session {}   {mode}",
+            self.snapshot.model,
+            relay,
+            crate::session::short(&self.session),
+        )
+    }
 
-pub(super) fn status(model: &Model, info: &Info) -> String {
-    let total = model.prompt_tokens + model.completion_tokens;
-    let activity = model.busy_since.map_or_else(
-        || "ready".to_string(),
-        |(activity, start)| {
-            if activity != Activity::Turn {
-                return format!("{} · {}s", activity.label(), start.elapsed().as_secs());
-            }
-            let tool = model
-                .live_tool
-                .as_ref()
-                .map_or_else(String::new, |(name, arg)| format!(" · {name} {arg}"));
-            format!("working · {}s{tool}", start.elapsed().as_secs())
-        },
-    );
-    let cost = model
-        .spend()
-        .map_or_else(String::new, |spend| format!(" · {}", crate::dollars(spend)));
-    format!(
-        "{} · {} tokens{cost} · {}% cached · {} peer{} · {activity}",
-        info.workspace,
-        crate::provider::compact(total),
-        cache_rate(model),
-        model.peers.len(),
-        if model.peers.len() == 1 { "" } else { "s" },
-    )
-}
+    pub(super) fn status_line(&self, info: &Info) -> String {
+        let total = self.prompt_tokens + self.completion_tokens;
+        let activity = self.busy_since.map_or_else(
+            || "ready".to_string(),
+            |(activity, start)| {
+                if activity != Activity::Turn {
+                    return format!("{} · {}s", activity.label(), start.elapsed().as_secs());
+                }
+                let tool = self
+                    .live_tool
+                    .as_ref()
+                    .map_or_else(String::new, |(name, arg)| format!(" · {name} {arg}"));
+                format!("working · {}s{tool}", start.elapsed().as_secs())
+            },
+        );
+        let cost = self
+            .spend()
+            .map_or_else(String::new, |spend| format!(" · {}", crate::dollars(spend)));
+        format!(
+            "{} · {} tokens{cost} · {}% cached · {} peer{} · {activity}",
+            info.workspace,
+            crate::provider::compact(total),
+            self.cache_rate(),
+            self.peers.len(),
+            if self.peers.len() == 1 { "" } else { "s" },
+        )
+    }
 
-fn cache_rate(model: &Model) -> u64 {
-    model
-        .cached_tokens
-        .saturating_mul(100)
-        .checked_div(model.prompt_tokens)
-        .unwrap_or_default()
+    fn cache_rate(&self) -> u64 {
+        self.cached_tokens
+            .saturating_mul(100)
+            .checked_div(self.prompt_tokens)
+            .unwrap_or_default()
+    }
+
+    pub(super) fn facts(&self, info: &Info) -> String {
+        let relay = self
+            .snapshot
+            .relay
+            .as_deref()
+            .map_or_else(String::new, |relay| format!(" · {relay}"));
+        let mut rows = vec![
+            format!("summonr  {}", info.version),
+            format!("   model  {}{relay}", self.snapshot.model),
+            format!(" session  {}", crate::session::short(&self.session)),
+            format!(" workdir  {}", info.workspace),
+        ];
+        if self.snapshot.plan {
+            rows.push("    mode  plan · read-only".to_string());
+        }
+        if self.snapshot.strict {
+            rows.push("  policy  strict".to_string());
+        }
+        rows.join("\n")
+    }
 }
 
 pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
@@ -66,27 +88,6 @@ pub(super) fn settings_text(snapshot: &Snapshot, prefs: &Prefs) -> String {
         prefs.tools.name(),
         if prefs.mail { "on" } else { "off" },
     )
-}
-
-pub(super) fn facts(model: &Model, info: &Info) -> String {
-    let relay = model
-        .snapshot
-        .relay
-        .as_deref()
-        .map_or_else(String::new, |relay| format!(" · {relay}"));
-    let mut rows = vec![
-        format!("summonr  {}", info.version),
-        format!("   model  {}{relay}", model.snapshot.model),
-        format!(" session  {}", crate::session::short(&model.session)),
-        format!(" workdir  {}", info.workspace),
-    ];
-    if model.snapshot.plan {
-        rows.push("    mode  plan · read-only".to_string());
-    }
-    if model.snapshot.strict {
-        rows.push("  policy  strict".to_string());
-    }
-    rows.join("\n")
 }
 
 pub(in crate::tui::sigil_view) fn stats(rounds: &[Round]) -> String {

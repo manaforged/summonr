@@ -2,7 +2,7 @@ use std::path::Path;
 
 use crate::error::{Error, Result};
 
-use super::{COMMIT_MAX, Tree, base_record, dirty, remove, worktree_id};
+use super::{COMMIT_MAX, Tree, base_record, dirty, worktree_id};
 
 pub(crate) struct Landing {
     pub(crate) paths: Vec<String>,
@@ -30,22 +30,19 @@ pub(crate) fn reconcile_children(
 }
 
 fn reconcile_delta(target: &Path, tree: &Tree, paths: &[String]) -> Landing {
-    if !on_base(tree) {
-        return kept(tree, "moved off the parent base; its delta was kept");
+    if !tree.on_base() {
+        return tree.kept("moved off the parent base; its delta was kept");
     }
-    let (bytes, found) = match patch(tree, paths) {
+    let (bytes, found) = match tree.patch(paths) {
         Ok(patch) => patch,
-        Err(error) => return kept(tree, &format!("was kept: {error}")),
+        Err(error) => return tree.kept(&format!("was kept: {error}")),
     };
     if !bytes.is_empty()
         && let Err(error) = apply(target, &bytes)
     {
-        return kept(
-            tree,
-            &format!("conflicts with the parent and was kept: {error}"),
-        );
+        return tree.kept(&format!("conflicts with the parent and was kept: {error}"));
     }
-    let note = remove_child(tree).err().map(|error| {
+    let note = tree.remove_child().err().map(|error| {
         format!(
             "applied changes, but could not remove {}: {error}",
             tree.path.display()
@@ -57,21 +54,136 @@ fn reconcile_delta(target: &Path, tree: &Tree, paths: &[String]) -> Landing {
     }
 }
 
-fn kept(tree: &Tree, reason: &str) -> Landing {
-    Landing {
-        paths: Vec::new(),
-        kept: Some(format!("{} {reason}", tree.path.display())),
+impl Tree {
+    fn kept(&self, reason: &str) -> Landing {
+        Landing {
+            paths: Vec::new(),
+            kept: Some(format!("{} {reason}", self.path.display())),
+        }
     }
-}
 
-fn on_base(tree: &Tree) -> bool {
-    let Ok(head) = crate::diff::git_env(&tree.path, &[], &["rev-parse", "HEAD"]) else {
-        return false;
-    };
-    let Ok(base) = crate::diff::git_env(&tree.path, &[], &["merge-base", &tree.base, &head]) else {
-        return false;
-    };
-    base == tree.base
+    fn on_base(&self) -> bool {
+        let Ok(head) = crate::diff::git_env(&self.path, &[], &["rev-parse", "HEAD"]) else {
+            return false;
+        };
+        let Ok(base) = crate::diff::git_env(&self.path, &[], &["merge-base", &self.base, &head])
+        else {
+            return false;
+        };
+        base == self.base
+    }
+
+    fn place(&self) -> &'static str {
+        if self.snapshot.is_some() {
+            "delta"
+        } else {
+            "worktree"
+        }
+    }
+
+    fn patch(&self, paths: &[String]) -> Result<(Vec<u8>, Vec<String>)> {
+        let discovered = if self.snapshot.is_some() {
+            Some(self.snapshot_paths()?)
+        } else {
+            None
+        };
+        let paths = discovered.as_deref().unwrap_or(paths);
+        if paths.is_empty() {
+            return Ok((Vec::new(), Vec::new()));
+        }
+        for path in paths {
+            if std::fs::metadata(self.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX) {
+                return Err(Error::Config(format!(
+                    "{path} exceeds {COMMIT_MAX} bytes; the child {} was kept",
+                    self.place()
+                )));
+            }
+        }
+        let mut list = vec![
+            "--literal-pathspecs",
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "--",
+        ];
+        list.extend(paths.iter().map(String::as_str));
+        let untracked = crate::diff::git_env(&self.path, &[], &list)?;
+        if !untracked.is_empty() {
+            let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
+            mark.extend(untracked.lines());
+            crate::diff::git_env(&self.path, &[], &mark)?;
+        }
+        let base = self.snapshot.as_deref().unwrap_or("HEAD");
+        let mut diff = vec![
+            "--literal-pathspecs",
+            "diff",
+            "--binary",
+            "--no-ext-diff",
+            base,
+            "--",
+        ];
+        diff.extend(paths.iter().map(String::as_str));
+        let bytes = crate::diff::git_output(&self.path, &[], &diff, None)?;
+        Ok((bytes, paths.to_vec()))
+    }
+
+    fn snapshot_paths(&self) -> Result<Vec<String>> {
+        let snapshot = self.snapshot.as_deref().unwrap_or("HEAD");
+        let diff = crate::diff::git_env(&self.path, &[], &["diff", "--name-only", snapshot])?;
+        let untracked = crate::diff::git_env(
+            &self.path,
+            &[],
+            &["ls-files", "--others", "--exclude-standard"],
+        )?;
+        let mut paths: Vec<String> = diff
+            .lines()
+            .chain(untracked.lines())
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect();
+        paths.sort();
+        paths.dedup();
+        Ok(paths)
+    }
+
+    pub(crate) fn remove_child(&self) -> Result<()> {
+        if self.snapshot.is_some() {
+            if self.path.exists() {
+                std::fs::remove_dir_all(&self.path)?;
+            }
+            if let Some(parent) = self.path.parent() {
+                drop(std::fs::remove_dir(parent));
+            }
+            return Ok(());
+        }
+        let head = crate::diff::git_env(&self.primary, &[], &["rev-parse", &self.branch])?;
+        let path = self.path.to_str().ok_or_else(|| {
+            Error::Config(format!(
+                "worktree path is not utf-8: {}",
+                self.path.display()
+            ))
+        })?;
+        crate::diff::git_env(&self.primary, &[], &["worktree", "remove", "--force", path])?;
+        crate::diff::git_env(
+            &self.primary,
+            &[],
+            &[
+                "update-ref",
+                "-d",
+                &format!("refs/heads/{}", self.branch),
+                &head,
+            ],
+        )?;
+        if let Some(id) = worktree_id(&self.branch)
+            && let Ok(record) = base_record(&self.primary, id)
+        {
+            drop(std::fs::remove_file(record));
+        }
+        if let Some(parent) = self.path.parent() {
+            drop(std::fs::remove_dir(parent));
+        }
+        Ok(())
+    }
 }
 
 fn children_base(target: &Path, children: &[(Tree, Vec<String>)]) -> Result<String> {
@@ -95,25 +207,17 @@ fn children_base(target: &Path, children: &[(Tree, Vec<String>)]) -> Result<Stri
             return Err(Error::Config(format!(
                 "{} moved from the parent base; its {} was kept",
                 tree.branch,
-                place(tree)
+                tree.place()
             )));
         }
     }
     Ok(start)
 }
 
-fn place(tree: &Tree) -> &'static str {
-    if tree.snapshot.is_some() {
-        "delta"
-    } else {
-        "worktree"
-    }
-}
-
 fn combine_children(children: &[(Tree, Vec<String>)]) -> Result<Vec<u8>> {
     let patches = children
         .iter()
-        .map(|(tree, paths)| patch(tree, paths).map(|(bytes, _)| bytes))
+        .map(|(tree, paths)| tree.patch(paths).map(|(bytes, _)| bytes))
         .collect::<Result<Vec<_>>>()?;
     let integration = &children[0].0.path;
     for bytes in patches.iter().skip(1).filter(|bytes| !bytes.is_empty()) {
@@ -130,7 +234,7 @@ fn combine_children(children: &[(Tree, Vec<String>)]) -> Result<Vec<u8>> {
         .collect::<Vec<_>>();
     paths.sort();
     paths.dedup();
-    patch(&children[0].0, &paths).map(|(bytes, _)| bytes)
+    children[0].0.patch(&paths).map(|(bytes, _)| bytes)
 }
 
 fn apply_combined(target: &Path, start: &str, combined: &[u8], deltas: bool) -> Result<()> {
@@ -162,7 +266,7 @@ fn remove_landings(children: &[(Tree, Vec<String>)]) -> Vec<Landing> {
         .iter()
         .map(|(tree, paths)| Landing {
             paths: paths.clone(),
-            kept: remove_child(tree).err().map(|error| {
+            kept: tree.remove_child().err().map(|error| {
                 format!(
                     "applied changes, but could not remove {}: {error}",
                     tree.path.display()
@@ -170,71 +274,6 @@ fn remove_landings(children: &[(Tree, Vec<String>)]) -> Vec<Landing> {
             }),
         })
         .collect()
-}
-
-fn patch(tree: &Tree, paths: &[String]) -> Result<(Vec<u8>, Vec<String>)> {
-    let discovered = if tree.snapshot.is_some() {
-        Some(snapshot_paths(tree)?)
-    } else {
-        None
-    };
-    let paths = discovered.as_deref().unwrap_or(paths);
-    if paths.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
-    }
-    for path in paths {
-        if std::fs::metadata(tree.path.join(path)).is_ok_and(|meta| meta.len() > COMMIT_MAX) {
-            return Err(Error::Config(format!(
-                "{path} exceeds {COMMIT_MAX} bytes; the child {} was kept",
-                place(tree)
-            )));
-        }
-    }
-    let mut list = vec![
-        "--literal-pathspecs",
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "--",
-    ];
-    list.extend(paths.iter().map(String::as_str));
-    let untracked = crate::diff::git_env(&tree.path, &[], &list)?;
-    if !untracked.is_empty() {
-        let mut mark = vec!["--literal-pathspecs", "add", "-N", "--"];
-        mark.extend(untracked.lines());
-        crate::diff::git_env(&tree.path, &[], &mark)?;
-    }
-    let base = tree.snapshot.as_deref().unwrap_or("HEAD");
-    let mut diff = vec![
-        "--literal-pathspecs",
-        "diff",
-        "--binary",
-        "--no-ext-diff",
-        base,
-        "--",
-    ];
-    diff.extend(paths.iter().map(String::as_str));
-    let bytes = crate::diff::git_output(&tree.path, &[], &diff, None)?;
-    Ok((bytes, paths.to_vec()))
-}
-
-fn snapshot_paths(tree: &Tree) -> Result<Vec<String>> {
-    let snapshot = tree.snapshot.as_deref().unwrap_or("HEAD");
-    let diff = crate::diff::git_env(&tree.path, &[], &["diff", "--name-only", snapshot])?;
-    let untracked = crate::diff::git_env(
-        &tree.path,
-        &[],
-        &["ls-files", "--others", "--exclude-standard"],
-    )?;
-    let mut paths: Vec<String> = diff
-        .lines()
-        .chain(untracked.lines())
-        .filter(|line| !line.is_empty())
-        .map(str::to_string)
-        .collect();
-    paths.sort();
-    paths.dedup();
-    Ok(paths)
 }
 
 fn apply(tree: &Path, patch: &[u8]) -> Result<()> {
@@ -250,45 +289,6 @@ fn apply(tree: &Path, patch: &[u8]) -> Result<()> {
         &["apply", "--binary", "--whitespace=nowarn", "-"],
         Some(patch),
     )?;
-    Ok(())
-}
-
-pub(crate) fn remove_child(tree: &Tree) -> Result<()> {
-    if tree.snapshot.is_some() {
-        if tree.path.exists() {
-            std::fs::remove_dir_all(&tree.path)?;
-        }
-        if let Some(parent) = tree.path.parent() {
-            drop(std::fs::remove_dir(parent));
-        }
-        return Ok(());
-    }
-    let head = crate::diff::git_env(&tree.primary, &[], &["rev-parse", &tree.branch])?;
-    let path = tree.path.to_str().ok_or_else(|| {
-        Error::Config(format!(
-            "worktree path is not utf-8: {}",
-            tree.path.display()
-        ))
-    })?;
-    crate::diff::git_env(&tree.primary, &[], &["worktree", "remove", "--force", path])?;
-    crate::diff::git_env(
-        &tree.primary,
-        &[],
-        &[
-            "update-ref",
-            "-d",
-            &format!("refs/heads/{}", tree.branch),
-            &head,
-        ],
-    )?;
-    if let Some(id) = worktree_id(&tree.branch)
-        && let Ok(record) = base_record(&tree.primary, id)
-    {
-        drop(std::fs::remove_file(record));
-    }
-    if let Some(parent) = tree.path.parent() {
-        drop(std::fs::remove_dir(parent));
-    }
     Ok(())
 }
 
@@ -362,7 +362,7 @@ pub fn finish(tree: &Tree, objective: &str, paths: &[String]) -> Result<Vec<Stri
         &[],
         &["merge", "--ff-only", "--", &tree.branch],
     )?;
-    remove(tree)?;
+    tree.remove()?;
     Ok(committed)
 }
 

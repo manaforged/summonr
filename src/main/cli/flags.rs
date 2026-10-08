@@ -112,7 +112,7 @@ pub(super) const VALUES: [Valued; 11] = [
 pub(super) const COMMANDS: [(&str, Run); 24] = [
     ("endpoints", |args, _| on(&mut args.list)),
     ("sessions", |args, _| on(&mut args.list_sessions)),
-    ("resume", resume),
+    ("resume", Args::resume),
     ("logs", |args, _| {
         renamed("logs", "doctor --logs");
         on(&mut args.logs)
@@ -178,7 +178,7 @@ pub(super) const SCOPED: [Scope; 17] = [
         |args| args.profile,
         |args, _| on(&mut args.all),
     ),
-    ("--last", "profile", |args| args.profile, last),
+    ("--last", "profile", |args| args.profile, Args::last),
     (
         "--list",
         "install",
@@ -246,7 +246,7 @@ pub(super) const SCOPED: [Scope; 17] = [
             )
         },
     ),
-    ("--gate", "classify", |args| args.classify, gate),
+    ("--gate", "classify", |args| args.classify, Args::gate),
     (
         "--patch",
         "classify",
@@ -287,31 +287,33 @@ fn effort(level: &str) -> Result<summonr::Effort> {
         .ok_or_else(|| Error::Config(format!("--effort {}", summonr::Effort::rejects(level))))
 }
 
-fn resume(args: &mut Args, input: &mut Input) -> Result<()> {
-    match input.next_if(|next| !next.starts_with('-')) {
-        Some(key) => args.session = Some(key),
-        None => args.resume = true,
+impl Args {
+    fn resume(&mut self, input: &mut Input) -> Result<()> {
+        match input.next_if(|next| !next.starts_with('-')) {
+            Some(key) => self.session = Some(key),
+            None => self.resume = true,
+        }
+        Ok(())
     }
-    Ok(())
-}
 
-fn last(args: &mut Args, input: &mut Input) -> Result<()> {
-    let raw = value(input, "--last", "a session count")?;
-    let count = raw
-        .parse()
-        .map_err(|error| Error::Config(format!("--last wants a count: {error}")))?;
-    some(&mut args.last, count)
-}
-
-fn gate(args: &mut Args, input: &mut Input) -> Result<()> {
-    let raw = value(input, "--gate", "a confidence from 0 to 1")?;
-    let floor: f64 = raw
-        .parse()
-        .map_err(|error| Error::Config(format!("--gate wants a number from 0 to 1: {error}")))?;
-    if !(0.0..=1.0).contains(&floor) {
-        return Err(Error::Config(
-            "--gate wants a number from 0 to 1".to_string(),
-        ));
+    fn last(&mut self, input: &mut Input) -> Result<()> {
+        let raw = value(input, "--last", "a session count")?;
+        let count = raw
+            .parse()
+            .map_err(|error| Error::Config(format!("--last wants a count: {error}")))?;
+        some(&mut self.last, count)
     }
-    some(&mut args.gate, floor)
+
+    fn gate(&mut self, input: &mut Input) -> Result<()> {
+        let raw = value(input, "--gate", "a confidence from 0 to 1")?;
+        let floor: f64 = raw.parse().map_err(|error| {
+            Error::Config(format!("--gate wants a number from 0 to 1: {error}"))
+        })?;
+        if !(0.0..=1.0).contains(&floor) {
+            return Err(Error::Config(
+                "--gate wants a number from 0 to 1".to_string(),
+            ));
+        }
+        some(&mut self.gate, floor)
+    }
 }

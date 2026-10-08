@@ -59,20 +59,22 @@ pub(crate) fn contract(markdown: &str) -> Result<Contract> {
     Ok(Contract { items })
 }
 
-#[must_use]
-pub fn missing(contract: &Contract, workspace: &std::path::Path) -> Vec<String> {
-    let mut gone = Vec::new();
-    for item in &contract.items {
-        match item {
-            Item::File(path) => {
-                if !workspace.join(path).exists() {
-                    gone.push(format!("file `{path}` does not exist"));
+impl Contract {
+    #[must_use]
+    pub fn missing(&self, workspace: &std::path::Path) -> Vec<String> {
+        let mut gone = Vec::new();
+        for item in &self.items {
+            match item {
+                Item::File(path) => {
+                    if !workspace.join(path).exists() {
+                        gone.push(format!("file `{path}` does not exist"));
+                    }
                 }
+                Item::Stdout { .. } => {}
             }
-            Item::Stdout { .. } => {}
         }
+        gone
     }
-    gone
 }
 
 pub fn parse(markdown: &str) -> Result<Vec<Step>> {

@@ -8,8 +8,8 @@ pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
     let (used, cached, spend, rate) = {
         let model = app.model.get();
         (
-            chat::context_percent(&model),
-            chat::cache_percent(&model),
+            model.context_percent(),
+            model.cache_percent(),
             model.spend(),
             model.speed.live(std::time::Instant::now()),
         )

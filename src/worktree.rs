@@ -8,7 +8,7 @@ mod delta;
 mod land;
 
 pub use land::finish;
-pub(crate) use land::{Landing, reconcile_children, remove_child};
+pub(crate) use land::{Landing, reconcile_children};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;
 
@@ -81,7 +81,7 @@ pub(crate) fn discard(tree: &Tree) -> Result<()> {
             tree.base
         )));
     }
-    remove(tree)
+    tree.remove()
 }
 
 #[must_use]
@@ -158,7 +158,7 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
         Ok(())
     })();
     if let Err(error) = recorded {
-        drop(remove_child(&tree));
+        drop(tree.remove_child());
         return Err(error);
     }
     Ok(tree)
@@ -171,25 +171,46 @@ pub(crate) fn same_repository(left: &Path, right: &Path) -> bool {
     }
 }
 
-pub(crate) fn remove(tree: &Tree) -> Result<()> {
-    let path = tree.path.to_str().ok_or_else(|| {
-        Error::Config(format!(
-            "worktree path is not utf-8: {}",
-            tree.path.display()
-        ))
-    })?;
-    crate::diff::git_env(&tree.primary, &[], &["worktree", "remove", "--force", path])?;
-    drop(crate::diff::git_env(
-        &tree.primary,
-        &[],
-        &["branch", "-d", &tree.branch],
-    ));
-    if let Some(id) = worktree_id(&tree.branch)
-        && let Ok(record) = base_record(&tree.primary, id)
-    {
-        drop(std::fs::remove_file(record));
+impl Tree {
+    pub(crate) fn remove(&self) -> Result<()> {
+        let path = self.path.to_str().ok_or_else(|| {
+            Error::Config(format!(
+                "worktree path is not utf-8: {}",
+                self.path.display()
+            ))
+        })?;
+        crate::diff::git_env(&self.primary, &[], &["worktree", "remove", "--force", path])?;
+        drop(crate::diff::git_env(
+            &self.primary,
+            &[],
+            &["branch", "-d", &self.branch],
+        ));
+        if let Some(id) = worktree_id(&self.branch)
+            && let Ok(record) = base_record(&self.primary, id)
+        {
+            drop(std::fs::remove_file(record));
+        }
+        Ok(())
     }
-    Ok(())
+
+    pub(crate) fn unchanged(&self) -> Result<bool> {
+        if !self.path.exists() {
+            return Ok(true);
+        }
+        let Some(snapshot) = &self.snapshot else {
+            return Ok(!dirty(&self.path)?);
+        };
+        let diff = crate::diff::git_env(&self.path, &[], &["diff", "--name-only", snapshot])?;
+        if !diff.is_empty() {
+            return Ok(false);
+        }
+        let untracked = crate::diff::git_env(
+            &self.path,
+            &[],
+            &["ls-files", "--others", "--exclude-standard"],
+        )?;
+        Ok(untracked.is_empty())
+    }
 }
 
 pub fn sweep(cwd: &Path) -> Result<Vec<PathBuf>> {
@@ -257,25 +278,6 @@ fn checkout_dir(primary: &Path, kind: &str, id: &str) -> Result<PathBuf> {
 
 pub(crate) fn open_delta(primary: &Path) -> Result<Tree> {
     delta::open(primary)
-}
-
-pub(crate) fn unchanged(tree: &Tree) -> Result<bool> {
-    if !tree.path.exists() {
-        return Ok(true);
-    }
-    let Some(snapshot) = &tree.snapshot else {
-        return Ok(!dirty(&tree.path)?);
-    };
-    let diff = crate::diff::git_env(&tree.path, &[], &["diff", "--name-only", snapshot])?;
-    if !diff.is_empty() {
-        return Ok(false);
-    }
-    let untracked = crate::diff::git_env(
-        &tree.path,
-        &[],
-        &["ls-files", "--others", "--exclude-standard"],
-    )?;
-    Ok(untracked.is_empty())
 }
 
 pub(crate) fn dirty(path: &Path) -> Result<bool> {

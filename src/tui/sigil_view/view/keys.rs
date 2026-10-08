@@ -2,91 +2,94 @@ use super::*;
 
 type Handler = fn(&App, &mut KeyEvent);
 
-fn escape(app: &App, event: &mut KeyEvent) {
-    event.stop_propagation();
-    if app.options_active() {
-        super::input::escape(app);
-    } else if app.form_stage().is_some() {
-        app.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
-    } else if app.edit_stop() || app.note_stop() {
-    } else if app.context.peek().is_some() {
-        app.context_close();
-    } else if app.pane_back() {
-    } else if app.pane_focus.peek() {
-        app.focus_pane(false);
-    } else {
-        super::input::escape(app);
-    }
-}
-
-fn enter(app: &App, event: &mut KeyEvent) {
-    if (app.view_edit.peek() || app.note_target.peek().is_some()) && !app.options_active() {
-        return;
-    }
-    event.stop_propagation();
-    if app.overlay_enter() {
-    } else if app.context.peek().is_some() {
-        app.context_enter();
-    } else if app.pane_active().is_some() {
-        app.pane_enter();
-    } else if app.form_enter() {
-    } else if !app.accept() {
-        app.submit();
-    }
-}
-
-fn review(app: &App) -> bool {
-    !app.options_active() && app.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
-}
-
-fn answering(app: &App) -> bool {
-    !app.options_active() && app.draft.peek().is_empty() && app.approval.peek().is_some()
-}
-
-fn shortcuts(app: &App, event: &mut KeyEvent) {
-    if !app.options_active()
-        && !app.view_edit.peek()
-        && !app.pane_focus.peek()
-        && app.form_stage().is_none()
-        && app.approval.peek().is_none()
-        && app.draft.peek().is_empty()
-    {
+impl App {
+    fn escape(&self, event: &mut KeyEvent) {
         event.stop_propagation();
-        app.help.show();
-        app.refresh();
+        if self.options_active() {
+            super::input::escape(self);
+        } else if self.form_stage().is_some() {
+            self.form_reply(crate::tui::sigil_view::app::Reply::Cancel);
+        } else if self.edit_stop() || self.note_stop() {
+        } else if self.context.peek().is_some() {
+            self.context_close();
+        } else if self.pane_back() {
+        } else if self.pane_focus.peek() {
+            self.focus_pane(false);
+        } else {
+            super::input::escape(self);
+        }
+    }
+
+    fn enter(&self, event: &mut KeyEvent) {
+        if (self.view_edit.peek() || self.note_target.peek().is_some()) && !self.options_active() {
+            return;
+        }
+        event.stop_propagation();
+        if self.overlay_enter() {
+        } else if self.context.peek().is_some() {
+            self.context_enter();
+        } else if self.pane_active().is_some() {
+            self.pane_enter();
+        } else if self.form_enter() {
+        } else if !self.accept() {
+            self.submit();
+        }
+    }
+
+    fn review(&self) -> bool {
+        !self.options_active()
+            && self.form_stage() == Some(crate::tui::sigil_view::app::Stage::Review)
+    }
+
+    fn answering(&self) -> bool {
+        !self.options_active() && self.draft.peek().is_empty() && self.approval.peek().is_some()
+    }
+
+    fn shortcuts(&self, event: &mut KeyEvent) {
+        if !self.options_active()
+            && !self.view_edit.peek()
+            && !self.pane_focus.peek()
+            && self.form_stage().is_none()
+            && self.approval.peek().is_none()
+            && self.draft.peek().is_empty()
+        {
+            event.stop_propagation();
+            self.help.show();
+            self.refresh();
+        }
     }
 }
 
 fn respond() -> Vec<(Shortcut, Handler)> {
     vec![
-        (LogicalKey::character("?").into(), shortcuts),
+        (LogicalKey::character("?").into(), App::shortcuts),
         (
             Shortcut::new(LogicalKey::character("?"), ModifiersState::SHIFT),
-            shortcuts,
+            App::shortcuts,
         ),
         (
             Shortcut::new(LogicalKey::character("y"), ModifiersState::SHIFT),
             |app, event| {
-                if answering(app) && app.approval.peek().is_some_and(|(_, persist)| persist) {
+                if app.answering() && app.approval.peek().is_some_and(|(_, persist)| persist) {
                     event.stop_propagation();
                     app.approval_answer(crate::runtime::GrantAnswer::Always);
                 }
             },
         ),
         (LogicalKey::character("y").into(), |app, event| {
-            if review(app) {
+            if app.review() {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Send);
-            } else if answering(app) {
+            } else if app.answering() {
                 event.stop_propagation();
                 app.approval_answer(crate::runtime::GrantAnswer::Allow);
             }
         }),
         (LogicalKey::character("n").into(), |app, event| {
-            if review(app) {
+            if app.review() {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Decline);
-            } else if answering(app) {
+            } else if app.answering() {
                 event.stop_propagation();
                 app.approval_answer(crate::runtime::GrantAnswer::Deny);
             }
@@ -97,8 +100,8 @@ fn respond() -> Vec<(Shortcut, Handler)> {
                 app.retry();
             }
         }),
-        (Key::Escape.into(), escape),
-        (Key::Enter.into(), enter),
+        (Key::Escape.into(), App::escape),
+        (Key::Enter.into(), App::enter),
         (Shortcut::ctrl(LogicalKey::character("c")), |app, event| {
             if !app.hotkeys.recording.peek() {
                 event.stop_propagation();
@@ -121,7 +124,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
 fn panes() -> Vec<(Shortcut, Handler)> {
     vec![
         (LogicalKey::character("e").into(), |app, event| {
-            if review(app) {
+            if app.review() {
                 event.stop_propagation();
                 app.form_reply(crate::tui::sigil_view::app::Reply::Edit);
             } else if app.pane_active() == Some(super::Pane::View) {
@@ -218,120 +221,86 @@ fn panes() -> Vec<(Shortcut, Handler)> {
     ]
 }
 
-fn edge(app: &App, event: &mut KeyEvent, end: bool) {
-    if app.overlay() == Some(Overlay::Usage) {
-        return;
+impl App {
+    fn edge(&self, event: &mut KeyEvent, end: bool) {
+        if self.overlay() == Some(Overlay::Usage) {
+            return;
+        }
+        if self.pane_active().is_some() {
+            event.stop_propagation();
+            self.pane_edge(end);
+        } else if self.overlay().is_none() && self.draft.peek().is_empty() {
+            event.stop_propagation();
+            self.history_edge(end);
+        }
     }
-    if app.pane_active().is_some() {
-        event.stop_propagation();
-        app.pane_edge(end);
-    } else if app.overlay().is_none() && app.draft.peek().is_empty() {
-        event.stop_propagation();
-        app.history_edge(end);
+
+    fn ctrl_edge(&self, event: &mut KeyEvent, end: bool) {
+        if self.overlay().is_none() {
+            event.stop_propagation();
+            self.history_edge(end);
+        }
     }
-}
 
-fn first(app: &App, event: &mut KeyEvent) {
-    edge(app, event, false);
-}
-
-fn last(app: &App, event: &mut KeyEvent) {
-    edge(app, event, true);
-}
-
-fn ctrl_edge(app: &App, event: &mut KeyEvent, end: bool) {
-    if app.overlay().is_none() {
+    fn page(&self, event: &mut KeyEvent, dir: isize) {
+        if self.overlay() == Some(Overlay::Usage) {
+            return;
+        }
         event.stop_propagation();
-        app.history_edge(end);
+        if self.overlay_move(8 * dir) {
+            return;
+        }
+        if self.pane_active().is_some() {
+            self.pane_page(dir);
+        } else {
+            self.page_history(dir as f32);
+        }
     }
-}
 
-fn ctrl_first(app: &App, event: &mut KeyEvent) {
-    ctrl_edge(app, event, false);
-}
-
-fn ctrl_last(app: &App, event: &mut KeyEvent) {
-    ctrl_edge(app, event, true);
-}
-
-fn page(app: &App, event: &mut KeyEvent, dir: isize) {
-    if app.overlay() == Some(Overlay::Usage) {
-        return;
+    fn arrow(&self, event: &mut KeyEvent, dir: isize) {
+        if self.overlay() == Some(Overlay::Usage) {
+            return;
+        }
+        if self.overlay_move(dir) {
+            event.stop_propagation();
+        } else if self.context.peek().is_some() {
+            event.stop_propagation();
+            self.context_move(dir);
+        } else if self.pane_active().is_some() {
+            event.stop_propagation();
+            self.pane_move(dir);
+        } else if dir < 0 && self.draft.peek().is_empty() && self.model.get().queued != (0, 0) {
+            event.stop_propagation();
+            self.dequeue();
+        } else if self.suggesting() {
+            event.stop_propagation();
+            self.shift(dir);
+        }
     }
-    event.stop_propagation();
-    if app.overlay_move(8 * dir) {
-        return;
+
+    fn adjust(&self, event: &mut KeyEvent, dir: isize) {
+        if self.overlay_adjust(dir) {
+            event.stop_propagation();
+        }
     }
-    if app.pane_active().is_some() {
-        app.pane_page(dir);
-    } else {
-        app.page_history(dir as f32);
-    }
-}
-
-fn page_up(app: &App, event: &mut KeyEvent) {
-    page(app, event, -1);
-}
-
-fn page_down(app: &App, event: &mut KeyEvent) {
-    page(app, event, 1);
-}
-
-fn arrow(app: &App, event: &mut KeyEvent, dir: isize) {
-    if app.overlay() == Some(Overlay::Usage) {
-        return;
-    }
-    if app.overlay_move(dir) {
-        event.stop_propagation();
-    } else if app.context.peek().is_some() {
-        event.stop_propagation();
-        app.context_move(dir);
-    } else if app.pane_active().is_some() {
-        event.stop_propagation();
-        app.pane_move(dir);
-    } else if dir < 0 && app.draft.peek().is_empty() && app.model.get().queued != (0, 0) {
-        event.stop_propagation();
-        app.dequeue();
-    } else if app.suggesting() {
-        event.stop_propagation();
-        app.shift(dir);
-    }
-}
-
-fn up(app: &App, event: &mut KeyEvent) {
-    arrow(app, event, -1);
-}
-
-fn down(app: &App, event: &mut KeyEvent) {
-    arrow(app, event, 1);
-}
-
-fn adjust(app: &App, event: &mut KeyEvent, dir: isize) {
-    if app.overlay_adjust(dir) {
-        event.stop_propagation();
-    }
-}
-
-fn left(app: &App, event: &mut KeyEvent) {
-    adjust(app, event, -1);
-}
-
-fn right(app: &App, event: &mut KeyEvent) {
-    adjust(app, event, 1);
 }
 
 fn nav() -> Vec<(Shortcut, Handler)> {
     vec![
-        (Key::Home.into(), first),
-        (Key::End.into(), last),
-        (Shortcut::ctrl(Key::Home), ctrl_first),
-        (Shortcut::ctrl(Key::End), ctrl_last),
-        (Key::PageUp.into(), page_up),
-        (Key::PageDown.into(), page_down),
-        (Key::ArrowUp.into(), up),
-        (Key::ArrowDown.into(), down),
-        (Key::ArrowLeft.into(), left),
-        (Key::ArrowRight.into(), right),
+        (Key::Home.into(), |app, event| app.edge(event, false)),
+        (Key::End.into(), |app, event| app.edge(event, true)),
+        (Shortcut::ctrl(Key::Home), |app, event| {
+            app.ctrl_edge(event, false)
+        }),
+        (Shortcut::ctrl(Key::End), |app, event| {
+            app.ctrl_edge(event, true)
+        }),
+        (Key::PageUp.into(), |app, event| app.page(event, -1)),
+        (Key::PageDown.into(), |app, event| app.page(event, 1)),
+        (Key::ArrowUp.into(), |app, event| app.arrow(event, -1)),
+        (Key::ArrowDown.into(), |app, event| app.arrow(event, 1)),
+        (Key::ArrowLeft.into(), |app, event| app.adjust(event, -1)),
+        (Key::ArrowRight.into(), |app, event| app.adjust(event, 1)),
     ]
 }
 

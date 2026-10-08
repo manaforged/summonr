@@ -241,44 +241,45 @@ pub fn budget(endpoint: &Endpoint, questions: &BTreeMap<String, Question>) -> us
 
 const WIDTH: usize = 20;
 
-pub fn render(decision: &Decision) -> String {
-    let mut out = String::new();
-    for (name, answer) in &decision.answers {
-        match answer {
-            Answer::Choice {
-                choice,
-                probabilities,
-                confidence,
-            } => {
-                out.push_str(&headline(name, choice, Some(*confidence)));
-                out.push_str(&bars(probabilities, |label| label.to_string()));
-            }
-            Answer::Score {
-                score,
-                legend,
-                probabilities,
-                confidence,
-            } => {
-                let level = legend
-                    .get(&format!("{}", score.round() as i64))
-                    .map_or_else(
-                        || format!("{score:.2}"),
-                        |text| format!("{score:.2} {text}"),
-                    );
-                out.push_str(&headline(name, &level, Some(*confidence)));
-                out.push_str(&bars(probabilities, |label| {
-                    legend
-                        .get(label)
-                        .map_or_else(|| label.to_string(), |text| format!("{label} {text}"))
-                }));
-            }
-            Answer::Noul { noul } => {
-                let verdict = if *noul >= 0.5 { "yes" } else { "no" };
-                out.push_str(&format!("{name:<16} {verdict:<28} p {noul:.2}\n"));
+impl std::fmt::Display for Decision {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (name, answer) in &self.answers {
+            match answer {
+                Answer::Choice {
+                    choice,
+                    probabilities,
+                    confidence,
+                } => {
+                    out.write_str(&headline(name, choice, Some(*confidence)))?;
+                    out.write_str(&bars(probabilities, |label| label.to_string()))?;
+                }
+                Answer::Score {
+                    score,
+                    legend,
+                    probabilities,
+                    confidence,
+                } => {
+                    let level = legend
+                        .get(&format!("{}", score.round() as i64))
+                        .map_or_else(
+                            || format!("{score:.2}"),
+                            |text| format!("{score:.2} {text}"),
+                        );
+                    out.write_str(&headline(name, &level, Some(*confidence)))?;
+                    out.write_str(&bars(probabilities, |label| {
+                        legend
+                            .get(label)
+                            .map_or_else(|| label.to_string(), |text| format!("{label} {text}"))
+                    }))?;
+                }
+                Answer::Noul { noul } => {
+                    let verdict = if *noul >= 0.5 { "yes" } else { "no" };
+                    writeln!(out, "{name:<16} {verdict:<28} p {noul:.2}")?;
+                }
             }
         }
+        Ok(())
     }
-    out
 }
 
 fn headline(name: &str, value: &str, confidence: Option<f64>) -> String {

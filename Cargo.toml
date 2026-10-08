@@ -73,7 +73,7 @@ libc = "0.2"
 dunce = "1.0"
 
 [patch.crates-io]
-crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "3ebd75e9e63a1c869a52fd99d51ff379dc1b981f" }
+crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "ee9ebdbb0d0e7d49e06a8adfcaa11c3679dca7da" }
 
 [features]
 default = []

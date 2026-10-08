@@ -88,7 +88,7 @@ pub(super) fn theme(_name: &str, background: crate::prefs::Background) -> Theme 
     theme
 }
 
-fn tokens(palette: Palette) -> [(&'static str, Rgba8); 31] {
+fn tokens(palette: Palette) -> [(&'static str, Rgba8); 32] {
     [
         ("accent", palette.accent),
         (
@@ -99,6 +99,7 @@ fn tokens(palette: Palette) -> [(&'static str, Rgba8); 31] {
         ("surface", palette.base),
         ("surface-hover", palette.tool_bg),
         ("surface-pressed", palette.user_bg),
+        ("surface-pressed-strong", palette.dim),
         ("on-surface", palette.text),
         ("border", palette.dim),
         ("scrim", canvas::blend(palette.black, palette.base, 0.5)),

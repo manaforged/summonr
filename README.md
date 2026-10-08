@@ -1,6 +1,6 @@
 # summonr
 
-A terminal coding agent written in Rust that works until your test command passes, and loads no third-party code into its process.
+An open-source coding agent for any model, in your terminal or a desktop window. It does the same work as heavier harnesses on fewer tokens and a fraction of the memory: in our [Terminal-Bench 2.1 run](https://summonr.dev/benchmarks) it used 24 MB, where four other harnesses peaked between 146 and 505 MB. It loads no third-party code into its process.
 
 ![summonr fixing two bugs in calc.py and running pytest, captured from a session](docs/guide/assets/summonr-session.png)
 

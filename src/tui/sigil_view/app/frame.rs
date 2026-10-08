@@ -10,18 +10,18 @@ impl App {
             if !model.entries.is_empty() {
                 self.splash.set(false);
             }
-            self.header.set(header(&model));
-            self.status.set(status(&model, &self.info));
+            self.header.set(model.header());
+            self.status.set(model.status_line(&self.info));
             self.settings
                 .set(settings_text(&model.snapshot, &model.prefs));
-            self.facts.set(facts(&model, &self.info));
+            self.facts.set(model.facts(&self.info));
             self.theme_name.set(model.prefs.theme.clone());
             self.backdrop.set(model.prefs.background);
         });
     }
 
     pub(in crate::tui::sigil_view) fn refresh_status(&self) {
-        self.status.set(status(&self.model.get(), &self.info));
+        self.status.set(self.model.get().status_line(&self.info));
     }
 
     pub(in crate::tui::sigil_view) fn resize(&self, cols: u16, rows: u16) {

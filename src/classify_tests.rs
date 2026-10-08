@@ -92,7 +92,7 @@ fn options_render_in_probability_order_not_alphabetical() {
         )]),
         usage: Usage::default(),
     };
-    let lines: Vec<_> = render(&decision).lines().map(str::to_string).collect();
+    let lines: Vec<_> = decision.to_string().lines().map(str::to_string).collect();
     assert!(
         lines[1].contains("zeta"),
         "the winning option must lead, got {lines:?}"
@@ -103,7 +103,7 @@ fn options_render_in_probability_order_not_alphabetical() {
 #[test]
 fn a_long_level_name_keeps_every_bar_in_one_column() {
     let decision: Decision = serde_json::from_str(LIVE).unwrap();
-    let rendered = render(&decision);
+    let rendered = decision.to_string();
     let bars: Vec<_> = rendered
         .lines()
         .filter(|line| line.starts_with("  "))
@@ -123,7 +123,7 @@ fn a_long_level_name_keeps_every_bar_in_one_column() {
 #[test]
 fn a_full_bar_is_full_and_an_empty_one_is_empty() {
     let decision: Decision = serde_json::from_str(LIVE).unwrap();
-    let rendered = render(&decision);
+    let rendered = decision.to_string();
     let antibot = rendered
         .lines()
         .find(|line| line.contains("antibot") && line.starts_with("  "))

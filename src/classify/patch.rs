@@ -54,33 +54,34 @@ pub async fn review(
     Ok(swept.into_iter().map(|(decision, _)| decision).collect())
 }
 
-fn severity(decision: &Decision) -> f64 {
-    decision
-        .answers
-        .get("risk")
-        .and_then(|answer| match answer {
-            Answer::Score { score, .. } => Some(*score),
-            _ => None,
-        })
-        .unwrap_or_default()
-}
+impl Decision {
+    fn severity(&self) -> f64 {
+        self.answers
+            .get("risk")
+            .and_then(|answer| match answer {
+                Answer::Score { score, .. } => Some(*score),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
 
-fn flags(decision: &Decision, floor: f64) -> Vec<String> {
-    let mut raised: Vec<String> = decision
-        .answers
-        .iter()
-        .filter_map(|(name, answer)| match answer {
-            Answer::Noul { noul } if *noul >= floor => Some(format!("{name} {noul:.2}")),
-            _ => None,
-        })
-        .collect();
-    raised.sort();
-    raised
+    fn flags(&self, floor: f64) -> Vec<String> {
+        let mut raised: Vec<String> = self
+            .answers
+            .iter()
+            .filter_map(|(name, answer)| match answer {
+                Answer::Noul { noul } if *noul >= floor => Some(format!("{name} {noul:.2}")),
+                _ => None,
+            })
+            .collect();
+        raised.sort();
+        raised
+    }
 }
 
 pub fn table(changes: &[Change], decided: &[Decision], floor: f64) -> String {
     let mut rows: Vec<(&Change, &Decision)> = changes.iter().zip(decided).collect();
-    rows.sort_by(|left, right| severity(right.1).total_cmp(&severity(left.1)));
+    rows.sort_by(|left, right| right.1.severity().total_cmp(&left.1.severity()));
     let mut out = String::new();
     for (change, decision) in rows {
         let kind = decision
@@ -95,9 +96,9 @@ pub fn table(changes: &[Change], decided: &[Decision], floor: f64) -> String {
             "{:<44} {:<10} risk {:.2}\n",
             crate::text::ellipsize_start(&change.path, 44),
             kind,
-            severity(decision)
+            decision.severity()
         ));
-        let raised = flags(decision, floor);
+        let raised = decision.flags(floor);
         if !raised.is_empty() {
             out.push_str(&format!("  {}\n", raised.join("   ")));
         }

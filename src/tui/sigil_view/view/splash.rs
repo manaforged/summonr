@@ -14,6 +14,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .caret_position(app.caret)
                 .content_padding(12.0, 0.0)
                 .placeholder("")
+                .chrome(false)
                 .change(move |draft| {
                     changed.pane_focus.set(false);
                     changed.change(draft);

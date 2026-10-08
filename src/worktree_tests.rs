@@ -75,9 +75,9 @@ fn a_listed_cache_path_is_shared_into_the_delta() {
 fn an_untouched_delta_is_clean_until_the_child_edits() {
     let (_root, primary) = repo();
     let tree = super::open_delta(&primary).unwrap();
-    assert!(super::unchanged(&tree).unwrap());
+    assert!(tree.unchanged().unwrap());
     std::fs::write(tree.path.join("note.txt"), "edit").unwrap();
-    assert!(!super::unchanged(&tree).unwrap());
+    assert!(!tree.unchanged().unwrap());
 }
 
 #[test]

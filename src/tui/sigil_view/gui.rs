@@ -9,7 +9,7 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::app::App;
 use super::desktop::root;
-use super::host::{copy_out, start_tick, stop};
+use super::host::{start_tick, stop};
 use super::model::Entry;
 use crate::error::{Error, Result};
 use crate::provider::Client;
@@ -89,7 +89,7 @@ fn outputs(app: &App) {
         }
         app.refresh();
     }
-    copy_out(app);
+    app.copy_out();
     if app.editor_requested.peek() {
         app.editor_requested.set(false);
         app.model_mut(|model| {

@@ -206,33 +206,35 @@ pub(super) fn enrich_from(
         else {
             continue;
         };
-        apply(model, meta);
+        model.apply(meta);
         if let Some(own) = own {
-            price(model, own);
+            model.price(own);
         }
     }
 }
 
-fn apply(model: &mut Model, meta: &Meta) {
-    if model.display.is_none() {
-        model.display = meta.display.clone();
+impl Model {
+    fn apply(&mut self, meta: &Meta) {
+        if self.display.is_none() {
+            self.display = meta.display.clone();
+        }
+        if self.context.is_none() {
+            self.context = meta.context;
+        }
+        self.release = self.release.or(meta.release);
+        self.reasoning |= meta.reasoning;
+        self.vision |= meta.vision;
+        self.family = self.family.take().or_else(|| meta.family.clone());
+        self.deprecated |= meta.deprecated;
+        self.tools = self.tools.or(meta.tools);
     }
-    if model.context.is_none() {
-        model.context = meta.context;
-    }
-    model.release = model.release.or(meta.release);
-    model.reasoning |= meta.reasoning;
-    model.vision |= meta.vision;
-    model.family = model.family.take().or_else(|| meta.family.clone());
-    model.deprecated |= meta.deprecated;
-    model.tools = model.tools.or(meta.tools);
-}
 
-fn price(model: &mut Model, meta: &Meta) {
-    model.price = model.price.or(meta.price);
-    if model.cost == Cost::Unknown
-        && let Some(metered) = meta.metered
-    {
-        model.cost = if metered { Cost::Metered } else { Cost::Free };
+    fn price(&mut self, meta: &Meta) {
+        self.price = self.price.or(meta.price);
+        if self.cost == Cost::Unknown
+            && let Some(metered) = meta.metered
+        {
+            self.cost = if metered { Cost::Metered } else { Cost::Free };
+        }
     }
 }

@@ -34,9 +34,7 @@ pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) ->
                 .min_size(0.0, 0.0)
                 .overflow_y(Overflow::Scroll),
         )
-        .bg(sigil::prelude::Token::Gray2)
-        .border_left(1)
-        .border_color(sigil::prelude::Token::Gray6);
+        .bg(sigil::prelude::Token::Gray3);
     column = match pane {
         Pane::Diff => diff::diff(app, column),
         Pane::Files => files(app, column),

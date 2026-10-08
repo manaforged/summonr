@@ -2,14 +2,14 @@ use super::*;
 
 pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endpoint> {
     let offered = match endpoint.oauth.take() {
-        Some(login) if takes_key(&endpoint) && !logged_in(&login, &endpoint.name)? => Some(login),
+        Some(login) if endpoint.takes_key() && !logged_in(&login, &endpoint.name)? => Some(login),
         Some(login) => {
             endpoint.oauth = Some(login);
             return Ok(endpoint);
         }
         None => None,
     };
-    if let Some((key, source)) = known_key(&endpoint)? {
+    if let Some((key, source)) = endpoint.known_key()? {
         endpoint.api_key = Some(key);
         endpoint.source = Some(source);
         return Ok(endpoint);
@@ -17,34 +17,53 @@ pub(super) fn fill_key(mut endpoint: Endpoint, require_key: bool) -> Result<Endp
     fallback_key(endpoint, require_key, offered)
 }
 
-fn known_key(endpoint: &Endpoint) -> Result<Option<(String, Source)>> {
-    let custom = preset(&endpoint.name).is_none();
-    if custom && let Some(key) = &endpoint.api_key {
-        return Ok(Some((key.clone(), Source::Config)));
+impl Endpoint {
+    fn known_key(&self) -> Result<Option<(String, Source)>> {
+        let custom = preset(&self.name).is_none();
+        if custom && let Some(key) = &self.api_key {
+            return Ok(Some((key.clone(), Source::Config)));
+        }
+        let own = if custom {
+            secret::get(&self.name)?
+        } else {
+            None
+        };
+        let row = preset(&self.name)
+            .filter(|row| self.own_base(row))
+            .or_else(|| self.base_url.as_deref().and_then(hosted));
+        if own.is_none()
+            && let Some(key) = row.and_then(|row| env_key(row.env_keys))
+        {
+            return Ok(Some((key, Source::Env)));
+        }
+        let stored = if custom {
+            own
+        } else {
+            secret::get(&self.name)?
+        };
+        Ok(stored.or_else(|| self.peer_key(row)))
     }
-    let own = if custom {
-        secret::get(&endpoint.name)?
-    } else {
-        None
-    };
-    let row = preset(&endpoint.name)
-        .filter(|row| own_base(endpoint, row))
-        .or_else(|| endpoint.base_url.as_deref().and_then(hosted));
-    if own.is_none()
-        && let Some(key) = row.and_then(|row| env_key(row.env_keys))
-    {
-        return Ok(Some((key, Source::Env)));
-    }
-    let stored = if custom {
-        own
-    } else {
-        secret::get(&endpoint.name)?
-    };
-    Ok(stored.or_else(|| peer_key(endpoint, row)))
-}
 
-pub(super) fn takes_key(endpoint: &Endpoint) -> bool {
-    preset(&endpoint.name).is_some_and(|row| !row.env_keys.is_empty())
+    pub(super) fn takes_key(&self) -> bool {
+        preset(&self.name).is_some_and(|row| !row.env_keys.is_empty())
+    }
+
+    fn own_base(&self, row: &super::preset::Preset) -> bool {
+        self.base_url
+            .as_deref()
+            .is_some_and(|base| trim_slash(base) == trim_slash(&row.base_url))
+    }
+
+    fn peer_key(&self, row: Option<&super::preset::Preset>) -> Option<(String, Source)> {
+        let row = row.filter(|row| self.own_base(row))?;
+        if let Some(cli) = &row.cli_token
+            && let Some(token) = (cli.read)()
+        {
+            return Some((token, Source::Peer(cli.label)));
+        }
+        let bearer = row.opencode_oauth && !matches!(self.wire, Wire::Anthropic | Wire::Gemini);
+        opencode_peer(provider_ids(&row.name), bearer).map(|key| (key, Source::Peer("opencode")))
+    }
 }
 
 fn fallback_key(
@@ -62,7 +81,7 @@ fn fallback_key(
     }
     let row = preset(&endpoint.name);
     if let Some(key) = row
-        .filter(|row| own_base(&endpoint, row))
+        .filter(|row| endpoint.own_base(row))
         .and_then(|row| row.default_key)
     {
         endpoint.api_key = Some(key.to_string());
@@ -83,29 +102,11 @@ fn fallback_key(
     )))
 }
 
-fn own_base(endpoint: &Endpoint, row: &super::preset::Preset) -> bool {
-    endpoint
-        .base_url
-        .as_deref()
-        .is_some_and(|base| trim_slash(base) == trim_slash(&row.base_url))
-}
-
-fn peer_key(endpoint: &Endpoint, row: Option<&super::preset::Preset>) -> Option<(String, Source)> {
-    let row = row.filter(|row| own_base(endpoint, row))?;
-    if let Some(cli) = &row.cli_token
-        && let Some(token) = (cli.read)()
-    {
-        return Some((token, Source::Peer(cli.label)));
-    }
-    let bearer = row.opencode_oauth && !matches!(endpoint.wire, Wire::Anthropic | Wire::Gemini);
-    opencode_peer(provider_ids(&row.name), bearer).map(|key| (key, Source::Peer("opencode")))
-}
-
 pub(crate) fn peer_token(name: &str) -> Option<String> {
     let file = config::file().ok()?;
     let endpoint = seat(&file, name)?;
     let row = preset(name).or_else(|| endpoint.base_url.as_deref().and_then(hosted));
-    peer_key(&endpoint, row).map(|(key, _)| key)
+    endpoint.peer_key(row).map(|(key, _)| key)
 }
 
 fn opencode_peer(ids: &[&str], bearer: bool) -> Option<String> {

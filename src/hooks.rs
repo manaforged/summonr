@@ -128,6 +128,87 @@ impl Hook {
             .find(|(ours, _)| *ours == tool)
             .map_or_else(|| mcp_name(tool), |(_, theirs)| (*theirs).to_string())
     }
+
+    fn claude_payload(&self, call: &Call<'_>) -> Value {
+        let payload = call.payload;
+        let mut body = json!({
+            "session_id": call.session,
+            "cwd": call.workspace,
+            "hook_event_name": call.event.claude(),
+        });
+        if let Some(tool) = payload.get("tool").and_then(Value::as_str) {
+            body["tool_name"] = json!(self.tool_name(tool));
+            body["tool_input"] = payload.get("arguments").cloned().unwrap_or(Value::Null);
+            body["tool_use_id"] = payload.get("id").cloned().unwrap_or(Value::Null);
+        }
+        if let Some(output) = payload.get("output") {
+            body["tool_response"] = json!({"output": output, "success": payload.get("success")});
+        }
+        body
+    }
+
+    async fn execute(&self, workspace: &Path, body: &Value) -> Result<Outcome, String> {
+        let program = crate::shell::program().map_err(|error| error.to_string())?;
+        let mut command = Command::new(program);
+        command
+            .env_clear()
+            .envs(crate::tools::command::command_env())
+            .args(crate::shell::arguments(&self.command, workspace))
+            .current_dir(workspace)
+            .env("CLAUDE_PROJECT_DIR", workspace)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true);
+        #[cfg(unix)]
+        command.process_group(0);
+        if let Some(root) = &self.root {
+            command
+                .env("CLAUDE_PLUGIN_ROOT", root)
+                .env("SUMMONR_PLUGIN_ROOT", root);
+            if let Some(data) = root
+                .file_name()
+                .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok())
+            {
+                command
+                    .env("CLAUDE_PLUGIN_DATA", &data)
+                    .env("SUMMONR_PLUGIN_DATA", &data);
+            }
+        }
+        let mut child = command
+            .spawn()
+            .map_err(|error| format!("hook `{}` did not start: {error}", self.command))?;
+        let group = child
+            .id()
+            .map(|pid| crate::tools::command::ProcessGroup::new(pid, false));
+        let text = body.to_string();
+        let work = async move {
+            let stdin = child.stdin.take();
+            let feed = async move {
+                if let Some(mut stdin) = stdin {
+                    drop(stdin.write_all(text.as_bytes()).await);
+                }
+            };
+            let ((), stdout, stderr) = tokio::join!(
+                feed,
+                read_capped(child.stdout.take()),
+                read_capped(child.stderr.take())
+            );
+            let status = child.wait().await?;
+            Ok::<_, std::io::Error>(Outcome {
+                code: status.code(),
+                stdout,
+                stderr,
+            })
+        };
+        let finished = tokio::time::timeout(JOB_WAIT, work).await;
+        drop(group);
+        finished
+            .map_err(|_elapsed| {
+                format!("hook `{}` ran past {}s", self.command, JOB_WAIT.as_secs())
+            })?
+            .map_err(|error| format!("hook `{}` failed: {error}", self.command))
+    }
 }
 
 fn mcp_name(tool: &str) -> String {
@@ -238,9 +319,9 @@ pub(crate) struct Call<'a> {
 pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
     let body = match hook.dialect {
         Dialect::Summonr => call.payload.clone(),
-        Dialect::Claude => claude_payload(hook, call),
+        Dialect::Claude => hook.claude_payload(call),
     };
-    let outcome = match execute(hook, call.workspace, &body).await {
+    let outcome = match hook.execute(call.workspace, &body).await {
         Ok(outcome) => outcome,
         Err(error) if call.event == HookEvent::PreTool => return Verdict::Block(error),
         Err(error) => return Verdict::Note(error),
@@ -248,89 +329,10 @@ pub(crate) async fn run(hook: &Hook, call: &Call<'_>) -> Verdict {
     judge(hook.dialect, call.event, outcome)
 }
 
-fn claude_payload(hook: &Hook, call: &Call<'_>) -> Value {
-    let payload = call.payload;
-    let mut body = json!({
-        "session_id": call.session,
-        "cwd": call.workspace,
-        "hook_event_name": call.event.claude(),
-    });
-    if let Some(tool) = payload.get("tool").and_then(Value::as_str) {
-        body["tool_name"] = json!(hook.tool_name(tool));
-        body["tool_input"] = payload.get("arguments").cloned().unwrap_or(Value::Null);
-        body["tool_use_id"] = payload.get("id").cloned().unwrap_or(Value::Null);
-    }
-    if let Some(output) = payload.get("output") {
-        body["tool_response"] = json!({"output": output, "success": payload.get("success")});
-    }
-    body
-}
-
 struct Outcome {
     code: Option<i32>,
     stdout: String,
     stderr: String,
-}
-
-async fn execute(hook: &Hook, workspace: &Path, body: &Value) -> Result<Outcome, String> {
-    let program = crate::shell::program().map_err(|error| error.to_string())?;
-    let mut command = Command::new(program);
-    command
-        .env_clear()
-        .envs(crate::tools::command::command_env())
-        .args(crate::shell::arguments(&hook.command, workspace))
-        .current_dir(workspace)
-        .env("CLAUDE_PROJECT_DIR", workspace)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    if let Some(root) = &hook.root {
-        command
-            .env("CLAUDE_PLUGIN_ROOT", root)
-            .env("SUMMONR_PLUGIN_ROOT", root);
-        if let Some(data) = root
-            .file_name()
-            .and_then(|name| crate::plugins::data_dir(&name.to_string_lossy()).ok())
-        {
-            command
-                .env("CLAUDE_PLUGIN_DATA", &data)
-                .env("SUMMONR_PLUGIN_DATA", &data);
-        }
-    }
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("hook `{}` did not start: {error}", hook.command))?;
-    let group = child
-        .id()
-        .map(|pid| crate::tools::command::ProcessGroup::new(pid, false));
-    let text = body.to_string();
-    let work = async move {
-        let stdin = child.stdin.take();
-        let feed = async move {
-            if let Some(mut stdin) = stdin {
-                drop(stdin.write_all(text.as_bytes()).await);
-            }
-        };
-        let ((), stdout, stderr) = tokio::join!(
-            feed,
-            read_capped(child.stdout.take()),
-            read_capped(child.stderr.take())
-        );
-        let status = child.wait().await?;
-        Ok::<_, std::io::Error>(Outcome {
-            code: status.code(),
-            stdout,
-            stderr,
-        })
-    };
-    let finished = tokio::time::timeout(JOB_WAIT, work).await;
-    drop(group);
-    finished
-        .map_err(|_elapsed| format!("hook `{}` ran past {}s", hook.command, JOB_WAIT.as_secs()))?
-        .map_err(|error| format!("hook `{}` failed: {error}", hook.command))
 }
 
 async fn read_capped(pipe: Option<impl tokio::io::AsyncRead + Unpin>) -> String {

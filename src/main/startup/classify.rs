@@ -188,7 +188,7 @@ async fn run_sweep(args: &Args, questions: &Questions, state: String) -> Result<
             }))?
         );
     } else {
-        print!("{}", summonr::classify::render(&decision));
+        print!("{}", decision);
     }
     Ok(0)
 }

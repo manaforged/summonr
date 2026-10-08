@@ -1,6 +1,6 @@
 [package]
 name = "summonr"
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -17,7 +17,7 @@ publish = false
 members = ["crates/auth"]
 
 [workspace.package]
-version = "0.1.0-rc.1"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.98"
 license = "MIT"
@@ -61,7 +61,7 @@ leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "2788
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "834ad8dc638ef32889f3b27bc1908f1bac100b54", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "4112a12a5e6bf3013aab5393ffde8cbe5138136f", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"

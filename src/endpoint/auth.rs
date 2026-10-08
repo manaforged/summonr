@@ -8,7 +8,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
         name: name.to_string(),
         flow: endpoint.oauth.as_ref().map(flow).unwrap_or_default(),
         login: offered.as_ref().map(flow).unwrap_or_default(),
-        key: takes_key(&endpoint) || (preset(name).is_none() && offered.is_none()),
+        key: endpoint.takes_key() || (preset(name).is_none() && offered.is_none()),
         plan: offered
             .as_ref()
             .and_then(|row| row.label.clone())

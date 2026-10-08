@@ -97,7 +97,7 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
         if !arg.starts_with('-') {
             command_position = false;
         }
-        match step(&mut args, &mut input, &arg, command)? {
+        match args.step(&mut input, &arg, command)? {
             Step::Next => {}
             Step::Endpoint => {
                 args.endpoint = Some(arg);
@@ -109,59 +109,82 @@ fn parse_from(args: impl IntoIterator<Item = String>) -> Result<Args> {
             }
         }
     }
-    check(&args)?;
+    args.check()?;
     Ok(args)
 }
 
-fn step(args: &mut Args, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
-    if let Some((_, set)) = SWITCHES.iter().find(|(names, _)| names.contains(&arg)) {
-        set(args);
-    } else if let Some(valued) = VALUES
-        .iter()
-        .find(|valued| valued.option == arg || valued.short == Some(arg))
-    {
-        (valued.set)(args, value(input, valued.option, valued.expected)?)?;
-    } else if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| command && *name == arg) {
-        run(args, input)?;
-    } else if let Some((.., run)) = SCOPED
-        .iter()
-        .find(|(flag, _, active, _)| *flag == arg && active(args))
-    {
-        run(args, input)?;
-    } else {
-        return rest(args, arg, command);
+impl Args {
+    fn step(&mut self, input: &mut Input, arg: &str, command: bool) -> Result<Step> {
+        if let Some((_, set)) = SWITCHES.iter().find(|(names, _)| names.contains(&arg)) {
+            set(self);
+        } else if let Some(valued) = VALUES
+            .iter()
+            .find(|valued| valued.option == arg || valued.short == Some(arg))
+        {
+            (valued.set)(self, value(input, valued.option, valued.expected)?)?;
+        } else if let Some((_, run)) = COMMANDS.iter().find(|(name, _)| command && *name == arg) {
+            run(self, input)?;
+        } else if let Some((.., run)) = SCOPED
+            .iter()
+            .find(|(flag, _, active, _)| *flag == arg && active(self))
+        {
+            run(self, input)?;
+        } else {
+            return self.rest(arg, command);
+        }
+        Ok(Step::Next)
     }
-    Ok(Step::Next)
-}
 
-fn rest(args: &mut Args, arg: &str, command: bool) -> Result<Step> {
-    match arg {
-        "-p" | "--print" => print(args).map(|()| Step::Next),
-        "-h" | "--help" => exit_help(None),
-        "-V" | "--version" => exit_version(),
-        "--" => Ok(Step::Rest),
-        option if option.starts_with('-') => Err(misplaced(option)),
-        name if endpoint_slot(args, command) && is_endpoint(name) => Ok(Step::Endpoint),
-        word => {
-            args.prompt.push(word.to_string());
-            Ok(Step::Next)
+    fn rest(&mut self, arg: &str, command: bool) -> Result<Step> {
+        match arg {
+            "-p" | "--print" => self.print().map(|()| Step::Next),
+            "-h" | "--help" => exit_help(None),
+            "-V" | "--version" => exit_version(),
+            "--" => Ok(Step::Rest),
+            option if option.starts_with('-') => Err(misplaced(option)),
+            name if self.endpoint_slot(command) && is_endpoint(name) => Ok(Step::Endpoint),
+            word => {
+                self.prompt.push(word.to_string());
+                Ok(Step::Next)
+            }
         }
     }
-}
 
-fn print(args: &mut Args) -> Result<()> {
-    if let [name] = args.prompt.as_slice()
-        && args.endpoint.is_none()
-        && named(name)
-    {
-        return Err(unknown(name, "; a prompt goes after -p"));
+    fn print(&mut self) -> Result<()> {
+        if let [name] = self.prompt.as_slice()
+            && self.endpoint.is_none()
+            && named(name)
+        {
+            return Err(unknown(name, "; a prompt goes after -p"));
+        }
+        self.print = true;
+        Ok(())
     }
-    args.print = true;
-    Ok(())
-}
 
-fn endpoint_slot(args: &Args, command: bool) -> bool {
-    args.endpoint.is_none() && (command || args.login || args.logout)
+    fn endpoint_slot(&self, command: bool) -> bool {
+        self.endpoint.is_none() && (command || self.login || self.logout)
+    }
+
+    fn check(&self) -> Result<()> {
+        if let [name] = self.prompt.as_slice()
+            && self.endpoint.is_none()
+            && (self.goal.is_some() || self.steps.is_some())
+            && named(name)
+        {
+            return Err(unknown(name, ""));
+        }
+        if self.here && self.worktree {
+            return Err(Error::Config(
+                "use --here or --worktree, not both".to_string(),
+            ));
+        }
+        if (self.logs || self.doctor) && !self.prompt.is_empty() {
+            return Err(Error::Config(
+                "doctor does not accept arguments".to_string(),
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn misplaced(option: &str) -> Error {
@@ -174,27 +197,6 @@ fn misplaced(option: &str) -> Error {
                 |(_, verb, ..)| format!("`{option}` works only after `summonr {verb}`"),
             ),
     )
-}
-
-fn check(args: &Args) -> Result<()> {
-    if let [name] = args.prompt.as_slice()
-        && args.endpoint.is_none()
-        && (args.goal.is_some() || args.steps.is_some())
-        && named(name)
-    {
-        return Err(unknown(name, ""));
-    }
-    if args.here && args.worktree {
-        return Err(Error::Config(
-            "use --here or --worktree, not both".to_string(),
-        ));
-    }
-    if (args.logs || args.doctor) && !args.prompt.is_empty() {
-        return Err(Error::Config(
-            "doctor does not accept arguments".to_string(),
-        ));
-    }
-    Ok(())
 }
 
 fn unknown(name: &str, tail: &str) -> Error {

@@ -123,7 +123,7 @@ pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<En
         .get(&endpoint.name)
         .and_then(|row| row.models.get(&endpoint.model))
     {
-        overlay_model(&mut endpoint, spec);
+        endpoint.overlay_model(spec);
     }
 
     fill_key(endpoint, need.key())
@@ -236,7 +236,7 @@ pub fn closest<'a>(name: &str, names: &'a [String]) -> Option<&'a str> {
 pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {
     let mut endpoint = builtin(chosen).or_else(|| from_file(file, chosen))?;
     if let Some(row) = file.endpoint.get(chosen) {
-        overlay(&mut endpoint, row);
+        endpoint.overlay(row);
     }
     Some(endpoint)
 }
@@ -286,85 +286,87 @@ pub(super) fn hosted(base: &str) -> Option<&'static super::preset::Preset> {
         })
 }
 
-pub(super) fn overlay(endpoint: &mut Endpoint, row: &FileEndpoint) {
-    overlay_connection(endpoint, row);
-    overlay_tuning(endpoint, row);
-    reasoning::overlay(
-        &mut endpoint.reasoning,
-        row.reasoning_levels.as_deref(),
-        row.thinking_off,
-    );
-}
+impl Endpoint {
+    pub(super) fn overlay(&mut self, row: &FileEndpoint) {
+        self.overlay_connection(row);
+        self.overlay_tuning(row);
+        reasoning::overlay(
+            &mut self.reasoning,
+            row.reasoning_levels.as_deref(),
+            row.thinking_off,
+        );
+    }
 
-fn overlay_connection(endpoint: &mut Endpoint, row: &FileEndpoint) {
-    if let Some(base) = &row.base_url {
-        endpoint.base_url = Some(trim_slash(base));
-    }
-    if let Some(url) = &row.models_url {
-        endpoint.models_url = Some(trim_slash(url));
-    }
-    if let Some(model) = &row.model {
-        endpoint.model.clone_from(model);
-    }
-    if let Some(key) = &row.api_key
-        && !key.trim().is_empty()
-    {
-        endpoint.api_key = Some(key.clone());
-    }
-    if let Some(auth) = &row.auth {
-        endpoint.oauth = Some(auth.clone());
-    }
-    if let Some(body) = &row.body {
-        endpoint.body = Some(json(body));
-    }
-    for (key, value) in &row.env {
-        endpoint.env.insert(key.clone(), value.clone());
-    }
-    for (key, value) in &row.headers {
-        endpoint.headers.insert(key.clone(), value.clone());
-    }
-    if !row.fallback.is_empty() {
-        endpoint.fallback.clone_from(&row.fallback);
-    }
-}
-
-fn overlay_tuning(endpoint: &mut Endpoint, row: &FileEndpoint) {
-    endpoint.context_window = row.context_window.or(endpoint.context_window);
-    endpoint.effort = row.effort.or(endpoint.effort);
-    endpoint.price = row.price.or(endpoint.price);
-    endpoint.wire = row.wire.unwrap_or(endpoint.wire);
-    endpoint.compact_tokens = row.compact_tokens.or(endpoint.compact_tokens);
-    endpoint.images = row.images.or(endpoint.images);
-    endpoint.keep_reasoning = row.keep_reasoning.unwrap_or(endpoint.keep_reasoning);
-}
-
-fn overlay_model(endpoint: &mut Endpoint, spec: &crate::config::Model) {
-    if let Some(body) = &spec.body {
-        let body = json(body);
-        match (&mut endpoint.body, body) {
-            (Some(serde_json::Value::Object(existing)), serde_json::Value::Object(extra)) => {
-                for (key, value) in extra {
-                    existing.insert(key, value);
-                }
-            }
-            (slot, body) => *slot = Some(body),
+    fn overlay_connection(&mut self, row: &FileEndpoint) {
+        if let Some(base) = &row.base_url {
+            self.base_url = Some(trim_slash(base));
+        }
+        if let Some(url) = &row.models_url {
+            self.models_url = Some(trim_slash(url));
+        }
+        if let Some(model) = &row.model {
+            self.model.clone_from(model);
+        }
+        if let Some(key) = &row.api_key
+            && !key.trim().is_empty()
+        {
+            self.api_key = Some(key.clone());
+        }
+        if let Some(auth) = &row.auth {
+            self.oauth = Some(auth.clone());
+        }
+        if let Some(body) = &row.body {
+            self.body = Some(json(body));
+        }
+        for (key, value) in &row.env {
+            self.env.insert(key.clone(), value.clone());
+        }
+        for (key, value) in &row.headers {
+            self.headers.insert(key.clone(), value.clone());
+        }
+        if !row.fallback.is_empty() {
+            self.fallback.clone_from(&row.fallback);
         }
     }
-    if let Some(window) = spec.context_window {
-        endpoint.context_window = Some(window);
+
+    fn overlay_tuning(&mut self, row: &FileEndpoint) {
+        self.context_window = row.context_window.or(self.context_window);
+        self.effort = row.effort.or(self.effort);
+        self.price = row.price.or(self.price);
+        self.wire = row.wire.unwrap_or(self.wire);
+        self.compact_tokens = row.compact_tokens.or(self.compact_tokens);
+        self.images = row.images.or(self.images);
+        self.keep_reasoning = row.keep_reasoning.unwrap_or(self.keep_reasoning);
     }
-    if let Some(effort) = spec.effort {
-        endpoint.effort = Some(effort);
+
+    fn overlay_model(&mut self, spec: &crate::config::Model) {
+        if let Some(body) = &spec.body {
+            let body = json(body);
+            match (&mut self.body, body) {
+                (Some(serde_json::Value::Object(existing)), serde_json::Value::Object(extra)) => {
+                    for (key, value) in extra {
+                        existing.insert(key, value);
+                    }
+                }
+                (slot, body) => *slot = Some(body),
+            }
+        }
+        if let Some(window) = spec.context_window {
+            self.context_window = Some(window);
+        }
+        if let Some(effort) = spec.effort {
+            self.effort = Some(effort);
+        }
+        if let Some(tokens) = spec.compact_tokens {
+            self.compact_tokens = Some(tokens);
+        }
+        if let Some(keep) = spec.keep_reasoning {
+            self.keep_reasoning = keep;
+        }
+        reasoning::overlay(
+            &mut self.reasoning,
+            spec.reasoning_levels.as_deref(),
+            spec.thinking_off,
+        );
     }
-    if let Some(tokens) = spec.compact_tokens {
-        endpoint.compact_tokens = Some(tokens);
-    }
-    if let Some(keep) = spec.keep_reasoning {
-        endpoint.keep_reasoning = keep;
-    }
-    reasoning::overlay(
-        &mut endpoint.reasoning,
-        spec.reasoning_levels.as_deref(),
-        spec.thinking_off,
-    );
 }

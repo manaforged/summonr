@@ -170,6 +170,7 @@ pub summonr::classify::Decision::usage: summonr::classify::Usage
 impl core::clone::Clone for summonr::classify::Decision
 impl core::cmp::PartialEq for summonr::classify::Decision
 impl core::fmt::Debug for summonr::classify::Decision
+impl core::fmt::Display for summonr::classify::Decision
 impl core::marker::StructuralPartialEq for summonr::classify::Decision
 impl<'de> serde_core::de::Deserialize<'de> for summonr::classify::Decision
 pub struct summonr::classify::Usage
@@ -184,7 +185,6 @@ impl core::marker::StructuralPartialEq for summonr::classify::Usage
 impl<'de> serde_core::de::Deserialize<'de> for summonr::classify::Usage
 pub async fn summonr::classify::ask(endpoint: &summonr::Endpoint, state: &serde_json::value::Value, questions: &alloc::collections::btree::map::BTreeMap<alloc::string::String, summonr::classify::Question>) -> summonr::Result<summonr::classify::Decision>
 pub fn summonr::classify::budget(endpoint: &summonr::Endpoint, questions: &alloc::collections::btree::map::BTreeMap<alloc::string::String, summonr::classify::Question>) -> usize
-pub fn summonr::classify::render(decision: &summonr::classify::Decision) -> alloc::string::String
 pub mod summonr::diff
 pub struct summonr::diff::Diff
 pub summonr::diff::Diff::base: alloc::string::String
@@ -329,9 +329,10 @@ pub summonr::splash::Splash::strict: bool
 pub summonr::splash::Splash::trust: bool
 pub summonr::splash::Splash::version: &'a str
 pub summonr::splash::Splash::workspace: &'a std::path::Path
+impl summonr::splash::Splash<'_>
+pub fn summonr::splash::Splash<'_>::interactive(&self, full: bool)
+pub fn summonr::splash::Splash<'_>::line(&self)
 pub fn summonr::splash::host_of(url: core::option::Option<&str>) -> core::option::Option<&str>
-pub fn summonr::splash::interactive(splash: &summonr::splash::Splash<'_>, full: bool)
-pub fn summonr::splash::line(splash: &summonr::splash::Splash<'_>)
 pub mod summonr::steps
 pub enum summonr::steps::Item
 pub summonr::steps::Item::File(alloc::string::String)
@@ -345,6 +346,8 @@ impl core::fmt::Debug for summonr::steps::Item
 impl core::marker::StructuralPartialEq for summonr::steps::Item
 pub struct summonr::steps::Contract
 pub summonr::steps::Contract::items: alloc::vec::Vec<summonr::steps::Item>
+impl summonr::steps::Contract
+pub fn summonr::steps::Contract::missing(&self, workspace: &std::path::Path) -> alloc::vec::Vec<alloc::string::String>
 impl core::clone::Clone for summonr::steps::Contract
 impl core::cmp::Eq for summonr::steps::Contract
 impl core::cmp::PartialEq for summonr::steps::Contract
@@ -362,7 +365,6 @@ impl core::cmp::PartialEq for summonr::steps::Step
 impl core::fmt::Debug for summonr::steps::Step
 impl core::marker::StructuralPartialEq for summonr::steps::Step
 pub fn summonr::steps::exit_code(output: &str) -> core::option::Option<i32>
-pub fn summonr::steps::missing(contract: &summonr::steps::Contract, workspace: &std::path::Path) -> alloc::vec::Vec<alloc::string::String>
 pub fn summonr::steps::parse(markdown: &str) -> summonr::Result<alloc::vec::Vec<summonr::steps::Step>>
 pub fn summonr::steps::prompt(step: &summonr::steps::Step, total: usize, plan_path: &str) -> alloc::string::String
 pub mod summonr::tui

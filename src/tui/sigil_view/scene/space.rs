@@ -2,7 +2,7 @@ use super::*;
 
 pub(in crate::tui::sigil_view) const SCRIM: Rgba8 = rgb(10, 8, 20);
 
-pub(in crate::tui::sigil_view) const PLATE: Rgba8 = rgb(18, 16, 34);
+pub(in crate::tui::sigil_view) const PLATE: Rgba8 = rgb(42, 44, 58);
 
 pub(in crate::tui::sigil_view) const STAR_DIM: Rgba8 = rgb(58, 74, 110);
 

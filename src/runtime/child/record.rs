@@ -73,27 +73,35 @@ pub(super) fn empty(diagnostic: Option<&str>) -> ChildResult {
     }
 }
 
-pub(super) fn access_name(access: Access) -> &'static str {
-    access.name()
-}
-
-pub(super) fn note_record(record: &mut ChildRecord, diagnostic: &str) {
-    if let Some(result) = result_mut(&mut record.state) {
-        result.diagnostic = Some(diagnostic.to_string());
+impl ChildRecord {
+    pub(super) fn note_record(&mut self, diagnostic: &str) {
+        if let Some(result) = result_mut(&mut self.state) {
+            result.diagnostic = Some(diagnostic.to_string());
+        }
     }
-}
 
-pub(super) fn fail_record(record: &mut ChildRecord, diagnostic: &str) {
-    let state = std::mem::replace(&mut record.state, ChildState::Running);
-    let mut result = match state {
-        ChildState::Completed(result)
-        | ChildState::Aborted(result)
-        | ChildState::Failed(result)
-        | ChildState::Interrupted(result) => result,
-        ChildState::Running => return,
-    };
-    result.diagnostic = Some(diagnostic.to_string());
-    record.state = ChildState::Failed(result);
+    pub(super) fn fail_record(&mut self, diagnostic: &str) {
+        let state = std::mem::replace(&mut self.state, ChildState::Running);
+        let mut result = match state {
+            ChildState::Completed(result)
+            | ChildState::Aborted(result)
+            | ChildState::Failed(result)
+            | ChildState::Interrupted(result) => result,
+            ChildState::Running => return,
+        };
+        result.diagnostic = Some(diagnostic.to_string());
+        self.state = ChildState::Failed(result);
+    }
+
+    pub(super) fn record_paths(&self) -> usize {
+        match &self.state {
+            ChildState::Running => 0,
+            ChildState::Completed(result)
+            | ChildState::Aborted(result)
+            | ChildState::Failed(result)
+            | ChildState::Interrupted(result) => result.changed_paths_total,
+        }
+    }
 }
 
 pub(super) fn result_mut(state: &mut ChildState) -> Option<&mut ChildResult> {
@@ -135,14 +143,4 @@ pub(super) fn rejected(count: usize, message: &str) -> Vec<Result<Execution>> {
     (0..count)
         .map(|_| Err(Error::Denied(message.to_string())))
         .collect()
-}
-
-pub(super) fn record_paths(record: &ChildRecord) -> usize {
-    match &record.state {
-        ChildState::Running => 0,
-        ChildState::Completed(result)
-        | ChildState::Aborted(result)
-        | ChildState::Failed(result)
-        | ChildState::Interrupted(result) => result.changed_paths_total,
-    }
 }

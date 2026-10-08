@@ -15,8 +15,6 @@ pub(super) use super::pane::Pane;
 pub(super) use super::panes;
 pub(super) use super::speed::Speed;
 pub(super) use super::suggest;
-#[cfg(feature = "gui")]
-pub(in crate::tui::sigil_view) use chrome::{cache_percent, context_percent};
 pub(super) use composer::{busy_status, composer_hint, draft_view};
 pub(in crate::tui::sigil_view) use footer::Target;
 pub(super) use sigil::app::cell_width;

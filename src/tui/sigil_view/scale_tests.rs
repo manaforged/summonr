@@ -276,6 +276,29 @@ fn expanded_thinking_renders_in_full_live_and_after_the_turn() {
 }
 
 #[test]
+fn the_side_pane_does_not_add_a_full_height_rule() {
+    use super::pane::{Layout, Pane};
+    let grid = paint(busy_info(), 100, 30, State::Idle, |app| {
+        app.layout.set(Layout {
+            secondary: Some(Pane::Files),
+            share: 30,
+        });
+    });
+    let rails = (0..100usize)
+        .filter(|&col| {
+            (0..30)
+                .filter(|&row| {
+                    grid.get(col, row)
+                        .is_some_and(|cell| cell.text == "│" || cell.text == "┃")
+                })
+                .count()
+                > 20
+        })
+        .count();
+    assert_eq!(rails, 0, "a full-height rule sits beside the transcript");
+}
+
+#[test]
 fn your_line_is_the_text_you_sent() {
     let lines = frame(80, 24, State::Idle);
     let row = lines

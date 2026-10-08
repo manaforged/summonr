@@ -85,7 +85,7 @@ fn openai_and_grok_offer_a_sign_in_and_a_key() {
         let row = super::keys::builtin(name).unwrap();
         let spec = crate::credentials::spec(row.oauth.as_ref().unwrap()).unwrap();
         assert_eq!(spec.grant, grant, "{name}");
-        assert!(super::keys::takes_key(&row), "{name} still takes a key");
+        assert!(row.takes_key(), "{name} still takes a key");
     }
     assert_eq!(
         super::keys::builtin("openai").unwrap().wire,

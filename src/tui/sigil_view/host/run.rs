@@ -7,7 +7,6 @@ use sigil::tasks::on_message_or_close;
 use tokio::task::JoinHandle;
 
 use super::edit::{edit, edit_external, editor};
-use super::intake::intake;
 use super::*;
 
 use crate::limits::BEAT;
@@ -49,7 +48,7 @@ pub(crate) fn run(
         external_events: Some(Box::new(move |events| turn.borrow_mut().turn(events))),
         after_frame: None,
         region_rows: Some(Box::new(move || {
-            region.borrow().as_ref().map_or(8, inline_rows)
+            region.borrow().as_ref().map_or(8, App::inline_rows)
         })),
     };
     let config = sigil::AppConfig::new("summonr")
@@ -101,30 +100,103 @@ pub(crate) fn run(
     Ok(exit)
 }
 
-fn commit(app: &App) {
-    if !app.inline {
-        return;
+impl App {
+    fn commit(&self) {
+        if !self.inline {
+            return;
+        }
+        let mut lines = String::new();
+        self.model_mut(|model| lines = model.commit_lines());
+        if !lines.is_empty() {
+            drop(sigil::terminal::print_above(&lines));
+        }
     }
-    let mut lines = String::new();
-    app.model_mut(|model| lines = model.commit_lines());
-    if !lines.is_empty() {
-        drop(sigil::terminal::print_above(&lines));
-    }
-}
 
-fn inline_rows(app: &App) -> u16 {
-    let (cols, rows) = app.viewport.peek();
-    let model = app.model.get();
-    if app.splash.peek() || app.select.peek() || app.overlay().is_some() {
-        return rows.max(1);
+    fn inline_rows(&self) -> u16 {
+        let (cols, rows) = self.viewport.peek();
+        let model = self.model.get();
+        if self.splash.peek() || self.select.peek() || self.overlay().is_some() {
+            return rows.max(1);
+        }
+        let mut height = 6u16;
+        if model.busy_since.is_some() {
+            height += 1;
+        }
+        height += crate::tui::sigil_view::chat::panels::strip_rows(self).min(9) as u16;
+        height += crate::tui::sigil_view::chat::todos::height(self, cols);
+        height.clamp(1, rows.max(1))
     }
-    let mut height = 6u16;
-    if model.busy_since.is_some() {
-        height += 1;
+
+    fn open_out(&self) {
+        if let Some(path) = self.open_file.peek() {
+            self.open_file.set(None);
+            if let Ok(Err(error)) | Err(error) =
+                suspend(|| edit(&path, &editor())).map_err(Error::from)
+            {
+                self.push_entry(Entry::Error(error.to_string()));
+            }
+            self.refresh();
+        }
+        if self.editor_requested.peek() {
+            self.editor_requested.set(false);
+            let draft = self.draft.peek();
+            match suspend(|| edit_external(&draft, &editor())).map_err(Error::from) {
+                Ok(Ok(draft)) => self.edit(&draft),
+                Ok(Err(error)) | Err(error) => {
+                    self.push_entry(Entry::Error(error.to_string()));
+                    self.refresh();
+                }
+            }
+        }
     }
-    height += crate::tui::sigil_view::chat::panels::strip_rows(app).min(9) as u16;
-    height += crate::tui::sigil_view::chat::todos::height(app, cols);
-    height.clamp(1, rows.max(1))
+
+    pub(in crate::tui::sigil_view) fn copy_out(&self) {
+        if let Some(text) = self.copy.peek() {
+            self.copy.set(None);
+            match sigil::clipboard::copy(&text) {
+                Ok(delivery) => self.copied(&text, delivery),
+                Err(error) => {
+                    self.push_entry(Entry::Error(format!("clipboard: {error}")));
+                    self.refresh();
+                }
+            }
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn ending(&self) -> &'static str {
+        let model = self.model.get();
+        let last = model
+            .entries
+            .iter()
+            .rev()
+            .take_while(|entry| !matches!(entry, Entry::User(_)))
+            .find(|entry| matches!(entry, Entry::Aborted(_) | Entry::Error(_)));
+        match last {
+            Some(Entry::Aborted(_)) => "turn cancelled",
+            Some(_) => "turn failed",
+            None => "turn finished",
+        }
+    }
+
+    fn place(&self) -> String {
+        self.workspace
+            .file_name()
+            .map(|name| {
+                name.to_string_lossy()
+                    .chars()
+                    .filter(|ch| !ch.is_control())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    pub(in crate::tui::sigil_view) fn title(&self, busy: bool) -> String {
+        let place = self.place();
+        format!(
+            "summon · {place} · {}",
+            if busy { "working" } else { "ready" }
+        )
+    }
 }
 
 struct Pump {
@@ -145,7 +217,7 @@ impl Pump {
         if self.exit.is_some() {
             return;
         }
-        intake(&app, events);
+        app.intake(events);
         if let Ok(size) = crossterm::terminal::size()
             && size != app.viewport.peek()
         {
@@ -166,21 +238,21 @@ impl Pump {
             self.select = select;
             drop(set_mouse_capture(!select && !app.inline));
         }
-        commit(&app);
-        open_out(&app);
-        copy_out(&app);
+        app.commit();
+        app.open_out();
+        app.copy_out();
     }
 
     fn track_busy(&mut self, app: &App, busy: bool, notify: crate::prefs::Notify) {
         if self.busy == Some(busy) {
             return;
         }
-        drop(set_title(&title(app, busy)));
+        drop(set_title(&app.title(busy)));
         if self.busy == Some(true) && !busy && !focused() && notify.turns() {
             drop(bell(Some(&format!(
                 "summonr · {}: {}",
-                place(app),
-                ending(app)
+                app.place(),
+                app.ending()
             ))));
         }
         self.busy = Some(busy);
@@ -193,7 +265,7 @@ impl Pump {
         } else if !self.asking && !focused() && notify.approvals() {
             drop(bell(Some(&format!(
                 "summonr · {}: approval needed",
-                place(app)
+                app.place()
             ))));
             self.asking = true;
         }
@@ -203,41 +275,6 @@ impl Pump {
         self.session = app.model.get().session.to_string();
         self.exit = Some(exit);
         sigil::request_exit();
-    }
-}
-
-fn open_out(app: &App) {
-    if let Some(path) = app.open_file.peek() {
-        app.open_file.set(None);
-        if let Ok(Err(error)) | Err(error) = suspend(|| edit(&path, &editor())).map_err(Error::from)
-        {
-            app.push_entry(Entry::Error(error.to_string()));
-        }
-        app.refresh();
-    }
-    if app.editor_requested.peek() {
-        app.editor_requested.set(false);
-        let draft = app.draft.peek();
-        match suspend(|| edit_external(&draft, &editor())).map_err(Error::from) {
-            Ok(Ok(draft)) => app.edit(&draft),
-            Ok(Err(error)) | Err(error) => {
-                app.push_entry(Entry::Error(error.to_string()));
-                app.refresh();
-            }
-        }
-    }
-}
-
-pub(in crate::tui::sigil_view) fn copy_out(app: &App) {
-    if let Some(text) = app.copy.peek() {
-        app.copy.set(None);
-        match sigil::clipboard::copy(&text) {
-            Ok(delivery) => app.copied(&text, delivery),
-            Err(error) => {
-                app.push_entry(Entry::Error(format!("clipboard: {error}")));
-                app.refresh();
-            }
-        }
     }
 }
 
@@ -274,41 +311,6 @@ pub(in crate::tui::sigil_view) fn stop<T>(
             }
         });
     });
-}
-
-pub(in crate::tui::sigil_view) fn ending(app: &App) -> &'static str {
-    let model = app.model.get();
-    let last = model
-        .entries
-        .iter()
-        .rev()
-        .take_while(|entry| !matches!(entry, Entry::User(_)))
-        .find(|entry| matches!(entry, Entry::Aborted(_) | Entry::Error(_)));
-    match last {
-        Some(Entry::Aborted(_)) => "turn cancelled",
-        Some(_) => "turn failed",
-        None => "turn finished",
-    }
-}
-
-fn place(app: &App) -> String {
-    app.workspace
-        .file_name()
-        .map(|name| {
-            name.to_string_lossy()
-                .chars()
-                .filter(|ch| !ch.is_control())
-                .collect()
-        })
-        .unwrap_or_default()
-}
-
-pub(in crate::tui::sigil_view) fn title(app: &App, busy: bool) -> String {
-    let place = place(app);
-    format!(
-        "summon · {place} · {}",
-        if busy { "working" } else { "ready" }
-    )
 }
 
 pub(in crate::tui::sigil_view) fn status(closed: bool, quit: bool) -> Option<i32> {

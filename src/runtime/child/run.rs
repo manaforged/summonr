@@ -23,9 +23,9 @@ impl Guard {
 impl Drop for Guard {
     fn drop(&mut self) {
         if let Some(tree) = self.tree.take()
-            && worktree::unchanged(&tree).is_ok_and(|same| same)
+            && tree.unchanged().is_ok_and(|same| same)
         {
-            drop(worktree::remove_child(&tree));
+            drop(tree.remove_child());
         }
     }
 }
@@ -148,7 +148,7 @@ impl<P: Provider> Run<P> {
                     result.usage.clone_from(&usage);
                 }
             }
-            Err(error) => fail_record(&mut self.record, &error.to_string()),
+            Err(error) => self.record.fail_record(&error.to_string()),
         }
         usage
     }

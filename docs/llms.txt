@@ -2,7 +2,7 @@
 
 > Public API reference that truesight generates from the compiler's rustdoc output, except the task names and calls, which come from the task file.
 
-## summonr-auth 0.1.0-rc.1
+## summonr-auth 0.1.0
 
 - [Every public item, one per line](reference/summonr-auth/api.txt): 112 lines
 - [API overview](reference/summonr-auth/index.html): tasks, modules, features, and examples
@@ -10,7 +10,7 @@
 - [summonr_auth](reference/summonr-auth/summonr_auth.html): 67 items
 - [summonr_auth::open](reference/summonr-auth/summonr_auth-open.html): 2 items
 
-## summonr 0.1.0-rc.1
+## summonr 0.1.0
 
 - [Every public item, one per line](reference/summonr/api.txt): 1137 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples

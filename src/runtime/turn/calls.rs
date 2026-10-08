@@ -65,14 +65,18 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Vec<(Result<ToolOutput>, u64, Option<Usage>)>> {
-        let mut ran = Vec::with_capacity(calls.len());
-        for call in calls {
-            let started = Instant::now();
-            ran.push((
-                self.tools.execute_outcome(call).await,
-                super::elapsed_millis(started),
-            ));
-        }
+        let tools = &self.tools;
+        let ran = calls
+            .iter()
+            .map(|call| async move {
+                let started = Instant::now();
+                (
+                    tools.execute_outcome(call).await,
+                    super::elapsed_millis(started),
+                )
+            })
+            .collect::<Vec<_>>();
+        let ran = futures::future::join_all(ran).await;
         let mut outputs = Vec::with_capacity(ran.len());
         for ((output, millis), call) in ran.into_iter().zip(calls) {
             outputs.push((

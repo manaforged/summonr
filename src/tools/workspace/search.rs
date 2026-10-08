@@ -231,6 +231,27 @@ fn collect(
         let (modified, size) = std::fs::metadata(root).map_or((0, 0), |meta| stamp(&meta));
         return vec![(root.to_path_buf(), modified, size)];
     }
+    let walker = walker(root, types, no_ignore);
+    let mut files = Vec::new();
+    for entry in walker.build().filter_map(std::result::Result::ok) {
+        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+            continue;
+        }
+        let meta = entry.metadata();
+        let path = entry.into_path();
+        if !keep(&path, overrides, require_match, protect) {
+            continue;
+        }
+        let stamp = match meta {
+            Ok(meta) => stamp(&meta),
+            Err(_) => path.metadata().map_or((0, 0), |meta| stamp(&meta)),
+        };
+        files.push((path, stamp.0, stamp.1));
+    }
+    files
+}
+
+fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> WalkBuilder {
     let mut walker = WalkBuilder::new(root);
     walker
         .require_git(false)
@@ -250,29 +271,18 @@ fn collect(
     if let Some(types) = types {
         walker.types(types);
     }
-    let mut files = Vec::new();
-    for entry in walker.build().filter_map(std::result::Result::ok) {
-        if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-            continue;
-        }
-        let meta = entry.metadata();
-        let path = entry.into_path();
-        if protect && crate::policy::protected_read(&path) {
-            continue;
-        }
-        if let Some(overrides) = overrides {
-            let matched = overrides.matched(&path, false);
-            if matched.is_ignore() || (require_match && !matched.is_whitelist()) {
-                continue;
-            }
-        }
-        let stamp = match meta {
-            Ok(meta) => stamp(&meta),
-            Err(_) => path.metadata().map_or((0, 0), |meta| stamp(&meta)),
-        };
-        files.push((path, stamp.0, stamp.1));
+    walker
+}
+
+fn keep(path: &Path, overrides: Option<&Override>, require_match: bool, protect: bool) -> bool {
+    if protect && crate::policy::protected_read(path) {
+        return false;
     }
-    files
+    let Some(overrides) = overrides else {
+        return true;
+    };
+    let matched = overrides.matched(path, false);
+    !(matched.is_ignore() || (require_match && !matched.is_whitelist()))
 }
 
 fn file_list(base: &Path, files: &[(PathBuf, u64, u64)], limit: usize) -> String {

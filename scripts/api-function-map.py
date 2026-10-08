@@ -79,6 +79,41 @@ def read_lines() -> list[tuple[str, str, int]]:
     return rows
 
 
+def bucket_table(buckets, source, rows) -> list[str]:
+    area_files: Counter[str] = Counter()
+    area_lines: Counter[str] = Counter()
+    for path, _, count in source:
+        area_files[bucket_of(path)] += 1
+        area_lines[bucket_of(path)] += count
+    out = [
+        "| bucket | files | lines | functions | fn lines | share |",
+        "| --- | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for name in sorted(set(buckets) | set(area_lines), key=lambda n: -area_lines[n]):
+        group = buckets.get(name, [])
+        share = 100 * len(group) / len(rows)
+        out.append(
+            f"| {name} | {area_files[name]} | {area_lines[name]} | {len(group)} "
+            f"| {sum(r[3] for r in group)} | {share:.1f}% |"
+        )
+    out.append("")
+    return out
+
+
+def bucket_sections(buckets) -> list[str]:
+    out: list[str] = []
+    for name in sorted(buckets):
+        group = sorted(buckets[name], key=lambda r: -r[3])
+        out.append(f"## {name} ({len(group)})")
+        out.append("")
+        out.append("| fn | lines | mentions | where |")
+        out.append("| --- | ---: | ---: | --- |")
+        for path, line_no, fn, loc, mentions in group:
+            out.append(f"| `{fn}` | {loc} | {mentions} | `{path}:{line_no}` |")
+        out.append("")
+    return out
+
+
 def main() -> None:
     rows = read_tsv()
     tree = read_lines()
@@ -88,11 +123,6 @@ def main() -> None:
 
     source = [r for r in tree if r[1] == "source"]
     test = [r for r in tree if r[1] == "test"]
-    area_files: Counter[str] = Counter()
-    area_lines: Counter[str] = Counter()
-    for path, _, count in source:
-        area_files[bucket_of(path)] += 1
-        area_lines[bucket_of(path)] += count
 
     jobs = sum(len(v) for k, v in buckets.items() if k in MENU_JOBS)
     plumbing = sum(len(v) for k, v in buckets.items() if k.startswith("plumbing"))
@@ -123,26 +153,8 @@ def main() -> None:
     out.append("`REVIEW` is a list, not an answer. A row there is either a job nobody")
     out.append("named, or code that should go.")
     out.append("")
-    out.append("| bucket | files | lines | functions | fn lines | share |")
-    out.append("| --- | ---: | ---: | ---: | ---: | ---: |")
-    for name in sorted(set(buckets) | set(area_lines), key=lambda n: -area_lines[n]):
-        group = buckets.get(name, [])
-        share = 100 * len(group) / len(rows)
-        out.append(
-            f"| {name} | {area_files[name]} | {area_lines[name]} | {len(group)} "
-            f"| {sum(r[3] for r in group)} | {share:.1f}% |"
-        )
-    out.append("")
-
-    for name in sorted(buckets):
-        group = sorted(buckets[name], key=lambda r: -r[3])
-        out.append(f"## {name} ({len(group)})")
-        out.append("")
-        out.append("| fn | lines | mentions | where |")
-        out.append("| --- | ---: | ---: | --- |")
-        for path, line_no, fn, loc, mentions in group:
-            out.append(f"| `{fn}` | {loc} | {mentions} | `{path}:{line_no}` |")
-        out.append("")
+    out += bucket_table(buckets, source, rows)
+    out += bucket_sections(buckets)
 
     OUT.write_text("\n".join(out) + "\n")
     print(f"wrote {OUT.relative_to(ROOT)}")

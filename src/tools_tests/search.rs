@@ -91,3 +91,29 @@ fn a_search_over_several_paths_reports_a_missing_one_inline() {
     assert!(hits.contains("a.txt:1:"), "{hits}");
     assert!(hits.contains("missing.txt: "), "{hits}");
 }
+
+#[test]
+fn a_filtered_search_keeps_matching_files_and_skips_build_dirs_and_secrets() {
+    let (dir, tools) = workspace(&[(".env", "needle\n")]);
+    for (path, text) in [
+        ("src/a.rs", "needle\n"),
+        ("src/b.txt", "needle\n"),
+        ("docs/d.rs", "needle\n"),
+        ("target/c.rs", "needle\n"),
+    ] {
+        let file = dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(file, text).unwrap();
+    }
+    let hits = run(
+        &tools,
+        "read",
+        serde_json::json!({"pattern": "needle", "glob": "*.rs", "exclude": "docs/**"}),
+    );
+    let files: Vec<&str> = hits
+        .lines()
+        .filter_map(|line| line.split(':').next())
+        .filter(|path| path.contains('.'))
+        .collect();
+    assert_eq!(files, ["src/a.rs"], "{hits}");
+}

@@ -6,6 +6,7 @@ import statistics
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from paired import ci, log_ratios
 from stats import cell, fmt, requests, wilson
 from trial import trials
 
@@ -230,28 +231,6 @@ def solved_rate(group):
     return statistics.mean(map(ok, group))
 
 
-def log_ratios(mine, theirs, tasks, key):
-    ratios = {}
-    for task in tasks:
-        a = [row[key] for row in mine[task] if row[key]]
-        b = [row[key] for row in theirs[task] if row[key]]
-        if a and b:
-            ratios[task] = math.log(statistics.mean(a) / statistics.mean(b))
-    return ratios
-
-
-def ci(values, transform, draws):
-    if not values:
-        return "–"
-    point = transform(statistics.mean(values.values()))
-    means = sorted(
-        transform(statistics.mean(values[t] for t in draw if t in values))
-        for draw in draws
-        if any(t in values for t in draw)
-    )
-    return f"{point:.2f} ({means[int(0.025 * len(means))]:.2f}–{means[int(0.975 * len(means)) - 1]:.2f})"
-
-
 def paired_line(other, mine, theirs, rng, samples):
     tasks = sorted(set(mine) & set(theirs))
     if not tasks:
@@ -289,17 +268,21 @@ def arguments():
     return parser.parse_args()
 
 
-def load(args, rates):
-    if args.proxy and len(args.runs) > 1:
-        raise SystemExit("--proxy names one log; give one run with it")
-    rows = []
+def gather(args, rates):
+    rows, shared = [], {}
     for run in args.runs:
         found = trials(args.jobs, run, requests(args.proxy or [Path(args.jobs).parent / "logs" / f"{run}.jsonl"]), rates)
         rows += [{**row, "run": run} for row in found]
-    shared = {}
     for row in rows:
         if shared.setdefault(row["harness"], row["run"]) != row["run"]:
             raise SystemExit(f"harness {row['harness']} appears in {shared[row['harness']]} and {row['run']}")
+    return rows
+
+
+def load(args, rates):
+    if args.proxy and len(args.runs) > 1:
+        raise SystemExit("--proxy names one log; give one run with it")
+    rows = gather(args, rates)
     if args.tasks:
         keep = {line.strip() for line in open(args.tasks) if line.strip()}
         rows = [row for row in rows if row["task"] in keep]

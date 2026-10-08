@@ -41,13 +41,7 @@ def label(text):
     return proved, looped, len(ran)
 
 
-def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        return 2
-    out = sys.argv[1]
-    listing = sh(SUMMONR, "sessions")
-    ids = [line.split("\t")[0] for line in listing.splitlines() if line.strip()]
+def fill(ids):
     buckets = {
         (True, True): [],
         (True, False): [],
@@ -72,6 +66,17 @@ def main():
             )
         if all(len(rows) >= PER_BUCKET for rows in buckets.values()):
             break
+    return buckets
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return 2
+    out = sys.argv[1]
+    listing = sh(SUMMONR, "sessions")
+    ids = [line.split("\t")[0] for line in listing.splitlines() if line.strip()]
+    buckets = fill(ids)
     rows = [row for bucket in buckets.values() for row in bucket]
     random.seed(7)
     random.shuffle(rows)

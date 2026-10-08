@@ -217,6 +217,34 @@ class Proxy(BaseHTTPRequestHandler):
             return first, chunks, f"cut off: {type(error).__name__}"
         return first, chunks, None
 
+    def dump_body(self, raw, record, label):
+        if self.dump and record is not None:
+            folder = os.path.join(self.dump, label)
+            os.makedirs(folder, exist_ok=True)
+            with open(os.path.join(folder, f"{time.time_ns()}.json"), "wb") as out:
+                out.write(raw)
+
+    def upstream_headers(self, key, index, label):
+        headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
+        for name in headers:
+            if name.lower() == "authorization":
+                headers[name] = f"Bearer {key}"
+            elif name.lower() == "x-api-key":
+                headers[name] = key
+        if "opencode.ai" in self.upstreams[index]:
+            headers["x-opencode-session"] = label
+        return headers
+
+    def answer(self, response, status, record, started):
+        self.send_response(status)
+        for key, value in response.headers.items():
+            if key.lower() not in DROP:
+                self.send_header(key, value)
+        self.send_header("Connection", "close")
+        self.end_headers()
+        first, chunks, cut = self.stream(response)
+        self.write(record, started, first, status, b"".join(chunks), cut)
+
     def relay(self, method):
         group, label, path = self.route()
         index = self.key_for(group)
@@ -227,19 +255,8 @@ class Proxy(BaseHTTPRequestHandler):
         except json.JSONDecodeError as error:
             self.send_error(400, f"request body is not JSON: {error}")
             return
-        if self.dump and record is not None:
-            folder = os.path.join(self.dump, label)
-            os.makedirs(folder, exist_ok=True)
-            with open(os.path.join(folder, f"{time.time_ns()}.json"), "wb") as out:
-                out.write(raw)
-        headers = {k: v for k, v in self.headers.items() if k.lower() not in DROP}
-        for name in headers:
-            if name.lower() == "authorization":
-                headers[name] = f"Bearer {key}"
-            elif name.lower() == "x-api-key":
-                headers[name] = key
-        if "opencode.ai" in self.upstreams[index]:
-            headers["x-opencode-session"] = label
+        self.dump_body(raw, record, label)
+        headers = self.upstream_headers(key, index, label)
         request = urllib.request.Request(self.target(path, index), data=raw, method=method, headers=headers)
         started = time.time()
         try:
@@ -251,14 +268,7 @@ class Proxy(BaseHTTPRequestHandler):
             self.send_error(502, str(error.reason))
             self.write(record, started, None, 502, b"", str(error.reason))
             return
-        self.send_response(status)
-        for key, value in response.headers.items():
-            if key.lower() not in DROP:
-                self.send_header(key, value)
-        self.send_header("Connection", "close")
-        self.end_headers()
-        first, chunks, cut = self.stream(response)
-        self.write(record, started, first, status, b"".join(chunks), cut)
+        self.answer(response, status, record, started)
 
     def write(self, record, started, first, status, raw, error):
         if record is None:

@@ -1,4 +1,6 @@
-use super::input::{FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, overlay, prompt, write};
+use super::input::{
+    FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, fill_bg, overlay, prompt, write,
+};
 use super::space::STAR_BRIGHT;
 use super::*;
 use sigil::prelude::Paint;
@@ -21,17 +23,13 @@ pub(in crate::tui::sigil_view) fn compose(
     let [body_x, body_y, input_x, input_y, input_width] = layout(cols, rows, body_width, body_rows);
     let scrim_x = body_x.saturating_sub(2);
     let scrim_y = body_y.saturating_sub(1);
-    dim_rect(
-        cells,
-        cols,
-        [
-            scrim_x,
-            scrim_y,
-            (body_width + 4).min(cols.saturating_sub(scrim_x)),
-            (body_rows + 2).min(rows.saturating_sub(scrim_y)),
-        ],
-        true,
-    );
+    let card = [
+        scrim_x,
+        scrim_y,
+        (body_width + 4).min(cols.saturating_sub(scrim_x)),
+        (body_rows + 2).min(rows.saturating_sub(scrim_y)),
+    ];
+    dim_rect(cells, cols, card, true);
     let accent = palette().accent;
     let revealed =
         app.splash_revealed.peek() || !model.prefs.animations || !app.draft.peek().is_empty();
@@ -79,6 +77,7 @@ pub(in crate::tui::sigil_view) fn compose(
             palette().gray,
         );
     }
+    fill_bg(cells, cols, card);
     clear(
         cells,
         cols,

@@ -28,27 +28,38 @@ pub(in crate::tui::sigil_view) fn dim_rect(
         for col in x..x.saturating_add(width).min(cols) {
             let index = usize::from(row) * usize::from(cols) + usize::from(col);
             if let Some(cell) = cells.get_mut(index) {
+                if reset_background {
+                    cell.text = " ".into();
+                    cell.fg = ink(PLATE);
+                    cell.bg = ink(PLATE);
+                    continue;
+                }
                 let reset = rgb(0, 0, 0);
-                let fg = if let Ink::Exact(colour) = cell.fg
-                    && !(reset_background && cell.text == " ")
-                {
+                let fg = if let Ink::Exact(colour) = cell.fg {
                     colour
                 } else {
                     reset
                 };
-                let bg = if let Ink::Exact(colour) = cell.bg
-                    && !reset_background
-                {
+                let bg = if let Ink::Exact(colour) = cell.bg {
                     colour
                 } else {
                     reset
                 };
                 cell.fg = ink(blend(fg, SCRIM, 0.55));
-                cell.bg = if reset_background {
-                    ink(PLATE)
-                } else {
-                    ink(blend(bg, SCRIM, 0.55))
-                };
+                cell.bg = ink(blend(bg, SCRIM, 0.55));
+            }
+        }
+    }
+}
+
+pub(in crate::tui::sigil_view) fn fill_bg(cells: &mut [Cell], cols: u16, area: [u16; 4]) {
+    let [x, y, width, height] = area;
+    let rows = u16::try_from(cells.len() / usize::from(cols.max(1))).unwrap_or(u16::MAX);
+    for row in y..y.saturating_add(height).min(rows) {
+        for col in x..x.saturating_add(width).min(cols) {
+            let index = usize::from(row) * usize::from(cols) + usize::from(col);
+            if let Some(cell) = cells.get_mut(index) {
+                cell.bg = ink(PLATE);
             }
         }
     }

@@ -61,7 +61,7 @@ leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "2788
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "e85351ddc7a9f954caa77674b1de0ef96a1a8549", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "db25681fc9f60076f708d037c582ecc08acc6799", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"

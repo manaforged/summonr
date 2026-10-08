@@ -101,7 +101,7 @@ Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
 - Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
-- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk and the other children still land. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`. The 0.1.0-rc.1 release binary does not include this checkout. A build from source does.
+- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk and the other children still land. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`. The 0.1.0 release binary does not include this checkout. A build from source does.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
@@ -124,7 +124,7 @@ Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.a
 
 | Harness | Version | Tasks solved | Mean memory | Peak memory | Median input tokens, solved tasks | Median input tokens, all tasks | Median time, solved tasks |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| summonr | 0.1.0-rc.1 | 63 | 24 MB | 24 MB | 95,271 | 194,193 | 219 s |
+| summonr | 0.1.0 | 63 | 24 MB | 24 MB | 95,271 | 194,193 | 219 s |
 | pi | 1.0.0 | 62 | 134 MB | 146 MB | 240,762 | 212,337 | 368 s |
 | OMP | 18.4.12 | 59 | 387 MB | 505 MB | 218,939 | 294,356 | 294 s |
 | OpenCode | 2.0.22 | 58 | 394 MB | 480 MB | 228,578 | 253,726 | 341 s |

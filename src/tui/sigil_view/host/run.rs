@@ -53,6 +53,7 @@ pub(crate) fn run(
         .quit_on_ctrl_c(false)
         .terminal()
         .inline(inline)
+        .modify_other_keys(true)
         .terminal_hooks(hooks);
     let ran = {
         tokio::task::block_in_place(|| {

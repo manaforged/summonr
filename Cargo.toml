@@ -61,7 +61,7 @@ leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "2788
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"
-sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "db25681fc9f60076f708d037c582ecc08acc6799", default-features = false, features = ["terminal", "inspect"] }
+sigil = { package = "sigil-ui", git = "https://github.com/manaforged/sigil.git", rev = "1997cf3a0399e6e73d76ffb4c916c5c6ead486f2", default-features = false, features = ["terminal", "inspect"] }
 ignore = "0.4"
 grep-matcher = "0.1"
 grep-regex = "0.1"
@@ -73,7 +73,7 @@ libc = "0.2"
 dunce = "1.0"
 
 [patch.crates-io]
-crossterm = { git = "https://github.com/eitsupi/crossterm.git", rev = "94ed7154e35d24a2f643c61760e1eb05b8ca9e63" }
+crossterm = { git = "https://github.com/manaforged/crossterm.git", rev = "3ebd75e9e63a1c869a52fd99d51ff379dc1b981f" }
 
 [features]
 default = []

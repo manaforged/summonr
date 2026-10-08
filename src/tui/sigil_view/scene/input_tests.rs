@@ -54,10 +54,27 @@ fn the_splash_card_covers_the_stars() {
         let Some((x0, y0, x1, y1)) = bounds else {
             panic!("splash card missing");
         };
-        assert!(x1 > x0 && y1 > y0, "splash card is a sliver");
+        assert!(x1 > x0 + 1 && y1 > y0 + 1, "splash card is a sliver");
+        let edge = |cell: &Cell| {
+            matches!(cell.fg, Ink::Exact(colour) if colour == super::palette().gray)
+        };
+        let at = |col: usize, row: usize| &cells[row * usize::from(cols) + col];
+        assert_eq!(at(x0, y0).text, "╭", "top left");
+        assert_eq!(at(x1, y0).text, "╮", "top right");
+        assert_eq!(at(x0, y1).text, "╰", "bottom left");
+        assert_eq!(at(x1, y1).text, "╯", "bottom right");
+        for col in x0 + 1..x1 {
+            assert_eq!(at(col, y0).text, "─", "top edge {col}");
+            assert_eq!(at(col, y1).text, "─", "bottom edge {col}");
+            assert!(edge(at(col, y0)), "top edge colour {col}");
+        }
+        for row in y0 + 1..y1 {
+            assert_eq!(at(x0, row).text, "│", "left edge {row}");
+            assert_eq!(at(x1, row).text, "│", "right edge {row}");
+        }
         for row in y0..=y1 {
             for col in x0..=x1 {
-                let cell = &cells[row * usize::from(cols) + col];
+                let cell = at(col, row);
                 assert!(plate(cell), "card hole at {col},{row} bg={:?}", cell.bg);
                 assert_ne!(cell.text, "✦", "star shows through the card at {col},{row}");
             }

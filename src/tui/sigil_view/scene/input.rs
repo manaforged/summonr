@@ -65,6 +65,55 @@ pub(in crate::tui::sigil_view) fn fill_bg(cells: &mut [Cell], cols: u16, area: [
     }
 }
 
+pub(in crate::tui::sigil_view) fn frame(cells: &mut [Cell], cols: u16, area: [u16; 4]) {
+    let [x, y, width, height] = area;
+    if width < 2 || height < 2 || cols == 0 {
+        return;
+    }
+    let rows = u16::try_from(cells.len() / usize::from(cols)).unwrap_or(0);
+    if rows == 0 {
+        return;
+    }
+    let right = x.saturating_add(width).saturating_sub(1).min(cols - 1);
+    let bottom = y.saturating_add(height).saturating_sub(1).min(rows - 1);
+    if right <= x || bottom <= y {
+        return;
+    }
+    let color = palette().gray;
+    for col in x..=right {
+        let (top, bottom_glyph) = if col == x {
+            ("╭", "╰")
+        } else if col == right {
+            ("╮", "╯")
+        } else {
+            ("─", "─")
+        };
+        stroke(cells, cols, col, y, top, color);
+        stroke(cells, cols, col, bottom, bottom_glyph, color);
+    }
+    for row in y + 1..bottom {
+        stroke(cells, cols, x, row, "│", color);
+        stroke(cells, cols, right, row, "│", color);
+    }
+}
+
+fn stroke(cells: &mut [Cell], cols: u16, x: u16, y: u16, glyph: &str, color: Rgba8) {
+    set(
+        cells,
+        cols,
+        x,
+        y,
+        Cell {
+            text: glyph.into(),
+            fg: ink(color),
+            bg: ink(PLATE),
+            bold: false,
+            italic: false,
+            ..Cell::blank()
+        },
+    );
+}
+
 pub(in crate::tui::sigil_view) fn overlay(
     cells: &mut [Cell],
     cols: u16,

@@ -1,5 +1,5 @@
 use super::input::{
-    FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, fill_bg, overlay, prompt, write,
+    FACTS_MS, ROW_MS, ROW_WIPE_MS, clear, dim_rect, fill_bg, frame, overlay, prompt, write,
 };
 use super::space::STAR_BRIGHT;
 use super::*;
@@ -21,13 +21,13 @@ pub(in crate::tui::sigil_view) fn compose(
     let logo = crate::splash::logo();
     let [body_width, body_rows] = cover(logo, &facts);
     let [body_x, body_y, input_x, input_y, input_width] = layout(cols, rows, body_width, body_rows);
-    let scrim_x = body_x.saturating_sub(2);
-    let scrim_y = body_y.saturating_sub(1);
+    let card_x = body_x.saturating_sub(3);
+    let card_y = body_y.saturating_sub(2);
     let card = [
-        scrim_x,
-        scrim_y,
-        (body_width + 4).min(cols.saturating_sub(scrim_x)),
-        (body_rows + 2).min(rows.saturating_sub(scrim_y)),
+        card_x,
+        card_y,
+        (body_width + 6).min(cols.saturating_sub(card_x)),
+        (body_rows + 3).min(rows.saturating_sub(card_y)),
     ];
     dim_rect(cells, cols, card, true);
     let accent = palette().accent;
@@ -78,6 +78,7 @@ pub(in crate::tui::sigil_view) fn compose(
         );
     }
     fill_bg(cells, cols, card);
+    frame(cells, cols, card);
     clear(
         cells,
         cols,

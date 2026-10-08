@@ -142,7 +142,10 @@ pub(super) fn reason(text: &str) -> String {
         .get("message")
         .or(Some(error))
         .and_then(Value::as_str)
-        .map_or_else(|| text.to_string(), str::to_string)
+        .map_or_else(
+            || crate::text::hide_key_echo(text),
+            crate::text::hide_key_echo,
+        )
 }
 
 impl Client {

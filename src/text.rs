@@ -102,6 +102,41 @@ pub(crate) fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>)
         })
 }
 
+const KEY_ECHOES: &[&str] = &[
+    "api key provided:",
+    "key provided:",
+    "api key:",
+    "x-api-key:",
+];
+
+pub(crate) fn hide_key_echo(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some((at, marker)) = KEY_ECHOES
+        .iter()
+        .filter_map(|marker| {
+            rest.to_ascii_lowercase()
+                .find(marker)
+                .map(|at| (at, marker.len()))
+        })
+        .min_by_key(|(at, _)| *at)
+    {
+        let after = at + marker;
+        out.push_str(&rest[..after]);
+        let tail = &rest[after..];
+        let gap = tail.len() - tail.trim_start().len();
+        let token = tail[gap..]
+            .find(|ch: char| ch.is_whitespace() || ch == '"' || ch == ',')
+            .unwrap_or(tail.len() - gap);
+        let token = token - usize::from(tail[gap..gap + token].ends_with('.'));
+        out.push_str(&tail[..gap]);
+        out.push_str("[key]");
+        rest = &tail[gap + token..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;

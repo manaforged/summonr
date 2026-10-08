@@ -74,12 +74,19 @@ pub(crate) fn run(
                 if let Some(ui_rx) = inbox.borrow_mut().take() {
                     let receiver = app.clone();
                     let ended = ended.clone();
+                    let dirty = Rc::new(Cell::new(false));
                     on_message_or_close(
                         ui_rx,
                         move |msg| {
                             receiver.update(msg);
-                            let refresh = receiver.clone();
-                            defer(move || refresh.refresh());
+                            if !dirty.replace(true) {
+                                let refresh = receiver.clone();
+                                let dirty = dirty.clone();
+                                defer(move || {
+                                    dirty.set(false);
+                                    refresh.refresh();
+                                });
+                            }
                         },
                         move || ended.set(true),
                     );

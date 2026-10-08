@@ -235,19 +235,24 @@ impl Hub {
 
 impl Session {
     fn observe(&mut self, msg: &Msg, active: bool) -> bool {
-        let before = (self.status, self.title.is_some(), self.id.clone());
         let next = status(self.status, msg);
-        self.status = if active { seen(next) } else { next };
+        let settled = if active { seen(next) } else { next };
+        let mut changed = self.status != settled;
+        self.status = settled;
         if let Msg::User(text) = msg
             && self.title.is_none()
         {
             self.title = Some(text.clone());
+            changed = true;
         }
-        if let Msg::Session(id) = msg {
-            self.id.clone_from(id);
+        if let Msg::Session(id) = msg
+            && self.id != *id
+        {
+            self.id = id.clone();
+            changed = true;
         }
         self.sticky.record(msg, active);
-        before != (self.status, self.title.is_some(), self.id.clone())
+        changed
     }
 }
 

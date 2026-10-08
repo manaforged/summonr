@@ -322,10 +322,9 @@ impl<P: Provider> Loop<P> {
 mod tests;
 
 fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
-    failure.partial_output
-        && failure.status.is_none()
-        && matches!(
-            failure.kind,
-            ProviderFailureKind::Transport | ProviderFailureKind::Server
-        )
+    match failure.kind {
+        ProviderFailureKind::RateLimited => true,
+        ProviderFailureKind::Transport | ProviderFailureKind::Server => failure.status.is_none(),
+        _ => false,
+    }
 }

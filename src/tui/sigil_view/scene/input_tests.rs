@@ -104,3 +104,24 @@ fn the_splash_caret_sits_after_the_typed_text() {
         assert_eq!(&text[at..at + "What c│".len()], "What c│");
     });
 }
+
+#[test]
+fn slash_and_mention_drafts_keep_the_splash() {
+    Runtime::scope("splash-typeahead", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = unbounded_channel();
+        let app = crate::tui::sigil_view::app::App::new(
+            crate::tui::sigil_view::profile::info(),
+            workspace.path().to_owned(),
+            commands,
+        );
+        app.viewport.set((100, 30));
+        app.splash.set(true);
+        for draft in ["/", "/he", "see @src"] {
+            app.reveal(draft);
+            assert!(app.splash.peek(), "{draft} left the splash");
+        }
+        app.reveal("first line\nsecond line");
+        assert!(!app.splash.peek());
+    });
+}

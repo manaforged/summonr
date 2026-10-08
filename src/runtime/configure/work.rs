@@ -139,7 +139,7 @@ impl<P: Provider> Loop<P> {
             .prepare_external_work(markdown, WorkPolicy::Steps, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        Ok(())
+        self.set_mode(crate::RunMode::Work)
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
@@ -147,7 +147,7 @@ impl<P: Provider> Loop<P> {
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        Ok(())
+        self.set_mode(crate::RunMode::Goal)
     }
 
     pub(crate) fn accept_plan(&mut self) -> Result<()> {

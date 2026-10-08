@@ -28,3 +28,23 @@ fn a_provider_error_never_echoes_a_key_fragment() {
         "rate limited, retry later"
     );
 }
+
+#[test]
+fn frontmatter_reads_fields_and_leaves_the_body() {
+    let front = Frontmatter::parse(
+        "---\nname: \"reviewer\"\ntools: Read, Grep\nempty:\n---\nReview the diff.\n",
+    );
+    assert_eq!(front.get("name"), Some("reviewer"));
+    assert_eq!(front.get("tools"), Some("Read, Grep"));
+    assert_eq!(front.get("empty"), None);
+    assert_eq!(front.body, "Review the diff.\n");
+}
+
+#[test]
+fn text_without_a_closed_fence_is_all_body() {
+    for text in ["# Title\nbody", "---\nname: x\nno closing fence"] {
+        let front = Frontmatter::parse(text);
+        assert_eq!(front.get("name"), None);
+        assert_eq!(front.body, text);
+    }
+}

@@ -257,7 +257,9 @@ impl Reader {
     }
 
     fn offers(&self) {
-        self.send(Msg::Offers(crate::mcp::offers(&self.workspace)));
+        let mut offers = crate::mcp::offers(&self.workspace);
+        offers.extend(crate::plugins::commands::offers());
+        self.send(Msg::Offers(offers));
     }
 
     fn kill(&self, id: &str) {

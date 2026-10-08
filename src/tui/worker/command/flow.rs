@@ -62,6 +62,7 @@ impl Worker {
         };
         match crate::parse_command(line) {
             Some(command) => self.slash(command, line, argument).await,
+            None if crate::plugins::commands::named(line) => None,
             None if line.starts_with('/') => Some(self.unknown(line).unwrap_or(true)),
             None => None,
         }

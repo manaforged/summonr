@@ -140,3 +140,48 @@ pub(crate) fn hide_key_echo(text: &str) -> String {
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;
+
+pub(crate) const FENCE: &str = "---";
+
+pub(crate) struct Frontmatter<'a> {
+    fields: Vec<(&'a str, &'a str)>,
+    pub(crate) body: &'a str,
+}
+
+impl<'a> Frontmatter<'a> {
+    pub(crate) fn parse(text: &'a str) -> Self {
+        let plain = Self {
+            fields: Vec::new(),
+            body: text,
+        };
+        let Some(rest) = text.trim_start().strip_prefix(FENCE).and_then(|rest| {
+            rest.strip_prefix('\n')
+                .or_else(|| rest.strip_prefix("\r\n"))
+        }) else {
+            return plain;
+        };
+        let mut fields = Vec::new();
+        let mut offset = 0;
+        for line in rest.split_inclusive('\n') {
+            offset += line.len();
+            let line = line.trim();
+            if line == FENCE {
+                return Self {
+                    fields,
+                    body: &rest[offset..],
+                };
+            }
+            if let Some((key, value)) = line.split_once(':') {
+                fields.push((key.trim(), value.trim().trim_matches(['"', '\''])));
+            }
+        }
+        plain
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<&'a str> {
+        self.fields
+            .iter()
+            .find(|(name, value)| *name == key && !value.is_empty())
+            .map(|(_, value)| *value)
+    }
+}

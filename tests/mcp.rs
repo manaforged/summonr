@@ -39,6 +39,7 @@ fn main() {
         defer::a_hook_sees_the_tool_behind_the_mcp_tool,
         lifecycle::a_configured_server_is_on_by_default_and_starts_only_when_called,
         lifecycle::an_idle_server_stops_and_starts_again_on_the_next_call,
+        lifecycle::the_least_recently_used_idle_server_stops_at_the_server_cap,
         lifecycle::tool_lists_are_cached_per_workspace,
         lifecycle::an_empty_cached_tool_list_is_fetched_again,
         lifecycle::an_unchanged_tool_list_is_not_rewritten,
@@ -53,6 +54,8 @@ fn main() {
         manage::servers_are_added_listed_described_and_removed_from_the_shell,
         #[cfg(unix)]
         plugins::a_claude_code_plugin_installs_and_every_part_loads,
+        #[cfg(unix)]
+        plugins::a_plugin_command_expands_into_the_prompt_and_its_agents_are_listed,
         #[cfg(unix)]
         plugins::an_uninstalled_or_disabled_plugin_does_not_load,
         #[cfg(unix)]

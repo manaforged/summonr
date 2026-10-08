@@ -8,6 +8,7 @@ use super::Hub;
 use super::catalog;
 use super::config::{self, Launch, Server};
 use crate::error::Result;
+use crate::supervise::{self, Live, ServerKind};
 
 pub type Board = Arc<Mutex<Weak<Hub>>>;
 
@@ -55,6 +56,7 @@ impl McpTransport {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct ServerStatus {
+    pub kind: ServerKind,
     pub name: String,
     pub transport: Option<McpTransport>,
     pub state: McpState,
@@ -62,6 +64,7 @@ pub struct ServerStatus {
     pub schema_bytes: usize,
     pub launch: Option<String>,
     pub detail: Option<String>,
+    pub rss_kb: Option<u64>,
 }
 
 impl ServerStatus {
@@ -75,12 +78,14 @@ impl ServerStatus {
 pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatus>> {
     let hub = board.and_then(|board| board.lock().ok()?.upgrade());
     let found = config::servers(workspace)?;
+    let live = supervise::live();
     let mut rows: Vec<ServerStatus> = found
         .servers
         .iter()
-        .map(|server| row(server, hub.as_deref()))
+        .map(|server| row(server, hub.as_deref(), &live))
         .collect();
     rows.extend(found.waiting.into_iter().map(|name| ServerStatus {
+        kind: ServerKind::Mcp,
         detail: Some(format!(
             "set `enabled = true` under [mcp.{name}] in ~/.summonr/config.toml to run it"
         )),
@@ -90,11 +95,27 @@ pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatu
         tools: Vec::new(),
         schema_bytes: 0,
         launch: None,
+        rss_kb: None,
     }));
+    rows.extend(
+        live.iter()
+            .filter(|server| server.kind == ServerKind::Lsp)
+            .map(|server| ServerStatus {
+                kind: ServerKind::Lsp,
+                name: server.name.clone(),
+                transport: Some(McpTransport::Stdio),
+                state: McpState::Live,
+                tools: Vec::new(),
+                schema_bytes: 0,
+                launch: None,
+                detail: None,
+                rss_kb: server.rss_kb,
+            }),
+    );
     Ok(rows)
 }
 
-fn row(server: &Server, hub: Option<&Hub>) -> ServerStatus {
+fn row(server: &Server, hub: Option<&Hub>, live: &[Live]) -> ServerStatus {
     let items = catalog::load(&server.key)
         .map(|listing| listing.tools)
         .unwrap_or_default();
@@ -136,7 +157,15 @@ fn row(server: &Server, hub: Option<&Hub>) -> ServerStatus {
         ),
         Launch::Http { url, .. } => (McpTransport::Http, url.clone()),
     };
+    let rss_kb = (state == McpState::Live)
+        .then(|| {
+            live.iter()
+                .find(|found| found.kind == ServerKind::Mcp && found.name == server.name)
+                .and_then(|found| found.rss_kb)
+        })
+        .flatten();
     ServerStatus {
+        kind: ServerKind::Mcp,
         name: server.name.clone(),
         transport: Some(transport),
         state,
@@ -151,5 +180,6 @@ fn row(server: &Server, hub: Option<&Hub>) -> ServerStatus {
             .sum(),
         launch: Some(launch),
         detail,
+        rss_kb,
     }
 }

@@ -4,7 +4,7 @@ use crate::error::{Error, Result};
 use crate::prompt::summonr_home;
 
 const SKILL: &str = "SKILL.md";
-const FENCE: &str = "---";
+use crate::text::FENCE;
 
 #[must_use]
 pub(crate) fn catalog(workspace: &Path) -> Option<String> {
@@ -97,7 +97,12 @@ fn collect(root: Option<PathBuf>, rows: &mut Vec<(String, String)>) {
             }
             continue;
         };
-        rows.push((name, summary(std::io::BufReader::new(handle))));
+        rows.push((
+            name,
+            std::io::read_to_string(handle)
+                .map(|text| summary(&text))
+                .unwrap_or_default(),
+        ));
     }
 }
 
@@ -113,33 +118,15 @@ fn skill_file(path: PathBuf, dir: bool) -> Option<(String, PathBuf)> {
     None
 }
 
-fn summary(reader: impl std::io::BufRead) -> String {
-    let mut lines = reader.lines().map_while(std::result::Result::ok);
-    let Some(first) = lines
-        .by_ref()
-        .map(|line| line.trim().to_string())
-        .find(|line| !line.is_empty())
-    else {
-        return String::new();
-    };
-    if first != FENCE {
-        return heading(&first);
+fn summary(text: &str) -> String {
+    let first = text.lines().map(str::trim).find(|line| !line.is_empty());
+    match first {
+        None => String::new(),
+        Some(line) if line != FENCE => heading(line),
+        Some(_) => crate::text::Frontmatter::parse(text)
+            .get("description")
+            .map_or_else(|| heading(FENCE), str::to_string),
     }
-    let mut description = None;
-    for line in lines.by_ref() {
-        let line = line.trim();
-        if line == FENCE {
-            return description
-                .filter(|text: &String| !text.is_empty())
-                .unwrap_or_else(|| heading(FENCE));
-        }
-        if description.is_none()
-            && let Some(text) = line.strip_prefix("description:")
-        {
-            description = Some(text.trim().trim_matches(['"', '\'']).to_string());
-        }
-    }
-    heading(FENCE)
 }
 
 fn heading(line: &str) -> String {

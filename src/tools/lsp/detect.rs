@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use super::*;
 use crate::askpass::on_path;
+use crate::plugins::lsp::{Server, servers};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(in crate::tools) enum Scope {
@@ -14,7 +15,7 @@ pub(in crate::tools) enum Scope {
 enum Source {
     Pinned(&'static language::Module),
     Custom(Arc<Launch>),
-    Tree,
+    Tree(Arc<[Server]>),
 }
 
 #[derive(Default)]
@@ -42,7 +43,10 @@ impl Launches {
                 }
                 self.built(module)
             }
-            Source::Tree => self.built(language::detect(workspace, path)?),
+            Source::Tree(plugins) => match plugins.iter().find(|server| server.handles(path)) {
+                Some(server) => plugin(server).map(Arc::new),
+                None => self.built(language::detect(workspace, path)?),
+            },
         }
     }
 
@@ -83,7 +87,7 @@ fn resolve(workspace: &Path) -> Result<Source> {
     if let Some(module) = &config.lsp.module {
         return Ok(Source::Pinned(language::named(module)?));
     }
-    Ok(Source::Tree)
+    Ok(Source::Tree(servers(workspace).into()))
 }
 
 fn handles(module: &language::Module, path: &Path) -> bool {
@@ -103,6 +107,12 @@ pub(in crate::tools) fn available(workspace: &Path) -> bool {
         if let Some(module) = &config.lsp.module {
             return language::named(module).is_ok_and(|module| built(module).is_ok());
         }
+    }
+    if servers(workspace)
+        .iter()
+        .any(|server| plugin(server).is_ok())
+    {
+        return true;
     }
     language::present(workspace)
         .into_iter()
@@ -134,6 +144,8 @@ pub(super) fn built(module: &language::Module) -> Result<Launch> {
             return Ok(Launch {
                 key: module.id.to_string(),
                 argv: command,
+                env: Vec::new(),
+                languages: BTreeMap::new(),
                 options: language::options(module),
             });
         }
@@ -149,6 +161,25 @@ pub(super) fn custom(command: &[String]) -> Result<Launch> {
     Ok(Launch {
         key: "custom".to_string(),
         argv: argv(command)?,
+        env: Vec::new(),
+        languages: BTreeMap::new(),
+        options: json!({}),
+    })
+}
+
+fn plugin(server: &Server) -> Result<Launch> {
+    let name = server.argv.first().map(String::as_str).unwrap_or_default();
+    if !Path::new(name).is_file() && on_path(name).is_none() {
+        return Err(Error::Tool(format!(
+            "{name} is not on PATH for the {} plugin server",
+            server.key
+        )));
+    }
+    Ok(Launch {
+        key: server.key.clone(),
+        argv: server.argv.clone(),
+        env: server.env.clone().into_iter().collect(),
+        languages: server.languages.clone(),
         options: json!({}),
     })
 }

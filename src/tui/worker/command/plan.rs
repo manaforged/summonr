@@ -75,6 +75,7 @@ impl Worker {
             self.fail(&error.to_string());
             return true;
         }
+        announce_run_mode(&self.loop_, &self.ui, crate::RunMode::Work);
         let code = loop {
             let prompt = match self.loop_.next_step(&steps, plan_path) {
                 Ok(crate::StepRun::Done(code)) => break code,
@@ -148,7 +149,7 @@ impl Worker {
             self.fail(&error.to_string());
             return true;
         }
-        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Goal);
+        announce_run_mode(&self.loop_, &self.ui, crate::RunMode::Goal);
         let code = loop {
             let progress = match self.loop_.work_progress() {
                 Ok(progress) => progress,

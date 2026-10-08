@@ -29,6 +29,8 @@ struct Args {
     child: Option<String>,
     #[serde(default)]
     kill: bool,
+    #[serde(default)]
+    agent: Option<String>,
     #[serde(skip)]
     call: String,
 }
@@ -83,7 +85,8 @@ pub(super) fn definition() -> ToolDefinition {
                 "access": {"type": "string", "enum": ["implement", "research"], "default": "implement"},
                 "background": {"type": "boolean"},
                 "child": {"type": "string"},
-                "kill": {"type": "boolean"}
+                "kill": {"type": "boolean"},
+                "agent": {"type": "string", "description": "name of an agent from <agents>"}
             },
             "additionalProperties": false
         }),

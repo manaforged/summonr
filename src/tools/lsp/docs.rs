@@ -18,7 +18,12 @@ pub(super) async fn did_open(conn: &mut Conn, path: &Path) -> Result<()> {
     }
     let text = std::fs::read_to_string(path)
         .map_err(|error| Error::Tool(format!("cannot read {}: {error}", path.display())))?;
-    let language_id = language::language_id(path);
+    let language_id = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .and_then(|extension| conn.languages.get(extension))
+        .map_or_else(|| language::language_id(path), String::as_str)
+        .to_string();
     match conn.docs.get_mut(&uri) {
         Some((held, _, stamp)) if *held == text => {
             *stamp = fresh.unwrap_or(*stamp);

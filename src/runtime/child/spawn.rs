@@ -76,17 +76,10 @@ impl<P: Provider> Loop<P> {
             Some(self.session.id()),
         )
         .map_err(super::session_err)?;
-        let instruction = match (args.access, tree.is_some()) {
-            (Access::Implement, true) => {
-                "You are in an isolated checkout of the parent workspace. It shares the parent build cache. Do not commit. Do not delete target or node_modules. The parent applies your edits when you finish, even if another child fails. Background commands stay with the parent."
-            }
-            (Access::Implement, false) => {
-                "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
-            }
-            (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
-        };
+        let instruction = instruction(args.access, tree.is_some());
+        let (brief, tools) = agent_brief(args.agent.as_deref(), &self.workspace)?;
         let opener = format!(
-            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{}",
+            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{brief}{}",
             workspace.display(),
             args.assignment
         );
@@ -102,6 +95,9 @@ impl<P: Provider> Loop<P> {
         child.tools = self.tools.child_at(&workspace, &child.session_id())?;
         if args.access == Access::Research {
             child.tools.contain_read_only();
+        }
+        if let Some(tools) = tools {
+            child.tools.restrict_to(&tools);
         }
         child.schema = Some(self.advertised_tools());
         child.depth = 1;
@@ -280,6 +276,43 @@ pub(super) fn child_tree(workspace: &Path, access: Access) -> Result<Option<Tree
         return Ok(None);
     }
     worktree::open_delta(workspace).map(Some)
+}
+
+fn instruction(access: Access, isolated: bool) -> &'static str {
+    match (access, isolated) {
+        (Access::Implement, true) => {
+            "You are in an isolated checkout of the parent workspace. It shares the parent build cache. Do not commit. Do not delete target or node_modules. The parent applies your edits when you finish, even if another child fails. Background commands stay with the parent."
+        }
+        (Access::Implement, false) => {
+            "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
+        }
+        (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
+    }
+}
+
+fn agent_brief(name: Option<&str>, workspace: &Path) -> Result<(String, Option<Vec<String>>)> {
+    let Some(name) = name else {
+        return Ok((String::new(), None));
+    };
+    let agent = known_agent(name, workspace)?;
+    Ok((format!("{}\n\n", agent.instructions), agent.tools))
+}
+
+fn known_agent(name: &str, workspace: &Path) -> Result<crate::plugins::agents::Agent> {
+    crate::plugins::agents::find(name, workspace).ok_or_else(|| {
+        let names = crate::plugins::agents::agents(workspace)
+            .into_iter()
+            .map(|agent| agent.name)
+            .collect::<Vec<_>>();
+        let available = if names.is_empty() {
+            "none".to_string()
+        } else {
+            names.join(", ")
+        };
+        Error::Tool(format!(
+            "unknown agent `{name}`; available agents: {available}"
+        ))
+    })
 }
 
 fn release_unfinished(done: &mut Done) {

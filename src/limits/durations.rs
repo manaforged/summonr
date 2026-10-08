@@ -105,6 +105,10 @@ impl Limits {
         secs(self.lsp_start_secs)
     }
 
+    pub(crate) fn lsp_idle(&self) -> Duration {
+        secs(self.lsp_idle_secs)
+    }
+
     pub(crate) fn lsp_request(&self) -> Duration {
         secs(self.lsp_request_secs)
     }

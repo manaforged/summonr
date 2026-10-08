@@ -261,20 +261,31 @@ impl ToolRegistry {
         let mut state = slot.lock().await;
         let mut conn = match state.take() {
             Some(conn) => conn,
-            None => tokio::time::timeout(
-                crate::limits::limits().lsp_start(),
-                Conn::spawn(&self.workspace, &launch),
-            )
-            .await
-            .map_err(|_elapsed| {
-                Error::Tool(format!(
-                    "{} did not start within {} s",
-                    launch.argv[0],
-                    crate::limits::limits().lsp_start_secs
-                ))
-            })??,
+            None => {
+                let conn = tokio::time::timeout(
+                    crate::limits::limits().lsp_start(),
+                    Conn::spawn(&self.workspace, &launch),
+                )
+                .await
+                .map_err(|_elapsed| {
+                    Error::Tool(format!(
+                        "{} did not start within {} s",
+                        launch.argv[0],
+                        crate::limits::limits().lsp_start_secs
+                    ))
+                })??;
+                crate::supervise::register(
+                    crate::supervise::ServerKind::Lsp,
+                    &launch.key,
+                    conn.child.as_ref().and_then(|child| child.id()),
+                    Some(crate::limits::limits().lsp_idle()),
+                    &slot,
+                );
+                conn
+            }
         };
         let outcome = tokio::time::timeout(deadline, f(&mut conn)).await;
+        crate::supervise::touch(&slot);
         if conn.clean {
             *state = Some(conn);
         }

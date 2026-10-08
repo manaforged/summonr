@@ -334,7 +334,7 @@ impl SessionDriver {
         }
         self.append(Line::Close {
             reason: None,
-            footprint_kb: footprint_kb(),
+            footprint_kb: crate::supervise::footprint_kb(None),
         })?;
         self.turn = None;
         Ok(())
@@ -361,7 +361,7 @@ impl SessionDriver {
         }
         self.append(Line::Close {
             reason: Some(reason.to_string()),
-            footprint_kb: footprint_kb(),
+            footprint_kb: crate::supervise::footprint_kb(None),
         })?;
         if let Some(receipt) = receipt {
             self.append(Line::Receipt {

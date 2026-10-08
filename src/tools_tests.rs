@@ -136,3 +136,35 @@ fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
     };
     assert!(text.contains("plan mode does not edit files"), "{text}");
 }
+
+#[tokio::test]
+async fn an_agent_tool_list_denies_tools_outside_it_by_claude_or_summonr_name() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("note.txt"), "hello\n").unwrap();
+    let mut tools =
+        ToolRegistry::with_policy_and_search(dir.path(), Policy::builtin(), None).unwrap();
+    tools.restrict_to(&["Read".to_string(), "Grep".to_string()]);
+    let call = |name: &str, arguments: serde_json::Value| crate::provider::ToolCall {
+        id: "t".to_string(),
+        kind: crate::provider::ToolKind::Function,
+        function: crate::provider::ToolFunction {
+            checked: Default::default(),
+            name: name.to_string(),
+            arguments: arguments.to_string(),
+        },
+        continuation: None,
+    };
+    let read = tools
+        .execute_outcome(&call("read", serde_json::json!({"path": "note.txt"})))
+        .await
+        .unwrap();
+    assert!(read.text.contains("hello"), "{}", read.text);
+    let denied = tools
+        .execute_outcome(&call("run_command", serde_json::json!({"command": "true"})))
+        .await;
+    assert!(
+        matches!(denied, Err(Error::Denied(_))),
+        "{:?}",
+        denied.err()
+    );
+}

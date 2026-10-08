@@ -345,10 +345,17 @@ pub(super) fn set_run_mode(
     if loop_.mode() == mode {
         return;
     }
-    let requested = mode;
     if let Err(error) = loop_.set_mode(mode) {
         drop(ui.send(Msg::System(format!("sandbox unavailable: {error}"))));
     }
+    announce_run_mode(loop_, ui, mode);
+}
+
+pub(super) fn announce_run_mode(
+    loop_: &Loop<Client>,
+    ui: &UnboundedSender<Msg>,
+    requested: crate::RunMode,
+) {
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
     let text = if requested == crate::RunMode::Work && mode == crate::RunMode::Plan {

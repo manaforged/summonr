@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use serde::Deserialize;
-
 use super::*;
-use crate::provider::levels::STANDARD;
-use crate::provider::{Effort, EffortField, Off, Scale, Spec};
+use crate::provider::Spec;
 
 pub(super) struct Preset {
     pub(super) name: String,
@@ -150,76 +147,9 @@ fn wire(value: &str) -> std::result::Result<Wire, String> {
     }
 }
 
-#[derive(Deserialize)]
-struct File {
-    preset: Vec<Row>,
-}
+mod row;
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Row {
-    name: String,
-    base_url: String,
-    #[serde(default)]
-    models_url: Option<String>,
-    #[serde(default)]
-    model: String,
-    #[serde(default)]
-    env_keys: Vec<String>,
-    #[serde(default)]
-    default_key: Option<String>,
-    #[serde(default)]
-    missing: Option<String>,
-    #[serde(default)]
-    aliases: BTreeMap<String, String>,
-    #[serde(default)]
-    oauth: Option<String>,
-    #[serde(default)]
-    headers: BTreeMap<String, String>,
-    #[serde(default)]
-    wire: Option<String>,
-    #[serde(default)]
-    reasoning: ReasoningRow,
-    #[serde(default)]
-    context_window: Option<u32>,
-    #[serde(default)]
-    opencode: bool,
-    #[serde(default)]
-    prompt_cache_key: bool,
-    #[serde(default)]
-    cache_ttl: Option<CacheTtl>,
-    #[serde(default)]
-    cache_header: Option<String>,
-    #[serde(default)]
-    cli_token: Option<String>,
-    #[serde(default = "yes")]
-    opencode_oauth: bool,
-    #[serde(default)]
-    env_default: bool,
-    #[serde(default)]
-    plan: bool,
-    #[serde(default)]
-    off: bool,
-    #[serde(default)]
-    opencode_ids: Vec<String>,
-}
-
-#[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
-struct ReasoningRow {
-    #[serde(default)]
-    field: Option<String>,
-    #[serde(default)]
-    levels: Option<Vec<Effort>>,
-    #[serde(default)]
-    off: Option<Off>,
-    #[serde(default)]
-    host_only: bool,
-}
-
-fn yes() -> bool {
-    true
-}
+use row::File;
 
 pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
     let file: File = toml::from_str(text).map_err(|error| error.to_string())?;
@@ -235,107 +165,7 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
             return Err(format!("preset `{name}` is listed twice"));
         }
         seen.push(name.clone());
-        let oauth = match row.oauth.as_deref() {
-            None => None,
-            Some(named) => Some(
-                login(named).ok_or_else(|| format!("`{name}` names unknown login `{named}`"))?,
-            ),
-        };
-        let cli_token = match row.cli_token.as_deref() {
-            None => None,
-            Some(named) => Some(
-                cli_token(named)
-                    .ok_or_else(|| format!("`{name}` names unknown cli token `{named}`"))?,
-            ),
-        };
-        let wire = match row.wire.as_deref() {
-            None => Wire::Completions,
-            Some(named) => {
-                wire(named).map_err(|error| format!("`{name}` has an invalid wire: {error}"))?
-            }
-        };
-        for key in &row.env_keys {
-            if !key
-                .chars()
-                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-                || key.is_empty()
-            {
-                return Err(format!("`{name}` lists env key `{key}`"));
-            }
-        }
-        let reasoning = {
-            let field = match row.reasoning.field.as_deref() {
-                None | Some("reasoning_effort") => EffortField::ReasoningEffort,
-                Some("reasoning_object") => EffortField::ReasoningObject,
-                Some(other) => {
-                    return Err(format!("`{name}` names unknown effort field `{other}`"));
-                }
-            };
-            let mut levels = row.reasoning.levels.unwrap_or_else(|| STANDARD.to_vec());
-            levels.sort();
-            levels.dedup();
-            let off = row.reasoning.off.unwrap_or(Off::Omit);
-            Spec {
-                field,
-                scale: Scale::new(Box::leak(levels.into_boxed_slice()), off),
-                by_model: !row.reasoning.host_only,
-            }
-        };
-        let missing = row.missing.clone().unwrap_or_else(|| {
-            if row.env_keys.is_empty() {
-                format!("run `summonr login {name}`")
-            } else {
-                format!("run `summonr login {name}` or set {}", row.env_keys[0])
-            }
-        });
-        let leak = |values: &[String]| -> &'static [&'static str] {
-            let kept: Vec<&'static str> = values
-                .iter()
-                .map(|value| Box::leak(value.clone().into_boxed_str()) as &'static str)
-                .collect();
-            Box::leak(kept.into_boxed_slice())
-        };
-        rows.push(Preset {
-            name,
-            base_url,
-            models_url: row
-                .models_url
-                .as_deref()
-                .map(|url| Box::leak(url.to_string().into_boxed_str()) as &'static str),
-            model: row.model,
-            env_keys: leak(&row.env_keys),
-            default_key: row
-                .default_key
-                .as_deref()
-                .map(|key| Box::leak(key.to_string().into_boxed_str()) as &'static str),
-            missing,
-            aliases: Box::leak(
-                row.aliases
-                    .into_iter()
-                    .collect::<Vec<(String, String)>>()
-                    .into_boxed_slice(),
-            ),
-            oauth,
-            headers: Box::leak(
-                row.headers
-                    .into_iter()
-                    .collect::<Vec<(String, String)>>()
-                    .into_boxed_slice(),
-            ),
-            wire,
-            reasoning,
-            context_window: row.context_window,
-            opencode: row.opencode,
-            prompt_cache_key: row.prompt_cache_key,
-            cache_ttl: row.cache_ttl,
-            cache_header: row.cache_header,
-            cli_token,
-            opencode_oauth: row.opencode_oauth,
-            env_default: row.env_default,
-            plan: row.plan,
-            off: row.off,
-            opencode_ids: leak(&row.opencode_ids),
-        });
+        rows.push(row.into_preset(name, base_url)?);
     }
     Ok(rows)
 }

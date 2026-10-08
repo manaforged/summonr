@@ -5,8 +5,9 @@ use sigil::prelude::{
     LayoutBuilderExt, LayoutStyle, NodeBuilder, NodeEventsExt, container, effect, empty_state,
     fragment, node, signal, virtual_list,
 };
-use sigil::reactive::defer;
 use sigil::reactive::untrack;
+use sigil::reactive::{defer, derived};
+use sigil::style::{NodeStyleExt, NumericAtomKind};
 
 use super::composer;
 use super::entry;
@@ -33,7 +34,7 @@ pub(in crate::tui::sigil_view) fn layer(
                 .padding_y(canvas::edge(app.viewport.peek().1))
                 .gap(0.0),
         )
-        .child(node(move || {
+        .child(fit(app.clone()).child(node(move || {
             let hint_app = transcript_app.clone();
             transcript(
                 transcript_app,
@@ -48,12 +49,36 @@ pub(in crate::tui::sigil_view) fn layer(
                     empty_state("Summonr", hint)
                 },
             )
-        }))
+        })))
         .child(pin(canvas::gutter(panels::agents(app.clone(), width))))
         .child(pin(todos::widget(app.clone(), cols)))
         .child(pin(canvas::gutter(panels::bands(app.clone(), width))))
         .child(pin(composer::widget(app.clone(), width, editor)))
+        .child(container().layout(LayoutStyle::block().fill_width().grow(1.0)))
         .child(pin(canvas::gutter(footer::footer_bar(app, width))))
+}
+
+fn fit(app: App) -> NodeBuilder {
+    let model = app.model;
+    let content = app.content_height;
+    let viewport = app.viewport;
+    let height = derived(move || {
+        let measured = content.get();
+        if measured > 0.0 && !model.with(|model| model.entries.is_empty()) {
+            measured
+        } else {
+            canvas::cell().h * f32::from(viewport.get().1)
+        }
+    });
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .grow(0.0)
+                .shrink(1.0)
+                .min_size(0.0, 0.0),
+        )
+        .animate(NumericAtomKind::Height, height)
 }
 
 fn pin(child: NodeBuilder) -> NodeBuilder {

@@ -1,7 +1,6 @@
 use std::time::Duration;
 
 use super::*;
-use crate::limits::{LSP_CHECK, LSP_REQUEST, LSP_START};
 
 impl ToolRegistry {
     pub(in crate::tools) async fn lsp(&self, arguments: &str) -> Result<ToolOutput> {
@@ -33,9 +32,12 @@ impl ToolRegistry {
         let file = self.resolve_existing(path)?;
         let request_path = file.clone();
         let (text, _) = self
-            .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
-                Box::pin(async move { conn.diagnostics(&request_path).await })
-            })
+            .with_lsp(
+                &file,
+                Scope::Request,
+                crate::limits::limits().lsp_request(),
+                move |conn| Box::pin(async move { conn.diagnostics(&request_path).await }),
+            )
             .await?;
         Ok(ToolOutput::ok(text))
     }
@@ -68,26 +70,36 @@ impl ToolRegistry {
             let name = new_name.to_string();
             let request_path = file.clone();
             let edit = self
-                .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
-                    Box::pin(
-                        async move { conn.rename(&request_path, line, character, &name).await },
-                    )
-                })
+                .with_lsp(
+                    &file,
+                    Scope::Request,
+                    crate::limits::limits().lsp_request(),
+                    move |conn| {
+                        Box::pin(
+                            async move { conn.rename(&request_path, line, character, &name).await },
+                        )
+                    },
+                )
                 .await?;
             return self.apply_workspace_edit(&edit);
         }
         let refs = object_bool(&args, "references");
         let request_path = file.clone();
         let text = self
-            .with_lsp(&file, Scope::Request, LSP_REQUEST, move |conn| {
-                Box::pin(async move {
-                    if refs {
-                        conn.references(&request_path, line, character).await
-                    } else {
-                        conn.definition(&request_path, line, character).await
-                    }
-                })
-            })
+            .with_lsp(
+                &file,
+                Scope::Request,
+                crate::limits::limits().lsp_request(),
+                move |conn| {
+                    Box::pin(async move {
+                        if refs {
+                            conn.references(&request_path, line, character).await
+                        } else {
+                            conn.definition(&request_path, line, character).await
+                        }
+                    })
+                },
+            )
             .await?;
         Ok(ToolOutput::ok(text))
     }
@@ -106,9 +118,12 @@ impl ToolRegistry {
         }
         let request_path = dest.to_path_buf();
         let (text, errors) = self
-            .with_lsp(dest, Scope::Edit, LSP_CHECK, move |conn| {
-                Box::pin(async move { conn.diagnostics(&request_path).await })
-            })
+            .with_lsp(
+                dest,
+                Scope::Edit,
+                crate::limits::limits().lsp_check(),
+                move |conn| Box::pin(async move { conn.diagnostics(&request_path).await }),
+            )
             .await
             .ok()?;
         Some(ToolOutput {
@@ -246,15 +261,18 @@ impl ToolRegistry {
         let mut state = slot.lock().await;
         let mut conn = match state.take() {
             Some(conn) => conn,
-            None => tokio::time::timeout(LSP_START, Conn::spawn(&self.workspace, &launch))
-                .await
-                .map_err(|_elapsed| {
-                    Error::Tool(format!(
-                        "{} did not start within {} s",
-                        launch.argv[0],
-                        LSP_START.as_secs()
-                    ))
-                })??,
+            None => tokio::time::timeout(
+                crate::limits::limits().lsp_start(),
+                Conn::spawn(&self.workspace, &launch),
+            )
+            .await
+            .map_err(|_elapsed| {
+                Error::Tool(format!(
+                    "{} did not start within {} s",
+                    launch.argv[0],
+                    crate::limits::limits().lsp_start_secs
+                ))
+            })??,
         };
         let outcome = tokio::time::timeout(deadline, f(&mut conn)).await;
         if conn.clean {

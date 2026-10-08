@@ -217,9 +217,9 @@ pub(super) fn trim_slash(url: &str) -> String {
 }
 
 fn skew_millis() -> i64 {
-    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_millis()).unwrap_or(i64::MAX)
+    i64::try_from(crate::limits::limits().token_expiry_skew().as_millis()).unwrap_or(i64::MAX)
 }
 
 fn skew_secs() -> i64 {
-    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_secs()).unwrap_or(i64::MAX)
+    i64::try_from(crate::limits::limits().token_expiry_skew().as_secs()).unwrap_or(i64::MAX)
 }

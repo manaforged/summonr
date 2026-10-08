@@ -150,7 +150,7 @@ impl<P: Provider> Loop<P> {
         }
         let text = error.to_string();
         if kind == Some(ProviderFailureKind::MalformedToolCall) {
-            if state.repairs >= REPAIR_LIMIT {
+            if state.repairs >= crate::limits::limits().repair_limit {
                 return Err(error);
             }
             state.repairs += 1;
@@ -158,7 +158,7 @@ impl<P: Provider> Loop<P> {
             return Ok(true);
         }
         if kind == Some(ProviderFailureKind::ContextOverflow) {
-            if state.overflows >= REPAIR_LIMIT {
+            if state.overflows >= crate::limits::limits().repair_limit {
                 return Err(error);
             }
             state.overflows += 1;

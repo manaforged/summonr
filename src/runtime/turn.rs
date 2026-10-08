@@ -19,8 +19,6 @@ use crate::session::decorate;
 use crate::tools::{ToolOutput, needed_grant, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, verify};
 
-use crate::limits::REPAIR_LIMIT;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GrantAnswer {
     Deny,
@@ -363,7 +361,7 @@ fn verify_call(command: &str) -> ToolCall {
             name: "run_command".to_string(),
             arguments: serde_json::json!({
                 "command": command,
-                "timeout_secs": crate::limits::VERIFY_TIMEOUT_SECS,
+                "timeout_secs": crate::limits::limits().verify_timeout_secs,
                 "fresh": true
             })
             .to_string(),

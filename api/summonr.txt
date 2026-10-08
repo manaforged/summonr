@@ -216,9 +216,7 @@ pub fn summonr::diff::patch(root: &std::path::Path, path: core::option::Option<&
 pub fn summonr::diff::stats(root: &std::path::Path) -> summonr::Result<summonr::diff::Diff>
 pub fn summonr::diff::turns(journal: &std::path::Path) -> summonr::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
 pub mod summonr::limits
-pub const summonr::limits::JOB_RETAIN: core::time::Duration
-pub const summonr::limits::LOG_RETAIN: core::time::Duration
-pub const summonr::limits::SESSION_RETAIN: core::time::Duration
+pub fn summonr::limits::log_retain() -> core::time::Duration
 pub mod summonr::mail
 pub mod summonr::mail::cli
 pub fn summonr::mail::cli::run(args: &[alloc::string::String], cwd: &std::path::Path) -> summonr::Result<i32>

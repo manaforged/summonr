@@ -3,7 +3,6 @@ use tokio::time::Instant;
 
 use super::{Client, Read};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_SETTLE};
 use crate::rpc::{Ask, Frame, Notice, Reply, ask, failure, notice, outcome, parse, response};
 
 struct Clock {
@@ -21,7 +20,10 @@ impl Client {
     ) -> Result<Value> {
         let mut clock = Clock {
             deadline,
-            hard: Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH),
+            hard: Instant::now()
+                + self
+                    .wait
+                    .saturating_mul(crate::limits::limits().mcp_progress_stretch),
         };
         loop {
             let read = match tokio::time::timeout_at(clock.deadline, self.frame()).await {
@@ -36,7 +38,9 @@ impl Client {
                 Err(_elapsed) => return Err(self.give_up(id, method).await),
             };
             if matches!(read, Read::Closed) && self.drain.is_some() {
-                clock.deadline = clock.deadline.min(Instant::now() + MCP_STDERR_SETTLE);
+                clock.deadline = clock
+                    .deadline
+                    .min(Instant::now() + crate::limits::limits().mcp_stderr_settle());
                 continue;
             }
             let Some(line) = self.line(read, method)? else {
@@ -87,7 +91,7 @@ impl Client {
             }
             Read::Oversize => Err(Error::Tool(format!(
                 "a reply to `{method}` was over {} MiB; summonr dropped it",
-                MCP_FRAME_MAX / (1024 * 1024)
+                crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
             ))),
             Read::Closed => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",

@@ -136,7 +136,7 @@ pub(crate) fn bearer(key: impl Into<String>) -> Auth {
 
 pub(crate) fn http() -> Result<leyline::Session> {
     session(summonr_auth::builder(
-        crate::limits::AUTH,
+        crate::limits::limits().auth(),
         crate::limits::limits().connect(),
     ))
 }

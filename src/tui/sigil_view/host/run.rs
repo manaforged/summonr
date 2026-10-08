@@ -9,8 +9,6 @@ use tokio::task::JoinHandle;
 use super::edit::{edit, edit_external, editor};
 use super::*;
 
-use crate::limits::BEAT;
-
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -96,7 +94,7 @@ pub(crate) fn run(
             })
         })
     };
-    stop(worker, &cmd_tx, BEAT);
+    stop(worker, &cmd_tx, crate::limits::limits().beat());
     ran.map_err(|error| Error::Tool(format!("the terminal failed: {error}")))?;
     let mut pump = pump.borrow_mut();
     let exit = pump.exit.take().unwrap_or(0);
@@ -287,7 +285,7 @@ impl Pump {
 
 pub(in crate::tui::sigil_view) fn start_tick(tx: UnboundedSender<Cmd>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(BEAT);
+        let mut interval = tokio::time::interval(crate::limits::limits().beat());
         loop {
             interval.tick().await;
             if tx.send(Cmd::Tick).is_err() {

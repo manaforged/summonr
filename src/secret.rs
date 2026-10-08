@@ -16,7 +16,6 @@ const MAGIC: &[u8] = b"SMNR1";
 const NONCE_LEN: usize = 12;
 const KEY_LEN: usize = 32;
 const FILE: &str = "credentials.toml";
-use crate::limits::KEYCHAIN as TIMEOUT;
 const LOCKED: &str = "the keychain did not answer; unlock it";
 #[cfg_attr(
     test,

@@ -26,8 +26,8 @@ impl Wait {
     pub(super) fn chosen(explicit: Option<u64>, detach: bool) -> Self {
         match explicit {
             Some(seconds) => Self::Kill(seconds),
-            None if detach => Self::Detach(crate::limits::COMMAND_WAIT_SECS),
-            None => Self::Kill(crate::limits::COMMAND_KILL_SECS),
+            None if detach => Self::Detach(crate::limits::limits().command_wait_secs),
+            None => Self::Kill(crate::limits::limits().command_kill_secs),
         }
     }
 

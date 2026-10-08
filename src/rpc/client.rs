@@ -11,7 +11,6 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_STDERR_TAIL};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
 
@@ -149,7 +148,11 @@ impl Client {
             return;
         };
         if !matches!(
-            self.send(&line, Instant::now() + MCP_CANCEL_WRITE).await,
+            self.send(
+                &line,
+                Instant::now() + crate::limits::limits().mcp_cancel_write()
+            )
+            .await,
             Ok(Ok(()))
         ) {
             self.broken = true;
@@ -228,7 +231,9 @@ impl Client {
                 .iter()
                 .position(|byte| *byte == b'\n')
                 .map_or((chunk.len(), false), |at| (at + 1, true));
-            if !self.over && self.pending.len() + take <= MCP_FRAME_MAX {
+            if !self.over
+                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
+            {
                 self.pending.extend_from_slice(&chunk[..take]);
             } else if !self.over {
                 self.over = true;
@@ -325,7 +330,9 @@ async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
             break;
         };
         bytes.extend_from_slice(&chunk[..read]);
-        let excess = bytes.len().saturating_sub(MCP_STDERR_TAIL);
+        let excess = bytes
+            .len()
+            .saturating_sub(crate::limits::limits().mcp_stderr_tail_bytes);
         bytes.drain(..excess);
     }
 }

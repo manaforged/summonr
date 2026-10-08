@@ -80,7 +80,7 @@ fn an_edit_hands_the_view_a_patch_and_the_model_a_summary() {
 
 #[test]
 fn a_display_patch_is_skipped_past_the_line_limit() {
-    let lines: Vec<String> = (0..=crate::limits::DISPLAY_PATCH_LINES)
+    let lines: Vec<String> = (0..=crate::limits::limits().display_patch_lines)
         .map(|n| format!("line {n}"))
         .collect();
     let new: Vec<&str> = lines.iter().map(String::as_str).collect();

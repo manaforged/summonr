@@ -155,14 +155,13 @@ impl ToolRegistry {
                 .await
                 .map_err(|error| Error::Tool(format!("job stop failed: {error}")))??;
         }
-        let status =
-            crate::jobs::wait(
-                &self.workspace,
-                id,
-                crate::runtime::JOB_WAIT_SECS,
-                || Ok(()),
-            )
-            .await?;
+        let status = crate::jobs::wait(
+            &self.workspace,
+            id,
+            crate::limits::limits().job_wait_secs,
+            || Ok(()),
+        )
+        .await?;
         Ok(ToolOutput {
             success: matches!(
                 status.state,

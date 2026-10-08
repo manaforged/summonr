@@ -116,7 +116,7 @@ fn run(
         pipe.flush()?;
     }
     let (_tick, wait) = mpsc::channel::<()>();
-    let deadline = Instant::now() + TIMEOUT;
+    let deadline = Instant::now() + crate::limits::limits().keychain();
     let status = loop {
         if let Some(status) = child.try_wait()? {
             break status;
@@ -126,7 +126,10 @@ fn run(
             drop(child.wait());
             return Err(Error::Config(LOCKED.to_string()));
         }
-        if wait.recv_timeout(crate::limits::KEYCHAIN_POLL).is_ok() {
+        if wait
+            .recv_timeout(crate::limits::limits().keychain_poll())
+            .is_ok()
+        {
             continue;
         }
     };

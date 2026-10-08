@@ -122,7 +122,7 @@ Keys on an `[endpoint.NAME]` row:
 | `auth.required_scope` | A scope the token reply must grant, or the sign-in fails. |
 | `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
 
-`[limits]` in `~/.summonr/config.toml` overrides the built-in tuning values in [`src/limits.toml`](../../src/limits.toml). A key you leave out keeps its built-in value.
+`[limits]` in `~/.summonr/config.toml` overrides the built-in values in [`src/limits.toml`](../../src/limits.toml): every timeout, retry, size, retention, and UI timing summonr uses. A key you leave out keeps its built-in value.
 
 ```toml
 [limits]
@@ -143,6 +143,61 @@ cache_ttl = "5m"
 | `compact_percent` | `80` | Share of the context window that starts compaction. |
 | `compact_chars` | `400000` | Prompt size in characters that starts compaction when the window is unknown. |
 | `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
+| `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |
+| `command_wait_secs` | `120` | Time before a `run_command` continues as a background job. |
+| `command_kill_secs` | `3600` | Hard stop for a foreground command with no `timeout_secs`. |
+| `grant_wait_secs` | `600` | Wait for a permission answer. |
+| `job_poll_start_secs` | `1` | First job poll interval. |
+| `job_poll_cap_secs` | `2` | Longest job poll interval. |
+| `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
+| `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
+| `verify_timeout_secs` | `600` | Timeout for a check command. |
+| `probe_secs` | `5` | Endpoint probe timeout. |
+| `auth_secs` | `30` | Sign-in request timeout. |
+| `model_probe_secs` | `8` | Model list request timeout. |
+| `web_search_secs` | `15` | Web search timeout. |
+| `web_connect_secs` | `8` | Web connect timeout. |
+| `web_fetch_secs` | `20` | Web fetch timeout. |
+| `web_body_bytes` | `1048576` | Largest web response body. |
+| `web_redirect_max` | `5` | Most redirects a web request follows. |
+| `keychain_ms` | `5000` | OS keychain call timeout. |
+| `keychain_poll_ms` | `20` | Keychain poll interval. |
+| `mcp_open_secs` | `60` | MCP server start timeout. |
+| `mcp_call_secs` | `300` | MCP tool call timeout when a server sets none. |
+| `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
+| `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
+| `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
+| `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
+| `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
+| `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
+| `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
+| `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
+| `mcp_found_max` | `8` | Most deferred tools returned per search. |
+| `lsp_start_secs` | `30` | Language server start timeout. |
+| `lsp_request_secs` | `30` | Language server request timeout. |
+| `lsp_check_secs` | `5` | Diagnostics wait after an edit. |
+| `log_retain_days` | `14` | Log retention. |
+| `session_retain_days` | `30` | Session retention when `[sessions] retain_days` is unset. |
+| `job_retain_days` | `7` | Finished job retention. |
+| `speed_window_secs` | `3` | Window for the tokens-per-second figure. |
+| `reader_window_ms` | `400` | Stream batching window. |
+| `frame_window_secs` | `1` | Frame budget window. |
+| `animation_ms` | `40` | Animation frame period. |
+| `spinner_ms` | `100` | Spinner frame period. |
+| `splash_reveal_ms` | `760` | Splash reveal time. |
+| `status_refresh_secs` | `1` | Status line refresh. |
+| `beat_secs` | `2` | Heartbeat interval. |
+| `notice_secs` | `2` | Time a notice stays on screen. |
+| `worker_stop_secs` | `2` | Desktop worker stop wait. |
+| `repeat_window_secs` | `2` | Window for a double key press. |
+| `step_attempts` | `3` | Attempts per plan step. |
+| `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
+| `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
+| `display_patch_lines` | `1000` | Most patch lines shown. |
+| `token_expiry_skew_secs` | `60` | Refresh a sign-in token this early. |
+| `read_line_limit` | `1000` | Largest `read` line limit. |
+| `paste_fold_lines` | `8` | A paste of this many lines folds. |
+| `paste_fold_chars` | `1000` | A paste of this many characters folds. |
 
 ### Environment variables
 

@@ -111,7 +111,7 @@ pub(crate) struct Sessions {
 impl Sessions {
     pub(crate) fn retain(&self) -> std::time::Duration {
         self.retain_days
-            .map_or(crate::limits::SESSION_RETAIN, |days| {
+            .map_or(crate::limits::limits().session_retain(), |days| {
                 std::time::Duration::from_secs(crate::session::DAY * u64::from(days.get()))
             })
     }
@@ -254,13 +254,13 @@ pub(crate) fn hold(path: &Path) -> Result<std::fs::File> {
         Error::Config(format!(
             "{} is locked by another summonr process; gave up after {}s",
             tilde(path),
-            crate::limits::AUTH.as_secs()
+            crate::limits::limits().auth_secs
         ))
     };
     let (send, wait) = std::sync::mpsc::channel();
     let owned = path.to_path_buf();
     std::thread::spawn(move || drop(send.send(store::lock(&owned, true))));
-    match wait.recv_timeout(crate::limits::AUTH) {
+    match wait.recv_timeout(crate::limits::limits().auth()) {
         Ok(held) => held?.ok_or_else(locked),
         Err(_) => Err(locked()),
     }

@@ -18,8 +18,6 @@ mod models;
 
 use files::{add, clipboard, files, relative, unignored, view, watch};
 
-use crate::limits::READER_WINDOW as WINDOW;
-
 #[derive(Clone)]
 pub(super) struct Reader {
     workspace: PathBuf,
@@ -308,7 +306,7 @@ impl Reader {
         };
         while let Ok(first) = receiver.recv() {
             let mut events = vec![first];
-            let deadline = Instant::now() + WINDOW;
+            let deadline = Instant::now() + crate::limits::limits().reader_window();
             while let Ok(more) =
                 receiver.recv_timeout(deadline.saturating_duration_since(Instant::now()))
             {

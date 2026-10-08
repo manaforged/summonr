@@ -8,7 +8,6 @@ use url::Url;
 use super::{Format, Search};
 use crate::error::{Error, Result};
 
-use crate::limits::WEB_FETCH as TIMEOUT;
 const OUT_MAX: usize = 32 * 1024;
 const PAGE_PREFIX: &str = "page-";
 const PAGE_SUFFIX: &str = ".md";
@@ -80,7 +79,7 @@ impl Search {
     async fn request(session: &Session, url: &Url) -> Result<Response> {
         session
             .get(url.as_str())
-            .timeout(TIMEOUT)
+            .timeout(crate::limits::limits().web_fetch())
             .header(
                 "accept",
                 "text/markdown, text/plain, text/html;q=0.9, */*;q=0.1",

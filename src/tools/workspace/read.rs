@@ -144,7 +144,7 @@ impl ToolRegistry {
             limit
                 .saturating_add(before.min(offset - 1))
                 .saturating_add(after)
-                .clamp(1, crate::limits::READ_LINE_LIMIT)
+                .clamp(1, crate::limits::limits().read_line_limit)
         });
         let tags = args.get("tags").and_then(Value::as_bool).unwrap_or(false);
         let mut reader = match self.open_text(path)? {

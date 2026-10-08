@@ -34,7 +34,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) async fn answer(&self, shared: &Steering) -> Option<UserInput> {
-        tokio::time::timeout(crate::limits::GRANT_WAIT, shared.next())
+        tokio::time::timeout(crate::limits::limits().grant_wait(), shared.next())
             .await
             .ok()
     }

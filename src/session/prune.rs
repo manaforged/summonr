@@ -16,7 +16,9 @@ pub fn prune(keep: Option<&str>) {
             return;
         };
         let retain = crate::config::file()
-            .map_or(crate::limits::SESSION_RETAIN, |file| file.sessions.retain());
+            .map_or(crate::limits::limits().session_retain(), |file| {
+                file.sessions.retain()
+            });
         prune_in(&home, retain, keep.as_deref(), SystemTime::now());
     });
 }

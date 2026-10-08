@@ -13,7 +13,10 @@ fn finished(workspace: &Path, started: u64) -> PathBuf {
 fn a_finished_job_past_retention_is_pruned_and_a_recent_one_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     let now = crate::mail::now();
-    let old = finished(dir.path(), now - crate::limits::JOB_RETAIN.as_secs() - 60);
+    let old = finished(
+        dir.path(),
+        now - crate::limits::limits().job_retain().as_secs() - 60,
+    );
     let recent = finished(dir.path(), now);
     drop(since(dir.path(), 0, None));
     assert!(!old.exists());

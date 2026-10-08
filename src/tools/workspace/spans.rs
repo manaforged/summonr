@@ -134,7 +134,7 @@ fn render(steps: &[Step], old: &[&str], new: &[&str]) -> Option<String> {
     let marks: Vec<usize> = (0..steps.len())
         .filter(|at| steps[*at] != Step::Keep)
         .collect();
-    if marks.len() > crate::limits::DISPLAY_PATCH_LINES {
+    if marks.len() > crate::limits::limits().display_patch_lines {
         return None;
     }
     let mut out = Vec::new();

@@ -6,8 +6,6 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
-use crate::runtime::JOB_WAIT;
-
 const OUTPUT_MAX: u64 = 64 * 1024;
 const CLAUDE_NAMES: [(&str, &str); 8] = [
     ("run_command", "Bash"),
@@ -201,11 +199,15 @@ impl Hook {
                 stderr,
             })
         };
-        let finished = tokio::time::timeout(JOB_WAIT, work).await;
+        let finished = tokio::time::timeout(crate::limits::limits().job_wait(), work).await;
         drop(group);
         finished
             .map_err(|_elapsed| {
-                format!("hook `{}` ran past {}s", self.command, JOB_WAIT.as_secs())
+                format!(
+                    "hook `{}` ran past {}s",
+                    self.command,
+                    crate::limits::limits().job_wait_secs
+                )
             })?
             .map_err(|error| format!("hook `{}` failed: {error}", self.command))
     }

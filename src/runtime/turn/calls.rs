@@ -298,15 +298,20 @@ impl<P: Provider> Loop<P> {
         }
         for record in owned.into_values() {
             let label = format!("job {} `{}`", record.id, record.command);
-            let status = jobs::wait(&workspace, &record.id, JOB_WAIT_SECS, || {
-                self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: format!("waiting for background {label}"),
-                    },
-                )
-            })
+            let status = jobs::wait(
+                &workspace,
+                &record.id,
+                crate::limits::limits().job_wait_secs,
+                || {
+                    self.push_event(
+                        events,
+                        emit,
+                        Event::Note {
+                            text: format!("waiting for background {label}"),
+                        },
+                    )
+                },
+            )
             .await?;
             if status.state == jobs::JobState::Killed {
                 continue;
@@ -321,7 +326,8 @@ impl<P: Provider> Loop<P> {
                 passed: status.state == jobs::JobState::Exited(0),
                 output: if running_now {
                     format!(
-                        "still running after {JOB_WAIT_SECS}s; wait for it or kill it\n{}",
+                        "still running after {}s; wait for it or kill it\n{}",
+                        crate::limits::limits().job_wait_secs,
                         status.text
                     )
                 } else {

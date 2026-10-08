@@ -6,7 +6,9 @@ impl App {
             return false;
         }
         let lines = text.lines().count();
-        if lines < crate::limits::PASTE_FOLD_LINES && text.len() < crate::limits::PASTE_FOLD_CHARS {
+        if lines < crate::limits::limits().paste_fold_lines
+            && text.len() < crate::limits::limits().paste_fold_chars
+        {
             return false;
         }
         let index = {

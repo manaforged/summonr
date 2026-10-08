@@ -4,7 +4,6 @@ use super::ToolRegistry;
 use crate::durable::store::{self, Staged};
 use crate::error::{Error, Result};
 
-const HUNK_ROWS: usize = crate::limits::EDIT_HUNK_ROWS;
 const HUNK_LINE_CHARS: usize = 160;
 
 pub(in crate::tools) struct Change {
@@ -183,7 +182,7 @@ fn overwritten(before: &str, after: &str) -> String {
 }
 
 fn cap_rows(lines: Vec<String>) -> Vec<String> {
-    let limit = HUNK_ROWS;
+    let limit = crate::limits::limits().edit_hunk_rows;
     let mut lines = lines
         .iter()
         .map(|line| crate::text::ellipsize(line, HUNK_LINE_CHARS))

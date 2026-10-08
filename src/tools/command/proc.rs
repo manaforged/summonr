@@ -275,7 +275,7 @@ pub(in crate::tools) fn kill_group(pid: u32, sandbox: bool) {
     #[cfg(unix)]
     if signal(pid, libc::SIGTERM) {
         let escalate = async move {
-            tokio::time::sleep(crate::runtime::JOB_WAIT / 60).await;
+            tokio::time::sleep(crate::limits::limits().job_wait() / 60).await;
             let _ = signal(pid, 0) && signal(pid, libc::SIGKILL);
         };
         match tokio::runtime::Handle::try_current() {

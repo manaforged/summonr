@@ -6,7 +6,6 @@ use super::Hub;
 use super::link::Link;
 use super::tool::Tool;
 use crate::error::{Error, Result};
-use crate::limits::{MCP_DEFER_BYTES, MCP_FOUND_MAX};
 use crate::policy::Policy;
 use crate::provider::ToolDefinition;
 use crate::tools::tool;
@@ -67,7 +66,7 @@ fn deferred(link: &Arc<Link>, policy: &Policy) -> bool {
     allowed(link, policy)
         .map(|item| serde_json::to_vec(&declared(item)).map_or(0, |bytes| bytes.len()))
         .sum::<usize>()
-        > MCP_DEFER_BYTES
+        > crate::limits::limits().mcp_defer_bytes
 }
 
 impl Hub {
@@ -130,7 +129,7 @@ impl Hub {
         }
         scored
             .iter()
-            .take(MCP_FOUND_MAX)
+            .take(crate::limits::limits().mcp_found_max)
             .map(|(_, item)| {
                 json!({
                     "tool": item.alias,

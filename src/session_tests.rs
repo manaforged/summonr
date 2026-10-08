@@ -16,7 +16,7 @@ fn sessions_idle_past_the_retention_are_removed_except_the_open_one() {
         std::fs::create_dir_all(sessions.join(id)).unwrap();
         std::fs::write(sessions.join(id).join("session.jsonl"), "{}\n").unwrap();
     }
-    let retain = crate::limits::SESSION_RETAIN;
+    let retain = crate::limits::limits().session_retain();
     let now = std::time::SystemTime::now();
     assert_eq!(super::prune::prune_in(home.path(), retain, None, now), 0);
     let later = now + retain + std::time::Duration::from_secs(60);

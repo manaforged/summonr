@@ -10,7 +10,6 @@ use url::Url;
 use crate::config;
 use crate::error::{Error, Result};
 
-use crate::limits::WEB_SEARCH as SEARCH_TIMEOUT;
 const HITS_DEFAULT: usize = 5;
 const HITS_MAX: usize = 8;
 const QUERY_MAX: usize = 400;
@@ -170,12 +169,12 @@ fn http_builder() -> leyline::SessionBuilder {
         .browser(Browser::latest(Family::Chrome))
         .timeout(
             TimeoutConfig::new()
-                .total(SEARCH_TIMEOUT)
-                .connect(crate::limits::WEB_CONNECT),
+                .total(crate::limits::limits().web_search())
+                .connect(crate::limits::limits().web_connect()),
         )
-        .compression(CompressionConfig::new().max_body_size(crate::limits::WEB_BODY))
+        .compression(CompressionConfig::new().max_body_size(crate::limits::limits().web_body_bytes))
         .redirect(RedirectPolicy::custom(|attempt| {
-            if attempt.previous.len() >= crate::limits::WEB_REDIRECT_MAX
+            if attempt.previous.len() >= crate::limits::limits().web_redirect_max
                 || !safe_redirect(attempt.url)
             {
                 RedirectAction::Stop

@@ -1,7 +1,6 @@
 use sigil::prelude::{effect, interval};
 
 use super::*;
-use crate::limits::{ANIMATION, BEAT, NOTICE, SPINNER, SPLASH_REVEAL_MS, STATUS_REFRESH};
 
 impl App {
     pub(in crate::tui::sigil_view) fn refresh(&self) {
@@ -43,9 +42,9 @@ impl App {
         let app = self.clone();
         effect(move || {
             let period = if splash.get() {
-                Some(ANIMATION)
+                Some(crate::limits::limits().animation())
             } else {
-                busy.get().then_some(SPINNER)
+                busy.get().then_some(crate::limits::limits().spinner())
             };
             if let Some(period) = period {
                 let tick = app.clone();
@@ -53,7 +52,9 @@ impl App {
             }
             if busy.get() {
                 let status = app.clone();
-                interval(STATUS_REFRESH, move || status.refresh_status());
+                interval(crate::limits::limits().status_refresh(), move || {
+                    status.refresh_status()
+                });
             }
         });
         self.poll();
@@ -61,7 +62,9 @@ impl App {
         effect(move || {
             if app.notice.get().is_some() {
                 let clear = app.clone();
-                interval(NOTICE, move || clear.notice.set(None));
+                interval(crate::limits::limits().notice(), move || {
+                    clear.notice.set(None)
+                });
             }
         });
     }
@@ -105,7 +108,9 @@ impl App {
             };
             if let Some(command) = command {
                 let poll = app.clone();
-                interval(BEAT, move || drop(poll.cmd.send(command())));
+                interval(crate::limits::limits().beat(), move || {
+                    drop(poll.cmd.send(command()))
+                });
             }
         });
     }
@@ -113,7 +118,8 @@ impl App {
     fn tick(&self) {
         self.ticks.update(|ticks| *ticks = ticks.saturating_add(1));
         if !self.splash_revealed.peek()
-            && self.splash_since.get().elapsed().as_millis() > SPLASH_REVEAL_MS
+            && self.splash_since.get().elapsed().as_millis()
+                > u128::from(crate::limits::limits().splash_reveal_ms)
         {
             self.splash_revealed.set(true);
         }

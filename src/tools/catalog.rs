@@ -158,7 +158,7 @@ fn read() -> ToolDefinition {
             "properties": {
                 "path": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 1},
-                "limit": {"type": "integer", "minimum": 1, "maximum": crate::limits::READ_LINE_LIMIT},
+                "limit": {"type": "integer", "minimum": 1, "maximum": crate::limits::limits().read_line_limit},
                 "pattern": {"type": "string"},
                 "glob": {"type": "string"},
                 "paths": {"type": "array", "items": {"type": "string"}},
@@ -309,7 +309,7 @@ fn run_command() -> ToolDefinition {
         "run_command",
         &format!(
             "Run a shell command in the workspace sandbox. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
-            wait = crate::limits::COMMAND_WAIT_SECS
+            wait = crate::limits::limits().command_wait_secs
         ),
         serde_json::json!({
             "type": "object",

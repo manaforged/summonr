@@ -205,7 +205,7 @@ impl Work {
             .ok_or_else(|| WorkError("active item is not in the plan".to_string()))?;
         step.rounds = step.rounds.saturating_add(1);
         step.attempts = step.attempts.saturating_add(1);
-        if step.attempts >= crate::limits::STEP_ATTEMPTS {
+        if step.attempts >= crate::limits::limits().step_attempts {
             self.active = Some(active);
             self.status = Status::Failed(continuation);
             return Ok(());

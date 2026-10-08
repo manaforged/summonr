@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::reader::Reader;
-use super::settings::set_run_mode;
+use super::settings::{announce_run_mode, set_run_mode};
 use super::{Cmd, Msg, Worker};
 
 mod flow;

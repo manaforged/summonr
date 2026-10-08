@@ -216,3 +216,39 @@ fn a_partial_reply_at_the_end_is_never_sent_as_the_last_message() {
     assert_eq!(request.messages.len(), 2);
     assert_eq!(request.messages[1].content, "do it");
 }
+
+#[tokio::test]
+async fn a_goal_selected_from_the_command_line_runs_its_check_and_asks_the_judge() {
+    let mut run = session([
+        Reply::Text("fixed"),
+        Reply::Text(r#"{"verdict": "done", "reason": "the check passed"}"#),
+    ]);
+    run.loop_
+        .select_goal("make the tests pass", &["true".to_string()])
+        .unwrap();
+    let turn = run.loop_.turn("make the tests pass").await.unwrap();
+    assert!(
+        turn.events.iter().any(
+            |event| matches!(event, Event::Verify { command, passed: true } if command == "true")
+        ),
+        "{:?}",
+        closing(&turn)
+    );
+    assert_eq!(run.loop_.work_progress().unwrap().exit_code(), Some(0));
+}
+
+#[tokio::test]
+async fn steps_selected_from_the_command_line_run_the_completion_check() {
+    let mut run = session([Reply::Text("done")]);
+    run.loop_
+        .select_steps("## Steps\n\n1. Ship it\n", &["true".to_string()])
+        .unwrap();
+    let turn = run.loop_.turn("Ship it").await.unwrap();
+    assert!(
+        turn.events.iter().any(
+            |event| matches!(event, Event::Verify { command, passed: true } if command == "true")
+        ),
+        "{:?}",
+        closing(&turn)
+    );
+}

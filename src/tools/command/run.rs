@@ -186,7 +186,11 @@ impl ToolRegistry {
         let shown = digest(command, &raw);
         let output = format!(
             "exit {code}{}\n{}{}{}",
-            full_output_note(&log_path, shown.cut),
+            full_output_note(
+                &log_path,
+                shown.cut,
+                crate::diff::line_count(&log_path).ok().flatten()
+            ),
             shown.text,
             plan_write_note(read_only, &raw),
             sandbox_note(grant.as_ref(), self, &raw)
@@ -247,7 +251,11 @@ impl ToolRegistry {
         } else {
             "the command may have changed workspace files before timeout"
         };
-        let note = full_output_note(&log_path, shown.cut);
+        let note = full_output_note(
+            &log_path,
+            shown.cut,
+            crate::diff::line_count(&log_path).ok().flatten(),
+        );
         keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
             text: format!("{headline}\n{warning}{note}\n{}", shown.text)

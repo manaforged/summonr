@@ -1,10 +1,12 @@
 use super::*;
-use sigil::prelude::Paint;
+use crate::tui::sigil_view::suggest;
+use sigil::prelude::{Paint, node};
 
 pub(super) fn layer(app: App) -> NodeBuilder {
     let submit = app.clone();
     let changed = app.clone();
     let surface = app.clone();
+    let typeahead = app.clone();
     container()
         .bg(scene::SCRIM)
         .layout(LayoutStyle::block().fill_width().fill_height())
@@ -23,4 +25,19 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .layout(LayoutStyle::block().fill_width().fill_height()),
         )
         .child(scene::layer(surface))
+        .child(node(move || popup(typeahead.clone())))
+}
+
+fn popup(app: App) -> NodeBuilder {
+    let (cols, rows) = app.viewport.get();
+    let [x, y, width] = scene::prompt_area(&app, cols, rows);
+    let cell = canvas::cell();
+    container()
+        .layout(
+            LayoutStyle::block()
+                .position(Position::Absolute)
+                .inset_left(f32::from(x) * cell.w)
+                .inset_top(f32::from(y.saturating_add(1)) * cell.h),
+        )
+        .child(suggest::widget(app, usize::from(width)))
 }

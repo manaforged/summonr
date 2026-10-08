@@ -22,6 +22,8 @@ fn the_default_prompt_names_the_module_surface() {
         "web (search, fetch)",
         "mail (agents, send, inbox, board)",
         "`summonr modules`",
+        "SKILL.md",
+        "summonr mcp add",
     ] {
         assert!(prompt.contains(capability), "{capability}: {prompt}");
     }

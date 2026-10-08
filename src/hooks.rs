@@ -17,6 +17,24 @@ const CLAUDE_NAMES: [(&str, &str); 8] = [
     ("web", "WebFetch"),
     ("skill", "Skill"),
 ];
+const CLAUDE_ALIASES: [(&str, &str); 5] = [
+    ("read", "Grep"),
+    ("read", "Glob"),
+    ("edit", "MultiEdit"),
+    ("edit", "NotebookEdit"),
+    ("web", "WebSearch"),
+];
+
+#[must_use]
+pub(crate) fn builtin(name: &str) -> Option<crate::tools::Builtin> {
+    let name = name.trim();
+    let native = CLAUDE_NAMES
+        .iter()
+        .chain(&CLAUDE_ALIASES)
+        .find(|(_, claude)| *claude == name)
+        .map_or(name, |(native, _)| *native);
+    crate::tools::Builtin::live(native)
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum HookEvent {

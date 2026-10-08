@@ -52,6 +52,7 @@ pub mod secret;
 mod session;
 mod shell;
 mod skills;
+pub mod supervise;
 mod text;
 mod tools;
 mod verify;

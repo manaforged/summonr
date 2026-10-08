@@ -82,6 +82,9 @@ pub(crate) fn compose(workspace: &Path, home: Option<&Path>, sources: Sources) -
     if skills && let Some(catalog) = crate::skills::catalog(workspace) {
         parts.push(format!("<skills>\n{catalog}\n</skills>"));
     }
+    if skills && let Some(catalog) = crate::plugins::agents::catalog(workspace) {
+        parts.push(format!("<agents>\n{catalog}\n</agents>"));
+    }
     parts.push(format!("<cwd>{}</cwd>", workspace.display()));
     parts.join("\n\n")
 }

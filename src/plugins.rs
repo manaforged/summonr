@@ -8,6 +8,9 @@ use crate::hooks::{Dialect, Hook, HookEvent, Hooks, Matcher};
 use crate::prompt::summonr_home;
 use crate::skills;
 
+pub(crate) mod agents;
+pub(crate) mod commands;
+pub(crate) mod lsp;
 mod manage;
 
 pub use manage::{install, list, uninstall};
@@ -17,14 +20,11 @@ const ROOTS: [&str; 2] = ["${CLAUDE_PLUGIN_ROOT}", "${SUMMONR_PLUGIN_ROOT}"];
 const DATA: [&str; 2] = ["${CLAUDE_PLUGIN_DATA}", "${SUMMONR_PLUGIN_DATA}"];
 const PROJECT: &str = "${CLAUDE_PROJECT_DIR}";
 pub(super) const USER_CONFIG: &str = "${user_config.";
-pub(super) const UNSUPPORTED: [(&str, &str); 7] = [
-    ("commands", "slash commands"),
-    ("agents", "subagents"),
+pub(super) const UNSUPPORTED: [(&str, &str); 4] = [
     ("monitors", "monitors"),
     ("output-styles", "output styles"),
     ("workflows", "workflows"),
     ("themes", "themes"),
-    (".lsp.json", "language servers"),
 ];
 
 #[derive(Clone, Debug, Default, Deserialize)]

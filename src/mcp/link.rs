@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tokio::sync::Mutex;
@@ -10,6 +9,7 @@ use tokio::sync::Mutex;
 use crate::error::{Error, Result};
 use crate::policy::Policy;
 use crate::rpc::Notice;
+use crate::supervise::{self, ServerKind, Slot};
 use crate::tools::sandbox::Sandbox;
 
 use super::catalog::{self, Listing};
@@ -24,11 +24,10 @@ use super::{Answer, McpProgress, McpUpdate};
 pub(super) struct Link {
     server: Server,
     workspace: PathBuf,
-    conn: Mutex<Option<Conn>>,
+    conn: Slot<Conn>,
     fresh: std::sync::Mutex<Option<HashMap<String, bool>>>,
     started: AtomicBool,
     detail: std::sync::Mutex<Option<String>>,
-    used: std::sync::Mutex<Instant>,
     journal: Journal,
     pub(super) tools: Vec<Tool>,
 }
@@ -61,17 +60,21 @@ impl Link {
                     .is_none_or(|allow| allow.contains(&tool.name))
             })
             .collect();
-        Ok(Arc::new(Self {
+        let pid = conn.as_ref().and_then(Conn::pid);
+        let link = Arc::new(Self {
             server,
             workspace,
-            conn: Mutex::new(conn),
+            conn: Arc::new(Mutex::new(conn)),
             fresh: std::sync::Mutex::new(None),
             started,
             detail: std::sync::Mutex::new(None),
-            used: std::sync::Mutex::new(Instant::now()),
             journal: Journal::default(),
             tools,
-        }))
+        });
+        if link.started.load(Ordering::Relaxed) {
+            supervise::register(ServerKind::Mcp, &link.server.name, pid, None, &link.conn);
+        }
+        Ok(link)
     }
 
     pub(super) async fn call_tool(
@@ -132,7 +135,7 @@ impl Link {
             .await;
         pending.settle();
         self.after(slot, result.as_ref().err(), changes).await;
-        self.touch();
+        supervise::touch(&self.conn);
         result.map(|value| (value, changes.tools))
     }
 
@@ -161,8 +164,14 @@ impl Link {
             self.remember(&listing.tools);
         }
         conn.ready(self.server.wait)?;
+        supervise::register(
+            ServerKind::Mcp,
+            &self.server.name,
+            conn.pid(),
+            self.server.idle,
+            &self.conn,
+        );
         *slot = Some(conn);
-        self.reap_later();
         Ok(())
     }
 
@@ -269,26 +278,6 @@ impl Link {
             ))
         })
     }
-
-    fn touch(&self) {
-        if let Ok(mut used) = self.used.lock() {
-            *used = Instant::now();
-        }
-    }
-
-    fn idle_for(&self) -> Duration {
-        self.used
-            .lock()
-            .map(|used| used.elapsed())
-            .unwrap_or_default()
-    }
-
-    fn reap_later(self: &Arc<Self>) {
-        let Some(idle) = self.server.idle else {
-            return;
-        };
-        drop(tokio::spawn(reap(Arc::downgrade(self), idle)));
-    }
 }
 
 pub(super) struct Gate<'a> {
@@ -336,29 +325,6 @@ impl Link {
     pub(super) async fn cancel_inflight(&self) {
         if let Some(conn) = self.conn.lock().await.as_mut() {
             conn.cancel_inflight().await;
-        }
-    }
-}
-
-async fn reap(link: Weak<Link>, idle: Duration) {
-    loop {
-        let Some(wait) = link
-            .upgrade()
-            .map(|link| idle.saturating_sub(link.idle_for()))
-        else {
-            return;
-        };
-        tokio::time::sleep(wait).await;
-        let Some(link) = link.upgrade() else {
-            return;
-        };
-        let mut slot = link.conn.lock().await;
-        if slot.is_none() {
-            return;
-        }
-        if link.idle_for() >= idle {
-            *slot = None;
-            return;
         }
     }
 }

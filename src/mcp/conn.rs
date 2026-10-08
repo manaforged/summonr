@@ -136,6 +136,13 @@ impl Conn {
         )))
     }
 
+    pub(super) fn pid(&self) -> Option<u32> {
+        match &self.transport {
+            Transport::Stdio(client) => client.pid(),
+            Transport::Http(_) => None,
+        }
+    }
+
     pub(super) fn alive(&mut self) -> bool {
         match &mut self.transport {
             Transport::Stdio(client) => client.alive(),

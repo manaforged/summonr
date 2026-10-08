@@ -155,11 +155,9 @@ pub(crate) fn renamed(line: &str) -> Option<(String, Option<String>)> {
 
 pub(crate) fn argument(line: &str) -> Result<Option<&str>, String> {
     let Some(command) = parse_command(line) else {
-        if let Some(head) = line
-            .split_whitespace()
-            .next()
-            .filter(|head| head.starts_with('/') && !server_prompt(head))
-        {
+        if let Some(head) = line.split_whitespace().next().filter(|head| {
+            head.starts_with('/') && !server_prompt(head) && !crate::plugins::commands::named(head)
+        }) {
             return Err(format!(
                 "Unknown command `{head}`. Use /help or press Tab to complete."
             ));

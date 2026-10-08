@@ -320,38 +320,6 @@ pub(crate) fn canonical(path: &Path) -> PathBuf {
     path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
 }
 
-#[cfg(target_os = "macos")]
-#[expect(unsafe_code, reason = "proc_pid_rusage has no std wrapper")]
-fn footprint_kb() -> Option<u64> {
-    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v4>::zeroed();
-    // SAFETY: proc_pid_rusage writes one rusage_info_v4 into the buffer; zero means success.
-    let info = unsafe {
-        (libc::proc_pid_rusage(
-            libc::getpid(),
-            libc::RUSAGE_INFO_V4,
-            info.as_mut_ptr().cast(),
-        ) == 0)
-            .then(|| info.assume_init())
-    }?;
-    Some(info.ri_lifetime_max_phys_footprint / 1024)
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-#[expect(unsafe_code, reason = "getrusage has no std wrapper")]
-fn footprint_kb() -> Option<u64> {
-    let mut usage = std::mem::MaybeUninit::<libc::rusage>::zeroed();
-    // SAFETY: getrusage writes one rusage into the zeroed buffer; zero means success.
-    let usage = unsafe {
-        (libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) == 0).then(|| usage.assume_init())
-    }?;
-    u64::try_from(usage.ru_maxrss).ok()
-}
-
-#[cfg(not(unix))]
-fn footprint_kb() -> Option<u64> {
-    None
-}
-
 #[cfg(test)]
 #[path = "driver_tests.rs"]
 mod tests;

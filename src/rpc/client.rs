@@ -1,5 +1,4 @@
 use std::path::Path;
-use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -7,14 +6,17 @@ use tokio::time::Instant;
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout};
 
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
 
+mod process;
 mod reply;
+
+pub(crate) use process::{Env, Launch, Process, Stderr, start};
 
 const SECRET_MIN: usize = 8;
 
@@ -53,48 +55,24 @@ pub(crate) struct Spawn<'a> {
 
 impl Client {
     pub(crate) fn spawn(launch: &Spawn<'_>) -> Result<Self> {
-        let mut command = match launch.sandbox {
-            Some(sandbox) => sandbox.command(launch.program, launch.args, launch.cwd),
-            None => {
-                let mut command = Command::new(launch.program);
-                command.args(launch.args).current_dir(launch.cwd);
-                command
-            }
-        };
-        #[cfg(unix)]
-        command.process_group(0);
-        command
-            .env_clear()
-            .envs(crate::tools::command::command_env())
-            .envs(launch.env.iter().map(|(key, value)| (key, value)));
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(|error| Error::Tool(format!("cannot start `{}`: {error}", launch.program)))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::Tool("child has no stdin".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::Tool("child has no stdout".to_string()))?;
+        let process = process::start(&process::Launch {
+            program: launch.program,
+            args: launch.args,
+            env: launch.env,
+            cwd: launch.cwd,
+            sandbox: launch.sandbox,
+            base: process::Env::Clean,
+            stderr: process::Stderr::Pipe,
+        })?;
         let stderr = Arc::new(Mutex::new(Vec::new()));
-        let drain = child
+        let drain = process
             .stderr
-            .take()
             .map(|pipe| tokio::spawn(tail(pipe, Arc::clone(&stderr))));
-        let _group = child
-            .id()
-            .map(|pid| ProcessGroup::new(pid, launch.sandbox.is_some()));
         Ok(Self {
-            _group,
-            child,
-            stdin: Some(stdin),
-            reader: BufReader::new(stdout),
+            _group: process.group,
+            child: process.child,
+            stdin: Some(process.stdin),
+            reader: BufReader::new(process.stdout),
             pending: Vec::new(),
             over: false,
             abandoned: Vec::new(),
@@ -112,6 +90,10 @@ impl Client {
             wait: launch.wait,
             next: 1,
         })
+    }
+
+    pub(crate) fn pid(&self) -> Option<u32> {
+        self.child.id()
     }
 
     pub(crate) fn set_wait(&mut self, wait: Duration) {

@@ -47,6 +47,28 @@ pub(crate) fn an_idle_server_stops_and_starts_again_on_the_next_call() {
     );
 }
 
+pub(crate) fn the_least_recently_used_idle_server_stops_at_the_server_cap() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__echo", json!({"text": "one"})),
+        Step::Call("fixture2__echo", json!({"text": "two"})),
+        Step::Call("fixture1__echo", json!({"text": "three"})),
+        Step::Text("ok"),
+    ]);
+    let config = format!(
+        "{}{}[limits]\nservers_max = 1\n",
+        session.server("fixture1", "idle_secs = 60"),
+        session.server("fixture2", "idle_secs = 60"),
+    );
+    session.run(&model, &config, &[]);
+    assert_eq!(
+        session.starts("fixture1"),
+        3,
+        "list, first call, and a restart after the cap stopped it"
+    );
+    assert!(model.tool_results()[2].contains("three"));
+}
+
 pub(crate) fn tool_lists_are_cached_per_workspace() {
     let session = Session::new();
     let echo_only = session.server_env("fixture1", ", MCP_FIXTURE_TOOLS = 'echo'", "");

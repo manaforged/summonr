@@ -68,6 +68,7 @@ pub(crate) struct ToolRegistry {
     allowed_edits: Vec<&'static str>,
     model_images: bool,
     vision: Option<crate::endpoint::Endpoint>,
+    only: Option<Vec<Builtin>>,
 }
 
 pub(crate) struct ToolOutput {
@@ -137,6 +138,7 @@ impl ToolRegistry {
             allowed_edits: Vec::new(),
             model_images: false,
             vision: None,
+            only: None,
         })
     }
 
@@ -255,9 +257,24 @@ impl ToolRegistry {
         }
     }
 
+    pub(crate) fn restrict_to(&mut self, names: &[String]) {
+        self.only = Some(
+            names
+                .iter()
+                .filter_map(|name| crate::hooks::builtin(name))
+                .collect(),
+        );
+    }
+
     pub(crate) async fn execute_outcome(&self, call: &ToolCall) -> Result<ToolOutput> {
         let call = normalize(call)?;
         match Builtin::live(&call.function.name) {
+            Some(kind) if self.only.as_ref().is_some_and(|only| !only.contains(&kind)) => {
+                Err(Error::Denied(format!(
+                    "tool `{}` is not one of this agent's tools",
+                    call.function.name
+                )))
+            }
             Some(kind) if self.enabled(kind) => self.dispatch(kind, &call).await,
             Some(kind) if kind != Builtin::Task => Err(Error::Denied(format!(
                 "tool `{}` is unavailable in the current mode",

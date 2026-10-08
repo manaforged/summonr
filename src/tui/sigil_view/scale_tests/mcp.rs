@@ -1,9 +1,12 @@
 use super::*;
 use crate::mcp::{McpState, McpTransport, ServerStatus};
+use crate::supervise::ServerKind;
 
 fn server(name: &str, state: McpState, schema_bytes: usize, detail: Option<&str>) -> ServerStatus {
     ServerStatus {
         name: name.to_owned(),
+        kind: ServerKind::Mcp,
+        rss_kb: None,
         transport: Some(McpTransport::Stdio),
         state,
         tools: vec!["search".to_owned()],

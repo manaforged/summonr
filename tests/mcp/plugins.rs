@@ -46,7 +46,14 @@ fn plugin_with(session: &Session, hooks: &Value, env: &Value, manifest: &str) ->
         &dir.join("skills/greet/SKILL.md"),
         "---\nname: greet\ndescription: say hello politely\n---\nSay hello.\n",
     );
-    write(&dir.join("commands/hello.md"), "hello");
+    write(
+        &dir.join("commands/hello.md"),
+        "---\ndescription: greet someone\n---\nGreet $1 warmly. Everyone: $ARGUMENTS",
+    );
+    write(
+        &dir.join("agents/reviewer.md"),
+        "---\nname: reviewer\ndescription: reviews a diff for bugs\ntools: Read, Grep\n---\nReview the diff.",
+    );
     write(
         &dir.join("hooks/hooks.json"),
         &json!({ "hooks": hooks }).to_string(),
@@ -70,7 +77,8 @@ pub(crate) fn a_claude_code_plugin_installs_and_every_part_loads() {
         "hooks": [{"type": "command", "command": format!("cat > '{}'; echo blocked by plugin >&2; exit 2", seen.display())}]
     }]});
     let installed = install(&session, &plugin(&session, &hooks));
-    assert!(installed.contains("skipped\tcommands"), "{installed}");
+    assert!(!installed.contains("skipped\tcommands"), "{installed}");
+    assert!(!installed.contains("skipped\tagents"), "{installed}");
     let model = Model::start(vec![
         Step::Call("fixture1__never", json!({})),
         Step::Call("run_command", json!({"command": "command -v serve"})),
@@ -229,4 +237,27 @@ pub(crate) fn plugin_settings_and_data_are_handled() {
     let (removed, text) = session.cli(&["uninstall", "demo"]);
     assert!(removed, "{text}");
     assert!(!data.exists(), "plugin data was left behind");
+}
+
+#[cfg(unix)]
+pub(crate) fn a_plugin_command_expands_into_the_prompt_and_its_agents_are_listed() {
+    let session = Session::new();
+    install(&session, &plugin(&session, &json!({})));
+    for prompt in ["/demo:hello Ada Lovelace", "/hello Ada Lovelace"] {
+        let model = Model::start(vec![Step::Text("ok")]);
+        let options = crate::support::Options {
+            prompt: Some(prompt),
+            ..crate::support::Options::default()
+        };
+        session.run_with(&model, "", &[], &options);
+        let first = model.requests()[0].to_string();
+        assert!(
+            first.contains("Greet Ada warmly. Everyone: Ada Lovelace"),
+            "{prompt}: {first}"
+        );
+        assert!(
+            first.contains("reviewer: reviews a diff for bugs"),
+            "{first}"
+        );
+    }
 }

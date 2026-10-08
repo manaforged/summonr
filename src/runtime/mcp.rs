@@ -44,13 +44,40 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
     ) -> Result<UserInput> {
         if !crate::mcp::wanted(&input.text) {
-            return Ok(input);
+            return Ok(self.expand_command(input));
         }
         self.settle_mcp(events, emit).await?;
         let Some(hub) = self.mcp.clone() else {
-            return Ok(input);
+            return Ok(self.expand_command(input));
+        };
+        let server = input
+            .text
+            .split_whitespace()
+            .next()
+            .and_then(|head| head.strip_prefix('/'))
+            .and_then(|head| head.split_once(':'))
+            .map(|(server, _)| server);
+        let input = if server.is_some_and(|server| hub.state(server).is_some()) {
+            input
+        } else {
+            self.expand_command(input)
         };
         hub.expand(input, self.tools.sandbox().as_ref()).await
+    }
+
+    fn expand_command(&self, input: UserInput) -> UserInput {
+        let Some(text) = crate::plugins::commands::expand(&input.text, &self.workspace) else {
+            return input;
+        };
+        let source = input.source.unwrap_or(crate::provider::Source {
+            text: input.text,
+            images: input.images.len(),
+        });
+        UserInput {
+            text,
+            images: input.images,
+            source: Some(source),
+        }
     }
 
     #[must_use]

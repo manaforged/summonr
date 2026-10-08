@@ -68,6 +68,8 @@ table! {
     mcp_defer_bytes: usize,
     mcp_found_max: usize,
     lsp_start_secs: u64,
+    lsp_idle_secs: u64,
+    servers_max: usize,
     lsp_request_secs: u64,
     lsp_check_secs: u64,
     log_retain_days: u64,

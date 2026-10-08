@@ -1,12 +1,11 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::process::Stdio;
 use std::sync::Arc;
 
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, BufReader};
-use tokio::process::{Child, Command};
+use tokio::process::Child;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 use url::Url;
@@ -34,6 +33,7 @@ pub(super) struct Conn {
     options: Value,
     server: String,
     key: String,
+    languages: std::collections::BTreeMap<String, String>,
     group: Option<ProcessGroup>,
 }
 
@@ -41,32 +41,33 @@ pub(super) struct Conn {
 pub(super) struct Launch {
     key: String,
     argv: Vec<String>,
+    env: Vec<(String, String)>,
+    languages: std::collections::BTreeMap<String, String>,
     options: Value,
 }
 
 impl Conn {
     pub(super) async fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
-        let mut command = Command::new(&launch.argv[0]);
-        command
-            .args(&launch.argv[1..])
-            .current_dir(workspace)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true);
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = command
-            .spawn()
-            .map_err(|error| Error::Tool(format!("cannot start {}: {error}", launch.argv[0])))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::Tool("language server has no stdout".to_string()))?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::Tool("language server has no stdin".to_string()))?;
+        let (program, args) = launch
+            .argv
+            .split_first()
+            .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let rpc::Process {
+            child,
+            stdin,
+            stdout,
+            group,
+            ..
+        } = rpc::start(&rpc::Launch {
+            program,
+            args: &args,
+            env: &launch.env,
+            cwd: workspace,
+            sandbox: None,
+            base: rpc::Env::Inherit,
+            stderr: rpc::Stderr::Discard,
+        })?;
         let (sender, inbox) = mpsc::channel(INBOX);
         let mut stdout = BufReader::new(stdout);
         let reader = tokio::spawn(async move {
@@ -85,7 +86,6 @@ impl Conn {
                 }
             }
         });
-        let group = child.id().map(|pid| ProcessGroup::new(pid, false));
         let mut conn = Self {
             child: Some(child),
             inbox,
@@ -95,6 +95,7 @@ impl Conn {
             root: file_uri(workspace)?,
             clean: true,
             docs: std::collections::HashMap::new(),
+            languages: launch.languages.clone(),
             options: launch.options.clone(),
             server: launch.argv[0].clone(),
             key: launch.key.clone(),

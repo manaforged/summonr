@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::durable::store;
 use crate::error::{Error, Result};
-use crate::limits::{BEAT, MAIL_STALE_SECS as STALE_SECS, MAIL_SWEEP_SECS as SWEEP_SECS};
 use crate::prompt::summonr_home;
 
 mod presence;
@@ -262,7 +261,7 @@ impl Mailbox {
     }
 
     pub(crate) fn heartbeat(&mut self, model: &str, cwd: &Path, status: Presence) {
-        if now() < self.last_beat + BEAT.as_secs() && status == self.status {
+        if now() < self.last_beat + crate::limits::limits().beat_secs && status == self.status {
             return;
         }
         self.write_record(model, cwd, status);

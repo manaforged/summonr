@@ -9,8 +9,6 @@ use tokio::task::JoinHandle;
 use super::edit::{edit, edit_external, editor};
 use super::*;
 
-use crate::limits::BEAT;
-
 pub(crate) fn run(
     loop_: Loop<Client>,
     workspace: PathBuf,
@@ -55,6 +53,7 @@ pub(crate) fn run(
         .quit_on_ctrl_c(false)
         .terminal()
         .inline(inline)
+        .modify_other_keys(true)
         .terminal_hooks(hooks);
     let ran = {
         tokio::task::block_in_place(|| {
@@ -74,12 +73,19 @@ pub(crate) fn run(
                 if let Some(ui_rx) = inbox.borrow_mut().take() {
                     let receiver = app.clone();
                     let ended = ended.clone();
+                    let dirty = Rc::new(Cell::new(false));
                     on_message_or_close(
                         ui_rx,
                         move |msg| {
                             receiver.update(msg);
-                            let refresh = receiver.clone();
-                            defer(move || refresh.refresh());
+                            if !dirty.replace(true) {
+                                let refresh = receiver.clone();
+                                let dirty = dirty.clone();
+                                defer(move || {
+                                    dirty.set(false);
+                                    refresh.refresh();
+                                });
+                            }
                         },
                         move || ended.set(true),
                     );
@@ -89,7 +95,7 @@ pub(crate) fn run(
             })
         })
     };
-    stop(worker, &cmd_tx, BEAT);
+    stop(worker, &cmd_tx, crate::limits::limits().beat());
     ran.map_err(|error| Error::Tool(format!("the terminal failed: {error}")))?;
     let mut pump = pump.borrow_mut();
     let exit = pump.exit.take().unwrap_or(0);
@@ -280,7 +286,7 @@ impl Pump {
 
 pub(in crate::tui::sigil_view) fn start_tick(tx: UnboundedSender<Cmd>) {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(BEAT);
+        let mut interval = tokio::time::interval(crate::limits::limits().beat());
         loop {
             interval.tick().await;
             if tx.send(Cmd::Tick).is_err() {

@@ -38,6 +38,7 @@ impl Chat for Wire {
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,
+        _cache: crate::endpoint::CacheTtl,
         _stream: bool,
     ) -> crate::error::Result<super::Wired> {
         body::body(call, reasoning)

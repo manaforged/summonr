@@ -7,7 +7,6 @@ use super::catalog::Listing;
 use super::config::{Launch, Server};
 use super::http;
 use crate::error::{Error, Result};
-use crate::limits::MCP_OPEN;
 use crate::rpc::{self, Client, Notice};
 use crate::tools::sandbox::Sandbox;
 
@@ -41,13 +40,13 @@ impl Conn {
                     env,
                     cwd: workspace,
                     sandbox,
-                    wait: MCP_OPEN.min(server.wait),
+                    wait: crate::limits::limits().mcp_open().min(server.wait),
                 })?))
             }
             Launch::Http { url, headers, auth } => Transport::Http(http::Http::new(
                 url,
                 headers,
-                MCP_OPEN.min(server.wait),
+                crate::limits::limits().mcp_open().min(server.wait),
                 auth.clone()
                     .map(|spec| {
                         crate::credentials::mcp_auth(*spec, &format!("mcp-{}", server.name))

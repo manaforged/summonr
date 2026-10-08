@@ -100,7 +100,7 @@ struct Tally {
 
 pub(super) fn search(
     base: &Path,
-    files: &[(PathBuf, u64)],
+    files: &[(PathBuf, u64, u64)],
     matcher: &RegexMatcher,
     spec: &Spec<'_>,
 ) -> Result<String> {
@@ -118,12 +118,12 @@ pub(super) fn search(
         .multi_line(multiline)
         .build();
     let mut tally = Tally::default();
-    for (path, _) in files {
+    for (path, _, size) in files {
         if tally.matches >= limit {
             tally.truncated = true;
             break;
         }
-        file(base, path, &mut searcher, matcher, spec, &mut tally);
+        file(base, path, *size, &mut searcher, matcher, spec, &mut tally);
     }
     Ok(render(spec, &tally))
 }
@@ -131,12 +131,13 @@ pub(super) fn search(
 fn file(
     base: &Path,
     path: &Path,
+    size: u64,
     searcher: &mut Searcher,
     matcher: &RegexMatcher,
     spec: &Spec<'_>,
     tally: &mut Tally,
 ) {
-    if path.metadata().map(|meta| meta.len()).unwrap_or(0) > GREP_FILE_MAX {
+    if size > GREP_FILE_MAX {
         tally.skipped += 1;
         return;
     }

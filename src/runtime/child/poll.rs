@@ -116,7 +116,7 @@ impl<P: Provider> Loop<P> {
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
     ) -> Result<Vec<String>> {
-        let deadline = tokio::time::Instant::now() + JOB_WAIT;
+        let deadline = tokio::time::Instant::now() + crate::limits::limits().job_wait();
         let mut announced = false;
         loop {
             self.drain(events, emit);

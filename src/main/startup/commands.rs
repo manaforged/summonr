@@ -11,38 +11,51 @@ pub(super) async fn probe_endpoints() -> Result<()> {
     if let Err(error) = summonr::catalog::refresh_registry().await {
         eprintln!("summonr: models.dev catalog not refreshed: {error}");
     }
-    for name in summonr::endpoint_names()? {
-        let info = summonr::auth_info(&name).ok();
-        let seat = summonr::resolve_endpoint(Some(&name), None, summonr::Need::Model).ok();
-        let model = seat.as_ref().map_or("", |seat| seat.model.as_str());
-        let base = seat.as_ref().and_then(|seat| seat.base_url.as_deref());
-        let host = base.map_or("", |base| splash::host_of(Some(base)).unwrap_or(base));
-        let status = match (
-            &info,
-            summonr::resolve_endpoint(Some(&name), None, summonr::Need::Seat),
-        ) {
-            (Some(info), _) if !info.configured && !info.keyless() => {
-                format!("{} · {}", info.state(), info.setup)
-            }
-            (Some(_), Err(_)) if seat.is_none() => format!(
-                "{} · run `summonr {name} --model NAME` or set model in config.toml",
-                State::NeedsModel
-            ),
-            (_, Err(error)) => format!("{} · {error}", State::Error),
-            (_, Ok(endpoint)) if endpoint.base_url.is_none() => "adapter".to_string(),
-            (_, Ok(endpoint)) => {
-                let key = endpoint
-                    .source
-                    .map_or_else(String::new, |source| format!(" · key: {}", source.label()));
-                match Client::discover(&endpoint).await {
-                    Ok(models) => format!("{} · {} models{key}", State::Ready, models.len()),
-                    Err(error) => format!("{} · {error}{key}", Client::state(&error)),
-                }
-            }
-        };
-        println!("{name:<14} {model:<22} {host:<34} {status}");
+    let names = summonr::endpoint_names()?;
+    let probes = names.iter().map(|name| async move {
+        let (model, host, status) = probe_endpoint(name).await;
+        format!("{name:<14} {model:<22} {host:<34} {status}")
+    });
+    for line in futures::future::join_all(probes).await {
+        println!("{line}");
     }
     Ok(())
+}
+
+async fn probe_endpoint(name: &str) -> (String, String, String) {
+    let info = summonr::auth_info(name).ok();
+    let seat = summonr::resolve_endpoint(Some(name), None, summonr::Need::Model).ok();
+    let model = seat
+        .as_ref()
+        .map_or_else(String::new, |seat| seat.model.clone());
+    let base = seat.as_ref().and_then(|seat| seat.base_url.clone());
+    let host = base.as_deref().map_or_else(String::new, |base| {
+        splash::host_of(Some(base)).unwrap_or(base).to_string()
+    });
+    let status = match (
+        &info,
+        summonr::resolve_endpoint(Some(name), None, summonr::Need::Seat),
+    ) {
+        (Some(info), _) if !info.configured && !info.keyless() => {
+            format!("{} · {}", info.state(), info.setup)
+        }
+        (Some(_), Err(_)) if seat.is_none() => format!(
+            "{} · run `summonr {name} --model NAME` or set model in config.toml",
+            State::NeedsModel
+        ),
+        (_, Err(error)) => format!("{} · {error}", State::Error),
+        (_, Ok(endpoint)) if endpoint.base_url.is_none() => "adapter".to_string(),
+        (_, Ok(endpoint)) => {
+            let key = endpoint
+                .source
+                .map_or_else(String::new, |source| format!(" · key: {}", source.label()));
+            match Client::discover(&endpoint).await {
+                Ok(models) => format!("{} · {} models{key}", State::Ready, models.len()),
+                Err(error) => format!("{} · {error}{key}", Client::state(&error)),
+            }
+        }
+    };
+    (model, host, status)
 }
 
 pub(super) fn session_path(args: &Args) -> Result<PathBuf> {
@@ -204,7 +217,7 @@ fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
     }
     for stat in &diff.files {
         let new = if stat.new { "  new" } else { "" };
-        println!("+{:<5} −{:<5} {}{new}", stat.added, stat.removed, stat.path);
+        println!("+{} −{} {}{new}", stat.added, stat.removed, stat.path);
     }
     println!("{}", diff.summary());
     Ok(())

@@ -64,7 +64,7 @@ mod viewer;
 mod workflow;
 
 pub(super) use files::{Action, Context, FileRow};
-use files::{REPEAT_WINDOW, armed, file_url, read_git_branch, save};
+use files::{armed, file_url, read_git_branch, save};
 
 mod secret;
 mod state;

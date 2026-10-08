@@ -60,6 +60,7 @@ pub(crate) struct File {
     pub hooks: crate::hooks::Hooks,
     #[serde(default)]
     pub plugins: crate::plugins::Switches,
+    pub limits: Option<crate::limits::Overrides>,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
 }
@@ -110,7 +111,7 @@ pub(crate) struct Sessions {
 impl Sessions {
     pub(crate) fn retain(&self) -> std::time::Duration {
         self.retain_days
-            .map_or(crate::limits::SESSION_RETAIN, |days| {
+            .map_or(crate::limits::limits().session_retain(), |days| {
                 std::time::Duration::from_secs(crate::session::DAY * u64::from(days.get()))
             })
     }
@@ -145,6 +146,7 @@ pub(crate) struct Endpoint {
     pub compact_tokens: Option<u32>,
     pub images: Option<bool>,
     pub keep_reasoning: Option<bool>,
+    pub cache_ttl: Option<crate::endpoint::CacheTtl>,
     pub reasoning_levels: Option<Vec<crate::provider::Effort>>,
     pub thinking_off: Option<crate::provider::Off>,
     #[serde(default)]
@@ -252,13 +254,13 @@ pub(crate) fn hold(path: &Path) -> Result<std::fs::File> {
         Error::Config(format!(
             "{} is locked by another summonr process; gave up after {}s",
             tilde(path),
-            crate::limits::AUTH.as_secs()
+            crate::limits::limits().auth_secs
         ))
     };
     let (send, wait) = std::sync::mpsc::channel();
     let owned = path.to_path_buf();
     std::thread::spawn(move || drop(send.send(store::lock(&owned, true))));
-    match wait.recv_timeout(crate::limits::AUTH) {
+    match wait.recv_timeout(crate::limits::limits().auth()) {
         Ok(held) => held?.ok_or_else(locked),
         Err(_) => Err(locked()),
     }

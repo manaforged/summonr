@@ -107,6 +107,10 @@ impl SessionDriver {
         })
     }
 
+    pub(crate) fn turn_open(&self) -> bool {
+        self.turn.is_some()
+    }
+
     pub(crate) fn usage(&self) -> (u64, u64) {
         (self.state.spent, self.state.unreported)
     }

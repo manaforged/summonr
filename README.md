@@ -1,6 +1,6 @@
 # summonr
 
-A terminal coding agent written in Rust that works until your test command passes, and loads no third-party code into its process.
+An open-source coding agent for any model, in your terminal or a desktop window. It does the same work as heavier harnesses on fewer tokens and a fraction of the memory: in our [Terminal-Bench 2.1 run](https://summonr.dev/benchmarks) it used 24 MB, where four other harnesses peaked between 146 and 505 MB. It loads no third-party code into its process.
 
 ![summonr fixing two bugs in calc.py and running pytest, captured from a session](docs/guide/assets/summonr-session.png)
 
@@ -166,11 +166,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-719 public items (72 types, 95 functions, 117 methods, 255 fields, 176 variants, 4 constants) at 719 paths; 0 are re-export aliases. 364 trait impl lines, 33 inherent impl lines. 23 modules, 0 re-export only.
+719 public items (72 types, 96 functions, 117 methods, 257 fields, 176 variants, 1 constant) at 719 paths; 0 are re-export aliases. 364 trait impl lines, 33 inherent impl lines. 23 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 478 | 40 | 48 | 94 | 0 |
+| `summonr` | 480 | 40 | 48 | 94 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -182,7 +182,7 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
 | `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
 | `summonr::diff` | 14 | 2 | 3 | 3 | 0 |
-| `summonr::limits` | 3 | 0 | 0 | 0 | 0 |
+| `summonr::limits` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::modules` | 20 | 3 | 2 | 5 | 0 |

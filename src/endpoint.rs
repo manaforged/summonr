@@ -50,6 +50,8 @@ pub struct Endpoint {
     pub keep_reasoning: bool,
     pub opencode: bool,
     pub prompt_cache_key: bool,
+    pub cache_ttl: CacheTtl,
+    pub cache_header: Option<String>,
     pub(crate) reasoning: Reasoning,
 }
 
@@ -78,6 +80,8 @@ impl std::fmt::Debug for Endpoint {
             .field("keep_reasoning", &self.keep_reasoning)
             .field("opencode", &self.opencode)
             .field("prompt_cache_key", &self.prompt_cache_key)
+            .field("cache_ttl", &self.cache_ttl)
+            .field("cache_header", &self.cache_header)
             .field("reasoning", &self.reasoning)
             .finish()
     }
@@ -91,6 +95,14 @@ pub enum Wire {
     Anthropic,
     Gemini,
     Decisions,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub enum CacheTtl {
+    #[serde(rename = "5m")]
+    FiveMinutes,
+    #[serde(rename = "1h")]
+    OneHour,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

@@ -119,6 +119,29 @@ def source_files() -> list[Path]:
     ]
 
 
+def skip_token(text: str, i: int) -> int:
+    n = len(text)
+    c = text[i]
+    if c == "/" and i + 1 < n and text[i + 1] == "/":
+        j = text.find("\n", i)
+        return n if j < 0 else j
+    if c == '"':
+        j = i + 1
+        while j < n:
+            if text[j] == "\\":
+                j += 2
+                continue
+            if text[j] == '"':
+                break
+            j += 1
+        return j + 1
+    if c == "'":
+        m = re.match(r"'(?:\\.|[^\\'])'", text[i:])
+        if m:
+            return i + m.end()
+    return i
+
+
 def block_end(text: str, start: int) -> int:
     """Index just past the braced block beginning at or after `start`."""
     depth = 0
@@ -126,27 +149,11 @@ def block_end(text: str, start: int) -> int:
     i = start
     n = len(text)
     while i < n:
+        j = skip_token(text, i)
+        if j != i:
+            i = j
+            continue
         c = text[i]
-        if c == "/" and i + 1 < n and text[i + 1] == "/":
-            j = text.find("\n", i)
-            i = n if j < 0 else j
-            continue
-        if c == '"':
-            j = i + 1
-            while j < n:
-                if text[j] == "\\":
-                    j += 2
-                    continue
-                if text[j] == '"':
-                    break
-                j += 1
-            i = j + 1
-            continue
-        if c == "'":
-            m = re.match(r"'(?:\\.|[^\\'])'", text[i:])
-            if m:
-                i += m.end()
-                continue
         if c == "{":
             depth += 1
             seen = True
@@ -273,14 +280,7 @@ def command_drift() -> list[str]:
     )
 
 
-def main() -> int:
-    args = set(sys.argv[1:])
-    check = "--check" in args
-    update = "--update" in args
-
-    rows = items()
-    fns = functions()
-    tree = tree_lines()
+def summarize_items(rows, fns) -> None:
     pub = sum(1 for r in rows if r[0] == "pub")
     crate = sum(1 for r in rows if r[0] == "pub(crate)")
     sup = sum(1 for r in rows if r[0] == "pub(super)")
@@ -290,6 +290,9 @@ def main() -> int:
     print(f"items {len(rows)} (pub {pub}, pub(crate) {crate}, pub(super) {sup})")
     print("by kind: " + ", ".join(f"{k} {n}" for k, n in kinds.most_common()))
     print(f"functions {len(fns)}, bodies with no other mention {len(orphans)}")
+
+
+def summarize_tree(tree) -> None:
     source = [r for r in tree if r[1] == "source"]
     test = [r for r in tree if r[1] == "test"]
     source_lines = sum(r[2] for r in source)
@@ -300,6 +303,8 @@ def main() -> int:
     )
     print(f"files over {CAP} lines: {sum(1 for _, k, n in source if n > CAP)}")
 
+
+def write_tables(fns, tree) -> None:
     out = ROOT / "off" / "functions.tsv"
     out.parent.mkdir(exist_ok=True)
     out.write_text(
@@ -313,15 +318,15 @@ def main() -> int:
         + "\n"
     )
 
-    hits = ratchet(tree)
-    live = [(label, keep, count) for label, keep, count in hits if count]
-    print(f"delete-list names still present: {len(live)} of {len(hits)}")
 
-    if update or not BASELINE.is_file():
-        write_baseline(hits)
-        print(f"baseline written: {BASELINE.relative_to(ROOT)}")
-        return 0
+def deny(title: str, lines: list[str]) -> int:
+    print(title)
+    for line in lines:
+        print(f"  {line}")
+    return 1
 
+
+def verdict(hits, live, check: bool) -> int:
     base = read_baseline()
     grew = [
         (label, keep, count, base.get(label))
@@ -341,22 +346,43 @@ def main() -> int:
 
     drift = command_drift()
     if drift:
-        print("api-census deny: commands table")
-        for line in drift:
-            print(f"  {line}")
-        return 1
+        return deny("api-census deny: commands table", drift)
 
     if grew:
-        print("api-census deny:")
-        for label, keep, now, was in grew:
-            print(f"  {label}: {was} -> {now} (keep {keep})")
-        return 1
+        return deny(
+            "api-census deny:",
+            [f"{label}: {was} -> {now} (keep {keep})" for label, keep, now, was in grew],
+        )
 
     if not check:
         for label, keep, count in live:
             print(f"  {count:4}x {label} (keep {keep})")
     print("api-census deny: clean")
     return 0
+
+
+def main() -> int:
+    args = set(sys.argv[1:])
+    check = "--check" in args
+    update = "--update" in args
+
+    rows = items()
+    fns = functions()
+    tree = tree_lines()
+    summarize_items(rows, fns)
+    summarize_tree(tree)
+    write_tables(fns, tree)
+
+    hits = ratchet(tree)
+    live = [(label, keep, count) for label, keep, count in hits if count]
+    print(f"delete-list names still present: {len(live)} of {len(hits)}")
+
+    if update or not BASELINE.is_file():
+        write_baseline(hits)
+        print(f"baseline written: {BASELINE.relative_to(ROOT)}")
+        return 0
+
+    return verdict(hits, live, check)
 
 
 if __name__ == "__main__":

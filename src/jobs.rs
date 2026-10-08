@@ -134,7 +134,7 @@ pub(crate) fn since(workspace: &Path, started: u64, session: Option<&str>) -> Ve
 }
 
 fn prune(workspace: &Path, record: &Record) -> bool {
-    let cutoff = crate::mail::now().saturating_sub(crate::limits::JOB_RETAIN.as_secs());
+    let cutoff = crate::mail::now().saturating_sub(crate::limits::limits().job_retain().as_secs());
     let exit = exit_path(workspace, &record.id);
     if check_id(&record.id).is_err()
         || record.started >= cutoff
@@ -260,7 +260,7 @@ pub(crate) async fn wait(
     mut waiting: impl FnMut() -> Result<()>,
 ) -> Result<Status> {
     let started = std::time::Instant::now();
-    let mut pause = crate::limits::JOB_POLL_START_SECS;
+    let mut pause = crate::limits::limits().job_poll_start_secs;
     let mut announced = false;
     loop {
         let current = status(workspace, &load(workspace, id)?)?;
@@ -273,7 +273,7 @@ pub(crate) async fn wait(
             waiting()?;
         }
         tokio::time::sleep(crate::limits::seconds(pause.min(limit_secs - elapsed))).await;
-        pause = (pause * 2).min(crate::limits::JOB_POLL_CAP_SECS);
+        pause = (pause * 2).min(crate::limits::limits().job_poll_cap_secs);
     }
 }
 

@@ -39,14 +39,28 @@ fn steps(old: &[&str], new: &[&str]) -> Option<Vec<Step>> {
     Some(steps)
 }
 
-pub(in crate::tools) fn changed(old: &[&str], new: &[&str]) -> Vec<Span> {
-    let Some(steps) = steps(old, new) else {
+pub(in crate::tools) fn changed_and_patch(
+    old: &[&str],
+    new: &[&str],
+) -> (Vec<Span>, Option<String>) {
+    let Some(mut computed) = steps(old, new) else {
         let (head, _, new_end) = trimmed(old, new);
-        return vec![Span {
-            start: head,
-            len: new_end - head,
-        }];
+        return (
+            vec![Span {
+                start: head,
+                len: new_end - head,
+            }],
+            None,
+        );
     };
+    let spans = spans_from(&computed);
+    for run in computed.split_mut(|step| *step == Step::Keep) {
+        run.sort_by_key(|step| *step == Step::Add);
+    }
+    (spans, render(&computed, old, new))
+}
+
+fn spans_from(steps: &[Step]) -> Vec<Span> {
     let mut spans: Vec<Span> = Vec::new();
     let mut open: Option<Span> = None;
     let mut at = 0;
@@ -102,13 +116,17 @@ fn walk(old: &[&str], new: &[&str]) -> Vec<Step> {
 }
 
 pub(in crate::tools) fn patch(old: &[&str], new: &[&str]) -> Option<String> {
-    let mut steps = steps(old, new)?;
-    for run in steps.split_mut(|step| *step == Step::Keep) {
+    let mut computed = steps(old, new)?;
+    for run in computed.split_mut(|step| *step == Step::Keep) {
         run.sort_by_key(|step| *step == Step::Add);
     }
+    render(&computed, old, new)
+}
+
+fn render(steps: &[Step], old: &[&str], new: &[&str]) -> Option<String> {
     let mut starts = Vec::with_capacity(steps.len() + 1);
     let (mut i, mut j) = (0, 0);
-    for step in &steps {
+    for step in steps {
         starts.push((i, j));
         i += usize::from(*step != Step::Add);
         j += usize::from(*step != Step::Remove);
@@ -116,7 +134,7 @@ pub(in crate::tools) fn patch(old: &[&str], new: &[&str]) -> Option<String> {
     let marks: Vec<usize> = (0..steps.len())
         .filter(|at| steps[*at] != Step::Keep)
         .collect();
-    if marks.len() > crate::limits::DISPLAY_PATCH_LINES {
+    if marks.len() > crate::limits::limits().display_patch_lines {
         return None;
     }
     let mut out = Vec::new();

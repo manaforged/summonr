@@ -5,8 +5,6 @@ use std::sync::Mutex;
 
 use serde_json::Value;
 
-use crate::limits::MCP_LOG_MAX;
-
 struct Sink {
     dir: PathBuf,
     file: File,
@@ -28,7 +26,10 @@ impl Journal {
         let Ok(mut slot) = self.0.lock() else {
             return;
         };
-        if slot.as_ref().is_none_or(|sink| sink.written > MCP_LOG_MAX) {
+        if slot
+            .as_ref()
+            .is_none_or(|sink| sink.written > crate::limits::limits().mcp_log_max_bytes)
+        {
             *slot = slot.take().map_or_else(Sink::open, Sink::rotate);
         }
         if let Some(sink) = slot.as_mut()
@@ -44,7 +45,7 @@ impl Sink {
         let dir = crate::prompt::summonr_home().ok()?.join("logs");
         std::fs::create_dir_all(&dir).ok()?;
         let sink = Self::attach(dir)?;
-        if sink.written > MCP_LOG_MAX {
+        if sink.written > crate::limits::limits().mcp_log_max_bytes {
             return Self::rotate(sink);
         }
         Some(sink)

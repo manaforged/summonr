@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use crate::limits::SPEED_WINDOW as WINDOW;
 const FLOOR: f64 = 0.25;
 
 #[derive(Clone, Debug)]
@@ -47,7 +46,7 @@ impl Speed {
         while self
             .samples
             .front()
-            .is_some_and(|(at, _)| now.duration_since(*at) > WINDOW)
+            .is_some_and(|(at, _)| now.duration_since(*at) > crate::limits::limits().speed_window())
         {
             self.samples.pop_front();
         }
@@ -58,7 +57,7 @@ impl Speed {
         let chars: usize = self
             .samples
             .iter()
-            .filter(|(at, _)| now.duration_since(*at) <= WINDOW)
+            .filter(|(at, _)| now.duration_since(*at) <= crate::limits::limits().speed_window())
             .map(|(_, chars)| *chars)
             .sum();
         if chars == 0 {
@@ -66,7 +65,7 @@ impl Speed {
         }
         let span = now
             .duration_since(first)
-            .min(WINDOW)
+            .min(crate::limits::limits().speed_window())
             .as_secs_f64()
             .max(FLOOR);
         Some(chars as f64 / self.chars_per_token / span)

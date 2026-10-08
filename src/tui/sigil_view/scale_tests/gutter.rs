@@ -7,28 +7,28 @@ use crate::tui::Msg;
 const TODO: &str =
     r#"{"items":[{"text":"Plan","status":"in_progress"},{"text":"Ship","status":"pending"}]}"#;
 
-fn chat_side(lines: &[String], cols: u16) -> (Vec<String>, usize) {
-    let border = lines
-        .last()
-        .and_then(|line| line.chars().position(|c| c == '│'));
-    let lines = lines
+fn chat_side(lines: &[String], chat: usize) -> Vec<String> {
+    lines
         .iter()
-        .map(|line| line.chars().take(border.unwrap_or(line.len())).collect())
-        .collect();
-    (lines, border.unwrap_or(usize::from(cols)))
+        .map(|line| line.chars().take(chat).collect())
+        .collect()
 }
 
 #[test]
 fn chrome_rows_start_at_the_gutter() {
     for cols in [40, 110, 200] {
+        let seen = std::cell::RefCell::new(None);
         let full = frame_with(busy_info(), cols, 40, State::Busy, |app| {
             app.update(Msg::Event(Event::ToolCall {
                 id: "todo".to_owned(),
                 name: "todo".to_owned(),
                 arguments: TODO.to_owned(),
             }));
+            let (chat, side) = app.layout.get().split(cols);
+            seen.replace(Some(if side == 0 { cols } else { chat + 1 }));
         });
-        let (lines, width) = chat_side(&full, cols);
+        let width = usize::from(seen.into_inner().unwrap());
+        let lines = chat_side(&full, width);
         let screen = full.join("\n");
         let rows = [
             ("busy", find(&lines, " · 0s")),

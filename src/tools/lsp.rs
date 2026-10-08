@@ -30,7 +30,7 @@ pub(super) struct Conn {
     next_id: i64,
     root: String,
     clean: bool,
-    docs: std::collections::HashMap<String, (String, i64)>,
+    docs: std::collections::HashMap<String, (String, i64, (u64, u64))>,
     options: Value,
     server: String,
     key: String,
@@ -229,41 +229,7 @@ impl Conn {
     }
 
     async fn did_open(&mut self, path: &Path) -> Result<()> {
-        let text = std::fs::read_to_string(path)
-            .map_err(|error| Error::Tool(format!("cannot read {}: {error}", path.display())))?;
-        let uri = file_uri(path)?;
-        let language_id = language::language_id(path);
-        match self.docs.get_mut(&uri) {
-            Some((held, _)) if *held == text => Ok(()),
-            Some((held, version)) => {
-                *version += 1;
-                *held = text.clone();
-                let version = *version;
-                self.notify(
-                    "textDocument/didChange",
-                    json!({
-                        "textDocument": { "uri": uri, "version": version },
-                        "contentChanges": [{ "text": text }]
-                    }),
-                )
-                .await
-            }
-            None => {
-                self.docs.insert(uri.clone(), (text.clone(), 1));
-                self.notify(
-                    "textDocument/didOpen",
-                    json!({
-                        "textDocument": {
-                            "uri": uri,
-                            "languageId": language_id,
-                            "version": 1,
-                            "text": text
-                        }
-                    }),
-                )
-                .await
-            }
-        }
+        docs::did_open(self, path).await
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -371,6 +337,7 @@ impl Drop for Conn {
 }
 
 mod detect;
+mod docs;
 mod proto;
 mod tool;
 

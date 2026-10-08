@@ -154,8 +154,9 @@ fn an_edit_shows_its_diff_under_one_call_line() {
         shown.contains("first_old") && shown.contains("first_new"),
         "{shown}"
     );
+    assert!(shown.contains("+1 −1"), "{shown}");
     assert!(
-        shown.contains("+1 −1") && shown.contains("unified"),
+        !shown.contains("unified") && !shown.contains("Before") && !shown.contains("@@"),
         "{shown}"
     );
     assert!(!shown.contains("Applied"), "{shown}");

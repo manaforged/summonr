@@ -144,7 +144,7 @@ impl ToolRegistry {
             limit
                 .saturating_add(before.min(offset - 1))
                 .saturating_add(after)
-                .clamp(1, crate::limits::READ_LINE_LIMIT)
+                .clamp(1, crate::limits::limits().read_line_limit)
         });
         let tags = args.get("tags").and_then(Value::as_bool).unwrap_or(false);
         let mut reader = match self.open_text(path)? {
@@ -152,7 +152,7 @@ impl ToolRegistry {
             Opened::Image(image) => return Ok(image),
         };
         let first = offset.saturating_sub(1).saturating_sub(before);
-        scan(&mut reader, path, first, limit)?
+        scan(&mut reader, path, first, limit, tags)?
             .render(path, first, tags)
             .map(ToolOutput::ok)
     }
@@ -195,6 +195,7 @@ fn scan(
     path: &str,
     first: usize,
     limit: usize,
+    tags: bool,
 ) -> Result<Page> {
     let mut page = Page::default();
     let mut read_bytes = 0_usize;
@@ -230,7 +231,11 @@ fn scan(
         };
         let over = read_bytes > READ_MAX_WORK_BYTES;
         if page.wants(first, limit) {
-            let hash = line_hash(body.strip_suffix(b"\r").unwrap_or(body));
+            let hash = if tags {
+                line_hash(body.strip_suffix(b"\r").unwrap_or(body))
+            } else {
+                String::new()
+            };
             let (line, clipped) = decode(body, over && !ended);
             page.keep(line, hash, clipped);
         }

@@ -309,15 +309,15 @@ fn confirm_risky_in_policy_toml_opts_into_asking_before_routine_hazards() {
     std::fs::write(&risky, "confirm = \"risky\"\n").unwrap();
     std::fs::write(&quiet, "confirm = \"destructive\"\n").unwrap();
     let mut policy = Policy::builtin();
-    assert_eq!(policy.confirm(), Gate::Destructive);
+    assert_eq!(policy.confirm, Gate::Destructive);
     assert_eq!(
-        super::danger("sudo true", workspace, workspace, policy.confirm()),
+        super::danger("sudo true", workspace, workspace, policy.confirm),
         None
     );
     policy.overlay_file(&risky).unwrap();
     policy.overlay_file(&quiet).unwrap();
-    assert_eq!(policy.confirm(), Gate::Risky);
-    assert!(super::danger("sudo true", workspace, workspace, policy.confirm()).is_some());
+    assert_eq!(policy.confirm, Gate::Risky);
+    assert!(super::danger("sudo true", workspace, workspace, policy.confirm).is_some());
 }
 
 fn refusal(command: &str) -> String {

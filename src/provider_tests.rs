@@ -171,3 +171,16 @@ fn a_plan_permission_failure_does_not_read_as_a_rejected_key() {
         );
     }
 }
+
+#[test]
+fn a_rejected_key_error_does_not_echo_the_key() {
+    let body = r#"{"error":{"message":"Incorrect API key provided: sk-ab12*****xy9z. You can find your API key at https://example.com.","type":"invalid_request_error"}}"#;
+    let error = response_failure(401, body, None);
+    let failure = error.provider_failure().unwrap();
+    assert!(!failure.message.contains("xy9z"), "{}", failure.message);
+    assert!(
+        failure.message.contains("API key provided: [key]"),
+        "{}",
+        failure.message
+    );
+}

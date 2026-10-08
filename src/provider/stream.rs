@@ -41,6 +41,7 @@ impl Client {
         partial: &mut Partial,
     ) -> Result<AssistantMessage> {
         let body = self.request(request, true)?;
+        let route = self.cache_header.as_ref().map(|_| request.prefix_hash());
         let model = body.model().map(str::to_string);
         let bytes = body.to_bytes()?;
         drop(body);
@@ -50,7 +51,14 @@ impl Client {
             sink.write("request", &String::from_utf8_lossy(&bytes));
         }
         let mut bytes = self
-            .send(&url, bytes, model.as_deref(), &request.session, true)
+            .send(
+                &url,
+                bytes,
+                model.as_deref(),
+                &request.session,
+                route.as_deref(),
+                true,
+            )
             .await?
             .into_stream()
             .map_err(|error| Error::provider(ProviderFailureKind::Transport, error.to_string()))?;

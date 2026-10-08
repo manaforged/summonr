@@ -66,6 +66,7 @@ fn child_row(kid: &Agent, first: bool, roots: &[String]) -> NodeBuilder {
         )
         .child(label(mark, tone))
         .child(label(kid.title.clone(), title))
+        .child(label(kid.access.name(), Look::xs(Token::Gray10)))
         .child(label(workspace_relative(&note, roots), note_look).ellipsize());
     let mut rows = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))

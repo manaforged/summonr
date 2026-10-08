@@ -1,6 +1,5 @@
 use super::*;
 use crate::catalog::{Cost, Model, tokens};
-use crate::limits::{MODEL_PROBE, PROBE};
 
 pub(super) fn loaded(value: &Value) -> Option<u32> {
     value
@@ -142,7 +141,10 @@ pub(super) fn reason(text: &str) -> String {
         .get("message")
         .or(Some(error))
         .and_then(Value::as_str)
-        .map_or_else(|| text.to_string(), str::to_string)
+        .map_or_else(
+            || crate::text::hide_key_echo(text),
+            crate::text::hide_key_echo,
+        )
 }
 
 impl Client {
@@ -229,14 +231,17 @@ impl Client {
             Ok(info) if info.keyless() => Cost::Free,
             Ok(_) | Err(_) => Cost::Unknown,
         };
-        let mut models = tokio::time::timeout(MODEL_PROBE, client.catalog(covered))
-            .await
-            .map_err(|elapsed| {
-                Error::provider(
-                    ProviderFailureKind::Transport,
-                    format!("GET /models {elapsed}"),
-                )
-            })??;
+        let mut models = tokio::time::timeout(
+            crate::limits::limits().model_probe(),
+            client.catalog(covered),
+        )
+        .await
+        .map_err(|elapsed| {
+            Error::provider(
+                ProviderFailureKind::Transport,
+                format!("GET /models {elapsed}"),
+            )
+        })??;
         crate::catalog::enrich(&endpoint.name, endpoint.base_url.as_deref(), &mut models);
         crate::catalog::remember(&endpoint.name, models.clone())?;
         Ok(models)
@@ -293,7 +298,7 @@ impl Client {
         if !local && let Some(limit) = self.recorded(endpoint, model) {
             return Some(limit);
         }
-        tokio::time::timeout(PROBE, self.probe(model))
+        tokio::time::timeout(crate::limits::limits().probe(), self.probe(model))
             .await
             .ok()
             .flatten()

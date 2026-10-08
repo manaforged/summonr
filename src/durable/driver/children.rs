@@ -12,7 +12,7 @@ impl SessionDriver {
         }
         let workspace = record.workspace == self.workspace
             || record.access == crate::child::Access::Implement
-                && crate::worktree::same_repository(&self.workspace, &record.workspace);
+                && crate::worktree::is_delta_of(&self.workspace, &record.workspace);
         if record.version != 1
             || record.parent != self.id()
             || record.depth != self.depth().saturating_add(1)

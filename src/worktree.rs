@@ -164,11 +164,23 @@ fn add_from(primary: &Path, base: &str, start: &str) -> Result<Tree> {
     Ok(tree)
 }
 
-pub(crate) fn same_repository(left: &Path, right: &Path) -> bool {
-    match (primary(left), primary(right)) {
-        (Ok(left), Ok(right)) => left == right,
-        _ => false,
-    }
+pub(crate) fn is_delta_of(workspace: &Path, candidate: &Path) -> bool {
+    let Ok(primary) = primary(workspace) else {
+        return false;
+    };
+    let primary = primary.canonicalize().unwrap_or_else(|_| primary.clone());
+    let (Some(name), Some(parent)) = (primary.file_name(), primary.parent()) else {
+        return false;
+    };
+    let root = parent.join(format!("{}-deltas", name.to_string_lossy()));
+    let root = root.canonicalize().unwrap_or(root);
+    let Some(actual) = candidate.parent() else {
+        return false;
+    };
+    let actual = actual
+        .canonicalize()
+        .unwrap_or_else(|_| actual.to_path_buf());
+    actual == root && candidate.file_name().is_some()
 }
 
 impl Tree {

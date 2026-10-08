@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io;
@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::store;
-use super::tree::{Snapshot, changed};
+use super::tree::{Entry, Snapshot, changed};
 
 mod ledger;
 mod progress;
@@ -125,6 +125,10 @@ struct Trees<T> {
     base: Option<T>,
     candidate: Option<T>,
 }
+
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct LegacyFiles(BTreeMap<String, Entry>);
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 pub(crate) struct Work {
@@ -302,7 +306,16 @@ impl Work {
             Err(error) => return Err(error),
         };
         let trees: Trees<Snapshot> = match std::fs::read(path.with_extension(TREES)) {
-            Ok(bytes) => serde_json::from_slice(&bytes)?,
+            Ok(bytes) => match serde_json::from_slice(&bytes) {
+                Ok(trees) => trees,
+                Err(_) => {
+                    let legacy: Trees<LegacyFiles> = serde_json::from_slice(&bytes)?;
+                    Trees {
+                        base: legacy.base.map(|files| Snapshot::from_files(files.0)),
+                        candidate: legacy.candidate.map(|files| Snapshot::from_files(files.0)),
+                    }
+                }
+            },
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Some(work)),
             Err(error) => return Err(error),
         };

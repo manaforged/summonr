@@ -40,7 +40,7 @@ impl ToolRegistry {
 
     fn spill(&self, raw: &str) -> Result<String> {
         let log_path = self.spill_file(SPILL_PREFIX, raw.as_bytes())?;
-        let note = full_output_note(&log_path, true);
+        let note = full_output_note(&log_path, true, text_lines(raw));
         Ok(note.trim_start().to_string())
     }
 
@@ -82,13 +82,20 @@ impl ToolRegistry {
     }
 }
 
-pub(super) fn full_output_note(log_path: &Path, cut: bool) -> String {
+pub(super) fn full_output_note(log_path: &Path, cut: bool, lines: Option<u64>) -> String {
     if !cut {
         return String::new();
     }
-    if let Ok(Some(lines)) = crate::diff::line_count(log_path) {
+    if let Some(lines) = lines {
         return format!("\n[full output: {} ({lines} lines)]", log_path.display());
     }
     let size = std::fs::metadata(log_path).map_or(0, |meta| meta.len());
     format!("\n[full output: {} ({size} bytes)]", log_path.display())
+}
+
+fn text_lines(raw: &str) -> Option<u64> {
+    if raw.as_bytes()[..raw.len().min(8000)].contains(&0) {
+        return None;
+    }
+    Some(raw.lines().count() as u64)
 }

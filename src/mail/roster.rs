@@ -15,8 +15,8 @@ impl Agent {
 }
 
 pub(crate) fn live(dir: &Path) -> Vec<Agent> {
-    let cutoff = now().saturating_sub(STALE_SECS);
-    let sweep = now().saturating_sub(SWEEP_SECS);
+    let cutoff = now().saturating_sub(crate::limits::limits().mail_stale_secs);
+    let sweep = now().saturating_sub(crate::limits::limits().mail_sweep_secs);
     let mut roster = Vec::new();
     for entry in std::fs::read_dir(dir.join("agents"))
         .into_iter()

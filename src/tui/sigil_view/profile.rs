@@ -248,7 +248,7 @@ pub(super) fn info() -> Info {
 }
 
 fn frame_budget(fps: u32) -> std::time::Duration {
-    crate::limits::FRAME_WINDOW / fps.clamp(FPS_MIN, FPS_MAX)
+    crate::limits::limits().frame_window() / fps.clamp(FPS_MIN, FPS_MAX)
 }
 
 #[cfg(test)]

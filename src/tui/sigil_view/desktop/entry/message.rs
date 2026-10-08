@@ -78,6 +78,9 @@ pub(super) fn user(body: String) -> NodeBuilder {
 }
 
 fn code_block(app: &App, lang: String, body: String) -> NodeBuilder {
+    if let Some(card) = crate::tui::sigil_view::chat::entry::diff_card(app, &body) {
+        return card;
+    }
     let copy = app.clone();
     let copied = body.clone();
     let head = container()

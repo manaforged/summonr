@@ -13,6 +13,7 @@ pub struct CompletionRequest<'a> {
     pub(crate) reasoning: Reasoning,
     pub(crate) traits: super::wire::traits::Traits,
     pub(crate) tools_json: Option<&'a ToolsJson>,
+    pub(crate) prefix_hash: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
@@ -219,6 +220,7 @@ impl<'a> CompletionRequest<'a> {
             reasoning: Reasoning::default(),
             traits: super::wire::traits::traits(&model),
             tools_json: None,
+            prefix_hash: None,
             model,
         }
     }
@@ -236,6 +238,12 @@ impl<'a> CompletionRequest<'a> {
         self
     }
 
+    #[must_use]
+    pub fn with_prefix_hash(mut self, prefix_hash: String) -> Self {
+        self.prefix_hash = Some(prefix_hash);
+        self
+    }
+
     fn tools_bytes(&self) -> std::borrow::Cow<'a, [u8]> {
         self.tools_json.map_or_else(
             || std::borrow::Cow::Owned(serde_json::to_vec(self.tools).unwrap_or_default()),
@@ -244,6 +252,9 @@ impl<'a> CompletionRequest<'a> {
     }
 
     pub(crate) fn prefix_hash(&self) -> String {
+        if let Some(prefix_hash) = &self.prefix_hash {
+            return prefix_hash.clone();
+        }
         let system = self.messages.first().map(|message| &message.content);
         let tools = self.tools_bytes();
         let mut bytes = Vec::with_capacity(tools.len() + self.model.len() + 64);

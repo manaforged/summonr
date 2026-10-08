@@ -11,7 +11,6 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use super::{Notice, agreed, hello, notification, request};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_CANCEL_WRITE, MCP_FRAME_MAX, MCP_STDERR_TAIL};
 use crate::tools::command::ProcessGroup;
 use crate::tools::sandbox::Sandbox;
 
@@ -22,7 +21,7 @@ const SECRET_MIN: usize = 8;
 pub(crate) struct Client {
     _group: Option<ProcessGroup>,
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     reader: BufReader<ChildStdout>,
     pending: Vec<u8>,
     over: bool,
@@ -94,7 +93,7 @@ impl Client {
         Ok(Self {
             _group,
             child,
-            stdin,
+            stdin: Some(stdin),
             reader: BufReader::new(stdout),
             pending: Vec::new(),
             over: false,
@@ -149,7 +148,11 @@ impl Client {
             return;
         };
         if !matches!(
-            self.send(&line, Instant::now() + MCP_CANCEL_WRITE).await,
+            self.send(
+                &line,
+                Instant::now() + crate::limits::limits().mcp_cancel_write()
+            )
+            .await,
             Ok(Ok(()))
         ) {
             self.broken = true;
@@ -162,8 +165,9 @@ impl Client {
         deadline: Instant,
     ) -> std::result::Result<std::io::Result<()>, tokio::time::error::Elapsed> {
         tokio::time::timeout_at(deadline, async {
-            self.stdin.write_all(line.as_bytes()).await?;
-            self.stdin.flush().await
+            let pipe = self.pipe()?;
+            pipe.write_all(line.as_bytes()).await?;
+            pipe.flush().await
         })
         .await
     }
@@ -228,7 +232,9 @@ impl Client {
                 .iter()
                 .position(|byte| *byte == b'\n')
                 .map_or((chunk.len(), false), |at| (at + 1, true));
-            if !self.over && self.pending.len() + take <= MCP_FRAME_MAX {
+            if !self.over
+                && self.pending.len() + take <= crate::limits::limits().mcp_frame_max_bytes
+            {
                 self.pending.extend_from_slice(&chunk[..take]);
             } else if !self.over {
                 self.over = true;
@@ -250,9 +256,16 @@ impl Client {
 
     async fn write(&mut self, value: &Value) -> Result<()> {
         let line = frame_line(value)?;
-        self.stdin.write_all(line.as_bytes()).await?;
-        self.stdin.flush().await?;
+        let pipe = self.pipe()?;
+        pipe.write_all(line.as_bytes()).await?;
+        pipe.flush().await?;
         Ok(())
+    }
+
+    fn pipe(&mut self) -> std::io::Result<&mut ChildStdin> {
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::BrokenPipe))
     }
 
     pub(crate) fn alive(&mut self) -> bool {
@@ -299,6 +312,18 @@ impl Drop for Client {
         if let Some(drain) = &self.drain {
             drain.abort();
         }
+        drop(self.stdin.take());
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        if runtime.runtime_flavor() != tokio::runtime::RuntimeFlavor::MultiThread {
+            return;
+        }
+        let grace = crate::limits::limits().mcp_close_grace();
+        let child = &mut self.child;
+        drop(tokio::task::block_in_place(|| {
+            runtime.block_on(tokio::time::timeout(grace, child.wait()))
+        }));
     }
 }
 
@@ -325,7 +350,9 @@ async fn tail(mut pipe: ChildStderr, keep: Arc<Mutex<Vec<u8>>>) {
             break;
         };
         bytes.extend_from_slice(&chunk[..read]);
-        let excess = bytes.len().saturating_sub(MCP_STDERR_TAIL);
+        let excess = bytes
+            .len()
+            .saturating_sub(crate::limits::limits().mcp_stderr_tail_bytes);
         bytes.drain(..excess);
     }
 }

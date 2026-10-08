@@ -1,5 +1,4 @@
 use super::*;
-use crate::limits::{CONNECT, STREAM_TOTAL};
 
 impl Client {
     pub async fn login(
@@ -33,8 +32,8 @@ impl Client {
             }
         }
         let timeouts = leyline::TimeoutConfig::new()
-            .total(STREAM_TOTAL)
-            .connect(CONNECT)
+            .total(crate::limits::limits().stream_total())
+            .connect(crate::limits::limits().connect())
             .read(opts.idle_timeout);
         let builder = leyline::Session::builder().timeout(timeouts);
         let mut headers = headers;
@@ -65,6 +64,8 @@ impl Client {
             keep_reasoning: false,
             name: String::new(),
             prompt_cache_key: opts.prompt_cache_key,
+            cache_ttl: crate::limits::limits().cache_ttl,
+            cache_header: None,
             wire: opts.wire,
             reasoning: Reasoning::default(),
             idle: opts.idle_timeout,

@@ -56,7 +56,7 @@ pub(crate) fn run(
             root(app)
         })
     });
-    stop(worker, &cmd_tx, crate::limits::WORKER_STOP);
+    stop(worker, &cmd_tx, crate::limits::limits().worker_stop());
     opened.map_err(|error| Error::Tool(format!("the window failed: {error}")))?;
     Ok(0)
 }

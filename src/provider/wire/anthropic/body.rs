@@ -5,7 +5,8 @@ use serde_json::{Map, Value, json};
 
 use super::super::traits::Thinking;
 use super::super::{Wired, arguments};
-use super::part::{Origin, Part, Use};
+use super::part::{Origin, Part, Use, control};
+use crate::endpoint::CacheTtl;
 use crate::provider::{CompletionRequest, Continuation, Message, Reasoning, Role, Step};
 
 #[derive(Serialize)]
@@ -23,20 +24,21 @@ impl Turn<'_> {
 pub(crate) fn body(
     call: &CompletionRequest<'_>,
     reasoning: &Reasoning,
+    ttl: CacheTtl,
     stream: bool,
 ) -> crate::error::Result<Wired> {
     let (mut system, mut turns) = turns(call)?;
     if let Some(last) = system.last_mut() {
-        breakpoint(last);
+        last["cache_control"] = control(ttl);
     }
     let mut tools = tools(call);
     if let Some(last) = tools.last_mut() {
-        breakpoint(last);
+        last["cache_control"] = control(ttl);
     }
     if let Some(turn) = turns.last_mut()
         && let Some(last) = turn.content.iter_mut().rev().find(|part| !part.thought())
     {
-        last.breakpoint();
+        last.breakpoint(ttl);
     }
     let unthought = turns.len() > 1
         && turns[turns.len() - 1].opens("tool_result")
@@ -116,7 +118,7 @@ fn think(
                     json!({"effort": level.as_str()}),
                 );
             }
-            if unthought {
+            if unthought && thinking != Thinking::Adaptive {
                 return;
             }
             let budget = plan.budget(level, most);
@@ -138,10 +140,6 @@ fn think(
             }
         }
     }
-}
-
-fn breakpoint(part: &mut Value) {
-    part["cache_control"] = json!({"type": "ephemeral"});
 }
 
 fn tools(call: &CompletionRequest<'_>) -> Vec<Value> {
@@ -193,7 +191,7 @@ fn assistant_parts<'a>(message: &'a Message, model: &str) -> crate::error::Resul
             origin: Origin::Fresh(&call.id),
             name: &call.function.name,
             input: arguments(&call.function.name, &call.function.arguments)?,
-            cached: false,
+            cached: None,
         }));
     }
     Ok(parts)
@@ -228,7 +226,7 @@ fn retained<'a>(message: &'a Message, model: &str) -> crate::error::Result<Optio
             origin: Origin::Kept(kept),
             name: &call.function.name,
             input: arguments(&call.function.name, &call.function.arguments)?,
-            cached: false,
+            cached: None,
         }));
     }
     Ok(calls.next().is_none().then_some(parts))

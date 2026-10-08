@@ -4,7 +4,6 @@ use super::ToolRegistry;
 use crate::durable::store::{self, Staged};
 use crate::error::{Error, Result};
 
-const HUNK_ROWS: usize = crate::limits::EDIT_HUNK_ROWS;
 const HUNK_LINE_CHARS: usize = 160;
 
 pub(in crate::tools) struct Change {
@@ -40,16 +39,11 @@ impl ToolRegistry {
         content: &str,
         view: impl Into<View>,
     ) -> Result<Written> {
-        let preview = self.stage_write(dest, before, content, view)?;
+        let (preview, patch) = self.stage_write_full(dest, before, content, view)?;
         stage(dest, display, content)?
             .commit()
             .map_err(|error| Error::Tool(format!("cannot replace `{display}`: {error}")))?;
-        let old: Vec<&str> = before.lines().collect();
-        let new: Vec<&str> = content.lines().collect();
-        Ok(Written {
-            preview,
-            patch: super::spans::patch(&old, &new),
-        })
+        Ok(Written { preview, patch })
     }
 
     pub(in crate::tools) fn stage_write(
@@ -59,6 +53,16 @@ impl ToolRegistry {
         content: &str,
         view: impl Into<View>,
     ) -> Result<String> {
+        Ok(self.stage_write_full(dest, before, content, view)?.0)
+    }
+
+    fn stage_write_full(
+        &self,
+        dest: &Path,
+        before: &str,
+        content: &str,
+        view: impl Into<View>,
+    ) -> Result<(String, Option<String>)> {
         if let Some((option, detail)) =
             crate::prefs::banned_edit(dest, before, content, &self.allowed_edits)
         {
@@ -125,25 +129,37 @@ pub(in crate::tools) fn apply_changes(changes: &[Change]) -> Result<()> {
     Ok(())
 }
 
-fn edit_view(before: &str, after: &str, view: View) -> String {
+fn edit_view(before: &str, after: &str, view: View) -> (String, Option<String>) {
     if matches!(view, View::Overwrite) {
-        return overwritten(before, after);
+        let old: Vec<&str> = before.lines().collect();
+        let new: Vec<&str> = after.lines().collect();
+        return (overwritten(before, after), super::spans::patch(&old, &new));
     }
     if before.is_empty() && !after.is_empty() {
-        return format!("new file, {} lines", after.lines().count());
+        let new: Vec<&str> = after.lines().collect();
+        return (
+            format!("new file, {} lines", new.len()),
+            super::spans::patch(&[], &new),
+        );
     }
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
-    let spans = super::spans::changed(&old, &new);
+    let (spans, patch) = super::spans::changed_and_patch(&old, &new);
     let summary = super::spans::summary(old.len(), new.len(), &spans);
-    if !matches!(view, View::Tagged) || spans.is_empty() {
-        return summary;
-    }
+    let text = if !matches!(view, View::Tagged) || spans.is_empty() {
+        summary
+    } else {
+        tagged_view(&new, &spans, summary)
+    };
+    (text, patch)
+}
+
+fn tagged_view(new: &[&str], spans: &[super::spans::Span], summary: String) -> String {
     let tagged = spans
         .iter()
         .flat_map(|span| {
             crate::hashline::tagged_span(
-                &new,
+                new,
                 span.start.saturating_sub(1),
                 span.start + span.len.max(1),
             )
@@ -166,7 +182,7 @@ fn overwritten(before: &str, after: &str) -> String {
 }
 
 fn cap_rows(lines: Vec<String>) -> Vec<String> {
-    let limit = HUNK_ROWS;
+    let limit = crate::limits::limits().edit_hunk_rows;
     let mut lines = lines
         .iter()
         .map(|line| crate::text::ellipsize(line, HUNK_LINE_CHARS))

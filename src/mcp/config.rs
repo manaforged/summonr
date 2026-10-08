@@ -86,11 +86,11 @@ impl Entry {
         let allow = self.tools.clone();
         let idle = (self.keep_alive != Some(true)).then(|| {
             self.idle_secs
-                .map_or(crate::limits::MCP_IDLE, Duration::from_secs)
+                .map_or(crate::limits::limits().mcp_idle(), Duration::from_secs)
         });
         let wait = self
             .timeout_secs
-            .map_or(crate::limits::MCP_CALL, Duration::from_secs);
+            .map_or(crate::limits::limits().mcp_call(), Duration::from_secs);
         Ok(self.launch().map(|launch| Server {
             launch,
             name,

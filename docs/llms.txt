@@ -15,7 +15,7 @@
 - [Every public item, one per line](reference/summonr/api.txt): 1139 lines
 - [API overview](reference/summonr/index.html): tasks, modules, features, and examples
 - [API changes by release](reference/summonr/changes.html)
-- [summonr](reference/summonr/summonr.html): 478 items
+- [summonr](reference/summonr/summonr.html): 480 items
 - [summonr::acp](reference/summonr/summonr-acp.html): 1 items
 - [summonr::askpass](reference/summonr/summonr-askpass.html): 5 items
 - [summonr::catalog](reference/summonr/summonr-catalog.html): 24 items
@@ -27,7 +27,7 @@
 - [summonr::classify::sets](reference/summonr/summonr-classify-sets.html): 5 items
 - [summonr::classify::sweep](reference/summonr/summonr-classify-sweep.html): 2 items
 - [summonr::diff](reference/summonr/summonr-diff.html): 14 items
-- [summonr::limits](reference/summonr/summonr-limits.html): 3 items
+- [summonr::limits](reference/summonr/summonr-limits.html): 1 items
 - [summonr::mail](reference/summonr/summonr-mail.html): 0 items
 - [summonr::mail::cli](reference/summonr/summonr-mail-cli.html): 1 items
 - [summonr::modules](reference/summonr/summonr-modules.html): 20 items

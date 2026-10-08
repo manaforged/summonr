@@ -19,8 +19,6 @@ use crate::session::decorate;
 use crate::tools::{ToolOutput, needed_grant, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, verify};
 
-use crate::limits::REPAIR_LIMIT;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GrantAnswer {
     Deny,
@@ -96,6 +94,32 @@ impl<P: Provider> Loop<P> {
         Some(limit.saturating_sub(crate::limits::seconds(self.elapsed_secs())))
     }
 
+    async fn complete_outside_turn(
+        &mut self,
+        role: workflow::Role,
+        request: &CompletionRequest<'_>,
+    ) -> Result<std::result::Result<AssistantMessage, WaitError>> {
+        let started = Instant::now();
+        let message =
+            match Self::wait(self.seat(role).0.complete(request), self.remaining_time()).await {
+                Ok(message) => message,
+                Err(wait_error) => return Ok(Err(wait_error)),
+            };
+        let meter = super::meter(&message.usage, super::elapsed_millis(started));
+        let meta = UsageMeta {
+            continuation: message.continuation.clone(),
+            prefix_hash: request.prefix_hash(),
+            cost: self
+                .price_for(role)
+                .map(|price| price.cost(meter.input, meter.output, meter.cached, meter.written)),
+        };
+        self.session
+            .charge(meter, "outside a turn", &request.model, true, meta)
+            .map_err(super::session_err)?;
+        self.spent_tokens = self.session.spent_tokens();
+        Ok(Ok(message))
+    }
+
     pub(super) async fn complete_once(
         &mut self,
         role: workflow::Role,
@@ -103,6 +127,9 @@ impl<P: Provider> Loop<P> {
     ) -> Result<std::result::Result<AssistantMessage, WaitError>> {
         if let Some(reason) = self.round_abort() {
             return Err(Error::Config(reason));
+        }
+        if !self.session.turn_open() {
+            return self.complete_outside_turn(role, request).await;
         }
         let tool_bytes = request.tools_json.map_or_else(
             || crate::provider::ToolsJson::encode(request.tools).len(),
@@ -334,7 +361,7 @@ fn verify_call(command: &str) -> ToolCall {
             name: "run_command".to_string(),
             arguments: serde_json::json!({
                 "command": command,
-                "timeout_secs": crate::limits::VERIFY_TIMEOUT_SECS,
+                "timeout_secs": crate::limits::limits().verify_timeout_secs,
                 "fresh": true
             })
             .to_string(),

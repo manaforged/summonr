@@ -163,6 +163,8 @@ pub(super) fn builtin(name: &str) -> Option<Endpoint> {
         keep_reasoning: false,
         opencode: row.opencode,
         prompt_cache_key: row.prompt_cache_key,
+        cache_ttl: row.cache_ttl.unwrap_or(crate::limits::limits().cache_ttl),
+        cache_header: row.cache_header.clone(),
         reasoning: reasoning::from_preset(Some(row)),
     })
 }
@@ -215,9 +217,9 @@ pub(super) fn trim_slash(url: &str) -> String {
 }
 
 fn skew_millis() -> i64 {
-    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_millis()).unwrap_or(i64::MAX)
+    i64::try_from(crate::limits::limits().token_expiry_skew().as_millis()).unwrap_or(i64::MAX)
 }
 
 fn skew_secs() -> i64 {
-    i64::try_from(crate::limits::TOKEN_EXPIRY_SKEW.as_secs()).unwrap_or(i64::MAX)
+    i64::try_from(crate::limits::limits().token_expiry_skew().as_secs()).unwrap_or(i64::MAX)
 }

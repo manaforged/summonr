@@ -63,6 +63,18 @@ pub(crate) fn scan(path: &Path) -> io::Result<impl Iterator<Item = Line>> {
         .map(receipt_text))
 }
 
+pub(crate) fn head(path: &Path, max: usize) -> io::Result<Vec<Line>> {
+    use std::io::BufRead;
+    let file = File::open(path)?;
+    Ok(io::BufReader::new(file)
+        .lines()
+        .take(max)
+        .map_while(|line| line.ok())
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .map(receipt_text)
+        .collect())
+}
+
 pub(crate) fn header(path: &Path) -> io::Result<Line> {
     use std::io::BufRead;
     let mut first = String::new();

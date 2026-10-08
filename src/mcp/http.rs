@@ -4,7 +4,6 @@ use serde_json::{Value, json};
 use std::time::Duration;
 
 use crate::error::{Error, Result};
-use crate::limits::MCP_FRAME_MAX;
 use crate::rpc::{self, Frame, Notice};
 
 pub(super) struct Http {
@@ -50,7 +49,7 @@ impl Http {
         Ok(Self {
             client: crate::credentials::session(summonr_auth::builder(
                 wait,
-                crate::limits::CONNECT,
+                crate::limits::limits().connect(),
             ))?,
             url: url.to_string(),
             headers: headers.to_vec(),
@@ -64,8 +63,10 @@ impl Http {
     }
 
     pub(super) fn set_wait(&mut self, wait: Duration) -> Result<()> {
-        self.client =
-            crate::credentials::session(summonr_auth::builder(wait, crate::limits::CONNECT))?;
+        self.client = crate::credentials::session(summonr_auth::builder(
+            wait,
+            crate::limits::limits().connect(),
+        ))?;
         Ok(())
     }
 
@@ -139,7 +140,9 @@ impl Http {
         let status = response.status();
         if !status.is_success() {
             let body = response
-                .read_until(MCP_FRAME_MAX + 1, |_, _| false)
+                .read_until(crate::limits::limits().mcp_frame_max_bytes + 1, |_, _| {
+                    false
+                })
                 .await
                 .unwrap_or_default();
             self.expired = status == StatusCode::NOT_FOUND && self.session.is_some();
@@ -196,9 +199,10 @@ async fn read_reply(
         .is_some_and(|kind| kind.contains("text/event-stream"));
     let mut events = Events::default();
     let body = response
-        .read_until(MCP_FRAME_MAX + 1, |body, _| {
-            stream && events.feed(body, id, method, on_note)
-        })
+        .read_until(
+            crate::limits::limits().mcp_frame_max_bytes + 1,
+            |body, _| stream && events.feed(body, id, method, on_note),
+        )
         .await
         .map_err(|error| {
             Failure::Unreachable(Error::Tool(format!("`{method}` response broke: {error}")))
@@ -211,10 +215,12 @@ async fn read_reply(
             events.answer(&String::from_utf8_lossy(rest), id, method, on_note);
         }
     }
-    if events.oversize || (events.reply.is_none() && body.len() > MCP_FRAME_MAX) {
+    if events.oversize
+        || (events.reply.is_none() && body.len() > crate::limits::limits().mcp_frame_max_bytes)
+    {
         return Err(Failure::Unreachable(Error::Tool(format!(
             "a reply to `{method}` was over {} MiB; summonr dropped it",
-            MCP_FRAME_MAX / (1024 * 1024)
+            crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
         ))));
     }
     events
@@ -237,7 +243,7 @@ impl Events {
             let event = &body[self.start..end];
             self.start = end + width;
             self.searched = self.start;
-            if event.len() > MCP_FRAME_MAX {
+            if event.len() > crate::limits::limits().mcp_frame_max_bytes {
                 self.oversize = true;
                 return true;
             }
@@ -245,7 +251,7 @@ impl Events {
                 return true;
             }
         }
-        if body.len().saturating_sub(self.start) > MCP_FRAME_MAX {
+        if body.len().saturating_sub(self.start) > crate::limits::limits().mcp_frame_max_bytes {
             self.oversize = true;
             return true;
         }

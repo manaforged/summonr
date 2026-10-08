@@ -1,0 +1,4 @@
+job_wait_secs = 1
+command_wait_secs = 1
+command_kill_secs = 4
+keychain_ms = 600

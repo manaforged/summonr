@@ -16,9 +16,7 @@ use sigil::prelude::container;
 use sigil::prelude::diff;
 use sigil::prelude::icon_button;
 use sigil::prelude::image;
-use sigil::prelude::markdown;
 use sigil::prelude::markdown_inline;
-use sigil::prelude::signal;
 use sigil::prelude::text;
 use sigil::widgets::DiffBuilder;
 
@@ -29,6 +27,9 @@ use crate::tui::sigil_view::look::Look;
 mod children;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) mod fold;
+mod reply;
+#[cfg(feature = "gui")]
+pub(in crate::tui::sigil_view) use reply::diff_card;
 pub(in crate::tui::sigil_view) mod preview;
 mod steps;
 mod tools;
@@ -153,6 +154,7 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
 fn assistant(body: String, app: &App) -> NodeBuilder {
     let copy_app = app.clone();
     let copied = body.clone();
+    let shown = reply::body(&body, app);
     wrap(
         container()
             .layout(
@@ -164,7 +166,7 @@ fn assistant(body: String, app: &App) -> NodeBuilder {
             .child(
                 container()
                     .layout(LayoutStyle::block().grow(1.0).min_size(0.0, 0.0))
-                    .child(markdown(signal(body))),
+                    .child(shown),
             )
             .child(
                 icon_button("⧉", move || copy_app.copy.set(Some(copied.clone())))

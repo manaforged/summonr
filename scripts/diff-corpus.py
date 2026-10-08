@@ -39,19 +39,19 @@ def git(root, *args):
     return done.stdout
 
 
-def label(path, text):
-    added = [
+def changed(text, sign, header):
+    return [
         line[1:]
         for line in text.splitlines()
-        if line.startswith("+") and not line.startswith("+++")
+        if line.startswith(sign) and not line.startswith(header)
     ]
+
+
+def label(path, text):
+    added = changed(text, "+", "+++")
     if any("#[cfg(test)]" in line for line in added):
         return None
-    removed = [
-        line[1:]
-        for line in text.splitlines()
-        if line.startswith("-") and not line.startswith("---")
-    ]
+    removed = changed(text, "-", "---")
     is_test = bool(TEST.search(path))
     panics = (not is_test) and any(PANIC.search(line) for line in added)
     widens = any(PUB.search(line) for line in added)
@@ -61,35 +61,42 @@ def label(path, text):
     return panics, widens, guards
 
 
+def rust_diffs(patch):
+    for body in re.split(r"(?m)^diff --git ", patch)[1:]:
+        path = body.splitlines()[0].split()[-1]
+        path = path[2:] if path.startswith("b/") else path
+        if not path.endswith(".rs"):
+            continue
+        text = "diff --git " + body
+        if not 300 < len(text) < 50_000:
+            continue
+        yield path, text
+
+
+def example(sha, path, text, marked):
+    return {
+        "name": f"{sha[:7]}:{path.split('/')[-1]}"[:26],
+        "state": text,
+        "expect": {
+            "adds_panic": marked[0],
+            "widens_surface": marked[1],
+            "removes_guard": marked[2],
+        },
+    }
+
+
 def build(root, commits):
     keys = [(a, b, c) for a in (True, False) for b in (True, False) for c in (True, False)]
     buckets = {key: [] for key in keys}
     for sha in git(root, "log", "--format=%H", f"-{commits}").split():
         patch = git(root, "show", "--no-color", "--no-renames", sha)
-        for body in re.split(r"(?m)^diff --git ", patch)[1:]:
-            path = body.splitlines()[0].split()[-1]
-            path = path[2:] if path.startswith("b/") else path
-            if not path.endswith(".rs"):
-                continue
-            text = "diff --git " + body
-            if not 300 < len(text) < 50_000:
-                continue
+        for path, text in rust_diffs(patch):
             marked = label(path, text)
             if marked is None:
                 continue
             bucket = buckets[marked]
             if len(bucket) < PER_BUCKET:
-                bucket.append(
-                    {
-                        "name": f"{sha[:7]}:{path.split('/')[-1]}"[:26],
-                        "state": text,
-                        "expect": {
-                            "adds_panic": marked[0],
-                            "widens_surface": marked[1],
-                            "removes_guard": marked[2],
-                        },
-                    }
-                )
+                bucket.append(example(sha, path, text, marked))
         if all(len(rows) >= PER_BUCKET for rows in buckets.values()):
             break
     rows = [row for bucket in buckets.values() for row in bucket]

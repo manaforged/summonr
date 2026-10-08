@@ -96,8 +96,7 @@ impl ToolRegistry {
     ) -> Result<Option<ToolOutput>> {
         if !approved
             && !self.policy.is_strict()
-            && let Some(reason) =
-                crate::policy::danger(command, &self.workspace, cwd, self.policy.confirm())
+            && let Some(reason) = self.policy.needs_approval(command, &self.workspace, cwd)
         {
             return Ok(Some(ToolOutput {
                 text: format!(
@@ -156,14 +155,13 @@ impl ToolRegistry {
                 .await
                 .map_err(|error| Error::Tool(format!("job stop failed: {error}")))??;
         }
-        let status =
-            crate::jobs::wait(
-                &self.workspace,
-                id,
-                crate::runtime::JOB_WAIT_SECS,
-                || Ok(()),
-            )
-            .await?;
+        let status = crate::jobs::wait(
+            &self.workspace,
+            id,
+            crate::limits::limits().job_wait_secs,
+            || Ok(()),
+        )
+        .await?;
         Ok(ToolOutput {
             success: matches!(
                 status.state,

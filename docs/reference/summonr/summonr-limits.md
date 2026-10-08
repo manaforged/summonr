@@ -2,25 +2,13 @@
 
 | Item | Kind | Description |
 | --- | --- | --- |
-| [`JOB_RETAIN`](#job_retain) | const |  |
-| [`LOG_RETAIN`](#log_retain) | const |  |
-| [`SESSION_RETAIN`](#session_retain) | const |  |
+| [`log_retain`](#log_retain) | fn |  |
 
-## Constants
+## Functions
 
-### `JOB_RETAIN`
+### `log_retain`
 
-<pre>pub const <a href="#job_retain">JOB_RETAIN</a>: Duration</pre>
-
-
-### `LOG_RETAIN`
-
-<pre>pub const <a href="#log_retain">LOG_RETAIN</a>: Duration</pre>
-
-
-### `SESSION_RETAIN`
-
-<pre>pub const <a href="#session_retain">SESSION_RETAIN</a>: Duration</pre>
+<pre>pub fn <a href="#log_retain">log_retain</a>() -&gt; Duration</pre>
 
 
 ---

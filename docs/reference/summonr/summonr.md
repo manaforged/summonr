@@ -178,6 +178,8 @@
 | <code>api_key: Option&lt;String&gt;</code> |  |
 | <code>base_url: Option&lt;String&gt;</code> |  |
 | <code>body: Option&lt;Value&gt;</code> |  |
+| <code>cache_header: Option&lt;String&gt;</code> |  |
+| <code>cache_ttl: endpoint::CacheTtl</code> |  |
 | <code>compact_tokens: Option&lt;u32&gt;</code> |  |
 | <code>context_window: Option&lt;u32&gt;</code> |  |
 | <code>effort: Option&lt;<a href="#effort">Effort</a>&gt;</code> |  |

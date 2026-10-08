@@ -8,8 +8,6 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use serde::Deserialize;
 use serde_json::json;
 
-use summonr::limits::LOG_RETAIN as RETAIN;
-
 pub(super) struct Log {
     path: PathBuf,
     run: String,
@@ -327,7 +325,7 @@ fn sweep(dir: &Path) -> Option<String> {
                     .map_err(io::Error::other)
             });
         let expired = match (now, age) {
-            (Some(now), Ok(age)) => now.saturating_sub(age) > RETAIN,
+            (Some(now), Ok(age)) => now.saturating_sub(age) > summonr::limits::log_retain(),
             _ => false,
         };
         if !expired {

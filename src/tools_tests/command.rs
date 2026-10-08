@@ -107,9 +107,9 @@ fn the_full_output_note_counts_every_line_of_a_large_log() {
     let log = dir.path().join("out.log");
     let line = "x".repeat(1023) + "\n";
     std::fs::write(&log, line.repeat(700)).unwrap();
-    let note = spill::full_output_note(&log, true);
+    let note = spill::full_output_note(&log, true, crate::diff::line_count(&log).ok().flatten());
     assert!(note.ends_with("(700 lines)]"), "got {note}");
-    assert_eq!(spill::full_output_note(&log, false), "");
+    assert_eq!(spill::full_output_note(&log, false, None), "");
 }
 
 #[cfg(sandboxed)]

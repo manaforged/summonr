@@ -196,8 +196,6 @@ impl Context {
     }
 }
 
-pub(in crate::tui::sigil_view) use crate::limits::REPEAT_WINDOW;
-
 pub(in crate::tui::sigil_view) fn armed(
     slot: &Cell<Option<std::time::Instant>>,
     window: std::time::Duration,

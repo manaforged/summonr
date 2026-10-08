@@ -116,10 +116,89 @@ Keys on an `[endpoint.NAME]` row:
 | `fallback` | A list of endpoint names. When a request fails with an error that a retry cannot fix, the session moves to the next name. |
 | `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
+| `cache_ttl` | Prompt-cache lifetime on the Anthropic wire: `"1h"` or `"5m"`; unset uses `[limits] cache_ttl`. A cache write costs 2x the input price at `1h` and 1.25x at `5m`; a read costs 0.1x either way. `grok` also sends `x-grok-conv-id` with the prompt hash so xAI routes each request to a warm cache. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
 | `auth.label` | Name of the subscription shown when an endpoint offers both a sign-in and a key. |
 | `auth.required_scope` | A scope the token reply must grant, or the sign-in fails. |
 | `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
+
+`[limits]` in `~/.summonr/config.toml` overrides the built-in values in [`src/limits.toml`](../../src/limits.toml): every timeout, retry, size, retention, and UI timing summonr uses. A key you leave out keeps its built-in value.
+
+```toml
+[limits]
+retry_after_max_secs = 30
+cache_ttl = "5m"
+```
+
+| Key | Built in | Meaning |
+| --- | --- | --- |
+| `cache_ttl` | `"1h"` | Prompt-cache lifetime for an endpoint that sets none: `"5m"` or `"1h"`. |
+| `retry_limit` | `3` | Retries for a 429, a 5xx, or a connection error. |
+| `retry_base_ms` | `1000` | First retry wait; each retry doubles it. |
+| `retry_max_ms` | `8000` | Longest retry wait. |
+| `retry_after_max_secs` | `60` | Longest `Retry-After` summonr waits for; a longer one falls back to the next endpoint. |
+| `stream_idle_secs` | `240` | Idle stream timeout for an endpoint with no `idle_timeout_secs`. |
+| `stream_total_secs` | `86400` | Total time limit for one request. |
+| `connect_secs` | `20` | Connect timeout. |
+| `compact_percent` | `80` | Share of the context window that starts compaction. |
+| `compact_chars` | `400000` | Prompt size in characters that starts compaction when the window is unknown. |
+| `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
+| `job_wait_secs` | `120` | Wait on a job or hook before it is reported still running. |
+| `command_wait_secs` | `120` | Time before a `run_command` continues as a background job. |
+| `command_kill_secs` | `3600` | Hard stop for a foreground command with no `timeout_secs`. |
+| `grant_wait_secs` | `600` | Wait for a permission answer. |
+| `job_poll_start_secs` | `1` | First job poll interval. |
+| `job_poll_cap_secs` | `2` | Longest job poll interval. |
+| `mail_stale_secs` | `120` | A mail peer with no heartbeat for this long is stale. |
+| `mail_sweep_secs` | `86400` | Mail entries older than this are removed. |
+| `verify_timeout_secs` | `600` | Timeout for a check command. |
+| `probe_secs` | `5` | Endpoint probe timeout. |
+| `auth_secs` | `30` | Sign-in request timeout. |
+| `model_probe_secs` | `8` | Model list request timeout. |
+| `web_search_secs` | `15` | Web search timeout. |
+| `web_connect_secs` | `8` | Web connect timeout. |
+| `web_fetch_secs` | `20` | Web fetch timeout. |
+| `web_body_bytes` | `1048576` | Largest web response body. |
+| `web_redirect_max` | `5` | Most redirects a web request follows. |
+| `keychain_ms` | `5000` | OS keychain call timeout. |
+| `keychain_poll_ms` | `20` | Keychain poll interval. |
+| `mcp_open_secs` | `60` | MCP server start timeout. |
+| `mcp_call_secs` | `300` | MCP tool call timeout when a server sets none. |
+| `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
+| `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
+| `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
+| `mcp_close_grace_ms` | `500` | After closing a stdio MCP server's input, how long summonr waits for it to exit before it stops the process. |
+| `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
+| `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
+| `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |
+| `mcp_stderr_settle_secs` | `1` | Most time spent draining MCP stderr after stdout closes. |
+| `mcp_defer_bytes` | `8192` | Tool schemas above this size go behind one `mcp` tool. |
+| `mcp_found_max` | `8` | Most deferred tools returned per search. |
+| `lsp_start_secs` | `30` | Language server start timeout. |
+| `lsp_request_secs` | `30` | Language server request timeout. |
+| `lsp_check_secs` | `5` | Diagnostics wait after an edit. |
+| `log_retain_days` | `14` | Log retention. |
+| `session_retain_days` | `30` | Session retention when `[sessions] retain_days` is unset. |
+| `job_retain_days` | `7` | Finished job retention. |
+| `speed_window_secs` | `3` | Window for the tokens-per-second figure. |
+| `reader_window_ms` | `400` | Stream batching window. |
+| `frame_window_secs` | `1` | Frame budget window. |
+| `animation_ms` | `40` | Animation frame period. |
+| `spinner_ms` | `100` | Spinner frame period. |
+| `splash_reveal_ms` | `760` | Splash reveal time. |
+| `status_refresh_secs` | `1` | Status line refresh. |
+| `beat_secs` | `2` | Heartbeat interval. |
+| `notice_secs` | `2` | Time a notice stays on screen. |
+| `worker_stop_secs` | `2` | Desktop worker stop wait. |
+| `repeat_window_secs` | `2` | Window for a double key press. |
+| `step_attempts` | `3` | Attempts per plan step. |
+| `repair_limit` | `6` | Argument repairs and overflow retries per turn. |
+| `edit_hunk_rows` | `80` | Rows shown per edit hunk. |
+| `display_patch_lines` | `1000` | Most patch lines shown. |
+| `token_expiry_skew_secs` | `60` | Refresh a sign-in token this early. |
+| `read_line_limit` | `1000` | Largest `read` line limit. |
+| `paste_fold_lines` | `8` | A paste of this many lines folds. |
+| `paste_fold_chars` | `1000` | A paste of this many characters folds. |
 
 ### Environment variables
 
@@ -241,7 +320,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 
 Work is plan after accept. Without a selected plan, a request for work stays in plan mode. `/plan reject` discards the plan and returns to auto.
 
-Plan mode is off by default. Turn it on with the `plan mode` row in `/settings` or `plan_mode = true` in `~/.summonr/config.toml`. While it is off, `/plan` is refused. `--plan` still works. Leaving plan mode removes the sandbox that plan mode turned on; a sandbox from `--sandbox` or `[sandbox] on` stays.
+Plan mode is off by default. Turn it on with the `plan mode` row in `/settings` or `plan_mode = true` in `~/.summonr/config.toml`. While it is off, `/plan` is refused. `--plan` still works. The tool list stays the same in plan and auto mode, so the prompt cache survives a switch; plan mode refuses `edit` and `write` when they run. Leaving plan mode removes the sandbox that plan mode turned on; a sandbox from `--sandbox` or `[sandbox] on` stays.
 
 ### Confirmation
 
@@ -392,7 +471,7 @@ With a `scout` role, a `--steps`, `--goal`, or plan-mode job opens with a read-o
 
 The `task` tool delegates work to fresh child sessions. Only an interactive session offers it: `-p`, `--steps`, `--goal`, and `summonr acp` runs have no steering channel, so the model does not get `task` there. A model can emit several `task` calls in one response. summonr runs them concurrently. Each `implement` child edits an isolated checkout in `<repo>-deltas/<id>` that shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. Children started together do not see each other's edits. When two children change the same lines, that child's checkout stays on disk and the others still land. The receipt lists the files that landed. Implement children get the parent's file, shell, and language-server tools; background commands stay with the parent. The parent verifies after they finish. Pass `--worktree` on the session to isolate the whole run in a git worktree.
 
-A `research` child reads the parent workspace. It cannot write files or start background commands. Its shell commands run in a read-only sandbox (Seatbelt on macOS, bubblewrap on Linux) that summonr turns on for it, so it can run checks, searches, and scripts but cannot change the workspace; where no sandbox is available it has no shell. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. Children have no web tools or another `task` tool. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
+A `research` child reads the parent workspace. It cannot write files or start background commands. Its shell commands run in a read-only sandbox (Seatbelt on macOS, bubblewrap on Linux) that summonr turns on for it, so it can run checks, searches, and scripts but cannot change the workspace; where no sandbox is available it has no shell. Each child uses the endpoint context window. If the parent has a token or time budget, the children share what remains of it; otherwise a child runs until it finishes or you cancel it. A child gets the parent's system prompt and tool list byte for byte, so its first request reuses the parent's prompt cache; its instructions and working directory arrive in its first message. A child that calls `task`, `web`, an MCP tool, or peer mail gets a refusal, and a research child that calls `edit` or `write` is told it is read-only. Every child tool call, result, and answer streams into the parent transcript under the child id. A research child that finished before you pressed Esc keeps its result: the model reads it on the next turn instead of an `aborted` answer.
 
 `task` with `background: true` starts the child and returns its id at once. `task` with `child: ID` reports its state, elapsed time, and last action while it runs, and its full result once it finishes; `kill: true` stops it. A turn does not end while a background child runs: summonr waits, then defers the turn the way it does for a background command, until the child finishes or the model kills it.
 
@@ -494,11 +573,11 @@ write = ["~/.cargo/registry", "~/code"]
 
 A `~/` prefix expands to your home directory. A listed path that does not exist is skipped at startup; it is still a writable root for policy checks.
 
-A provider reply of 429, a 5xx status, or a connection error is retried up to three times with a wait that doubles from 1 s to 8 s. A `Retry-After` header replaces that wait; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back.
+A provider reply of 429, a 5xx status, or a connection error is retried up to three times with a wait that doubles from 1 s to 8 s. A `Retry-After` header replaces that wait; one over 60 s stops the retries so the turn can fall back to the next endpoint. A reply that already streamed output is retried once, then the turn falls back. A rate limit, or a connection failure before any output, also gets one more completion after those retries, unless its `Retry-After` is over 60 s.
 
 A language server gets 30 s to start and 30 s to answer an `lsp` call. The diagnostics check after an edit waits 5 s and is skipped when the server is slower. A server that misses a deadline keeps running, so a slow first index can finish in the background.
 
-summonr does not steer the model. Tool results reach it unchanged, and it decides when a turn is done; only a token or wall-clock budget that you set ends a turn early. A reply cut off at the output limit gets one note saying so. The compaction summary request carries no tools, and a failed summary retries after 8 rounds.
+summonr does not steer the model. Tool results reach it unchanged, and it decides when a turn is done; only a token or wall-clock budget that you set ends a turn early. A reply cut off at the output limit gets one note saying so. The compaction summary request sends the session's tools and history unchanged, so it reuses the prompt cache; a failed summary retries after 8 rounds.
 
 User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.toml`. A nonempty command allow list must match on every overlay (intersection). Deny lists accumulate. `write` globs in policy.toml are a narrowing filter on paths relative to a writable root; extra roots themselves come only from `[sandbox] write`, `--add-dir`, and `/write`. Empty lists add no restriction, except that `strict = true` with an empty allow list denies all commands. Repository policy can narrow user permissions, never widen them. Children inherit these restrictions.
 
@@ -506,6 +585,12 @@ User policy is `~/.summonr/policy.toml`; repository policy is `.summonr/policy.t
 
 ```toml
 confirm = "risky"
+```
+
+`ask` lists commands that always ask first, whatever `confirm` says. A command matches when it contains a pattern, the same rule as `deny`. A match shows `[ allow ]` / `[ deny ]`, and under `-p` it does not run. User and repository lists add together; a repository can add patterns, never remove them. Strict mode does not read `ask`.
+
+```toml
+ask = ["git push", "git tag", "cargo publish", "npm publish", "gh release"]
 ```
 In plan mode `edit` and `write` are denied. Shell commands stay read-only, so source edits and builds are refused. A restricted write list makes contained shell commands read-only and disables background commands; file tools still use the list.
 

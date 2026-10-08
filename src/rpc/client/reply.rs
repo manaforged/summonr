@@ -3,7 +3,6 @@ use tokio::time::Instant;
 
 use super::{Client, Read};
 use crate::error::{Error, Result};
-use crate::limits::{MCP_FRAME_MAX, MCP_PROGRESS_STRETCH, MCP_STDERR_SETTLE};
 use crate::rpc::{Ask, Frame, Notice, Reply, ask, failure, notice, outcome, parse, response};
 
 struct Clock {
@@ -21,22 +20,17 @@ impl Client {
     ) -> Result<Value> {
         let mut clock = Clock {
             deadline,
-            hard: Instant::now() + self.wait.saturating_mul(MCP_PROGRESS_STRETCH),
+            hard: Instant::now()
+                + self
+                    .wait
+                    .saturating_mul(crate::limits::limits().mcp_progress_stretch),
         };
         loop {
-            let read = match tokio::time::timeout_at(clock.deadline, self.frame()).await {
-                Ok(read) => read?,
-                Err(_elapsed) if self.broken => {
-                    if let Some(drain) = &self.drain {
-                        drain.abort();
-                    }
-                    self.settle_stderr().await?;
-                    Read::Closed
-                }
-                Err(_elapsed) => return Err(self.give_up(id, method).await),
-            };
+            let read = self.next_read(&clock, id, method).await?;
             if matches!(read, Read::Closed) && self.drain.is_some() {
-                clock.deadline = clock.deadline.min(Instant::now() + MCP_STDERR_SETTLE);
+                clock.deadline = clock
+                    .deadline
+                    .min(Instant::now() + crate::limits::limits().mcp_stderr_settle());
                 continue;
             }
             let Some(line) = self.line(read, method)? else {
@@ -50,32 +44,61 @@ impl Client {
             let Ok(frame) = parsed else {
                 continue;
             };
-            match frame {
-                Frame::Response {
-                    id: got,
-                    result,
-                    error,
-                } if got == *id => return outcome(method, result, error),
-                Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
-                Frame::Notification { method, params } => {
-                    let notice = notice(&method, &params);
-                    if matches!(notice, Notice::Progress { token, .. } if token == id) {
-                        clock.deadline = (Instant::now() + self.wait).min(clock.hard);
-                    }
-                    on_note(notice);
-                }
-                Frame::Request {
-                    id: asked,
-                    method,
-                    params,
-                } => {
-                    let answer = self
-                        .answer(&asked, &method, &params, &mut clock, on_note)
-                        .await;
-                    self.write(&answer).await?;
-                }
+            if let Some(done) = self
+                .dispatch(frame, id, method, &mut clock, on_note)
+                .await?
+            {
+                return done;
             }
         }
+    }
+
+    async fn next_read(&mut self, clock: &Clock, id: &Value, method: &str) -> Result<Read> {
+        match tokio::time::timeout_at(clock.deadline, self.frame()).await {
+            Ok(read) => read,
+            Err(_elapsed) if self.broken => {
+                if let Some(drain) = &self.drain {
+                    drain.abort();
+                }
+                self.settle_stderr().await?;
+                Ok(Read::Closed)
+            }
+            Err(_elapsed) => Err(self.give_up(id, method).await),
+        }
+    }
+
+    async fn dispatch(
+        &mut self,
+        frame: Frame,
+        id: &Value,
+        method: &str,
+        clock: &mut Clock,
+        on_note: &mut impl FnMut(Notice<'_>),
+    ) -> Result<Option<Result<Value>>> {
+        match frame {
+            Frame::Response {
+                id: got,
+                result,
+                error,
+            } if got == *id => return Ok(Some(outcome(method, result, error))),
+            Frame::Response { id: got, .. } => self.abandoned.retain(|old| *old != got),
+            Frame::Notification { method, params } => {
+                let notice = notice(&method, &params);
+                if matches!(notice, Notice::Progress { token, .. } if token == id) {
+                    clock.deadline = (Instant::now() + self.wait).min(clock.hard);
+                }
+                on_note(notice);
+            }
+            Frame::Request {
+                id: asked,
+                method,
+                params,
+            } => {
+                let answer = self.answer(&asked, &method, &params, clock, on_note).await;
+                self.write(&answer).await?;
+            }
+        }
+        Ok(None)
     }
 
     fn line(&mut self, read: Read, method: &str) -> Result<Option<String>> {
@@ -87,7 +110,7 @@ impl Client {
             }
             Read::Oversize => Err(Error::Tool(format!(
                 "a reply to `{method}` was over {} MiB; summonr dropped it",
-                MCP_FRAME_MAX / (1024 * 1024)
+                crate::limits::limits().mcp_frame_max_bytes / (1024 * 1024)
             ))),
             Read::Closed => Err(Error::Tool(format!(
                 "the child exited during `{method}`{}",

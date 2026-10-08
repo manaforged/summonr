@@ -303,7 +303,6 @@ impl<P: Provider> Loop<P> {
         }
         self.plan_sandbox |= matches!(sandbox, Some(Ok(())));
         self.tools.set_read_only(plan);
-        self.schema = None;
         if let Some(result) = sandbox {
             result?;
         }

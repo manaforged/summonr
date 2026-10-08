@@ -1,97 +1,71 @@
+use std::sync::OnceLock;
 use std::time::Duration;
 
-#[cfg(not(test))]
-pub(crate) const JOB_WAIT_SECS: u64 = 120;
-#[cfg(test)]
-pub(crate) const JOB_WAIT_SECS: u64 = 1;
-pub(crate) const JOB_WAIT: Duration = Duration::from_secs(JOB_WAIT_SECS);
-#[cfg(not(test))]
-pub(crate) const COMMAND_WAIT_SECS: u64 = 120;
-#[cfg(test)]
-pub(crate) const COMMAND_WAIT_SECS: u64 = 1;
-#[cfg(not(test))]
-pub(crate) const COMMAND_KILL_SECS: u64 = 3600;
-#[cfg(test)]
-pub(crate) const COMMAND_KILL_SECS: u64 = 4;
-pub(crate) const GRANT_WAIT: Duration = Duration::from_secs(600);
-pub(crate) const JOB_POLL_START_SECS: u64 = 1;
-pub(crate) const JOB_POLL_CAP_SECS: u64 = 10;
-pub(crate) const MAIL_STALE_SECS: u64 = 120;
-pub(crate) const MAIL_SWEEP_SECS: u64 = 24 * 3600;
-pub(crate) const VERIFY_TIMEOUT_SECS: u64 = 600;
-pub(crate) const STREAM_TOTAL: Duration = Duration::from_secs(24 * 60 * 60);
-pub(crate) const STREAM_IDLE: Duration = Duration::from_secs(240);
-pub(crate) const CONNECT: Duration = Duration::from_secs(20);
-pub(crate) const PROBE: Duration = Duration::from_secs(5);
-pub(crate) const AUTH: Duration = Duration::from_secs(30);
-pub(crate) const MODEL_PROBE: Duration = Duration::from_secs(8);
-pub(crate) const WEB_SEARCH: Duration = Duration::from_secs(15);
-pub(crate) const WEB_CONNECT: Duration = Duration::from_secs(8);
-pub(crate) const WEB_FETCH: Duration = Duration::from_secs(20);
-pub(crate) const WEB_BODY: usize = 1024 * 1024;
-#[cfg(not(test))]
-pub(crate) const KEYCHAIN: Duration = Duration::from_secs(5);
-#[cfg(test)]
-pub(crate) const KEYCHAIN: Duration = Duration::from_millis(600);
-pub(crate) const KEYCHAIN_POLL: Duration = Duration::from_millis(20);
-pub(crate) const MCP_OPEN: Duration = Duration::from_secs(60);
-pub(crate) const MCP_CALL: Duration = Duration::from_secs(300);
-pub(crate) const MCP_IDLE: Duration = Duration::from_secs(120);
-pub(crate) const MCP_PROGRESS_STRETCH: u32 = 4;
-pub(crate) const MCP_CANCEL_WRITE: Duration = Duration::from_secs(1);
-pub(crate) const MCP_LOG_MAX: u64 = 1024 * 1024;
-pub(crate) const MCP_FRAME_MAX: usize = 4 * 1024 * 1024;
-pub(crate) const MCP_STDERR_TAIL: usize = 2 * 1024;
-pub(crate) const MCP_STDERR_SETTLE: Duration = Duration::from_secs(1);
-pub(crate) const MCP_DEFER_BYTES: usize = 8 * 1024;
-pub(crate) const MCP_FOUND_MAX: usize = 8;
-pub(crate) const LSP_START: Duration = Duration::from_secs(30);
-pub(crate) const LSP_REQUEST: Duration = Duration::from_secs(30);
-pub(crate) const LSP_CHECK: Duration = Duration::from_secs(5);
-pub const LOG_RETAIN: Duration = Duration::from_secs(14 * 24 * 60 * 60);
-pub const SESSION_RETAIN: Duration = Duration::from_secs(30 * 24 * 60 * 60);
-pub const JOB_RETAIN: Duration = Duration::from_secs(7 * 24 * 60 * 60);
-pub(crate) const SPEED_WINDOW: Duration = Duration::from_secs(3);
-pub(crate) const READER_WINDOW: Duration = Duration::from_millis(400);
-pub(crate) const FRAME_WINDOW: Duration = Duration::from_secs(1);
-pub(crate) const ANIMATION: Duration = Duration::from_millis(40);
-pub(crate) const SPINNER: Duration = Duration::from_millis(100);
-pub(crate) const SPLASH_REVEAL_MS: u128 = 760;
-pub(crate) const STATUS_REFRESH: Duration = Duration::from_secs(1);
-pub(crate) const BEAT: Duration = Duration::from_secs(2);
-pub(crate) const NOTICE: Duration = Duration::from_secs(2);
-#[cfg(feature = "gui")]
-pub(crate) const WORKER_STOP: Duration = Duration::from_secs(2);
-pub(crate) const REPEAT_WINDOW: Duration = Duration::from_secs(2);
-pub(crate) const RETRY_LIMIT: usize = 3;
-pub(crate) const STEP_ATTEMPTS: u16 = 3;
-pub(crate) const REPAIR_LIMIT: usize = 6;
-pub(crate) const EDIT_HUNK_ROWS: usize = 80;
-pub(crate) const DISPLAY_PATCH_LINES: usize = 1_000;
-pub(crate) const SUMMARY_RETRY_ROUNDS: usize = 8;
-pub(crate) const RETRY_BASE: Duration = Duration::from_secs(1);
-pub(crate) const RETRY_MAX: Duration = Duration::from_secs(8);
-pub(crate) const RETRY_AFTER_MAX: Duration = Duration::from_secs(60);
-pub(crate) const TOKEN_EXPIRY_SKEW: Duration = Duration::from_secs(60);
-pub(crate) const WEB_REDIRECT_MAX: usize = 5;
-pub(crate) const READ_LINE_LIMIT: usize = 1000;
+mod durations;
+mod fields;
+
+pub(crate) use fields::{Limits, Overrides};
 
 pub(crate) const fn seconds(value: u64) -> Duration {
     Duration::from_secs(value)
 }
 
-pub(crate) fn retry_policy() -> leyline::RetryPolicy {
-    leyline::RetryPolicy::transient()
-        .max_retries(RETRY_LIMIT as u32)
-        .initial_backoff(RETRY_BASE)
-        .max_backoff(RETRY_MAX)
-        .max_retry_after(RETRY_AFTER_MAX)
-        .retry_on([
-            leyline::RetryTrigger::ConnectionError,
-            leyline::RetryTrigger::Status(429),
-            leyline::RetryTrigger::ServerError,
-        ])
+const BUILT_IN: &str = include_str!("limits.toml");
+#[cfg(test)]
+const TEST: &str = include_str!("limits_test.toml");
+
+fn parse<T: serde::de::DeserializeOwned>(text: &str, name: &str) -> T {
+    match toml::from_str(text) {
+        Ok(table) => table,
+        Err(error) => panic!("the {name} limits table is invalid: {error}"),
+    }
 }
 
-pub(crate) const PASTE_FOLD_LINES: usize = 8;
-pub(crate) const PASTE_FOLD_CHARS: usize = 1000;
+impl Limits {
+    pub(crate) fn built_in() -> Self {
+        parse(BUILT_IN, "built-in")
+    }
+
+    pub(crate) fn retry_policy(&self) -> leyline::RetryPolicy {
+        leyline::RetryPolicy::transient()
+            .max_retries(self.retry_limit)
+            .initial_backoff(self.retry_base())
+            .max_backoff(self.retry_max())
+            .max_retry_after(self.retry_after_max())
+            .retry_on([
+                leyline::RetryTrigger::ConnectionError,
+                leyline::RetryTrigger::Status(429),
+                leyline::RetryTrigger::ServerError,
+            ])
+    }
+}
+
+#[cfg(not(test))]
+fn load() -> Limits {
+    let built_in = Limits::built_in();
+    match crate::config::file() {
+        Ok(file) => match &file.limits {
+            Some(with) => built_in.overlay(with),
+            None => built_in,
+        },
+        Err(_) => built_in,
+    }
+}
+
+#[cfg(test)]
+fn load() -> Limits {
+    Limits::built_in().overlay(&parse(TEST, "test"))
+}
+
+pub(crate) fn limits() -> &'static Limits {
+    static LOADED: OnceLock<Limits> = OnceLock::new();
+    LOADED.get_or_init(load)
+}
+
+pub fn log_retain() -> Duration {
+    limits().log_retain()
+}
+
+#[cfg(test)]
+#[path = "limits_tests.rs"]
+mod tests;

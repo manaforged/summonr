@@ -4,6 +4,7 @@ use serde::Deserialize;
 
 use crate::error::{Error, Result};
 
+mod ask;
 mod danger;
 mod walk;
 
@@ -20,6 +21,7 @@ pub(crate) struct Policy {
     read_only: bool,
     unrestricted: bool,
     deny: Vec<String>,
+    ask: Vec<String>,
     allow: Vec<Vec<String>>,
     write: Vec<Vec<String>>,
     roots: Vec<PathBuf>,
@@ -58,6 +60,8 @@ struct File {
     #[serde(default)]
     deny: Vec<String>,
     #[serde(default)]
+    ask: Vec<String>,
+    #[serde(default)]
     allow: Vec<String>,
     #[serde(default)]
     write: Vec<String>,
@@ -93,11 +97,8 @@ impl Policy {
     fn overlay(&mut self, file: File) {
         self.strict |= file.strict;
         self.confirm = self.confirm.max(file.confirm);
-        for item in file.deny {
-            if !item.trim().is_empty() && !self.deny.iter().any(|have| have == &item) {
-                self.deny.push(item);
-            }
-        }
+        ask::extend_unique(&mut self.deny, file.deny);
+        ask::extend_unique(&mut self.ask, file.ask);
         if file.strict || !file.allow.is_empty() {
             self.allow.push(file.allow);
         }
@@ -135,11 +136,6 @@ impl Policy {
     #[must_use]
     pub(crate) fn is_strict(&self) -> bool {
         self.strict
-    }
-
-    #[must_use]
-    pub(crate) fn confirm(&self) -> Gate {
-        self.confirm
     }
 
     #[must_use]

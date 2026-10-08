@@ -51,8 +51,8 @@ pub(crate) fn help_text(keys: &Hotkeys) -> String {
             "  !cmd         run in the sandbox and send the output; !!cmd runs only".to_string(),
             format!(
                 "  a paste of {}+ lines or {}+ characters folds into [pasted N lines #k] until sent",
-                crate::limits::PASTE_FOLD_LINES,
-                crate::limits::PASTE_FOLD_CHARS
+                crate::limits::limits().paste_fold_lines,
+                crate::limits::limits().paste_fold_chars
             ),
             "".to_string(),
             "interface".to_string(),

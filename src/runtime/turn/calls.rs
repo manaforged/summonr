@@ -65,14 +65,18 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<Vec<(Result<ToolOutput>, u64, Option<Usage>)>> {
-        let mut ran = Vec::with_capacity(calls.len());
-        for call in calls {
-            let started = Instant::now();
-            ran.push((
-                self.tools.execute_outcome(call).await,
-                super::elapsed_millis(started),
-            ));
-        }
+        let tools = &self.tools;
+        let ran = calls
+            .iter()
+            .map(|call| async move {
+                let started = Instant::now();
+                (
+                    tools.execute_outcome(call).await,
+                    super::elapsed_millis(started),
+                )
+            })
+            .collect::<Vec<_>>();
+        let ran = futures::future::join_all(ran).await;
         let mut outputs = Vec::with_capacity(ran.len());
         for ((output, millis), call) in ran.into_iter().zip(calls) {
             outputs.push((
@@ -112,6 +116,59 @@ impl<P: Provider> Loop<P> {
         Ok(())
     }
 
+    async fn mcp_dispatch(
+        &mut self,
+        hub: &crate::mcp::Hub,
+        call: &ToolCall,
+        events: &mut Vec<Event>,
+        emit: &mut impl FnMut(&Event),
+    ) -> Result<Result<ToolOutput>> {
+        let resolved = hub.resolve(
+            &call.function.name,
+            &call.function.arguments,
+            self.tools.policy(),
+        );
+        let (alias, arguments) = match resolved {
+            Ok(crate::mcp::Resolved::Call { alias, arguments }) => (alias, arguments),
+            Ok(crate::mcp::Resolved::Found(text)) => {
+                return Ok(self.tools.fit_output(Ok(ToolOutput::ok(text))));
+            }
+            Err(error) => return Ok(Err(error)),
+        };
+        let sandbox = self.tools.sandbox();
+        let policy = self.tools.policy().clone();
+        let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
+        let mut report = move |update| drop(sender.send(update));
+        let running = hub.call(&alias, arguments, &policy, sandbox.as_ref(), &mut report);
+        tokio::pin!(running);
+        let output = loop {
+            tokio::select! {
+                biased;
+                Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
+                output = &mut running => break output,
+            }
+        };
+        while let Ok(update) = updates.try_recv() {
+            self.heard(&call.id, update, events, emit).await?;
+        }
+        Ok(self.tools.fit_output(output))
+    }
+
+    fn child_refusal(&self, name: &str) -> Option<String> {
+        if self.depth == 0 {
+            return None;
+        }
+        match Builtin::of(name) {
+            None => Some(format!(
+                "child sessions cannot call `{name}`; use the built-in tools"
+            )),
+            Some(Builtin::Edit | Builtin::Write) if self.tools.policy().is_read_only() => {
+                Some("this child is read-only; report what to change instead".to_string())
+            }
+            Some(_) => None,
+        }
+    }
+
     async fn dispatch(
         &mut self,
         call: &ToolCall,
@@ -125,32 +182,11 @@ impl<P: Provider> Loop<P> {
                 Err(error) => (Err(error), None),
             });
         }
+        if let Some(refusal) = self.child_refusal(name) {
+            return Ok((Err(crate::Error::Denied(refusal)), None));
+        }
         if let Some(hub) = self.mcp.clone().filter(|hub| hub.owns(name)) {
-            let resolved = hub.resolve(name, &call.function.arguments, self.tools.policy());
-            let (alias, arguments) = match resolved {
-                Ok(crate::mcp::Resolved::Call { alias, arguments }) => (alias, arguments),
-                Ok(crate::mcp::Resolved::Found(text)) => {
-                    return Ok((self.tools.fit_output(Ok(ToolOutput::ok(text))), None));
-                }
-                Err(error) => return Ok((Err(error), None)),
-            };
-            let sandbox = self.tools.sandbox();
-            let policy = self.tools.policy().clone();
-            let (sender, mut updates) = tokio::sync::mpsc::unbounded_channel();
-            let mut report = move |update| drop(sender.send(update));
-            let running = hub.call(&alias, arguments, &policy, sandbox.as_ref(), &mut report);
-            tokio::pin!(running);
-            let output = loop {
-                tokio::select! {
-                    biased;
-                    Some(update) = updates.recv() => self.heard(&call.id, update, events, emit).await?,
-                    output = &mut running => break output,
-                }
-            };
-            while let Ok(update) = updates.try_recv() {
-                self.heard(&call.id, update, events, emit).await?;
-            }
-            return Ok((self.tools.fit_output(output), None));
+            return Ok((self.mcp_dispatch(&hub, call, events, emit).await?, None));
         }
         if is_mail_tool(name) {
             return Ok((self.mail_execute(call).map(ToolOutput::ok), None));
@@ -262,15 +298,20 @@ impl<P: Provider> Loop<P> {
         }
         for record in owned.into_values() {
             let label = format!("job {} `{}`", record.id, record.command);
-            let status = jobs::wait(&workspace, &record.id, JOB_WAIT_SECS, || {
-                self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: format!("waiting for background {label}"),
-                    },
-                )
-            })
+            let status = jobs::wait(
+                &workspace,
+                &record.id,
+                crate::limits::limits().job_wait_secs,
+                || {
+                    self.push_event(
+                        events,
+                        emit,
+                        Event::Note {
+                            text: format!("waiting for background {label}"),
+                        },
+                    )
+                },
+            )
             .await?;
             if status.state == jobs::JobState::Killed {
                 continue;
@@ -285,7 +326,8 @@ impl<P: Provider> Loop<P> {
                 passed: status.state == jobs::JobState::Exited(0),
                 output: if running_now {
                     format!(
-                        "still running after {JOB_WAIT_SECS}s; wait for it or kill it\n{}",
+                        "still running after {}s; wait for it or kill it\n{}",
+                        crate::limits::limits().job_wait_secs,
                         status.text
                     )
                 } else {

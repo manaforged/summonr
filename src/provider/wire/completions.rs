@@ -43,6 +43,7 @@ impl Chat for Wire {
     fn body(
         call: &CompletionRequest<'_>,
         reasoning: &Reasoning,
+        _cache: crate::endpoint::CacheTtl,
         stream: bool,
     ) -> crate::error::Result<super::Wired> {
         let mut body = json!({

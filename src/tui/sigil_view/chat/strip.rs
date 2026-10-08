@@ -22,11 +22,8 @@ fn mark(agent: &Agent) -> (&'static str, Look) {
 
 fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilder {
     let (glyph, tone) = mark(agent);
+    let access = agent.access.name();
     let meta = if detail {
-        let access = match agent.access {
-            crate::child::Access::Implement => "rw",
-            crate::child::Access::Research => "ro",
-        };
         format!(
             "{} · {access} · {} · {} tok",
             agent.id,
@@ -35,7 +32,7 @@ fn line(agent: &Agent, lead: &str, roots: &[String], detail: bool) -> NodeBuilde
         )
     } else {
         format!(
-            "{} · {} tok",
+            "{access} · {} · {} tok",
             agent.clock(),
             crate::provider::compact(agent.tokens)
         )

@@ -217,7 +217,7 @@ fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
     }
     for stat in &diff.files {
         let new = if stat.new { "  new" } else { "" };
-        println!("+{:<5} −{:<5} {}{new}", stat.added, stat.removed, stat.path);
+        println!("+{} −{} {}{new}", stat.added, stat.removed, stat.path);
     }
     println!("{}", diff.summary());
     Ok(())

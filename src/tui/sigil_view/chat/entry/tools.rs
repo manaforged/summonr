@@ -1,6 +1,6 @@
 use sigil::prelude::{
-    AlignItems, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt, Paint,
-    PointerEvent, Token, container,
+    AlignItems, IntoNode, LayoutBuilderExt, LayoutStyle, MouseButton, NodeBuilder, NodeEventsExt,
+    Paint, PointerEvent, Token, container,
 };
 
 use super::super::{App, Call, Entry};
@@ -156,7 +156,13 @@ pub(in crate::tui::sigil_view) fn call_output(
 ) -> Option<NodeBuilder> {
     let failed = matches!(call.state, ToolState::Failed);
     let running = matches!(call.state, ToolState::Running);
-    let Some(patch) = call.patch.clone().or_else(|| patch_of(output)) else {
+    let patch = call.patch.clone().or_else(|| patch_of(output));
+    if patch.is_none()
+        && let Some(card) = super::reply::stat_node_of(output)
+    {
+        return Some(framed(card));
+    }
+    let Some(patch) = patch else {
         let ranged = Builtin::is(name, Builtin::Read) && crate::tools::read_span(output).is_some();
         if ranged && !full && !failed {
             return None;
@@ -174,16 +180,18 @@ pub(in crate::tui::sigil_view) fn call_output(
     } else {
         view.path(patch_path(output).unwrap_or_else(|| call.arg.clone()))
     };
-    Some(
-        container()
-            .layout(
-                LayoutStyle::flex_column()
-                    .fill_width()
-                    .min_size(0.0, 0.0)
-                    .padding_bottom(crate::tui::sigil_view::canvas::GUTTER),
-            )
-            .child(view),
-    )
+    Some(framed(view))
+}
+
+fn framed(child: impl IntoNode + 'static) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::flex_column()
+                .fill_width()
+                .min_size(0.0, 0.0)
+                .padding_bottom(crate::tui::sigil_view::canvas::GUTTER),
+        )
+        .child(child)
 }
 
 pub(super) fn tool_card(

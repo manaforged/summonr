@@ -15,7 +15,7 @@ pub(crate) enum Reply {
 
 #[derive(Default)]
 pub(crate) struct Scripted {
-    replies: Mutex<VecDeque<Reply>>,
+    replies: Arc<Mutex<VecDeque<Reply>>>,
     sent: Sent,
     prefixes: Prefixes,
 }
@@ -26,7 +26,7 @@ pub(crate) type Prefixes = Arc<Mutex<Vec<String>>>;
 impl Scripted {
     pub(crate) fn new(replies: impl IntoIterator<Item = Reply>) -> Self {
         Self {
-            replies: Mutex::new(replies.into_iter().collect()),
+            replies: Arc::new(Mutex::new(replies.into_iter().collect())),
             sent: Sent::default(),
             prefixes: Prefixes::default(),
         }
@@ -44,7 +44,7 @@ impl Scripted {
 impl Provider for Scripted {
     fn child(&self) -> Option<Self> {
         Some(Self {
-            replies: Mutex::default(),
+            replies: Arc::clone(&self.replies),
             sent: Arc::clone(&self.sent),
             prefixes: Arc::clone(&self.prefixes),
         })

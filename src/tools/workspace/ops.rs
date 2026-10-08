@@ -264,12 +264,34 @@ fn no_match(text: &str, old: &str) -> Error {
         .filter(|line| line.len() >= 4)
         .max_by_key(|line| line.len());
     if let Some(needle) = needle {
-        let squashed = needle.split_whitespace().collect::<Vec<_>>().join(" ");
+        let squashed = squash(needle);
+        let floor = squashed.len().div_ceil(2);
+        let mut needle_counts = [0_u32; 256];
+        for byte in squashed.bytes() {
+            needle_counts[usize::from(byte)] += 1;
+        }
+        let mut line_counts = [0_u32; 256];
         let mut scored: Vec<(f64, usize, &str)> = text
             .lines()
             .enumerate()
             .filter_map(|(index, line)| {
-                let candidate = line.split_whitespace().collect::<Vec<_>>().join(" ");
+                if line.len() < floor {
+                    return None;
+                }
+                line_counts.fill(0);
+                for byte in line.bytes() {
+                    line_counts[usize::from(byte)] += 1;
+                }
+                let mut shared = 0_usize;
+                for byte in 0..256_usize {
+                    if needle_counts[byte] > 0 {
+                        shared += (needle_counts[byte].min(line_counts[byte])) as usize;
+                    }
+                }
+                if shared < floor {
+                    return None;
+                }
+                let candidate = squash(line);
                 if candidate.is_empty() {
                     return None;
                 }

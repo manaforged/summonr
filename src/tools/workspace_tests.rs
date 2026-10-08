@@ -26,7 +26,7 @@ fn an_edit_names_each_changed_region_and_nothing_it_did_not_touch() {
         .replace("line 250\n", "beta\n");
     let old: Vec<&str> = before.lines().collect();
     let new: Vec<&str> = after.lines().collect();
-    let spans = super::spans::changed(&old, &new);
+    let (spans, _) = super::spans::changed_and_patch(&old, &new);
     assert_eq!(
         super::spans::summary(old.len(), new.len(), &spans),
         "changed lines 100-101, line 251 (+1 line, 400 lines now)"

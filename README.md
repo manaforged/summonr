@@ -101,6 +101,7 @@ Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
 - Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
+- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk and the other children still land. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`. The 0.1.0-rc.1 release binary does not include this checkout. A build from source does.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
@@ -121,15 +122,15 @@ Optional capabilities are compiled modules; `summonr modules` lists them. You ex
 
 Terminal-Bench 2.1, 86 tasks, one pass, GLM 5.3 Flash at high effort through z.ai, every harness on its defaults. Runs `tb21-zai-1002d` (summonr, pi), `tb21-zai-1002f` (OpenCode, Hermes), and `tb21-zai-1003a` (OMP), 2026-10-02 to 2026-10-03; arms from different runs did not run side by side.
 
-| Harness | Version | Tasks solved | Mean memory | Median input tokens, solved tasks | Median input tokens, all tasks | Median time, solved tasks |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| summonr | 0.1.0-rc.1 | 63 | 24 MB | 95,271 | 194,193 | 219 s |
-| pi | 1.0.0 | 62 | 134 MB | 240,762 | 212,337 | 368 s |
-| OMP | 18.4.12 | 59 | 387 MB | 218,939 | 294,356 | 294 s |
-| OpenCode | 2.0.22 | 58 | 394 MB | 228,578 | 253,726 | 341 s |
-| Hermes | v2026.9.24 | 49 | 202 MB | 225,215 | 272,086 | 335 s |
+| Harness | Version | Tasks solved | Mean memory | Peak memory | Median input tokens, solved tasks | Median input tokens, all tasks | Median time, solved tasks |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| summonr | 0.1.0-rc.1 | 63 | 24 MB | 24 MB | 95,271 | 194,193 | 219 s |
+| pi | 1.0.0 | 62 | 134 MB | 146 MB | 240,762 | 212,337 | 368 s |
+| OMP | 18.4.12 | 59 | 387 MB | 505 MB | 218,939 | 294,356 | 294 s |
+| OpenCode | 2.0.22 | 58 | 394 MB | 480 MB | 228,578 | 253,726 | 341 s |
+| Hermes | v2026.9.24 | 49 | 202 MB | 244 MB | 225,215 | 272,086 | 335 s |
 
-Mean memory counts the harness and every helper it started without a shell, where the harness has helpers. The solved-tasks columns count only the tasks that harness solved; the all-tasks column counts all 86, solved and failed. summonr's failed tasks ran long, so its lead is smaller across all tasks than on solved ones. The lead in tasks solved over pi, OMP, and OpenCode is inside the 95% interval.
+Mean and peak memory are medians over trials. Peak is the median of each trial's highest sample. The figure counts the harness and every helper it started without a shell, where that run started a helper, and the harness process alone otherwise. summonr's 24 MB is the process. That run started no helper. The solved-tasks columns count only the tasks that harness solved. The all-tasks column counts all 86, solved and failed. summonr's failed tasks ran long, so its lead is smaller across all tasks than on solved ones: median input 194,193 against pi at 212,337, and a paired input ratio of 0.94 (0.76 to 1.17). On tasks summonr did not solve, the median was 551,156 input tokens and 29 requests, against 199,458 and 14 for pi. The lead in tasks solved over pi, OMP, and OpenCode is inside the 95% interval.
 
 Method and limits: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks.html).
 

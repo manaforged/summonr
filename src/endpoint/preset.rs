@@ -23,7 +23,7 @@ pub(super) struct Preset {
     pub(super) context_window: Option<u32>,
     pub(super) opencode: bool,
     pub(super) prompt_cache_key: bool,
-    pub(super) cache_ttl: CacheTtl,
+    pub(super) cache_ttl: Option<CacheTtl>,
     pub(super) cache_header: Option<String>,
     pub(super) cli_token: Option<CliToken>,
     pub(super) opencode_oauth: bool,
@@ -187,7 +187,7 @@ struct Row {
     #[serde(default)]
     prompt_cache_key: bool,
     #[serde(default)]
-    cache_ttl: CacheTtl,
+    cache_ttl: Option<CacheTtl>,
     #[serde(default)]
     cache_header: Option<String>,
     #[serde(default)]

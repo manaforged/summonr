@@ -60,6 +60,7 @@ pub(crate) struct File {
     pub hooks: crate::hooks::Hooks,
     #[serde(default)]
     pub plugins: crate::plugins::Switches,
+    pub limits: Option<crate::limits::Overrides>,
     #[serde(flatten)]
     pub other: BTreeMap<String, toml::Value>,
 }

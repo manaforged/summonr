@@ -54,7 +54,7 @@ pub(crate) fn request(call: &CompletionRequest<'_>, stream: bool) -> crate::erro
     body::body(
         call,
         &call.reasoning,
-        crate::endpoint::CacheTtl::default(),
+        crate::limits::limits().cache_ttl,
         stream,
     )?
     .value()

@@ -334,7 +334,7 @@ fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
     match failure.kind {
         ProviderFailureKind::RateLimited => failure
             .retry_after
-            .is_none_or(|seconds| seconds <= crate::limits::RETRY_AFTER_MAX.as_secs()),
+            .is_none_or(|seconds| seconds <= crate::limits::limits().retry_after_max_secs),
         ProviderFailureKind::Transport | ProviderFailureKind::Server => failure.status.is_none(),
         _ => false,
     }

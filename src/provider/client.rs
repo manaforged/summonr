@@ -31,7 +31,7 @@ fn request_timeout(seconds: Option<u64>) -> Result<Option<Duration>> {
             "endpoint idle_timeout_secs must be at least 1".to_string(),
         )),
         Some(seconds) => Ok(Some(crate::limits::seconds(seconds))),
-        None => Ok(Some(crate::limits::STREAM_IDLE)),
+        None => Ok(Some(crate::limits::limits().stream_idle())),
     }
 }
 
@@ -278,7 +278,11 @@ impl Client {
             .auth
             .scheme()
             .apply(request.header("user-agent", summonr_auth::AGENT), token)
-            .retry(crate::limits::retry_policy().allow_non_idempotent(true));
+            .retry(
+                crate::limits::limits()
+                    .retry_policy()
+                    .allow_non_idempotent(true),
+            );
         for (key, value) in wire::headers(self.wire) {
             request = request.header(*key, *value);
         }

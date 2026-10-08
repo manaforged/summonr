@@ -47,10 +47,8 @@ pub(super) fn repair_arguments(history: &[Message]) -> Vec<(usize, Message)> {
 
 pub(super) const CHARS_PER_TOKEN: usize = 4;
 const KEEP_TAIL: usize = 2;
-const COMPACT_PERCENT: usize = 80;
 const RESERVE_TOKENS: u32 = 16_384;
 const TAIL_TOKENS: u32 = 24_000;
-const DEFAULT_COMPACT_CHARS: usize = 400_000;
 
 const SUMMARY_ASK: &str = "Do not call tools. Summarize this session so it can continue without the raw history. \
     Exactly these sections, terse bullets: Goal / Constraints / Progress / Key decisions / \
@@ -67,7 +65,8 @@ pub(super) fn estimate(chars: usize, sample: Option<(usize, u32)>) -> usize {
 }
 
 fn under_pressure(estimated_tokens: usize, window: u32) -> bool {
-    estimated_tokens.saturating_mul(100) >= (window as usize).saturating_mul(COMPACT_PERCENT)
+    estimated_tokens.saturating_mul(100)
+        >= (window as usize).saturating_mul(crate::limits::limits().compact_percent)
 }
 
 impl<P: Provider> Loop<P> {
@@ -141,13 +140,14 @@ impl<P: Provider> Loop<P> {
             (Some(window), Some(cap)) => Some(window.min(cap)),
             (window, cap) => window.or(cap),
         };
-        let pressure = window.map_or(chars >= DEFAULT_COMPACT_CHARS, |window| {
+        let compact_chars = crate::limits::limits().compact_chars;
+        let pressure = window.map_or(chars >= compact_chars, |window| {
             under_pressure(estimated_tokens, window)
         });
         if !pressure || messages.len() < 8 {
             return Ok(false);
         }
-        let tail_chars = window.map_or(DEFAULT_COMPACT_CHARS / 4, |window| {
+        let tail_chars = window.map_or(compact_chars / 4, |window| {
             let tail_tokens = window
                 .saturating_sub(RESERVE_TOKENS.min(window / 4))
                 .div_ceil(4)
@@ -173,7 +173,7 @@ impl<P: Provider> Loop<P> {
             .summarize(&messages[0], &messages[1..keep_from])
             .await?
         else {
-            self.summary_wait = crate::limits::SUMMARY_RETRY_ROUNDS;
+            self.summary_wait = crate::limits::limits().summary_retry_rounds;
             self.push_event(
                 events,
                 emit,
@@ -181,7 +181,7 @@ impl<P: Provider> Loop<P> {
                     text: format!(
                         "auto-compaction failed; keeping the live context and retrying \
                          after {} rounds",
-                        crate::limits::SUMMARY_RETRY_ROUNDS
+                        crate::limits::limits().summary_retry_rounds
                     ),
                 },
             )?;

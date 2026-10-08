@@ -97,11 +97,10 @@ pub enum Wire {
     Decisions,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
 pub enum CacheTtl {
     #[serde(rename = "5m")]
     FiveMinutes,
-    #[default]
     #[serde(rename = "1h")]
     OneHour,
 }

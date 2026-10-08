@@ -137,13 +137,13 @@ pub(crate) fn bearer(key: impl Into<String>) -> Auth {
 pub(crate) fn http() -> Result<leyline::Session> {
     session(summonr_auth::builder(
         crate::limits::AUTH,
-        crate::limits::CONNECT,
+        crate::limits::limits().connect(),
     ))
 }
 
 pub(crate) fn session(builder: leyline::SessionBuilder) -> Result<leyline::Session> {
     builder
-        .retry(crate::limits::retry_policy())
+        .retry(crate::limits::limits().retry_policy())
         .build()
         .map_err(|error| Error::Config(error.to_string()))
 }

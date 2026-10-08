@@ -116,11 +116,33 @@ Keys on an `[endpoint.NAME]` row:
 | `fallback` | A list of endpoint names. When a request fails with an error that a retry cannot fix, the session moves to the next name. |
 | `compact_tokens` | Compact the context at this token count. With `context_window` also set, the smaller value applies. |
 | `keep_reasoning` | `true` sends earlier reasoning back to the model on later requests. |
-| `cache_ttl` | Prompt-cache lifetime on the Anthropic wire: `"1h"` (default) or `"5m"`. A cache write costs 2x the input price at `1h` and 1.25x at `5m`; a read costs 0.1x either way. `grok` also sends `x-grok-conv-id` with the prompt hash so xAI routes each request to a warm cache. |
+| `cache_ttl` | Prompt-cache lifetime on the Anthropic wire: `"1h"` or `"5m"`; unset uses `[limits] cache_ttl`. A cache write costs 2x the input price at `1h` and 1.25x at `5m`; a read costs 0.1x either way. `grok` also sends `x-grok-conv-id` with the prompt hash so xAI routes each request to a warm cache. |
 | `auth.token_url` | Token endpoint of a login. Required with `auth.client_id`. |
 | `auth.label` | Name of the subscription shown when an endpoint offers both a sign-in and a key. |
 | `auth.required_scope` | A scope the token reply must grant, or the sign-in fails. |
 | `auth.device_url` | Device authorization endpoint for `grant = "device_code"`. |
+
+`[limits]` in `~/.summonr/config.toml` overrides the built-in tuning values in [`src/limits.toml`](../../src/limits.toml). A key you leave out keeps its built-in value.
+
+```toml
+[limits]
+retry_after_max_secs = 30
+cache_ttl = "5m"
+```
+
+| Key | Built in | Meaning |
+| --- | --- | --- |
+| `cache_ttl` | `"1h"` | Prompt-cache lifetime for an endpoint that sets none: `"5m"` or `"1h"`. |
+| `retry_limit` | `3` | Retries for a 429, a 5xx, or a connection error. |
+| `retry_base_ms` | `1000` | First retry wait; each retry doubles it. |
+| `retry_max_ms` | `8000` | Longest retry wait. |
+| `retry_after_max_secs` | `60` | Longest `Retry-After` summonr waits for; a longer one falls back to the next endpoint. |
+| `stream_idle_secs` | `240` | Idle stream timeout for an endpoint with no `idle_timeout_secs`. |
+| `stream_total_secs` | `86400` | Total time limit for one request. |
+| `connect_secs` | `20` | Connect timeout. |
+| `compact_percent` | `80` | Share of the context window that starts compaction. |
+| `compact_chars` | `400000` | Prompt size in characters that starts compaction when the window is unknown. |
+| `summary_retry_rounds` | `8` | Rounds before a failed compaction summary retries. |
 
 ### Environment variables
 

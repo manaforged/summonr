@@ -161,7 +161,9 @@ fn env_endpoint(base: &str, model: Option<&str>) -> Endpoint {
         keep_reasoning: std::env::var_os("SUMMONR_KEEP_REASONING").is_some(),
         opencode: hosted(base).is_some_and(|preset| preset.opencode),
         prompt_cache_key: hosted(base).is_some_and(|preset| preset.prompt_cache_key),
-        cache_ttl: hosted(base).map_or_else(CacheTtl::default, |preset| preset.cache_ttl),
+        cache_ttl: hosted(base)
+            .and_then(|preset| preset.cache_ttl)
+            .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: hosted(base).and_then(|preset| preset.cache_header.clone()),
         reasoning: reasoning::from_preset(hosted(base)),
     }
@@ -269,8 +271,8 @@ pub(super) fn from_file(file: &File, chosen: &str) -> Option<Endpoint> {
         prompt_cache_key: preset.is_some_and(|preset| preset.prompt_cache_key),
         cache_ttl: row
             .cache_ttl
-            .or_else(|| preset.map(|preset| preset.cache_ttl))
-            .unwrap_or_default(),
+            .or_else(|| preset.and_then(|preset| preset.cache_ttl))
+            .unwrap_or(crate::limits::limits().cache_ttl),
         cache_header: preset.and_then(|preset| preset.cache_header.clone()),
         reasoning: reasoning::from_preset(preset),
         wire: row.wire.unwrap_or(Wire::Completions),

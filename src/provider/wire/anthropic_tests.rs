@@ -295,7 +295,7 @@ fn replayed_tool_arguments_keep_the_bytes_the_model_produced() {
     let wired = <Wire as crate::provider::wire::Chat>::body(
         &ask(&[message(Role::User, "go"), assistant]),
         &Reasoning::default(),
-        crate::endpoint::CacheTtl::default(),
+        crate::limits::limits().cache_ttl,
         false,
     )
     .unwrap();

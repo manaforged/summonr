@@ -242,7 +242,7 @@ pub(crate) trait Chat {
         Self::body(
             call,
             &call.reasoning,
-            crate::endpoint::CacheTtl::default(),
+            crate::limits::limits().cache_ttl,
             stream,
         )?
         .value()

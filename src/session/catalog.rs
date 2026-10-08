@@ -261,10 +261,32 @@ fn info(path: PathBuf) -> SessionInfo {
     }
 }
 
-fn peek(path: &Path) -> (Option<String>, Option<String>, String, Option<String>, u8) {
-    let Ok(lines) = log::scan(path) else {
-        return (None, None, String::new(), None, 0);
-    };
+type Peek = (
+    Option<String>,
+    Option<String>,
+    String,
+    Option<String>,
+    u8,
+);
+
+fn peek(path: &Path) -> Peek {
+    const PEEK_LINES: usize = 64;
+    if let Ok(head) = log::head(path, PEEK_LINES) {
+        let (info, found) = peek_lines(&head);
+        if found {
+            return info;
+        }
+    }
+    match log::scan(path) {
+        Ok(lines) => {
+            let lines: Vec<Line> = lines.collect();
+            peek_lines(&lines).0
+        }
+        Err(_) => (None, None, String::new(), None, 0),
+    }
+}
+
+fn peek_lines(lines: &[Line]) -> (Peek, bool) {
     let mut cwd = None;
     let mut model = None;
     let mut parent = None;
@@ -279,21 +301,22 @@ fn peek(path: &Path) -> (Option<String>, Option<String>, String, Option<String>,
                 ..
             } => {
                 cwd = Some(workspace.display().to_string());
-                model = Some(name);
+                model = Some(name.clone());
                 parent = recorded_parent.map(|id| id.to_string());
-                depth = recorded_depth;
+                depth = *recorded_depth;
             }
             Line::User { text, source, .. } if !text.is_empty() => {
-                return (
+                let info = (
                     cwd,
                     model,
-                    preview(source.as_deref().unwrap_or(&text)),
+                    preview(source.as_deref().unwrap_or(text)),
                     parent,
                     depth,
                 );
+                return (info, true);
             }
             _ => {}
         }
     }
-    (cwd, model, String::new(), parent, depth)
+    ((cwd, model, String::new(), parent, depth), false)
 }

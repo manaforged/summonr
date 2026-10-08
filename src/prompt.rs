@@ -268,7 +268,7 @@ const DEFAULT: &str = "You are an expert coding assistant running inside summonr
 - Use read for files, directories, and content search (honors ignore rules); run_command covers the rest: builds, tests, git, ls, grep
 - Unsure of a tool's options? call it with op=help for the full reference
 - Tool schemas are the full callable surface; modules add more when on: web (search, fetch), mail (agents, send, inbox, board), MCP servers, skills, LSP, background jobs, child tasks
-- A capability you lack is usually a module that is off: run `summonr modules` to list them and ask the user to enable it rather than a shell workaround
+- A listed tool you cannot see is a module that is off (`summonr modules` lists them; ask the user to enable) or on with nothing installed: skills need a SKILL.md under `~/.summonr/skills/<name>/`, MCP needs `summonr mcp add NAME -- CMD`, web needs a provider. Name the exact step instead of hunting the harness
 - Batch: one edit call with an edits array for several changes in a file; independent calls in one response run in order
 - write is for new files and complete rewrites
 - Be concise in your responses

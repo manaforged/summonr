@@ -71,6 +71,7 @@ impl<P: Provider> Loop<P> {
         loop {
             let request = self.request_with(role, messages, tools);
             let prefix_hash = request.prefix_hash();
+            let request = request.with_prefix_hash(prefix_hash.clone());
             self.freeze_catalog();
             let request_chars =
                 request_chars(messages, tools.json.len(), self.provider.keeps_reasoning());

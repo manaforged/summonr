@@ -167,6 +167,7 @@ cache_ttl = "5m"
 | `mcp_idle_secs` | `120` | MCP idle stop when a server sets none. |
 | `mcp_progress_stretch` | `4` | Progress can extend an MCP call up to this multiple of its timeout. |
 | `mcp_cancel_write_secs` | `1` | Time to write an MCP cancel. |
+| `mcp_close_grace_ms` | `500` | After closing a stdio MCP server's input, how long summonr waits for it to exit before it stops the process. |
 | `mcp_log_max_bytes` | `1048576` | MCP log size before rotation. |
 | `mcp_frame_max_bytes` | `4194304` | Largest MCP reply. |
 | `mcp_stderr_tail_bytes` | `2048` | MCP stderr kept for diagnostics. |

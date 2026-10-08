@@ -33,6 +33,7 @@ mcp_call_secs = 300
 mcp_idle_secs = 120
 mcp_progress_stretch = 4
 mcp_cancel_write_secs = 1
+mcp_close_grace_ms = 500
 mcp_log_max_bytes = 1048576
 mcp_frame_max_bytes = 4194304
 mcp_stderr_tail_bytes = 2048

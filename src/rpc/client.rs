@@ -21,7 +21,7 @@ const SECRET_MIN: usize = 8;
 pub(crate) struct Client {
     _group: Option<ProcessGroup>,
     child: Child,
-    stdin: ChildStdin,
+    stdin: Option<ChildStdin>,
     reader: BufReader<ChildStdout>,
     pending: Vec<u8>,
     over: bool,
@@ -93,7 +93,7 @@ impl Client {
         Ok(Self {
             _group,
             child,
-            stdin,
+            stdin: Some(stdin),
             reader: BufReader::new(stdout),
             pending: Vec::new(),
             over: false,
@@ -165,8 +165,9 @@ impl Client {
         deadline: Instant,
     ) -> std::result::Result<std::io::Result<()>, tokio::time::error::Elapsed> {
         tokio::time::timeout_at(deadline, async {
-            self.stdin.write_all(line.as_bytes()).await?;
-            self.stdin.flush().await
+            let pipe = self.pipe()?;
+            pipe.write_all(line.as_bytes()).await?;
+            pipe.flush().await
         })
         .await
     }
@@ -255,9 +256,16 @@ impl Client {
 
     async fn write(&mut self, value: &Value) -> Result<()> {
         let line = frame_line(value)?;
-        self.stdin.write_all(line.as_bytes()).await?;
-        self.stdin.flush().await?;
+        let pipe = self.pipe()?;
+        pipe.write_all(line.as_bytes()).await?;
+        pipe.flush().await?;
         Ok(())
+    }
+
+    fn pipe(&mut self) -> std::io::Result<&mut ChildStdin> {
+        self.stdin
+            .as_mut()
+            .ok_or_else(|| std::io::Error::from(std::io::ErrorKind::BrokenPipe))
     }
 
     pub(crate) fn alive(&mut self) -> bool {
@@ -304,6 +312,18 @@ impl Drop for Client {
         if let Some(drain) = &self.drain {
             drain.abort();
         }
+        drop(self.stdin.take());
+        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+            return;
+        };
+        if runtime.runtime_flavor() != tokio::runtime::RuntimeFlavor::MultiThread {
+            return;
+        }
+        let grace = crate::limits::limits().mcp_close_grace();
+        let child = &mut self.child;
+        drop(tokio::task::block_in_place(|| {
+            runtime.block_on(tokio::time::timeout(grace, child.wait()))
+        }));
     }
 }
 

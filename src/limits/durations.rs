@@ -93,6 +93,10 @@ impl Limits {
         secs(self.mcp_cancel_write_secs)
     }
 
+    pub(crate) fn mcp_close_grace(&self) -> Duration {
+        millis(self.mcp_close_grace_ms)
+    }
+
     pub(crate) fn mcp_stderr_settle(&self) -> Duration {
         secs(self.mcp_stderr_settle_secs)
     }

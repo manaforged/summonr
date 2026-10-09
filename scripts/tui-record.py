@@ -16,7 +16,7 @@ The screen is emulated with pyte, which also answers the terminal's cursor
 and device queries so summonr can measure text. Set SUMMONR_HOME to a
 throwaway home with the keys and theme the recording should use.
 """
-import fcntl, json, os, pty, select, struct, sys, termios, time
+import codecs, fcntl, json, os, pty, select, struct, sys, termios, time
 
 import pyte
 
@@ -53,6 +53,7 @@ class Session:
         self.events = []
         self.start = time.time()
         self.alive = True
+        self.decoder = codecs.getincrementaldecoder("utf-8")("replace")
         env = dict(os.environ, TERM="xterm-256color", COLORTERM="truecolor")
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
@@ -75,7 +76,9 @@ class Session:
             self.out.extend(chunk)
         fresh = bytes(self.out[before:])
         if fresh:
-            self.events.append([round(time.time() - self.start, 3), "o", fresh.decode("utf-8", "replace")])
+            text = self.decoder.decode(fresh)
+            if text:
+                self.events.append([round(time.time() - self.start, 3), "o", text])
             self.stream.feed(fresh)
         return bool(fresh)
 

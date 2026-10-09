@@ -1,8 +1,6 @@
 use super::*;
 use crate::tools::Builtin;
 
-const TITLE_CHARS: usize = 72;
-
 impl Model {
     pub(in crate::tui::sigil_view) fn apply_child(&mut self, id: &str, event: Event) {
         if let Event::ToolCall {
@@ -19,11 +17,13 @@ impl Model {
                 access,
                 call,
                 background,
+                workspace,
             } => self.child_spawn(Agent {
                 call: call.clone(),
                 background: *background,
-                title: title(assignment),
+                title: Agent::title_of(assignment),
                 assignment: assignment.clone(),
+                workspace: workspace.clone(),
                 access: *access,
                 ..Agent::placeholder(tag)
             }),
@@ -111,15 +111,6 @@ impl Model {
             });
         }
     }
-}
-
-fn title(assignment: &str) -> String {
-    let line = assignment.lines().next().unwrap_or_default().trim();
-    let sentence = line
-        .match_indices(". ")
-        .next()
-        .map_or(line, |(at, _)| &line[..at]);
-    crate::text::ellipsize(sentence.trim_end_matches('.'), TITLE_CHARS).to_string()
 }
 
 fn child_line(event: &Event) -> Option<(String, bool, bool)> {

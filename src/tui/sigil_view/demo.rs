@@ -99,6 +99,7 @@ pub(super) fn agents() -> Vec<Agent> {
         background: true,
         title: assignment.to_string(),
         assignment: assignment.to_string(),
+        workspace: String::new(),
         access,
         started: Instant::now() - std::time::Duration::from_secs(secs_ago),
         secs: done.then_some(secs_ago),

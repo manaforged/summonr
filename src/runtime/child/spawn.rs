@@ -130,6 +130,7 @@ impl<P: Provider> Loop<P> {
                 access: record.access,
                 call: args.call.clone(),
                 background: args.background,
+                workspace: record.workspace.to_string_lossy().into_owned(),
             }),
         }));
         Ok(Run {

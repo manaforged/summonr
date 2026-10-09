@@ -59,6 +59,9 @@ pub(super) fn newer(args: &Value) -> Result<Option<u64>> {
 }
 
 pub(super) fn grouped(args: &Value) -> Result<bool> {
+    if args.get("output").and_then(Value::as_str) == Some("folders") {
+        return Ok(true);
+    }
     match args.get("group") {
         None | Some(Value::Null) => Ok(false),
         Some(Value::Bool(on)) => Ok(*on),

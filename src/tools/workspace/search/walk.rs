@@ -168,7 +168,7 @@ fn from_index(query: &Query, shared: &Shared, root: &Root, searcher: &mut Search
     let Some(found) = index::covering(&root.path) else {
         return false;
     };
-    index::each(&found, &root.path, |path| {
+    index::each(&found, &root.path, &query.name, |path| {
         if shared.stop.load(Ordering::Relaxed) || Instant::now() >= query.deadline {
             shared.halt();
             return false;

@@ -1,6 +1,6 @@
 use super::scan::{Found, Row};
 use super::walk::Report;
-use super::{GREP_FILE_HITS, Mode, Query, relative};
+use super::{GREP_FILE_HITS, Mode, OUTPUT_MAX, Query, relative};
 
 #[derive(Default)]
 struct Tally {
@@ -9,9 +9,33 @@ struct Tally {
     truncated: bool,
 }
 
-pub(super) fn render(query: &Query, mut report: Report) -> String {
+pub(super) fn render(query: &Query, report: Report) -> String {
+    let out = shaped(query, report);
+    if out.len() <= OUTPUT_MAX {
+        return out;
+    }
+    let mut end = OUTPUT_MAX;
+    while !out.is_char_boundary(end) {
+        end -= 1;
+    }
+    let end = out[..end].rfind('\n').unwrap_or(end);
+    format!(
+        "{}\n[output cut at {} KB: lower context or limit, or narrow path]",
+        &out[..end],
+        OUTPUT_MAX / 1024
+    )
+}
+
+fn shaped(query: &Query, mut report: Report) -> String {
     if query.group {
         return groups(query, &report);
+    }
+    if query.offset > 0 && query.offset >= report.files && report.files > 0 {
+        return format!(
+            "no entries at offset {}: {} in all",
+            query.offset,
+            crate::text::plural(report.files, "file")
+        );
     }
     let page: Vec<Found> = std::mem::take(&mut report.found)
         .into_iter()

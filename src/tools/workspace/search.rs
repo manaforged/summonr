@@ -16,6 +16,7 @@ const GREP_FILE_HITS: usize = 20;
 const GREP_FILE_MAX: u64 = 1024 * 1024;
 const GREP_LINE_MAX: usize = 500;
 pub(in crate::tools) const CONTEXT_MAX: usize = 10;
+const OUTPUT_MAX: usize = 50 * 1024;
 
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, arguments: &str) -> Result<String> {
@@ -84,7 +85,7 @@ impl ToolRegistry {
             after: object_usize(args, "after")
                 .unwrap_or(context)
                 .min(CONTEXT_MAX),
-            mode: Mode::of(args),
+            mode: Mode::of(args)?,
             multiline,
             tags: object_bool(args, "tags"),
             no_ignore: object_bool(args, "no_ignore"),
@@ -100,6 +101,7 @@ impl ToolRegistry {
     fn search_roots(&self, args: &Value) -> Result<(Vec<Root>, Vec<String>)> {
         let listed: Vec<&str> = args
             .get("paths")
+            .or_else(|| args.get("path"))
             .and_then(Value::as_array)
             .map(|paths| paths.iter().filter_map(Value::as_str).collect())
             .unwrap_or_default();
@@ -255,6 +257,14 @@ fn build_types(args: &Value) -> Result<Option<ignore::types::Types>> {
         .transpose()
 }
 
+const OUTPUTS: &[(&str, Mode)] = &[
+    ("lines", Mode::Content),
+    ("content", Mode::Content),
+    ("files", Mode::Files),
+    ("count", Mode::Count),
+    ("folders", Mode::Files),
+];
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Content,
@@ -263,14 +273,25 @@ enum Mode {
 }
 
 impl Mode {
-    fn of(args: &Value) -> Self {
-        if object_bool(args, "count") {
+    fn of(args: &Value) -> Result<Self> {
+        if let Some(name) = args.get("output").and_then(Value::as_str) {
+            return OUTPUTS
+                .iter()
+                .find(|(output, _)| *output == name)
+                .map(|(_, mode)| *mode)
+                .ok_or_else(|| {
+                    Error::Tool(format!(
+                        "search output `{name}` is invalid: use lines, files, count, or folders"
+                    ))
+                });
+        }
+        Ok(if object_bool(args, "count") {
             Self::Count
         } else if object_bool(args, "files") || object_bool(args, "files_only") {
             Self::Files
         } else {
             Self::Content
-        }
+        })
     }
 }
 

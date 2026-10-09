@@ -116,3 +116,72 @@ fn a_tag_from_a_long_line_edits_that_line() {
         "let value = 1;\nend\n"
     );
 }
+
+#[test]
+fn the_schema_stays_small_and_old_argument_names_still_work() {
+    let (dir, tools) = workspace(&[("a.rs", "needle\n"), ("b.rs", "needle\n")]);
+    std::fs::create_dir_all(dir.path().join("lib")).unwrap();
+    std::fs::write(dir.path().join("lib/c.rs"), "needle\n").unwrap();
+    let definition = tools
+        .definitions()
+        .into_iter()
+        .find(|tool| {
+            crate::tools::Builtin::live(&tool.function.name) == Some(crate::tools::Builtin::Search)
+        })
+        .unwrap();
+    let properties = definition.function.parameters["properties"]
+        .as_object()
+        .unwrap()
+        .len();
+    assert!(properties <= 15, "{properties} search arguments");
+    let files = search(
+        &tools,
+        serde_json::json!({"pattern": "needle", "files": true}),
+    );
+    let listed = search(
+        &tools,
+        serde_json::json!({"pattern": "needle", "output": "files"}),
+    );
+    assert_eq!(files, listed);
+    let folders = search(
+        &tools,
+        serde_json::json!({"glob": "*.rs", "output": "folders"}),
+    );
+    assert!(folders.starts_with("3 files in 2 folders"), "{folders}");
+    let both = search(
+        &tools,
+        serde_json::json!({"pattern": "needle", "path": ["lib", "a.rs"]}),
+    );
+    assert!(
+        both.contains("lib/c.rs") && both.contains("a.rs:1:"),
+        "{both}"
+    );
+    assert!(!both.contains("b.rs"), "{both}");
+    let past = search(&tools, serde_json::json!({"glob": "*.rs", "offset": 9}));
+    assert_eq!(past, "no entries at offset 9: 3 files in all");
+}
+
+#[test]
+fn a_flood_of_matches_is_cut_at_the_output_cap() {
+    let block = format!(
+        "needle here\n{}",
+        "filler text that only pads the context around each match\n".repeat(20)
+    );
+    let text = block.repeat(40);
+    let names: Vec<String> = (0..10).map(|at| format!("f{at}.txt")).collect();
+    let files: Vec<(&str, &str)> = names
+        .iter()
+        .map(|name| (name.as_str(), text.as_str()))
+        .collect();
+    let (_dir, tools) = workspace(&files);
+    let hits = search(
+        &tools,
+        serde_json::json!({"pattern": "needle", "context": 10, "limit": 200}),
+    );
+    assert!(hits.len() <= 50 * 1024 + 100, "{}", hits.len());
+    assert!(
+        hits.ends_with("narrow path]"),
+        "{}",
+        &hits[hits.len() - 80..]
+    );
+}

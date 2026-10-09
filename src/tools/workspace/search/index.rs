@@ -58,7 +58,12 @@ pub(super) fn covering(root: &Path) -> Option<Index> {
     })
 }
 
-pub(super) fn each(index: &Index, root: &Path, mut visit: impl FnMut(PathBuf) -> bool) {
+pub(super) fn each(
+    index: &Index,
+    root: &Path,
+    words: &[String],
+    mut visit: impl FnMut(PathBuf) -> bool,
+) {
     let Ok(file) = File::open(&index.file) else {
         return;
     };
@@ -70,6 +75,8 @@ pub(super) fn each(index: &Index, root: &Path, mut visit: impl FnMut(PathBuf) ->
         }
     }
     let prefix = root.to_string_lossy().into_owned();
+    let prefix = prefix.trim_end_matches('/').as_bytes().to_vec();
+    let words: Vec<&[u8]> = words.iter().map(String::as_bytes).collect();
     let mut entry: Vec<u8> = Vec::new();
     let mut inside = false;
     while let (Some(shared), Some(len)) = (number(&mut reader), number(&mut reader)) {
@@ -79,17 +86,42 @@ pub(super) fn each(index: &Index, root: &Path, mut visit: impl FnMut(PathBuf) ->
         if reader.read_exact(&mut entry[start..]).is_err() {
             return;
         }
-        let text = String::from_utf8_lossy(&entry);
-        let path = Path::new(text.as_ref());
-        if path.starts_with(&prefix) {
-            inside = true;
-            if !visit(path.to_path_buf()) {
+        if !under(&entry, &prefix) {
+            if inside {
                 return;
             }
-        } else if inside {
+            continue;
+        }
+        inside = true;
+        if !named(&entry, &words) {
+            continue;
+        }
+        let path = PathBuf::from(String::from_utf8_lossy(&entry).into_owned());
+        if !visit(path) {
             return;
         }
     }
+}
+
+fn under(entry: &[u8], prefix: &[u8]) -> bool {
+    entry.starts_with(prefix)
+        && (prefix.is_empty() || entry.get(prefix.len()).is_none_or(|next| *next == b'/'))
+}
+
+fn named(entry: &[u8], words: &[&[u8]]) -> bool {
+    if words.is_empty() {
+        return true;
+    }
+    let name = entry
+        .iter()
+        .rposition(|byte| *byte == b'/')
+        .map_or(entry, |slash| &entry[slash + 1..]);
+    words.iter().all(|word| {
+        !word.is_ascii()
+            || name
+                .windows(word.len().max(1))
+                .any(|window| window.eq_ignore_ascii_case(word))
+    })
 }
 
 fn number(reader: &mut impl Read) -> Option<usize> {

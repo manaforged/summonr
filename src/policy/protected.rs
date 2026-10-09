@@ -1,4 +1,5 @@
 use std::path::{Component, Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 const WORKSPACE_CONTROL: &[&[&str]] = &[&[".summonr", "check.toml"], &[".summonr", "policy.toml"]];
 
@@ -42,21 +43,37 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     {
         return true;
     }
-    protected_dirs().any(|dir| path.starts_with(dir))
+    protected_dirs().iter().any(|dir| path.starts_with(dir))
 }
 
 pub(crate) fn holds_protected(path: &Path) -> bool {
-    protected_dirs().any(|dir| dir.starts_with(path))
+    protected_dirs().iter().any(|dir| dir.starts_with(path))
 }
 
-fn protected_dirs() -> impl Iterator<Item = PathBuf> {
+type Dirs = (Option<PathBuf>, Option<PathBuf>, Arc<Vec<PathBuf>>);
+
+fn protected_dirs() -> Arc<Vec<PathBuf>> {
+    static CACHE: Mutex<Option<Dirs>> = Mutex::new(None);
     let home = crate::config::home_dir();
-    SECRET_DIRS
-        .iter()
-        .filter_map(move |dir| home.as_ref().map(|home| home.join(dir)))
-        .chain(crate::prompt::summonr_home())
-        .flat_map(|dir| {
-            let real = dir.canonicalize().ok().filter(|real| *real != dir);
-            std::iter::once(dir).chain(real)
-        })
+    let summonr = crate::prompt::summonr_home().ok();
+    let mut cache = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((cached_home, cached_summonr, dirs)) = cache.as_ref()
+        && *cached_home == home
+        && *cached_summonr == summonr
+    {
+        return Arc::clone(dirs);
+    }
+    let dirs: Arc<Vec<PathBuf>> = Arc::new(
+        SECRET_DIRS
+            .iter()
+            .filter_map(|dir| home.as_ref().map(|home| home.join(dir)))
+            .chain(summonr.clone())
+            .flat_map(|dir| {
+                let real = dir.canonicalize().ok().filter(|real| *real != dir);
+                std::iter::once(dir).chain(real)
+            })
+            .collect(),
+    );
+    *cache = Some((home, summonr, Arc::clone(&dirs)));
+    dirs
 }

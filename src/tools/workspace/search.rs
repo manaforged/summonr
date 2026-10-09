@@ -22,7 +22,17 @@ impl ToolRegistry {
         let args: Value = parse_args("search", arguments)?;
         let (roots, missing) = self.search_roots(&args)?;
         let query = Arc::new(self.query(&args, roots)?);
+        let started = Instant::now();
         let report = walk::run(&query)?;
+        let slow = started.elapsed().as_millis()
+            >= u128::from(crate::limits::limits().search_index_after_ms);
+        for root in query
+            .roots
+            .iter()
+            .filter(|root| query.indexable(&root.path))
+        {
+            index::refresh(&root.path, slow);
+        }
         let out = render::render(&query, report);
         Ok(if missing.is_empty() {
             out
@@ -221,6 +231,13 @@ struct Query {
     no_ignore: bool,
 }
 
+impl Query {
+    fn indexable(&self, root: &Path) -> bool {
+        (self.matcher.is_none() || self.glob || !self.name.is_empty())
+            && !root.starts_with(&self.shown)
+    }
+}
+
 fn build_types(args: &Value) -> Result<Option<ignore::types::Types>> {
     args.get("type")
         .or_else(|| args.get("file_type"))
@@ -287,6 +304,7 @@ fn build_overrides(
 }
 
 mod filter;
+pub(in crate::tools) mod index;
 mod render;
 mod scan;
 mod walk;

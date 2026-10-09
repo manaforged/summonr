@@ -186,6 +186,12 @@ fn skipped_note(query: &Query) -> String {
 
 fn coverage(report: &Report) -> String {
     let mut out = String::new();
+    if let Some(built) = report.indexed {
+        out.push_str(&format!(
+            "; from the file index of {} ago, so files made since appear after the refresh this search started",
+            crate::text::duration(crate::mail::now().saturating_sub(built))
+        ));
+    }
     if report.links > 0 {
         out.push_str(&format!(
             "; includes {}, which find -type f leaves out",

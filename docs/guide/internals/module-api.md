@@ -62,6 +62,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | verify | `verify.rs`, `.summonr/check.toml` | the commands that decide pass or fail |
 | check verdict | `Work::record_check`, `SessionDriver::record_check`, `Loop::stop_work` | one verdict source for `checks_failed` and the exit code; `stop_work` ends Work, runs the check once at exit, and returns the exit code |
 | default check | `language::check` | the workspace's default check from the language table (`cargo test`, `go test ./...`, `npm test` with a `test` script); `/goal` uses it when no check is configured |
+| file index | `search/index.rs` (`covering`, `each`, `refresh`, `build`), `summonr --index-files ROOT` (internal) | the one filename index for name searches outside the workspace: built by a detached helper process after a slow search, refreshed when older than `search_index_secs`, stored in `~/.summonr/cache/names/` |
 | secret shield | `secret::shield::scrub`, `policy::protected::{protected_read, holds_protected}` | the one owner of what the model may not see: every tool result passes `scrub` (askpass passwords, secret values from `.env`-style files, PEM private keys); protected files and folders are data in `protected.rs` |
 | workspace control files | `policy::protected::workspace_control` | `.summonr/check.toml` and `.summonr/policy.toml`; the model cannot write them |
 | abort | `Abort`, `AbortCode` | the typed reason a turn stopped: `time_budget`, `token_budget`, `interrupted`, `cancelled`, `error`; `reason` is free text |

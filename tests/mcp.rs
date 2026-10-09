@@ -16,6 +16,8 @@ mod plugins;
 mod policy;
 #[path = "mcp/protocol.rs"]
 mod protocol;
+#[path = "mcp/search_index.rs"]
+mod search_index;
 #[path = "mcp/secrets.rs"]
 mod secrets;
 #[path = "mcp/session.rs"]
@@ -114,6 +116,8 @@ fn main() {
         policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
         #[cfg(unix)]
         secrets::secret_values_never_reach_the_model_but_commands_still_load_them,
+        #[cfg(unix)]
+        search_index::a_name_search_outside_the_workspace_answers_from_the_index_and_checks_the_disk,
         protocol::the_client_offers_the_current_spec_with_roots,
         protocol::a_server_on_an_unknown_version_is_refused,
         protocol::the_server_can_ask_for_the_workspace_roots,

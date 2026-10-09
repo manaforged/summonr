@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 use crate::{SKIP_DIRS, STATE_DIRS};
 
 use super::scan::{self, Found};
-use super::{Query, Root, filter};
+use super::{Query, Root, filter, index};
 
 #[derive(Default)]
 pub(super) struct Report {
@@ -24,6 +24,7 @@ pub(super) struct Report {
     pub(super) capped: usize,
     pub(super) unreadable: usize,
     pub(super) links: usize,
+    pub(super) indexed: Option<u64>,
     pub(super) stopped: bool,
     pub(super) groups: BTreeMap<String, usize>,
 }
@@ -116,6 +117,10 @@ fn walk_all(query: &Query, shared: &Shared) {
     for root in files {
         visit_path(query, shared, root, root.path.clone(), &mut searcher);
     }
+    let dirs: Vec<&Root> = dirs
+        .into_iter()
+        .filter(|root| !from_index(query, shared, root, &mut searcher))
+        .collect();
     let Some((first, rest)) = dirs.split_first() else {
         return;
     };
@@ -156,20 +161,65 @@ fn walk_all(query: &Query, shared: &Shared) {
     });
 }
 
+fn from_index(query: &Query, shared: &Shared, root: &Root, searcher: &mut Searcher) -> bool {
+    if !query.indexable(&root.path) {
+        return false;
+    }
+    let Some(found) = index::covering(&root.path) else {
+        return false;
+    };
+    index::each(&found, &root.path, |path| {
+        if shared.stop.load(Ordering::Relaxed) || Instant::now() >= query.deadline {
+            shared.halt();
+            return false;
+        }
+        if fits(query, &root.path, &path) {
+            visit_path(query, shared, root, path, searcher);
+        }
+        true
+    });
+    let mut report = shared.report.lock().unwrap_or_else(PoisonError::into_inner);
+    report.indexed = Some(
+        report
+            .indexed
+            .map_or(found.built, |built| built.min(found.built)),
+    );
+    true
+}
+
+fn fits(query: &Query, root: &Path, path: &Path) -> bool {
+    let inside = path.strip_prefix(root).unwrap_or(path);
+    query
+        .depth
+        .is_none_or(|depth| inside.components().count() <= depth)
+        && (query.no_ignore
+            || !inside
+                .components()
+                .any(|part| SKIP_DIRS.contains(&part.as_os_str().to_string_lossy().as_ref())))
+        && query
+            .types
+            .as_ref()
+            .is_none_or(|types| !types.matched(path, false).is_ignore())
+}
+
+pub(super) fn skipped_root(path: &Path) -> bool {
+    SKIP_ROOTS.iter().any(|skipped| path == Path::new(skipped))
+}
+
 fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, searcher: &mut Searcher) {
     if query.matcher.is_none() {
         shared.searched.fetch_add(1, Ordering::Relaxed);
     }
-    if !keep(&path, root.overrides.as_ref(), query.glob)
-        || !filter::named(&query.name, &path)
+    if !filter::named(&query.name, &path)
+        || !keep(&path, root.overrides.as_ref(), query.glob)
         || (query.roots.len() > 1 && !shared.first_visit(&path))
     {
         return;
     }
-    let (modified, size) = path
-        .metadata()
-        .or_else(|_| path.symlink_metadata())
-        .map_or((0, 0), |meta| stamp(&meta));
+    let Ok(meta) = path.metadata().or_else(|_| path.symlink_metadata()) else {
+        return;
+    };
+    let (modified, size) = stamp(&meta);
     if query.newer.is_some_and(|newer| modified < newer) {
         return;
     }
@@ -217,9 +267,7 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
             entry.depth() == 0
                 || !entry.file_type().is_some_and(|kind| kind.is_dir())
                 || !(skipped.contains(&entry.file_name().to_string_lossy().as_ref())
-                    || SKIP_ROOTS
-                        .iter()
-                        .any(|mirror| entry.path() == Path::new(mirror))
+                    || skipped_root(entry.path())
                     || crate::policy::protected_read(entry.path()))
         });
     if no_ignore {
@@ -236,14 +284,11 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
 }
 
 fn keep(path: &Path, overrides: Option<&Override>, require_match: bool) -> bool {
-    if crate::policy::protected_read(path) {
-        return false;
-    }
-    let Some(overrides) = overrides else {
-        return true;
-    };
-    let matched = overrides.matched(path, false);
-    !(matched.is_ignore() || (require_match && !matched.is_whitelist()))
+    let wanted = overrides.is_none_or(|overrides| {
+        let matched = overrides.matched(path, false);
+        !(matched.is_ignore() || (require_match && !matched.is_whitelist()))
+    });
+    wanted && !crate::policy::protected_read(path)
 }
 
 fn stamp(meta: &std::fs::Metadata) -> (u64, u64) {

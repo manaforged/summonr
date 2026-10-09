@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- Name searches over large paths outside the workspace answer from a file index: the first slow search builds it in the background, and later ones over a home folder of 1.5 million files take about half a second instead of a 20-second walk. Each hit is checked on disk, the result says how old the index is, and `search_index_secs` and `search_index_after_ms` in `[limits]` tune it.
 - `search` finds files by words in their names (`name: "q3 report"`), matches whole words (`word`), takes a list of patterns, keeps files changed within a span (`newer: "2d"`), counts matches per folder (`group: "folder"`), and pages with `offset`. A glob without wildcards matches names that contain it, `no_ignore` also reaches build folders, and results name unreadable folders and paths that could not be opened. Every argument carries its own description for the model.
 - Several sessions stay live in one window or terminal. `/new` starts a session beside the current one, and `/resume` or a click in the window's sidebar switches without restarting. The sidebar groups open sessions by project and marks each as working, needs you, ready, or failed. A session open in one summonr cannot be opened in another.
 - The window draws its own conversation view: tool calls fold into a steps card, code blocks carry a copy button, and the composer holds the attach, model, and mode controls.

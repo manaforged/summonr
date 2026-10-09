@@ -13,13 +13,11 @@ use crate::error::{Error, Result};
 const HITS_DEFAULT: usize = 5;
 const HITS_MAX: usize = 8;
 const QUERY_MAX: usize = 400;
-
-const SEARCH_URL: &str = "https://www.bing.com/search";
 mod fetch;
 mod results;
 
 use fetch::{host_blocked, resolves_blocked};
-use results::{Hit, flat, format_hits, parse_rss};
+use results::{Engine, Hit, Window, engines, flat, format_hits, parse_page};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Format {
@@ -47,7 +45,6 @@ pub(crate) struct Search {
     count: usize,
     allowed: Vec<String>,
     excluded: Vec<String>,
-    origin: Option<String>,
     logs: Arc<Mutex<Vec<tempfile::TempDir>>>,
 }
 
@@ -63,7 +60,6 @@ impl Search {
             count,
             allowed,
             excluded,
-            origin: None,
             logs: Arc::new(Mutex::new(Vec::new())),
         })
     }
@@ -95,54 +91,66 @@ impl Search {
             return Err(Error::Tool("web_search query is too long".to_string()));
         }
         let count = count.unwrap_or(self.count).clamp(1, HITS_MAX);
-        let hits = self.rss(query, freshness).await?;
+        let freshness = Window::parse(freshness)?;
+        let mut failure = None;
+        let mut found = None;
+        for engine in engines()? {
+            match self.page(engine, query, freshness).await {
+                Ok(hits) if !hits.is_empty() => {
+                    found = Some((engine, hits));
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    failure.get_or_insert(error);
+                }
+            }
+        }
+        let Some((engine, hits)) = found else {
+            return match failure {
+                Some(error) => Err(error),
+                None => Ok(format_hits(query, &[])),
+            };
+        };
         let hits = self
             .filter_hits(hits)
             .into_iter()
             .take(count)
             .collect::<Vec<_>>();
-        Ok(format!("{}\nvia bing rss", format_hits(query, &hits)))
+        Ok(format!(
+            "{}\nvia {}",
+            format_hits(query, &hits),
+            engine.name
+        ))
     }
 
-    async fn rss(&self, query: &str, freshness: Option<&str>) -> Result<Vec<Hit>> {
-        let endpoint = self
-            .origin
-            .clone()
-            .unwrap_or_else(|| SEARCH_URL.to_string());
-        let mut url = Url::parse(&endpoint)
-            .map_err(|error| Error::Tool(format!("web_search url: {error}")))?;
-        {
-            let mut pairs = url.query_pairs_mut();
-            pairs.append_pair("q", query);
-            pairs.append_pair("format", "rss");
-            if let Some(filter) = freshness_filter(freshness) {
-                pairs.append_pair("filters", filter);
-            }
-        }
+    async fn page(
+        &self,
+        engine: &Engine,
+        query: &str,
+        freshness: Option<Window>,
+    ) -> Result<Vec<Hit>> {
+        let url = engine.request(query, freshness)?;
         let response = self
             .http()?
             .get(url.as_str())
-            .header("accept", "application/rss+xml, application/xml")
+            .header("accept", "text/html,application/xhtml+xml")
             .send()
             .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+            .map_err(|error| Error::Tool(format!("web_search {} failed: {error}", engine.name)))?;
         let status = response.status();
         let body = response
             .text()
             .await
-            .map_err(|error| Error::Tool(format!("web_search failed: {error}")))?;
+            .map_err(|error| Error::Tool(format!("web_search {} failed: {error}", engine.name)))?;
         if !status.is_success() {
             return Err(Error::Tool(format!(
-                "web_search HTTP {status}: {}",
+                "web_search {} HTTP {status}: {}",
+                engine.name,
                 crate::text::ellipsize(&flat(&body), 200)
             )));
         }
-        if !body.contains("<rss") {
-            return Err(Error::Tool(
-                "web_search returned an unexpected response".to_string(),
-            ));
-        }
-        Ok(parse_rss(&body))
+        Ok(parse_page(&body, engine))
     }
 
     fn filter_hits(&self, hits: Vec<Hit>) -> Vec<Hit> {
@@ -233,15 +241,6 @@ fn normalize_domains(list: Vec<String>) -> Vec<String> {
         .map(|d| d.trim().trim_start_matches('.').to_ascii_lowercase())
         .filter(|d| !d.is_empty() && !d.starts_with("http"))
         .collect()
-}
-
-fn freshness_filter(value: Option<&str>) -> Option<&'static str> {
-    match value {
-        Some("day") => Some("ex1:\"ez1\""),
-        Some("week") => Some("ex1:\"ez2\""),
-        Some("month") => Some("ex1:\"ez3\""),
-        _ => None,
-    }
 }
 
 #[cfg(test)]

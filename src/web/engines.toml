@@ -1,0 +1,35 @@
+[[engine]]
+name = "duckduckgo"
+url = "https://html.duckduckgo.com/html/"
+query = "q"
+block = "web-result"
+link = "result__a"
+snippet = "result__snippet"
+unwrap = "uddg"
+hosts = ["duckduckgo.com"]
+
+[engine.freshness]
+param = "df"
+
+[engine.freshness.values]
+day = "d"
+week = "w"
+month = "m"
+
+[[engine]]
+name = "brave"
+url = "https://search.brave.com/search"
+query = "q"
+block = "data-type=\"web\""
+link = "l1"
+title = "search-snippet-title"
+snippet = "generic-snippet"
+hosts = ["brave.com"]
+
+[engine.freshness]
+param = "tf"
+
+[engine.freshness.values]
+day = "pd"
+week = "pw"
+month = "pm"

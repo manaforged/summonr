@@ -21,6 +21,9 @@ case $vendor in
     envfile=glm.env keyenv=ZAI_API_KEY port=8095 model=${BENCH_MODEL:-glm-5.3-flash}
     upstream=https://api.z.ai/api/coding/paas/v4 anthropic=https://api.z.ai/api/anthropic
     routes=(OPENCODE_GO_API_KEY=https://opencode.ai/zen/go/v1) drops=(opencode.ai=thinking,tool_stream) ;;
+  openai)
+    envfile=openai.env keyenv=OPENAI_API_KEY port=8096 model=${BENCH_MODEL:-gpt-6.1-sol}
+    upstream=https://api.openai.com/v1 anthropic="" ;;
   *)
     envfile=deepseek.env keyenv=DEEPSEEK_API_KEY port=8094 model=${BENCH_MODEL:-deepseek-flash}
     upstream=https://api.deepseek.com anthropic=https://api.deepseek.com/anthropic ;;
@@ -81,13 +84,13 @@ fi
   echo "harness.sh $(sha256sum "$root/harness.sh" | cut -d' ' -f1)"
   echo "summonr $(awk '$1=="summonr"{print $2}' "$root/tools/versions.txt")"
   echo "summonr_commit $(awk '$1=="summonr_commit"{print $2}' "$root/tools/versions.txt")"
-  awk '$1 ~ /^(summonr_version|pi|opencode2|hermes|omp|bun|node)$/ {print $1, $2}' "$root/tools/versions.txt"
+  awk '$1 ~ /^(summonr_version|pi|opencode2|hermes|omp|codex|bun|node)$/ {print $1, $2}' "$root/tools/versions.txt"
   echo "manifest $(sha256sum "$root/tools/manifest.sha256" | cut -d' ' -f1)"
 } > "$root/jobs/$run/run.txt.new"
 if [ -f "$root/jobs/$run/run.txt" ]; then
   while read -r key value; do
     case $key in
-      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|summonr_version|pi|opencode2|hermes|omp|bun|node|manifest)
+      seed|vendor|provider|model|effort|repeats|timeout_mult|harness.sh|dataset|tasks|summonr|summonr_commit|summonr_version|pi|opencode2|hermes|omp|codex|bun|node|manifest)
         old=$(awk -v k="$key" '$1==k{print $2}' "$root/jobs/$run/run.txt")
         if [ -n "$old" ] && [ "$old" != "$value" ]; then
           rm -f "$root/jobs/$run/run.txt.new"

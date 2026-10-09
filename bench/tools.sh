@@ -67,7 +67,7 @@ fi
 if [ -x "$out/summonr/bin/summonr" ]; then
   echo "summonr_version $("$out/summonr/bin/summonr" --version | awk '{print $2}')" >> "$out/versions.txt"
 fi
-pi=$(pin pi) opencode2=$(pin opencode2) omp=$(pin omp)
+pi=$(pin pi) opencode2=$(pin opencode2) omp=$(pin omp) codex=$(pin codex)
 if [ -x "$out/node/bin/node" ] && [ -n "$pi" ]; then
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/pi" "@earendil-works/pi-coding-agent@$pi"
   echo "node $("$out/node/bin/node" --version | tr -d v)" >> "$out/versions.txt"
@@ -83,6 +83,14 @@ if [ -x "$out/node/bin/node" ] && [ -n "$omp" ]; then
   PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/omp" "@oh-my-pi/pi-coding-agent@$omp"
   echo "omp $("$out/node/bin/node" -p "require('$out/omp/lib/node_modules/@oh-my-pi/pi-coding-agent/package.json').version")" >> "$out/versions.txt"
   echo "bun $("$out/bun/bun" --version)" >> "$out/versions.txt"
+fi
+if [ -x "$out/node/bin/node" ] && [ -n "$codex" ]; then
+  rm -rf "$out/codex" "$out/codex-npm"
+  PATH="$out/node/bin:$PATH" npm install -g --silent --prefix "$out/codex-npm" "@openai/codex@$codex"
+  platform=$("$out/node/bin/node" -p "require('path').dirname(require.resolve('@openai/codex-linux-x64/package.json', {paths: ['$out/codex-npm/lib/node_modules/@openai/codex']}))")
+  cp -R "$platform/vendor/x86_64-unknown-linux-musl" "$out/codex"
+  rm -rf "$out/codex-npm"
+  echo "codex $("$out/codex/bin/codex" --version | awk '{print $2}')" >> "$out/versions.txt"
 fi
 if [ -n "$hermes" ]; then
   [ -x "$out/hermes/.venv/bin/hermes" ] || { echo "missing tool entrypoint: hermes/.venv/bin/hermes" >&2; exit 1; }

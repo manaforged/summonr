@@ -22,7 +22,7 @@ impl ToolRegistry {
         let args: Value = parse_args("search", arguments)?;
         let (roots, missing) = self.search_roots(&args)?;
         let query = Arc::new(self.query(&args, roots)?);
-        let report = walk::run(&query);
+        let report = walk::run(&query)?;
         let mut out = scan::render(&query, report);
         for line in missing {
             out.push('\n');
@@ -90,7 +90,7 @@ impl ToolRegistry {
             let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
             return Ok((vec![self.root(path)?], Vec::new()));
         }
-        let mut roots = Vec::new();
+        let mut roots: Vec<Root> = Vec::new();
         let mut missing = Vec::new();
         for path in listed {
             match self.root(path) {
@@ -98,6 +98,8 @@ impl ToolRegistry {
                 Err(error) => missing.push(format!("{path}: {error}")),
             }
         }
+        roots.sort_by(|left, right| left.path.cmp(&right.path));
+        roots.dedup_by(|later, kept| later.path.starts_with(&kept.path));
         Ok((roots, missing))
     }
 

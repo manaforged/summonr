@@ -220,14 +220,20 @@ fn a_timed_out_command_is_a_change_only_when_it_can_write() {
     assert!(search.text.contains("timed out"), "{}", search.text);
     assert!(!search.mutated, "{}", search.text);
     assert!(!search.text.contains("may have changed"), "{}", search.text);
-    let redirected = timed_out("tail -f /dev/null > out.txt");
-    assert!(redirected.mutated, "{}", redirected.text);
-    assert!(
-        redirected.text.contains("may have changed"),
-        "{}",
-        redirected.text
-    );
-    assert!(dir.path().join("out.txt").exists());
+    for (command, file) in [
+        ("tail -f /dev/null > out.txt", "out.txt"),
+        ("tail -f /dev/null > 1", "1"),
+        ("tail -f /dev/null 3> fd.txt", "fd.txt"),
+    ] {
+        let redirected = timed_out(command);
+        assert!(redirected.mutated, "{command}: {}", redirected.text);
+        assert!(
+            redirected.text.contains("may have changed"),
+            "{command}: {}",
+            redirected.text
+        );
+        assert!(dir.path().join(file).exists(), "{command}");
+    }
 }
 
 #[test]
@@ -236,6 +242,9 @@ fn a_protected_read_is_refused_from_any_working_directory() {
     for (command, workdir) in [
         ("wc -l .ssh/config", Some("~")),
         ("cd ~ && wc -l .ssh/config", None),
+        ("cd \"$HOME\" && wc -l .ssh/config", None),
+        ("cd && wc -l .ssh/config", None),
+        ("cp ~/.ssh/config copied.txt", None),
     ] {
         let mut arguments = serde_json::json!({ "command": command });
         if let Some(workdir) = workdir {

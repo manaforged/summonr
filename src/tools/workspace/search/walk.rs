@@ -5,9 +5,10 @@ use std::time::{Instant, UNIX_EPOCH};
 
 use grep_searcher::Searcher;
 use ignore::overrides::Override;
-use ignore::{DirEntry, WalkBuilder, WalkState};
+use ignore::{WalkBuilder, WalkState};
 
 use crate::SKIP_DIRS;
+use crate::error::{Error, Result};
 
 use super::scan::{self, Found};
 use super::{Query, Root};
@@ -62,63 +63,68 @@ impl Shared {
     }
 }
 
-pub(super) fn run(query: &Arc<Query>) -> Report {
+pub(super) fn run(query: &Arc<Query>) -> Result<Report> {
     let shared = Arc::new(Shared::default());
     let (done, finished) = mpsc::channel::<()>();
     let (owned, state) = (Arc::clone(query), Arc::clone(&shared));
-    let spawned = std::thread::Builder::new()
+    let worker = std::thread::Builder::new()
         .name("search".to_string())
         .spawn(move || {
             walk_all(&owned, &state);
             drop(done);
-        });
-    match spawned {
-        Ok(_) => {
-            let wait = query.deadline.saturating_duration_since(Instant::now());
-            if let Err(mpsc::RecvTimeoutError::Timeout) = finished.recv_timeout(wait) {
-                shared.halt();
+        })
+        .map_err(|error| Error::Tool(format!("search could not start: {error}")))?;
+    let wait = query.deadline.saturating_duration_since(Instant::now());
+    match finished.recv_timeout(wait) {
+        Err(mpsc::RecvTimeoutError::Timeout) => shared.halt(),
+        Err(mpsc::RecvTimeoutError::Disconnected) | Ok(()) => {
+            if worker.join().is_err() {
+                return Err(Error::Tool(
+                    "search failed while it walked the files".to_string(),
+                ));
             }
         }
-        Err(_) => walk_all(query, &shared),
     }
-    shared.take()
+    Ok(shared.take())
 }
 
 fn walk_all(query: &Query, shared: &Shared) {
-    for root in &query.roots {
-        if shared.stop.load(Ordering::Relaxed) {
-            return;
-        }
-        if root.path.is_file() {
-            let mut searcher = scan::searcher(query);
-            visit_path(query, shared, root, root.path.clone(), &mut searcher);
-            continue;
-        }
-        let mut walker = walker(&root.path, query.types.clone(), query.no_ignore);
-        walker.max_depth(query.depth);
-        walker.build_parallel().run(|| {
-            let mut searcher = scan::searcher(query);
-            Box::new(move |entry| {
-                if shared.stop.load(Ordering::Relaxed) {
-                    return WalkState::Quit;
-                }
-                if Instant::now() >= query.deadline {
-                    shared.halt();
-                    return WalkState::Quit;
-                }
-                if let Ok(entry) = entry {
-                    visit(query, shared, root, entry, &mut searcher);
-                }
-                WalkState::Continue
-            })
-        });
+    let (files, dirs): (Vec<&Root>, Vec<&Root>) =
+        query.roots.iter().partition(|root| root.path.is_file());
+    let mut searcher = scan::searcher(query);
+    for root in files {
+        visit_path(query, shared, root, root.path.clone(), &mut searcher);
     }
-}
-
-fn visit(query: &Query, shared: &Shared, root: &Root, entry: DirEntry, searcher: &mut Searcher) {
-    if entry.file_type().is_some_and(|kind| kind.is_file()) {
-        visit_path(query, shared, root, entry.into_path(), searcher);
+    let Some((first, rest)) = dirs.split_first() else {
+        return;
+    };
+    let mut walker = walker(&first.path, query.types.clone(), query.no_ignore);
+    for root in rest {
+        walker.add(&root.path);
     }
+    walker.max_depth(query.depth);
+    walker.build_parallel().run(|| {
+        let mut searcher = scan::searcher(query);
+        let dirs = &dirs;
+        Box::new(move |entry| {
+            if shared.stop.load(Ordering::Relaxed) {
+                return WalkState::Quit;
+            }
+            if Instant::now() >= query.deadline {
+                shared.halt();
+                return WalkState::Quit;
+            }
+            if let Ok(entry) = entry
+                && entry.file_type().is_some_and(|kind| kind.is_file())
+                && let Some(root) = dirs
+                    .iter()
+                    .find(|root| entry.path().starts_with(&root.path))
+            {
+                visit_path(query, shared, root, entry.into_path(), &mut searcher);
+            }
+            WalkState::Continue
+        })
+    });
 }
 
 fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, searcher: &mut Searcher) {

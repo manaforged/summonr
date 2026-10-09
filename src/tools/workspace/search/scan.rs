@@ -144,7 +144,9 @@ pub(super) fn file(
         binary: false,
     };
     shared.searched.fetch_add(1, Relaxed);
-    if searcher.search_path(matcher, path, &mut collect).is_err()
+    if open(path)
+        .and_then(|file| searcher.search_file(matcher, &file, &mut collect))
+        .is_err()
         || (collect.binary && !collect.matched)
     {
         shared.skipped.fetch_add(1, Relaxed);
@@ -155,6 +157,20 @@ pub(super) fn file(
         matches: collect.matches,
         over: collect.over,
     })
+}
+
+#[cfg(unix)]
+fn open(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)
+}
+
+#[cfg(not(unix))]
+fn open(path: &Path) -> io::Result<std::fs::File> {
+    std::fs::File::open(path)
 }
 
 pub(super) fn render(query: &Query, mut report: Report) -> String {

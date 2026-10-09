@@ -117,8 +117,22 @@ impl ToolRegistry {
         let opened = existing(&requested)
             .canonicalize()
             .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
+        let normal = requested
+            .components()
+            .fold(PathBuf::new(), |mut path, part| {
+                match part {
+                    Component::ParentDir => {
+                        path.pop();
+                    }
+                    Component::CurDir => {}
+                    other => path.push(other),
+                }
+                path
+            });
         if !self.policy.is_unrestricted()
-            && (crate::policy::protected_read(&requested) || crate::policy::protected_read(&opened))
+            && [&requested, &normal, &opened]
+                .into_iter()
+                .any(|path| crate::policy::protected_read(path))
         {
             return Err(Error::Denied(format!("`{path}` is a protected path")));
         }

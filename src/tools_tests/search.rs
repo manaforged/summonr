@@ -181,3 +181,29 @@ fn a_search_over_several_paths_shares_one_limit_and_lists_the_newest_hit_first()
     assert_eq!(lines.len(), 1, "{hits}");
     assert!(lines[0].ends_with("new.txt:1:1:hit"), "{hits}");
 }
+
+#[test]
+fn overlapping_search_paths_report_each_file_once() {
+    let (dir, tools) = workspace(&[]);
+    std::fs::create_dir_all(dir.path().join("sub")).unwrap();
+    std::fs::write(dir.path().join("sub/a.txt"), "hit\n").unwrap();
+    std::fs::write(dir.path().join("sub/b.txt"), "hit\n").unwrap();
+    let hits = run(
+        &tools,
+        "search",
+        serde_json::json!({"pattern": "hit", "limit": 2, "paths": ["sub", "sub/a.txt"]}),
+    );
+    let rows: Vec<&str> = hits
+        .lines()
+        .filter(|line| line.ends_with(":1:1:hit"))
+        .collect();
+    assert_eq!(rows.len(), 2, "{hits}");
+    assert!(
+        rows.iter().any(|row| row.ends_with("a.txt:1:1:hit")),
+        "{hits}"
+    );
+    assert!(
+        rows.iter().any(|row| row.ends_with("b.txt:1:1:hit")),
+        "{hits}"
+    );
+}

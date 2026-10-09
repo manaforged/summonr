@@ -40,6 +40,7 @@ fn main() {
         lifecycle::a_configured_server_is_on_by_default_and_starts_only_when_called,
         lifecycle::an_idle_server_stops_and_starts_again_on_the_next_call,
         lifecycle::the_least_recently_used_idle_server_stops_at_the_server_cap,
+        lifecycle::keep_alive_servers_count_toward_the_server_cap,
         lifecycle::tool_lists_are_cached_per_workspace,
         lifecycle::an_empty_cached_tool_list_is_fetched_again,
         lifecycle::an_unchanged_tool_list_is_not_rewritten,

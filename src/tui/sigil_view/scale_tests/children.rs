@@ -16,6 +16,7 @@ fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
             access: crate::child::Access::Research,
             call: "t1".to_owned(),
             background,
+            workspace: String::new(),
         }),
     }));
 }
@@ -112,4 +113,82 @@ fn a_background_child_runs_in_the_strip_and_reports_in_the_transcript() {
         "{done}"
     );
     assert!(done.contains("startup 0.28 s"), "{done}");
+}
+
+#[test]
+fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
+    let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
+        task_call(app);
+        app.update(Msg::Event(Event::Child {
+            id: IDS[0].to_owned(),
+            event: Box::new(Event::Spawned {
+                assignment: "Fix the parser.".to_owned(),
+                access: crate::child::Access::Implement,
+                call: "t1".to_owned(),
+                background: false,
+                workspace: "/w/repo-deltas/abc".to_owned(),
+            }),
+        }));
+        act(
+            app,
+            IDS[0],
+            Event::ToolCall {
+                id: "c".to_owned(),
+                name: "read".to_owned(),
+                arguments: r#"{"path":"/w/repo-deltas/abc/src/lib.rs"}"#.to_owned(),
+            },
+        );
+    })
+    .join("\n");
+    assert!(shown.contains("Read src/lib.rs"), "{shown}");
+    assert!(!shown.contains("repo-deltas"), "{shown}");
+}
+
+#[test]
+fn a_child_receipt_reads_as_its_answer_not_json() {
+    use crate::child::{ChildRecord, ChildResult, ChildState};
+    let record = ChildRecord {
+        version: 1,
+        id: IDS[0].parse().unwrap(),
+        parent: IDS[1].parse().unwrap(),
+        assignment: "Fix the parser. Keep the tests.".to_owned(),
+        model: "m".to_owned(),
+        workspace: "/w/repo-deltas/abc".into(),
+        depth: 1,
+        access: crate::child::Access::Implement,
+        call: Some("t9".to_owned()),
+        state: ChildState::Completed(ChildResult {
+            text: "Parser fixed; 4 tests pass.".to_owned(),
+            changed_paths: vec!["/w/repo-deltas/abc/src/parse.rs".to_owned()],
+            changed_paths_total: 1,
+            rounds: 3,
+            usage: crate::provider::Usage::default(),
+            billed_tokens: 0,
+            elapsed_millis: 0,
+            diagnostic: None,
+        }),
+    };
+    let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {
+        app.update(Msg::Event(Event::ToolCall {
+            id: "t9".to_owned(),
+            name: "task".to_owned(),
+            arguments: format!(r#"{{"id":"{}"}}"#, IDS[0]),
+        }));
+        app.update(Msg::Event(Event::ToolResult {
+            id: "t9".to_owned(),
+            success: true,
+            mutated: false,
+            output: serde_json::to_string(&record).unwrap(),
+            millis: None,
+            patch: None,
+        }));
+    })
+    .join("\n");
+    assert!(shown.contains("Task Fix the parser"), "{shown}");
+    assert!(shown.contains("Parser fixed; 4 tests pass."), "{shown}");
+    assert!(shown.contains("src/parse.rs"), "{shown}");
+    assert!(
+        !shown.contains("\"status\"") && !shown.contains("repo-deltas"),
+        "{shown}"
+    );
 }

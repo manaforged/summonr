@@ -64,7 +64,10 @@ impl Worker {
         match command {
             Cmd::Branch { session, turn } => self.branch(&session, turn),
             Cmd::Command(line) => {
-                let running = self.command(&line).await.unwrap_or(true);
+                let running = match self.command(&line).await {
+                    Some(running) => running,
+                    None => self.submit(crate::provider::UserInput::from(line)).await,
+                };
                 self.send_settings();
                 running
             }

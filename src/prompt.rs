@@ -134,7 +134,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
             .collect::<Vec<_>>()
             .join(" then ");
         parts.push(format!(
-            "Harness: before Work can complete, Summonr runs {list} as the completion check."
+            "Harness: before Work can complete, summonr runs {list} as the completion check."
         ));
     }
     if children && matches!(mode, crate::RunMode::Work | crate::RunMode::Goal) {

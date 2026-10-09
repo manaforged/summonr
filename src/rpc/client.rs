@@ -16,7 +16,7 @@ use crate::tools::sandbox::Sandbox;
 mod process;
 mod reply;
 
-pub(crate) use process::{Env, Launch, Process, Stderr, start};
+pub(crate) use process::{Access, Env, Launch, Process, Stderr, start};
 
 const SECRET_MIN: usize = 8;
 
@@ -60,7 +60,9 @@ impl Client {
             args: launch.args,
             env: launch.env,
             cwd: launch.cwd,
-            sandbox: launch.sandbox,
+            sandbox: launch
+                .sandbox
+                .map(|sandbox| (sandbox, process::Access::Write)),
             base: process::Env::Clean,
             stderr: process::Stderr::Pipe,
         })?;

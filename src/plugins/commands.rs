@@ -9,8 +9,10 @@ const DIR: &str = "commands";
 const EXTENSION: &str = "md";
 const DESCRIPTION: &str = "description";
 const HINT: &str = "argument-hint";
-const ARGUMENTS: &str = "$ARGUMENTS";
-const POSITIONS: usize = 9;
+const SIGIL: char = '$';
+const ARGUMENTS: &str = "ARGUMENTS";
+const FIRST: u8 = b'1';
+const LAST: u8 = b'9';
 
 #[derive(Clone, Debug)]
 pub(crate) struct Command {
@@ -27,17 +29,32 @@ impl Command {
     }
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
-        let words: Vec<&str> = arguments.split_whitespace().collect();
-        let text = (1..=POSITIONS).fold(
-            self.template.replace(ARGUMENTS, arguments),
-            |text, index| {
-                text.replace(
-                    &format!("${index}"),
-                    words.get(index - 1).copied().unwrap_or_default(),
-                )
-            },
-        );
-        self.plugin.expand(&text, workspace)
+        let template = self.plugin.expand(&self.template, workspace);
+        let words = crate::policy::shell_words(arguments);
+        let mut out = String::with_capacity(template.len() + arguments.len());
+        let mut rest = template.as_str();
+        while let Some(at) = rest.find(SIGIL) {
+            out.push_str(&rest[..at]);
+            let tail = &rest[at + SIGIL.len_utf8()..];
+            if let Some(after) = tail.strip_prefix(ARGUMENTS) {
+                out.push_str(arguments);
+                rest = after;
+                continue;
+            }
+            match tail.as_bytes().first() {
+                Some(&digit @ FIRST..=LAST) => {
+                    let index = usize::from(digit - FIRST);
+                    out.push_str(words.get(index).map_or("", String::as_str));
+                    rest = &tail[1..];
+                }
+                Some(_) | None => {
+                    out.push(SIGIL);
+                    rest = tail;
+                }
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     fn about(&self) -> String {
@@ -130,3 +147,7 @@ fn read(plugin: &Plugin, path: &Path) -> Option<Command> {
         template: front.body.trim().to_string(),
     })
 }
+
+#[cfg(test)]
+#[path = "commands_tests.rs"]
+mod tests;

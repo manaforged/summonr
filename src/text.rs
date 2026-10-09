@@ -19,6 +19,11 @@ pub(crate) fn plural(count: usize, word: &str) -> String {
     }
 }
 
+#[must_use]
+pub(crate) fn megabytes(kb: u64) -> String {
+    format!("{:.0} MB", kb as f64 / 1024.0)
+}
+
 pub(crate) fn duration(secs: u64) -> String {
     if secs < 60 {
         return format!("{secs}s");
@@ -143,8 +148,17 @@ mod tests;
 
 pub(crate) const FENCE: &str = "---";
 
+const ITEM: &str = "- ";
+const QUOTES: [char; 2] = ['"', '\''];
+
+struct Field<'a> {
+    key: &'a str,
+    value: &'a str,
+    items: Vec<&'a str>,
+}
+
 pub(crate) struct Frontmatter<'a> {
-    fields: Vec<(&'a str, &'a str)>,
+    fields: Vec<Field<'a>>,
     pub(crate) body: &'a str,
 }
 
@@ -160,7 +174,7 @@ impl<'a> Frontmatter<'a> {
         }) else {
             return plain;
         };
-        let mut fields = Vec::new();
+        let mut fields: Vec<Field<'a>> = Vec::new();
         let mut offset = 0;
         for line in rest.split_inclusive('\n') {
             offset += line.len();
@@ -171,8 +185,16 @@ impl<'a> Frontmatter<'a> {
                     body: &rest[offset..],
                 };
             }
-            if let Some((key, value)) = line.split_once(':') {
-                fields.push((key.trim(), value.trim().trim_matches(['"', '\''])));
+            if let Some(item) = line.strip_prefix(ITEM) {
+                if let Some(field) = fields.last_mut().filter(|field| field.value.is_empty()) {
+                    field.items.push(item.trim().trim_matches(QUOTES));
+                }
+            } else if let Some((key, value)) = line.split_once(':') {
+                fields.push(Field {
+                    key: key.trim().trim_matches(QUOTES),
+                    value: value.trim().trim_matches(QUOTES),
+                    items: Vec::new(),
+                });
             }
         }
         plain
@@ -181,7 +203,23 @@ impl<'a> Frontmatter<'a> {
     pub(crate) fn get(&self, key: &str) -> Option<&'a str> {
         self.fields
             .iter()
-            .find(|(name, value)| *name == key && !value.is_empty())
-            .map(|(_, value)| *value)
+            .find(|field| field.key == key && !field.value.is_empty())
+            .map(|field| field.value)
+    }
+
+    pub(crate) fn list(&self, key: &str) -> Option<Vec<String>> {
+        let field = self.fields.iter().find(|field| field.key == key)?;
+        if field.value.is_empty() {
+            return Some(field.items.iter().map(|item| (*item).to_string()).collect());
+        }
+        let inline = field.value.trim_start_matches('[').trim_end_matches(']');
+        Some(
+            crate::policy::unquoted(inline, &[","])
+                .iter()
+                .map(|item| item.trim().trim_matches(QUOTES))
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect(),
+        )
     }
 }

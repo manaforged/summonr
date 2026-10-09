@@ -125,3 +125,29 @@ fn slash_and_mention_drafts_keep_the_splash() {
         assert!(!app.splash.peek());
     });
 }
+
+#[test]
+fn a_server_prompt_line_is_sent_as_a_turn_and_an_unknown_command_is_not() {
+    Runtime::scope("slash-turn", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut receiver) = unbounded_channel();
+        let app = crate::tui::sigil_view::app::App::new(
+            crate::tui::sigil_view::profile::info(),
+            workspace.path().to_owned(),
+            commands,
+        );
+        let mut send = |line: &str| {
+            app.draft.set(line.to_string());
+            app.submit();
+            let mut turns = 0;
+            while let Ok(command) = receiver.try_recv() {
+                turns += usize::from(
+                    matches!(command, crate::tui::Cmd::Submit(input) if input.text == line),
+                );
+            }
+            turns
+        };
+        assert_eq!(send("/docs:search tokio"), 1);
+        assert_eq!(send("/nosuchcommand now"), 0);
+    });
+}

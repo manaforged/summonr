@@ -1,8 +1,10 @@
 use sigil::prelude::{AlignItems, LayoutBuilderExt, LayoutStyle, NodeBuilder, Token, container};
 
-use super::super::{Agent, App};
+use super::super::{Agent, App, Call};
+use super::preview;
 use super::tools::{call_line, glyph, header, workspace_relative};
-use super::tree::{branch, label};
+use super::tree::{branch, label, tree};
+use crate::child::{ChildRecord, ChildState};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
 
@@ -37,6 +39,7 @@ fn totals(kids: &[&Agent]) -> String {
 }
 
 fn child_row(kid: &Agent, first: bool, roots: &[String]) -> NodeBuilder {
+    let roots = &kid.roots(roots);
     let state = kid.state();
     let (mark, tone) = glyph(&state);
     let (title, note) = match state {
@@ -122,4 +125,76 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         card = card.child(child_row(kid, at == 0, &app.roots));
     }
     Some(card)
+}
+
+fn receipt_state(state: &ChildState) -> (ToolState, &'static str) {
+    match state {
+        ChildState::Running => (ToolState::Running, "running"),
+        ChildState::Completed(_) => (ToolState::Ok, "completed"),
+        ChildState::Aborted(_) => (ToolState::Failed, "aborted"),
+        ChildState::Failed(_) => (ToolState::Failed, "failed"),
+        ChildState::Interrupted(_) => (ToolState::Failed, "interrupted"),
+    }
+}
+
+pub(super) fn receipt_card(
+    call: &Call,
+    full: bool,
+    hidden: bool,
+    app: &App,
+) -> Option<NodeBuilder> {
+    let record: ChildRecord = serde_json::from_str(&call.output).ok()?;
+    let (state, word) = receipt_state(&record.state);
+    let mut roots = vec![record.workspace.to_string_lossy().into_owned()];
+    roots.extend(app.roots.iter().cloned());
+    let note = format!("{} · {word}", record.access.name());
+    let card = container()
+        .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
+        .child(header(
+            &state,
+            call_line(
+                "Task",
+                &Agent::title_of(&record.assignment),
+                Some((note, Look::xs(Token::Gray10))),
+                true,
+            ),
+        ));
+    let result = match &record.state {
+        ChildState::Running => return Some(card),
+        ChildState::Completed(result)
+        | ChildState::Aborted(result)
+        | ChildState::Failed(result)
+        | ChildState::Interrupted(result) => result,
+    };
+    if hidden {
+        return Some(card);
+    }
+    let mut body = preview::plain(&result.text);
+    if let Some(diagnostic) = &result.diagnostic {
+        body = format!("{body}\n{diagnostic}").trim().to_string();
+    }
+    let failed = matches!(state, ToolState::Failed);
+    let mut shown = preview::text(full, "Task", &body, failed, false);
+    if !result.changed_paths.is_empty() {
+        let paths = result
+            .changed_paths
+            .iter()
+            .map(|path| workspace_relative(path, &roots))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = result
+            .changed_paths_total
+            .saturating_sub(result.changed_paths.len());
+        let tail = if more == 0 {
+            String::new()
+        } else {
+            format!(" +{more}")
+        };
+        shown = format!("{shown}\nchanged {paths}{tail}").trim().to_string();
+    }
+    Some(if shown.is_empty() {
+        card
+    } else {
+        card.child(tree(&shown))
+    })
 }

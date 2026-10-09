@@ -173,6 +173,11 @@ impl Args {
         {
             return Err(unknown(name, ""));
         }
+        if self.plan && (self.goal.is_some() || self.steps.is_some()) {
+            return Err(Error::Config(
+                "--plan denies writes; use it without --goal or --steps".to_string(),
+            ));
+        }
         if self.here && self.worktree {
             return Err(Error::Config(
                 "use --here or --worktree, not both".to_string(),

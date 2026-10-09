@@ -38,17 +38,12 @@ impl Link {
         workspace: PathBuf,
         sandbox: Option<&Sandbox>,
     ) -> Result<Arc<Self>> {
-        let (listing, conn) = match catalog::load(&server.key) {
-            Some(listing) => (listing, None),
-            None => {
-                let mut conn = Conn::open(&server, &workspace, sandbox).await?;
-                let listing = conn.listing().await?;
-                catalog::save(&server.key, &listing);
-                conn.ready(server.wait)?;
-                (listing, server.idle.is_none().then_some(conn))
-            }
+        let slot: Slot<Conn> = Arc::new(Mutex::new(None));
+        let listing = match catalog::load(&server.key) {
+            Some(listing) => listing,
+            None => Self::list(&server, &workspace, sandbox, &slot).await?,
         };
-        let started = AtomicBool::new(conn.is_some());
+        let started = AtomicBool::new(slot.lock().await.is_some());
         let tools = listing
             .tools
             .iter()
@@ -60,21 +55,34 @@ impl Link {
                     .is_none_or(|allow| allow.contains(&tool.name))
             })
             .collect();
-        let pid = conn.as_ref().and_then(Conn::pid);
-        let link = Arc::new(Self {
+        Ok(Arc::new(Self {
             server,
             workspace,
-            conn: Arc::new(Mutex::new(conn)),
+            conn: slot,
             fresh: std::sync::Mutex::new(None),
             started,
             detail: std::sync::Mutex::new(None),
             journal: Journal::default(),
             tools,
-        });
-        if link.started.load(Ordering::Relaxed) {
-            supervise::register(ServerKind::Mcp, &link.server.name, pid, None, &link.conn);
+        }))
+    }
+
+    async fn list(
+        server: &Server,
+        workspace: &std::path::Path,
+        sandbox: Option<&Sandbox>,
+        slot: &Slot<Conn>,
+    ) -> Result<Listing> {
+        let mut held = slot.lock().await;
+        let conn = held.insert(Conn::open(server, workspace, sandbox).await?);
+        supervise::register(ServerKind::Mcp, &server.name, conn.pid(), server.idle, slot);
+        let listing = conn.listing().await?;
+        catalog::save(&server.key, &listing);
+        conn.ready(server.wait)?;
+        if server.idle.is_some() {
+            *held = None;
         }
-        Ok(link)
+        Ok(listing)
     }
 
     pub(super) async fn call_tool(

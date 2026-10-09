@@ -43,9 +43,14 @@ impl Launches {
                 }
                 self.built(module)
             }
-            Source::Tree(plugins) => match plugins.iter().find(|server| server.handles(path)) {
-                Some(server) => plugin(server).map(Arc::new),
-                None => self.built(language::detect(workspace, path)?),
+            Source::Tree(plugins) => match language::detect(workspace, path) {
+                Ok(module) => self.built(module),
+                Err(error) => plugins
+                    .iter()
+                    .filter(|server| server.handles(path))
+                    .find_map(|server| plugin(server).ok())
+                    .map(Arc::new)
+                    .ok_or(error),
             },
         }
     }
@@ -142,6 +147,7 @@ pub(super) fn built(module: &language::Module) -> Result<Launch> {
             let mut command = vec![server.name.to_string()];
             command.extend(server.args.iter().map(|arg| (*arg).to_string()));
             return Ok(Launch {
+                origin: Origin::Host,
                 key: module.id.to_string(),
                 argv: command,
                 env: Vec::new(),
@@ -159,6 +165,7 @@ pub(super) fn built(module: &language::Module) -> Result<Launch> {
 
 pub(super) fn custom(command: &[String]) -> Result<Launch> {
     Ok(Launch {
+        origin: Origin::Host,
         key: "custom".to_string(),
         argv: argv(command)?,
         env: Vec::new(),
@@ -176,6 +183,7 @@ fn plugin(server: &Server) -> Result<Launch> {
         )));
     }
     Ok(Launch {
+        origin: Origin::Plugin,
         key: server.key.clone(),
         argv: server.argv.clone(),
         env: server.env.clone().into_iter().collect(),
@@ -197,3 +205,7 @@ pub(super) fn argv(command: &[String]) -> Result<Vec<String>> {
     }
     Ok(command.to_vec())
 }
+
+#[cfg(test)]
+#[path = "detect_tests.rs"]
+mod tests;

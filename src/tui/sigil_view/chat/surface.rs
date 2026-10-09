@@ -46,7 +46,7 @@ pub(in crate::tui::sigil_view) fn layer(
                     } else {
                         "ask anything · @file · !cmd · /help"
                     };
-                    empty_state("Summonr", hint)
+                    empty_state(env!("CARGO_PKG_NAME"), hint)
                 },
             )
         })))

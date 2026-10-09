@@ -103,12 +103,11 @@ impl ToolRegistry {
             let Some(path) = path.as_str() else {
                 continue;
             };
-            let mut call = serde_json::json!({"path": path});
-            for key in ["offset", "limit"] {
-                if let Some(value) = args.get(key) {
-                    call[key] = value.clone();
-                }
+            let mut call = args.clone();
+            if let Some(fields) = call.as_object_mut() {
+                fields.remove("paths");
             }
+            call["path"] = Value::String(path.to_string());
             let call = call.to_string();
             match self.read_file(&call) {
                 Ok(read) if !out.is_empty() && out.len() + read.text.len() > READ_PAGE_BYTES => {

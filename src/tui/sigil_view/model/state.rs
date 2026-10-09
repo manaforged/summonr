@@ -1,5 +1,7 @@
 use super::*;
 
+const TITLE_CHARS: usize = 72;
+
 #[derive(Clone, Debug, PartialEq)]
 pub(in crate::tui::sigil_view) struct Agent {
     pub(in crate::tui::sigil_view) id: String,
@@ -7,6 +9,7 @@ pub(in crate::tui::sigil_view) struct Agent {
     pub(in crate::tui::sigil_view) background: bool,
     pub(in crate::tui::sigil_view) title: String,
     pub(in crate::tui::sigil_view) assignment: String,
+    pub(in crate::tui::sigil_view) workspace: String,
     pub(in crate::tui::sigil_view) access: crate::child::Access,
     pub(in crate::tui::sigil_view) started: Instant,
     pub(in crate::tui::sigil_view) secs: Option<u64>,
@@ -25,6 +28,7 @@ impl Agent {
             background: false,
             title: String::new(),
             assignment: String::new(),
+            workspace: String::new(),
             access: crate::child::Access::default(),
             started: Instant::now(),
             secs: None,
@@ -34,6 +38,23 @@ impl Agent {
             tokens: 0,
             cost: 0.0,
         }
+    }
+
+    pub(in crate::tui::sigil_view) fn title_of(assignment: &str) -> String {
+        let line = assignment.lines().next().unwrap_or_default().trim();
+        let sentence = line
+            .match_indices(". ")
+            .next()
+            .map_or(line, |(at, _)| &line[..at]);
+        crate::text::ellipsize(sentence.trim_end_matches('.'), TITLE_CHARS).to_string()
+    }
+
+    pub(in crate::tui::sigil_view) fn roots(&self, roots: &[String]) -> Vec<String> {
+        std::iter::once(&self.workspace)
+            .filter(|workspace| !workspace.is_empty())
+            .chain(roots)
+            .cloned()
+            .collect()
     }
 
     pub(in crate::tui::sigil_view) fn elapsed(&self) -> u64 {

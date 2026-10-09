@@ -14,9 +14,21 @@ pub(crate) enum Env {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Access {
+    Write,
+    Read,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Stderr {
     Pipe,
     Discard,
+}
+
+impl Access {
+    pub(crate) fn from_read_only(read_only: bool) -> Self {
+        if read_only { Self::Read } else { Self::Write }
+    }
 }
 
 pub(crate) struct Launch<'a> {
@@ -24,7 +36,7 @@ pub(crate) struct Launch<'a> {
     pub(crate) args: &'a [&'a str],
     pub(crate) env: &'a [(String, String)],
     pub(crate) cwd: &'a Path,
-    pub(crate) sandbox: Option<&'a Sandbox>,
+    pub(crate) sandbox: Option<(&'a Sandbox, Access)>,
     pub(crate) base: Env,
     pub(crate) stderr: Stderr,
 }
@@ -39,7 +51,10 @@ pub(crate) struct Process {
 
 pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
     let mut command = match launch.sandbox {
-        Some(sandbox) => sandbox.command(launch.program, launch.args, launch.cwd),
+        Some((sandbox, Access::Write)) => sandbox.command(launch.program, launch.args, launch.cwd),
+        Some((sandbox, Access::Read)) => {
+            sandbox.read_command(launch.program, launch.args, launch.cwd)
+        }
         None => {
             let mut command = Command::new(launch.program);
             command.args(launch.args).current_dir(launch.cwd);
@@ -84,3 +99,7 @@ pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
         group,
     })
 }
+
+#[cfg(all(test, unix))]
+#[path = "process_tests.rs"]
+mod tests;

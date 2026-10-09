@@ -4,17 +4,17 @@ Harness-level comparison. Model, tasks, and endpoint match; the runs were not si
 
 ## Terminal-Bench 2.1, 2026-10-02 to 2026-10-03
 
-86 tasks, one pass each, GLM 5.3 Flash (`glm-5.3-flash`) at high effort through z.ai, every harness on its defaults, run by `bench/run.sh` with the method in [`bench/README.md`](bench/README.md). Three runs: `tb21-zai-1002d` (summonr 0.1.0 at 74e08fbc, pi 1.0.0), `tb21-zai-1002f` (OpenCode 2.0.22, Hermes v2026.9.24), and `tb21-zai-1003a` (OMP 18.4.12). Arms from different runs did not run side by side; tasks, model, effort, and dataset match. Three tasks are dropped for every harness because their verifier could not install its tools: path-tracing-reverse, qemu-alpine-ssh, qemu-startup. Cost is not priced for this vendor; tokens only. Intervals are 95% Wilson for solved and bootstrap medians (10,000 resamples) elsewhere.
+86 tasks, one pass each, GLM 5.3 Flash (`glm-5.3-flash`) at high effort through z.ai, every harness on its defaults, run by `bench/run.sh` with the method in [`bench/README.md`](bench/README.md). Three runs: `tb21-zai-1002d` (summonr 0.1.0-rc.1 at 74e08fbc, pi 1.0.0), `tb21-zai-1002f` (OpenCode 2.0.22, Hermes v2026.9.24), and `tb21-zai-1003a` (OMP 18.4.12). Arms from different runs did not run side by side; tasks, model, effort, and dataset match. Three tasks are dropped for every harness because their verifier could not install its tools: path-tracing-reverse, qemu-alpine-ssh, qemu-startup. Cost is not priced for this vendor; tokens only. Intervals are 95% Wilson for solved and bootstrap medians (10,000 resamples) elsewhere.
 
-Solved shows the task count with its interval. Token and time figures are medians per task, in two cuts. The solved cut counts only the tasks that harness solved, so each harness has its own task set. The all cut counts all 86 tasks, solved and failed.
+Solved shows the task count with its interval. Token and time figures are medians per task, in two cuts. The solved cut counts only the tasks that harness solved, so each harness has its own task set. The all cut counts all 86 tasks, solved and failed. Uncached input is the input the provider did not serve from its prompt cache. Cache hit is the share of input tokens served from the provider's prompt cache, taken from the usage each response reported.
 
-| Harness | Solved | Input tokens, solved | Input tokens, all | Output tokens, solved | Output tokens, all | Time, solved | Time, all |
-| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| summonr | 63/86 (73%, 63%–81%) | 95,271 | 194,193 | 8,231 | 12,920 | 219 s | 470 s |
-| pi | 62/86 (72%, 62%–80%) | 240,762 | 212,337 | 15,226 | 15,310 | 368 s | 410 s |
-| OMP | 59/86 (69%, 58%–77%) | 218,939 | 294,356 | 10,642 | 12,531 | 294 s | 327 s |
-| OpenCode | 58/86 (67%, 57%–76%) | 228,578 | 253,726 | 12,364 | 17,756 | 341 s | 567 s |
-| Hermes | 49/86 (57%, 46%–67%) | 225,215 | 272,086 | 12,047 | 16,118 | 335 s | 558 s |
+| Harness | Solved | Input tokens, solved | Input tokens, all | Uncached input, solved | Uncached input, all | Cache hit, solved | Cache hit, all | Output tokens, solved | Output tokens, all | Time, solved | Time, all |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| summonr | 63/86 (73%, 63%–81%) | 95,271 | 194,193 | 14,151 | 23,436 | 95.3% | 95.0% | 8,231 | 12,920 | 219 s | 470 s |
+| pi | 62/86 (72%, 62%–80%) | 240,762 | 212,337 | 22,464 | 22,758 | 95.3% | 95.2% | 15,226 | 15,310 | 368 s | 410 s |
+| OMP | 59/86 (69%, 58%–77%) | 218,939 | 294,356 | 17,617 | 20,030 | 95.3% | 95.0% | 10,642 | 12,531 | 294 s | 327 s |
+| OpenCode | 58/86 (67%, 57%–76%) | 228,578 | 253,726 | 29,448 | 40,433 | 92.8% | 93.2% | 12,364 | 17,756 | 341 s | 567 s |
+| Hermes | 49/86 (57%, 46%–67%) | 225,215 | 272,086 | 19,053 | 20,568 | 96.9% | 96.8% | 12,047 | 16,118 | 335 s | 558 s |
 
 RSS is sampled every 0.5 s per trial. Agent RSS is the harness process alone. Harness RSS is the harness process and every helper it started without a shell (language servers, MCP servers, its own server); a dash means the harness started no such helper. The README's "Mean memory" column shows harness RSS where it is measured and agent RSS otherwise.
 

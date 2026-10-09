@@ -69,6 +69,28 @@ pub(crate) fn the_least_recently_used_idle_server_stops_at_the_server_cap() {
     assert!(model.tool_results()[2].contains("three"));
 }
 
+pub(crate) fn keep_alive_servers_count_toward_the_server_cap() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("fixture1__echo", json!({"text": "one"})),
+        Step::Call("fixture2__echo", json!({"text": "two"})),
+        Step::Call("fixture1__echo", json!({"text": "three"})),
+        Step::Text("ok"),
+    ]);
+    let config = format!(
+        "{}{}[limits]\nservers_max = 1\n",
+        session.server("fixture1", "keep_alive = true"),
+        session.server("fixture2", "keep_alive = true"),
+    );
+    session.run(&model, &config, &[]);
+    assert!(
+        session.starts("fixture1") >= 2,
+        "fixture1 restarted after the cap stopped it: {} starts",
+        session.starts("fixture1")
+    );
+    assert!(model.tool_results()[2].contains("three"));
+}
+
 pub(crate) fn tool_lists_are_cached_per_workspace() {
     let session = Session::new();
     let echo_only = session.server_env("fixture1", ", MCP_FIXTURE_TOOLS = 'echo'", "");

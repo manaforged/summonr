@@ -85,7 +85,7 @@ pub(crate) const ALL: [Module; 7] = [
     },
     Module {
         id: ModuleId::Mcp,
-        summary: "tools from MCP servers you named; each starts on first call and stops when idle",
+        summary: "tools from MCP servers you named; each lists its tools once, then starts on first call and stops when idle",
         default: true,
     },
     Module {

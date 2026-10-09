@@ -4,6 +4,7 @@ use sigil::prelude::{IntoNode, MouseButton, NodeBuilder, NodeEventsExt, Tone, ch
 use super::App;
 use super::body::{detail, header};
 use crate::mcp::{McpState, McpTransport, ServerStatus};
+use crate::supervise::ServerKind;
 
 const EMPTY: &str = "no mcp servers; summonr mcp add configures one";
 
@@ -13,7 +14,7 @@ pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
     let cursor = app.mcp_cursor.peek();
     column = column.child(header(
         &app,
-        "MCP servers".to_string(),
+        "Servers".to_string(),
         model.mcp.len().to_string(),
     ));
     if model.mcp.is_empty() {
@@ -52,12 +53,19 @@ pub(super) fn mcp(app: App, mut column: NodeBuilder) -> NodeBuilder {
 }
 
 fn summary(server: &ServerStatus) -> String {
-    format!(
-        "{} · {} · {}",
-        server.transport.map_or("-", McpTransport::label),
-        crate::text::plural(server.tools.len(), "tool"),
-        server.schema_size(),
-    )
+    let head = match server.kind {
+        ServerKind::Lsp => "language server".to_string(),
+        ServerKind::Mcp => format!(
+            "{} · {} · {}",
+            server.transport.map_or("-", McpTransport::label),
+            crate::text::plural(server.tools.len(), "tool"),
+            server.schema_size(),
+        ),
+    };
+    match server.rss_kb {
+        Some(kb) => format!("{head} · mem {}", crate::text::megabytes(kb)),
+        None => head,
+    }
 }
 
 fn tone(state: McpState) -> Tone {

@@ -11,6 +11,7 @@ pub(crate) struct Module {
     pub(crate) extensions: &'static [&'static str],
     pub(crate) servers: &'static [Server],
     pub(crate) commands: &'static [&'static str],
+    pub(crate) options: &'static str,
 }
 
 #[derive(Debug)]
@@ -18,6 +19,21 @@ pub(crate) struct Server {
     pub(crate) name: &'static str,
     pub(crate) args: &'static [&'static str],
 }
+
+const PLAIN_TEXT: &str = "plaintext";
+
+const LANGUAGE_IDS: &[(&str, &str)] = &[
+    ("rs", "rust"),
+    ("go", "go"),
+    ("ts", "typescript"),
+    ("tsx", "typescriptreact"),
+    ("js", "javascript"),
+    ("mjs", "javascript"),
+    ("cjs", "javascript"),
+    ("jsx", "javascriptreact"),
+    ("py", "python"),
+    ("toml", "toml"),
+];
 
 const MODULES: &[Module] = &[
     Module {
@@ -29,6 +45,7 @@ const MODULES: &[Module] = &[
             args: &[],
         }],
         commands: &["cargo", "rustc"],
+        options: r#"{"checkOnSave": false, "cargo": {"allTargets": false, "buildScripts": {"enable": false}}, "procMacro": {"enable": false}}"#,
     },
     Module {
         id: "typescript",
@@ -45,6 +62,7 @@ const MODULES: &[Module] = &[
             },
         ],
         commands: &["npm", "pnpm", "yarn", "bun", "node --test", "tsc"],
+        options: "{}",
     },
     Module {
         id: "python",
@@ -61,6 +79,7 @@ const MODULES: &[Module] = &[
             },
         ],
         commands: &["pytest", "python -m pytest", "ruff", "mypy", "pyright"],
+        options: "{}",
     },
     Module {
         id: "go",
@@ -71,6 +90,7 @@ const MODULES: &[Module] = &[
             args: &[],
         }],
         commands: &["go test", "go build", "go vet"],
+        options: "{}",
     },
 ];
 
@@ -130,31 +150,15 @@ pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
 }
 
 pub(crate) fn options(module: &Module) -> Value {
-    match module.id {
-        "rust" => json!({
-            "checkOnSave": false,
-            "cargo": {
-                "allTargets": false,
-                "buildScripts": { "enable": false }
-            },
-            "procMacro": { "enable": false }
-        }),
-        _ => json!({}),
-    }
+    serde_json::from_str(module.options).unwrap_or_else(|_error| json!({}))
 }
 
 pub(crate) fn language_id(path: &Path) -> &'static str {
-    match path.extension().and_then(|extension| extension.to_str()) {
-        Some("rs") => "rust",
-        Some("go") => "go",
-        Some("ts") => "typescript",
-        Some("tsx") => "typescriptreact",
-        Some("js" | "mjs" | "cjs") => "javascript",
-        Some("jsx") => "javascriptreact",
-        Some("py") => "python",
-        Some("toml") => "toml",
-        _ => "plaintext",
-    }
+    let extension = path.extension().and_then(|extension| extension.to_str());
+    LANGUAGE_IDS
+        .iter()
+        .find(|(known, _)| extension == Some(*known))
+        .map_or(PLAIN_TEXT, |(_, id)| id)
 }
 
 pub(crate) fn toolchain(command: &str) -> bool {
@@ -185,3 +189,7 @@ fn marked(workspace: &Path, path: &Path, module: &Module) -> bool {
     }
     false
 }
+
+#[cfg(test)]
+#[path = "language_tests.rs"]
+mod tests;

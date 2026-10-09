@@ -99,9 +99,9 @@ fn outcome(tools: &ToolRegistry, command: &str) -> String {
     }
 }
 
-fn names(tools: &ToolRegistry, work: crate::WorkKind) -> Vec<String> {
+fn names(tools: &ToolRegistry) -> Vec<String> {
     tools
-        .definitions(work)
+        .definitions()
         .into_iter()
         .map(|tool| tool.function.name)
         .collect()
@@ -110,11 +110,9 @@ fn names(tools: &ToolRegistry, work: crate::WorkKind) -> Vec<String> {
 #[test]
 fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
     let (_dir, mut tools) = workspace(&[("a.txt", "one\n")]);
-    let open = names(&tools, crate::WorkKind::Single);
+    let open = names(&tools);
     tools.set_read_only(true);
-    assert_eq!(names(&tools, crate::WorkKind::Single), open);
-    let goal = names(&tools, crate::WorkKind::Goal);
-    assert_eq!(goal.last().map(String::as_str), Some("todo"));
+    assert_eq!(names(&tools), open);
     let call = ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,

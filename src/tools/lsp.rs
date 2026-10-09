@@ -29,6 +29,7 @@ pub(super) struct Conn {
     next_id: i64,
     root: String,
     clean: bool,
+    access: Option<rpc::Access>,
     docs: std::collections::HashMap<String, (String, i64, (u64, u64))>,
     options: Value,
     server: String,
@@ -37,8 +38,28 @@ pub(super) struct Conn {
     group: Option<ProcessGroup>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Origin {
+    Host,
+    Plugin,
+}
+
+impl Launch {
+    pub(super) fn fits(&self, conn: &Conn, sandbox: Option<rpc::Access>) -> bool {
+        self.origin == Origin::Host || conn.access == self.access(sandbox)
+    }
+
+    pub(super) fn access(&self, sandbox: Option<rpc::Access>) -> Option<rpc::Access> {
+        match self.origin {
+            Origin::Host => None,
+            Origin::Plugin => sandbox,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct Launch {
+    origin: Origin,
     key: String,
     argv: Vec<String>,
     env: Vec<(String, String)>,
@@ -47,12 +68,22 @@ pub(super) struct Launch {
 }
 
 impl Conn {
-    pub(super) async fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
+    pub(super) async fn spawn(
+        workspace: &Path,
+        launch: &Launch,
+        sandbox: Option<&super::sandbox::Sandbox>,
+        read_only: bool,
+    ) -> Result<Self> {
         let (program, args) = launch
             .argv
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let access = launch.access(sandbox.map(|_| rpc::Access::from_read_only(read_only)));
+        let base = match launch.origin {
+            Origin::Host => rpc::Env::Inherit,
+            Origin::Plugin => rpc::Env::Clean,
+        };
         let rpc::Process {
             child,
             stdin,
@@ -64,8 +95,8 @@ impl Conn {
             args: &args,
             env: &launch.env,
             cwd: workspace,
-            sandbox: None,
-            base: rpc::Env::Inherit,
+            sandbox: sandbox.zip(access),
+            base,
             stderr: rpc::Stderr::Discard,
         })?;
         let (sender, inbox) = mpsc::channel(INBOX);
@@ -94,6 +125,7 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace)?,
             clean: true,
+            access,
             docs: std::collections::HashMap::new(),
             languages: launch.languages.clone(),
             options: launch.options.clone(),

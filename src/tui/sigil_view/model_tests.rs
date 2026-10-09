@@ -118,6 +118,7 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
                 access: crate::child::Access::Research,
                 call: String::new(),
                 background: false,
+                workspace: String::new(),
             },
         );
         model.apply_child(

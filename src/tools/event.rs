@@ -42,6 +42,8 @@ pub enum Event {
         call: String,
         #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         background: bool,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        workspace: String,
     },
     Unreported {
         tokens: u64,

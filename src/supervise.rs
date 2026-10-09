@@ -20,7 +20,7 @@ pub(crate) struct Live {
 }
 
 trait Held: Send + Sync {
-    fn release(&self, still_idle: &dyn Fn() -> bool) -> Release;
+    fn release(&self, id: usize, still_idle: &dyn Fn() -> bool) -> Release;
 }
 
 enum Release {
@@ -31,17 +31,20 @@ enum Release {
 }
 
 impl<T: Send> Held for tokio::sync::Mutex<Option<T>> {
-    fn release(&self, still_idle: &dyn Fn() -> bool) -> Release {
+    fn release(&self, id: usize, still_idle: &dyn Fn() -> bool) -> Release {
         let Ok(mut slot) = self.try_lock() else {
             return Release::Busy;
         };
         if slot.is_none() {
+            forget(id);
             return Release::Empty;
         }
         if !still_idle() {
             return Release::Fresh;
         }
         drop(slot.take());
+        forget(id);
+        drop(slot);
         Release::Stopped
     }
 }
@@ -51,7 +54,6 @@ struct Entry {
     kind: ServerKind,
     name: String,
     pid: Option<u32>,
-    idle: Option<Duration>,
     used: Instant,
     held: Weak<dyn Held>,
 }
@@ -76,16 +78,15 @@ pub(crate) fn register<T: Send + 'static>(
         kind,
         name: name.to_string(),
         pid,
-        idle,
         used: Instant::now(),
         held: Arc::downgrade(&held),
     };
-    let (fresh, excess, crowd) = {
+    let fresh = {
         let Ok(mut board) = BOARD.lock() else {
             return;
         };
         board.retain(|entry| entry.held.strong_count() > 0);
-        let fresh = match board.iter_mut().find(|entry| entry.id == id) {
+        match board.iter_mut().find(|entry| entry.id == id) {
             Some(found) => {
                 *found = entry;
                 false
@@ -94,22 +95,9 @@ pub(crate) fn register<T: Send + 'static>(
                 board.push(entry);
                 true
             }
-        };
-        let excess = board
-            .len()
-            .saturating_sub(crate::limits::limits().servers_max);
-        let mut crowd: Vec<&Entry> = board
-            .iter()
-            .filter(|entry| entry.id != id && entry.idle.is_some())
-            .collect();
-        crowd.sort_by_key(|entry| entry.used);
-        let crowd: Vec<(usize, Weak<dyn Held>)> = crowd
-            .into_iter()
-            .map(|entry| (entry.id, entry.held.clone()))
-            .collect();
-        (fresh, excess, crowd)
+        }
     };
-    evict(excess, crowd);
+    settle(slot);
     if fresh
         && let Some(idle) = idle
         && let Ok(runtime) = tokio::runtime::Handle::try_current()
@@ -118,8 +106,23 @@ pub(crate) fn register<T: Send + 'static>(
     }
 }
 
-pub(crate) fn touch<T>(slot: &Slot<T>) {
-    touch_id(id(slot));
+pub(crate) fn touch<T: Send + 'static>(slot: &Slot<T>) {
+    stamp(id(slot));
+    settle(slot);
+}
+
+fn settle<T: Send + 'static>(slot: &Slot<T>) {
+    let id = id(slot);
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        enforce(Some(id));
+        return;
+    };
+    let slot = slot.clone();
+    drop(runtime.spawn(async move {
+        drop(slot.lock().await);
+        drop(slot);
+        enforce(None);
+    }));
 }
 
 pub(crate) fn live() -> Vec<Live> {
@@ -143,19 +146,26 @@ pub(crate) fn live() -> Vec<Live> {
         .collect()
 }
 
-fn evict(mut excess: usize, crowd: Vec<(usize, Weak<dyn Held>)>) {
+fn over_cap() -> bool {
+    BOARD.lock().is_ok_and(|board| {
+        board
+            .iter()
+            .filter(|entry| entry.held.strong_count() > 0)
+            .count()
+            > crate::limits::limits().servers_max
+    })
+}
+
+fn evict(crowd: Vec<(usize, Weak<dyn Held>)>) {
     for (id, held) in crowd {
-        if excess == 0 {
+        if !over_cap() {
             return;
         }
-        let Some(held) = held.upgrade() else {
-            forget(id);
-            excess -= 1;
-            continue;
-        };
-        if let Release::Stopped | Release::Empty = held.release(&|| true) {
-            forget(id);
-            excess -= 1;
+        match held.upgrade() {
+            Some(held) => {
+                held.release(id, &|| true);
+            }
+            None => forget(id),
         }
     }
 }
@@ -190,23 +200,43 @@ async fn reap(id: usize, idle: Duration) {
             forget(id);
             return;
         };
-        match held.release(&|| idle_for(id).is_some_and(|spent| spent >= idle)) {
-            Release::Stopped | Release::Empty => {
-                forget(id);
-                return;
-            }
+        match held.release(id, &|| idle_for(id).is_some_and(|spent| spent >= idle)) {
+            Release::Stopped | Release::Empty => return,
             Release::Busy => touch_id(id),
             Release::Fresh => {}
         }
     }
 }
 
-fn touch_id(id: usize) {
+fn stamp(id: usize) {
     if let Ok(mut board) = BOARD.lock()
         && let Some(entry) = board.iter_mut().find(|entry| entry.id == id)
     {
         entry.used = Instant::now();
     }
+}
+
+fn touch_id(id: usize) {
+    stamp(id);
+    enforce(Some(id));
+}
+
+fn enforce(keep: Option<usize>) {
+    let crowd = {
+        let Ok(board) = BOARD.lock() else {
+            return;
+        };
+        let mut crowd: Vec<&Entry> = board
+            .iter()
+            .filter(|entry| Some(entry.id) != keep)
+            .collect();
+        crowd.sort_by_key(|entry| entry.used);
+        crowd
+            .into_iter()
+            .map(|entry| (entry.id, entry.held.clone()))
+            .collect::<Vec<(usize, Weak<dyn Held>)>>()
+    };
+    evict(crowd);
 }
 
 #[cfg(target_os = "macos")]
@@ -256,3 +286,7 @@ pub(crate) fn footprint_kb(pid: Option<u32>) -> Option<u64> {
 pub(crate) fn footprint_kb(_pid: Option<u32>) -> Option<u64> {
     None
 }
+
+#[cfg(test)]
+#[path = "supervise_tests.rs"]
+mod tests;

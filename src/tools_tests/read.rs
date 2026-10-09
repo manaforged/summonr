@@ -1,25 +1,14 @@
 use super::*;
 
 #[test]
-fn todo_is_advertised_only_where_the_ledger_is_read() {
+fn todo_is_advertised_from_the_first_request_so_a_goal_keeps_the_prompt_cache() {
     let (_dir, tools) = workspace(&[]);
-    let names = |work| {
-        tools
-            .definitions(work)
-            .into_iter()
-            .map(|tool| tool.function.name)
-            .collect::<Vec<_>>()
-    };
-    assert!(
-        !names(crate::durable::work::WorkKind::Single)
-            .iter()
-            .any(|name| name == "todo")
-    );
-    assert!(
-        names(crate::durable::work::WorkKind::Steps)
-            .iter()
-            .any(|name| name == "todo")
-    );
+    let names: Vec<String> = tools
+        .definitions()
+        .into_iter()
+        .map(|tool| tool.function.name)
+        .collect();
+    assert!(names.iter().any(|name| name == "todo"), "{names:?}");
 }
 
 #[test]
@@ -81,4 +70,31 @@ fn a_file_read_with_context_widens_the_page_around_the_offset() {
         !text.contains("row97") && !text.contains("row105"),
         "{text}"
     );
+}
+
+#[test]
+fn a_batch_read_keeps_line_tags_for_every_file() {
+    let (_dir, tools) = workspace(&[("a.txt", "one\n"), ("b.txt", "two\n")]);
+    let call = ToolCall {
+        id: "t".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({ "paths": ["a.txt", "b.txt"], "tags": true }).to_string(),
+        },
+        continuation: None,
+    };
+    let text = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap()
+        .text;
+    let tagged = |line: &str| {
+        text.lines()
+            .any(|row| row.starts_with("1:") && row.contains('|') && row.ends_with(line))
+    };
+    assert!(tagged("one") && tagged("two"), "{text}");
 }

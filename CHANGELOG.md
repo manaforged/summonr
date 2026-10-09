@@ -18,7 +18,9 @@ First stable release.
 - MCP 2025-11-25: summonr answers `roots/list`, shows tool progress, fetches changed tool, prompt, and resource lists, logs server messages to `~/.summonr/logs/mcp.log`, and cancels a call when a turn stops. Servers on an unknown protocol version are refused.
 - MCP prompts, resources, and forms: `/server:prompt ARGS` runs a server prompt and `@server:uri` attaches a resource. A server can ask you to fill a form; each field is checked against its schema.
 - A server with more than 8 KB of tool schemas is listed under one `mcp` tool, so large servers do not fill the prompt.
-- Plugins: `summonr install PATH` installs a plugin in the Claude Code layout (skills, MCP servers, hooks, `bin/`); `summonr uninstall NAME` removes it and `[plugins] off` disables plugins.
+- Plugins: `summonr install PATH` installs a plugin in the Claude Code layout (skills, slash commands, agents, MCP servers, `.lsp.json` language servers, hooks, `bin/`); `summonr uninstall NAME` removes it and `[plugins] off` disables plugins. A plugin command runs as `/plugin:name`, or `/name` when the name is unique. A plugin agent is picked by the `task` tool and limited to the tools it lists. Plugin language servers start on first use.
+- MCP servers and language servers stop when idle and share one limit: `servers_max` sets how many run at once, and `lsp_idle_secs` sets the language-server idle stop. `/mcp` shows each running server's memory on macOS and Linux.
+- Slash-command and `@` mention type-ahead work on the start screen.
 - `shift+tab` cycles reasoning effort from none to max. Each vendor and model sends the nearest level it accepts; `reasoning_levels` and `thinking_off` on an endpoint override this.
 - The provider table is data. Every built-in endpoint is one `[[preset]]` row in `src/endpoint/presets.toml` (base URL, env keys, wire, reasoning quirks, peer ids), and a row summonr cannot honor fails startup by name. New built-ins: the Qwen coding plans `qwen-plan` and `qwen-plan-cn` and the DashScope hosts `dashscope` and `dashscope-cn`; the MiniMax coding plans `minimax-plan` and `minimax-cn-plan` on the Anthropic wire; `tencent-plan` and `volcengine-plan`; `nvidia`, `huggingface`, `cohere`, `perplexity`, `siliconflow`, `siliconflow-cn`, `ollama-cloud`, and the local `lmstudio`. Coding-plan keys adopt from OpenCode's `auth.json` through their models.dev ids.
 - `plan_mode = true` turns on plan mode. It is off by default.
@@ -57,6 +59,7 @@ First stable release.
 
 ### Fixed
 
+- `--goal` and `--steps` from the command line run the completion check and the goal judge. Before, a goal that was already met could repeat turns until its budget ran out.
 - Dragging across the transcript in a terminal copies exactly the text crossed, in either direction, and the footer says "copied N lines". Before, the first character was dropped, a drag toward the start copied nothing, and nothing confirmed the copy.
 - Links in replies open on click, a dropped file lands only in the pane under the pointer, and loading older messages keeps the message you were reading in place.
 - Review follow-ups: `xargs -I {} sh -c {}` is seen by the ask gate; a failed attempt's partial reply is no longer sent back as the last message; the password dialog names the program that really asked; a hook's process group is stopped only on timeout; compaction keeps a later message that repeats the turn's first prompt and says when it starts.

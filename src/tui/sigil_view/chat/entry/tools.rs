@@ -210,6 +210,11 @@ pub(super) fn tool_card(
     }
     let full = call.expanded || tools == ToolOutput::Full;
     let hidden = tools == ToolOutput::Hidden && !call.expanded;
+    if Builtin::is(name, Builtin::Task)
+        && let Some(card) = super::children::receipt_card(call, full, hidden, app)
+    {
+        return card.pointer_up(flip(app, index, at));
+    }
     let shown = workspace_relative(&call.arg, &app.roots);
     let (verb, arg) = verb(name, &shown);
     let output = preview::plain(&call.output);

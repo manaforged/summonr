@@ -17,7 +17,7 @@ use crate::runtime::Loop;
 use crate::tui::hub::{Factory, Started, start};
 use crate::tui::{Info, Msg};
 
-const TITLE: &str = "Summonr";
+const TITLE: &str = env!("CARGO_PKG_NAME");
 const SIZE: (u32, u32) = (1280, 800);
 
 pub(crate) fn run(

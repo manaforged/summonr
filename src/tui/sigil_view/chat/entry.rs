@@ -9,7 +9,6 @@ use sigil::prelude::MouseButton;
 use sigil::prelude::NodeBuilder;
 use sigil::prelude::NodeEventsExt;
 use sigil::prelude::Paint;
-use sigil::prelude::PointerEvent;
 use sigil::prelude::WidgetLayoutExt;
 use sigil::prelude::chart;
 use sigil::prelude::container;
@@ -21,10 +20,11 @@ use sigil::prelude::text;
 use sigil::widgets::DiffBuilder;
 
 use super::{App, Call, Entry};
-use crate::prefs::{DiffLayout, Prefs, Visibility};
+use crate::prefs::{DiffLayout, Prefs};
 use crate::tui::sigil_view::look::Look;
 
 mod children;
+mod collapse;
 #[cfg(feature = "gui")]
 pub(in crate::tui::sigil_view) mod fold;
 mod reply;
@@ -115,8 +115,12 @@ fn passive(entry: Entry, live: bool, prefs: &Prefs, app: &App) -> NodeBuilder {
                     .text_color(sigil::prelude::Token::Gray12),
             ),
         Entry::Assistant { text: body, .. } => assistant(body, app),
-        Entry::Thinking(body) => collapsible(&body, "thinking", prefs.reasoning, app, true, live),
-        Entry::Receipt(body) => collapsible(&body, "receipt", prefs.receipts, app, false, false),
+        Entry::Thinking(body) => {
+            collapse::collapsible(&body, "thinking", prefs.reasoning, app, true, live)
+        }
+        Entry::Receipt(body) => {
+            collapse::collapsible(&body, "receipt", prefs.receipts, app, false, false)
+        }
         Entry::Verify { command, passed } => verify(&command, passed),
         Entry::Mail { from, text: body } => prose(
             &format!("{from}: {body}"),
@@ -221,96 +225,7 @@ fn picture(source: ImageSource, bytes: std::rc::Rc<[u8]>, name: String) -> NodeB
         )
 }
 
-fn collapsible(
-    body: &str,
-    kind: &str,
-    visibility: Visibility,
-    app: &App,
-    reasoning: bool,
-    live: bool,
-) -> NodeBuilder {
-    let toggle = app.clone();
-    let next = if visibility == Visibility::Expanded {
-        "collapsed"
-    } else {
-        "expanded"
-    };
-    let press = move |event: &mut PointerEvent| {
-        if event.button == Some(MouseButton::Left) {
-            if reasoning {
-                toggle.reasoning_command(Some(next));
-            } else {
-                toggle.receipts_command(Some(next));
-            }
-            event.stop_propagation();
-        }
-    };
-    match visibility {
-        Visibility::Off | Visibility::Collapsed if live => wrap(
-            sigil::kernel::text("✻ thinking…")
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .font_italic(true)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
-        .pointer_down(press),
-        Visibility::Off => wrap(
-            sigil::kernel::text(format!("▸ {kind} · hidden"))
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .font_italic(true)
-                .text_color(sigil::prelude::Token::Gray11),
-        )
-        .pointer_down(press),
-        Visibility::Collapsed if reasoning => {
-            let words = body.split_whitespace().count();
-            wrap(
-                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(words, "word")))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
-                    .font_size(12.0)
-                    .font_italic(true)
-                    .text_color(sigil::prelude::Token::Gray11),
-            )
-            .pointer_down(press)
-        }
-        Visibility::Collapsed => {
-            let count = body.lines().filter(|line| !line.trim().is_empty()).count();
-            wrap(
-                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(count, "line")))
-                    .nowrap()
-                    .text_color(sigil::prelude::Token::OnSurface)
-                    .font_size(12.0)
-                    .font_italic(true)
-                    .text_color(sigil::prelude::Token::Gray11),
-            )
-            .pointer_down(press)
-        }
-        Visibility::Expanded => container()
-            .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
-            .child(
-                sigil::kernel::text(if live {
-                    "✻ thinking…".to_string()
-                } else {
-                    format!("✻ {kind}")
-                })
-                .nowrap()
-                .text_color(sigil::prelude::Token::OnSurface)
-                .font_size(12.0)
-                .font_italic(true)
-                .text_color(sigil::prelude::Token::Gray11),
-            )
-            .child(prose(
-                body,
-                Look::xs(sigil::prelude::Token::Gray10).italic(),
-            ))
-            .pointer_down(press),
-    }
-}
-
-fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
+pub(super) fn wrap(child: impl IntoNode + 'static) -> NodeBuilder {
     container()
         .layout(LayoutStyle::block().fill_width().min_size(0.0, 0.0))
         .child(child)

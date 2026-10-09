@@ -28,6 +28,7 @@ mod mode;
 mod picker;
 mod secret;
 mod settings;
+mod thinking;
 mod typeahead;
 mod typing;
 mod usage;

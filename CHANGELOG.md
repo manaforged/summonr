@@ -86,6 +86,7 @@ First stable release.
 
 ### Fixed
 
+- In the terminal, only the `✻ thinking` header folds expanded reasoning, so a drag over the reasoning text selects and copies it.
 - A read-only command such as `grep` that times out no longer reports that it may have changed workspace files, and a command that redirects into a file still does. `mdfind` and `locate` count as read-only.
 - A command run with `workdir`, or after `cd`, can no longer read a protected path such as `~/.ssh` by a relative name, and `cp`, `mv`, `ln`, `install`, and `rsync` can no longer copy one out. A numbered redirect such as `3> FILE` counts as a write.
 - In a contained session, a shell content search such as `grep -r`, `rg`, `ag`, or `ack`, or a copy, over a folder that holds a protected path such as `~` or `/` is refused, so it can no longer print `~/.ssh`, `~/.aws`, or summonr session files. `~` and `$HOME` count as the home folder in command checks. A name search with `find`, `fd`, `mdfind`, or `locate` still runs.

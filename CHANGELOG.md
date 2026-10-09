@@ -27,13 +27,19 @@ First stable release.
 - `/goal` with no check configured uses a check detected from the project (`cargo test`, `go test ./...`, or `npm test` when `package.json` has a `test` script) and says how to set another in `.summonr/check.toml`.
 - `--json` runs open with `{"type":"session","id":...}`, and the `aborted` event carries a `code`: `time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`.
 - `summonr diff --turn N|last` shows what one turn changed, from the checkpoint at its start to the next turn's checkpoint; resumed sessions keep numbering turns.
-- `summonr mcp add` connects once, caches the tool list, and prints the tool count; a server that fails stays configured and shows `failed: <error>` in `summonr mcp list`. In `-p` output a call through the `mcp` tool prints `→ mcp server:tool`.
+- `summonr mcp add` connects once, caches the tool list, and prints the tool count; a server that fails stays configured, `mcp add` exits 1 and names the config file, and `summonr mcp list` shows a clipped `failed: <error>`. In `-p` output each tool line carries a short argument summary (`→ read src/a.rs`), and a call through the `mcp` tool prints `→ mcp server:tool`.
 - Hooks take `{ command, dialect = "claude" }` to run a Claude Code hook with its stdin JSON and verdict rules. Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR`.
 - `summonr install --list` names each plugin, whether it is on, and what it adds. `summonr login` shows each preset's label, `summonr endpoints` lists set-up endpoints first, and `summonr sessions` prints a header row on a terminal.
 - `AGENTS.md` and `CLAUDE.md` expand `@path` lines: the named file, relative to the one holding the line, joins the prompt in place. Files load once across user and project context, and a missing include stays as the literal line.
 - `/pane jobs` lists background commands with status, log, and kill. `/pane peers` lists live sessions you can mention with `@name`.
-- The diff pane reviews one hunk at a time: `a` accepts, `r` reverts, and `n` adds a note for the model (Enter saves). Typed letters stay in the pane, and `esc` returns to the composer. A pane narrower than `diff_split_min_cols` shows the unified diff. Marks persist in `.summonr/review.json`.
+- The diff pane reviews one hunk at a time: `a` accepts, `r` reverts, and `n` adds a note for the model (Enter saves). Typed letters stay in the pane, and `esc` returns to the composer. A pane narrower than `diff_split_min_cols` shows the unified diff. Marks persist in `.git/summonr/review.json`.
 - Inline terminal mode, grouped repeated tool calls, a transcript scrollbar, and images attached during a turn.
+- `summonr login NAME --url URL [--model M]` adds your own OpenAI-compatible server, or updates it in place; when the server lists one model, summonr picks it. `summonr logout NAME --remove` deletes it, forgets its key, and clears `default` and `default_model` when they named it. An unknown endpoint name suggests this command.
+- `summonr login` prints one compact line per endpoint with its state and label, set-up endpoints first. A preset `label` names the region and default model, `start` names the command that starts a local server, and `key_from` lets rows on the same plan share a stored key (`zai` and `glm-intl`, `zai-cn` and `glm`). A keyless endpoint with no model reads `needs model`.
+- A misspelled endpoint name of `typo_min_chars` characters or more gets a hint for one changed character or two swapped ones.
+- A `--steps` item that says ``Run `CMD` `` gets `CMD` as its own check.
+- A hook table takes `matcher`, with the syntax of a Claude Code `hooks.json` matcher, checked against the tool name in the hook's dialect.
+- The composer header shows `model (effort) · endpoint`.
 
 ### Changed
 
@@ -64,6 +70,11 @@ First stable release.
 - In `--goal` and `--steps`, the check decides the exit code: a run that stops short runs the check once at exit and exits 2 when it fails, even after a budget ran out. The `work` event's `checks_failed` and the `verify` events now agree.
 - The plan is saved as `plan.md` in the session directory instead of `.summonr/plan.md` in the workspace.
 - Lower startup time, memory, and per-turn overhead: model facts come from the local catalog, requests are encoded once per turn, and waits no longer poll.
+- The approval prompt shows the whole command, wrapped, and says why it needs approval, for example `a destructive command because …`.
+- `summonr diff --turn N` reads `turn N of session <short id>`, and its JSON adds `session`.
+- A child whose edits conflict with the parent shows as a conflict with its kept checkout (`kept <repo>-deltas/<id>: conflicts with the parent`), not as failed. summonr never deletes a kept checkout. A child row names the plugin agent it runs as.
+- Hunk review marks live in the repository's git directory, `.git/summonr/review.json`.
+- In plan mode the model ends with the plan and does not ask for permission; `/plan accept` or a short reply accepts it.
 
 ### Fixed
 
@@ -89,6 +100,9 @@ First stable release.
 - Leaving plan mode removes the sandbox plan mode turned on.
 - A failed compaction summary retries after 8 rounds.
 - A file whose change time moved is hashed again for undo snapshots.
+- A closed stdout or stderr pipe ends summonr quietly and leaves no crash report for the next run.
+- The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. When the check file changes during a run anyway, summonr restores it and adds a note.
+- A file that summonr's own output is redirected to stays out of every checkpoint, so `summonr diff --turn` never lists it.
 
 ### Security
 

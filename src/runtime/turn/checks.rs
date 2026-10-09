@@ -11,11 +11,12 @@ impl<P: Provider> Loop<P> {
             .completion_checks()
             .map_err(super::session_err)?;
         if self.check_file_drifted() {
+            self.restore_check_file();
             self.push_event(
                 events,
                 emit,
                 Event::Note {
-                    text: "the workspace check file changed during this run; summonr verified with the check it loaded at start".to_string(),
+                    text: "the check file changed during this run; summonr put it back and verified with the check it loaded at start".to_string(),
                 },
             )?;
         }
@@ -91,11 +92,17 @@ impl<P: Provider> Loop<P> {
         Ok(progress.exit_code().unwrap_or(3))
     }
 
+    fn restore_check_file(&self) {
+        let path = crate::verify::check_path(&self.workspace);
+        drop(match &self.check_file {
+            Some(bytes) => std::fs::write(path, bytes),
+            None => std::fs::remove_file(path),
+        });
+    }
+
     fn check_file_drifted(&self) -> bool {
-        let Some(loaded) = self.verify.as_deref() else {
-            return false;
-        };
-        !matches!(verify::check_commands(&self.workspace), Ok(Some(now)) if now == loaded)
+        self.verify.is_some()
+            && std::fs::read(crate::verify::check_path(&self.workspace)).ok() != self.check_file
     }
 
     pub(super) async fn abort_turn(

@@ -108,3 +108,20 @@ fn a_typed_command_that_does_not_exist_is_sent_as_typed() {
         );
     });
 }
+
+#[test]
+fn a_plugin_command_that_starts_with_the_typed_text_ranks_first() {
+    let typed = frame_with(busy_info(), 100, 24, State::Idle, |app| {
+        app.model_mut(|model| model.offers = vec![stats()]);
+        app.replace("/stats".to_string());
+    });
+    let row = |name: &str| typed.iter().position(|line| line.contains(name));
+    let (Some(plugin), status) = (row("/stats-report"), row("/status")) else {
+        panic!("{}", typed.join("\n"));
+    };
+    assert!(
+        status.is_none_or(|status| plugin < status),
+        "{}",
+        typed.join("\n")
+    );
+}

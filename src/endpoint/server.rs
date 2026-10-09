@@ -9,31 +9,42 @@ pub async fn add_server(name: &str, url: &str, model: Option<&str>) -> Result<St
             "endpoint name `{name}`: letters, digits, `-`, and `_` only"
         )));
     }
-    if is_named(name) {
+    if builtin(name).is_some() {
         return Err(Error::Config(format!(
-            "`{name}` is already an endpoint; pick another name or run `summonr logout {name} --remove` first"
+            "`{name}` is a built-in endpoint; pick another name for your server"
         )));
     }
-    let path = config::path()?;
-    save(&path, name, url, model)?;
-    if model.is_some() {
-        return Ok(added(name, url, model.unwrap_or_default()));
-    }
-    let listed = match resolve(Some(name), None, Need::Config) {
-        Ok(endpoint) => crate::provider::Client::discover(&endpoint).await,
-        Err(error) => Err(error),
+    let model = match model {
+        Some(model) => model.to_string(),
+        None => only_model(name, url).await?,
     };
-    config::remove_named(&path, config::Section::Endpoint, name)?;
-    let models = listed.map_err(|error| {
-        Error::Config(format!(
-            "cannot list models at {url}: {error}; pass --model NAME to add it anyway"
-        ))
-    })?;
+    let path = config::path()?;
+    let replaced = config::remove_named(&path, config::Section::Endpoint, name)?;
+    save(&path, name, url, Some(&model))?;
+    Ok(added(name, url, &model, replaced))
+}
+
+async fn only_model(name: &str, url: &str) -> Result<String> {
+    let mut file = (*config::file()?).clone();
+    file.endpoint.insert(
+        name.to_string(),
+        FileEndpoint {
+            base_url: Some(url.to_string()),
+            ..FileEndpoint::default()
+        },
+    );
+    let endpoint = seat(&file, name)
+        .ok_or_else(|| Error::Config(format!("cannot read the endpoint `{name}`")))?;
+    let endpoint = fill_key(endpoint, false)?;
+    let models = crate::provider::Client::discover(&endpoint)
+        .await
+        .map_err(|error| {
+            Error::Config(format!(
+                "cannot list models at {url}: {error}; pass --model NAME to add it anyway"
+            ))
+        })?;
     match models.as_slice() {
-        [only] => {
-            save(&path, name, url, Some(&only.id))?;
-            Ok(added(name, url, &only.id))
-        }
+        [only] => Ok(only.id.clone()),
         [] => Err(Error::Config(format!(
             "{url} lists no models; pass --model NAME"
         ))),
@@ -56,7 +67,10 @@ pub fn remove_server(name: &str) -> Result<String> {
     let removed = config::remove_named(&config::path()?, config::Section::Endpoint, name)?;
     super::auth::forget_key(name)?;
     if removed {
-        Ok(format!("✓ Removed the endpoint {name}."))
+        Ok(format!(
+            "✓ Removed the endpoint {name}.{}",
+            clear_default(name)?
+        ))
     } else {
         Err(Error::Config(format!(
             "no endpoint named {name} in {}",
@@ -74,9 +88,23 @@ fn save(path: &std::path::Path, name: &str, url: &str, model: Option<&str>) -> R
     config::save_named(path, config::Section::Endpoint, name, Item::Table(table))
 }
 
-fn added(name: &str, url: &str, model: &str) -> String {
+fn added(name: &str, url: &str, model: &str, replaced: bool) -> String {
+    let verb = if replaced { "Updated" } else { "Added" };
+    let config =
+        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
+    let default = config::file().ok().and_then(|file| file.default.clone());
+    if default.as_deref() == Some(name) {
+        return format!("✓ {verb} {name}: {model} at {url}. Run `summonr {name}`.");
+    }
     format!(
-        "✓ Added {name}: {model} at {url}. Run `summonr {name}`, or set `default = \"{name}\"` in {}.",
-        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path))
+        "✓ {verb} {name}: {model} at {url}. Run `summonr {name}`, or set `default = \"{name}\"` in {config}."
     )
+}
+
+fn clear_default(name: &str) -> Result<String> {
+    if config::file()?.default.as_deref() != Some(name) {
+        return Ok(String::new());
+    }
+    config::save_default_seat(&config::path()?, None)?;
+    Ok(" It was the default, so `default` and `default_model` are cleared; the next run picks the first endpoint that is set up.".to_string())
 }

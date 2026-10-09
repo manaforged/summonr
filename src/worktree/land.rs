@@ -1,12 +1,14 @@
 use std::path::Path;
 
 use crate::error::{Error, Result};
+use crate::tools::{Hold, Kept};
 
 use super::{COMMIT_MAX, Tree, base_record, dirty, worktree_id};
 
 pub(crate) struct Landing {
     pub(crate) paths: Vec<String>,
     pub(crate) kept: Option<String>,
+    pub(crate) held: Option<Kept>,
 }
 
 pub(crate) fn reconcile_children(
@@ -31,34 +33,53 @@ pub(crate) fn reconcile_children(
 
 fn reconcile_delta(target: &Path, tree: &Tree, paths: &[String]) -> Landing {
     if !tree.on_base() {
-        return tree.kept("moved off the parent base; its delta was kept");
+        return tree.kept(
+            Hold::OffBase,
+            "moved off the parent base; its delta was kept",
+        );
     }
     let (bytes, found) = match tree.patch(paths) {
         Ok(patch) => patch,
-        Err(error) => return tree.kept(&format!("was kept: {error}")),
+        Err(error) => return tree.kept(Hold::Unreadable, &format!("was kept: {error}")),
     };
     if !bytes.is_empty()
         && let Err(error) = apply(target, &bytes)
     {
-        return tree.kept(&format!("conflicts with the parent and was kept: {error}"));
+        return tree.kept(
+            Hold::Conflict,
+            &format!("conflicts with the parent and was kept: {error}"),
+        );
     }
-    let note = tree.remove_child().err().map(|error| {
-        format!(
-            "applied changes, but could not remove {}: {error}",
-            tree.path.display()
-        )
-    });
-    Landing {
-        paths: if bytes.is_empty() { Vec::new() } else { found },
-        kept: note,
-    }
+    tree.landed(if bytes.is_empty() { Vec::new() } else { found })
 }
 
 impl Tree {
-    fn kept(&self, reason: &str) -> Landing {
+    fn kept(&self, hold: Hold, reason: &str) -> Landing {
         Landing {
             paths: Vec::new(),
             kept: Some(format!("{} {reason}", self.path.display())),
+            held: Some(self.held(hold)),
+        }
+    }
+
+    fn held(&self, hold: Hold) -> Kept {
+        Kept {
+            checkout: self.path.clone(),
+            hold,
+        }
+    }
+
+    fn landed(&self, paths: Vec<String>) -> Landing {
+        let kept = self.remove_child().err().map(|error| {
+            format!(
+                "applied changes, but could not remove {}: {error}",
+                self.path.display()
+            )
+        });
+        Landing {
+            paths,
+            held: kept.as_ref().map(|_| self.held(Hold::Unremoved)),
+            kept,
         }
     }
 
@@ -264,15 +285,7 @@ fn apply_combined(target: &Path, start: &str, combined: &[u8], deltas: bool) -> 
 fn remove_landings(children: &[(Tree, Vec<String>)]) -> Vec<Landing> {
     children
         .iter()
-        .map(|(tree, paths)| Landing {
-            paths: paths.clone(),
-            kept: tree.remove_child().err().map(|error| {
-                format!(
-                    "applied changes, but could not remove {}: {error}",
-                    tree.path.display()
-                )
-            }),
-        })
+        .map(|(tree, paths)| tree.landed(paths.clone()))
         .collect()
 }
 

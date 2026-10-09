@@ -11,7 +11,7 @@ impl Model {
         let percent = if window == 0 {
             0
         } else {
-            u64::from(used.min(window)) * 100 / u64::from(window)
+            (u64::from(used.min(window)) * 100).div_ceil(u64::from(window))
         };
         (used, window, percent)
     }

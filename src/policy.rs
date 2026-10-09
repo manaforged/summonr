@@ -7,6 +7,7 @@ use crate::error::{Error, Result};
 mod ask;
 mod danger;
 mod protected;
+pub(crate) use protected::workspace_control;
 mod walk;
 
 pub(crate) use walk::shell_words;
@@ -33,7 +34,7 @@ pub(crate) enum Grant {
     Write(PathBuf),
     Guarded(PathBuf),
     Command(String),
-    Danger(String),
+    Danger { command: String, reason: String },
     Edit(&'static str),
     Network,
 }
@@ -45,7 +46,9 @@ impl Grant {
             Self::Write(path) => path.display().to_string(),
             Self::Guarded(path) => format!("protected path {}", path.display()),
             Self::Command(command) => format!("a shell command without the sandbox: {command}"),
-            Self::Danger(command) => format!("a destructive command: {command}"),
+            Self::Danger { command, reason } => {
+                format!("a destructive command because {reason}: {command}")
+            }
             Self::Edit(setting) => format!("allow {setting} for this task (saved setting is off)"),
             Self::Network => "network".to_string(),
         }

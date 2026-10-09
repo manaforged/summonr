@@ -75,8 +75,13 @@ struct CheckFile {
     checks: Option<Vec<String>>,
 }
 
+#[must_use]
+pub(crate) fn check_path(workspace: &Path) -> std::path::PathBuf {
+    workspace.join(".summonr/check.toml")
+}
+
 pub fn check_commands(workspace: &Path) -> Result<Option<Vec<String>>> {
-    let path = workspace.join(".summonr/check.toml");
+    let path = check_path(workspace);
     if !path.is_file() {
         return Ok(None);
     }

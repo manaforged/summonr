@@ -124,7 +124,7 @@ fn model_text(model: &Model) -> String {
         .effort
         .filter(|effort| *effort != crate::provider::Effort::None)
         .map_or(String::new(), |effort| format!(" ({})", effort.as_str()));
-    format!("{}{suffix}", model.snapshot.model)
+    model.snapshot.seat_label(&suffix)
 }
 
 fn header_row(app: App) -> NodeBuilder {

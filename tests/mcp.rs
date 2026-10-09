@@ -73,6 +73,8 @@ fn main() {
         plugins::a_legacy_bundle_installs_as_a_plugin,
         #[cfg(unix)]
         plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
+        #[cfg(unix)]
+        plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -83,6 +85,7 @@ fn main() {
         output::a_server_error_line_is_shown_without_secrets,
         output::a_json_run_starts_with_its_session_id,
         diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
+        diff::a_turn_diff_names_its_session,
         session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
         session::forking_a_named_session_keeps_the_original_transcript,
         session::a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code,

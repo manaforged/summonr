@@ -231,13 +231,15 @@ pub(super) async fn mcp(command: &McpCommand) -> Result<()> {
         McpCommand::List { json } => mcp_list(*json),
         McpCommand::Get { name, json } => mcp_get(name, *json),
         McpCommand::Add { name, launch } => {
-            summonr::mcp_add(name, launch)?;
-            match summonr::mcp_probe(&workspace()?, name).await {
-                Ok(count) => println!("{name}: {count} tools"),
-                Err(error) => println!(
-                    "{name}: not reachable: {error}\nkept in ~/.summonr/config.toml; fix the command or run `summonr mcp remove {name}`"
-                ),
-            }
+            let kept = summonr::mcp_add(name, launch)?;
+            let count = summonr::mcp_probe(&workspace()?, name)
+                .await
+                .map_err(|error| {
+                    summonr::Error::Config(format!(
+                        "{name}: not reachable: {error}\nkept in {kept}; fix the command or run `summonr mcp remove {name}`"
+                    ))
+                })?;
+            println!("{name}: {count} tools");
             Ok(())
         }
         McpCommand::Remove { name } => {
@@ -281,16 +283,14 @@ fn mcp_get(name: &str, json: bool) -> Result<()> {
     Ok(())
 }
 
+const STATE_WIDTH: usize = 22;
+
 fn server_line(row: &summonr::ServerStatus) -> String {
     let transport = row.transport.map_or("-", summonr::McpTransport::label);
     format!(
-        "{:<20} {:<22} {transport:<6} {} tools  {}",
+        "{:<20} {:<STATE_WIDTH$} {transport:<6} {} tools  {}",
         row.name,
-        match row.state {
-            summonr::McpState::Failed =>
-                format!("failed: {}", row.detail.as_deref().unwrap_or_default()),
-            state => state.label().to_string(),
-        },
+        row.state_text(STATE_WIDTH),
         row.tools.len(),
         row.schema_size()
     )

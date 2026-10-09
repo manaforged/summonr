@@ -38,7 +38,7 @@ impl Span {
         format!("turn {}", self.turn)
     }
 
-    fn stats(&self, root: &Path) -> Result<Diff> {
+    fn stats(&self, root: &Path, session: &str) -> Result<Diff> {
         let numstat = git(
             root,
             &[
@@ -76,6 +76,7 @@ impl Span {
         files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(Diff {
             base: self.label(),
+            session: Some(session.to_string()),
             files,
         })
     }
@@ -108,7 +109,7 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
     match id {
         TurnId::Number(number) if number <= count => {
             let span = spans.swap_remove(number - 1);
-            let diff = span.stats(root)?;
+            let diff = span.stats(root, session)?;
             Ok((span, diff))
         }
         TurnId::Number(number) => Err(Error::Config(format!(
@@ -118,7 +119,7 @@ fn pick(root: &Path, session: &str, id: TurnId) -> Result<(Span, Diff)> {
         TurnId::Last => {
             let mut empty = None;
             while let Some(span) = spans.pop() {
-                let diff = span.stats(root)?;
+                let diff = span.stats(root, session)?;
                 if !diff.files.is_empty() {
                     return Ok((span, diff));
                 }

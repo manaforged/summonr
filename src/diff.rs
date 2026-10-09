@@ -29,6 +29,8 @@ pub struct Stat {
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Diff {
     pub base: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session: Option<String>,
     pub files: Vec<Stat>,
 }
 
@@ -46,12 +48,19 @@ impl Diff {
     #[must_use]
     pub fn summary(&self) -> String {
         let count = self.files.len();
+        let scope = match &self.session {
+            Some(session) => format!(
+                "{} of session {}",
+                self.base,
+                crate::session::short(session)
+            ),
+            None => format!("vs {}", self.base),
+        };
         format!(
-            "{count} file{} · +{} −{} · vs {}",
+            "{count} file{} · +{} −{} · {scope}",
             if count == 1 { "" } else { "s" },
             self.added(),
             self.removed(),
-            self.base
         )
     }
 }
@@ -188,6 +197,7 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(Diff {
         base: base.unwrap_or_else(|| "empty tree".to_string()),
+        session: None,
         files,
     })
 }

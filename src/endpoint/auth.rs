@@ -25,6 +25,9 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
                     .copied()
                     .find(|key| env_key(&[key]).is_some())
             }),
+        model: endpoint.model.clone(),
+        base_url: endpoint.base_url.clone(),
+        env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
         group: login_group(name, &endpoint),
     };
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {

@@ -290,6 +290,25 @@ fn device_of(_: &Metadata) -> Option<u64> {
     None
 }
 
+pub(crate) fn own_files(root: &Path) -> Vec<String> {
+    let own = own_outputs();
+    if own.is_empty() {
+        return Vec::new();
+    }
+    listing(root)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|relative| {
+            root.join(relative)
+                .symlink_metadata()
+                .ok()
+                .and_then(|metadata| identity(&metadata))
+                .is_some_and(|id| own.contains(&id))
+        })
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .collect()
+}
+
 #[cfg(unix)]
 fn identity(metadata: &Metadata) -> Option<(u64, u64)> {
     use std::os::unix::fs::MetadataExt;

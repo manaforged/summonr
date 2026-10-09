@@ -204,13 +204,10 @@ impl App {
         self.begin_auth(None);
         if self.unseated() {
             let rows = self.filtered_auth();
-            let starts = |choice: &crate::endpoint::AuthInfo| {
-                crate::endpoint::resolve(Some(&choice.name), None, crate::endpoint::Need::Seat)
-                    .is_ok()
-            };
+            let ready = crate::endpoint::set_up();
             let at = rows
                 .iter()
-                .position(starts)
+                .position(|choice| ready.contains(&choice.name))
                 .or_else(|| rows.iter().position(|choice| !choice.keyless()))
                 .unwrap_or(0);
             self.auth.sel.set(at);

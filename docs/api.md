@@ -22,6 +22,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr worktrees [--json]`, `summonr worktrees prune` | List session worktrees, or drop records of missing directories |
 | `summonr endpoints` | Probe every endpoint and show its key status |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
+| `summonr login NAME --url URL [--model M]`, `summonr logout NAME --remove` | Add or update your own OpenAI-compatible server, or remove it |
 | `summonr modules` | List compiled modules and their state |
 | `summonr workflows` | List configured workflows |
 | `summonr mcp list\|get NAME [--json]`, `summonr mcp add NAME -- CMD\|--url URL`, `summonr mcp remove NAME` | List MCP servers with state, tools, and schema size; add or remove a `[mcp.NAME]` table |
@@ -84,7 +85,7 @@ In `--goal` and `--steps`, the check decides the exit code. When a run stops sho
 
 A signal exit skips the `--worktree` finish: the worktree and its branch stay in place, with the run's files uncommitted.
 
-An unknown option is exit code 1 with `unknown option`.
+An unknown option is exit code 1 with `unknown option`. `summonr mcp add` exits 1 when the new server does not answer; the entry stays in the config file, and the message names that file. On Unix, a closed stdout or stderr pipe ends summonr through `SIGPIPE` with no error message.
 
 ## Machine output
 
@@ -114,11 +115,20 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `work` | `progress`; its `checks_failed` agrees with the `verify` events |
 | `child` | `id`, `event` (a nested event) |
 
+A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.toml`. A step with no `Run` phrase is gated on `.summonr/check.toml` alone. The last step runs every check.
+
+```markdown
+## Steps
+
+1. Add the `--limit` flag. Run `cargo test cli`.
+2. Document the flag in README.md.
+```
+
 Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`.
 
 ### `summonr diff --json`
 
-One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`.
+One object: `{"base": string, "files": [{"path", "added", "removed", "new"}]}`. With `--turn`, `base` is `"turn N"` and `session` holds the session id.
 
 ### `summonr worktrees --json`
 
@@ -145,7 +155,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
   - `~/.summonr/skills/<name>/SKILL.md`, `~/.summonr/bin/<name>/`.
 - Key lookup order: the endpoint's environment variable, then `credentials.toml`, then peer stores (`~/.local/share/opencode/auth.json`, `~/.kimi-code/credentials/kimi-code.json`), then `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
-- `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`. When the check file changes during a run, a `note` event says so and the run keeps the check it loaded at start.
+- `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. When the check file changes during a run anyway, summonr restores it, a `note` event says so, and the run keeps the check it loaded at start.
 - A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail` and `search` are off by default.

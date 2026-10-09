@@ -96,4 +96,22 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
         }));
     }));
     assert!(known.contains("ctx"), "{known}");
+    let small = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.update(Msg::Settings(crate::tui::Snapshot {
+            model: "stub-model".to_owned(),
+            context_window: Some(200_000),
+            ..crate::tui::Snapshot::default()
+        }));
+        app.update(Msg::Event(Event::Usage {
+            prompt_tokens: 1500,
+            completion_tokens: 20,
+            reasoning_tokens: 0,
+            cached_tokens: 0,
+            millis: None,
+            prefix_hash: String::new(),
+            cost: None,
+        }));
+    }));
+    let ctx = small.split("cache").next().unwrap_or_default();
+    assert!(ctx.contains("ctx") && ctx.contains("1%"), "{small}");
 }

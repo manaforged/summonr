@@ -73,12 +73,22 @@ impl ServerStatus {
         let tenths = (self.schema_bytes * 10 + 512) / 1024;
         format!("{}.{} KB", tenths / 10, tenths % 10)
     }
+
+    #[must_use]
+    pub fn state_text(&self, width: usize) -> String {
+        let text = match (self.state, &self.detail) {
+            (McpState::Failed, Some(detail)) => format!("failed: {detail}"),
+            (state, _) => state.label().to_string(),
+        };
+        crate::text::ellipsize(&text, width)
+    }
 }
 
 pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatus>> {
     let hub = board.and_then(|board| board.lock().ok()?.upgrade());
     let found = config::servers(workspace)?;
     let live = supervise::live();
+    let file = crate::config::tilde(&crate::config::path()?);
     let mut rows: Vec<ServerStatus> = found
         .servers
         .iter()
@@ -87,7 +97,7 @@ pub fn status(workspace: &Path, board: Option<&Board>) -> Result<Vec<ServerStatu
     rows.extend(found.waiting.into_iter().map(|name| ServerStatus {
         kind: ServerKind::Mcp,
         detail: Some(format!(
-            "set `enabled = true` under [mcp.{name}] in ~/.summonr/config.toml to run it"
+            "set `enabled = true` under [mcp.{name}] in {file} to run it"
         )),
         name,
         transport: None,

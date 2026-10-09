@@ -201,7 +201,8 @@ impl Picker {
         } else {
             matching_commands(draft)
         };
-        rows.into_iter()
+        let rows = rows
+            .into_iter()
             .filter(|(name, _)| match parse_command(name) {
                 Some(SlashCommand::PlanAccept | SlashCommand::PlanReject) => {
                     model.snapshot.pending_plan
@@ -212,8 +213,24 @@ impl Picker {
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))
             .chain(prompts(model, draft))
-            .collect()
+            .collect::<Rows>();
+        ranked(rows, draft)
     }
+}
+
+fn ranked(mut rows: Rows, draft: &str) -> Rows {
+    let typed = draft.trim_end().to_lowercase();
+    rows.sort_by_key(|(name, _)| {
+        let name = name.trim_end().to_lowercase();
+        if name == typed {
+            0
+        } else if name.starts_with(&typed) {
+            1
+        } else {
+            2
+        }
+    });
+    rows
 }
 
 fn prompts(model: &Model, draft: &str) -> Rows {

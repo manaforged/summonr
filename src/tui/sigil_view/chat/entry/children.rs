@@ -5,6 +5,7 @@ use super::preview;
 use super::tools::{call_line, glyph, header, workspace_relative};
 use super::tree::{branch, label, tree};
 use crate::child::{ChildRecord, ChildState};
+use crate::tools::{Hold, Kept};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
 
@@ -38,28 +39,18 @@ fn totals(kids: &[&Agent]) -> String {
     )
 }
 
-fn child_row(kid: &Agent, first: bool, roots: &[String]) -> NodeBuilder {
-    let roots = &kid.roots(roots);
+fn child_row(kid: &Agent, first: bool, parents: &[String], kept: Option<&Kept>) -> NodeBuilder {
+    let roots = &kid.roots(parents);
     let state = kid.state();
-    let (mark, tone) = glyph(&state);
-    let (title, note) = match state {
-        ToolState::Running => (
-            Look::xs(Token::Gray12),
-            format!(
-                "{} · {} tok",
-                kid.clock(),
-                crate::provider::compact(kid.tokens)
-            ),
-        ),
-        ToolState::Ok => (Look::xs(Token::Gray11), kid.last.clone()),
-        ToolState::Failed => (Look::xs(Token::Gray12), kid.last.clone()),
+    let (mark, tone) = match kept {
+        Some(_) => ("●", Look::xs(Token::Warn11)),
+        None => glyph(&state),
     };
-    let note_look = if matches!(state, ToolState::Failed) {
-        Look::xs(Token::Error11)
-    } else {
-        Look::xs(Token::Gray10)
+    let title = match state {
+        ToolState::Ok => Look::xs(Token::Gray11),
+        ToolState::Running | ToolState::Failed => Look::xs(Token::Gray12),
     };
-    let line = container()
+    let mut line = container()
         .layout(
             LayoutStyle::flex_row()
                 .grow(1.0)
@@ -68,23 +59,69 @@ fn child_row(kid: &Agent, first: bool, roots: &[String]) -> NodeBuilder {
                 .align_items(AlignItems::Center),
         )
         .child(label(mark, tone))
-        .child(label(kid.title.clone(), title))
-        .child(label(kid.access.name(), Look::xs(Token::Gray10)))
-        .child(label(workspace_relative(&note, roots), note_look).ellipsize());
+        .child(
+            label(kid.title.clone(), title)
+                .ellipsize()
+                .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
+        );
+    if !kid.agent.is_empty() {
+        line = line.child(label(kid.agent.clone(), Look::xs(Token::Info11)));
+    }
+    line = line.child(label(kid.access.name(), Look::xs(Token::Gray10)));
+    if matches!(state, ToolState::Running) {
+        line = line.child(label(
+            format!(
+                "{} · {} tok",
+                kid.clock(),
+                crate::provider::compact(kid.tokens)
+            ),
+            Look::xs(Token::Gray10),
+        ));
+    }
     let mut rows = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(branch(first, line));
-    if matches!(state, ToolState::Running) && !kid.last.is_empty() {
+    if let Some(kept) = kept {
         rows = rows.child(branch(
             false,
             label(
-                format!("  {}", workspace_relative(&kid.last, roots)),
-                Look::xs(Token::Gray10),
+                format!("  {}", kept_line(kept, parents)),
+                Look::xs(Token::Warn11),
             )
             .ellipsize(),
         ));
     }
+    if !kid.last.is_empty() {
+        let look = if matches!(state, ToolState::Failed) {
+            Look::xs(Token::Error11)
+        } else {
+            Look::xs(Token::Gray10)
+        };
+        rows = rows.child(branch(
+            false,
+            label(format!("  {}", workspace_relative(&kid.last, roots)), look).ellipsize(),
+        ));
+    }
     rows
+}
+
+fn kept_line(kept: &Kept, roots: &[String]) -> String {
+    let checkout = roots
+        .iter()
+        .filter_map(|root| std::path::Path::new(root).parent())
+        .find_map(|parent| kept.checkout.strip_prefix(parent).ok())
+        .unwrap_or(&kept.checkout);
+    format!("kept {}: {}", checkout.display(), kept.hold.reason())
+}
+
+fn kept_of(record: &ChildRecord) -> Option<&Kept> {
+    match &record.state {
+        ChildState::Running => None,
+        ChildState::Completed(result)
+        | ChildState::Aborted(result)
+        | ChildState::Failed(result)
+        | ChildState::Interrupted(result) => result.kept.as_ref(),
+    }
 }
 
 pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
@@ -109,6 +146,11 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
             call_line("Task", &what, Some((detail, Look::xs(Token::Gray10))), true),
         ));
     }
+    let receipt = model.child_receipt(call);
+    let kept = receipt.as_ref().and_then(|record| {
+        let tag = crate::child::tag(&record.id.to_string());
+        kept_of(record).map(|kept| (tag, kept))
+    });
     let head = crate::text::plural(kids.len(), "child");
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
@@ -122,7 +164,11 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
             ),
         ));
     for (at, kid) in kids.iter().enumerate() {
-        card = card.child(child_row(kid, at == 0, &app.roots));
+        let held = kept
+            .as_ref()
+            .filter(|(tag, _)| *tag == kid.id)
+            .map(|(_, kept)| *kept);
+        card = card.child(child_row(kid, at == 0, &app.roots, held));
     }
     Some(card)
 }
@@ -130,7 +176,11 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
 fn receipt_state(state: &ChildState) -> (ToolState, &'static str) {
     match state {
         ChildState::Running => (ToolState::Running, "running"),
-        ChildState::Completed(_) => (ToolState::Ok, "completed"),
+        ChildState::Completed(result) => match result.kept.as_ref().map(|kept| kept.hold) {
+            Some(Hold::Conflict) => (ToolState::Ok, "conflict"),
+            Some(Hold::OffBase | Hold::Unreadable | Hold::Unremoved) => (ToolState::Ok, "kept"),
+            None => (ToolState::Ok, "completed"),
+        },
         ChildState::Aborted(_) => (ToolState::Failed, "aborted"),
         ChildState::Failed(_) => (ToolState::Failed, "failed"),
         ChildState::Interrupted(_) => (ToolState::Failed, "interrupted"),
@@ -170,7 +220,11 @@ pub(super) fn receipt_card(
         return Some(card);
     }
     let mut body = preview::plain(&result.text);
-    if let Some(diagnostic) = &result.diagnostic {
+    if let Some(kept) = &result.kept {
+        body = format!("{body}\n{}", kept_line(kept, &roots[1..]))
+            .trim()
+            .to_string();
+    } else if let Some(diagnostic) = &result.diagnostic {
         body = format!("{body}\n{diagnostic}").trim().to_string();
     }
     let failed = matches!(state, ToolState::Failed);

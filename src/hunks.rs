@@ -39,8 +39,13 @@ pub(crate) enum Op {
     Reject,
 }
 
+const FILE: &str = "review.json";
+
 fn file(root: &Path) -> PathBuf {
-    root.join(".summonr").join("review.json")
+    crate::diff::git_env(root, &[], &["rev-parse", "--absolute-git-dir"]).map_or_else(
+        |_| root.join(".summonr").join(FILE),
+        |dir| PathBuf::from(dir.trim()).join("summonr").join(FILE),
+    )
 }
 
 pub(crate) fn load(root: &Path) -> Marks {

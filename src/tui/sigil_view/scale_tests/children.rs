@@ -17,6 +17,7 @@ fn spawn(app: &App, id: &str, assignment: &str, background: bool) {
             call: "t1".to_owned(),
             background,
             workspace: String::new(),
+            agent: String::new(),
         }),
     }));
 }
@@ -127,6 +128,7 @@ fn a_child_in_its_own_checkout_shows_paths_from_that_checkout() {
                 call: "t1".to_owned(),
                 background: false,
                 workspace: "/w/repo-deltas/abc".to_owned(),
+                agent: String::new(),
             }),
         }));
         act(
@@ -166,6 +168,7 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
             billed_tokens: 0,
             elapsed_millis: 0,
             diagnostic: None,
+            kept: None,
         }),
     };
     let shown = frame_with(busy_info(), 140, 40, State::Busy, |app| {

@@ -269,6 +269,15 @@ pub(in crate::tui::sigil_view) fn transcript(
             defer(move || target.set(None));
         }
     });
+    let settle = app.settle;
+    let scroll = app.scroll_y;
+    let bottom = app.max_scroll;
+    effect(move || {
+        let end = bottom.get();
+        if untrack(|| settle.get()) {
+            defer(move || scroll.set(end));
+        }
+    });
     let empty_now = sigil::reactive::derived(move || keys.get().is_empty());
     fragment().children_reactive(move || {
         if empty_now.get() {
@@ -284,6 +293,7 @@ pub(in crate::tui::sigil_view) fn transcript(
             ];
         }
         jump.set(keys.peek().len().saturating_sub(1));
+        settle.set(true);
         let live = app.clone();
         let copied = app.clone();
         vec![

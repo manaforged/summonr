@@ -22,6 +22,7 @@
 | [`WorkProgress`](#workprogress) | struct |  |
 | [`AbortCode`](#abortcode) | enum |  |
 | [`Effort`](#effort) | enum |  |
+| [`EndpointNear`](#endpointnear) | enum |  |
 | [`EndpointState`](#endpointstate) | enum |  |
 | [`Error`](#error) | enum |  |
 | [`Event`](#event) | enum |  |
@@ -110,21 +111,26 @@
 | <code>catalog_heading(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>catalog_line(&amp;self) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
+| <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>dual(&amp;self) -&gt; bool</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
+| <code>plan(&amp;self) -&gt; bool</code> |  |
 | <code>state(&amp;self) -&gt; String</code> |  |
 | <code>status(&amp;self) -&gt; String</code> |  |
 | <code>stored(&amp;self) -&gt; bool</code> |  |
+| <code>unmodeled(&amp;self) -&gt; bool</code> |  |
 
 **Fields**
 
 | Field | Description |
 | --- | --- |
+| <code>base_url: Option&lt;String&gt;</code> |  |
 | <code>configured: bool</code> |  |
 | <code>env: Option&lt;&amp;'static str&gt;</code> |  |
 | <code>flow: <a href="#loginflow">LoginFlow</a></code> |  |
 | <code>key: bool</code> |  |
 | <code>login: <a href="#loginflow">LoginFlow</a></code> |  |
+| <code>model: String</code> |  |
 | <code>name: String</code> |  |
 | <code>plan: String</code> |  |
 | <code>setup: String</code> |  |
@@ -370,6 +376,7 @@
 | Method | Description |
 | --- | --- |
 | <code>schema_size(&amp;self) -&gt; String</code> |  |
+| <code>state_text(&amp;self, width: usize) -&gt; String</code> |  |
 
 **Fields**
 
@@ -547,6 +554,18 @@
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>Ord</code>, <code>PartialEq</code>, <code>PartialOrd</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
 
 
+### `EndpointNear`
+
+**Variants**
+
+| Variant | Description |
+| --- | --- |
+| <code>Relative</code> |  |
+| <code>Typo</code> |  |
+
+**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
+
+
 ### `EndpointState`
 
 **Methods**
@@ -636,6 +655,7 @@
 | <code>Receipt::receipt: <a href="#receipt">Receipt</a></code> |  |
 | <code>Session::id: String</code> |  |
 | <code>Spawned::access: <a href="summonr-child.html#access">Access</a></code> |  |
+| <code>Spawned::agent: String</code> |  |
 | <code>Spawned::assignment: String</code> |  |
 | <code>Spawned::background: bool</code> |  |
 | <code>Spawned::call: String</code> |  |
@@ -1057,7 +1077,7 @@
 
 ### `closest_endpoint`
 
-<pre>pub fn <a href="#closest_endpoint">closest_endpoint</a>&lt;'a&gt;(name: &amp;str, names: &amp;'a [String]) -&gt; Option&lt;&amp;'a str&gt;</pre>
+<pre>pub fn <a href="#closest_endpoint">closest_endpoint</a>&lt;'a&gt;(name: &amp;str, names: &amp;'a [String], near: <a href="#endpointnear">EndpointNear</a>) -&gt; Option&lt;&amp;'a str&gt;</pre>
 
 
 ### `command_specs`
@@ -1172,7 +1192,7 @@
 
 ### `mcp_add`
 
-<pre>pub fn <a href="#mcp_add">mcp_add</a>(name: &amp;str, launch: &amp;<a href="#mcplaunch">McpLaunch</a>) -&gt; <a href="#result">Result</a>&lt;()&gt;</pre>
+<pre>pub fn <a href="#mcp_add">mcp_add</a>(name: &amp;str, launch: &amp;<a href="#mcplaunch">McpLaunch</a>) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
 
 
 ### `mcp_call_label`

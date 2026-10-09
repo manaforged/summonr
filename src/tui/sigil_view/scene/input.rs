@@ -185,7 +185,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     let accent = palette().accent;
     let border = if busy { accent } else { palette().gray };
     let right_width = usize::from(width).saturating_sub(6 + mode.len());
-    let right = crate::text::ellipsize(&model.snapshot.model, right_width);
+    let right = crate::text::ellipsize(&model.snapshot.seat_label(""), right_width);
     let fill = usize::from(width).saturating_sub(6 + mode.len() + cell_width(right.as_str()));
     write(
         cells,

@@ -17,9 +17,20 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .bg(canvas::palette().base)
         .child(surface);
     match layout.secondary {
-        Some(pane) if side_cols > 0 => row.child(panes::body(&app, pane, side_cols)),
+        Some(pane) if side_cols > 0 => row.child(side(app, pane, side_cols)),
         Some(_) | None => row,
     }
+}
+
+fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::block()
+                .fill_height()
+                .shrink(0.0)
+                .min_size(0.0, 0.0),
+        )
+        .children_reactive(move || vec![panes::body(&app, pane, cols)])
 }
 
 fn chat_surface(app: App, cols: u16) -> NodeBuilder {

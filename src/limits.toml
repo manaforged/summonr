@@ -44,6 +44,7 @@ lsp_start_secs = 30
 lsp_idle_secs = 300
 servers_max = 8
 closest_percent = 34
+typo_min_chars = 3
 diff_split_min_cols = 100
 lsp_request_secs = 30
 lsp_check_secs = 5

@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use super::{Dialect, Hook, HookEvent, Hooks};
+use super::{Dialect, Hook, HookEvent, Hooks, Matcher};
 
 #[derive(Deserialize)]
 #[serde(untagged)]
@@ -10,6 +10,8 @@ enum HookEntry {
         command: String,
         #[serde(default)]
         dialect: Dialect,
+        #[serde(default)]
+        matcher: Option<String>,
     },
 }
 
@@ -17,7 +19,14 @@ impl HookEntry {
     fn hook(self) -> Hook {
         match self {
             Self::Command(command) => Hook::plain(command, Dialect::Summonr),
-            Self::Table { command, dialect } => Hook::plain(command, dialect),
+            Self::Table {
+                command,
+                dialect,
+                matcher,
+            } => Hook {
+                matcher: matcher.as_deref().and_then(Matcher::parse),
+                ..Hook::plain(command, dialect)
+            },
         }
     }
 }

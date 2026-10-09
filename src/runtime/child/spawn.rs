@@ -119,6 +119,7 @@ impl<P: Provider> Loop<P> {
                 call: args.call.clone(),
                 background: args.background,
                 workspace: record.workspace.to_string_lossy().into_owned(),
+                agent: args.agent.clone().unwrap_or_default(),
             }),
         }));
         Ok(Run {
@@ -292,6 +293,7 @@ impl<P: Provider> Loop<P> {
             billed_tokens: self.session.spent_tokens(),
             elapsed_millis: self.session.elapsed_millis(),
             diagnostic: diagnostic.map(str::to_string),
+            kept: None,
         }
     }
 }
@@ -331,7 +333,7 @@ fn release_unfinished(done: &mut Done) {
 impl ChildRecord {
     fn record_landing(&mut self, landing: worktree::Landing) {
         if let Some(kept) = landing.kept {
-            if landing.paths.is_empty() {
+            if landing.paths.is_empty() && landing.held.is_none() {
                 self.fail_record(&kept);
                 return;
             }
@@ -340,6 +342,7 @@ impl ChildRecord {
         let Some(result) = result_mut(&mut self.state) else {
             return;
         };
+        result.kept = landing.held;
         result.changed_paths_total = landing.paths.len();
         result.changed_paths = landing.paths;
     }

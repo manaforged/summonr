@@ -31,3 +31,20 @@ pub(crate) fn turn_last_shows_the_latest_turn_of_a_resumed_session_without_gener
         .collect();
     assert_eq!(files, ["b.txt"], "{text}");
 }
+
+pub(crate) fn a_turn_diff_names_its_session() {
+    let session = Session::new();
+    session.run(
+        &Model::start(vec![write("a.txt"), Step::Text("ok")]),
+        "",
+        &[],
+    );
+    let (ok, text) = session.cli(&["diff", "--turn", "last", "--stat"]);
+    assert!(ok && text.contains("turn 1 of session "), "{text}");
+    let (_, json) = session.cli(&["diff", "--turn", "last", "--json"]);
+    let diff: Value = serde_json::from_str(json.trim()).unwrap_or_else(|_| panic!("{json}"));
+    assert!(
+        diff["session"].as_str().is_some_and(|id| !id.is_empty()),
+        "{json}"
+    );
+}

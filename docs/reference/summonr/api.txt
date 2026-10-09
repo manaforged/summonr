@@ -200,6 +200,7 @@ pub type summonr::diff::TurnId::Err = summonr::Error
 pub struct summonr::diff::Diff
 pub summonr::diff::Diff::base: alloc::string::String
 pub summonr::diff::Diff::files: alloc::vec::Vec<summonr::diff::Stat>
+pub summonr::diff::Diff::session: core::option::Option<alloc::string::String>
 impl summonr::diff::Diff
 pub fn summonr::diff::Diff::added(&self) -> u32
 pub fn summonr::diff::Diff::removed(&self) -> u32
@@ -487,6 +488,15 @@ impl core::marker::Copy for summonr::Effort
 impl core::marker::StructuralPartialEq for summonr::Effort
 impl serde_core::ser::Serialize for summonr::Effort
 impl<'de> serde_core::de::Deserialize<'de> for summonr::Effort
+pub enum summonr::EndpointNear
+pub summonr::EndpointNear::Relative
+pub summonr::EndpointNear::Typo
+impl core::clone::Clone for summonr::EndpointNear
+impl core::cmp::Eq for summonr::EndpointNear
+impl core::cmp::PartialEq for summonr::EndpointNear
+impl core::fmt::Debug for summonr::EndpointNear
+impl core::marker::Copy for summonr::EndpointNear
+impl core::marker::StructuralPartialEq for summonr::EndpointNear
 pub enum summonr::EndpointState
 pub summonr::EndpointState::Checking
 pub summonr::EndpointState::Error
@@ -566,6 +576,7 @@ pub summonr::Event::Session
 pub summonr::Event::Session::id: alloc::string::String
 pub summonr::Event::Spawned
 pub summonr::Event::Spawned::access: summonr::child::Access
+pub summonr::Event::Spawned::agent: alloc::string::String
 pub summonr::Event::Spawned::assignment: alloc::string::String
 pub summonr::Event::Spawned::background: bool
 pub summonr::Event::Spawned::call: alloc::string::String
@@ -835,11 +846,13 @@ impl core::marker::StructuralPartialEq for summonr::WorkKind
 impl serde_core::ser::Serialize for summonr::WorkKind
 impl<'de> serde_core::de::Deserialize<'de> for summonr::WorkKind
 pub struct summonr::AuthInfo
+pub summonr::AuthInfo::base_url: core::option::Option<alloc::string::String>
 pub summonr::AuthInfo::configured: bool
 pub summonr::AuthInfo::env: core::option::Option<&'static str>
 pub summonr::AuthInfo::flow: summonr::LoginFlow
 pub summonr::AuthInfo::key: bool
 pub summonr::AuthInfo::login: summonr::LoginFlow
+pub summonr::AuthInfo::model: alloc::string::String
 pub summonr::AuthInfo::name: alloc::string::String
 pub summonr::AuthInfo::plan: alloc::string::String
 pub summonr::AuthInfo::setup: alloc::string::String
@@ -848,11 +861,14 @@ impl summonr::AuthInfo
 pub fn summonr::AuthInfo::catalog_heading(&self) -> &'static str
 pub fn summonr::AuthInfo::catalog_line(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::catalog_rank(&self) -> u8
+pub fn summonr::AuthInfo::catalog_title(&self) -> &'static str
 pub fn summonr::AuthInfo::dual(&self) -> bool
 pub fn summonr::AuthInfo::keyless(&self) -> bool
+pub fn summonr::AuthInfo::plan(&self) -> bool
 pub fn summonr::AuthInfo::state(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::status(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::stored(&self) -> bool
+pub fn summonr::AuthInfo::unmodeled(&self) -> bool
 impl core::clone::Clone for summonr::AuthInfo
 impl core::cmp::Eq for summonr::AuthInfo
 impl core::cmp::PartialEq for summonr::AuthInfo
@@ -1046,6 +1062,7 @@ pub summonr::ServerStatus::tools: alloc::vec::Vec<alloc::string::String>
 pub summonr::ServerStatus::transport: core::option::Option<summonr::McpTransport>
 impl summonr::ServerStatus
 pub fn summonr::ServerStatus::schema_size(&self) -> alloc::string::String
+pub fn summonr::ServerStatus::state_text(&self, width: usize) -> alloc::string::String
 impl core::clone::Clone for summonr::ServerStatus
 impl core::fmt::Debug for summonr::ServerStatus
 impl serde_core::ser::Serialize for summonr::ServerStatus
@@ -1141,7 +1158,7 @@ pub fn summonr::check_commands(workspace: &std::path::Path) -> summonr::Result<c
 pub fn summonr::check_config() -> summonr::Result<()>
 pub async fn summonr::check_key(name: &str, key: &str) -> summonr::Result<summonr::secret::Source>
 pub fn summonr::classify_endpoint() -> core::option::Option<alloc::string::String>
-pub fn summonr::closest_endpoint<'a>(name: &str, names: &'a [alloc::string::String]) -> core::option::Option<&'a str>
+pub fn summonr::closest_endpoint<'a>(name: &str, names: &'a [alloc::string::String], near: summonr::EndpointNear) -> core::option::Option<&'a str>
 pub const fn summonr::command_specs() -> &'static [summonr::command::CommandSpec]
 pub fn summonr::default_effort(endpoint: &str, model: &str) -> core::option::Option<summonr::Effort>
 pub fn summonr::endpoint_chosen_by(name: core::option::Option<&str>, model: core::option::Option<&str>) -> core::option::Option<summonr::Pick>
@@ -1164,7 +1181,7 @@ pub fn summonr::live_jobs(workspace: &std::path::Path) -> alloc::vec::Vec<alloc:
 pub fn summonr::lock_file(path: &std::path::Path, wait: bool) -> core::io::error::Result<core::option::Option<std::fs::File>>
 pub fn summonr::login_seat(name: &str) -> summonr::Result<summonr::Endpoint>
 pub fn summonr::logout(name: &str) -> summonr::Result<alloc::string::String>
-pub fn summonr::mcp_add(name: &str, launch: &summonr::McpLaunch) -> summonr::Result<()>
+pub fn summonr::mcp_add(name: &str, launch: &summonr::McpLaunch) -> summonr::Result<alloc::string::String>
 pub fn summonr::mcp_call_label(name: &str, arguments: &str) -> alloc::string::String
 pub async fn summonr::mcp_probe(workspace: &std::path::Path, name: &str) -> summonr::Result<usize>
 pub fn summonr::mcp_remove(name: &str) -> summonr::Result<bool>

@@ -168,7 +168,7 @@ impl Args {
             && self.endpoint.is_none()
             && named(name)
         {
-            return Err(unknown(name, "; a prompt goes after -p"));
+            return Err(unknown(name, unlisted(true)));
         }
         self.print = true;
         Ok(())
@@ -239,7 +239,7 @@ fn unlisted(login: bool) -> &'static str {
 
 fn unknown(name: &str, tail: &str) -> Error {
     let names = summonr::endpoint_names().unwrap_or_default();
-    let hint = summonr::closest_endpoint(name, &names)
+    let hint = summonr::closest_endpoint(name, &names, summonr::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
     Error::Config(format!(
         "unknown endpoint `{name}`: {hint}`summonr endpoints` lists them{tail}"

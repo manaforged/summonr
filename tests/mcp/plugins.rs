@@ -288,3 +288,18 @@ pub(crate) fn a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home() {
         "{seen}"
     );
 }
+
+#[cfg(unix)]
+pub(crate) fn a_hook_matcher_limits_the_tools_it_runs_for() {
+    let session = Session::new();
+    let config = "[hooks]\npre_tool = { command = \"echo blocked by matcher >&2; exit 2\", dialect = \"claude\", matcher = \"Edit|Write\" }\n";
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "echo ran"})),
+        Step::Call("write", json!({"path": "a.txt", "content": "x\n"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, config, &[]);
+    let results = model.tool_results();
+    assert!(results[0].contains("ran"), "{results:?}");
+    assert!(results[1].contains("blocked by matcher"), "{results:?}");
+}

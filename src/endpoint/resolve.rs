@@ -137,8 +137,8 @@ fn unchosen(file: &File, need: Need) -> Result<String> {
 
 fn unknown(chosen: &str) -> Error {
     let names = names().unwrap_or_default();
-    let hint =
-        closest(chosen, &names).map_or_else(String::new, |name| format!("did you mean `{name}`? "));
+    let hint = closest(chosen, &names, Near::Typo)
+        .map_or_else(String::new, |name| format!("did you mean `{name}`? "));
     Error::Config(format!(
         "unknown endpoint `{chosen}`: {hint}`summonr endpoints` lists them"
     ))
@@ -152,35 +152,47 @@ fn no_seat() -> String {
     )
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Near {
+    Relative,
+    Typo,
+}
+
 #[must_use]
-pub fn closest<'a>(name: &str, names: &'a [String]) -> Option<&'a str> {
-    let distance = |other: &str| {
-        let mut row: Vec<usize> = (0..=other.chars().count()).collect();
-        for (index, left) in name.chars().enumerate() {
-            let mut last = row[0];
-            row[0] = index + 1;
-            for (column, right) in other.chars().enumerate() {
-                let next = (last + usize::from(left != right))
-                    .min(row[column] + 1)
-                    .min(row[column + 1] + 1);
-                last = row[column + 1];
-                row[column + 1] = next;
-            }
-        }
-        row[row.len() - 1]
-    };
+pub fn closest<'a>(name: &str, names: &'a [String], near: Near) -> Option<&'a str> {
+    let length = name.chars().count();
+    let typo = near == Near::Typo && length >= crate::limits::limits().typo_min_chars;
     names
         .iter()
-        .map(|other| (distance(other), other.as_str()))
+        .map(|other| (cost(name, other), other.as_str()))
         .filter(|(cost, _)| {
             cost.saturating_mul(100)
-                <= name
-                    .chars()
-                    .count()
-                    .saturating_mul(crate::limits::limits().closest_percent)
+                <= length.saturating_mul(crate::limits::limits().closest_percent)
+                || (typo && *cost <= 1)
         })
         .min()
         .map(|(_, other)| other)
+}
+
+fn cost(name: &str, other: &str) -> usize {
+    let left: Vec<char> = name.chars().collect();
+    let right: Vec<char> = other.chars().collect();
+    let mut rows = vec![(0..=right.len()).collect::<Vec<usize>>()];
+    for (index, letter) in left.iter().enumerate() {
+        let mut row = vec![index + 1];
+        for (column, mark) in right.iter().enumerate() {
+            let above = &rows[index];
+            let mut next = (above[column] + usize::from(letter != mark))
+                .min(above[column + 1] + 1)
+                .min(row[column] + 1);
+            if index > 0 && column > 0 && *letter == right[column - 1] && left[index - 1] == *mark {
+                next = next.min(rows[index - 1][column - 1] + 1);
+            }
+            row.push(next);
+        }
+        rows.push(row);
+    }
+    rows[left.len()][right.len()]
 }
 
 pub(super) fn seat(file: &File, chosen: &str) -> Option<Endpoint> {

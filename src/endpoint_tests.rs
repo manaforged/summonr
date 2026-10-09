@@ -55,8 +55,11 @@ fn a_misspelled_endpoint_suggests_the_closest_name() {
         "openai".to_string(),
         "gemini".to_string(),
     ];
-    assert_eq!(closest("antropic", &names), Some("anthropic"));
-    assert_eq!(closest("zzzzzzzz", &names), None);
+    assert_eq!(
+        closest("antropic", &names, super::Near::Typo),
+        Some("anthropic")
+    );
+    assert_eq!(closest("zzzzzzzz", &names, super::Near::Typo), None);
 }
 
 #[test]
@@ -209,7 +212,9 @@ fn hosts_that_route_caches_per_conversation_opt_into_the_cache_key() {
 #[test]
 fn a_short_name_gets_a_hint_only_for_a_near_miss() {
     let names = vec!["zai".to_string(), "ollama".to_string(), "qwen".to_string()];
-    assert_eq!(closest("lab", &names), None);
-    assert_eq!(closest("ollma", &names), Some("ollama"));
-    assert_eq!(closest("qwn", &names), Some("qwen"));
+    assert_eq!(closest("lab", &names, super::Near::Typo), None);
+    assert_eq!(closest("ollma", &names, super::Near::Typo), Some("ollama"));
+    assert_eq!(closest("qwn", &names, super::Near::Typo), Some("qwen"));
+    let lab = vec!["lab".to_string()];
+    assert_eq!(closest("lba", &lab, super::Near::Typo), Some("lab"));
 }

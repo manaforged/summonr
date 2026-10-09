@@ -30,6 +30,7 @@ pub(super) struct Preset {
     pub(super) opencode_ids: &'static [&'static str],
     pub(super) label: Option<String>,
     pub(super) start: Option<String>,
+    pub(super) key_from: Option<String>,
 }
 
 pub(super) struct CliToken {
@@ -168,6 +169,16 @@ pub(super) fn table(text: &str) -> std::result::Result<Vec<Preset>, String> {
         }
         seen.push(name.clone());
         rows.push(row.into_preset(name, base_url)?);
+    }
+    if let Some(row) = rows.iter().find(|row| {
+        row.key_from
+            .as_ref()
+            .is_some_and(|peer| !seen.contains(peer))
+    }) {
+        return Err(format!(
+            "`{}` reads its key from an unknown preset",
+            row.name
+        ));
     }
     Ok(rows)
 }

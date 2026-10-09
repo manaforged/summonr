@@ -1,6 +1,7 @@
 [[preset]]
 name = "zai"
-label = "Z.ai coding plan, GLM Flash (international)"
+label = "Z.ai coding plan (international), default GLM-5.3 Flash"
+key_from = "glm-intl"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = ["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"]
@@ -14,7 +15,8 @@ off = "disabled"
 
 [[preset]]
 name = "zai-cn"
-label = "BigModel coding plan, GLM Flash (China)"
+label = "BigModel coding plan (China), default GLM-5.3 Flash"
+key_from = "glm"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = ["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
@@ -28,7 +30,8 @@ off = "disabled"
 
 [[preset]]
 name = "glm"
-label = "BigModel coding plan (China)"
+label = "BigModel coding plan (China), default GLM-5.3"
+key_from = "zai-cn"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3"
 env_keys = [
@@ -43,7 +46,8 @@ plan = true
 
 [[preset]]
 name = "glm-intl"
-label = "Z.ai coding plan (international)"
+label = "Z.ai coding plan (international), default GLM-5.3"
+key_from = "zai"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
 env_keys = [

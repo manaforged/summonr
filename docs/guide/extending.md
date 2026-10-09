@@ -12,7 +12,7 @@ Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/
 
 ## Add an MCP server
 
-1. Run `summonr mcp add NAME -- COMMAND [ARGS...]` for a local server, or `summonr mcp add NAME --url URL` for a remote one. This writes a `[mcp.NAME]` table to `~/.summonr/config.toml`; you can also write it yourself. `mcp add` connects once, caches the tool list, and prints `NAME: N tools`. When the server does not start or answer, the table stays, and `summonr mcp list` shows `failed: <error>`.
+1. Run `summonr mcp add NAME -- COMMAND [ARGS...]` for a local server, or `summonr mcp add NAME --url URL` for a remote one. This writes a `[mcp.NAME]` table to `~/.summonr/config.toml`; you can also write it yourself. `mcp add` connects once, caches the tool list, and prints `NAME: N tools`. When the server does not start or answer, `mcp add` exits 1 and names the config file; the table stays, and `summonr mcp list` shows `failed: <error>`.
 2. Restart summonr so the new tool aliases join the next prefix.
 
 `summonr mcp list` shows each server's state, tool count, and how many bytes of tool schemas it adds to every request. `/mcp` shows the same in the terminal UI, with the live state of the current session. `summonr mcp remove NAME` deletes the table.
@@ -36,7 +36,7 @@ A server can ask you to fill a form during a tool call. summonr shows which serv
 
 ## Add a hook
 
-Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr/config.toml`. Each value is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run. With `dialect = "claude"`, a hook gets Claude Code's stdin JSON and verdict rules. The [reference](reference.md#hooks) lists the stdin fields, verdicts, and environment variables.
+Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr/config.toml`. Each value is a shell command, a table `{ command = "...", dialect = "claude", matcher = "Edit|Write" }`, or a list of either; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run. With `dialect = "claude"`, a hook gets Claude Code's stdin JSON and verdict rules. `matcher` takes tool names separated by `|`, or a regex, as in a Claude Code `hooks.json`, and is checked against the tool name in the hook's dialect. The [reference](reference.md#hooks) lists the stdin fields, verdicts, and environment variables.
 
 ## Add a CLI
 

@@ -52,10 +52,22 @@ pub(crate) fn effective(name: &str, text: &str) -> Option<(String, Value)> {
     routed(arguments(name, text).ok()?).ok()?.ok()
 }
 
+const LABEL_ARG_WIDTH: usize = 72;
+
 #[must_use]
 pub fn call_label(name: &str, arguments: &str) -> String {
     effective(name, arguments).map_or_else(
-        || name.to_string(),
+        || {
+            let summary = crate::tui::tool_arg(arguments);
+            if summary.is_empty() {
+                name.to_string()
+            } else {
+                format!(
+                    "{name} {}",
+                    crate::text::ellipsize(&summary, LABEL_ARG_WIDTH)
+                )
+            }
+        },
         |(alias, _)| {
             let target = alias.split_once("__").map_or_else(
                 || alias.clone(),

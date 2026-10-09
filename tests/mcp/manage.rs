@@ -23,10 +23,13 @@ pub(crate) fn servers_are_added_listed_described_and_removed_from_the_shell() {
         listed.contains("fixture1") && listed.contains("cached"),
         "{listed}"
     );
-    let (kept, broken) = session.cli(&["mcp", "add", "demo", "--", "/usr/bin/true"]);
-    assert!(kept && broken.contains("demo: not reachable"), "{broken}");
+    let (ok, broken) = session.cli(&["mcp", "add", "demo", "--", "/usr/bin/true"]);
+    assert!(!ok && broken.contains("demo: not reachable"), "{broken}");
     let (_, listed) = session.cli(&["mcp", "list"]);
-    assert!(listed.contains("failed: "), "{listed}");
+    assert!(
+        listed.contains("demo") && listed.contains("failed: "),
+        "{listed}"
+    );
     session.cli(&["mcp", "remove", "demo"]);
     let config = std::fs::read_to_string(session.home.path().join("config.toml")).unwrap();
     session.run(&Model::start(vec![Step::Text("ok")]), &config, &[]);

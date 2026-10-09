@@ -47,6 +47,8 @@ pub enum Event {
         background: bool,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         workspace: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        agent: String,
     },
     Unreported {
         tokens: u64,
@@ -104,6 +106,33 @@ pub enum Event {
         id: String,
         event: Box<Event>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Hold {
+    Conflict,
+    OffBase,
+    Unreadable,
+    Unremoved,
+}
+
+impl Hold {
+    #[must_use]
+    pub(crate) const fn reason(self) -> &'static str {
+        match self {
+            Self::Conflict => "conflicts with the parent",
+            Self::OffBase => "moved off the parent base",
+            Self::Unreadable => "could not be read",
+            Self::Unremoved => "landed, but could not be removed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct Kept {
+    pub(crate) checkout: std::path::PathBuf,
+    pub(crate) hold: Hold,
 }
 
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]

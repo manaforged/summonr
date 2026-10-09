@@ -74,6 +74,9 @@ pub(in crate::tui::sigil_view) fn section(
     if states.get(&choice.name).is_some_and(|state| state.failed()) {
         return Tier::Attention;
     }
+    if choice.unmodeled() {
+        return Tier::Unset;
+    }
     if choice.configured || choice.keyless() {
         return Tier::Ready;
     }
@@ -191,7 +194,7 @@ impl App {
     }
 
     pub(in crate::tui::sigil_view) fn replace_auth_filter(&self, filter: String) {
-        if self.auth_listing() && self.auth.filter.peek() != filter {
+        if self.auth_listing() {
             let best = best_match(&matching(self.auth.choices.peek(), &filter), &filter);
             self.auth.filter.set(filter);
             self.auth.sel.set(best);

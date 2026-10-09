@@ -23,6 +23,13 @@ use sigil::prelude::text_edit;
 use super::{App, FileRow, Pane, diff, jobs, mcp, peers, todos};
 
 pub(in crate::tui::sigil_view) fn pane_body(app: App, pane: Pane, width: f32) -> NodeBuilder {
+    drop((
+        app.diff_view.get(),
+        app.diff_cursor.get(),
+        app.hunk_cursor.get(),
+        app.note_target.get(),
+        app.pane_focus.get(),
+    ));
     let mut column = container()
         .layout(
             LayoutStyle::flex_column()

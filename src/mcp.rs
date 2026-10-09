@@ -101,8 +101,12 @@ impl Hub {
         }
         hub.notes.extend(failed);
         if !found.waiting.is_empty() {
+            let file = crate::config::path().map_or_else(
+                |_| "config.toml".to_string(),
+                |path| crate::config::tilde(&path),
+            );
             hub.notes.push(format!(
-                "project MCP servers wait for approval: {}. Set `enabled = true` under [mcp.NAME] in ~/.summonr/config.toml to run one",
+                "project MCP servers wait for approval: {}. Set `enabled = true` under [mcp.NAME] in {file} to run one",
                 found.waiting.join(", ")
             ));
         }

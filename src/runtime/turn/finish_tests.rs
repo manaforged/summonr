@@ -292,3 +292,24 @@ async fn a_failed_check_reads_the_same_in_progress_and_verify() {
     );
     assert!(run.loop_.work_progress().unwrap().checks_failed);
 }
+
+#[tokio::test]
+async fn a_check_file_changed_during_a_run_is_put_back() {
+    let mut run = session([
+        Reply::Text("tried"),
+        Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
+    ]);
+    let path = run.loop_.workspace().join(".summonr/check.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "check = \"false\"\n").unwrap();
+    run.loop_.set_verify(Some(vec!["false".to_string()]));
+    run.loop_
+        .select_goal("make the tests pass", &["false".to_string()])
+        .unwrap();
+    std::fs::write(&path, "check = \"true\"\n").unwrap();
+    run.loop_.turn("make the tests pass").await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "check = \"false\"\n"
+    );
+}

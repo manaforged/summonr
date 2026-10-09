@@ -29,6 +29,7 @@
 | --- | --- |
 | <code>base: String</code> |  |
 | <code>files: Vec&lt;<a href="#stat">Stat</a>&gt;</code> |  |
+| <code>session: Option&lt;String&gt;</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>
 

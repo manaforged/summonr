@@ -118,6 +118,7 @@ impl<P: Provider> Loop<P> {
             herdr,
             session,
             verify: None,
+            check_file: None,
             budget: Budget {
                 max_tokens,
                 max_secs: max_live_millis

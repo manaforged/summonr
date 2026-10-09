@@ -142,6 +142,21 @@ pub(crate) fn hide_key_echo(text: &str) -> String {
     out
 }
 
+#[must_use]
+pub(crate) fn lines_within(text: &str, width: usize) -> Vec<String> {
+    let mut parts: Vec<String> = Vec::new();
+    for word in text.split_whitespace() {
+        match parts.last_mut() {
+            Some(last) if cell_width(last) + 1 + cell_width(word) <= width => {
+                last.push(' ');
+                last.push_str(word);
+            }
+            Some(_) | None => parts.push(ellipsize(word, width)),
+        }
+    }
+    parts
+}
+
 #[cfg(test)]
 #[path = "text_tests.rs"]
 mod tests;

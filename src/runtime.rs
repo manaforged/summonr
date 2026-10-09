@@ -109,6 +109,7 @@ pub struct Loop<P> {
     herdr: Reporter,
     session: SessionDriver,
     verify: Option<Vec<String>>,
+    check_file: Option<Vec<u8>>,
     budget: Budget,
     spent_tokens: u64,
     context_sample: Option<(usize, u32)>,

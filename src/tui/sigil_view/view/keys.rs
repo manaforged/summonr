@@ -356,12 +356,14 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
                 && !event.modifiers.intersects(
                     ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META,
                 );
+            owner.settle.set(false);
             if typed && owner.pane_active().is_some() {
                 event.stop_propagation();
             }
         })
         .child(super::input::tab_shortcuts(app))
         .on_scroll(move |event| {
+            scroll.settle.set(false);
             let lines = super::canvas::scroll_lines(event.delta);
             if scroll.overlay_move(-lines.round() as isize) {
                 event.stop_propagation();

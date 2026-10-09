@@ -27,7 +27,7 @@ pub(crate) fn secret_values_never_reach_the_model_but_commands_still_load_them()
     )
     .unwrap();
     let model = Model::start(vec![
-        Step::Call("run_command", json!({"command": "grep -r STRIPE ."})),
+        Step::Call("run_command", json!({"command": "grep -r STRIPE . | sort"})),
         Step::Call(
             "run_command",
             json!({"command": "cat apps/web/.env notes.txt .npmrc"}),
@@ -38,11 +38,12 @@ pub(crate) fn secret_values_never_reach_the_model_but_commands_still_load_them()
             json!({"command": format!(". apps/web/.env && test \"$STRIPE_KEY\" = {STRIPE} && echo loaded")}),
         ),
         Step::Call("search", json!({"pattern": "STRIPE"})),
+        Step::Call("run_command", json!({"command": "grep -r STRIPE ."})),
         Step::Text("done"),
     ]);
     session.run(&model, "", &["--no-verify"]);
     let results = model.tool_results();
-    assert_eq!(results.len(), 5, "{results:?}");
+    assert_eq!(results.len(), 6, "{results:?}");
     for result in &results {
         assert!(!result.contains(STRIPE), "{results:?}");
         assert!(!result.contains(KEY_LINE), "{results:?}");
@@ -56,4 +57,6 @@ pub(crate) fn secret_values_never_reach_the_model_but_commands_still_load_them()
     assert!(results[1].contains("after"), "{results:?}");
     assert!(results[3].contains("loaded"), "{results:?}");
     assert!(!results[4].contains(".env"), "{results:?}");
+    assert!(results[5].contains("answered by search"), "{results:?}");
+    assert!(!results[5].contains(".env:"), "{results:?}");
 }

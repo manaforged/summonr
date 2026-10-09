@@ -65,11 +65,13 @@ pub(super) const VERBS: &[Verb] = &[
     },
     Verb {
         name: "grep",
+        native: Some(Native::Grep),
         search: Search::Contents,
         ..READ
     },
     Verb {
         name: "rg",
+        native: Some(Native::Rg),
         search: Search::Contents,
         ..READ
     },
@@ -170,6 +172,7 @@ pub(super) const VERBS: &[Verb] = &[
     },
     Verb {
         name: "find",
+        native: Some(Native::Find),
         read: Read::Unless(FIND_READ),
         search: Search::Names,
         write: Write::When(FIND_WRITE),
@@ -200,6 +203,7 @@ pub(super) const VERBS: &[Verb] = &[
     },
     Verb {
         name: "mdfind",
+        native: Some(Native::Mdfind),
         search: Search::Names,
         ..READ
     },

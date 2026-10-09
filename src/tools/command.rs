@@ -7,12 +7,14 @@ use super::{ToolOutput, ToolRegistry, object_bool, object_string, object_usize, 
 
 pub(super) mod digest;
 mod native;
+mod native_search;
 pub(super) mod proc;
 mod rewrite;
 mod run;
 
 pub(crate) use digest::searchish;
 pub(crate) use native::native_read_args;
+use native_search::native_search_args;
 pub(crate) use proc::{ProcessGroup, command_env, stop_groups};
 use proc::{background_result, stop_job};
 use run::Wait;
@@ -68,6 +70,9 @@ impl ToolRegistry {
             return Ok(output);
         }
         if !workdir && let Some(output) = self.read_natively(command)? {
+            return Ok(output);
+        }
+        if !workdir && let Some(output) = self.search_natively(command)? {
             return Ok(output);
         }
         let background = object_bool(args, "background");
@@ -192,6 +197,27 @@ impl ToolRegistry {
             text = pipe.apply(&text);
         }
         Ok(Some(ToolOutput::ok(text)))
+    }
+
+    fn search_natively(&self, command: &str) -> Result<Option<ToolOutput>> {
+        let parts: Vec<&str> = command
+            .split(';')
+            .map(str::trim)
+            .filter(|part| !part.is_empty())
+            .collect();
+        let Some(calls) = parts
+            .iter()
+            .map(|part| native_search_args(part))
+            .collect::<Option<Vec<_>>>()
+        else {
+            return Ok(None);
+        };
+        let mut answers = Vec::with_capacity(calls.len());
+        for (part, call) in parts.iter().zip(calls) {
+            let text = crate::tools::blocking(|| self.search_files(&call.to_string()))?;
+            answers.push(format!("[`{part}` answered by search {call}]\n{text}"));
+        }
+        Ok(Some(ToolOutput::ok(answers.join("\n\n"))))
     }
 
     pub(crate) fn stop_jobs(&self) -> Result<()> {

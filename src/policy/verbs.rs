@@ -89,6 +89,10 @@ pub(crate) enum Native {
     Cat,
     Head,
     Sed,
+    Grep,
+    Rg,
+    Find,
+    Mdfind,
 }
 
 #[derive(Clone, Copy)]

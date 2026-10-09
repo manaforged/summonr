@@ -11,7 +11,7 @@ use super::digest::digest;
 use super::proc::{
     CommandChild, ProcessGroup, StartedCommand, job_text, spawn_command, stop_command, wait_shell,
 };
-use super::rewrite::{plan_write_note, readonly_verb, sandbox_grant, sandbox_note};
+use super::rewrite::{plan_write_note, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 const COMMAND_LOG_PREFIX: &str = "command-";
@@ -199,7 +199,7 @@ impl ToolRegistry {
         Ok(ToolOutput {
             text: output.trim_end().to_string(),
             success: code == 0,
-            mutated: !read_only && code == 0 && !readonly_verb(command),
+            mutated: !read_only && code == 0 && !crate::policy::reads_only(command),
             grant,
             images: Vec::new(),
             patch: None,
@@ -246,10 +246,13 @@ impl ToolRegistry {
         let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
+        let mutated = !read_only && !crate::policy::reads_only(command);
         let warning = if read_only {
-            "workspace writes were restricted by the command sandbox"
+            "\nworkspace writes were restricted by the command sandbox"
+        } else if mutated {
+            "\nthe command may have changed workspace files before timeout"
         } else {
-            "the command may have changed workspace files before timeout"
+            ""
         };
         let note = full_output_note(
             &log_path,
@@ -258,11 +261,11 @@ impl ToolRegistry {
         );
         keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
-            text: format!("{headline}\n{warning}{note}\n{}", shown.text)
+            text: format!("{headline}{warning}{note}\n{}", shown.text)
                 .trim_end()
                 .to_string(),
             success: false,
-            mutated: !read_only,
+            mutated,
             grant: None,
             images: Vec::new(),
             patch: None,
@@ -303,7 +306,7 @@ impl ToolRegistry {
         Ok(ToolOutput {
             text: text.trim_end().to_string(),
             success: true,
-            mutated: !readonly_verb(command),
+            mutated: !crate::policy::reads_only(command),
             grant: None,
             images: Vec::new(),
             patch: None,

@@ -43,7 +43,7 @@ pub(super) fn format_tree(path: &str, dir: &Path, depth: usize) -> Result<String
     }
     if total > LIST_MAX {
         out.push_str(&format!(
-            "\n… {} more: tree incomplete; narrow with a smaller path or depth, or use op=search",
+            "\n… {} more: tree incomplete; narrow with a smaller path or depth, or use search",
             total - LIST_MAX
         ));
     }

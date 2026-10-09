@@ -30,11 +30,12 @@ plugin host or a second name for `skill`, `mcp`, or `run_command`.
 
 ## Model-facing jobs
 
-The tool schemas. Five core, six behind a module or a workspace file.
+The tool schemas. Six core, six behind a module or a workspace file.
 
 | Job | Where | Gating |
 | --- | --- | --- |
 | `read` | `tools/catalog.rs::read` | always |
+| `search` | `tools/catalog.rs::search` | always; walks with `workspace/search.rs::collect` under `search_secs` |
 | `edit` | `tools/catalog.rs::edit` | always |
 | `write` | `tools/catalog.rs::write` | always |
 | `run_command` | `tools/catalog.rs::run_command` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
@@ -46,7 +47,7 @@ The tool schemas. Five core, six behind a module or a workspace file.
 | `<server>__<tool>`, `mcp` | `mcp/defer.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode does not treat `readOnlyHint` as read-only; a server over `MCP_DEFER_BYTES` of schemas is listed under `mcp` |
 | `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in plan mode |
 
-Plan mode advertises `read`, `run_command`, `skill`, and `web` when `search` is on, plus the
+Plan mode advertises `read`, `search`, `run_command`, `skill`, and `web` when `search` is on, plus the
 mail tools when mail is on; `send` and `board` set refuse in plan mode.
 
 Peer mail has no server. Other agent CLIs reach the same files through

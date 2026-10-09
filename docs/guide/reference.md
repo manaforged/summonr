@@ -171,6 +171,7 @@ cache_ttl = "5m"
 | `auth_secs` | `30` | Sign-in request timeout. |
 | `model_probe_secs` | `8` | Model list request timeout. |
 | `web_search_secs` | `15` | Web search timeout. |
+| `search_secs` | `20` | Time one `search` call walks and scans before it returns what it found. |
 | `web_connect_secs` | `8` | Web connect timeout. |
 | `web_fetch_secs` | `20` | Web fetch timeout. |
 | `web_body_bytes` | `1048576` | Largest web response body. |
@@ -501,11 +502,12 @@ A `research` child reads the parent workspace. It cannot write files or start ba
 
 The model receives the full advertised schema every round (`Loop::advertised_tools`). Core names live in `src/tools/catalog.rs`.
 
-Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` lists a directory, shows an image, or searches (`pattern` / `glob` or `include`, with `literal` and `caseSensitive`). Search hits are `path:N:col:line`; `col` is the 1-based UTF-16 column of the match, which `lsp` takes as `character`. With `tags` true, hits are `path:N:hash|line`, and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a batch (`edits`), and a rename or move (`path` with `to`). `write` creates or overwrites one file, or several (`files`); over an existing file it returns `wrote PATH (N lines, replaced M lines)`, not the diff. `read` pages by 50 KB by default; an explicit `limit` is capped at 1000 lines. `run_command` takes `workdir`; its output keeps about 50 KB of head and tail, a single line up to 8 KB, and the full log path is named only when that cut something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE` without a `workdir` are answered by `read`; `ls`, `wc`, `tree`, `grep`, and `rg` run in the shell. A foreground command waits up to two minutes; past that it keeps running as a background job and returns its id and the call that waits for it, unless `timeout_secs` was set, which stops it instead. Where a command cannot become a job (a child session, Plan mode, a restricted write policy, or the jobs module turned off), it is stopped after an hour. A job poll waits until the job exits or the wait limit passes.
+Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` lists a directory or shows an image. `search` searches contents with `pattern` or finds files by name with `glob` alone, under `path` or `paths` anywhere on disk; `~` works. A pattern or glob with no capital letter ignores case unless `case_sensitive` is set; `literal`, `exclude`, `type`, `depth`, `files`, `count`, and `context` narrow it. A call that runs past `search_secs` returns what it found and says so; a path that the disk never answers can still hold one background thread until the operating system returns. Overlapping paths count each file once. Search hits are `path:N:col:line`; `col` is the 1-based UTF-16 column of the match, which `lsp` takes as `character`. With `tags` true, hits are `path:N:hash|line`, and `N:hash` is the tag that `edit` takes. `edit` covers substring replace (`old`/`new`), line replace (`tag`/`new`), insert (`tag`/`text`), delete (`op: delete`), a batch (`edits`), and a rename or move (`path` with `to`). `write` creates or overwrites one file, or several (`files`); over an existing file it returns `wrote PATH (N lines, replaced M lines)`, not the diff. `read` pages by 50 KB by default; an explicit `limit` is capped at 1000 lines. `run_command` takes `workdir`; its output keeps about 50 KB of head and tail, a single line up to 8 KB, and the full log path is named only when that cut something. Only exact `cat FILE`, single-file `head`, and `sed -n A,Bp FILE` without a `workdir` are answered by `read`; `ls`, `wc`, `tree`, `grep`, and `rg` run in the shell. A foreground command waits up to two minutes; past that it keeps running as a background job and returns its id and the call that waits for it, unless `timeout_secs` was set, which stops it instead. Where a command cannot become a job (a child session, Plan mode, a restricted write policy, or the jobs module turned off), it is stopped after an hour. A job poll waits until the job exits or the wait limit passes.
 
 | Name | When | Notes |
 | --- | --- | --- |
-| `read` | always | File, directory, image, or search (`literal`, `caseSensitive`, `include`) |
+| `read` | always | File, directory, or image |
+| `search` | always | Contents (`pattern`) or file names (`glob`) under any readable path; smart case; skips files over 1 MiB |
 | `edit` | not plan | Change or move a file; hashes from `read`; `edits` for a batch |
 | `write` | not plan | New or empty files; `files` for several |
 | `run_command` | always | Sandbox; `workdir` / `background` / `job` / `kill`; full log path |
@@ -520,13 +522,13 @@ Reads return `N:hash|text`. A stale or ambiguous tag fails before write. `read` 
 | `board` | `mail` module | `action` get, set, or list; `key`, `value` |
 | `mcp` | an MCP server has over 8 KB of tool schemas | Lists those servers' tool names; `query` returns matching tools with schemas; `tool` and `arguments` call one |
 
-The old names (`read_file`, `list_dir`, `grep`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. Plan mode advertises `read` and `run_command`, plus `skill` and, with `search` on, `web`. It does not advertise `edit`, `write`, or `todo`.
+The old names (`read_file`, `list_dir`, `grep`, `glob`, `show_image`, `write_file`, `replace_text`, `replace_lines`, `insert_after`, `delete_lines`, `replace_texts`, `edit_file`, `diagnostics`, `definition`, `web_search`, and `web_fetch`) still execute and are not advertised. Plan mode advertises `read`, `search`, and `run_command`, plus `skill` and, with `search` on, `web`. It does not advertise `edit`, `write`, or `todo`.
 
 ## Modules
 
 Every optional capability is a **module** compiled into the binary: `search`, `lsp`, `jobs`, `task`, `skills`, `mcp`, and `mail`. That list is the built-in module set: curated, switchable, and inside the harness process RSS. `search` and `mail` are off by default so unused tool schemas stay out of the first `prefix_hash`; `mcp` is on, and adds schemas only for servers you configure; the mail roster and `@` messages work without the `mail` module. `summonr modules` lists them with their state; the Modules rows in `/settings` in the interface switches one and writes `[modules]` in `~/.summonr/config.toml`. After the first `prefix_hash` in this process, that write is for the next process only. A workspace `.summonr/config.toml` may turn a module off for that project but cannot turn one on. A new compiled tool is a row on [`module-api.md`](internals/module-api.md) in the same change; if a skill or MCP can do the job, it is not a module. summonr runs no third-party code inside the harness; modules read declarative files under `.summonr` where they need user input.
 
-`read` with `pattern` or `glob` honors `.gitignore`, and lists matching files when the pattern is empty. With the `search` module on, `web` with `query` reads Bing without a key, and `url` fetches one page. Both go through Leyline with a browser identity, so no search API key or self-hosted search service is needed. `[search]` takes `count`, `allowed_domains`, and `excluded_domains`. Language modules cover Rust, TypeScript/JavaScript, Python, and Go. They select the server from the file and a project marker, then keep one connection per module in a polyglot checkout. Rust passes initialization options that disable check-on-save, build scripts, proc macros, and `cargo --all-targets`. Explicit Cargo commands still run through `run_command`.
+The `search` tool is always on and is separate from the `search` module. It honors `.gitignore`, skips build directories, binaries, and files over 1 MiB, and lists matching files when only `glob` is set. With the `search` module on, `web` with `query` reads Bing without a key, and `url` fetches one page. Both go through Leyline with a browser identity, so no search API key or self-hosted search service is needed. `[search]` takes `count`, `allowed_domains`, and `excluded_domains`. Language modules cover Rust, TypeScript/JavaScript, Python, and Go. They select the server from the file and a project marker, then keep one connection per module in a polyglot checkout. Rust passes initialization options that disable check-on-save, build scripts, proc macros, and `cargo --all-targets`. Explicit Cargo commands still run through `run_command`.
 
 A workspace `.summonr/config.toml` may force a built-in module:
 
@@ -572,7 +574,7 @@ Each flag alone gives these modes:
 | `--sandbox` | Reads any path the sandbox can read; writes under the workspace and extra writable roots | Contained; workspace, extra writable roots, and temporary storage writable | Allowed, or denied with `--no-net` |
 | `--plan` | Reads; edit and write denied | Contained; shell writes and background jobs denied | Denied |
 
-With containment on, `read` stays inside the workspace and the extra writable roots. `edit` and `write` stay inside the writable roots: the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and `--add-dir`. For work that spans sibling repositories, put the parent on that list, launch summonr in the parent directory, or pass `--add-dir`.
+`read` and `search` reach any path except the protected ones, and the summonr home is protected wherever `SUMMONR_HOME` puts it. A command that reads a protected path is refused from any `workdir` or after `cd`. `edit` and `write` stay inside the writable roots: the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and `--add-dir`. For work that spans sibling repositories, put the parent on that list, launch summonr in the parent directory, or pass `--add-dir`.
 
 Commands use Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer is unfinished and needs a build with `--features windows-sandbox`; Git for Windows and user-installed toolchains stay blocked. A missing backend is a hard stop. Sandboxed sockets are allowed by default. `--no-net` or `/permissions net off` denies them. That flag does not change file permissions. Model requests and language servers use host networking separately from shell commands.
 
@@ -638,7 +640,7 @@ When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude
 
 ### Hooks
 
-Each of `pre_tool`, `post_tool`, `compact`, and `stop` under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: tool names separated by `|`, or a regex. The hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`).
+Each of `pre_tool`, `post_tool`, `compact`, and `stop` under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: tool names separated by `|`, or a regex. The hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, and a `Glob` matcher also matches it.
 
 ```toml
 [hooks]
@@ -669,7 +671,7 @@ Browser: `web` fetches when the `search` module is on. A Playwright MCP is a chi
 
 `summonr export` is Markdown of `~/.summonr/sessions/<id>/session.jsonl`. It does not import transcripts from other tools.
 
-Search stays `read` (`pattern` / `glob`) or `run_command` (`rg`). A 1k-token impact graph is a named MCP server, not a second grep tool.
+Search is the `search` tool, or `rg` through `run_command`. A 1k-token impact graph is a named MCP server, not a second search tool.
 
 ## Theme
 

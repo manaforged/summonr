@@ -143,7 +143,7 @@ Mean and peak memory are medians over trials. Peak is the median of each trial's
 
 Method and limits: [`BENCHMARKS.md`](BENCHMARKS.md) and [summonr.dev/benchmarks](https://summonr.dev/benchmarks.html).
 
-The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Four core tools are advertised every round (`read`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. MCP schemas join the prefix only for servers you configure.
+The first-round prefix is one short system paragraph, the JSON schemas of the advertised tools, an optional skill catalog, and `AGENTS.md`. Five core tools are advertised every round (`read`, `search`, `edit`, `write`, `run_command`), `todo` in steps and goal runs, plus the modules you turned on. MCP schemas join the prefix only for servers you configure.
 
 ## Limits
 
@@ -154,7 +154,7 @@ The first-round prefix is one short system paragraph, the JSON schemas of the ad
 - A trusted workspace supplies `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` as instructions; `--no-trust` ignores all three.
 - `summonr export` writes Markdown. summonr doesn't import transcripts from other tools.
 - There is no in-process package loader, `dlopen`, or guest scripting. Write a skill, an MCP server, a hook, or a CLI.
-- Repository search is `read` with `pattern` or `glob`, or `rg` through `run_command`. There is no built-in code graph.
+- Search is the `search` tool: contents or file names under any readable path. There is no built-in code graph.
 - There is no memory between sessions.
 - Config is under `~/.summonr`.
 - On a headless Linux host, the keychain may not answer at startup. Set `secrets = "file"` in `~/.summonr/config.toml`, or pass keys through the environment.

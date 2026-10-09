@@ -28,13 +28,17 @@ impl Step {
         let mut targets = Vec::new();
         let mut words = self.words.iter();
         while let Some(word) = words.next() {
-            if REDIRECTS.contains(&word.as_str()) {
-                targets.extend(words.next().map(String::as_str));
-            } else if let Some((_, target)) = word.split_once('>') {
-                let target = target.trim_start_matches(['>', '&', '|']);
-                if !target.is_empty() {
-                    targets.push(target);
+            match redirect(word) {
+                Some(Redirect::Next) => {
+                    targets.extend(
+                        words
+                            .next()
+                            .map(String::as_str)
+                            .filter(|next| !next.starts_with('&')),
+                    );
                 }
+                Some(Redirect::File(target)) => targets.push(target),
+                Some(Redirect::Dup) | None => {}
             }
         }
         targets
@@ -44,17 +48,38 @@ impl Step {
         let mut operands = Vec::new();
         let mut words = self.argv().iter().skip(1);
         while let Some(word) = words.next() {
-            if REDIRECTS.contains(&word.as_str()) {
-                words.next();
-            } else if !word.contains('>') && !word.starts_with('-') {
-                operands.push(word.as_str());
+            match redirect(word) {
+                Some(Redirect::Next) => {
+                    words.next();
+                }
+                Some(_) => {}
+                None if !word.starts_with('-') => operands.push(word.as_str()),
+                None => {}
             }
         }
         operands
     }
 }
 
-const REDIRECTS: &[&str] = &[">", ">>", "1>", "2>", "&>"];
+enum Redirect<'a> {
+    Next,
+    File(&'a str),
+    Dup,
+}
+
+fn redirect(word: &str) -> Option<Redirect<'_>> {
+    let (_, rest) = word.split_once('>')?;
+    let rest = rest.trim_start_matches(['>', '|']);
+    if rest.is_empty() {
+        return Some(Redirect::Next);
+    }
+    match rest.strip_prefix('&') {
+        Some("") => Some(Redirect::Next),
+        Some(fd) if fd == "-" || fd.bytes().all(|b| b.is_ascii_digit()) => Some(Redirect::Dup),
+        Some(target) => Some(Redirect::File(target)),
+        None => Some(Redirect::File(rest)),
+    }
+}
 
 pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathBuf]) -> Vec<Step> {
     let repo = workspace.join(".git").exists();

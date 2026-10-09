@@ -193,3 +193,64 @@ fn a_command_in_another_workdir_is_judged_from_that_directory() {
     };
     assert!(root.path().join("keep").exists(), "{text}");
 }
+
+#[test]
+fn a_timed_out_command_is_a_change_only_when_it_can_write() {
+    let (dir, tools) = workspace(&[]);
+    let timed_out = |command: &str| {
+        let call = ToolCall {
+            id: "t1".to_string(),
+            kind: ToolKind::Function,
+            function: ToolFunction {
+                checked: Default::default(),
+                name: "run_command".to_string(),
+                arguments: serde_json::json!({"command": command, "timeout_secs": 1}).to_string(),
+            },
+            continuation: None,
+        };
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(tools.execute_outcome(&call))
+            .unwrap()
+    };
+    let search = timed_out("mdfind -name zzq 2>/dev/null; locate zzq 2>&1; tail -f /dev/null");
+    assert!(search.text.contains("timed out"), "{}", search.text);
+    assert!(!search.mutated, "{}", search.text);
+    assert!(!search.text.contains("may have changed"), "{}", search.text);
+    for (command, file) in [
+        ("tail -f /dev/null > out.txt", "out.txt"),
+        ("tail -f /dev/null > 1", "1"),
+        ("tail -f /dev/null 3> fd.txt", "fd.txt"),
+    ] {
+        let redirected = timed_out(command);
+        assert!(redirected.mutated, "{command}: {}", redirected.text);
+        assert!(
+            redirected.text.contains("may have changed"),
+            "{command}: {}",
+            redirected.text
+        );
+        assert!(dir.path().join(file).exists(), "{command}");
+    }
+}
+
+#[test]
+fn a_protected_read_is_refused_from_any_working_directory() {
+    let (_dir, tools) = workspace(&[]);
+    for (command, workdir) in [
+        ("wc -l .ssh/config", Some("~")),
+        ("cd ~ && wc -l .ssh/config", None),
+        ("cd \"$HOME\" && wc -l .ssh/config", None),
+        ("cd && wc -l .ssh/config", None),
+        ("cp ~/.ssh/config copied.txt", None),
+    ] {
+        let mut arguments = serde_json::json!({ "command": command });
+        if let Some(workdir) = workdir {
+            arguments["workdir"] = serde_json::Value::from(workdir);
+        }
+        let refused = outcome_with(&tools, arguments);
+        assert!(refused.contains("protected path"), "{command}: {refused}");
+    }
+}

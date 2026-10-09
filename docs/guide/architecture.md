@@ -27,7 +27,8 @@ The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts the old 
 
 | Tool | Job |
 | --- | --- |
-| `read` | File as tagged lines, directory, image, or search (`pattern` / `glob`) |
+| `read` | File as tagged lines, directory, or image |
+| `search` | Contents (`pattern`) or file names (`glob`) under any readable path |
 | `edit` | Hash-anchored replace, insert, delete, or a batch |
 | `write` | Create or overwrite |
 | `run_command` | Sandboxed shell |

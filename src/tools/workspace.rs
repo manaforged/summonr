@@ -33,7 +33,7 @@ impl ToolRegistry {
             return match op {
                 None if args.get("pattern").is_none() => self.read_files(&args, paths),
                 Some("file") => self.read_files(&args, paths),
-                None | Some("search") => self.search_paths(&args, paths),
+                None | Some("search") => self.search_files(arguments).map(ToolOutput::ok),
                 Some(operation) => Err(Error::Tool(format!(
                     "paths does not apply to read op={operation}"
                 ))),
@@ -45,27 +45,11 @@ impl ToolRegistry {
         }
     }
 
-    fn search_paths(&self, args: &Value, paths: &[Value]) -> Result<ToolOutput> {
-        let mut found = Vec::new();
-        for path in paths.iter().filter_map(Value::as_str) {
-            let mut one = args.clone();
-            if let Some(fields) = one.as_object_mut() {
-                fields.remove("paths");
-                fields.insert("path".to_string(), Value::from(path));
-            }
-            found.push(match self.grep(&one.to_string()) {
-                Ok(hits) => hits,
-                Err(error) => format!("{path}: {error}"),
-            });
-        }
-        Ok(ToolOutput::ok(found.join("\n")))
-    }
-
     fn read_op(&self, operation: &str, arguments: &str) -> Result<ToolOutput> {
         match operation {
             "file" => self.read_file(arguments),
             "list" => self.list_dir(arguments).map(ToolOutput::ok),
-            "search" => self.grep(arguments).map(ToolOutput::ok),
+            "search" => self.search_files(arguments).map(ToolOutput::ok),
             "image" => self.show_image(arguments),
             "help" => Ok(ToolOutput::ok(super::help::read())),
             unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
@@ -81,7 +65,7 @@ impl ToolRegistry {
             .map(str::trim)
             .filter(|glob| !glob.is_empty());
         if !pattern.is_empty() || glob.is_some() {
-            return self.grep(arguments).map(ToolOutput::ok);
+            return self.search_files(arguments).map(ToolOutput::ok);
         }
         let path = args
             .get("path")

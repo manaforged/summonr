@@ -96,7 +96,7 @@ fn capture_call(call: &str, seen: &mut Seen) {
                 seen.commands.push(ellipsize(&command, COMMAND_CHARS));
             }
         }
-        Some(Builtin::Read) => seen.reads += 1,
+        Some(Builtin::Read | Builtin::Search) => seen.reads += 1,
         Some(Builtin::Edit | Builtin::Write) => {
             seen.edits += 1;
             if let Some(path) = field(rest, "path")

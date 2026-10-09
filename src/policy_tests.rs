@@ -387,3 +387,12 @@ fn the_workspace_check_and_policy_files_are_not_the_models_to_write() {
     }
     assert!(!protected_write(Path::new(".summonr/notes.md")));
 }
+
+#[test]
+fn a_numbered_redirect_into_a_file_outside_the_workspace_is_refused() {
+    let error = refusal("echo hi 3> /etc/hosts");
+    assert!(
+        error.contains("`/etc/hosts` is outside the workspace"),
+        "{error}"
+    );
+}

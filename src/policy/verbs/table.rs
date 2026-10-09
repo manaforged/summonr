@@ -198,6 +198,16 @@ pub(super) const VERBS: &[Verb] = &[
         ..SEARCH
     },
     Verb {
+        name: "mdfind",
+        search: true,
+        ..READ
+    },
+    Verb {
+        name: "locate",
+        search: true,
+        ..READ
+    },
+    Verb {
         name: "curl",
         ..NETWORK
     },

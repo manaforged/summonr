@@ -61,6 +61,10 @@ impl Limits {
         secs(self.web_search_secs)
     }
 
+    pub(crate) fn search(&self) -> Duration {
+        secs(self.search_secs)
+    }
+
     pub(crate) fn web_connect(&self) -> Duration {
         secs(self.web_connect_secs)
     }

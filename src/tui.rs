@@ -319,8 +319,11 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         return String::new();
     };
     let field = |name: &str| value.get(name).and_then(serde_json::Value::as_str);
-    if let Some(pattern) = field("pattern") {
-        let scope = field("glob").or_else(|| field("path")).unwrap_or("");
+    if let Some(pattern) = field("pattern").or_else(|| field("glob")) {
+        let scope = field("glob")
+            .filter(|glob| *glob != pattern)
+            .or_else(|| field("path"))
+            .unwrap_or("");
         return format!("search \"{pattern}\" {scope}")
             .trim_end()
             .to_string();

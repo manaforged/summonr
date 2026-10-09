@@ -50,15 +50,42 @@ pub(super) fn block_target(
 }
 
 pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
+    let home = crate::config::home_dir();
     steps.iter().find_map(|step| {
         let row = verb_row(&step.verb()?)?;
-        if !matches!(row.read, Read::Always) {
+        let operands = step.operands();
+        let read = if matches!(row.read, Read::Always) {
+            operands.as_slice()
+        } else if matches!(row.write, Write::Last) {
+            operands
+                .split_last()
+                .map_or(&[][..], |(_, sources)| sources)
+        } else {
             return None;
-        }
-        step.operands().into_iter().find_map(|word| {
+        };
+        let bases: Vec<&Path> = [Some(workspace), step.cwd.as_deref().or(home.as_deref())]
+            .into_iter()
+            .flatten()
+            .collect();
+        read.iter().find_map(|word| {
             let target = path_word(word);
-            protected_read(&locate(target, workspace)).then(|| target.to_string())
+            bases
+                .iter()
+                .map(|base| locate(target, base))
+                .any(|path| protected_read(&path) || protected_read(&super::paths::resolved(&path)))
+                .then(|| target.to_string())
         })
+    })
+}
+
+pub(crate) fn reads_only(command: &str) -> bool {
+    let root = Path::new("/");
+    walk::walk(command, root, root, &[]).iter().all(|step| {
+        step.redirects().iter().all(|target| *target == "/dev/null")
+            && step.verb().is_none_or(|verb| {
+                verb_row(&verb)
+                    .is_some_and(|row| row.read.allows(step.argv().get(1..).unwrap_or_default()))
+            })
     })
 }
 

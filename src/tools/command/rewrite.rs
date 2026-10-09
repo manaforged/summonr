@@ -99,15 +99,3 @@ pub(super) fn sandbox_note(grant: Option<&Grant>, registry: &ToolRegistry, raw: 
         None => String::new(),
     }
 }
-
-pub(super) fn readonly_verb(command: &str) -> bool {
-    crate::policy::split_segments(command)
-        .iter()
-        .all(|segment| {
-            let words = crate::policy::argv(segment);
-            let args = words.get(1..).unwrap_or_default();
-            crate::policy::verb(&words).is_none_or(|verb| {
-                crate::policy::verb_row(&verb).is_some_and(|row| row.read.allows(args))
-            })
-        })
-}

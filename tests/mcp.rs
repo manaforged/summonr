@@ -77,7 +77,7 @@ fn main() {
         #[cfg(unix)]
         plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         #[cfg(unix)]
-        plugins::a_claude_glob_matcher_runs_for_search,
+        plugins::a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,

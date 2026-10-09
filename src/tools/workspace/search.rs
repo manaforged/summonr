@@ -40,7 +40,7 @@ impl ToolRegistry {
         let multiline = object_bool(args, "multiline") || object_bool(args, "multi_line");
         let context = object_usize(args, "context").unwrap_or(0).min(CONTEXT_MAX);
         let exclude = text_arg(args, "exclude", "exclude_pattern");
-        let fold = !sensitive(args, glob.unwrap_or_default());
+        let fold = !sensitive(args);
         let roots = roots
             .into_iter()
             .map(|root| {
@@ -139,7 +139,7 @@ fn build_matcher(args: &Value, pattern: &str, multiline: bool) -> Result<Option<
         return Ok(None);
     }
     let literal = object_bool(args, "literal") || object_bool(args, "fixed_strings");
-    let sensitive = sensitive(args, pattern);
+    let sensitive = sensitive(args);
     let pattern = if literal {
         regex::escape(pattern)
     } else {
@@ -154,11 +154,11 @@ fn build_matcher(args: &Value, pattern: &str, multiline: bool) -> Result<Option<
         .map_err(|error| Error::Tool(format!("search pattern is invalid: {error}")))
 }
 
-fn sensitive(args: &Value, text: &str) -> bool {
+fn sensitive(args: &Value) -> bool {
     args.get("caseSensitive")
         .or_else(|| args.get("case_sensitive"))
         .and_then(Value::as_bool)
-        .unwrap_or_else(|| text.chars().any(char::is_uppercase))
+        .unwrap_or(false)
 }
 
 struct Root {

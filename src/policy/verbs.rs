@@ -129,10 +129,17 @@ pub(crate) enum Hazard {
     },
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Search {
+    No,
+    Names,
+    Contents,
+}
+
 pub(crate) struct Verb {
     pub(crate) name: &'static str,
     pub(crate) read: Read,
-    pub(crate) search: bool,
+    pub(crate) search: Search,
     pub(crate) network: bool,
     pub(crate) write: Write,
     pub(crate) cwd: Cwd,

@@ -45,8 +45,9 @@ fn select<'a>(command: &str, lines: Vec<Cow<'a, str>>) -> Vec<Cow<'a, str>> {
 }
 
 pub(crate) fn searchish(command: &str) -> bool {
-    super::rewrite::segment_verbs(command)
-        .any(|verb| crate::policy::verb_row(&verb).is_some_and(|row| row.search))
+    super::rewrite::segment_verbs(command).any(|verb| {
+        crate::policy::verb_row(&verb).is_some_and(|row| row.search != crate::policy::Search::No)
+    })
 }
 
 fn search_lines<'a>(lines: &[Cow<'a, str>]) -> Vec<Cow<'a, str>> {

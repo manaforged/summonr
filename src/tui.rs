@@ -319,14 +319,13 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         return String::new();
     };
     let field = |name: &str| value.get(name).and_then(serde_json::Value::as_str);
-    if let Some(pattern) = field("pattern").or_else(|| field("glob")) {
-        let scope = field("glob")
-            .filter(|glob| *glob != pattern)
-            .or_else(|| field("path"))
-            .unwrap_or("");
-        return format!("search \"{pattern}\" {scope}")
-            .trim_end()
-            .to_string();
+    if field("pattern").is_some() || field("glob").is_some() {
+        let parts = [
+            field("pattern").map(|pattern| format!("\"{pattern}\"")),
+            field("glob").map(str::to_string),
+            field("path").map(|path| format!("in {path}")),
+        ];
+        return parts.into_iter().flatten().collect::<Vec<_>>().join(" ");
     }
     let paths = value
         .get("paths")

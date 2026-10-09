@@ -305,17 +305,21 @@ pub(crate) fn a_hook_matcher_limits_the_tools_it_runs_for() {
 }
 
 #[cfg(unix)]
-pub(crate) fn a_claude_glob_matcher_runs_for_search() {
+pub(crate) fn a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep() {
     let session = Session::new();
-    let config = "[hooks]\npre_tool = { command = \"echo blocked by glob matcher >&2; exit 2\", dialect = \"claude\", matcher = \"Glob\" }\n";
+    let config = "[hooks]\npre_tool = { command = \"grep -o 'tool_name.:.[A-Za-z]*' >&2; exit 2\", dialect = \"claude\", matcher = \"Glob\" }\n";
     let model = Model::start(vec![
-        Step::Call("search", json!({"glob": "*.txt"})),
+        Step::Call("search", json!({"glob": "*.txt", "path": "docs"})),
+        Step::Call("search", json!({"pattern": "needle"})),
         Step::Text("ok"),
     ]);
     session.run(&model, config, &[]);
     let results = model.tool_results();
     assert!(
-        results[0].contains("blocked by glob matcher"),
+        results[0].contains("Glob") && !results[0].contains("Grep"),
         "{results:?}"
     );
+    assert!(results[1].contains("Grep"), "{results:?}");
+    let printed = crate::support::read(&session.file("stderr"));
+    assert!(printed.contains("→ search *.txt in docs"), "{printed}");
 }

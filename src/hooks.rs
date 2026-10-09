@@ -161,8 +161,18 @@ impl Hook {
             "hook_event_name": call.event.claude(),
         });
         if let Some(tool) = payload.get("tool").and_then(Value::as_str) {
-            body["tool_name"] = json!(self.tool_name(tool));
-            body["tool_input"] = payload.get("arguments").cloned().unwrap_or(Value::Null);
+            let arguments = payload.get("arguments").cloned().unwrap_or(Value::Null);
+            let by_name = crate::tools::Builtin::live(tool) == Some(crate::tools::Builtin::Search)
+                && arguments.get("pattern").is_none();
+            body["tool_name"] = json!(if by_name {
+                CLAUDE_ALIASES
+                    .iter()
+                    .find(|(ours, _)| *ours == tool)
+                    .map_or_else(|| self.tool_name(tool), |(_, theirs)| (*theirs).to_string())
+            } else {
+                self.tool_name(tool)
+            });
+            body["tool_input"] = arguments;
             body["tool_use_id"] = payload.get("id").cloned().unwrap_or(Value::Null);
         }
         if let Some(output) = payload.get("output") {

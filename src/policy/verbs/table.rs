@@ -1,12 +1,12 @@
 use super::hazards::{
     CLUSTER, DESTROY, FIND, FIND_READ, FIND_WRITE, GIT, GIT_READS, IN_PLACE, PRUNE, RM, SHRED,
 };
-use super::{Clip, Cwd, Hazard, Native, Read, Verb, Write};
+use super::{Clip, Cwd, Hazard, Native, Read, Search, Verb, Write};
 
 const BASE: Verb = Verb {
     name: "",
     read: Read::Never,
-    search: false,
+    search: Search::No,
     network: false,
     write: Write::None,
     cwd: Cwd::Stays,
@@ -20,7 +20,7 @@ const READ: Verb = Verb {
     ..BASE
 };
 const SEARCH: Verb = Verb {
-    search: true,
+    search: Search::Contents,
     ..BASE
 };
 const NETWORK: Verb = Verb {
@@ -65,12 +65,12 @@ pub(super) const VERBS: &[Verb] = &[
     },
     Verb {
         name: "grep",
-        search: true,
+        search: Search::Contents,
         ..READ
     },
     Verb {
         name: "rg",
-        search: true,
+        search: Search::Contents,
         ..READ
     },
     Verb {
@@ -171,7 +171,7 @@ pub(super) const VERBS: &[Verb] = &[
     Verb {
         name: "find",
         read: Read::Unless(FIND_READ),
-        search: true,
+        search: Search::Names,
         write: Write::When(FIND_WRITE),
         hazard: Hazard::Args(FIND),
         ..BASE
@@ -195,16 +195,17 @@ pub(super) const VERBS: &[Verb] = &[
     },
     Verb {
         name: "fd",
-        ..SEARCH
+        search: Search::Names,
+        ..BASE
     },
     Verb {
         name: "mdfind",
-        search: true,
+        search: Search::Names,
         ..READ
     },
     Verb {
         name: "locate",
-        search: true,
+        search: Search::Names,
         ..READ
     },
     Verb {

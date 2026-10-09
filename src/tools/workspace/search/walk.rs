@@ -88,6 +88,8 @@ pub(super) fn run(query: &Arc<Query>) -> Result<Report> {
     Ok(shared.take())
 }
 
+const MIRRORS: &[&str] = &["/System/Volumes/Data"];
+
 fn walk_all(query: &Query, shared: &Shared) {
     let (files, dirs): (Vec<&Root>, Vec<&Root>) =
         query.roots.iter().partition(|root| root.path.is_file());
@@ -115,7 +117,10 @@ fn walk_all(query: &Query, shared: &Shared) {
                 return WalkState::Quit;
             }
             if let Ok(entry) = entry
-                && entry.file_type().is_some_and(|kind| kind.is_file())
+                && entry.file_type().is_some_and(|kind| {
+                    kind.is_file()
+                        || (query.matcher.is_none() && kind.is_symlink() && !entry.path().is_dir())
+                })
                 && let Some(root) = dirs
                     .iter()
                     .find(|root| entry.path().starts_with(&root.path))
@@ -131,7 +136,10 @@ fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, search
     if !keep(&path, root.overrides.as_ref(), query.glob, query.protect) {
         return;
     }
-    let (modified, size) = path.metadata().map_or((0, 0), |meta| stamp(&meta));
+    let (modified, size) = path
+        .metadata()
+        .or_else(|_| path.symlink_metadata())
+        .map_or((0, 0), |meta| stamp(&meta));
     let found = match &query.matcher {
         Some(matcher) => scan::file(query, shared, searcher, matcher, &path, size),
         None => Some(scan::Hits::default()),
@@ -165,7 +173,10 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
         .filter_entry(|entry| {
             entry.depth() == 0
                 || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
+                || !(SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
+                    || MIRRORS
+                        .iter()
+                        .any(|mirror| entry.path() == Path::new(mirror)))
         });
     if no_ignore {
         walker

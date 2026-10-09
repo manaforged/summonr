@@ -216,12 +216,16 @@ fn header(query: &Query, report: &Report, tally: &Tally) -> String {
             ));
         }
         out.push(')');
+        if !query.glob {
+            out.push_str("; to match file names, pass glob alone");
+        }
+        out.push_str(&skipped_note(query));
         out.push_str(&stopped_note(report.stopped));
         return out;
     }
     let mut out = match query.mode {
         Mode::Files => format!(
-            "{} with `{pattern}` ({} searched)",
+            "{} with `{pattern}`, newest first ({} searched)",
             crate::text::plural(report.files, "file"),
             report.searched
         ),
@@ -232,7 +236,7 @@ fn header(query: &Query, report: &Report, tally: &Tally) -> String {
             report.searched
         ),
         Mode::Content => format!(
-            "{} for `{pattern}` ({} files searched)",
+            "{} for `{pattern}`, newest file first ({} files searched)",
             crate::text::plural(tally.matches, "match"),
             report.searched
         ),
@@ -265,10 +269,17 @@ fn header(query: &Query, report: &Report, tally: &Tally) -> String {
 
 fn file_list(query: &Query, report: &Report) -> String {
     if report.found.is_empty() {
-        return format!("no files match{}", stopped_note(report.stopped));
+        return format!(
+            "no files match{}{}",
+            skipped_note(query),
+            stopped_note(report.stopped)
+        );
     }
     let shown = report.found.len().min(query.limit);
-    let mut out = format!("{} files", report.files);
+    let mut out = format!(
+        "{}, newest first",
+        crate::text::plural(report.files, "file")
+    );
     if report.files > shown {
         out.push_str(&format!("; showing {shown} most recently modified"));
     }
@@ -278,6 +289,14 @@ fn file_list(query: &Query, report: &Report) -> String {
         out.push_str(&relative(&query.shown, &found.path));
     }
     out
+}
+
+fn skipped_note(query: &Query) -> String {
+    let folders = crate::SKIP_DIRS.join(", ");
+    if query.no_ignore {
+        return format!("; {folders} folders skipped");
+    }
+    format!("; {folders} folders and gitignored files skipped (no_ignore true includes the files)")
 }
 
 fn stopped_note(stopped: bool) -> String {

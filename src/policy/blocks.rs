@@ -54,7 +54,8 @@ pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
     steps.iter().find_map(|step| {
         let row = verb_row(&step.verb()?)?;
         let operands = step.operands();
-        let read = if matches!(row.read, Read::Always) {
+        let whole = row.search == Search::Contents || matches!(row.write, Write::Last);
+        let read = if matches!(row.read, Read::Always) || row.search == Search::Contents {
             operands.as_slice()
         } else if matches!(row.write, Write::Last) {
             operands
@@ -72,7 +73,8 @@ pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
             bases
                 .iter()
                 .map(|base| locate(target, base))
-                .any(|path| protected_read(&path) || protected_read(&super::paths::resolved(&path)))
+                .flat_map(|path| [super::paths::resolved(&path), path])
+                .any(|path| protected_read(&path) || (whole && holds_protected(&path)))
                 .then(|| target.to_string())
         })
     })

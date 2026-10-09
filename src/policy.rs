@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 mod ask;
 mod danger;
 mod protected;
-pub(crate) use protected::workspace_control;
+pub(crate) use protected::{holds_protected, protected_read, workspace_control};
 mod walk;
 
 pub(crate) use walk::shell_words;
@@ -338,26 +338,6 @@ pub(crate) fn protected_write(path: &Path) -> bool {
     [".ssh", ".gnupg", ".summonr"]
         .into_iter()
         .any(|dir| path.starts_with(home.join(dir)))
-}
-
-pub(crate) fn protected_read(path: &Path) -> bool {
-    if let Some(name) = path.file_name().and_then(|name| name.to_str())
-        && (name == ".env"
-            || name.starts_with(".env.")
-            || name == "credentials"
-            || name == ".netrc"
-            || (name.starts_with("credentials.") && crate::secret::is_store(path)))
-    {
-        return true;
-    }
-    let home = crate::config::home_dir();
-    [".ssh", ".gnupg", ".aws", ".summonr"]
-        .into_iter()
-        .filter_map(|dir| home.as_ref().map(|home| home.join(dir)))
-        .chain(crate::prompt::summonr_home())
-        .any(|dir| {
-            path.starts_with(&dir) || dir.canonicalize().is_ok_and(|real| path.starts_with(real))
-        })
 }
 
 mod blocks;

@@ -1,4 +1,4 @@
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 const WORKSPACE_CONTROL: &[&[&str]] = &[&[".summonr", "check.toml"], &[".summonr", "policy.toml"]];
 
@@ -14,4 +14,33 @@ pub(crate) fn workspace_control(path: &Path) -> bool {
         })
         .collect();
     WORKSPACE_CONTROL.iter().any(|tail| parts.ends_with(tail))
+}
+
+pub(crate) fn protected_read(path: &Path) -> bool {
+    if let Some(name) = path.file_name().and_then(|name| name.to_str())
+        && (name == ".env"
+            || name.starts_with(".env.")
+            || name == "credentials"
+            || name == ".netrc"
+            || (name.starts_with("credentials.") && crate::secret::is_store(path)))
+    {
+        return true;
+    }
+    protected_dirs().any(|dir| path.starts_with(dir))
+}
+
+pub(crate) fn holds_protected(path: &Path) -> bool {
+    protected_dirs().any(|dir| dir.starts_with(path))
+}
+
+fn protected_dirs() -> impl Iterator<Item = PathBuf> {
+    let home = crate::config::home_dir();
+    [".ssh", ".gnupg", ".aws", ".summonr"]
+        .into_iter()
+        .filter_map(move |dir| home.as_ref().map(|home| home.join(dir)))
+        .chain(crate::prompt::summonr_home())
+        .flat_map(|dir| {
+            let real = dir.canonicalize().ok().filter(|real| *real != dir);
+            std::iter::once(dir).chain(real)
+        })
 }

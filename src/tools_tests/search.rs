@@ -207,3 +207,46 @@ fn overlapping_search_paths_report_each_file_once() {
         "{hits}"
     );
 }
+
+#[test]
+fn search_ignores_case_lists_linked_files_and_says_what_it_skipped() {
+    let (dir, tools) = workspace(&[
+        ("pricing.md", "Ledgerpro charges per seat\n"),
+        ("libz.1.dylib", "z\n"),
+    ]);
+    #[cfg(unix)]
+    for (target, link) in [
+        ("libz.1.dylib", "libz.dylib"),
+        ("gone.dylib", "libgone.dylib"),
+    ] {
+        std::os::unix::fs::symlink(target, dir.path().join(link)).unwrap();
+    }
+    let hits = run(
+        &tools,
+        "search",
+        serde_json::json!({"pattern": "LedgerPro"}),
+    );
+    assert!(hits.contains("pricing.md:1:1:Ledgerpro"), "{hits}");
+    assert!(
+        hits.starts_with("1 match for `LedgerPro`, newest file first"),
+        "{hits}"
+    );
+    let named = run(&tools, "search", serde_json::json!({"glob": "*PRICING*"}));
+    assert!(named.starts_with("1 file, newest first\n"), "{named}");
+    #[cfg(unix)]
+    {
+        let linked = run(&tools, "search", serde_json::json!({"glob": "*.dylib"}));
+        assert!(linked.lines().any(|line| line == "libz.dylib"), "{linked}");
+        assert!(
+            linked.lines().any(|line| line == "libgone.dylib"),
+            "{linked}"
+        );
+    }
+    let none = run(&tools, "search", serde_json::json!({"pattern": "absent"}));
+    assert!(
+        none.contains("node_modules")
+            && none.contains("no_ignore true")
+            && none.contains("pass glob alone"),
+        "{none}"
+    );
+}

@@ -296,9 +296,13 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
+    if matches!(word, "~" | "$HOME" | "${HOME}") {
+        return home_dir();
+    }
     let rest = word
         .strip_prefix("~/")
-        .or_else(|| word.strip_prefix("$HOME/"))?;
+        .or_else(|| word.strip_prefix("$HOME/"))
+        .or_else(|| word.strip_prefix("${HOME}/"))?;
     Some(home_dir()?.join(rest))
 }
 

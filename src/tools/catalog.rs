@@ -179,7 +179,10 @@ fn read() -> ToolDefinition {
 fn search() -> ToolDefinition {
     tool(
         "search",
-        "Search file contents or find files by name, anywhere on disk. pattern is a regex over contents; glob alone finds files by name (*refract*). path or paths[] picks where (default the workspace; ~ works). A lowercase pattern or glob ignores case. Skips ignored and build dirs, binaries, and files over 1 MiB. files true lists matching files, count counts, context adds lines, depth limits how deep. Hits are path:N:col:line; tags true prints path:N:hash|line for edit.",
+        &format!(
+            "Search file contents or find files by name, anywhere on disk. pattern is a regex over contents; glob alone finds files by name (*refract*). path or paths[] picks where (default the workspace; ~ and / work: a call stops after {secs}s with what it found). Case is ignored unless case_sensitive is true. Skips gitignored files and build dirs; content search also skips binaries and files over 1 MiB. Results are newest first. files true lists the files whose contents match, count counts, context adds lines, depth limits how deep. Hits are path:N:col:line; tags true prints path:N:hash|line for edit.",
+            secs = crate::limits::limits().search_secs
+        ),
         serde_json::json!({
             "type": "object",
             "properties": {

@@ -159,3 +159,31 @@ fn a_delta_that_leaves_the_parent_base_is_kept() {
     let kept = landed[0].kept.as_deref().unwrap();
     assert!(kept.contains("moved off the parent base"), "{kept}");
 }
+
+#[test]
+fn generated_files_from_two_children_do_not_block_their_edits() {
+    let (_root, primary) = repo();
+    let left = super::open_delta(&primary).unwrap();
+    let right = super::open_delta(&primary).unwrap();
+    for (tree, name, bytes) in [(&left, "left.py", "L"), (&right, "right.py", "R")] {
+        std::fs::write(tree.path.join(name), bytes).unwrap();
+        std::fs::create_dir_all(tree.path.join("__pycache__")).unwrap();
+        std::fs::write(tree.path.join("__pycache__/m.cpython-312.pyc"), bytes).unwrap();
+    }
+    let landed = super::reconcile_children(
+        &primary,
+        &[(left.clone(), Vec::new()), (right.clone(), Vec::new())],
+    )
+    .unwrap();
+    assert!(
+        landed.iter().all(|landing| landing.kept.is_none()),
+        "{:?}",
+        landed
+            .iter()
+            .map(|landing| &landing.kept)
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(std::fs::read(primary.join("left.py")).unwrap(), b"L");
+    assert_eq!(std::fs::read(primary.join("right.py")).unwrap(), b"R");
+    assert!(!primary.join("__pycache__").exists());
+}

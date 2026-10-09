@@ -3,6 +3,7 @@ summonr: a terminal coding agent
 Usage: summonr [ENDPOINT] [OPTIONS] [PROMPT]
   summonr grok                start on an endpoint (same as -e grok)
   summonr kimi -p PROMPT      run one prompt and exit
+  summonr kimi PROMPT         a bare prompt also runs once and exits
 
 Sessions:
   resume [ID|NAME]            resume a session; bare resumes the last one here
@@ -28,6 +29,7 @@ Setup:
   mcp add NAME -- CMD [ARGS]  add a stdio server (--env K=V), or --url URL (--header K=V)
   mcp remove NAME             remove an MCP server from ~/.summonr/config.toml
   install PATH                install a directory of extras (--list shows them)
+  uninstall NAME              remove an installed plugin
   doctor [--logs]             report crashed runs; --logs lists run logs
 
 Integrations:
@@ -42,7 +44,7 @@ Options:
       --effort LEVEL   none, minimal, low, medium, high, xhigh, or max
   -w, --workflow NAME  seat each step from [workflows.NAME]
   -p, --print          run one prompt and exit
-      --json           print JSON (with -p, diff, worktrees, classify)
+      --json           print JSON (with -p, diff, worktrees, mcp, classify)
   -c, --continue       resume the last session here
       --session ID     resume a session by id, prefix, or name
       --fork           copy the resumed session before continuing
@@ -57,15 +59,15 @@ Options:
       --no-trust       ignore workspace SYSTEM.md, AGENTS.md, CLAUDE.md
       --no-verify      skip the .summonr/check.toml gate
       --worktree       isolate this session in a git worktree
-      --max-tokens N   session token budget; a breach exits 3
-      --max-secs N     session wall-clock budget; a breach exits 3
+      --max-tokens N   session token budget; a breach stops the run
+      --max-secs N     session wall-clock budget; a breach stops the run
       --no-splash      skip the startup banner
       --inline         scrollback transcript, composer pinned at the bottom
       --gui            open the desktop window (a --features gui build)
   -h, --help           show this help
   -V, --version        show the version
 
-Exit codes: 0 ok · 1 harness error · 2 verify failed · 3 stopped short
+Exit codes: 0 ok · 1 harness error · 2 check failed · 3 stopped short with no failing check
 
 Interactive commands (/help in the interface lists the keys):
 {commands}

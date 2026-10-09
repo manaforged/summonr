@@ -1,6 +1,49 @@
 use super::*;
 
 #[test]
+fn a_profile_names_the_latest_nonempty_answering_model() {
+    let home = tempfile::tempdir().expect("journal home");
+    let path = home.path().join("session.jsonl");
+    std::fs::write(&path, concat!(
+        "{\"kind\":\"session\",\"id\":\"000000000000000018d2297ad34281e1\",\"model\":\"qwen\",\"system\":\"\",\"workspace\":\"/work\"}\n",
+        "{\"kind\":\"assistant\",\"text\":\"first\",\"model\":\"gpt-6.1-sol\",\"usage\":{\"input\":10,\"output\":5,\"cached\":0,\"millis\":20}}\n",
+        "{\"kind\":\"assistant\",\"text\":\"legacy\",\"usage\":{\"input\":10,\"output\":5,\"cached\":0,\"millis\":20}}\n"
+    )).expect("write model switch journal");
+    let report = crate::profile(crate::ProfileScope::Session(&path)).expect("profile session");
+    assert!(report.contains("gpt-6.1-sol"), "{report}");
+    assert!(!report.contains("qwen"), "{report}");
+}
+
+#[test]
+fn historical_usage_excludes_estimates_and_keeps_legacy_charges() {
+    let home = tempfile::tempdir().expect("journal home");
+    let dir =
+        crate::durable::log::sessions_dir(home.path()).join("000000000000000018d2297ad34281e1");
+    std::fs::create_dir_all(&dir).expect("session directory");
+    let usage = |input, reported: &str| {
+        format!(
+            "{{\"kind\":\"charge\",\"note\":\"side request\",\"model\":\"m\",\"usage\":{{\"input\":{input},\"output\":5,\"cached\":0,\"millis\":20}}{reported}}}\n"
+        )
+    };
+    let head = "{\"kind\":\"session\",\"id\":\"000000000000000018d2297ad34281e1\",\"model\":\"m\",\"system\":\"\",\"workspace\":\"/work\"}\n";
+    std::fs::write(
+        dir.join("session.jsonl"),
+        format!(
+            "{head}{}{}{}",
+            usage(1000, ",\"reported\":false"),
+            usage(20, ",\"reported\":true"),
+            usage(30, "")
+        ),
+    )
+    .expect("write charge journal");
+    let rows =
+        spend(home.path(), &[], &std::collections::BTreeMap::new()).expect("historical usage");
+    assert_eq!(rows.iter().map(|row| row.input).sum::<u64>(), 50);
+    assert_eq!(rows.iter().map(|row| row.output).sum::<u64>(), 10);
+    assert_eq!(rows.iter().map(|row| row.turns).sum::<u64>(), 2);
+}
+
+#[test]
 fn user_text_strips_the_harness_note() {
     assert_eq!(
         user_text("hi\n\nHarness state: auto mode. Do only what they asked."),

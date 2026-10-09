@@ -73,7 +73,7 @@ pub(super) const VALUES: [Valued; 11] = [
     Valued {
         option: "--endpoint",
         short: Some("-e"),
-        expected: "a name (zai, zai-cn, kimi, grok, …)",
+        expected: "a name from `summonr endpoints`",
         set: |args, name| some(&mut args.endpoint, name),
     },
     Valued {
@@ -294,9 +294,11 @@ fn some<T>(slot: &mut Option<T>, value: T) -> Result<()> {
     Ok(())
 }
 
-fn count<T: std::str::FromStr>(raw: &str, option: &str) -> Result<T> {
+fn count(raw: &str, option: &str) -> Result<u64> {
     raw.parse()
-        .map_err(|_error| Error::Config(format!("{option} requires a positive integer")))
+        .ok()
+        .filter(|count| *count > 0)
+        .ok_or_else(|| Error::Config(format!("{option} requires a positive integer")))
 }
 
 fn effort(level: &str) -> Result<summonr::Effort> {

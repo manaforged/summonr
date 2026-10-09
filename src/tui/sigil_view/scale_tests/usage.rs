@@ -5,6 +5,18 @@ use super::{State, busy_info, frame_with, paint};
 use crate::session::Spend;
 use crate::tui::Msg;
 
+#[test]
+fn an_empty_local_usage_scope_explains_how_to_show_other_workspaces() {
+    let shown = frame_with(busy_info(), 100, 30, State::Idle, |app| {
+        app.replace("/usage".to_owned());
+        app.submit();
+        app.update(Msg::Usage(Ok(vec![spend("m", "/other", 100)])));
+        app.overlay_enter();
+    })
+    .join("\n");
+    assert!(shown.contains("enter shows all workspaces"), "{shown}");
+}
+
 fn spend(model: &str, workspace: &str, input: u64) -> Spend {
     let hour = crate::mail::now() / 3600 * 3600;
     Spend {

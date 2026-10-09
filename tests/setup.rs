@@ -46,6 +46,56 @@ fn there_is_no_plan_mode_flag() {
     }
 }
 
+#[test]
+fn invalid_cli_arguments_fail_before_starting_a_session() {
+    let home = tempfile::tempdir().expect("isolated CLI home");
+    for (args, expected) in [
+        (vec!["modules", "extra"], "takes no arguments"),
+        (vec!["--goal", "fix", "ignored"], "takes no prompt"),
+        (vec!["--max-tokens", "0", "hi"], "positive integer"),
+        (vec!["login", "openai", "--model", "m"], "--default --model"),
+        (
+            vec![
+                "mcp",
+                "add",
+                "fixture",
+                "--url",
+                "https://example.com",
+                "--env",
+                "A=B",
+            ],
+            "use `--header`",
+        ),
+    ] {
+        let (ok, text) = summonr(home.path(), &args);
+        assert!(!ok && text.contains(expected), "{args:?}: {text}");
+    }
+    assert!(!home.path().join(".summonr/sessions").exists());
+}
+
+#[test]
+fn global_json_reaches_mcp_list_and_worktree_prune() {
+    let home = tempfile::tempdir().expect("isolated CLI home");
+    let (ok, text) = summonr(home.path(), &["--json", "mcp", "list"]);
+    assert!(ok, "{text}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(text.trim()).expect("MCP JSON"),
+        serde_json::json!([])
+    );
+    let status = Command::new("git")
+        .args(["init", "--quiet"])
+        .current_dir(home.path())
+        .status()
+        .expect("fixture repository");
+    assert!(status.success());
+    let (ok, text) = summonr(home.path(), &["worktrees", "prune", "--json"]);
+    assert!(ok, "{text}");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(text.trim()).expect("prune JSON"),
+        serde_json::json!([])
+    );
+}
+
 fn summonr(home: &std::path::Path, args: &[&str]) -> (bool, String) {
     let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
         .args(args)

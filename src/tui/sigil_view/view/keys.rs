@@ -276,9 +276,6 @@ impl App {
     }
 
     fn arrow(&self, event: &mut KeyEvent, dir: isize) {
-        if self.overlay() == Some(Overlay::Usage) {
-            return;
-        }
         if self.overlay_move(dir) {
             event.stop_propagation();
         } else if self.context.peek().is_some() {

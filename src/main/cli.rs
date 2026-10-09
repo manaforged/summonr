@@ -204,18 +204,55 @@ impl Args {
     }
 
     fn check(&self) -> Result<()> {
-        self.check_names()?;
         if self.here && self.worktree {
             return Err(Error::Config(
                 "use --here or --worktree, not both".to_string(),
             ));
         }
-        if (self.logs || self.doctor) && !self.prompt.is_empty() {
-            return Err(Error::Config(
-                "doctor does not accept arguments".to_string(),
-            ));
+        if let Some(mode) = [
+            ("--goal", self.goal.is_some()),
+            ("--steps", self.steps.is_some()),
+        ]
+        .into_iter()
+        .find_map(|(mode, on)| on.then_some(mode))
+            && let Some(extra) = self.prompt.first()
+        {
+            return Err(Error::Config(format!(
+                "{mode} takes no prompt; put `{extra}` in the objective or the plan"
+            )));
         }
-        Ok(())
+        self.check_names()?;
+        self.check_arity()
+    }
+
+    fn check_arity(&self) -> Result<()> {
+        let arity = [
+            (self.list, "endpoints", 0),
+            (self.list_sessions, "sessions", 0),
+            (self.list_workflows, "workflows", 0),
+            (self.list_modules, "modules", 0),
+            (self.acp, "acp", 0),
+            (self.list_worktrees, "worktrees", 0),
+            (self.logs || self.doctor, "doctor", 0),
+            (self.logout, "logout", 0),
+            (self.export, "export", 1),
+            (self.profile, "profile", 1),
+            (self.diff, "diff", 1),
+            (self.add, "install", 1),
+            (self.uninstall, "uninstall", 1),
+        ];
+        let Some((_, verb, most)) = arity.into_iter().find(|(on, ..)| *on) else {
+            return Ok(());
+        };
+        match self.prompt.get(most) {
+            Some(extra) if most == 0 => Err(Error::Config(format!(
+                "`summonr {verb}` takes no arguments; got `{extra}`"
+            ))),
+            Some(extra) => Err(Error::Config(format!(
+                "`summonr {verb}` takes one argument; got extra `{extra}`"
+            ))),
+            None => Ok(()),
+        }
     }
 }
 

@@ -107,10 +107,15 @@ impl Session {
         .unwrap();
         let stdout = self.file("stdout");
         let stderr = self.file("stderr");
-        let mut child = Command::new(env!("CARGO_BIN_EXE_summonr"))
-            .args(["-e", "replay"])
-            .args(flags)
-            .args(["-p", options.prompt.unwrap_or("go")])
+        let mut command = Command::new(env!("CARGO_BIN_EXE_summonr"));
+        command.args(["-e", "replay"]).args(flags);
+        if !flags
+            .iter()
+            .any(|flag| matches!(*flag, "--goal" | "--steps"))
+        {
+            command.args(["-p", options.prompt.unwrap_or("go")]);
+        }
+        let mut child = command
             .current_dir(options.work.unwrap_or(self.work.path()))
             .env("HOME", self.home.path())
             .env("USERPROFILE", self.home.path())

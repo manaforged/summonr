@@ -105,6 +105,16 @@ async fn account(args: &Args) -> Option<Result<i32>> {
             .map(|()| 0),
         );
     }
+    if args.login
+        && let Some(name) = args.endpoint.as_deref()
+        && args.model.is_some()
+        && !args.default
+        && summonr::auth_info(name).is_ok_and(|info| !info.own)
+    {
+        return Some(Err(summonr::Error::Config(format!(
+            "`{name}` is built in; `summonr login {name} --default --model M` saves its model, or `summonr {name} --model M` uses one for a run"
+        ))));
+    }
     if args.login {
         return Some(login(args).await.map(|()| 0));
     }
@@ -118,7 +128,7 @@ async fn account(args: &Args) -> Option<Result<i32>> {
         return Some(probe_endpoints().await.map(|()| 0));
     }
     if let Some(command) = &args.mcp {
-        return Some(mcp(command).await.map(|()| 0));
+        return Some(mcp(command, args.json).await.map(|()| 0));
     }
     None
 }

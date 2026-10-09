@@ -116,17 +116,25 @@ impl AddFlags {
             url,
             command,
         } = self;
-        match (url, command.split_first()) {
-            (Some(url), None) if env.is_empty() => Ok(McpLaunch::Url { url, headers }),
-            (None, Some((command, args))) if headers.is_empty() => Ok(McpLaunch::Command {
-                command: command.clone(),
-                args: args.to_vec(),
-                env,
-            }),
-            (Some(_) | None, Some(_) | None) => Err(usage(&format!(
-                "give a command after `--` or `--url`, not both; {ADD_USAGE}"
-            ))),
-        }
+        let advice = match (url, command.split_first()) {
+            (Some(url), None) if env.is_empty() => return Ok(McpLaunch::Url { url, headers }),
+            (None, Some((command, args))) if headers.is_empty() => {
+                return Ok(McpLaunch::Command {
+                    command: command.clone(),
+                    args: args.to_vec(),
+                    env,
+                });
+            }
+            (None, None) => "give a command after `--` or a server with `--url URL`",
+            (Some(_), Some(_)) => "give a command after `--` or `--url`, not both",
+            (Some(_), None) => {
+                "`--env` sets variables for a command server; use `--header` with `--url`"
+            }
+            (None, Some(_)) => {
+                "`--header` works only with `--url`; use `--env` for a command server"
+            }
+        };
+        Err(usage(&format!("{advice}; {ADD_USAGE}")))
     }
 }
 

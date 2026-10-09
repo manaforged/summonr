@@ -56,7 +56,8 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             return column.child(crate::tui::sigil_view::chat::entry::patch_view(
                 &app,
                 text.clone(),
-                layout(&app),
+                app.model.get().prefs.diff_layout,
+                app.layout.get().split(app.viewport.get().0).1,
             ));
         }
         let cursor = app.hunk_cursor.peek();
@@ -116,16 +117,6 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
         );
     }
     column
-}
-
-fn layout(app: &App) -> crate::prefs::DiffLayout {
-    let chosen = app.model.peek().prefs.diff_layout;
-    let cols = app.layout.peek().split(app.viewport.peek().0).1;
-    if cols < crate::limits::limits().diff_split_min_cols {
-        crate::prefs::DiffLayout::Unified
-    } else {
-        chosen
-    }
 }
 
 fn hunk_view(
@@ -219,6 +210,7 @@ fn hunk_view(
     card.child(crate::tui::sigil_view::chat::entry::patch_view(
         app,
         hunk.body().to_string(),
-        layout(app),
+        app.model.get().prefs.diff_layout,
+        app.layout.get().split(app.viewport.get().0).1,
     ))
 }

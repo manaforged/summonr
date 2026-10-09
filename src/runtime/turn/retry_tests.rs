@@ -1,45 +1,104 @@
-use super::{retry_cause, retryable_failure};
-use crate::error::{ProviderFailure, ProviderFailureKind};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Mutex;
 
-#[test]
-fn an_authentication_failure_is_not_retried() {
-    let failure = ProviderFailure {
-        kind: ProviderFailureKind::Authentication,
-        status: Some(401),
-        message: "rejected the key".to_string(),
-        partial_output: true,
-        retry_after: None,
-    };
-    assert!(!retryable_failure(&failure));
+use crate::error::{Error, ProviderFailure, ProviderFailureKind, Result};
+use crate::provider::{AssistantMessage, CompletionRequest, Message, Partial, Provider};
+use crate::runtime::Loop;
+
+struct Fault {
+    kind: ProviderFailureKind,
+    partial: bool,
+    sent: Mutex<Vec<Vec<Message>>>,
 }
 
-fn limited(retry_after: Option<u64>) -> ProviderFailure {
-    ProviderFailure {
-        kind: ProviderFailureKind::RateLimited,
-        status: Some(429),
-        message: "slow down".to_string(),
-        partial_output: false,
-        retry_after,
+impl Provider for Fault {
+    fn complete<'a>(
+        &'a self,
+        request: &'a CompletionRequest<'a>,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        Box::pin(async move { self.stream(request, &mut Partial::default()).await })
+    }
+
+    fn stream<'a>(
+        &'a self,
+        request: &'a CompletionRequest<'a>,
+        partial: &'a mut Partial,
+    ) -> Pin<Box<dyn Future<Output = Result<AssistantMessage>> + Send + 'a>> {
+        let mut sent = self.sent.lock().expect("captured requests");
+        sent.push(request.messages.to_vec());
+        let first = sent.len() == 1;
+        drop(sent);
+        let reply = if first {
+            if self.partial {
+                partial.text = "saved partial reply".to_string();
+            }
+            Err(Error::Provider(ProviderFailure {
+                kind: self.kind,
+                status: None,
+                message: "fixture failure".to_string(),
+                partial_output: self.partial,
+                retry_after: None,
+            }))
+        } else {
+            Ok(AssistantMessage {
+                content: Some("recovered".to_string()),
+                ..AssistantMessage::default()
+            })
+        };
+        Box::pin(async move { reply })
     }
 }
 
-#[test]
-fn a_long_retry_after_falls_back_instead_of_retrying() {
-    assert!(retryable_failure(&limited(None)));
-    assert!(retryable_failure(&limited(Some(30))));
-    assert!(!retryable_failure(&limited(Some(120))));
+async fn run(
+    kind: ProviderFailureKind,
+    partial: bool,
+) -> (bool, usize, Vec<crate::durable::log::Line>) {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let home = tempfile::tempdir().expect("session home");
+    let driver =
+        crate::runtime::configure::open_driver(home.path(), workspace.path(), "m", "system")
+            .expect("open journal");
+    let provider = Fault {
+        kind,
+        partial,
+        sent: Mutex::new(Vec::new()),
+    };
+    let mut loop_ =
+        Loop::open(provider, "m", workspace.path(), "system", driver).expect("open runtime");
+    let result = loop_.turn("hi there").await;
+    let sent = loop_.provider.sent.lock().expect("captured requests");
+    assert!(
+        sent[0]
+            .iter()
+            .any(|message| message.content.contains("hi there"))
+    );
+    let lines = crate::durable::log::read(loop_.session_path()).expect("read durable result");
+    (result.is_ok(), sent.len(), lines)
 }
 
-#[test]
-fn a_connect_failure_is_named_as_one() {
-    let failure = ProviderFailure {
-        kind: ProviderFailureKind::Transport,
-        status: None,
-        message: "connection refused".to_string(),
-        partial_output: false,
-        retry_after: None,
-    };
-    assert!(retryable_failure(&failure));
-    assert_eq!(retry_cause(&failure), "connection failed");
-    assert_eq!(retry_cause(&limited(None)), "rate limited");
+#[tokio::test]
+async fn an_unchanged_context_overflow_stops_after_one_request() {
+    let (ok, attempts, _) = run(ProviderFailureKind::ContextOverflow, false).await;
+    assert!(!ok);
+    assert_eq!(
+        attempts, 1,
+        "runtime must not resend the same overflowing context"
+    );
+}
+
+#[tokio::test]
+async fn transport_request_failures_do_not_get_an_extra_runtime_retry() {
+    let (ok, attempts, _) = run(ProviderFailureKind::Transport, false).await;
+    assert!(!ok);
+    assert_eq!(attempts, 1, "request retries belong to the transport");
+}
+
+#[tokio::test]
+async fn a_cut_stream_retries_once_and_preserves_interrupted_text() {
+    let (ok, attempts, lines) = run(ProviderFailureKind::Transport, true).await;
+    assert!(ok);
+    assert_eq!(attempts, 2);
+    assert!(lines.iter().any(|line| matches!(line, crate::durable::log::Line::Interrupted { text, .. } if text == "saved partial reply")), "{lines:?}");
+    assert!(lines.iter().any(|line| matches!(line, crate::durable::log::Line::Assistant { text, .. } if text == "recovered")), "{lines:?}");
 }

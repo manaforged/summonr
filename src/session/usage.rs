@@ -98,11 +98,22 @@ pub(crate) struct Spend {
 struct Record {
     #[serde(default)]
     at: u64,
-    kind: String,
     #[serde(default)]
-    model: String,
-    #[serde(default)]
-    usage: Option<Usage>,
+    reported: Option<bool>,
+    #[serde(flatten)]
+    line: log::Line,
+}
+
+impl Record {
+    fn charge(self) -> Option<(String, Usage)> {
+        match self.line {
+            log::Line::Assistant { model, usage, .. } => Some((model, usage)),
+            log::Line::Charge { model, usage, .. } if self.reported != Some(false) => {
+                Some((model, usage))
+            }
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn spend(
@@ -121,26 +132,23 @@ pub(crate) fn spend(
         let mut latest = None;
         let mut current = info.model.clone().unwrap_or_default();
         for record in records {
-            if record.kind == "session" {
-                current = record.model;
+            if let log::Line::Session { model, .. } = &record.line {
+                current.clone_from(model);
                 continue;
             }
-            let Some(usage) = record.usage else {
+            let stamp = record.at;
+            let Some((model, usage)) = record.charge() else {
                 continue;
             };
             if usage.input == 0 && usage.output == 0 {
                 continue;
             }
-            let model = if record.model.is_empty() {
+            let model = if model.is_empty() {
                 current.clone()
             } else {
-                record.model
+                model
             };
-            let at = if record.at == 0 {
-                fallback
-            } else {
-                record.at / 1000
-            };
+            let at = if stamp == 0 { fallback } else { stamp / 1000 };
             let hour = at - at % HOUR;
             let key = (model.clone(), hour, workspace.clone());
             latest = Some(key.clone());

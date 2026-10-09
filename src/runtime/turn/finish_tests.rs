@@ -25,7 +25,7 @@ fn session(replies: impl IntoIterator<Item = Reply>) -> Run {
 
 fn goal(run: &mut Run, review: impl IntoIterator<Item = Reply>) {
     run.loop_.select_goal("ship it", &[]).unwrap();
-    run.loop_.set_mode(crate::RunMode::Goal).unwrap();
+    run.loop_.set_mode(crate::RunMode::Goal);
     run.loop_.set_seat(
         workflow::Role::Review,
         Scripted::new(review),
@@ -61,25 +61,6 @@ fn closing(turn: &Turn) -> Vec<&Event> {
             )
         })
         .collect()
-}
-
-#[tokio::test]
-async fn a_plan_turn_reports_where_the_plan_was_saved_then_the_reply() {
-    let mut run = session([Reply::Text("the plan")]);
-    run.loop_ = run.loop_.with_plan();
-    let turn = run.loop_.turn("plan it").await.unwrap();
-    let closing = closing(&turn);
-    let [
-        ..,
-        Event::Work { .. },
-        Event::Note { text },
-        Event::Assistant { text: reply },
-    ] = closing.as_slice()
-    else {
-        panic!("{closing:?}");
-    };
-    assert!(text.starts_with("plan saved to "), "{text}");
-    assert_eq!(reply, "the plan");
 }
 
 #[tokio::test]
@@ -182,7 +163,7 @@ async fn a_turn_that_leaves_a_job_running_is_deferred_not_verified() {
 #[tokio::test]
 async fn an_unchanged_harness_note_is_sent_once() {
     let mut run = session([Reply::Text("one"), Reply::Text("two")]);
-    run.loop_ = run.loop_.with_plan();
+    run.loop_.set_mode(crate::RunMode::Work);
     run.loop_.turn("first").await.unwrap();
     run.loop_.turn("second").await.unwrap();
     let sent = run.sent.lock().unwrap();

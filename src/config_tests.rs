@@ -59,16 +59,6 @@ fn a_config_with_both_mail_and_bus_keeps_mail() {
 }
 
 #[test]
-fn plan_mode_is_on_by_default_and_turning_it_off_survives_a_save() {
-    let (_dir, path) = written("theme = \"space\"\n");
-    let mut prefs = crate::prefs::load_from(&path).unwrap();
-    assert!(prefs.plan_mode);
-    prefs.plan_mode = false;
-    crate::prefs::save_in(&path, &prefs).unwrap();
-    assert!(!crate::prefs::load_from(&path).unwrap().plan_mode);
-}
-
-#[test]
 fn an_old_last_endpoint_key_loads_and_the_next_save_drops_it() {
     let (_dir, path) = written("last_endpoint = \"zai\"\ntheme = \"space\"\n");
     parse(&path).unwrap();
@@ -77,6 +67,17 @@ fn an_old_last_endpoint_key_loads_and_the_next_save_drops_it() {
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(!text.contains("last_endpoint"), "{text}");
     assert!(text.contains("theme"), "{text}");
+}
+
+#[test]
+fn a_retired_plan_mode_key_is_not_called_unknown_and_the_next_save_drops_it() {
+    let (_dir, path) = written("plan_mode = false\ntheme = \"space\"\n");
+    let file = parse(&path).unwrap();
+    assert!(!file.other.contains_key("plan_mode"), "{:?}", file.other);
+    let prefs = crate::prefs::load_from(&path).unwrap();
+    crate::prefs::save_in(&path, &prefs).unwrap();
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(!text.contains("plan_mode"), "{text}");
 }
 
 #[test]

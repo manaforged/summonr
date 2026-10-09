@@ -32,28 +32,19 @@ impl Login {
     }
 }
 
-pub(in crate::tui::sigil_view) type States = std::collections::BTreeMap<String, State>;
-
-fn providers(states: &States) -> Vec<crate::endpoint::AuthInfo> {
+fn providers() -> Vec<crate::endpoint::AuthInfo> {
     let mut choices: Vec<_> = crate::endpoint::names()
         .unwrap_or_default()
         .into_iter()
         .filter_map(|name| crate::endpoint::auth_info(&name).ok())
         .collect();
-    choices.sort_by_key(|choice| {
-        (
-            section(choice, states),
-            choice.catalog_rank(),
-            choice.name.clone(),
-        )
-    });
+    choices.sort_by_key(|choice| (section(choice), choice.catalog_rank(), choice.name.clone()));
     choices
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(in crate::tui::sigil_view) enum Tier {
     Ready,
-    Attention,
     Unset,
 }
 
@@ -61,19 +52,12 @@ impl Tier {
     pub(in crate::tui::sigil_view) const fn title(self) -> &'static str {
         match self {
             Self::Ready => "ready",
-            Self::Attention => "needs attention",
             Self::Unset => "not set up",
         }
     }
 }
 
-pub(in crate::tui::sigil_view) fn section(
-    choice: &crate::endpoint::AuthInfo,
-    states: &States,
-) -> Tier {
-    if states.get(&choice.name).is_some_and(|state| state.failed()) {
-        return Tier::Attention;
-    }
+pub(in crate::tui::sigil_view) fn section(choice: &crate::endpoint::AuthInfo) -> Tier {
     if choice.unmodeled() {
         return Tier::Unset;
     }
@@ -85,7 +69,7 @@ pub(in crate::tui::sigil_view) fn section(
 
 impl App {
     pub(in crate::tui::sigil_view) fn begin_auth(&self, focus: Option<&str>) {
-        let choices = providers(&self.picker.groups.peek());
+        let choices = providers();
         let current = self.model.get().snapshot.endpoint.clone();
         if let Some(name) = focus
             && !choices.iter().any(|choice| choice.name == name)
@@ -117,28 +101,6 @@ impl App {
             self.commit_auth();
         } else if !self.picker.open.peek() {
             self.list_models(None);
-        }
-    }
-
-    pub(in crate::tui::sigil_view) fn regroup_auth(&self) {
-        let states = self.picker.groups.peek();
-        let keep = self.auth_choice().map(|choice| choice.name);
-        let mut choices = self.auth.choices.peek();
-        choices.sort_by_key(|choice| {
-            (
-                section(choice, &states),
-                choice.catalog_rank(),
-                choice.name.clone(),
-            )
-        });
-        self.auth.choices.set(choices);
-        if let Some(name) = keep
-            && let Some(at) = self
-                .filtered_auth()
-                .iter()
-                .position(|choice| choice.name == name)
-        {
-            self.auth.sel.set(at);
         }
     }
 
@@ -346,7 +308,7 @@ impl App {
                     }
                     return;
                 }
-                self.auth.choices.set(providers(&self.picker.groups.peek()));
+                self.auth.choices.set(providers());
                 let found = self
                     .filtered_auth()
                     .iter()

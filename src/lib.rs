@@ -11,6 +11,7 @@ mod credentials;
 pub mod diff;
 pub(crate) mod durable;
 
+pub(crate) const STATE_DIRS: &[&str] = &[".git", ".summonr"];
 pub(crate) const SKIP_DIRS: &[&str] = &[
     ".git",
     ".summonr",
@@ -38,7 +39,6 @@ pub use mcp::{
     call_label as mcp_call_label, probe as mcp_probe, remove as mcp_remove, status as mcp_status,
 };
 pub mod modules;
-mod plan;
 mod plugins;
 mod policy;
 mod prompt;
@@ -100,6 +100,12 @@ pub use session::{
 pub use tools::sandbox::Network;
 #[cfg(all(windows, feature = "windows-sandbox"))]
 pub use tools::sandbox::windows::entry as sandbox_entry;
+
+pub const INDEX_ENTRY: &str = tools::INDEX_ENTRY;
+
+pub fn index_files(root: &std::path::Path) -> i32 {
+    i32::from(tools::build_file_index(root).is_err())
+}
 pub use tools::{AbortCode, Event, ToolResult, attach, run_tool};
 pub use verify::{Receipt, check_commands};
 pub use worktree::{

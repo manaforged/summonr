@@ -164,7 +164,6 @@ impl App {
             if self.auth.open.peek() {
                 self.picker.choices.set(std::rc::Rc::new(rows));
                 self.picker.facts.set(std::rc::Rc::new(facts));
-                self.regroup_auth();
             }
             return;
         }

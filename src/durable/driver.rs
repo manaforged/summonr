@@ -45,12 +45,6 @@ pub(crate) enum Purpose {
     Judge,
     Review,
     Scout,
-    Plan,
-}
-
-pub(crate) enum TurnWork {
-    NeedsPlan,
-    Ready { accepted: bool },
 }
 
 struct Round {
@@ -84,7 +78,6 @@ pub(crate) struct SessionDriver {
 }
 
 mod children;
-mod plan;
 mod session;
 mod turns;
 mod verdict;

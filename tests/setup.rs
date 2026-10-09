@@ -24,9 +24,9 @@ fn a_first_run_without_a_provider_says_how_to_set_one_up() {
 }
 
 #[test]
-fn plan_mode_refuses_a_goal_or_steps_on_the_command_line() {
+fn there_is_no_plan_mode_flag() {
     let home = tempfile::tempdir().unwrap();
-    for work in [["--goal", "fix it"], ["--steps", "PLAN.md"]] {
+    for work in [["-p", "hi"], ["--goal", "fix it"]] {
         let output = Command::new(env!("CARGO_BIN_EXE_summonr"))
             .arg("--plan")
             .args(work)
@@ -42,7 +42,7 @@ fn plan_mode_refuses_a_goal_or_steps_on_the_command_line() {
             .unwrap();
         let text = String::from_utf8_lossy(&output.stderr);
         assert_eq!(output.status.code(), Some(1), "{work:?}: {text}");
-        assert!(text.contains("--plan denies writes"), "{work:?}: {text}");
+        assert!(text.contains("unknown option `--plan`"), "{work:?}: {text}");
     }
 }
 

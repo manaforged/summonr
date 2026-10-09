@@ -112,7 +112,6 @@ impl<P: Provider> Loop<P> {
             price: None,
             system_prompt,
             mode: crate::RunMode::Auto,
-            plan_first: false,
             tools,
             schema: None,
 
@@ -132,7 +131,6 @@ impl<P: Provider> Loop<P> {
             probe: None,
             effort: None,
             turn_started: 0,
-            accepted: false,
             summary_wait: 0,
             workspace: dunce::canonicalize(workspace).unwrap_or_else(|_| workspace.to_path_buf()),
             mailbox: None,
@@ -152,7 +150,6 @@ impl<P: Provider> Loop<P> {
             steer_shared: None,
             depth,
             tasks: true,
-            plan_sandbox: false,
             interactive: false,
             spawned: BTreeMap::new(),
             events: tokio::sync::mpsc::unbounded_channel(),
@@ -286,35 +283,8 @@ impl<P: Provider> Loop<P> {
         self
     }
 
-    #[must_use]
-    pub fn with_plan(mut self) -> Self {
-        drop(self.set_mode(crate::RunMode::Plan));
-        self
-    }
-
-    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) -> Result<()> {
-        let plan = mode == crate::RunMode::Plan
-            || mode == crate::RunMode::Work && !self.session.has_selected_plan();
-        let mode = if plan { crate::RunMode::Plan } else { mode };
-        if std::mem::replace(&mut self.mode, mode) == mode {
-            return Ok(());
-        }
-        let sandbox = (plan && !self.tools.has_sandbox())
-            .then(|| self.tools.enable_sandbox(crate::Network::Allowed));
-        if !plan && std::mem::take(&mut self.plan_sandbox) {
-            self.tools.disable_sandbox();
-        }
-        self.plan_sandbox |= matches!(sandbox, Some(Ok(())));
-        self.tools.set_read_only(plan);
-        if let Some(result) = sandbox {
-            result?;
-        }
-        Ok(())
-    }
-
-    #[must_use]
-    pub(crate) fn is_plan(&self) -> bool {
-        self.mode == crate::RunMode::Plan
+    pub(crate) fn set_mode(&mut self, mode: crate::RunMode) {
+        self.mode = mode;
     }
 
     #[must_use]

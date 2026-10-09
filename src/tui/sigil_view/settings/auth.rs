@@ -252,8 +252,8 @@ fn sections(
     let mut lookup: Vec<Row> = Vec::new();
     let (mut shown, mut header) = (0, 0);
     for (index, row) in rows.iter().enumerate() {
-        let tier = section(row, states);
-        if index == 0 || tier != section(&rows[index - 1], states) {
+        let tier = section(row);
+        if index == 0 || tier != section(&rows[index - 1]) {
             lookup.push((tier.title().to_string(), String::new(), None));
         }
         if index == selected {
@@ -264,7 +264,7 @@ fn sections(
                 .unwrap_or(0);
         }
         lookup.push((
-            row.name.clone(),
+            row.display_name(),
             chip(row, states.get(&row.name)),
             Some(index),
         ));

@@ -2,7 +2,7 @@ use sigil::prelude::{LayoutBuilderExt, LayoutStyle, NodeBuilder, Paint, Radius, 
 
 use super::fold::patch_counts;
 use super::preview;
-use super::tools::{searched, workspace_relative};
+use super::tools::workspace_relative;
 use super::tree::label;
 use crate::tools::Builtin;
 use crate::tui::ToolState;
@@ -27,10 +27,10 @@ pub(super) enum StepVerb {
 }
 
 impl StepVerb {
-    fn of(name: &str, arg: &str) -> Self {
+    fn of(name: &str) -> Self {
         match Builtin::of(name) {
-            Some(Builtin::Read) if searched(arg).is_some() => Self::Searched,
             Some(Builtin::Read) => Self::Explored,
+            Some(Builtin::Search) => Self::Searched,
             Some(Builtin::Edit | Builtin::Write) => Self::Edited,
             Some(Builtin::RunCommand) => Self::Ran,
             Some(Builtin::Web) => Self::Fetched,
@@ -83,7 +83,7 @@ pub(super) struct Step {
 
 impl Step {
     pub(super) fn kind(&self) -> StepVerb {
-        StepVerb::of(&self.name, &self.call.arg)
+        StepVerb::of(&self.name)
     }
 
     pub(super) fn counts(&self) -> Option<(usize, usize)> {
@@ -99,7 +99,7 @@ impl Step {
             StepVerb::Explored | StepVerb::Edited => {
                 shown.split(", ").map(str::to_string).collect()
             }
-            StepVerb::Searched => vec![searched(&shown).unwrap_or(&shown).to_string()],
+            StepVerb::Searched => vec![shown.clone()],
             StepVerb::Ran
             | StepVerb::Fetched
             | StepVerb::Inspected

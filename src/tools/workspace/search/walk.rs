@@ -1,3 +1,4 @@
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, mpsc};
@@ -7,11 +8,11 @@ use grep_searcher::Searcher;
 use ignore::overrides::Override;
 use ignore::{WalkBuilder, WalkState};
 
-use crate::SKIP_DIRS;
 use crate::error::{Error, Result};
+use crate::{SKIP_DIRS, STATE_DIRS};
 
 use super::scan::{self, Found};
-use super::{Query, Root};
+use super::{Query, Root, filter, index};
 
 #[derive(Default)]
 pub(super) struct Report {
@@ -21,7 +22,11 @@ pub(super) struct Report {
     pub(super) searched: usize,
     pub(super) skipped: usize,
     pub(super) capped: usize,
+    pub(super) unreadable: usize,
+    pub(super) links: usize,
+    pub(super) indexed: Option<u64>,
     pub(super) stopped: bool,
+    pub(super) groups: BTreeMap<String, usize>,
 }
 
 #[derive(Default)]
@@ -30,19 +35,32 @@ pub(super) struct Shared {
     stop: AtomicBool,
     pub(super) searched: AtomicUsize,
     pub(super) skipped: AtomicUsize,
+    unreadable: AtomicUsize,
+    links: AtomicUsize,
+    seen: Mutex<HashSet<PathBuf>>,
 }
 
 impl Shared {
-    fn add(&self, found: Found, limit: usize) {
+    fn add(&self, found: Found, keep: usize, group: Option<String>) {
         let mut report = self.report.lock().unwrap_or_else(PoisonError::into_inner);
         report.files += 1;
         report.match_total += found.hits.matches;
         report.capped += usize::from(found.hits.over);
-        report.found.push(found);
-        if report.found.len() >= limit.saturating_mul(2) {
-            newest_first(&mut report.found);
-            report.found.truncate(limit);
+        if let Some(group) = group {
+            *report.groups.entry(group).or_default() += 1;
         }
+        report.found.push(found);
+        if report.found.len() >= keep.saturating_mul(2) {
+            newest_first(&mut report.found);
+            report.found.truncate(keep);
+        }
+    }
+
+    fn first_visit(&self, path: &Path) -> bool {
+        self.seen
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .insert(path.to_path_buf())
     }
 
     fn halt(&self) {
@@ -58,6 +76,8 @@ impl Shared {
             std::mem::take(&mut *self.report.lock().unwrap_or_else(PoisonError::into_inner));
         report.searched = self.searched.load(Ordering::Relaxed);
         report.skipped = self.skipped.load(Ordering::Relaxed);
+        report.unreadable = self.unreadable.load(Ordering::Relaxed);
+        report.links = self.links.load(Ordering::Relaxed);
         newest_first(&mut report.found);
         report
     }
@@ -88,6 +108,8 @@ pub(super) fn run(query: &Arc<Query>) -> Result<Report> {
     Ok(shared.take())
 }
 
+const SKIP_ROOTS: &[&str] = &["/System/Volumes/Data", "/proc", "/sys", "/dev"];
+
 fn walk_all(query: &Query, shared: &Shared) {
     let (files, dirs): (Vec<&Root>, Vec<&Root>) =
         query.roots.iter().partition(|root| root.path.is_file());
@@ -95,6 +117,10 @@ fn walk_all(query: &Query, shared: &Shared) {
     for root in files {
         visit_path(query, shared, root, root.path.clone(), &mut searcher);
     }
+    let dirs: Vec<&Root> = dirs
+        .into_iter()
+        .filter(|root| !from_index(query, shared, root, &mut searcher))
+        .collect();
     let Some((first, rest)) = dirs.split_first() else {
         return;
     };
@@ -114,11 +140,19 @@ fn walk_all(query: &Query, shared: &Shared) {
                 shared.halt();
                 return WalkState::Quit;
             }
-            if let Ok(entry) = entry
-                && entry.file_type().is_some_and(|kind| kind.is_file())
-                && let Some(root) = dirs
-                    .iter()
-                    .find(|root| entry.path().starts_with(&root.path))
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    shared.unreadable.fetch_add(1, Ordering::Relaxed);
+                    return WalkState::Continue;
+                }
+            };
+            if entry.file_type().is_some_and(|kind| {
+                kind.is_file()
+                    || (query.matcher.is_none() && kind.is_symlink() && !entry.path().is_dir())
+            }) && let Some(root) = dirs
+                .iter()
+                .find(|root| entry.path().starts_with(&root.path))
             {
                 visit_path(query, shared, root, entry.into_path(), &mut searcher);
             }
@@ -127,23 +161,89 @@ fn walk_all(query: &Query, shared: &Shared) {
     });
 }
 
+fn from_index(query: &Query, shared: &Shared, root: &Root, searcher: &mut Searcher) -> bool {
+    if !query.indexable(&root.path) {
+        return false;
+    }
+    let Some(found) = index::covering(&root.path) else {
+        return false;
+    };
+    index::each(&found, &root.path, &query.name, |path| {
+        if shared.stop.load(Ordering::Relaxed) || Instant::now() >= query.deadline {
+            shared.halt();
+            return false;
+        }
+        if fits(query, &root.path, &path) {
+            visit_path(query, shared, root, path, searcher);
+        }
+        true
+    });
+    let mut report = shared.report.lock().unwrap_or_else(PoisonError::into_inner);
+    report.indexed = Some(
+        report
+            .indexed
+            .map_or(found.built, |built| built.min(found.built)),
+    );
+    true
+}
+
+fn fits(query: &Query, root: &Path, path: &Path) -> bool {
+    let inside = path.strip_prefix(root).unwrap_or(path);
+    query
+        .depth
+        .is_none_or(|depth| inside.components().count() <= depth)
+        && (query.no_ignore
+            || !inside
+                .components()
+                .any(|part| SKIP_DIRS.contains(&part.as_os_str().to_string_lossy().as_ref())))
+        && query
+            .types
+            .as_ref()
+            .is_none_or(|types| !types.matched(path, false).is_ignore())
+}
+
+pub(super) fn skipped_root(path: &Path) -> bool {
+    SKIP_ROOTS.iter().any(|skipped| path == Path::new(skipped))
+}
+
 fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, searcher: &mut Searcher) {
-    if !keep(&path, root.overrides.as_ref(), query.glob, query.protect) {
+    if query.matcher.is_none() {
+        shared.searched.fetch_add(1, Ordering::Relaxed);
+    }
+    if !filter::named(&query.name, &path)
+        || !keep(&path, root.overrides.as_ref(), query.glob)
+        || (query.roots.len() > 1 && !shared.first_visit(&path))
+    {
         return;
     }
-    let (modified, size) = path.metadata().map_or((0, 0), |meta| stamp(&meta));
+    let Ok(meta) = path.metadata().or_else(|_| path.symlink_metadata()) else {
+        return;
+    };
+    let (modified, size) = stamp(&meta);
+    if query.newer.is_some_and(|newer| modified < newer) {
+        return;
+    }
+    if query.matcher.is_none()
+        && path
+            .symlink_metadata()
+            .is_ok_and(|meta| meta.file_type().is_symlink())
+    {
+        shared.links.fetch_add(1, Ordering::Relaxed);
+    }
     let found = match &query.matcher {
         Some(matcher) => scan::file(query, shared, searcher, matcher, &path, size),
         None => Some(scan::Hits::default()),
     };
     if let Some(hits) = found {
+        let group = query.group.then(|| filter::folder(&path));
         shared.add(
             Found {
                 path,
                 modified,
                 hits,
             },
-            query.limit,
+            query.offset.saturating_add(query.limit),
+            group,
         );
     }
 }
@@ -159,13 +259,16 @@ fn newest_first(found: &mut [Found]) {
 
 fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> WalkBuilder {
     let mut walker = WalkBuilder::new(root);
+    let skipped: &'static [&'static str] = if no_ignore { STATE_DIRS } else { SKIP_DIRS };
     walker
         .require_git(false)
         .hidden(false)
-        .filter_entry(|entry| {
+        .filter_entry(move |entry| {
             entry.depth() == 0
                 || !entry.file_type().is_some_and(|kind| kind.is_dir())
-                || !SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
+                || !(skipped.contains(&entry.file_name().to_string_lossy().as_ref())
+                    || skipped_root(entry.path())
+                    || crate::policy::protected_read(entry.path()))
         });
     if no_ignore {
         walker
@@ -180,15 +283,12 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
     walker
 }
 
-fn keep(path: &Path, overrides: Option<&Override>, require_match: bool, protect: bool) -> bool {
-    if protect && crate::policy::protected_read(path) {
-        return false;
-    }
-    let Some(overrides) = overrides else {
-        return true;
-    };
-    let matched = overrides.matched(path, false);
-    !(matched.is_ignore() || (require_match && !matched.is_whitelist()))
+fn keep(path: &Path, overrides: Option<&Override>, require_match: bool) -> bool {
+    let wanted = overrides.is_none_or(|overrides| {
+        let matched = overrides.matched(path, false);
+        !(matched.is_ignore() || (require_match && !matched.is_whitelist()))
+    });
+    wanted && !crate::policy::protected_read(path)
 }
 
 fn stamp(meta: &std::fs::Metadata) -> (u64, u64) {

@@ -21,11 +21,6 @@ pub(in crate::tui::sigil_view) fn glyph(state: &ToolState) -> (&'static str, Loo
     }
 }
 
-pub(in crate::tui::sigil_view) fn searched(arg: &str) -> Option<&str> {
-    arg.strip_prefix("search ")
-        .filter(|rest| rest.starts_with('"'))
-}
-
 pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {
     arg.split(' ')
         .map(|word| {
@@ -54,10 +49,7 @@ pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]
 }
 
 fn verb<'a>(name: &'a str, arg: &'a str) -> (&'a str, &'a str) {
-    match searched(arg) {
-        Some(rest) => ("Search", rest),
-        None => (Builtin::of(name).map_or(name, |kind| kind.verb()), arg),
-    }
+    (Builtin::of(name).map_or(name, |kind| kind.verb()), arg)
 }
 
 fn detail(name: &str, call: &Call, output: &str) -> Detail {
@@ -257,21 +249,7 @@ fn group_title<'a>(name: &'a str, calls: &[Call]) -> (&'a str, String) {
         let verb = Builtin::of(name).map_or(name, |kind| kind.verb());
         return (verb, format!("×{}", calls.len()));
     }
-    let searches = calls
-        .iter()
-        .filter(|call| searched(&call.arg).is_some())
-        .count();
-    let counts = [
-        (calls.len() - searches, "file", "files"),
-        (searches, "search", "searches"),
-    ];
-    let parts = counts
-        .iter()
-        .filter(|(count, ..)| *count > 0)
-        .map(|(count, one, many)| format!("{count} {}", if *count == 1 { one } else { many }))
-        .collect::<Vec<_>>()
-        .join(", ");
-    ("Explored", parts)
+    ("Explored", crate::text::plural(calls.len(), "file"))
 }
 
 fn group_row(

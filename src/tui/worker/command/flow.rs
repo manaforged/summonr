@@ -5,9 +5,6 @@ impl Worker {
     pub(in crate::tui::worker) async fn submit(&mut self, input: UserInput) -> bool {
         if input.images.is_empty() {
             let line = input.text.trim();
-            if self.loop_.is_plan() && self.loop_.pending_plan() && crate::plan::approves(line) {
-                return self.accept_plan().await;
-            }
             if let Some((send, command)) = shell_prefix(line) {
                 return self.shell(command, send).await;
             }
@@ -86,14 +83,9 @@ impl Worker {
                 Some(self.login(&name).await)
             }
             crate::SlashCommand::Compact => self.compact().await.then_some(true),
-            crate::SlashCommand::PlanAccept => Some(self.accept_plan().await),
             crate::SlashCommand::Goal => Some(self.goal(argument.unwrap_or_default()).await),
             crate::SlashCommand::Retry => Some(self.retry().await),
             crate::SlashCommand::Steps => Some(self.steps(argument.unwrap_or_default()).await),
-            crate::SlashCommand::Plan => {
-                set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Plan);
-                Some(true)
-            }
             crate::SlashCommand::Auto => {
                 set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
                 Some(true)
@@ -113,7 +105,6 @@ impl Worker {
                 true
             }
             crate::SlashCommand::Clear => self.clear(),
-            crate::SlashCommand::PlanReject => self.reject_plan(),
             crate::SlashCommand::Status => self.session(),
             crate::SlashCommand::Usage => self.usage(argument),
             crate::SlashCommand::Resume => self.resume(argument),

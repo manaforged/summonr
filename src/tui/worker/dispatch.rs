@@ -22,8 +22,7 @@ impl Worker {
             | Cmd::Send(..)
             | Cmd::Tick
             | Cmd::LoginAnswer(_)) => self.traffic(command),
-            command @ (Cmd::SetRunMode(_)
-            | Cmd::SetEffort(_)
+            command @ (Cmd::SetEffort(_)
             | Cmd::SetVerify(_)
             | Cmd::SetEndpoint(_)
             | Cmd::SetModel(_)
@@ -129,7 +128,6 @@ impl Worker {
 
     async fn settings(&mut self, command: Cmd) -> bool {
         match command {
-            Cmd::SetRunMode(mode) => set_run_mode(&mut self.loop_, &self.ui, mode),
             Cmd::SetEffort(effort) => {
                 self.dial = effort;
                 self.loop_.set_effort(effort);

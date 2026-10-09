@@ -2,7 +2,7 @@ use sigil::reactive::Runtime;
 use tokio::sync::mpsc::unbounded_channel;
 
 use super::super::app::App;
-use super::{State, busy_info, frame_with};
+use super::busy_info;
 use crate::provider::Effort;
 use crate::tui::Cmd;
 
@@ -56,19 +56,4 @@ fn tab_cycles_back_to_the_lowest_supported_level() {
         app.cycle_effort(-1);
         assert_eq!(app.model.get().snapshot.effort, Some(Effort::High));
     });
-}
-
-#[test]
-fn slash_plan_is_refused_while_plan_mode_is_off() {
-    let mut info = busy_info();
-    info.prefs.plan_mode = false;
-    let lines = frame_with(info, 100, 24, State::Idle, |app| {
-        app.replace("/plan".to_owned());
-        app.submit();
-    });
-    assert!(
-        lines.iter().any(|line| line.contains("plan mode is off")),
-        "{}",
-        lines.join("\n")
-    );
 }

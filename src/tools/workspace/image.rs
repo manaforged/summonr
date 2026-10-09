@@ -14,7 +14,7 @@ impl ToolRegistry {
     pub(super) fn show_image(&self, arguments: &str) -> Result<ToolOutput> {
         let args: Value = parse_args("show_image", arguments)?;
         let path = object_string(&args, "path")?;
-        let canonical = self.resolve_read(path)?;
+        let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
         let mut head = Vec::new();
         std::fs::File::open(&canonical)
             .and_then(|file| file.take(12).read_to_end(&mut head))

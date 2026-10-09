@@ -11,7 +11,7 @@ use super::digest::digest;
 use super::proc::{
     CommandChild, ProcessGroup, StartedCommand, job_text, spawn_command, stop_command, wait_shell,
 };
-use super::rewrite::{plan_write_note, sandbox_grant, sandbox_note};
+use super::rewrite::{read_only_note, sandbox_grant, sandbox_note};
 
 const LOG_READ_BYTES: usize = 512 * 1024;
 const COMMAND_LOG_PREFIX: &str = "command-";
@@ -192,7 +192,7 @@ impl ToolRegistry {
                 crate::diff::line_count(&log_path).ok().flatten()
             ),
             shown.text,
-            plan_write_note(read_only, &raw),
+            read_only_note(read_only, &raw),
             sandbox_note(grant.as_ref(), self, &raw)
         );
         keep_log(&log_path, shown.cut);

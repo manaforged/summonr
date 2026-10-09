@@ -75,6 +75,7 @@ fn read_args(words: &[String], pipe: Option<Pipe>) -> Option<ReadArgs> {
         Native::Cat => cat(words, pipe),
         Native::Head => head(words),
         Native::Sed => sed(words),
+        Native::Grep | Native::Rg | Native::Find | Native::Mdfind => None,
     }
 }
 

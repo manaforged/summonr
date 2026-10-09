@@ -203,11 +203,7 @@ impl Picker {
         let rows = rows
             .into_iter()
             .filter(|(name, _)| match parse_command(name) {
-                Some(SlashCommand::PlanAccept | SlashCommand::PlanReject) => {
-                    model.snapshot.pending_plan
-                }
-                Some(SlashCommand::Auto) => model.snapshot.plan,
-                Some(SlashCommand::Plan) => model.prefs.plan_mode,
+                Some(SlashCommand::Auto) => model.snapshot.goal || model.snapshot.work,
                 _ => true,
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))

@@ -65,10 +65,10 @@ impl<P: Provider> Loop<P> {
         success: bool,
         text: String,
     ) -> String {
+        let mut text = crate::secret::shield::scrub(&text, &self.workspace);
         if self.hooks.of(HookEvent::PostTool).is_empty() {
             return text;
         }
-        let mut text = text;
         let (tool, input) = seen(call);
         let payload = json!({
             "event": "post_tool",

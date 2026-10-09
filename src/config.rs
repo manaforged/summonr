@@ -34,7 +34,6 @@ pub(crate) struct File {
     pub layout: Option<String>,
     pub ban_comments: Option<bool>,
     pub ban_tests: Option<bool>,
-    pub plan_mode: Option<bool>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,
@@ -296,9 +295,13 @@ pub(crate) fn home_dir() -> Option<PathBuf> {
 }
 
 pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
+    if matches!(word, "~" | "$HOME" | "${HOME}") {
+        return home_dir();
+    }
     let rest = word
         .strip_prefix("~/")
-        .or_else(|| word.strip_prefix("$HOME/"))?;
+        .or_else(|| word.strip_prefix("$HOME/"))
+        .or_else(|| word.strip_prefix("${HOME}/"))?;
     Some(home_dir()?.join(rest))
 }
 

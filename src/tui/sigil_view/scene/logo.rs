@@ -113,11 +113,8 @@ pub(in crate::tui::sigil_view) fn facts(model: &Model, app: &App) -> Vec<(&'stat
     if app.unseated() {
         facts.push(("setup", "/login · /model · /help".to_string()));
     }
-    if model.snapshot.plan {
-        facts.push(("mode", "plan · read-only".to_string()));
-    }
     if model.snapshot.work {
-        facts.push(("mode", "work · todos and verify".to_string()));
+        facts.push(("mode", "work · steps and verify".to_string()));
     }
     if model.snapshot.strict {
         facts.push(("policy", "strict".to_string()));

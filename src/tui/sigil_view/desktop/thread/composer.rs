@@ -74,7 +74,7 @@ fn tools(app: &App, editing: bool) -> NodeBuilder {
     let mention = app.clone();
     let picker = app.clone();
     let send = app.clone();
-    let mut row = container()
+    container()
         .layout(
             LayoutStyle::flex_row()
                 .fill_width()
@@ -102,42 +102,13 @@ fn tools(app: &App, editing: bool) -> NodeBuilder {
                 .size(ControlSize::Compact)
                 .accessible("Model")
                 .activate(move || picker.begin_model_edit()),
-        );
-    row = row.child(mode(app));
-    row.child(spacer()).child(
-        button("Send")
-            .primary()
-            .size(ControlSize::Compact)
-            .disabled(editing)
-            .activate(move || send.submit()),
-    )
-}
-
-fn mode(app: &App) -> NodeBuilder {
-    let (plan, offered) = {
-        let model = app.model.get();
-        (model.snapshot.plan, model.prefs.plan_mode)
-    };
-    let current = if plan {
-        crate::RunMode::Plan
-    } else {
-        crate::RunMode::Auto
-    };
-    let toggle = app.clone();
-    let chip = button(current.name())
-        .ghost()
-        .size(ControlSize::Compact)
-        .accessible("Mode");
-    let chip = if plan || offered {
-        chip.activate(move || {
-            if plan {
-                toggle.leave_plan();
-            } else {
-                toggle.enter_plan();
-            }
-        })
-    } else {
-        chip.disabled(true)
-    };
-    container().child(chip)
+        )
+        .child(spacer())
+        .child(
+            button("Send")
+                .primary()
+                .size(ControlSize::Compact)
+                .disabled(editing)
+                .activate(move || send.submit()),
+        )
 }

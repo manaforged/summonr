@@ -54,12 +54,12 @@ impl SessionDriver {
             .clone())
     }
 
-    pub(crate) fn needs_scout(&self, plan: bool) -> bool {
+    pub(crate) fn needs_scout(&self) -> bool {
         self.active().is_some_and(|work| {
             work.brief.is_none()
                 && match work.policy {
                     Policy::Steps | Policy::Goal { .. } => true,
-                    Policy::Single => plan,
+                    Policy::Single => false,
                 }
         })
     }
@@ -112,11 +112,9 @@ impl SessionDriver {
             Some(work)
                 if std::mem::discriminant(&work.policy) != std::mem::discriminant(&policy) =>
             {
-                return Err(DriverError::State(if work.policy == Policy::Single {
-                    "a plan is pending; /plan accept runs it, /plan reject drops it".to_string()
-                } else {
-                    "another Work is active; /goal clear or /steps clear ends it".to_string()
-                }));
+                return Err(DriverError::State(
+                    "another Work is active; /goal clear or /steps clear ends it".to_string(),
+                ));
             }
             Some(work) if work.objective != text => {
                 return Err(DriverError::State(
@@ -148,51 +146,20 @@ impl SessionDriver {
         &mut self,
         objective: &str,
         commands: &[String],
-        plan_first: bool,
-    ) -> Result<TurnWork, DriverError> {
-        let created = self.active().is_none();
-        if created && let Some(turn) = self.create_turn_work(objective, commands, plan_first)? {
-            return Ok(turn);
-        }
-        if let Some(turn) = self.sync_turn_checks(commands, plan_first)? {
-            return Ok(turn);
-        }
-        self.advance_turn_work(objective, commands, created)
-    }
-
-    fn create_turn_work(
-        &mut self,
-        objective: &str,
-        commands: &[String],
-        plan_first: bool,
-    ) -> Result<Option<TurnWork>, DriverError> {
-        self.set_work(objective, Policy::Single)?;
-        if plan_first {
+    ) -> Result<(), DriverError> {
+        if self.active().is_none() {
+            self.set_work(objective, Policy::Single)?;
             self.work
                 .as_mut()
                 .ok_or(DriverError::NoWork)?
-                .set_checks(commands)?;
-            self.checkpoint()?;
-            return Ok(Some(TurnWork::NeedsPlan));
+                .select(objective, commands)?;
         }
-        self.work
-            .as_mut()
-            .ok_or(DriverError::NoWork)?
-            .select(objective, commands)?;
-        Ok(None)
+        self.sync_turn_checks(commands)?;
+        self.advance_turn_work(objective, commands)
     }
 
-    fn sync_turn_checks(
-        &mut self,
-        commands: &[String],
-        plan_first: bool,
-    ) -> Result<Option<TurnWork>, DriverError> {
+    fn sync_turn_checks(&mut self, commands: &[String]) -> Result<(), DriverError> {
         let work = self.work.as_mut().ok_or(DriverError::NoWork)?;
-        if plan_first && work.policy == Policy::Single && work.plan.is_none() {
-            work.set_checks(commands)?;
-            self.checkpoint()?;
-            return Ok(Some(TurnWork::NeedsPlan));
-        }
         if work.policy == Policy::Single
             && work
                 .checks
@@ -204,25 +171,21 @@ impl SessionDriver {
             work.select(&plan, commands)?;
             self.checkpoint()?;
         }
-        Ok(None)
+        Ok(())
     }
 
     fn advance_turn_work(
         &mut self,
         objective: &str,
         commands: &[String],
-        created: bool,
-    ) -> Result<TurnWork, DriverError> {
+    ) -> Result<(), DriverError> {
         let work = self.work.as_ref().ok_or(DriverError::NoWork)?;
         match work.stage() {
             Some(Stage::Plan) if work.policy == Policy::Single && work.plan.is_none() => {
                 self.replan_turn_work(objective, commands)
             }
-            Some(Stage::Plan) => {
-                self.execute()?;
-                Ok(TurnWork::Ready { accepted: !created })
-            }
-            Some(Stage::Execute) => Ok(TurnWork::Ready { accepted: false }),
+            Some(Stage::Plan) => self.execute(),
+            Some(Stage::Execute) => Ok(()),
             Some(Stage::Verify | Stage::Review) => Err(DriverError::State(
                 "Work is still in Verify after an interrupted turn".to_string(),
             )),
@@ -234,7 +197,7 @@ impl SessionDriver {
         &mut self,
         objective: &str,
         commands: &[String],
-    ) -> Result<TurnWork, DriverError> {
+    ) -> Result<(), DriverError> {
         if let Some(work) = self.work.as_mut() {
             work.abandon("the plan turn selected no plan");
         }
@@ -243,8 +206,7 @@ impl SessionDriver {
             .as_mut()
             .ok_or(DriverError::NoWork)?
             .select(objective, commands)?;
-        self.execute()?;
-        Ok(TurnWork::Ready { accepted: false })
+        self.execute()
     }
 
     pub(crate) fn record_check(&mut self, passed: bool) -> Result<(), DriverError> {

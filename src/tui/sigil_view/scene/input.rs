@@ -172,9 +172,7 @@ pub(in crate::tui::sigil_view) fn prompt(
     ticks: u64,
 ) {
     let [x, y, width] = area;
-    let (mode, glyph, mode_color) = if model.snapshot.plan {
-        ("plan", '◇', palette().cyan)
-    } else if model.snapshot.work {
+    let (mode, glyph, mode_color) = if model.snapshot.work {
         ("work", '▣', palette().yellow)
     } else if model.snapshot.goal {
         ("goal", '◎', palette().red)

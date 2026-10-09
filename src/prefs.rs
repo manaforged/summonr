@@ -143,7 +143,6 @@ pub struct Prefs {
     pub(crate) mail: bool,
     pub(crate) ban_comments: bool,
     pub(crate) ban_tests: bool,
-    pub(crate) plan_mode: bool,
     pub(crate) layout: String,
     pub(crate) hotkeys: Hotkeys,
 }
@@ -164,7 +163,6 @@ impl Default for Prefs {
             mail: true,
             ban_comments: false,
             ban_tests: false,
-            plan_mode: true,
             hotkeys: Hotkeys::default(),
             layout: "chat".to_string(),
         }
@@ -196,7 +194,6 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         mail: file.mail.unwrap_or(base.mail),
         ban_comments: file.ban_comments.unwrap_or(base.ban_comments),
         ban_tests: file.ban_tests.unwrap_or(base.ban_tests),
-        plan_mode: file.plan_mode.unwrap_or(base.plan_mode),
     })
 }
 

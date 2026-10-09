@@ -196,35 +196,33 @@ pub(crate) fn a_sandboxed_command_cannot_write_outside_roots_without_approval() 
 
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub(crate) fn a_no_network_session_does_not_enable_shell_networking() {
-    for mode in ["--sandbox", "--plan"] {
-        let session = Session::new();
-        let listener =
-            std::net::TcpListener::bind("127.0.0.1:0").expect("bind the test network destination");
-        listener
-            .set_nonblocking(true)
-            .expect("inspect pending connections");
-        let port = listener.local_addr().expect("read listener address").port();
-        let command = format!(
-            "curl --noproxy '*' --connect-timeout 1 --max-time 1 --silent --show-error http://127.0.0.1:{port}/proof"
-        );
-        let model = Model::start(vec![
-            Step::Call("run_command", json!({"command": command})),
-            Step::Text("done"),
-        ]);
+    let session = Session::new();
+    let listener =
+        std::net::TcpListener::bind("127.0.0.1:0").expect("bind the test network destination");
+    listener
+        .set_nonblocking(true)
+        .expect("inspect pending connections");
+    let port = listener.local_addr().expect("read listener address").port();
+    let command = format!(
+        "curl --noproxy '*' --connect-timeout 1 --max-time 1 --silent --show-error http://127.0.0.1:{port}/proof"
+    );
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": command})),
+        Step::Text("done"),
+    ]);
 
-        let outcome = session.run(&model, "", &[mode, "--no-net", "--no-verify"]);
+    let outcome = session.run(&model, "", &["--sandbox", "--no-net", "--no-verify"]);
 
-        assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
-        assert!(
-            matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
-            "{mode} enabled shell networking despite --no-net"
-        );
-        assert_eq!(
-            model.tool_results().len(),
-            1,
-            "the command reached the tool boundary"
-        );
-    }
+    assert_eq!(outcome.code, Some(0), "{}", outcome.stdout);
+    assert!(
+        matches!(listener.accept(), Err(error) if error.kind() == std::io::ErrorKind::WouldBlock),
+        "--sandbox enabled shell networking despite --no-net"
+    );
+    assert_eq!(
+        model.tool_results().len(),
+        1,
+        "the command reached the tool boundary"
+    );
 }
 
 fn project(session: &Session) {
@@ -248,7 +246,7 @@ pub(crate) fn a_relocated_summonr_home_stays_protected_from_read_and_search() {
         ),
         Step::Text("done"),
     ]);
-    session.run(&model, "", &["--plan", "--no-verify"]);
+    session.run(&model, "", &["--sandbox", "--no-verify"]);
     let results = model.tool_results();
     assert!(results[0].contains("protected path"), "{results:?}");
     assert!(!results[1].contains("config.toml"), "{results:?}");

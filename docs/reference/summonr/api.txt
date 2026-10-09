@@ -332,7 +332,6 @@ pub mod summonr::splash
 pub struct summonr::splash::Splash<'a>
 pub summonr::splash::Splash::history: usize
 pub summonr::splash::Splash::model: &'a str
-pub summonr::splash::Splash::plan: bool
 pub summonr::splash::Splash::relay: core::option::Option<&'a str>
 pub summonr::splash::Splash::resumed: bool
 pub summonr::splash::Splash::session: &'a str
@@ -407,7 +406,6 @@ pub summonr::tui::Info::endpoint: alloc::string::String
 pub summonr::tui::Info::inline: bool
 pub summonr::tui::Info::model: alloc::string::String
 pub summonr::tui::Info::pick: core::option::Option<summonr::Pick>
-pub summonr::tui::Info::plan: bool
 pub summonr::tui::Info::prefs: summonr::prefs::Prefs
 pub summonr::tui::Info::relay: core::option::Option<alloc::string::String>
 pub summonr::tui::Info::session: alloc::string::String
@@ -770,7 +768,6 @@ impl core::marker::StructuralPartialEq for summonr::ProviderFailureKind
 pub enum summonr::RunMode
 pub summonr::RunMode::Auto
 pub summonr::RunMode::Goal
-pub summonr::RunMode::Plan
 pub summonr::RunMode::Work
 impl summonr::RunMode
 pub fn summonr::RunMode::name(self) -> &'static str
@@ -803,9 +800,6 @@ pub summonr::SlashCommand::Name
 pub summonr::SlashCommand::New
 pub summonr::SlashCommand::Pane
 pub summonr::SlashCommand::Permissions
-pub summonr::SlashCommand::Plan
-pub summonr::SlashCommand::PlanAccept
-pub summonr::SlashCommand::PlanReject
 pub summonr::SlashCommand::Resume
 pub summonr::SlashCommand::Retry
 pub summonr::SlashCommand::Search
@@ -863,6 +857,7 @@ pub fn summonr::AuthInfo::catalog_heading(&self) -> &'static str
 pub fn summonr::AuthInfo::catalog_line(&self, name: usize, state: usize) -> alloc::string::String
 pub fn summonr::AuthInfo::catalog_rank(&self) -> u8
 pub fn summonr::AuthInfo::catalog_title(&self) -> &'static str
+pub fn summonr::AuthInfo::display_name(&self) -> alloc::string::String
 pub fn summonr::AuthInfo::dual(&self) -> bool
 pub fn summonr::AuthInfo::keyless(&self) -> bool
 pub fn summonr::AuthInfo::plan(&self) -> bool
@@ -957,7 +952,6 @@ pub fn summonr::Loop<P>::set_images(&mut self, model_images: bool, vision: core:
 pub fn summonr::Loop<P>::set_modules(&mut self, switches: &summonr::modules::Switches)
 pub fn summonr::Loop<P>::verify_commands(&self) -> &[alloc::string::String]
 pub fn summonr::Loop<P>::with_interactive(self) -> Self
-pub fn summonr::Loop<P>::with_plan(self) -> Self
 pub fn summonr::Loop<P>::with_sandbox(self, network: summonr::Network) -> summonr::Result<Self>
 pub fn summonr::Loop<P>::with_strict(self) -> Self
 pub fn summonr::Loop<P>::with_unrestricted_commands(self) -> Self
@@ -1150,6 +1144,7 @@ impl core::fmt::Display for summonr::WorkProgress
 impl core::marker::StructuralPartialEq for summonr::WorkProgress
 impl serde_core::ser::Serialize for summonr::WorkProgress
 impl<'de> serde_core::de::Deserialize<'de> for summonr::WorkProgress
+pub const summonr::INDEX_ENTRY: &str
 pub async fn summonr::add_endpoint(name: &str, url: core::option::Option<&str>, model: core::option::Option<&str>, default: bool) -> summonr::Result<alloc::string::String>
 pub fn summonr::add_worktree(cwd: &std::path::Path) -> summonr::Result<summonr::Tree>
 pub fn summonr::adopt_keys() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
@@ -1172,6 +1167,7 @@ pub fn summonr::export_session(path: &std::path::Path) -> summonr::Result<alloc:
 pub fn summonr::finish_worktree(tree: &summonr::Tree, objective: &str, paths: &[alloc::string::String]) -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::goal_prompt(objective: &str, gates: &[alloc::string::String], round: u32) -> alloc::string::String
 pub fn summonr::in_git(path: &std::path::Path) -> bool
+pub fn summonr::index_files(root: &std::path::Path) -> i32
 pub fn summonr::install_plugin(src: &std::path::Path) -> summonr::Result<alloc::string::String>
 pub fn summonr::is_endpoint(token: &str) -> bool
 pub fn summonr::last_for(workspace: &std::path::Path) -> summonr::Result<core::option::Option<summonr::session::SessionInfo>>

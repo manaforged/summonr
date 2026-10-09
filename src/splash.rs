@@ -9,7 +9,6 @@ pub struct Splash<'a> {
     pub resumed: bool,
     pub history: usize,
     pub workspace: &'a Path,
-    pub plan: bool,
     pub strict: bool,
     pub trust: bool,
 }
@@ -97,9 +96,6 @@ impl Splash<'_> {
             rows.push(("history", format!("{} messages", self.history)));
         }
         rows.push(("workdir", crate::config::tilde(self.workspace)));
-        if self.plan {
-            rows.push(("mode", "plan · read-only".to_string()));
-        }
         if self.strict {
             rows.push(("policy", "strict".to_string()));
         }

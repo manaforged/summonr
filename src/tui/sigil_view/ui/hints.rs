@@ -13,7 +13,6 @@ pub(in crate::tui) enum Key {
     Esc,
     Tab,
     UpDown,
-    LeftRight,
     Hotkey(Hotkey),
     Fixed(&'static str),
 }
@@ -26,7 +25,6 @@ impl Key {
             Self::Esc => "esc".to_string(),
             Self::Tab => "tab".to_string(),
             Self::UpDown => "↑↓".to_string(),
-            Self::LeftRight => "←→".to_string(),
             Self::Hotkey(action) => keys.label(action),
             Self::Fixed(chord) => chord.to_string(),
         }

@@ -171,9 +171,6 @@ fn configure(
     for dir in &args.add_dir {
         loop_.allow_path(dir)?;
     }
-    if args.plan {
-        loop_ = loop_.with_plan();
-    }
     if args.strict {
         loop_ = loop_.with_strict();
     }
@@ -193,7 +190,7 @@ fn configure(
 }
 
 fn contain(loop_: Loop<Client>, args: &Args) -> Result<Loop<Client>> {
-    if args.plan || args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
+    if args.sandbox.map_or_else(summonr::sandbox_on, Ok)? {
         return loop_.with_sandbox(summonr::Network::allowed(args.network));
     }
     if !args.network {

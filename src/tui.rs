@@ -152,7 +152,6 @@ enum Cmd {
     Steer(UserInput),
     Queue(UserInput),
     Send(Vec<String>, String),
-    SetRunMode(crate::RunMode),
     SetEffort(Option<crate::provider::Effort>),
     SetVerify(bool),
     SetEndpoint(String),
@@ -228,12 +227,10 @@ impl Round {
 pub(crate) struct Snapshot {
     pub model: String,
     pub relay: Option<String>,
-    pub plan: bool,
     pub work: bool,
     pub goal: bool,
     pub effort: Option<crate::provider::Effort>,
     pub levels: Vec<crate::provider::Effort>,
-    pub pending_plan: bool,
     pub verify: Option<String>,
     pub strict: bool,
     pub endpoint: String,
@@ -254,9 +251,7 @@ impl Snapshot {
 
     #[must_use]
     pub(crate) fn mode_name(&self) -> &'static str {
-        if self.plan {
-            crate::RunMode::Plan.name()
-        } else if self.work {
+        if self.work {
             crate::RunMode::Work.name()
         } else if self.goal {
             crate::RunMode::Goal.name()
@@ -277,7 +272,6 @@ pub struct Info {
     pub prefs: Prefs,
     pub splash: bool,
     pub inline: bool,
-    pub plan: bool,
     pub strict: bool,
     pub workspace: String,
     pub workflow: Option<crate::workflow::Workflow>,
@@ -319,14 +313,13 @@ pub(crate) fn tool_arg(arguments: &str) -> String {
         return String::new();
     };
     let field = |name: &str| value.get(name).and_then(serde_json::Value::as_str);
-    if let Some(pattern) = field("pattern").or_else(|| field("glob")) {
-        let scope = field("glob")
-            .filter(|glob| *glob != pattern)
-            .or_else(|| field("path"))
-            .unwrap_or("");
-        return format!("search \"{pattern}\" {scope}")
-            .trim_end()
-            .to_string();
+    if field("pattern").is_some() || field("glob").is_some() {
+        let parts = [
+            field("pattern").map(|pattern| format!("\"{pattern}\"")),
+            field("glob").map(str::to_string),
+            field("path").map(|path| format!("in {path}")),
+        ];
+        return parts.into_iter().flatten().collect::<Vec<_>>().join(" ");
     }
     let paths = value
         .get("paths")

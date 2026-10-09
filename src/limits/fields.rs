@@ -50,6 +50,8 @@ table! {
     model_probe_secs: u64,
     web_search_secs: u64,
     search_secs: u64,
+    search_index_secs: u64,
+    search_index_after_ms: u64,
     web_connect_secs: u64,
     web_fetch_secs: u64,
     web_body_bytes: usize,

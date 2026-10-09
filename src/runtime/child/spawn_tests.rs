@@ -76,21 +76,12 @@ fn implement() -> super::Args {
 async fn a_child_of_a_goal_session_works_in_plain_mode_and_finishes_its_turn() {
     let (mut parent, _dirs) = parent(vec![Reply::Text("done")]);
     parent.select_goal("ship it", &[]).unwrap();
-    parent.set_mode(crate::RunMode::Goal).unwrap();
+    parent.set_mode(crate::RunMode::Goal);
     let budget = parent.task_budget(1).unwrap();
     let mut run = parent.task_start_in(implement(), &budget, None).unwrap();
     assert_eq!(run.child.mode(), crate::RunMode::Auto);
     let assignment = run.assignment.clone();
     run.child.turn(&assignment).await.unwrap();
-}
-
-#[tokio::test]
-async fn a_child_of_a_plan_session_cannot_write() {
-    let (parent, _dirs) = parent(Vec::new());
-    let mut parent = parent.with_plan();
-    let budget = parent.task_budget(1).unwrap();
-    let run = parent.task_start_in(implement(), &budget, None).unwrap();
-    assert!(run.child.tools.is_read_only());
 }
 
 #[test]

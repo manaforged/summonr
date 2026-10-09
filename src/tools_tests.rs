@@ -11,6 +11,10 @@ mod edit;
 mod read;
 #[path = "tools_tests/search.rs"]
 mod search;
+#[path = "tools_tests/search_power.rs"]
+mod search_power;
+#[path = "tools_tests/shell_search.rs"]
+mod shell_search;
 
 #[test]
 fn empty_run_command_arguments_are_a_tool_error() {
@@ -81,12 +85,16 @@ fn outcome(tools: &ToolRegistry, command: &str) -> String {
 }
 
 fn outcome_with(tools: &ToolRegistry, arguments: serde_json::Value) -> String {
+    outcome_of(tools, "run_command", arguments)
+}
+
+fn outcome_of(tools: &ToolRegistry, name: &str, arguments: serde_json::Value) -> String {
     let call = ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
             checked: Default::default(),
-            name: "run_command".to_string(),
+            name: name.to_string(),
             arguments: arguments.to_string(),
         },
         continuation: None,
@@ -112,7 +120,7 @@ fn names(tools: &ToolRegistry) -> Vec<String> {
 }
 
 #[test]
-fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
+fn a_read_only_session_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
     let (_dir, mut tools) = workspace(&[("a.txt", "one\n")]);
     let open = names(&tools);
     tools.set_read_only(true);
@@ -136,7 +144,7 @@ fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
         Ok(output) => output.text,
         Err(error) => error.to_string(),
     };
-    assert!(text.contains("plan mode does not edit files"), "{text}");
+    assert!(text.contains("this session is read-only"), "{text}");
 }
 
 #[tokio::test]

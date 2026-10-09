@@ -66,9 +66,6 @@ impl Model {
             format!(" session  {}", crate::session::short(&self.session)),
             format!(" workdir  {}", info.workspace),
         ];
-        if self.snapshot.plan {
-            rows.push("    mode  plan · read-only".to_string());
-        }
         if self.snapshot.strict {
             rows.push("  policy  strict".to_string());
         }

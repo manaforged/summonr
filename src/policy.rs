@@ -7,7 +7,7 @@ use crate::error::{Error, Result};
 mod ask;
 mod danger;
 mod protected;
-pub(crate) use protected::workspace_control;
+pub(crate) use protected::{holds_protected, protected_read, workspace_control};
 mod walk;
 
 pub(crate) use walk::shell_words;
@@ -239,7 +239,7 @@ impl Policy {
     pub(crate) fn tool(&self, alias: &str, readonly: bool) -> Result<()> {
         if self.read_only && !readonly {
             return Err(Error::Denied(format!(
-                "`{alias}` can change state and is unavailable in plan mode"
+                "`{alias}` can change state and is unavailable in a read-only session"
             )));
         }
         if self.unrestricted {
@@ -270,8 +270,8 @@ impl Policy {
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
-                "plan mode does not edit files. Return the plan in your reply. \
-                 Switch to auto mode before editing files."
+                "this session is read-only and does not edit files. \
+                 Report the change in your reply."
                     .to_string(),
             ));
         }
@@ -338,26 +338,6 @@ pub(crate) fn protected_write(path: &Path) -> bool {
     [".ssh", ".gnupg", ".summonr"]
         .into_iter()
         .any(|dir| path.starts_with(home.join(dir)))
-}
-
-pub(crate) fn protected_read(path: &Path) -> bool {
-    if let Some(name) = path.file_name().and_then(|name| name.to_str())
-        && (name == ".env"
-            || name.starts_with(".env.")
-            || name == "credentials"
-            || name == ".netrc"
-            || (name.starts_with("credentials.") && crate::secret::is_store(path)))
-    {
-        return true;
-    }
-    let home = crate::config::home_dir();
-    [".ssh", ".gnupg", ".aws", ".summonr"]
-        .into_iter()
-        .filter_map(|dir| home.as_ref().map(|home| home.join(dir)))
-        .chain(crate::prompt::summonr_home())
-        .any(|dir| {
-            path.starts_with(&dir) || dir.canonicalize().is_ok_and(|real| path.starts_with(real))
-        })
 }
 
 mod blocks;

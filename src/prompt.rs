@@ -106,8 +106,7 @@ pub(crate) fn harness_section(harness: &Harness<'_>) -> String {
     } = harness;
     let mut parts = vec![
         match mode {
-            crate::RunMode::Plan => "Harness state: plan mode. Read-only. Inspect, then propose diffs in the answer. End with the plan; do not ask for permission to apply it. The user accepts with /plan accept or a short reply.",
-            crate::RunMode::Work => "Harness state: work mode. Execute the accepted plan.",
+            crate::RunMode::Work => "Harness state: work mode. Execute the selected steps in order.",
             crate::RunMode::Goal => "Harness state: goal mode. The turn loop runs until the objective is met; a failed check starts another turn.",
             crate::RunMode::Auto => "Harness state: auto mode.",
         }

@@ -2,6 +2,9 @@ use crate::provider::ToolDefinition;
 
 use super::{ToolRegistry, tool};
 
+mod search;
+use search::search;
+
 impl ToolRegistry {
     pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
         let (lsp_on, skill_on) = *self.probed.get_or_init(|| {
@@ -170,37 +173,6 @@ fn read() -> ToolDefinition {
                 "recursive": {"type": "boolean"},
                 "depth": {"type": "integer", "minimum": 1},
                 "op": {"type": "string", "enum": ["file", "list", "image", "help"]}
-            },
-            "additionalProperties": false
-        }),
-    )
-}
-
-fn search() -> ToolDefinition {
-    tool(
-        "search",
-        "Search file contents or find files by name, anywhere on disk. pattern is a regex over contents; glob alone finds files by name (*refract*). path or paths[] picks where (default the workspace; ~ works). A lowercase pattern or glob ignores case. Skips ignored and build dirs, binaries, and files over 1 MiB. files true lists matching files, count counts, context adds lines, depth limits how deep. Hits are path:N:col:line; tags true prints path:N:hash|line for edit.",
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "pattern": {"type": "string"},
-                "glob": {"type": "string"},
-                "path": {"type": "string"},
-                "paths": {"type": "array", "items": {"type": "string"}},
-                "exclude": {"type": "string"},
-                "type": {"type": "string"},
-                "files": {"type": "boolean"},
-                "count": {"type": "boolean"},
-                "context": {"type": "integer", "minimum": 0, "maximum": 10},
-                "before": {"type": "integer", "minimum": 0, "maximum": 10},
-                "after": {"type": "integer", "minimum": 0, "maximum": 10},
-                "depth": {"type": "integer", "minimum": 1},
-                "literal": {"type": "boolean"},
-                "case_sensitive": {"type": "boolean"},
-                "multiline": {"type": "boolean"},
-                "no_ignore": {"type": "boolean"},
-                "tags": {"type": "boolean"},
-                "limit": {"type": "integer", "minimum": 1}
             },
             "additionalProperties": false
         }),

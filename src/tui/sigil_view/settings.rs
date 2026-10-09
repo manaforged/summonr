@@ -16,7 +16,6 @@ pub(super) use workflow::{keys as workflow_keys, layer as workflow_layer};
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum Setting {
     Mode,
-    PlanMode,
     Verify,
     Workflow,
     Endpoint,
@@ -47,10 +46,8 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     let model = app.model.get();
     let snapshot = &model.snapshot;
     let prefs = &model.prefs;
-    let mode = if snapshot.plan {
-        "plan · read-only"
-    } else if snapshot.work {
-        "work · execute the plan"
+    let mode = if snapshot.work {
+        "work · run the steps"
     } else if snapshot.goal {
         "goal · loop until met"
     } else {
@@ -58,17 +55,6 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
     };
     let mut rows = vec![
         ("session", Setting::Mode, "mode", mode.to_string()),
-        (
-            "session",
-            Setting::PlanMode,
-            "plan mode",
-            if prefs.plan_mode {
-                "on · /plan enters plan"
-            } else {
-                "off"
-            }
-            .to_string(),
-        ),
         (
             "session",
             Setting::Verify,

@@ -7,7 +7,7 @@ use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContex
 
 use crate::hashline::line_hash;
 
-use super::walk::{Report, Shared};
+use super::walk::Shared;
 use super::{GREP_FILE_HITS, GREP_FILE_MAX, GREP_LINE_MAX, Mode, Query, relative};
 
 pub(super) enum Row {
@@ -47,15 +47,24 @@ impl Sink for Collect<'_> {
             return Ok(false);
         }
         self.matches += 1;
-        let line = hit_line(hit.bytes());
         let number = hit.line_number().unwrap_or(0);
-        let hit = if self.tags {
-            format!("{}:{number}:{}|{line}", self.rel, line_hash(&line))
-        } else {
-            let column = match_column(self.matcher, hit.bytes());
-            format!("{}:{number}:{column}:{line}", self.rel)
-        };
-        self.out.push(Row::Hit(hit));
+        if self.tags {
+            for (at, raw) in (number..).zip(hit.lines()) {
+                let raw = String::from_utf8_lossy(raw);
+                let raw = raw.trim_end_matches(['\n', '\r']);
+                self.out.push(Row::Hit(format!(
+                    "{}:{at}:{}|{}",
+                    self.rel,
+                    line_hash(raw),
+                    hit_line(raw)
+                )));
+            }
+            return Ok(true);
+        }
+        let column = match_column(self.matcher, hit.bytes());
+        let line = hit_line(&String::from_utf8_lossy(hit.bytes()));
+        self.out
+            .push(Row::Hit(format!("{}:{number}:{column}:{line}", self.rel)));
         Ok(true)
     }
 
@@ -67,7 +76,7 @@ impl Sink for Collect<'_> {
             "{}-{}-{}",
             self.rel,
             ctx.line_number().unwrap_or(0),
-            hit_line(ctx.bytes())
+            hit_line(&String::from_utf8_lossy(ctx.bytes()))
         )));
         Ok(true)
     }
@@ -90,7 +99,7 @@ impl Sink for Collect<'_> {
 
 #[derive(Default)]
 pub(super) struct Hits {
-    rows: Vec<Row>,
+    pub(super) rows: Vec<Row>,
     pub(super) matches: usize,
     pub(super) over: bool,
 }
@@ -99,13 +108,6 @@ pub(super) struct Found {
     pub(super) path: PathBuf,
     pub(super) modified: u64,
     pub(super) hits: Hits,
-}
-
-#[derive(Default)]
-struct Tally {
-    hits: Vec<String>,
-    matches: usize,
-    truncated: bool,
 }
 
 pub(super) fn searcher(query: &Query) -> Searcher {
@@ -173,153 +175,6 @@ fn open(path: &Path) -> io::Result<std::fs::File> {
     std::fs::File::open(path)
 }
 
-pub(super) fn render(query: &Query, mut report: Report) -> String {
-    if query.matcher.is_none() {
-        return file_list(query, &report);
-    }
-    let mut tally = Tally::default();
-    let mut seen = 0;
-    for found in std::mem::take(&mut report.found) {
-        if tally.matches >= query.limit {
-            tally.truncated = true;
-            break;
-        }
-        seen += 1;
-        let rel = relative(&query.shown, &found.path);
-        match query.mode {
-            Mode::Files => {
-                tally.hits.push(rel);
-                tally.matches += 1;
-            }
-            Mode::Count => {
-                tally.hits.push(format!("{rel}:{}", found.hits.matches));
-                tally.matches += 1;
-            }
-            Mode::Content => drain(found.hits.rows, query.limit, &mut tally),
-        }
-    }
-    tally.truncated |= seen < report.files;
-    header(query, &report, &tally)
-}
-
-fn header(query: &Query, report: &Report, tally: &Tally) -> String {
-    let pattern = &query.pattern;
-    if tally.hits.is_empty() {
-        let mut out = format!(
-            "no matches for `{pattern}` ({} files searched",
-            report.searched
-        );
-        if report.skipped > 0 {
-            out.push_str(&format!(
-                ", {} skipped as binary, over 1 MiB, or unreadable",
-                report.skipped
-            ));
-        }
-        out.push(')');
-        out.push_str(&stopped_note(report.stopped));
-        return out;
-    }
-    let mut out = match query.mode {
-        Mode::Files => format!(
-            "{} with `{pattern}` ({} searched)",
-            crate::text::plural(report.files, "file"),
-            report.searched
-        ),
-        Mode::Count => format!(
-            "{} in {} ({} searched)",
-            crate::text::plural(report.match_total, "match"),
-            crate::text::plural(report.files, "file"),
-            report.searched
-        ),
-        Mode::Content => format!(
-            "{} for `{pattern}` ({} files searched)",
-            crate::text::plural(tally.matches, "match"),
-            report.searched
-        ),
-    };
-    if tally.truncated {
-        out.push_str(&format!(
-            "; limit {} reached: narrow with path, glob, or a more specific pattern",
-            query.limit
-        ));
-    }
-    if report.capped > 0 {
-        out.push_str(&format!(
-            "; {} had more than {GREP_FILE_HITS} matching lines",
-            crate::text::plural(report.capped, "file"),
-        ));
-    }
-    if report.skipped > 0 {
-        out.push_str(&format!(
-            "; {} files skipped as binary, over 1 MiB, or unreadable",
-            report.skipped
-        ));
-    }
-    out.push_str(&stopped_note(report.stopped));
-    for hit in &tally.hits {
-        out.push('\n');
-        out.push_str(hit);
-    }
-    out
-}
-
-fn file_list(query: &Query, report: &Report) -> String {
-    if report.found.is_empty() {
-        return format!("no files match{}", stopped_note(report.stopped));
-    }
-    let shown = report.found.len().min(query.limit);
-    let mut out = format!("{} files", report.files);
-    if report.files > shown {
-        out.push_str(&format!("; showing {shown} most recently modified"));
-    }
-    out.push_str(&stopped_note(report.stopped));
-    for found in report.found.iter().take(shown) {
-        out.push('\n');
-        out.push_str(&relative(&query.shown, &found.path));
-    }
-    out
-}
-
-fn stopped_note(stopped: bool) -> String {
-    if !stopped {
-        return String::new();
-    }
-    format!(
-        "; stopped after {}s: narrow path, glob, or depth for the rest",
-        crate::limits::limits().search_secs
-    )
-}
-
-fn drain(rows: Vec<Row>, limit: usize, tally: &mut Tally) {
-    let mut pending_break = false;
-    for row in rows {
-        match row {
-            Row::Break => {
-                pending_break = !tally.hits.is_empty();
-            }
-            Row::Ctx(line) => {
-                if pending_break {
-                    tally.hits.push("--".to_string());
-                    pending_break = false;
-                }
-                tally.hits.push(line);
-            }
-            Row::Hit(line) => {
-                if tally.matches >= limit {
-                    tally.truncated = true;
-                    break;
-                }
-                tally.matches += 1;
-                if pending_break {
-                    tally.hits.push("--".to_string());
-                    pending_break = false;
-                }
-                tally.hits.push(line);
-            }
-        }
-    }
-}
-
 fn match_column(matcher: &RegexMatcher, bytes: &[u8]) -> usize {
     let line = bytes
         .strip_suffix(b"\n")
@@ -334,8 +189,7 @@ fn match_column(matcher: &RegexMatcher, bytes: &[u8]) -> usize {
         + 1
 }
 
-fn hit_line(bytes: &[u8]) -> String {
-    let line = String::from_utf8_lossy(bytes);
+fn hit_line(line: &str) -> String {
     let line = line.trim_end_matches(['\n', '\r']);
     if line.len() <= GREP_LINE_MAX {
         return line.to_string();

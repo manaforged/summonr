@@ -104,17 +104,15 @@ fn rule() -> NodeBuilder {
 type ModeText = (String, u8);
 
 fn mode_text(model: &Model) -> ModeText {
-    let class: usize = if model.snapshot.plan {
+    let class: usize = if model.snapshot.work {
         0
-    } else if model.snapshot.work {
-        1
     } else if model.snapshot.goal {
-        2
+        1
     } else {
-        3
+        2
     };
     let mode = model.snapshot.mode_name();
-    let glyph = ["◇", "▣", "◎", "●"][class];
+    let glyph = ["▣", "◎", "●"][class];
     (format!("{glyph} {mode}"), class as u8)
 }
 
@@ -211,12 +209,8 @@ fn mode_label(mode: ModeText) -> NodeBuilder {
     let title = if class == 0 {
         title
             .font_size(12.0)
-            .text_color(sigil::prelude::Token::Accent)
-    } else if class == 1 {
-        title
-            .font_size(12.0)
             .text_color(sigil::prelude::Token::Warn11)
-    } else if class == 2 {
+    } else if class == 1 {
         title
             .font_size(12.0)
             .text_color(sigil::prelude::Token::Error11)

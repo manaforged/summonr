@@ -195,7 +195,6 @@ async fn dispatch(
         resumed: args.resume || args.session.is_some() || args.fork,
         history: loop_.history_len(),
         workspace: &workspace,
-        plan: args.plan,
         strict: args.strict,
         trust: args.trust,
     };
@@ -221,7 +220,6 @@ async fn dispatch(
             prefs,
             splash,
             inline: args.inline,
-            plan: args.plan,
             strict: args.strict,
             workspace: summonr::tilde(&workspace),
             workflow,

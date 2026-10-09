@@ -16,6 +16,10 @@ mod plugins;
 mod policy;
 #[path = "mcp/protocol.rs"]
 mod protocol;
+#[path = "mcp/search_index.rs"]
+mod search_index;
+#[path = "mcp/secrets.rs"]
+mod secrets;
 #[path = "mcp/session.rs"]
 mod session;
 mod support;
@@ -77,7 +81,7 @@ fn main() {
         #[cfg(unix)]
         plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         #[cfg(unix)]
-        plugins::a_claude_glob_matcher_runs_for_search,
+        plugins::a_claude_hook_sees_a_name_search_as_glob_and_a_content_search_as_grep,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -110,6 +114,10 @@ fn main() {
         policy::a_no_network_session_does_not_enable_shell_networking,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
+        #[cfg(unix)]
+        secrets::secret_values_never_reach_the_model_but_commands_still_load_them,
+        #[cfg(unix)]
+        search_index::a_name_search_outside_the_workspace_answers_from_the_index_and_checks_the_disk,
         protocol::the_client_offers_the_current_spec_with_roots,
         protocol::a_server_on_an_unknown_version_is_refused,
         protocol::the_server_can_ask_for_the_workspace_roots,

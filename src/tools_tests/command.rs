@@ -254,3 +254,29 @@ fn a_protected_read_is_refused_from_any_working_directory() {
         assert!(refused.contains("protected path"), "{command}: {refused}");
     }
 }
+
+#[test]
+fn a_content_search_over_a_folder_holding_a_protected_path_is_refused() {
+    let (_dir, tools) = workspace(&[("notes.txt", "needle\n")]);
+    for (command, workdir) in [
+        ("grep -r CANARY ~", None),
+        ("grep -r CANARY \"$HOME\"", None),
+        ("rg CANARY ~/", None),
+        ("ag CANARY ~", None),
+        ("grep -r CANARY /", None),
+        ("grep -r CANARY .", Some("~")),
+        ("cd && grep -r CANARY .", None),
+        ("cp -r ~ copied", None),
+    ] {
+        let mut arguments = serde_json::json!({ "command": command });
+        if let Some(workdir) = workdir {
+            arguments["workdir"] = serde_json::Value::from(workdir);
+        }
+        let refused = outcome_with(&tools, arguments);
+        assert!(refused.contains("protected path"), "{command}: {refused}");
+    }
+    for command in ["find ~ -maxdepth 0 -name x", "grep -r needle ."] {
+        let ran = outcome_with(&tools, serde_json::json!({ "command": command }));
+        assert!(!ran.contains("protected path"), "{command}: {ran}");
+    }
+}

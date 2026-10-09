@@ -120,7 +120,6 @@ impl SessionDriver {
             Purpose::Judge => charge("goal judge"),
             Purpose::Review => charge("review"),
             Purpose::Scout => charge("scout"),
-            Purpose::Plan => charge("plan"),
         };
         self.append(line)
     }

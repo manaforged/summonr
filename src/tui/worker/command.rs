@@ -8,9 +8,9 @@ use super::{Cmd, Msg, Worker};
 
 mod flow;
 mod network;
-mod plan;
 mod session;
 mod shell;
+mod work;
 use crate::command::argument;
 use crate::durable::log::{self, Line};
 use crate::provider::UserInput;

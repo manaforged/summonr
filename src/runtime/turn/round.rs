@@ -122,27 +122,8 @@ impl<P: Provider> Loop<P> {
     ) -> Result<Arc<super::mail::Advertised>> {
         self.settle_mcp(events, emit).await?;
         let tools = self.advertised_tools();
-        self.accept_note(events, emit)?;
-        self.plan_first(messages, usage, events, emit).await?;
         self.scout(messages, usage, events, emit).await?;
         Ok(tools)
-    }
-
-    fn accept_note(
-        &mut self,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        if !std::mem::take(&mut self.accepted) {
-            return Ok(());
-        }
-        self.push_event(
-            events,
-            emit,
-            Event::Note {
-                text: "plan accepted; starting implementation".to_string(),
-            },
-        )
     }
 
     async fn open_round(
@@ -191,57 +172,6 @@ impl<P: Provider> Loop<P> {
         )
     }
 
-    pub(super) async fn plan_first(
-        &mut self,
-        messages: &mut Vec<Message>,
-        usage: &mut Usage,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        if self.is_plan() || !self.plan_first || !self.session.needs_turn_plan() {
-            return Ok(());
-        }
-        let objective = self.session.objective().map_err(super::session_err)?;
-        let before = usage.clone();
-        self.tools.set_read_only(true);
-        let drafted = plan::draft(self, &objective, usage).await;
-        self.tools.set_read_only(self.is_plan());
-        self.seat_usage(workflow::Role::Plan, &before, usage, events, emit)?;
-        let commands = self.verify.clone().unwrap_or_default();
-        match drafted {
-            Ok(text) => {
-                self.session
-                    .select_plan(&text, &commands)
-                    .map_err(super::session_err)?;
-                self.inject(plan::note(&text), messages)?;
-                self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: plan::note(&text),
-                    },
-                )?;
-            }
-            Err(error) => {
-                self.session
-                    .begin_without_plan(&commands)
-                    .map_err(super::session_err)?;
-                self.push_event(
-                    events,
-                    emit,
-                    Event::Note {
-                        text: format!(
-                            "planning unavailable; executing without a written plan: {error}"
-                        ),
-                    },
-                )?;
-            }
-        }
-        let progress = self.work_progress()?;
-        self.push_event(events, emit, Event::Work { progress })?;
-        Ok(())
-    }
-
     pub(super) async fn scout(
         &mut self,
         messages: &mut Vec<Message>,
@@ -249,9 +179,7 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if self.seat_model(workflow::Role::Scout).is_none()
-            || !self.session.needs_scout(self.is_plan())
-        {
+        if self.seat_model(workflow::Role::Scout).is_none() || !self.session.needs_scout() {
             return Ok(());
         }
         let objective = self.session.objective().map_err(super::session_err)?;
@@ -285,8 +213,7 @@ impl<P: Provider> Loop<P> {
         if input.text.trim().is_empty() && input.images.is_empty() {
             return Err(Error::Config("the prompt is empty".to_string()));
         }
-        let child_read_only = self.depth > 0 && self.tools.is_read_only();
-        let read_only = self.is_plan() || child_read_only;
+        let read_only = self.depth > 0 && self.tools.is_read_only();
         self.tools.set_read_only(read_only);
         if self.depth == 0 {
             self.tools.reset_edits();
@@ -295,12 +222,7 @@ impl<P: Provider> Loop<P> {
         self.turn_started = crate::mail::now();
         let commands = self.verify.clone().unwrap_or_default();
         self.prepare_work(&input.text, &commands)?;
-        let mut harness = self.harness_note(&self.work_progress()?);
-        if self.accepted {
-            harness.push_str(
-                "\n\nHarness: the selected plan is now accepted; /plan reject discards it.",
-            );
-        }
+        let harness = self.harness_note(&self.work_progress()?);
         if !self.note_sent(&harness) {
             input.text = decorate(&harness, &input.text);
         }
@@ -315,12 +237,6 @@ impl<P: Provider> Loop<P> {
     }
 
     fn prepare_work(&mut self, text: &str, commands: &[String]) -> Result<()> {
-        if self.is_plan() {
-            self.session
-                .prepare_plan_work(text)
-                .map_err(super::session_err)?;
-            return Ok(());
-        }
         if self.is_goal()
             && self
                 .session
@@ -330,14 +246,9 @@ impl<P: Provider> Loop<P> {
         {
             self.select_goal(text, commands)?;
         }
-        if let TurnWork::Ready { accepted } = self
-            .session
-            .prepare_turn_work(text, commands, self.plan_first)
-            .map_err(super::session_err)?
-        {
-            self.accepted = accepted;
-        }
-        Ok(())
+        self.session
+            .prepare_turn_work(text, commands)
+            .map_err(super::session_err)
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {

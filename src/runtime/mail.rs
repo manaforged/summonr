@@ -140,7 +140,9 @@ fn send(
     read_only: bool,
 ) -> Result<String> {
     if read_only {
-        return Err(Error::Tool("send is disabled in plan mode".to_string()));
+        return Err(Error::Tool(
+            "send is disabled in a read-only session".to_string(),
+        ));
     }
     let to = args
         .get("to")
@@ -184,7 +186,7 @@ fn board_set(
 ) -> Result<String> {
     if read_only {
         return Err(Error::Tool(
-            "board set is disabled in plan mode".to_string(),
+            "board set is disabled in a read-only session".to_string(),
         ));
     }
     let key = args

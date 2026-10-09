@@ -19,6 +19,13 @@ fn main() {
     }
     if std::env::args_os()
         .nth(1)
+        .is_some_and(|arg| arg == summonr::INDEX_ENTRY)
+    {
+        let root = std::env::args_os().nth(2).unwrap_or_default();
+        std::process::exit(summonr::index_files(std::path::Path::new(&root)));
+    }
+    if std::env::args_os()
+        .nth(1)
         .is_some_and(|arg| arg == "askpass")
     {
         let args: Vec<_> = std::env::args_os().skip(2).collect();

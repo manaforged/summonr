@@ -64,6 +64,7 @@
 | [`finish_worktree`](#finish_worktree) | fn |  |
 | [`goal_prompt`](#goal_prompt) | fn |  |
 | [`in_git`](#in_git) | fn |  |
+| [`index_files`](#index_files) | fn |  |
 | [`install_plugin`](#install_plugin) | fn |  |
 | [`is_endpoint`](#is_endpoint) | fn |  |
 | [`last_for`](#last_for) | fn |  |
@@ -100,6 +101,7 @@
 | [`worktree_status`](#worktree_status) | fn |  |
 | [`McpBoard`](#mcpboard) | type |  |
 | [`Result`](#result) | type |  |
+| [`INDEX_ENTRY`](#index_entry) | const |  |
 
 ## Structs
 
@@ -113,6 +115,7 @@
 | <code>catalog_line(&amp;self, name: usize, state: usize) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
 | <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
+| <code>display_name(&amp;self) -&gt; String</code> |  |
 | <code>dual(&amp;self) -&gt; bool</code> |  |
 | <code>keyless(&amp;self) -&gt; bool</code> |  |
 | <code>plan(&amp;self) -&gt; bool</code> |  |
@@ -250,7 +253,6 @@
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::set_modules(&amp;mut self, switches: &amp;<a href="summonr-modules.html#switches">Switches</a>)</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::verify_commands(&amp;self) -&gt; &amp;[String]</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_interactive(self) -&gt; Self</code> |  |
-| <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_plan(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_sandbox(self, network: <a href="#network">Network</a>) -&gt; <a href="#result">Result</a>&lt;Self&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_strict(self) -&gt; Self</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::with_unrestricted_commands(self) -&gt; Self</code> |  |
@@ -947,7 +949,6 @@
 | --- | --- |
 | <code>Auto</code> |  |
 | <code>Goal</code> |  |
-| <code>Plan</code> |  |
 | <code>Work</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>
@@ -980,9 +981,6 @@
 | <code>New</code> |  |
 | <code>Pane</code> |  |
 | <code>Permissions</code> |  |
-| <code>Plan</code> |  |
-| <code>PlanAccept</code> |  |
-| <code>PlanReject</code> |  |
 | <code>Resume</code> |  |
 | <code>Retry</code> |  |
 | <code>Search</code> |  |
@@ -1140,6 +1138,11 @@
 ### `in_git`
 
 <pre>pub fn <a href="#in_git">in_git</a>(path: &amp;Path) -&gt; bool</pre>
+
+
+### `index_files`
+
+<pre>pub fn <a href="#index_files">index_files</a>(root: &amp;Path) -&gt; i32</pre>
 
 
 ### `install_plugin`
@@ -1322,6 +1325,13 @@
 ### `Result`
 
 <pre>pub type <a href="#result">Result</a>&lt;T&gt; = Result&lt;T, <a href="#error">Error</a>&gt;</pre>
+
+
+## Constants
+
+### `INDEX_ENTRY`
+
+<pre>pub const <a href="#index_entry">INDEX_ENTRY</a>: &amp;str</pre>
 
 
 ---

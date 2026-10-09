@@ -18,6 +18,8 @@ fn bad(path: &Path, message: &str) -> Error {
     Error::Config(format!("{}: {message}", tilde(path)))
 }
 
+const RETIRED: &[&str] = &["last_endpoint", "plan_mode"];
+
 pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     let mut table: toml::Table = toml::from_str(text).map_err(|error| {
         let line = error.span().map_or(1, |span| {
@@ -35,7 +37,9 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     if table.contains_key("mail") {
         table.remove("bus");
     }
-    table.remove("last_endpoint");
+    for key in RETIRED {
+        table.remove(*key);
+    }
     table
         .try_into()
         .map_err(|error: toml::de::Error| bad(path, &error.message().trim().replace('\n', "; ")))

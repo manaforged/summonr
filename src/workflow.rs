@@ -10,7 +10,6 @@ pub(crate) const RESERVED: [&str; 7] = ["off", "list", "show", "set", "clear", "
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Role {
     Scout,
-    Plan,
     Implement,
     Review,
     Judge,
@@ -18,9 +17,8 @@ pub(crate) enum Role {
 }
 
 impl Role {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 5] = [
         Self::Scout,
-        Self::Plan,
         Self::Implement,
         Self::Review,
         Self::Judge,
@@ -31,7 +29,6 @@ impl Role {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Scout => "scout",
-            Self::Plan => "plan",
             Self::Implement => "implement",
             Self::Review => "review",
             Self::Judge => "judge",

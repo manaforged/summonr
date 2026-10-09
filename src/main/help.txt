@@ -47,7 +47,6 @@ Options:
       --session ID     resume a session by id, prefix, or name
       --fork           copy the resumed session before continuing
       --name TEXT      name this session
-      --plan           read-only workspace
       --steps PLAN.md  run each step under `## Steps` and gate on its check
       --goal TEXT      work toward TEXT across turns
       --sandbox        contain commands; writes stay under the roots

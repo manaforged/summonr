@@ -56,7 +56,6 @@ echo $?
 | --- | --- |
 | Pick an endpoint or model | `-e NAME` or a leading `NAME`; `--model NAME`; `--effort none\|minimal\|low\|medium\|high\|xhigh\|max` |
 | Set a budget | `--max-tokens N`, `--max-secs N` |
-| Read-only run | `--plan` |
 | Contain shell commands | `--sandbox`; `--no-net` denies sockets and needs `--sandbox`; `--add-dir DIR` adds a writable root |
 | Allow only listed commands | `--strict` with `policy.toml` |
 | Ignore workspace `AGENTS.md` | `--no-trust` |
@@ -164,7 +163,7 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
 - Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
-- The sandbox is off by default. `--plan` denies writes and cannot be combined with `--goal` or `--steps`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
+- The sandbox is off by default. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.
 
 The [reference](guide/reference.md) has every flag and config key. [Extending summonr](guide/extending.md) covers skills, MCP servers, hooks, and CLIs.

@@ -1,31 +1,6 @@
 use super::*;
 
 impl Worker {
-    pub(in crate::tui::worker) async fn accept_plan(&mut self) -> bool {
-        if let Err(error) = self.loop_.accept_plan() {
-            self.fail(&error.to_string());
-            return true;
-        }
-        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Work);
-        if self.loop_.mode() != crate::RunMode::Work {
-            return true;
-        }
-        if self.goal_gates().is_none() {
-            return true;
-        }
-        self.turn("Execute the accepted plan.".into()).await
-    }
-
-    pub(in crate::tui::worker) fn reject_plan(&mut self) -> bool {
-        if let Err(error) = self.loop_.reject_plan() {
-            self.fail(&error.to_string());
-            return true;
-        }
-        set_run_mode(&mut self.loop_, &self.ui, crate::RunMode::Auto);
-        self.system("plan rejected");
-        true
-    }
-
     pub(in crate::tui::worker) async fn compact(&mut self) -> bool {
         drop(self.ui.send(Msg::Busy(Some(Activity::Compact))));
         let ui = self.ui.clone();
@@ -78,7 +53,7 @@ impl Worker {
             self.fail(&error.to_string());
             return true;
         }
-        announce_run_mode(&self.loop_, &self.ui, crate::RunMode::Work);
+        announce_run_mode(&self.loop_, &self.ui);
         let code = loop {
             let prompt = match self.loop_.next_step(&steps, plan_path) {
                 Ok(crate::StepRun::Done(code)) => break code,
@@ -148,40 +123,21 @@ impl Worker {
             self.leave_goal(crate::RunMode::Auto);
             return true;
         }
-        let plan = match self.loop_.leave_plan() {
-            Ok(plan) => plan,
-            Err(error) => {
-                self.fail(&error.to_string());
-                return true;
-            }
-        };
         let before = match self.loop_.mode() {
-            crate::RunMode::Goal | crate::RunMode::Plan => crate::RunMode::Auto,
+            crate::RunMode::Goal => crate::RunMode::Auto,
             mode => mode,
         };
-        let objective = self.goal_objective(objective, plan.as_deref());
         let Some(gates) = self.goal_gates() else {
             return true;
         };
-        if let Err(error) = self.loop_.select_goal(&objective, &gates) {
+        if let Err(error) = self.loop_.select_goal(objective, &gates) {
             self.fail(&error.to_string());
             return true;
         }
-        announce_run_mode(&self.loop_, &self.ui, crate::RunMode::Goal);
-        let keep_running = self.run_goal(&objective, &gates).await;
+        announce_run_mode(&self.loop_, &self.ui);
+        let keep_running = self.run_goal(objective, &gates).await;
         self.leave_goal(before);
         keep_running
-    }
-
-    fn goal_objective(&self, objective: &str, plan: Option<&str>) -> String {
-        if let Some(plan) = plan {
-            return format!("{objective}\n\n{}", crate::plan::note(plan));
-        }
-        let carried = format!("{objective}\n\n");
-        match self.loop_.active_goal().ok().flatten() {
-            Some((active, _)) if active.starts_with(&carried) => active,
-            Some(_) | None => objective.to_string(),
-        }
     }
 
     fn goal_gates(&mut self) -> Option<Vec<String>> {

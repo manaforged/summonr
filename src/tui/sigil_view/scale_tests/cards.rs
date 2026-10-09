@@ -181,8 +181,8 @@ fn tool_headers_name_the_call() {
     let shown = card(200, |app| {
         tool(
             app,
-            "read",
-            r#"{"pattern":"value_cents","glob":"*.py"}"#,
+            "search",
+            r#"{"pattern":"value_cents","glob":"*.py","path":"src"}"#,
             true,
             "a.py:1:x",
         );
@@ -201,7 +201,10 @@ fn tool_headers_name_the_call() {
             "ok",
         );
     });
-    assert!(shown.contains(r#"Search "value_cents" *.py"#), "{shown}");
+    assert!(
+        shown.contains(r#"Search "value_cents" *.py in src"#),
+        "{shown}"
+    );
     assert!(shown.contains("src/models.py:17:7"), "{shown}");
     assert!(shown.contains(&long), "{shown}");
 }

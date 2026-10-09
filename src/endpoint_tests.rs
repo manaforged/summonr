@@ -218,3 +218,38 @@ fn a_short_name_gets_a_hint_only_for_a_near_miss() {
     let lab = vec!["lab".to_string()];
     assert_eq!(closest("lba", &lab, super::Near::Typo), Some("lab"));
 }
+
+#[test]
+fn a_key_row_with_a_plan_sign_in_lists_under_coding_plans_by_its_plan_name() {
+    for (name, plan) in [("openai", "ChatGPT"), ("grok", "SuperGrok")] {
+        let endpoint = super::keys::builtin(name).unwrap();
+        let info = super::AuthInfo {
+            name: name.to_string(),
+            flow: super::LoginFlow::default(),
+            login: endpoint
+                .oauth
+                .as_ref()
+                .map(crate::credentials::flow)
+                .unwrap_or_default(),
+            key: endpoint.takes_key(),
+            plan: endpoint
+                .oauth
+                .as_ref()
+                .and_then(|spec| spec.label.clone())
+                .unwrap_or_default(),
+            configured: false,
+            source: None,
+            setup: String::new(),
+            env: None,
+            model: endpoint.model.clone(),
+            base_url: endpoint.base_url.clone(),
+            own: false,
+            env_hint: None,
+            group: super::login_group(name, &endpoint),
+        };
+        assert_eq!(info.catalog_title(), "Coding plans", "{name}");
+        assert!(info.display_name().contains(plan), "{name}");
+        assert!(info.catalog_line(16, 16).contains(plan), "{name}");
+        assert!(!info.plan(), "{name} keeps key pricing");
+    }
+}

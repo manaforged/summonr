@@ -32,11 +32,6 @@ impl Work {
         Ok(())
     }
 
-    pub(crate) fn set_checks(&mut self, commands: &[String]) -> Result<(), WorkError> {
-        self.checks = checks(&self.objective, self.policy, commands)?;
-        Ok(())
-    }
-
     pub(crate) fn execute(&mut self, base: Snapshot) -> Result<(), WorkError> {
         if self.plan.is_none() {
             return Err(WorkError("Execute requires a selected plan".to_string()));

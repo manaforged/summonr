@@ -49,6 +49,12 @@ pub(super) fn roots(policy: &crate::policy::Policy) -> Vec<Root> {
         .collect()
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(in crate::tools) enum Shield {
+    Contained,
+    Always,
+}
+
 impl ToolRegistry {
     pub(crate) fn exists(&self, path: &str) -> Result<bool> {
         Ok(self.lexical(path)?.exists())
@@ -61,10 +67,6 @@ impl ToolRegistry {
             &self.policy.write_roots(),
         )?);
         Ok(())
-    }
-
-    pub(crate) fn disable_sandbox(&mut self) {
-        self.sandbox = None;
     }
 
     pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
@@ -111,7 +113,7 @@ impl ToolRegistry {
             .collect()
     }
 
-    pub(in crate::tools) fn resolve_read(&self, path: &str) -> Result<PathBuf> {
+    pub(in crate::tools) fn resolve_read(&self, path: &str, shield: Shield) -> Result<PathBuf> {
         let cleaned = clean_path(path);
         let requested = self.workspace.join(cleaned.as_ref());
         let opened = existing(&requested)
@@ -129,7 +131,7 @@ impl ToolRegistry {
                 }
                 path
             });
-        if !self.policy.is_unrestricted()
+        if (shield == Shield::Always || !self.policy.is_unrestricted())
             && [&requested, &normal, &opened]
                 .into_iter()
                 .any(|path| crate::policy::protected_read(path))

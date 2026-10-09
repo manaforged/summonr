@@ -33,7 +33,7 @@ RULES: list[tuple[str, list[str]]] = [
     ("skill", ["src/skills.rs"]),
     ("task", ["src/child.rs", "src/runtime/child.rs"]),
     ("verify", ["src/verify.rs"]),
-    ("steps", ["src/steps.rs", "src/plan.rs"]),
+    ("steps", ["src/steps.rs"]),
     ("goal", ["src/goal.rs"]),
     ("session", ["src/durable.rs", "src/durable/*", "src/session.rs", "src/session/*"]),
     ("worktree", ["src/worktree.rs"]),

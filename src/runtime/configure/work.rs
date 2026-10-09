@@ -143,12 +143,12 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
-        self.refuse_in_plan("steps")?;
         self.session
             .prepare_external_work(markdown, WorkPolicy::Steps, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Work)
+        self.set_mode(crate::RunMode::Work);
+        Ok(())
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
@@ -156,36 +156,8 @@ impl<P: Provider> Loop<P> {
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)?;
         self.schema = None;
-        self.set_mode(crate::RunMode::Goal)
-    }
-
-    fn refuse_in_plan(&self, work: &str) -> Result<()> {
-        if self.is_plan() {
-            return Err(Error::Config(format!(
-                "plan mode is read-only; run /plan accept, /plan reject, or /auto before you start {work}"
-            )));
-        }
+        self.set_mode(crate::RunMode::Goal);
         Ok(())
-    }
-
-    pub(crate) fn accept_plan(&mut self) -> Result<()> {
-        self.session.accept_plan().map_err(super::session_err)
-    }
-
-    pub(crate) fn leave_plan(&mut self) -> Result<Option<String>> {
-        let plan = self.session.leave_plan().map_err(super::session_err)?;
-        if self.is_plan() {
-            self.set_mode(crate::RunMode::Auto)?;
-        }
-        Ok(plan)
-    }
-
-    pub(crate) fn pending_plan(&self) -> bool {
-        self.session.pending_plan().is_ok()
-    }
-
-    pub(crate) fn reject_plan(&mut self) -> Result<()> {
-        self.session.reject_plan().map_err(super::session_err)
     }
 
     #[must_use]

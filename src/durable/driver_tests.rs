@@ -19,7 +19,7 @@ fn a_compacted_tail_replays_as_the_model_saw_it_after_an_interrupted_reply() {
         },
         continuation: None,
     };
-    driver.prepare_turn_work("task", &[], false).unwrap();
+    driver.prepare_turn_work("task", &[]).unwrap();
     driver.start_input(&UserInput::from("task")).unwrap();
     let attempt = driver.start_provider("model", exposure()).unwrap();
     let planned = driver

@@ -49,10 +49,6 @@ impl<P: Provider> Loop<P> {
             meter,
             meta,
         };
-        if self.is_plan() {
-            self.record_plan(answer, snapshot, events, &mut emit)?;
-            return self.close_turn(Ending::Plan, message.content, events, emit, round, usage);
-        }
         self.record_answer(answer, events, &mut emit)?;
         if !self.executes_work() {
             self.close_plain(snapshot, events)?;
@@ -236,7 +232,6 @@ impl<P: Provider> Loop<P> {
         let progress = self.work_progress()?;
         self.push_event(events, &mut emit, Event::Work { progress })?;
         let (note, checks) = match ending {
-            Ending::Plan => (Some(crate::plan::ready(self.session_path())), Vec::new()),
             Ending::Deferred(running) => (
                 Some(format!(
                     "turn deferred; background work still running: {running}"
@@ -297,7 +292,6 @@ impl<P: Provider> Loop<P> {
 }
 
 enum Ending {
-    Plan,
     Deferred(String),
     Done(Vec<Outcome>),
 }

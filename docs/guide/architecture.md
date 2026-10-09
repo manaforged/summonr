@@ -15,7 +15,7 @@ Work is one coding job summonr holds so the model does not have to (`src/durable
 - a stage: Plan, Execute, Verify, or Review
 - steps, their checks, and (when verifying) a candidate capture of the workspace
 
-Plan and Work are one pipeline. Plan writes `plan.md` in the session directory, next to `session.jsonl`. `/plan accept` selects that file, sets `RunMode::Work`, and starts Execute in the same turn (`src/tui/worker/command.rs`). A work request with no selected plan stays in Plan (`Loop::set_mode`). When Work is terminal, the interface returns to Auto. When a goal ends, the session returns to the mode it had before. Goal (`/goal`, `--goal`) is the loop without a written plan. `shift+tab` switches Auto and Plan only (`RunMode::next`).
+`/steps` and `--steps` select the steps and set `RunMode::Work`. When Work is terminal, the interface returns to Auto. When a goal ends, the session returns to the mode it had before. Goal (`/goal`, `--goal`) is the loop on one objective.
 
 `summonr --steps` and `summonr --goal` start Work from the CLI. A plain `summonr` turn still opens an internal Work record if the session has none (`src/runtime/turn.rs`). That is Auto, not the Work UI mode.
 
@@ -34,7 +34,7 @@ The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts the old 
 | `run_command` | Sandboxed shell |
 | `todo` | The itemized step list summonr tracks, in steps and goal runs |
 
-On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by default), `task` (interactive sessions only), and the mail tools `agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is off by default; `/settings` switches either. Plan mode advertises `read` and `run_command` (plus `skill`, and `web` when `search` is on).
+On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by default), `task` (interactive sessions only), and the mail tools `agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is off by default; `/settings` switches either.
 
 ## What summonr holds between turns
 
@@ -54,7 +54,6 @@ Crash the process. Run the same command. Resume reads the session log back into 
 | Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
 | Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
-| Plan file `plan.md` in the session directory | `src/plan.rs` |
 | RunMode Plan → Work | `src/runtime.rs` `next`, `Loop::set_mode` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |

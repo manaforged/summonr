@@ -23,7 +23,6 @@ First stable release.
 - Slash-command and `@` mention type-ahead work on the start screen.
 - `shift+tab` cycles reasoning effort from none to max. Each vendor and model sends the nearest level it accepts; `reasoning_levels` and `thinking_off` on an endpoint override this.
 - The provider table is data. Every built-in endpoint is one `[[preset]]` row in `src/endpoint/presets.toml` (base URL, env keys, wire, reasoning quirks, peer ids), and a row summonr cannot honor fails startup by name. New built-ins: the Qwen coding plans `qwen-plan` and `qwen-plan-cn` and the DashScope hosts `dashscope` and `dashscope-cn`; the MiniMax coding plans `minimax-plan` and `minimax-cn-plan` on the Anthropic wire; `tencent-plan` and `volcengine-plan`; `nvidia`, `huggingface`, `cohere`, `perplexity`, `siliconflow`, `siliconflow-cn`, `ollama-cloud`, and the local `lmstudio`. Coding-plan keys adopt from OpenCode's `auth.json` through their models.dev ids.
-- Plan mode is on by default; `plan_mode = false` turns it off. `/goal TEXT` in plan mode starts the goal with the saved plan, `/auto` drops a pending plan, and a short reply such as `go` or `yes` accepts a ready plan like `/plan accept`. After a goal ends, the session returns to its earlier mode.
 - `/goal` with no check configured uses a check detected from the project (`cargo test`, `go test ./...`, or `npm test` when `package.json` has a `test` script) and says how to set another in `.summonr/check.toml`.
 - `--json` runs open with `{"type":"session","id":...}`, and the `aborted` event carries a `code`: `time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`.
 - `summonr diff --turn N|last` shows what one turn changed, from the checkpoint at its start to the next turn's checkpoint; resumed sessions keep numbering turns.
@@ -43,6 +42,7 @@ First stable release.
 
 ### Changed
 
+- Plan mode is gone: `/plan`, `/plan accept`, `/plan reject`, the `plan_mode` setting, the `plan` workflow role, and `--plan` are removed. `/goal`, `--goal`, and `--steps` work as before, and after a goal ends the session returns to its earlier mode.
 - Search is its own `search` tool. `pattern` searches contents and `glob` alone finds files by name, under any readable path, ignoring case unless `case_sensitive` is set. A call returns what it found within `search_secs`. `read` no longer searches, and `read` and `search` reach paths outside the workspace except protected ones.
 - `summonr login NAME --model M` changes the model of a server you added, with no `--url`. `summonr login NAME --default [--model M]` makes any endpoint that is set up the default. `summonr login NAME --help`, and `--help` after `logout`, `diff`, `profile`, `install`, `export`, `doctor`, `classify`, `worktrees`, and `mcp`, prints that command's help.
 - `summonr login` and `summonr endpoints` size their columns to the longest value, show only the URL on a row with no model, and say `1 model`. Each built-in label names its default model and the row whose key it shares; `glm` names `GLM_CODING_API_KEY` and `glm-intl` names `ZAI_CODING_API_KEY` when the key is missing.

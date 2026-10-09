@@ -30,8 +30,6 @@ impl App {
             return;
         };
         match setting {
-            Setting::Mode => self.toggle_mode(),
-            Setting::PlanMode => self.flip(|prefs| prefs.plan_mode = !prefs.plan_mode),
             Setting::Verify => self.toggle_verify(),
             Setting::Workflow => self.open_workflow(),
             Setting::Endpoint => self.cycle_endpoint(),
@@ -59,21 +57,12 @@ impl App {
             Setting::Splash => self.flip(|prefs| prefs.splash = !prefs.splash),
             Setting::Motion => self.toggle_motion(),
             Setting::Mode
-            | Setting::PlanMode
             | Setting::Verify
             | Setting::Workflow
             | Setting::Endpoint
             | Setting::Model
             | Setting::Reasoning
             | Setting::Tools => {}
-        }
-    }
-
-    fn toggle_mode(&self) {
-        if self.model.get().snapshot.plan {
-            self.leave_plan();
-        } else if self.model.get().prefs.plan_mode {
-            self.enter_plan();
         }
     }
 

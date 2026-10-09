@@ -17,7 +17,7 @@ pub(super) struct Valued {
     pub(super) set: fn(&mut Args, String) -> Result<()>,
 }
 
-pub(super) const SWITCHES: [Switch; 17] = [
+pub(super) const SWITCHES: [Switch; 16] = [
     (&["--json"], |args| args.json = true),
     (&["--trust"], |args| args.trust = true),
     (&["--no-trust"], |args| args.trust = false),
@@ -26,7 +26,6 @@ pub(super) const SWITCHES: [Switch; 17] = [
     (&["--no-sandbox"], |args| args.sandbox = Some(false)),
     (&["--net"], |args| args.network = true),
     (&["--no-net"], |args| args.network = false),
-    (&["--plan"], |args| args.plan = true),
     (&["--no-verify"], |args| args.no_verify = true),
     (&["--no-splash"], |args| args.no_splash = true),
     (&["--here"], |args| args.here = true),

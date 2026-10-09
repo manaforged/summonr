@@ -112,30 +112,6 @@ async fn approving_a_destructive_command_keeps_the_sandbox() -> Result<()> {
     Ok(())
 }
 
-#[cfg(target_os = "macos")]
-#[test]
-fn leaving_plan_drops_the_sandbox_plan_turned_on() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut loop_ = session(workspace.path(), home.path()).with_plan();
-    assert!(loop_.has_sandbox());
-    loop_.set_mode(crate::RunMode::Auto).unwrap();
-    assert!(!loop_.has_sandbox());
-}
-
-#[cfg(target_os = "macos")]
-#[test]
-fn leaving_plan_keeps_a_sandbox_the_user_asked_for() {
-    let workspace = tempfile::tempdir().unwrap();
-    let home = tempfile::tempdir().unwrap();
-    let mut loop_ = session(workspace.path(), home.path())
-        .with_sandbox(crate::Network::Allowed)
-        .unwrap()
-        .with_plan();
-    loop_.set_mode(crate::RunMode::Auto).unwrap();
-    assert!(loop_.has_sandbox());
-}
-
 #[tokio::test]
 async fn a_repeated_failure_reaches_the_model_unchanged() {
     let workspace = tempfile::tempdir().unwrap();

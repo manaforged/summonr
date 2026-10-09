@@ -34,7 +34,6 @@ pub(crate) struct File {
     pub layout: Option<String>,
     pub ban_comments: Option<bool>,
     pub ban_tests: Option<bool>,
-    pub plan_mode: Option<bool>,
     #[serde(default)]
     pub hotkeys: BTreeMap<String, String>,
     pub secrets: Option<String>,

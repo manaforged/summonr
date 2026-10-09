@@ -54,12 +54,6 @@ impl App {
         let command = crate::parse_command(line);
         match command {
             Some(crate::SlashCommand::Help) => self.help.show(),
-            Some(crate::SlashCommand::Plan) if !self.model.get().prefs.plan_mode => {
-                self.push_entry(Entry::Error(
-                    "plan mode is off; turn it on in /settings".to_string(),
-                ));
-                self.refresh();
-            }
             Some(crate::SlashCommand::Retry) => self.retry(),
             Some(crate::SlashCommand::Search) => self.search.start(argument.unwrap_or("")),
             Some(crate::SlashCommand::History) => self.prompt_history(argument.unwrap_or("")),
@@ -189,22 +183,6 @@ impl App {
         };
         self.model_mut(|model| model.snapshot.effort = Some(next));
         drop(self.cmd.send(Cmd::SetEffort(Some(next))));
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn enter_plan(&self) {
-        self.model_mut(|model| {
-            model.snapshot.plan = true;
-            model.snapshot.work = false;
-            model.snapshot.goal = false;
-        });
-        drop(self.cmd.send(Cmd::SetRunMode(crate::RunMode::Plan)));
-        self.refresh();
-    }
-
-    pub(in crate::tui::sigil_view) fn leave_plan(&self) {
-        self.model_mut(|model| model.snapshot.plan = false);
-        drop(self.cmd.send(Cmd::SetRunMode(crate::RunMode::Auto)));
         self.refresh();
     }
 

@@ -9,7 +9,6 @@ use crate::provider::UserInput;
 use crate::tools::Event;
 use crate::tui::Activity;
 
-const MODE_LATER: &str = "mode switches when the current turn ends; esc cancels now";
 const SENT_NOW: &str = "sent to the running turn";
 const SETTINGS_LATER: &str = "settings apply when the current turn ends; esc cancels now";
 
@@ -108,12 +107,6 @@ impl MidTurn<'_> {
             | Cmd::SteerQueued) => self.queued(command, workspace),
             Cmd::Export(target) => {
                 super::export_session(session_path, session_id, target, self.ui);
-                Outcome::Keep
-            }
-            Cmd::SetRunMode(mode) => {
-                self.deferred.push_back(Cmd::SetRunMode(mode));
-                drop(self.ui.send(Msg::RunMode(mode)));
-                drop(self.ui.send(Msg::System(MODE_LATER.to_string())));
                 Outcome::Keep
             }
             Cmd::SetEffort(effort) => {

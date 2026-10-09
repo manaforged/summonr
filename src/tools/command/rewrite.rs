@@ -2,10 +2,9 @@ use crate::policy::Grant;
 
 use super::ToolRegistry;
 
-pub(super) fn plan_write_note(read_only: bool, raw: &str) -> String {
+pub(super) fn read_only_note(read_only: bool, raw: &str) -> String {
     if read_only && raw.contains("Operation not permitted") {
-        "\nplan mode runs the shell read-only. Return the plan in your reply. Switch to auto mode before building or editing files."
-            .to_string()
+        "\nthis session runs the shell read-only. Report what to change in your reply.".to_string()
     } else {
         String::new()
     }

@@ -38,17 +38,17 @@ The tool schemas. Six core, six behind a module or a workspace file.
 | `search` | `tools/catalog.rs::search` | always; walks with `workspace/search.rs::collect` under `search_secs` |
 | `edit` | `tools/catalog.rs::edit` | always |
 | `write` | `tools/catalog.rs::write` | always |
-| `run_command` | `tools/catalog.rs::run_command` | always outside plan mode; in plan mode only with a sandbox; the schema is frozen per session |
+| `run_command` | `tools/catalog.rs::run_command` | always outside a read-only research child; there only with a sandbox; the schema is frozen per session |
 | `todo` | `tools/catalog.rs::todo` | steps and goal runs only; owns the itemized Work step list |
 | `skill` | `tools/catalog.rs::skill` | `.summonr/skills` present |
 | `lsp` | `tools/catalog.rs::lsp` | `lsp` module on |
 | `web` | `tools/catalog.rs::web` | `search` module on (off by default) |
 | `task` | `runtime/child.rs::definition` | interactive sessions (TUI, ACP) at depth 0 with the `task` module on; `/modules task off` disables; an optional `agent` names a plugin agent from `<agents>`, whose instructions open the child's first message and whose `tools` deny other tools at call time (`ToolRegistry::restrict_to`, names through `hooks::builtin`) |
-| `<server>__<tool>`, `mcp` | `mcp/defer.rs` `Hub::definitions` | `mcp` module on; project servers need approval; plan mode does not treat `readOnlyHint` as read-only; a server over `MCP_DEFER_BYTES` of schemas is listed under `mcp` |
-| `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in plan mode |
+| `<server>__<tool>`, `mcp` | `mcp/defer.rs` `Hub::definitions` | `mcp` module on; project servers need approval; a read-only research child does not treat `readOnlyHint` as read-only; a server over `MCP_DEFER_BYTES` of schemas is listed under `mcp` |
+| `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in a read-only research child |
 
-Plan mode advertises `read`, `search`, `run_command`, `skill`, and `web` when `search` is on, plus the
-mail tools when mail is on; `send` and `board` set refuse in plan mode.
+A read-only research child is offered `read`, `search`, `run_command`, `skill`, and `web` when `search` is on, plus the
+mail tools when mail is on; `send` and `board` set refuse there.
 
 Peer mail has no server. Other agent CLIs reach the same files through
 `summonr mail` (`mail/cli.rs::run`).
@@ -68,7 +68,6 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | hidden paths | `diff::ignored::{hidden, patterns}` | the one owner of paths summonr never reports or lands: generated caches and `.summonr/` state other than `check.toml` and `policy.toml` |
 | steps | `steps.rs`, `--steps`, `PLAN.md` | one numbered item per turn, gated on its `Run` line |
 | goal | `goal.rs`, `--goal` | one standing objective; the judge only answers continue or stop, after the gates |
-| plan mode | `--plan`, `/plan`, `RunMode::Plan`, `plan_mode` pref | read-only workspace, reply saved to `plan.md` in the session directory (`plan::file`); `plan::approves` is the one test for a short reply that accepts a ready plan, and `plan::ready` is the one plan-ready note; owns the sandbox it turns on and drops it on exit |
 | confirmation | `turn/grant.rs::with_grant`, `Policy::needs_approval`, `policy::danger`, `tools::command::Approval`, `ToolRegistry::{approve_once,take_approval}`, `askpass.rs` | destructive commands, policy `ask` patterns, sandbox escape, and network grants require interactive approval; `Policy::needs_approval` is the one check a shell command passes before it asks; edit grants apply in Auto mode; a write outside the writable roots asks, and a noninteractive run denies it; command approval is consumed once, and only `Approval::Uncontained` drops the sandbox; `sudo` runs as `sudo -A` through the askpass shim |
 | reasoning effort | `Effort::clamp`, `Reasoning::plan`, `Plan::{step, budget}`, `Off::fragment`, `provider/reasoning.rs::levels`, `provider/wire/traits/{anthropic,gemini,openai,vendors}.rs`, `Preset.reasoning`, `[endpoint.NAME] reasoning_levels, thinking_off` | levels and the `none` style are data: one `Spec` per preset and one `Traits` row per model id; `Effort::clamp` sends the nearest level the model accepts, the lower one on a tie; `Plan::step` returns no field, a level, or a thinking-off fragment; each wire writes only that result |
 | session | `durable/{log,work,driver}.rs`, `session::prune`, `[sessions] retain_days` | `session.jsonl`, `work.json`, crash resume; once per start `session::prune` removes session directories idle past `Sessions::retain` (default `limits().session_retain()`) through `session::remove_in`, except the session that run opens; every prompt rewrite (forced compaction, argument repair) is a `Line::Rewrite` through `SessionDriver::rewrite`, so replay matches what the model saw; a compaction `Line::Summary` carries the kept tail verbatim for the same reason; `Line` is the session record and `Line::events` projects `Event`; `SessionDriver::answer` is the one `Line::Assistant` writer; `--json` order per round is Usage, ToolCall…, ToolResult…, Work, Receipt, Assistant, and an abort is Aborted then Receipt; an MCP call may emit Progress events between its ToolCall and ToolResult, and they are not written to `session.jsonl`; memory is `footprint_kb` (KiB; old journals read `rss_kb`) |

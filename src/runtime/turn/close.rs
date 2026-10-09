@@ -31,28 +31,6 @@ impl<P: Provider> Loop<P> {
         ))
     }
 
-    pub(super) fn record_plan(
-        &mut self,
-        answer: Answer<'_>,
-        snapshot: String,
-        events: &mut Vec<Event>,
-        emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
-        let receipt = Receipt::new(Vec::new(), Vec::new(), snapshot, events);
-        self.session
-            .finish_plan(
-                answer.attempt,
-                answer.text,
-                answer.reasoning,
-                answer.meter,
-                answer.meta,
-                self.verify.as_deref().unwrap_or_default(),
-                &receipt,
-            )
-            .map_err(super::session_err)?;
-        self.emit_records(events, emit)
-    }
-
     pub(super) fn record_answer(
         &mut self,
         answer: Answer<'_>,

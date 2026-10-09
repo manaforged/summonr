@@ -11,8 +11,7 @@
 - **User extra**: Skill, MCP server, hook, or CLI. Files and child processes.
   Other harnesses say plugin; do not load guest code in-process. Avoid as
   product names: plugin host, extension, marketplace.
-- **Plan**: Read-only mode that writes `plan.md` in the session directory. Not the Work UI.
-- **Work**: Execute an accepted plan, then the completion check. Entered
-  only from `/plan accept`. Avoid: a sibling mode you toggle empty.
+- **Work**: Run a plan's `## Steps` one at a time, each gated on its check.
+  Entered from `/steps` or `--steps`.
 - **Goal**: Loop on an objective with no written plan until checks pass
   and a judge says done.

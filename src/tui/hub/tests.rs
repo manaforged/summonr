@@ -130,7 +130,6 @@ fn info() -> crate::tui::Info {
         prefs: crate::prefs::Prefs::default(),
         splash: false,
         inline: false,
-        plan: false,
         strict: false,
         workspace: String::new(),
         workflow: None,

@@ -26,7 +26,6 @@ mod state;
 mod turn;
 
 use reader::Reader;
-use settings::set_run_mode;
 
 pub(super) async fn worker(
     loop_: Loop<Client>,

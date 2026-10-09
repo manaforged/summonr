@@ -57,7 +57,6 @@ impl Budget {
 pub enum RunMode {
     #[default]
     Auto,
-    Plan,
     Work,
     Goal,
 }
@@ -67,7 +66,6 @@ impl RunMode {
     pub fn name(self) -> &'static str {
         match self {
             Self::Auto => "auto",
-            Self::Plan => "plan",
             Self::Work => "work",
             Self::Goal => "goal",
         }
@@ -102,7 +100,6 @@ pub struct Loop<P> {
     price: Option<Price>,
     system_prompt: String,
     mode: RunMode,
-    plan_first: bool,
     tools: ToolRegistry,
     schema: Option<Arc<mail::Advertised>>,
 
@@ -118,7 +115,6 @@ pub struct Loop<P> {
     probe: Option<tokio::task::JoinHandle<Option<u32>>>,
     effort: Option<Effort>,
     turn_started: u64,
-    accepted: bool,
     summary_wait: usize,
     workspace: PathBuf,
     mailbox: Option<Mailbox>,
@@ -135,7 +131,6 @@ pub struct Loop<P> {
     steer_shared: Option<Arc<turn::Steering>>,
     depth: u8,
     tasks: bool,
-    plan_sandbox: bool,
     interactive: bool,
     spawned: BTreeMap<String, child::Spawned>,
     events: (UnboundedSender<Event>, UnboundedReceiver<Event>),
@@ -226,11 +221,7 @@ impl<P: Provider> Loop<P> {
     }
 
     fn round_role(&self) -> workflow::Role {
-        if self.mode == RunMode::Plan {
-            workflow::Role::Plan
-        } else {
-            workflow::Role::Implement
-        }
+        workflow::Role::Implement
     }
 }
 

@@ -63,10 +63,6 @@ impl ToolRegistry {
         Ok(())
     }
 
-    pub(crate) fn disable_sandbox(&mut self) {
-        self.sandbox = None;
-    }
-
     pub(crate) fn allow_path(&mut self, path: PathBuf) -> Result<()> {
         if !path.exists() {
             if volume_unmounted(&path) {

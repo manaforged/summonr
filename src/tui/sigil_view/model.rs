@@ -186,7 +186,6 @@ impl Model {
             snapshot: Snapshot {
                 model: info.model.clone(),
                 relay: info.relay.clone(),
-                plan: info.plan,
                 strict: info.strict,
                 endpoint: info.endpoint.clone(),
                 ..Snapshot::default()
@@ -281,7 +280,6 @@ impl Model {
             Msg::Cleared => self.clear(),
             Msg::Reset => self.reset(),
             Msg::RunMode(mode) => {
-                self.snapshot.plan = mode == crate::RunMode::Plan;
                 self.snapshot.work = mode == crate::RunMode::Work;
                 self.snapshot.goal = mode == crate::RunMode::Goal;
             }

@@ -137,7 +137,7 @@ pub(super) const SPECS: &[CommandSpec] = &[
     .usage("[none|minimal|low|medium|high|xhigh|max]"),
     spec(
         "/workflow",
-        "choose models for plan, work, and review",
+        "choose models for scout, work, and review",
         SlashCommand::Workflow,
         Text,
         Model,
@@ -151,27 +151,6 @@ pub(super) const SPECS: &[CommandSpec] = &[
         Model,
     )
     .usage("[NAME]"),
-    spec(
-        "/plan",
-        "enter plan mode: read and plan, no edits",
-        SlashCommand::Plan,
-        Bare,
-        Model,
-    ),
-    spec(
-        "/plan accept",
-        "run the saved plan",
-        SlashCommand::PlanAccept,
-        Bare,
-        Model,
-    ),
-    spec(
-        "/plan reject",
-        "leave plan mode without running the plan",
-        SlashCommand::PlanReject,
-        Bare,
-        Model,
-    ),
     spec(
         "/auto",
         "return to auto mode",

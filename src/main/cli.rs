@@ -36,7 +36,6 @@ pub(super) struct Args {
     pub(super) sandbox: Option<bool>,
     pub(super) add_dir: Vec<String>,
     pub(super) network: bool,
-    pub(super) plan: bool,
     pub(super) no_verify: bool,
     pub(super) no_splash: bool,
     pub(super) inline: bool,
@@ -206,11 +205,6 @@ impl Args {
 
     fn check(&self) -> Result<()> {
         self.check_names()?;
-        if self.plan && (self.goal.is_some() || self.steps.is_some()) {
-            return Err(Error::Config(
-                "--plan denies writes; use it without --goal or --steps".to_string(),
-            ));
-        }
         if self.here && self.worktree {
             return Err(Error::Config(
                 "use --here or --worktree, not both".to_string(),

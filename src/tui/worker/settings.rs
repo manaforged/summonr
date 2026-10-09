@@ -8,7 +8,7 @@ use crate::workflow::{self, Role, Seat, Workflow};
 use tokio::sync::mpsc::UnboundedSender;
 
 const WORKFLOW_USAGE: &str = "/workflow [NAME | off | list | show | set ROLE ENDPOINT [MODEL] | \
-clear ROLE | save NAME | default NAME]; roles: scout plan implement review judge summary";
+clear ROLE | save NAME | default NAME]; roles: scout implement review judge summary";
 
 impl Worker {
     pub(super) fn set_verify(&mut self, on: bool) {
@@ -322,12 +322,10 @@ impl Worker {
             self.ui.send(Msg::Settings(Snapshot {
                 model: self.loop_.model().to_string(),
                 relay: self.relay.clone(),
-                plan: self.loop_.is_plan(),
                 work: self.loop_.is_work(),
                 goal: self.loop_.is_goal(),
                 effort: self.loop_.effort(),
                 levels: self.levels.clone(),
-                pending_plan: self.loop_.pending_plan(),
                 verify: verify_display(self.loop_.verify_commands()),
                 strict: self.loop_.is_strict(),
                 endpoint: self.endpoint.clone(),
@@ -352,38 +350,17 @@ pub(super) fn set_run_mode(
     if loop_.mode() == mode {
         return;
     }
-    if loop_.is_plan()
-        && mode == crate::RunMode::Auto
-        && let Err(error) = loop_.leave_plan()
-    {
-        drop(ui.send(Msg::System(error.to_string())));
-    }
-    if let Err(error) = loop_.set_mode(mode) {
-        drop(ui.send(Msg::System(format!("sandbox unavailable: {error}"))));
-    }
-    announce_run_mode(loop_, ui, mode);
+    loop_.set_mode(mode);
+    announce_run_mode(loop_, ui);
 }
 
-pub(super) fn announce_run_mode(
-    loop_: &Loop<Client>,
-    ui: &UnboundedSender<Msg>,
-    requested: crate::RunMode,
-) {
+pub(super) fn announce_run_mode(loop_: &Loop<Client>, ui: &UnboundedSender<Msg>) {
     let mode = loop_.mode();
     drop(ui.send(Msg::RunMode(mode)));
-    let text = if requested == crate::RunMode::Work && mode == crate::RunMode::Plan {
-        "Work needs a plan. Plan mode: write one, then /plan accept."
-    } else {
-        match mode {
-            crate::RunMode::Plan => {
-                "plan mode: read-only; /plan accept runs the plan, /goal TEXT starts a goal"
-            }
-            crate::RunMode::Work => {
-                "work mode: execute the accepted plan; verify at the end of the turn"
-            }
-            crate::RunMode::Goal => "goal mode: keep going until the objective is met",
-            crate::RunMode::Auto => "auto mode: full tools",
-        }
+    let text = match mode {
+        crate::RunMode::Work => "work mode: run the steps in order with a check per step",
+        crate::RunMode::Goal => "goal mode: keep going until the objective is met",
+        crate::RunMode::Auto => "auto mode: full tools",
     };
     drop(ui.send(Msg::System(text.to_string())));
 }

@@ -239,7 +239,7 @@ impl Policy {
     pub(crate) fn tool(&self, alias: &str, readonly: bool) -> Result<()> {
         if self.read_only && !readonly {
             return Err(Error::Denied(format!(
-                "`{alias}` can change state and is unavailable in plan mode"
+                "`{alias}` can change state and is unavailable in a read-only session"
             )));
         }
         if self.unrestricted {
@@ -270,8 +270,8 @@ impl Policy {
     pub(crate) fn write_path(&self, relative: &str) -> Result<()> {
         if self.read_only {
             return Err(Error::Denied(
-                "plan mode does not edit files. Return the plan in your reply. \
-                 Switch to auto mode before editing files."
+                "this session is read-only and does not edit files. \
+                 Report the change in your reply."
                     .to_string(),
             ));
         }

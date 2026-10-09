@@ -46,7 +46,7 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 | 2 | The check failed, including when the budget ran out. |
 | 3 | Stopped short with no check configured, or the check passed but the goal was not met. |
 
-Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
+Useful flags: `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
 ## Give it project instructions
 

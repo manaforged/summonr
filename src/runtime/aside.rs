@@ -9,12 +9,12 @@ impl<P: Provider> Loop<P> {
         user: &str,
     ) -> Result<(String, Usage)> {
         let advertised = self.advertised_tools();
-        let plan = self.is_plan();
+        let read_only = self.tools.is_read_only();
         self.tools.set_read_only(true);
         let result = self
             .aside_rounds(role, system, user, &advertised.tools, &advertised.json)
             .await;
-        self.tools.set_read_only(plan);
+        self.tools.set_read_only(read_only);
         result
     }
 

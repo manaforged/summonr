@@ -2,7 +2,7 @@ use super::checkpoint::Pretask;
 use super::compaction::{force_compact, repair_arguments};
 use super::*;
 use crate::ProviderFailureKind;
-use crate::durable::driver::{Purpose, TurnWork, Verdict};
+use crate::durable::driver::{Purpose, Verdict};
 use crate::durable::id::{Attempt, Call};
 use crate::durable::work::{Decision, Observation, Stage};
 use crate::hooks::HookEvent;
@@ -17,7 +17,7 @@ use crate::prompt::{Harness, harness_section};
 use crate::provider::StopReason;
 use crate::session::decorate;
 use crate::tools::{Abort, ToolOutput, needed_grant, readonly};
-use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, verify};
+use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, review, scout, verify};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum GrantAnswer {
@@ -339,7 +339,6 @@ fn purpose_of(role: workflow::Role) -> Purpose {
         workflow::Role::Judge => Purpose::Judge,
         workflow::Role::Review => Purpose::Review,
         workflow::Role::Scout => Purpose::Scout,
-        workflow::Role::Plan => Purpose::Plan,
     }
 }
 

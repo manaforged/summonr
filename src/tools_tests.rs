@@ -112,7 +112,7 @@ fn names(tools: &ToolRegistry) -> Vec<String> {
 }
 
 #[test]
-fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
+fn a_read_only_session_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
     let (_dir, mut tools) = workspace(&[("a.txt", "one\n")]);
     let open = names(&tools);
     tools.set_read_only(true);
@@ -136,7 +136,7 @@ fn plan_mode_keeps_the_tool_list_and_refuses_the_edit_when_it_runs() {
         Ok(output) => output.text,
         Err(error) => error.to_string(),
     };
-    assert!(text.contains("plan mode does not edit files"), "{text}");
+    assert!(text.contains("this session is read-only"), "{text}");
 }
 
 #[tokio::test]

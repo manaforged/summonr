@@ -42,20 +42,20 @@ impl ToolRegistry {
         if args.get("op").and_then(serde_json::Value::as_str) == Some("help") {
             return Ok(ToolOutput::ok(super::help::RUN_COMMAND.to_string()));
         }
-        let plan = self.policy.is_read_only();
+        let locked = self.policy.is_read_only();
         if let Some(id) = args
             .get("job")
             .and_then(serde_json::Value::as_str)
             .filter(|id| !id.is_empty())
         {
-            return self.poll_job(&args, id, plan).await;
+            return self.poll_job(&args, id, locked).await;
         }
-        self.launch_command(&args, plan).await
+        self.launch_command(&args, locked).await
     }
 
-    async fn launch_command(&self, args: &serde_json::Value, plan: bool) -> Result<ToolOutput> {
+    async fn launch_command(&self, args: &serde_json::Value, locked: bool) -> Result<ToolOutput> {
         let restricted = self.policy.restricts_writes();
-        let read_only = plan || restricted;
+        let read_only = locked || restricted;
         let command = object_string(args, "command")?;
         let workdir = args
             .get("workdir")
@@ -71,7 +71,7 @@ impl ToolRegistry {
             return Ok(output);
         }
         let background = object_bool(args, "background");
-        self.check_launch(plan, restricted, background)?;
+        self.check_launch(locked, restricted, background)?;
         let started = self.start_command(command, background, read_only, approval, cwd)?;
         if background {
             return Ok(background_result(started));
@@ -120,17 +120,17 @@ impl ToolRegistry {
         Ok(None)
     }
 
-    fn check_launch(&self, plan: bool, restricted: bool, background: bool) -> Result<()> {
+    fn check_launch(&self, locked: bool, restricted: bool, background: bool) -> Result<()> {
         if restricted && self.sandbox.is_none() {
             return Err(Error::Denied(
                 "a restricted write policy requires the command sandbox for shell inspection"
                     .to_string(),
             ));
         }
-        if (plan || restricted) && background {
+        if (locked || restricted) && background {
             return Err(Error::Denied(
-                if plan {
-                    "Plan mode does not permit background commands"
+                if locked {
+                    "A read-only session does not permit background commands"
                 } else {
                     "restricted write policy does not permit background commands"
                 }
@@ -145,10 +145,15 @@ impl ToolRegistry {
         Ok(())
     }
 
-    async fn poll_job(&self, args: &serde_json::Value, id: &str, plan: bool) -> Result<ToolOutput> {
-        if plan {
+    async fn poll_job(
+        &self,
+        args: &serde_json::Value,
+        id: &str,
+        locked: bool,
+    ) -> Result<ToolOutput> {
+        if locked {
             return Err(Error::Denied(
-                "Plan mode does not control background commands".to_string(),
+                "A read-only session does not control background commands".to_string(),
             ));
         }
         if object_bool(args, "kill") {

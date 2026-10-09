@@ -64,7 +64,7 @@ impl ToolRegistry {
         if let Some(new_name) = new_name {
             if self.policy.is_read_only() {
                 return Err(Error::Denied(
-                    "plan mode is read-only; no rename".to_string(),
+                    "this session is read-only; no rename".to_string(),
                 ));
             }
             let name = new_name.to_string();

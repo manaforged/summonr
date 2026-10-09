@@ -1,6 +1,11 @@
 use super::preset::presets;
 use super::*;
 
+mod pick;
+pub(crate) use pick::{choose, default_seat};
+use pick::{first_ready, last_used};
+pub use pick::{ordered_names, set_up};
+
 pub fn fallbacks<P>(
     endpoint: &Endpoint,
     mut connect: impl FnMut(&Endpoint) -> Result<P>,
@@ -39,55 +44,6 @@ pub fn chosen_by(name: Option<&str>, model: Option<&str>) -> Option<Pick> {
     }
     let file = config::file().ok()?;
     choose(&file, last_used(), name, model).2
-}
-
-fn last_used() -> Option<(String, String)> {
-    let home = crate::prompt::summonr_home().ok()?;
-    let seat = crate::recent::load(&home).into_iter().next()?;
-    Some((seat.endpoint, seat.model))
-}
-
-pub(crate) fn default_seat() -> Option<crate::recent::Seat> {
-    let file = config::file().ok()?;
-    Some(crate::recent::Seat::new(
-        file.default.clone()?,
-        file.default_model.clone()?,
-    ))
-}
-
-pub(crate) fn choose(
-    file: &File,
-    last: Option<(String, String)>,
-    name: Option<&str>,
-    model: Option<&str>,
-) -> (Option<String>, Option<String>, Option<Pick>) {
-    let given = |value: Option<&str>| {
-        value
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-    };
-    let env = |key: &str| given(std::env::var(key).ok().as_deref());
-    let (chosen, remembered, reason) = if let Some(name) = given(name) {
-        (Some(name), None, Some(Pick::Flag))
-    } else if let Some(name) = env("SUMMONR_ENDPOINT") {
-        (Some(name), None, Some(Pick::Env))
-    } else if let Some((name, model)) = last {
-        (Some(name), Some(model), Some(Pick::LastUsed))
-    } else if let Some(name) = file.default.clone() {
-        (Some(name), file.default_model.clone(), Some(Pick::Default))
-    } else {
-        (file.last_endpoint.clone(), None, Some(Pick::LastUsed))
-    };
-    let reason = if given(model).is_some() {
-        Some(Pick::ModelFlag)
-    } else if env("SUMMONR_MODEL").is_some() {
-        Some(Pick::Env)
-    } else {
-        reason.filter(|_| chosen.is_some())
-    };
-    let model = given(model).or_else(|| env("SUMMONR_MODEL")).or(remembered);
-    (chosen, model, reason)
 }
 
 pub fn resolve(name: Option<&str>, model: Option<&str>, need: Need) -> Result<Endpoint> {
@@ -188,22 +144,6 @@ fn unknown(chosen: &str) -> Error {
     ))
 }
 
-fn first_ready(file: &File) -> Option<String> {
-    names().ok()?.into_iter().find(|name| {
-        resolve(Some(name), None, Need::Seat).is_ok_and(|endpoint| {
-            endpoint.wire != Wire::Decisions
-                && (endpoint
-                    .source
-                    .is_some_and(|source| source != Source::Builtin)
-                    || (file.endpoint.contains_key(name) && endpoint.keyless())
-                    || endpoint
-                        .oauth
-                        .as_ref()
-                        .is_some_and(|spec| logged_in(spec, name).is_ok_and(|ready| ready)))
-        })
-    })
-}
-
 fn no_seat() -> String {
     let config =
         config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
@@ -232,7 +172,13 @@ pub fn closest<'a>(name: &str, names: &'a [String]) -> Option<&'a str> {
     names
         .iter()
         .map(|other| (distance(other), other.as_str()))
-        .filter(|(cost, _)| *cost <= (name.chars().count() / 3).max(2))
+        .filter(|(cost, _)| {
+            cost.saturating_mul(100)
+                <= name
+                    .chars()
+                    .count()
+                    .saturating_mul(crate::limits::limits().closest_percent)
+        })
         .min()
         .map(|(_, other)| other)
 }

@@ -5,7 +5,7 @@ use crate::tui::Msg;
 fn footer(lines: &[String]) -> String {
     lines
         .iter()
-        .rfind(|line| line.contains("ctx"))
+        .rfind(|line| line.contains("cache"))
         .cloned()
         .unwrap_or_default()
 }
@@ -25,7 +25,7 @@ fn the_footer_shows_spend_beside_the_meters_and_no_rate() {
     });
     let line = footer(&lines);
     let spend = line.find("$0.04").unwrap_or_else(|| panic!("{line}"));
-    let ctx = line.find("ctx").unwrap_or_default();
+    let ctx = line.find("cache").unwrap_or_default();
     assert!(spend < ctx, "{line}");
     assert!(!line.contains("tok/s"), "{line}");
 }
@@ -48,7 +48,7 @@ fn a_short_transcript_keeps_the_composer_under_it_and_the_footer_at_the_bottom()
         bottom,
         lines
             .iter()
-            .rposition(|line| line.contains("ctx"))
+            .rposition(|line| line.contains("cache"))
             .unwrap_or_default()
     );
     assert!(
@@ -70,7 +70,7 @@ fn a_long_transcript_keeps_the_composer_at_the_bottom() {
     let composer = composer_top(&lines);
     let footer = lines
         .iter()
-        .rposition(|line| line.contains("ctx"))
+        .rposition(|line| line.contains("cache"))
         .unwrap_or_default();
     assert!(
         footer - composer <= 4,
@@ -82,4 +82,18 @@ fn a_long_transcript_keeps_the_composer_at_the_bottom() {
         "the newest entry is not visible:\n{}",
         lines.join("\n")
     );
+}
+
+#[test]
+fn the_context_meter_shows_only_when_the_window_is_known() {
+    let unknown = footer(&frame_with(busy_info(), 110, 30, State::Idle, |_| {}));
+    assert!(!unknown.contains("ctx"), "{unknown}");
+    let known = footer(&frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.update(Msg::Settings(crate::tui::Snapshot {
+            model: "stub-model".to_owned(),
+            context_window: Some(200_000),
+            ..crate::tui::Snapshot::default()
+        }));
+    }));
+    assert!(known.contains("ctx"), "{known}");
 }

@@ -133,7 +133,6 @@ impl Worker {
             Cmd::SetEffort(effort) => {
                 self.dial = effort;
                 self.loop_.set_effort(effort);
-                self.remember_seat();
                 self.send_settings();
             }
             Cmd::SetVerify(on) => self.set_verify(on),

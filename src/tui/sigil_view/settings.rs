@@ -112,24 +112,23 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
         (
             "harness",
             Setting::Mail,
-            "mail",
+            "incoming mail",
             if prefs.mail {
-                "mail starts a turn"
+                "starts a turn"
             } else {
-                "mail waits"
+                "waits for the next turn"
             }
             .to_string(),
         ),
     ];
+    let mut shown: Vec<Row> = rows.drain(..).map(Row::from).collect();
     let modules = app.modules.peek();
-    for module in &crate::modules::ALL {
-        rows.push((
-            "modules",
-            Setting::Module(module.id),
-            module.id.name(),
-            on_off(modules.get(&module.id).copied().unwrap_or(module.default)).to_string(),
-        ));
-    }
+    shown.extend(crate::modules::ALL.iter().map(|module| Row {
+        group: "modules",
+        setting: Setting::Module(module.id),
+        label: format!("{} tools", module.id.name()),
+        value: on_off(modules.get(&module.id).copied().unwrap_or(module.default)).to_string(),
+    }));
     rows.extend([
         ("interface", Setting::Theme, "theme", prefs.theme.clone()),
         (
@@ -175,14 +174,19 @@ pub(super) fn setting_rows(app: &App) -> Vec<Row> {
             format!("{} bindings", crate::prefs::Hotkey::ALL.len()),
         ),
     ]);
-    rows.into_iter()
-        .map(|(group, setting, label, value)| Row {
+    shown.extend(rows.into_iter().map(Row::from));
+    shown
+}
+
+impl From<(&'static str, Setting, &str, String)> for Row {
+    fn from((group, setting, label, value): (&'static str, Setting, &str, String)) -> Self {
+        Self {
             group,
             setting,
             label: label.to_string(),
             value,
-        })
-        .collect()
+        }
+    }
 }
 
 const fn on_off(value: bool) -> &'static str {

@@ -15,7 +15,8 @@ Sessions:
 Providers:
   endpoints                   list endpoints, their models, and each key state
   login [NAME] [--key]        list keys and plans, or sign in to NAME
-  logout NAME                 forget the stored key or token
+  login NAME --url URL        add your own OpenAI-compatible server (--model NAME to pick one)
+  logout NAME [--remove]      forget the stored key or token; --remove deletes your own endpoint
 
 Setup:
   workflows                   list saved workflows
@@ -78,4 +79,4 @@ Classify:
   --json prints answers and probabilities; --gate N sets the confidence floor.
   State comes from arguments or stdin.
 
-Keys, sandbox, and policy: docs/guide/reference.md
+Keys, sandbox, and policy: https://github.com/manaforged/summonr/blob/main/docs/guide/reference.md

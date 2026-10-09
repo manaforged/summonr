@@ -129,13 +129,17 @@ fn row(server: &Server, hub: Option<&Hub>, live: &[Live]) -> ServerStatus {
             })
         })
         .collect();
-    let (state, detail) =
-        hub.and_then(|hub| hub.state(&server.name))
-            .unwrap_or(if items.is_empty() {
-                (McpState::Unlisted, None)
-            } else {
+    let (state, detail) = hub
+        .and_then(|hub| hub.state(&server.name))
+        .unwrap_or_else(|| {
+            if !items.is_empty() {
                 (McpState::Cached, None)
-            });
+            } else if let Some(error) = catalog::failure(&server.key) {
+                (McpState::Failed, Some(error))
+            } else {
+                (McpState::Unlisted, None)
+            }
+        });
     let (transport, launch) = match &server.launch {
         Launch::Stdio { command, args, env } => (
             McpTransport::Stdio,

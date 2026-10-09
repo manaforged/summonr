@@ -2,6 +2,8 @@
 mod content;
 #[path = "mcp/defer.rs"]
 mod defer;
+#[path = "mcp/diff.rs"]
+mod diff;
 #[path = "mcp/lifecycle.rs"]
 mod lifecycle;
 #[path = "mcp/manage.rs"]
@@ -67,6 +69,8 @@ fn main() {
         #[cfg(unix)]
         plugins::plugin_settings_and_data_are_handled,
         plugins::a_legacy_bundle_installs_as_a_plugin,
+        #[cfg(unix)]
+        plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -75,6 +79,8 @@ fn main() {
         output::an_image_is_withheld_from_a_model_without_images,
         output::an_image_whose_data_does_not_match_its_type_is_withheld,
         output::a_server_error_line_is_shown_without_secrets,
+        output::a_json_run_starts_with_its_session_id,
+        diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
         policy::strict_mode_denies_a_listed_tool_and_runs_an_allowed_one,
         policy::strict_mode_without_an_allow_entry_refuses_a_tool_that_changes_state,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

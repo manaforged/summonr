@@ -84,8 +84,10 @@ pub(crate) struct SessionDriver {
 }
 
 mod children;
+mod plan;
 mod session;
 mod turns;
+mod verdict;
 mod work;
 
 impl SessionDriver {

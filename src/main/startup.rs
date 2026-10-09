@@ -89,6 +89,16 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
 }
 
 async fn account(args: &Args) -> Option<Result<i32>> {
+    if args.login
+        && let (Some(name), Some(url)) = (args.endpoint.as_deref(), args.url.as_deref())
+    {
+        return Some(
+            summonr::add_endpoint(name, url, args.model.as_deref())
+                .await
+                .map(|text| println!("{text}"))
+                .map(|()| 0),
+        );
+    }
     if args.login {
         return Some(run_login(args).await.map(|()| 0));
     }
@@ -101,6 +111,9 @@ async fn account(args: &Args) -> Option<Result<i32>> {
     if args.list {
         return Some(probe_endpoints().await.map(|()| 0));
     }
+    if let Some(command) = &args.mcp {
+        return Some(mcp(command).await.map(|()| 0));
+    }
     None
 }
 
@@ -110,7 +123,12 @@ fn logout(args: &Args) -> Result<i32> {
             "logout needs an endpoint name".to_string(),
         ));
     };
-    println!("{}", summonr::logout(name)?);
+    let text = if args.remove {
+        summonr::remove_endpoint(name)?
+    } else {
+        summonr::logout(name)?
+    };
+    println!("{text}");
     Ok(0)
 }
 
@@ -124,9 +142,6 @@ fn listing(args: &Args) -> Option<Result<i32>> {
     }
     if args.profile {
         return done(profile(args));
-    }
-    if let Some(command) = &args.mcp {
-        return done(mcp(command));
     }
     if args.list_workflows {
         return done(print_workflows());

@@ -7,20 +7,40 @@ use crate::provider::Provider;
 use crate::runtime::Loop;
 use crate::workflow::Role;
 
+const FILE: &str = "plan.md";
+
+const APPROVALS: &[&str] = &[
+    "go",
+    "go ahead",
+    "do it",
+    "yes",
+    "y",
+    "ok",
+    "okay",
+    "implement it",
+    "implement",
+    "proceed",
+    "ship it",
+    "accept",
+    "approved",
+    "lgtm",
+    "sounds good",
+];
+
 #[must_use]
-pub(crate) fn file(workspace: &Path) -> PathBuf {
-    workspace.join(".summonr").join("plan.md")
+pub(crate) fn file(session: &Path) -> PathBuf {
+    session.with_file_name(FILE)
 }
 
-pub(crate) fn write(workspace: &Path, markdown: &str) -> io::Result<PathBuf> {
-    let path = file(workspace);
+pub(crate) fn write(session: &Path, markdown: &str) -> io::Result<PathBuf> {
+    let path = file(session);
     store::write(&path, markdown)?;
     Ok(path)
 }
 
 #[must_use]
-pub(crate) fn read(workspace: &Path) -> Option<String> {
-    fs::read_to_string(file(workspace))
+pub(crate) fn read(session: &Path) -> Option<String> {
+    fs::read_to_string(file(session))
         .ok()
         .filter(|text| !text.trim().is_empty())
 }
@@ -44,6 +64,24 @@ pub(crate) async fn draft<P: Provider>(
 }
 
 #[must_use]
+pub(crate) fn approves(reply: &str) -> bool {
+    let reply = reply.trim().to_lowercase();
+    APPROVALS.contains(&reply.as_str())
+}
+
+#[must_use]
+pub(crate) fn ready(session: &Path) -> String {
+    format!(
+        "plan saved to {}; /plan accept runs it, /plan reject drops it",
+        file(session).display()
+    )
+}
+
+#[must_use]
 pub(crate) fn note(plan: &str) -> String {
     format!("Plan written before execution:\n{}", plan.trim())
 }
+
+#[cfg(test)]
+#[path = "plan_tests.rs"]
+mod tests;

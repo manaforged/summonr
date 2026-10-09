@@ -80,7 +80,13 @@ pub fn list() -> Result<String> {
             } else {
                 "on"
             };
-            format!("{}\t{state}\t{}", plugin.name, describe(plugin).join("; "))
+            let adds = describe(plugin);
+            let adds = if adds.is_empty() {
+                "adds nothing summonr loads".to_string()
+            } else {
+                adds.join("; ")
+            };
+            format!("{}\t{state}\t{adds}", plugin.name)
         })
         .collect();
     if lines.is_empty() {
@@ -140,6 +146,31 @@ fn describe(plugin: &Plugin) -> Vec<String> {
             "mcp {}",
             servers.into_keys().collect::<Vec<_>>().join(" ")
         ));
+    }
+    let workspace = std::env::current_dir().unwrap_or_default();
+    let commands: Vec<String> = super::commands::commands()
+        .into_iter()
+        .filter(|command| command.plugin.name == plugin.name)
+        .map(|command| command.name)
+        .collect();
+    if !commands.is_empty() {
+        parts.push(format!("commands {}", commands.join(" ")));
+    }
+    let agents: Vec<String> = super::agents::agents(&workspace)
+        .into_iter()
+        .filter(|agent| agent.plugin == plugin.name)
+        .map(|agent| agent.name)
+        .collect();
+    if !agents.is_empty() {
+        parts.push(format!("agents {}", agents.join(" ")));
+    }
+    let prefix = format!("{}:", plugin.name);
+    let languages: Vec<String> = super::lsp::servers(&workspace)
+        .into_iter()
+        .filter_map(|server| server.key.strip_prefix(&prefix).map(str::to_string))
+        .collect();
+    if !languages.is_empty() {
+        parts.push(format!("lsp {}", languages.join(" ")));
     }
     let hooks = plugin.hooks().names();
     if !hooks.is_empty() {

@@ -16,8 +16,9 @@ impl Model {
         (used, window, percent)
     }
 
-    pub(in crate::tui::sigil_view) fn context_percent(&self) -> u64 {
-        self.fill().2
+    pub(in crate::tui::sigil_view) fn context_percent(&self) -> Option<u64> {
+        let (_, window, percent) = self.fill();
+        (window > 0).then_some(percent)
     }
 
     pub(in crate::tui::sigil_view) fn cache_percent(&self) -> u64 {

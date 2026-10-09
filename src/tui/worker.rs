@@ -14,6 +14,7 @@ use crate::runtime::Loop;
 use crate::workflow::Workflow;
 
 mod command;
+mod diff;
 mod dispatch;
 mod export;
 

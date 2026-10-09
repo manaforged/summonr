@@ -192,3 +192,42 @@ fn a_child_receipt_reads_as_its_answer_not_json() {
         "{shown}"
     );
 }
+
+#[test]
+fn a_child_that_recovers_from_a_failed_command_reads_done_and_one_that_aborts_reads_failed() {
+    let shown = frame_with(busy_info(), 140, 40, State::Idle, |app| {
+        task_call(app);
+        spawn(app, IDS[0], "Fix the parser.", false);
+        spawn(app, IDS[1], "Fix the lexer.", false);
+        act(
+            app,
+            IDS[0],
+            Event::ToolResult {
+                id: "c".to_owned(),
+                success: false,
+                mutated: false,
+                output: "1 test failed".to_owned(),
+                millis: None,
+                patch: None,
+            },
+        );
+        act(
+            app,
+            IDS[0],
+            Event::Assistant {
+                text: "parser fixed".to_owned(),
+            },
+        );
+        act(
+            app,
+            IDS[1],
+            Event::Aborted {
+                reason: "budget reached".to_owned(),
+                code: crate::tools::AbortCode::TimeBudget,
+            },
+        );
+    })
+    .join("\n");
+    assert!(shown.contains("1 done · 1 failed"), "{shown}");
+    assert!(shown.contains("parser fixed"), "{shown}");
+}

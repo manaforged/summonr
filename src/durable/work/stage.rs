@@ -90,6 +90,7 @@ impl Work {
         {
             return Err(WorkError(DECISION.to_string()));
         }
+        self.record_check(passed);
         if !passed {
             return self.fail("Repair the failed completion check.".to_string());
         }
@@ -183,6 +184,7 @@ impl Work {
         if self.stage() != Some(Stage::Review) {
             return Err(WorkError("a rejection requires Review".to_string()));
         }
+        self.record_check(false);
         self.fail(format!("Address the review findings:\n{findings}"))
     }
 

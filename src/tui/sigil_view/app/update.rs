@@ -203,7 +203,17 @@ impl App {
     fn login_opened(&self, note: String) {
         self.begin_auth(None);
         if self.unseated() {
-            self.auth.sel.set(0);
+            let rows = self.filtered_auth();
+            let starts = |choice: &crate::endpoint::AuthInfo| {
+                crate::endpoint::resolve(Some(&choice.name), None, crate::endpoint::Need::Seat)
+                    .is_ok()
+            };
+            let at = rows
+                .iter()
+                .position(starts)
+                .or_else(|| rows.iter().position(|choice| !choice.keyless()))
+                .unwrap_or(0);
+            self.auth.sel.set(at);
         }
         self.auth
             .step

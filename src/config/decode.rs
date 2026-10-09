@@ -35,6 +35,7 @@ pub(super) fn decode(path: &Path, text: &str) -> Result<File> {
     if table.contains_key("mail") {
         table.remove("bus");
     }
+    table.remove("last_endpoint");
     table
         .try_into()
         .map_err(|error: toml::de::Error| bad(path, &error.message().trim().replace('\n', "; ")))

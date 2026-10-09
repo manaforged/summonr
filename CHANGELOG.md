@@ -23,10 +23,16 @@ First stable release.
 - Slash-command and `@` mention type-ahead work on the start screen.
 - `shift+tab` cycles reasoning effort from none to max. Each vendor and model sends the nearest level it accepts; `reasoning_levels` and `thinking_off` on an endpoint override this.
 - The provider table is data. Every built-in endpoint is one `[[preset]]` row in `src/endpoint/presets.toml` (base URL, env keys, wire, reasoning quirks, peer ids), and a row summonr cannot honor fails startup by name. New built-ins: the Qwen coding plans `qwen-plan` and `qwen-plan-cn` and the DashScope hosts `dashscope` and `dashscope-cn`; the MiniMax coding plans `minimax-plan` and `minimax-cn-plan` on the Anthropic wire; `tencent-plan` and `volcengine-plan`; `nvidia`, `huggingface`, `cohere`, `perplexity`, `siliconflow`, `siliconflow-cn`, `ollama-cloud`, and the local `lmstudio`. Coding-plan keys adopt from OpenCode's `auth.json` through their models.dev ids.
-- `plan_mode = true` turns on plan mode. It is off by default.
+- Plan mode is on by default; `plan_mode = false` turns it off. `/goal TEXT` in plan mode starts the goal with the saved plan, `/auto` drops a pending plan, and a short reply such as `go` or `yes` accepts a ready plan like `/plan accept`. After a goal ends, the session returns to its earlier mode.
+- `/goal` with no check configured uses a check detected from the project (`cargo test`, `go test ./...`, or `npm test` when `package.json` has a `test` script) and says how to set another in `.summonr/check.toml`.
+- `--json` runs open with `{"type":"session","id":...}`, and the `aborted` event carries a `code`: `time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`.
+- `summonr diff --turn N|last` shows what one turn changed, from the checkpoint at its start to the next turn's checkpoint; resumed sessions keep numbering turns.
+- `summonr mcp add` connects once, caches the tool list, and prints the tool count; a server that fails stays configured and shows `failed: <error>` in `summonr mcp list`. In `-p` output a call through the `mcp` tool prints `→ mcp server:tool`.
+- Hooks take `{ command, dialect = "claude" }` to run a Claude Code hook with its stdin JSON and verdict rules. Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR`.
+- `summonr install --list` names each plugin, whether it is on, and what it adds. `summonr login` shows each preset's label, `summonr endpoints` lists set-up endpoints first, and `summonr sessions` prints a header row on a terminal.
 - `AGENTS.md` and `CLAUDE.md` expand `@path` lines: the named file, relative to the one holding the line, joins the prompt in place. Files load once across user and project context, and a missing include stays as the literal line.
 - `/pane jobs` lists background commands with status, log, and kill. `/pane peers` lists live sessions you can mention with `@name`.
-- The diff pane reviews one hunk at a time: accept, revert, or add a note for the model. Marks persist in `.summonr/review.json`.
+- The diff pane reviews one hunk at a time: `a` accepts, `r` reverts, and `n` adds a note for the model (Enter saves). Typed letters stay in the pane, and `esc` returns to the composer. A pane narrower than `diff_split_min_cols` shows the unified diff. Marks persist in `.summonr/review.json`.
 - Inline terminal mode, grouped repeated tool calls, a transcript scrollbar, and images attached during a turn.
 
 ### Changed
@@ -53,12 +59,19 @@ First stable release.
 - Fewer wasted rounds: command output keeps about 16 KB, `write` over a file returns one line, `read` pages by 50 KB, and batch edits to the same line apply in order.
 - A foreground command that reaches the wait limit continues as a background job unless `timeout_secs` was set.
 - `todo` is advertised only in steps and goal runs, `task` only in interactive sessions, and the `search` module is off by default.
-- The last seat you used wins over `default` in `config.toml`. Effort is remembered per seat; a reasoning model with no effort set uses `high`.
+- Seat order: the endpoint argument, `SUMMONR_ENDPOINT`, `default` in `config.toml`, the last seat used, then the first endpoint that is set up. A seat is remembered in `recent.json` only after a turn succeeds, and the old `last_endpoint` key is removed on the next save. A `default` or last-used endpoint that is gone or has no key prints one note and falls back. Effort is remembered per seat; a reasoning model with no effort set uses `high`.
 - DeepSeek and z.ai GLM receive earlier reasoning on every turn, as both vendors require.
+- In `--goal` and `--steps`, the check decides the exit code: a run that stops short runs the check once at exit and exits 2 when it fails, even after a budget ran out. The `work` event's `checks_failed` and the `verify` events now agree.
+- The plan is saved as `plan.md` in the session directory instead of `.summonr/plan.md` in the workspace.
 - Lower startup time, memory, and per-turn overhead: model facts come from the local catalog, requests are encoded once per turn, and waits no longer poll.
 
 ### Fixed
 
+- The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`; a check file that changes during a run gets a note, and the check loaded at start stays in force. A file that summonr's own output is redirected to never counts as a change.
+- `summonr diff` and child landings never include generated caches (`__pycache__`, `*.pyc`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`) or summonr state under `.summonr/`, even without a `.gitignore`.
+- A child never inherits goal or steps mode, a child of a plan-mode parent is read-only, and a child's first message names only its own checkout.
+- A local server needs no `api_key`. When `ollama` or `lmstudio` is not running, the error gives the start command and, with no model set, lists the server's models. `summonr logout NAME` says what it removed. A closest-name hint appears only within `closest_percent` of the name length.
+- An unknown slash command names the closest command and never runs another one. One `esc` closes `/login` and `/model`, and the `ctx` meter hides when the context window is unknown.
 - `--goal` and `--steps` from the command line run the completion check and the goal judge. Before, a goal that was already met could repeat turns until its budget ran out.
 - Dragging across the transcript in a terminal copies exactly the text crossed, in either direction, and the footer says "copied N lines". Before, the first character was dropped, a drag toward the start copied nothing, and nothing confirmed the copy.
 - Links in replies open on click, a dropped file lands only in the pane under the pointer, and loading older messages keeps the message you were reading in place.
@@ -109,7 +122,7 @@ First stable release.
 - `↑` on an empty draft pulls queued input back; `ctrl+q` no longer does.
 - A key stored with `summonr login` wins over peer keys. An endpoint with no key fails with the missing-key message.
 - The model sees five core tools: `read`, `edit`, `write`, `run_command`, and `todo`. Modules add `skill`, `lsp`, `web`, `task`, and `bus`. `read` search takes `literal`, `caseSensitive`, and `include`; `edit` and `write` take a `files` batch.
-- Chat runs at once. `shift+tab` and `/plan` enter plan mode, which is read-only and saves the plan to `.summonr/plan.md`. `/plan accept` runs the plan in the same turn.
+- Chat runs at once. `shift+tab` and `/plan` enter plan mode, which is read-only and saves the plan to `plan.md` in the session directory. `/plan accept` runs the plan in the same turn.
 - The `task` module is off by default.
 - `--goal`, `--steps`, and `implement` children edit the launch directory. `--worktree` isolates the session.
 - Sandboxed network is on by default; `--no-net` denies it.

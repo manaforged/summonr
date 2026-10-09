@@ -43,8 +43,8 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 | --- | --- |
 | 0 | Done. In goal and step modes, the work completed. |
 | 1 | Harness error: bad arguments, config, or an internal failure. |
-| 2 | The check failed. |
-| 3 | Stopped short: budget, stall, or aborted turn. |
+| 2 | The check failed, including when the budget ran out. |
+| 3 | Stopped short with no check configured, or the check passed but the goal was not met. |
 
 Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
@@ -62,7 +62,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 | --- | --- |
 | A skill | `~/.summonr/skills/NAME/SKILL.md` |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
-| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command that reads JSON on stdin |
+| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
 | A plugin | `summonr install PATH` for a plugin in the Claude Code layout |
 

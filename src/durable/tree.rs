@@ -63,13 +63,14 @@ pub(crate) fn snapshot(
         .as_secs();
     let mut files = BTreeMap::new();
     let mut stamps = BTreeMap::new();
+    let own = own_outputs();
     for relative in listing(root)? {
         let path = root.join(&relative);
         if exclude.is_some_and(|exclude| path.starts_with(exclude)) {
             continue;
         }
         let name = relative.to_string_lossy().replace('\\', "/");
-        if let Some((entry, stamp)) = mark(&path, &name, previous)? {
+        if let Some((entry, stamp)) = mark(&path, &name, previous, &own)? {
             stamps.insert(name.clone(), stamp);
             files.insert(name, entry);
         }
@@ -85,6 +86,7 @@ fn mark(
     path: &Path,
     name: &str,
     previous: Option<&Snapshot>,
+    own: &[(u64, u64)],
 ) -> io::Result<Option<(Entry, Stamp)>> {
     let metadata = match path.symlink_metadata() {
         Ok(metadata) => metadata,
@@ -92,6 +94,9 @@ fn mark(
         Err(error) => return Err(at(path, error)),
     };
     if !metadata.is_file() && !metadata.is_symlink() {
+        return Ok(None);
+    }
+    if identity(&metadata).is_some_and(|id| own.contains(&id)) {
         return Ok(None);
     }
     let modified = metadata
@@ -283,6 +288,37 @@ fn device_of(metadata: &Metadata) -> Option<u64> {
 #[cfg(not(unix))]
 fn device_of(_: &Metadata) -> Option<u64> {
     None
+}
+
+#[cfg(unix)]
+fn identity(metadata: &Metadata) -> Option<(u64, u64)> {
+    use std::os::unix::fs::MetadataExt;
+    Some((metadata.dev(), metadata.ino()))
+}
+
+#[cfg(not(unix))]
+fn identity(_: &Metadata) -> Option<(u64, u64)> {
+    None
+}
+
+#[cfg(unix)]
+fn own_outputs() -> Vec<(u64, u64)> {
+    use std::os::fd::AsFd;
+    [
+        std::io::stdout().as_fd().try_clone_to_owned(),
+        std::io::stderr().as_fd().try_clone_to_owned(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(|fd| std::fs::File::from(fd).metadata().ok())
+    .filter(Metadata::is_file)
+    .filter_map(|metadata| identity(&metadata))
+    .collect()
+}
+
+#[cfg(not(unix))]
+fn own_outputs() -> Vec<(u64, u64)> {
+    Vec::new()
 }
 
 #[cfg(all(test, unix))]

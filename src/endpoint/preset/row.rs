@@ -58,6 +58,10 @@ pub(super) struct Row {
     off: bool,
     #[serde(default)]
     opencode_ids: Vec<String>,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    start: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -202,6 +206,8 @@ impl Row {
             plan: self.plan,
             off: self.off,
             opencode_ids: leak_list(&self.opencode_ids),
+            label: self.label,
+            start: self.start,
             name,
             base_url,
         })

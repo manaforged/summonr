@@ -82,7 +82,7 @@ impl Checkpoints {
         Ok(paths)
     }
 
-    fn tree(&self) -> Result<String> {
+    pub(crate) fn tree(&self) -> Result<String> {
         let env = self.env();
         git_env(&self.root, &env, &["add", "-A", "--", "."])?;
         Ok(git_env(&self.root, &env, &["write-tree"])?
@@ -90,7 +90,7 @@ impl Checkpoints {
             .to_string())
     }
 
-    fn trees(&self) -> Vec<String> {
+    pub(crate) fn trees(&self) -> Vec<String> {
         std::fs::read_to_string(&self.log)
             .unwrap_or_default()
             .lines()

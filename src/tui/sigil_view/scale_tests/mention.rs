@@ -57,3 +57,54 @@ fn a_prompt_that_names_a_peer_is_sent_to_it() {
         );
     });
 }
+
+fn stats() -> crate::mcp::Offer {
+    crate::mcp::Offer {
+        kind: crate::mcp::OfferKind::Prompt,
+        insert: "/stats-report".to_string(),
+        about: "plugin command".to_string(),
+    }
+}
+
+#[test]
+fn a_plugin_command_is_offered_after_a_slash_and_not_on_an_empty_composer() {
+    let empty = frame_with(busy_info(), 100, 24, State::Idle, |app| {
+        app.model_mut(|model| model.offers = vec![stats()]);
+    });
+    assert!(
+        !empty.iter().any(|line| line.contains("/stats-report")),
+        "{}",
+        empty.join("\n")
+    );
+    let typed = frame_with(busy_info(), 100, 24, State::Idle, |app| {
+        app.model_mut(|model| model.offers = vec![stats()]);
+        app.replace("/st".to_string());
+    });
+    assert!(
+        typed.iter().any(|line| line.contains("/stats-report")),
+        "{}",
+        typed.join("\n")
+    );
+}
+
+#[test]
+fn a_typed_command_that_does_not_exist_is_sent_as_typed() {
+    Runtime::scope("unknown-command", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.replace("/profile".to_string());
+        if !app.accept() {
+            app.submit();
+        }
+        let mut usage = false;
+        while let Ok(command) = sent.try_recv() {
+            usage |= matches!(command, Cmd::ListUsage);
+        }
+        let draft = app.draft.peek();
+        assert!(
+            !usage && !draft.starts_with("/usage"),
+            "/profile became `{draft}`"
+        );
+    });
+}

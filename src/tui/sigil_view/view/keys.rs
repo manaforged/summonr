@@ -12,16 +12,21 @@ impl App {
         } else if self.edit_stop() || self.note_stop() {
         } else if self.context.peek().is_some() {
             self.context_close();
-        } else if self.pane_back() {
         } else if self.pane_focus.peek() {
             self.focus_pane(false);
+        } else if self.pane_back() {
         } else {
             super::input::escape(self);
         }
     }
 
     fn enter(&self, event: &mut KeyEvent) {
-        if (self.view_edit.peek() || self.note_target.peek().is_some()) && !self.options_active() {
+        if self.note_target.peek().is_some() && !self.options_active() {
+            event.stop_propagation();
+            self.note_commit(&self.note_text.peek());
+            return;
+        }
+        if self.view_edit.peek() && !self.options_active() {
             return;
         }
         event.stop_propagation();
@@ -122,7 +127,7 @@ fn respond() -> Vec<(Shortcut, Handler)> {
 }
 
 fn panes() -> Vec<(Shortcut, Handler)> {
-    vec![
+    let mut keys: Vec<(Shortcut, Handler)> = vec![
         (LogicalKey::character("e").into(), |app, event| {
             if app.review() {
                 event.stop_propagation();
@@ -150,26 +155,6 @@ fn panes() -> Vec<(Shortcut, Handler)> {
             if app.pane_active() == Some(super::Pane::Diff) {
                 event.stop_propagation();
                 app.copy_patch();
-            }
-        }),
-        (LogicalKey::character("r").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
-                event.stop_propagation();
-                app.hunk_reject();
-            }
-        }),
-        (LogicalKey::character("n").into(), |app, event| {
-            if app.pane_active() == Some(super::Pane::Diff)
-                && let Some(path) = app.diff_view.peek()
-            {
-                let hunks = app.hunks();
-                let Some(hunk) =
-                    hunks.get(app.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
-                else {
-                    return;
-                };
-                event.stop_propagation();
-                app.note_start(path, hunk.id.clone());
             }
         }),
         (LogicalKey::character("o").into(), |app, event| {
@@ -218,6 +203,39 @@ fn panes() -> Vec<(Shortcut, Handler)> {
                 app.nudge_split(5);
             },
         ),
+    ];
+    keys.extend(hunk_keys());
+    keys
+}
+
+fn hunk_keys() -> Vec<(Shortcut, Handler)> {
+    vec![
+        (LogicalKey::character("a").into(), |app, event| {
+            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
+                event.stop_propagation();
+                app.hunk_accept();
+            }
+        }),
+        (LogicalKey::character("r").into(), |app, event| {
+            if app.pane_active() == Some(super::Pane::Diff) && app.diff_view.peek().is_some() {
+                event.stop_propagation();
+                app.hunk_reject();
+            }
+        }),
+        (LogicalKey::character("n").into(), |app, event| {
+            if app.pane_active() == Some(super::Pane::Diff)
+                && let Some(path) = app.diff_view.peek()
+            {
+                let hunks = app.hunks();
+                let Some(hunk) =
+                    hunks.get(app.hunk_cursor.peek().min(hunks.len().saturating_sub(1)))
+                else {
+                    return;
+                };
+                event.stop_propagation();
+                app.note_start(path, hunk.id.clone());
+            }
+        }),
     ]
 }
 
@@ -328,7 +346,20 @@ pub(in crate::tui::sigil_view) fn shell(app: &App) -> NodeBuilder {
             }
         });
     let scroll = app.clone();
+    let owner = app.clone();
     let shell = shell
+        .key_capture_any(move |event| {
+            let typed = event
+                .text
+                .as_ref()
+                .is_some_and(|text| !text.is_empty() && !text.chars().any(char::is_control))
+                && !event.modifiers.intersects(
+                    ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META,
+                );
+            if typed && owner.pane_active().is_some() {
+                event.stop_propagation();
+            }
+        })
         .child(super::input::tab_shortcuts(app))
         .on_scroll(move |event| {
             let lines = super::canvas::scroll_lines(event.delta);

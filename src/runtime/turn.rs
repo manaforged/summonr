@@ -16,7 +16,7 @@ use crate::policy::Grant;
 use crate::prompt::{Harness, harness_section};
 use crate::provider::StopReason;
 use crate::session::decorate;
-use crate::tools::{ToolOutput, needed_grant, readonly};
+use crate::tools::{Abort, ToolOutput, needed_grant, readonly};
 use crate::{Receipt, WorkKind, WorkProgress, goal, jobs, plan, review, scout, verify};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -65,7 +65,7 @@ impl WaitError {
 
     pub(super) fn error(self) -> Error {
         match self {
-            Self::Deadline(_) => Error::Config("work-time limit reached".to_string()),
+            Self::Deadline(_) => Error::Config(Abort::time_limit().reason),
             Self::Provider(error) => error,
         }
     }
@@ -294,7 +294,7 @@ impl<P: Provider> Loop<P> {
             Ok(result) => result,
             Err(()) => {
                 self.abort_turn(
-                    Some("work-time limit reached".to_string()),
+                    Abort::time_limit(),
                     &mut events,
                     &mut emit,
                     &mut usage,

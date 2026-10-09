@@ -48,6 +48,8 @@ pub(crate) fn a_large_server_is_found_and_called_through_the_mcp_tool() {
     assert_eq!(sent.len(), 1, "{received:?}");
     assert_eq!(sent[0]["params"]["name"], json!("echo"));
     assert_eq!(sent[0]["params"]["arguments"], json!({"text": "deep"}));
+    let printed = crate::support::read(&session.file("stderr"));
+    assert!(printed.contains("→ mcp fixture1:echo"), "{printed}");
 }
 
 #[cfg(unix)]

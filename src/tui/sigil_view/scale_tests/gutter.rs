@@ -39,7 +39,7 @@ fn chrome_rows_start_at_the_gutter() {
             ("composer", find(&lines, "● auto")),
             (
                 "footer",
-                lines.iter().rposition(|line| line.contains("ctx")),
+                lines.iter().rposition(|line| line.contains("cache")),
             ),
         ];
         for (name, row) in rows {

@@ -133,6 +133,8 @@ pub(crate) enum Line {
     Close {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reason: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        code: Option<crate::tools::AbortCode>,
         #[serde(default, skip_serializing_if = "Option::is_none", alias = "rss_kb")]
         footprint_kb: Option<u64>,
     },

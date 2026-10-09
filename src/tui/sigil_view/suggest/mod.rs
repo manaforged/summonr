@@ -86,7 +86,11 @@ impl Picker {
             return None;
         }
         let rows = self.rows(draft, caret, model);
-        let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
+        let picked = self.cursor.peek().min(rows.len().saturating_sub(1));
+        let row = rows.get(picked)?;
+        if command && picked == 0 && !row.0.starts_with(draft.trim_end()) {
+            return None;
+        }
         let command = command && !prompt_row(model, &row.0);
         (row.0 != draft).then(|| (row.0.clone(), command))
     }
@@ -213,7 +217,7 @@ impl Picker {
 }
 
 fn prompts(model: &Model, draft: &str) -> Rows {
-    if draft.contains(char::is_whitespace) {
+    if !draft.starts_with('/') || draft.contains(char::is_whitespace) {
         return Vec::new();
     }
     model

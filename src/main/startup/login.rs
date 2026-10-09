@@ -128,10 +128,13 @@ pub(super) fn print_login_catalog() -> Result<()> {
                 println!("\n{heading}");
             }
         }
-        println!("  {}", row.catalog_line());
+        let label = summonr::endpoint_label(&row.name)
+            .map_or_else(String::new, |label| format!(" · {label}"));
+        println!("  {}{label}", row.catalog_line());
     }
     println!("\nsummonr login NAME     sign in or store a key");
     println!("summonr login NAME --key   skip the question and store a key");
+    println!("summonr login NAME --url URL   add your own OpenAI-compatible server");
     Ok(())
 }
 

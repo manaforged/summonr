@@ -1,11 +1,18 @@
 use std::path::Path;
-use std::process::{Command, Stdio};
 
 use serde::Serialize;
 
 use crate::durable::log::{self, Line};
 use crate::error::{Error, Result};
 use crate::worktree;
+
+mod git;
+pub(crate) mod ignored;
+mod turn;
+
+use git::{git, numstat_row};
+pub(crate) use git::{git_env, git_output};
+pub use turn::{TurnId, turn_patch, turn_stats};
 
 fn editor(name: &str) -> bool {
     crate::tools::Builtin::of(name).is_some_and(crate::tools::Builtin::edits)
@@ -161,9 +168,16 @@ fn changes(root: &Path, base: Option<String>, lines: bool) -> Result<Diff> {
         root,
         &["diff", "--numstat", "--no-renames", &reference, "--"],
     )?;
-    let mut files: Vec<Stat> = numstat.lines().filter_map(numstat_row).collect();
+    let mut files: Vec<Stat> = numstat
+        .lines()
+        .filter_map(numstat_row)
+        .filter(|stat| !ignored::hidden(&stat.path))
+        .collect();
     let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    for path in untracked.split('\0').filter(|path| !path.is_empty()) {
+    for path in untracked
+        .split('\0')
+        .filter(|path| !path.is_empty() && !ignored::hidden(path))
+    {
         files.push(Stat {
             path: path.to_string(),
             added: if lines { added(root, path)? } else { 0 },
@@ -209,16 +223,41 @@ pub(crate) fn line_count(path: &Path) -> Result<Option<u64>> {
 
 pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
     let base = reference(root, base(root)?.as_deref())?;
-    let mut args = vec!["diff", "--no-color", "--no-renames", base.as_str(), "--"];
-    if let Some(path) = path {
-        args.push(path);
-    }
-    let mut text = git(root, &args)?;
-    let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
-    for file in untracked
+    let mut text = tracked_patch(root, &base, path)?;
+    text.push_str(&untracked_patch(root, path)?);
+    Ok(text)
+}
+
+fn tracked_patch(root: &Path, base: &str, path: Option<&str>) -> Result<String> {
+    let shown: Vec<String> = match path {
+        Some(path) => vec![path.to_string()],
+        None => git(
+            root,
+            &["diff", "--name-only", "-z", "--no-renames", base, "--"],
+        )?
         .split('\0')
-        .filter(|file| !file.is_empty() && path.is_none_or(|path| path == *file))
-    {
+        .filter(|file| !file.is_empty() && !ignored::hidden(file))
+        .map(|file| format!(":(literal){file}"))
+        .collect(),
+    };
+    if shown.is_empty() {
+        return Ok(String::new());
+    }
+    let mut args = vec!["diff", "--no-color", "--no-renames", base, "--"];
+    args.extend(shown.iter().map(String::as_str));
+    let mut text = git(root, &args)?;
+    if !text.is_empty() {
+        text.push('\n');
+    }
+    Ok(text)
+}
+
+fn untracked_patch(root: &Path, path: Option<&str>) -> Result<String> {
+    let mut text = String::new();
+    let untracked = git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    for file in untracked.split('\0').filter(|file| {
+        !file.is_empty() && !ignored::hidden(file) && path.is_none_or(|path| path == *file)
+    }) {
         if file.ends_with('/') {
             if path.is_some() {
                 return Err(Error::Config(format!(
@@ -231,6 +270,7 @@ pub fn patch(root: &Path, path: Option<&str>) -> Result<String> {
             root,
             &["diff", "--no-index", "--no-color", "--", "/dev/null", file],
         )?);
+        text.push('\n');
     }
     Ok(text)
 }
@@ -308,72 +348,4 @@ pub fn turns(journal: &Path) -> Result<Vec<Vec<String>>> {
         }
     }
     Ok(turns)
-}
-
-fn numstat_row(line: &str) -> Option<Stat> {
-    let mut parts = line.splitn(3, '\t');
-    let added = parts.next()?.trim();
-    let removed = parts.next()?.trim();
-    let path = parts.next()?.trim();
-    if path.is_empty() {
-        return None;
-    }
-    Some(Stat {
-        path: path.to_string(),
-        added: added.parse().unwrap_or(0),
-        removed: removed.parse().unwrap_or(0),
-        new: false,
-    })
-}
-
-fn git(root: &Path, args: &[&str]) -> Result<String> {
-    git_env(root, &[], args)
-}
-
-pub(crate) fn git_env(
-    root: &Path,
-    env: &[(&str, &std::ffi::OsStr)],
-    args: &[&str],
-) -> Result<String> {
-    Ok(String::from_utf8_lossy(&git_output(root, env, args, None)?)
-        .trim()
-        .to_string())
-}
-
-pub(crate) fn git_output(
-    root: &Path,
-    env: &[(&str, &std::ffi::OsStr)],
-    args: &[&str],
-    input: Option<&[u8]>,
-) -> Result<Vec<u8>> {
-    use std::io::Write;
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .envs(env.iter().copied())
-        .args(args)
-        .stdin(if input.is_some() {
-            Stdio::piped()
-        } else {
-            Stdio::null()
-        })
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
-    if let (Some(input), Some(mut stdin)) = (input, child.stdin.take()) {
-        stdin.write_all(input)?;
-    }
-    let output = child.wait_with_output()?;
-    let different = args.starts_with(&["diff", "--no-index"])
-        && output.status.code() == Some(1)
-        && !output.stdout.is_empty();
-    if !output.status.success() && !different {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(Error::Config(format!(
-            "git {} failed: {}",
-            args.first().unwrap_or(&""),
-            stderr.trim()
-        )));
-    }
-    Ok(output.stdout)
 }

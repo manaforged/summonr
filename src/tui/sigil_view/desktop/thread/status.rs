@@ -14,14 +14,14 @@ pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
             model.speed.live(std::time::Instant::now()),
         )
     };
-    let mut facts = container()
-        .layout(
-            LayoutStyle::flex_row()
-                .gap(L)
-                .min_size(0.0, 0.0)
-                .align_items(AlignItems::Center),
-        )
-        .child(
+    let mut facts = container().layout(
+        LayoutStyle::flex_row()
+            .gap(L)
+            .min_size(0.0, 0.0)
+            .align_items(AlignItems::Center),
+    );
+    if let Some(used) = used {
+        facts = facts.child(
             container()
                 .layout(
                     LayoutStyle::flex_row()
@@ -37,6 +37,7 @@ pub(in crate::tui::sigil_view) fn meters(app: App) -> NodeBuilder {
                 )
                 .child(quiet(format!("{used}%"))),
         );
+    }
     if cached > 0 {
         facts = facts.child(quiet(format!("cache {cached}%")));
     }

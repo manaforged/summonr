@@ -17,6 +17,7 @@ pub(super) async fn print(mut loop_: Loop<Client>, args: &Args) -> Result<i32> {
         )));
     }
     let input = summonr::attach(loop_.workspace(), &prompt)?;
+    announce(&loop_, args.json);
     let turn = complete(&mut loop_, input, args.json).await?;
     if !args.json {
         println!();
@@ -31,6 +32,7 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
     let steps = summonr::steps::parse(&markdown)?;
     let checks = loop_.verify_commands().to_vec();
     loop_.select_steps(&markdown, &checks)?;
+    announce(&loop_, args.json);
     loop {
         let (index, total, prompt) = match loop_.next_step(&steps, plan_path)? {
             summonr::StepRun::Done(code) => {
@@ -48,8 +50,7 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
         step_event(args.json, index, total, "start", None);
         let turn = complete(&mut loop_, prompt.into(), args.json).await?;
         if turn.aborted {
-            loop_.abandon_work("step execution aborted")?;
-            return Ok(3);
+            return stop(&mut loop_, "step execution aborted", args.json).await;
         }
         let after = loop_.work_progress()?;
         step_outcome(args.json, index, total, &turn, &after);
@@ -86,6 +87,7 @@ pub(super) async fn goal(
     gates: Vec<String>,
 ) -> Result<i32> {
     loop_.select_goal(objective, &gates)?;
+    announce(&loop_, args.json);
     let code = drive_goal(&mut loop_, objective, &gates, args.json).await?;
     if !args.json {
         println!();
@@ -111,9 +113,24 @@ pub(super) async fn drive_goal(
         )
         .await?;
         if turn.aborted {
-            loop_.abandon_work("goal execution aborted")?;
-            return Ok(3);
+            return stop(loop_, "goal execution aborted", json).await;
         }
+    }
+}
+
+fn announce(loop_: &Loop<Client>, json: bool) {
+    if json {
+        print_json(&Event::Session {
+            id: loop_.session_id(),
+        });
+    }
+}
+
+async fn stop(loop_: &mut Loop<Client>, reason: &str, json: bool) -> Result<i32> {
+    if json {
+        loop_.stop_work(reason, print_json).await
+    } else {
+        loop_.stop_work(reason, print_live).await
     }
 }
 
@@ -140,7 +157,9 @@ pub(super) fn print_json(event: &Event) {
 
 fn print_live(event: &Event) {
     match event {
-        Event::ToolCall { name, .. } => eprintln!("\n→ {name}"),
+        Event::ToolCall {
+            name, arguments, ..
+        } => eprintln!("\n→ {}", summonr::mcp_call_label(name, arguments)),
         Event::ToolResult { success: false, .. } => eprintln!("  (failed)"),
         Event::Verify { passed: true, .. } => eprintln!("\n✓ verify passed"),
         Event::Verify { .. } => eprintln!("\n✗ verify failed"),
@@ -151,16 +170,18 @@ fn print_live(event: &Event) {
             }
         }
         Event::Receipt { receipt } => println!("\n{}", receipt.text),
-        Event::Aborted { reason } => eprintln!("\n{reason}"),
+        Event::Aborted { reason, .. } => eprintln!("\n{reason}"),
         Event::Child { id, event } => {
             let tag = summonr::child::tag(id);
             match &**event {
-                Event::ToolCall { name, .. } => eprintln!("  [{tag}] → {name}"),
+                Event::ToolCall {
+                    name, arguments, ..
+                } => eprintln!("  [{tag}] → {}", summonr::mcp_call_label(name, arguments)),
                 Event::ToolResult { success: false, .. } => eprintln!("  [{tag}] (failed)"),
                 Event::Assistant { text } => {
                     eprintln!("  [{tag}] {}", text.lines().next().unwrap_or_default());
                 }
-                Event::Aborted { reason } => eprintln!("  [{tag}] {reason}"),
+                Event::Aborted { reason, .. } => eprintln!("  [{tag}] {reason}"),
                 _ => {}
             }
         }

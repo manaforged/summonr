@@ -95,7 +95,7 @@ echo 'check = "cargo test"' > .summonr/check.toml
 summonr anthropic --goal "make cargo test pass"
 ```
 
-`--goal` continues until the check exits 0 and a second model call agrees that the goal is met. Exit codes: 0 done, 1 harness error, 2 check still red, 3 stopped short on a budget, a stall, or an abort. CI can branch on them.
+`--goal` continues until the check exits 0 and a second model call agrees that the goal is met. Exit codes: 0 done, 1 harness error, 2 check still red (summonr runs the check once more when a budget or an abort stops the run), 3 stopped short with no check configured, or with a passing check and an unmet goal. CI can branch on them.
 
 Next commands:
 
@@ -113,7 +113,6 @@ Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, 
 [endpoint.local]
 base_url = "http://127.0.0.1:8080/v1"
 model = "qwen3"
-api_key = "local"
 ```
 
 Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a plugin in the Claude Code layout: its skills, MCP servers, hooks, and `bin/`. See [Extending summonr](docs/guide/extending.md).
@@ -166,11 +165,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-719 public items (72 types, 96 functions, 117 methods, 257 fields, 176 variants, 1 constant) at 719 paths; 0 are re-export aliases. 364 trait impl lines, 33 inherent impl lines. 23 modules, 0 re-export only.
+746 public items (75 types, 104 functions, 118 methods, 262 fields, 186 variants, 1 constant) at 746 paths; 0 are re-export aliases. 388 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 480 | 40 | 48 | 94 | 0 |
+| `summonr` | 500 | 41 | 55 | 95 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -181,15 +180,16 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::classify::patch` | 6 | 1 | 3 | 0 | 0 |
 | `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
 | `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
-| `summonr::diff` | 14 | 2 | 3 | 3 | 0 |
+| `summonr::diff` | 19 | 3 | 5 | 3 | 0 |
 | `summonr::limits` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
-| `summonr::prefs` | 20 | 2 | 3 | 1 | 0 |
+| `summonr::prefs` | 19 | 2 | 2 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 1 | 2 | 0 |
 | `summonr::steps` | 16 | 3 | 3 | 1 | 0 |
+| `summonr::supervise` | 3 | 1 | 0 | 0 | 0 |
 | `summonr::tui` | 23 | 3 | 3 | 3 | 0 |
 | `summonr::tui::hub` | 4 | 2 | 0 | 0 | 0 |
 | `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |

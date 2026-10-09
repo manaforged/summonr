@@ -71,6 +71,7 @@ impl Layout {
     pub(super) const MIN_CHAT: u16 = 48;
     pub(super) const MIN_SIDE: u16 = 20;
     pub(super) const MIN_COLS: u16 = Self::MIN_CHAT + Self::MIN_SIDE + 1;
+    pub(super) const REVIEW_SHARE: u16 = 45;
 
     pub(super) fn parse(text: &str) -> Option<Self> {
         if let Some(preset) = Self::preset(text) {
@@ -112,7 +113,7 @@ impl Layout {
             }),
             "review" | "diff" => Some(Self {
                 secondary: Some(Pane::Diff),
-                share: 45,
+                share: Self::REVIEW_SHARE,
             }),
             _ => None,
         }

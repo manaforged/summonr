@@ -90,8 +90,12 @@ impl Line {
             } => vec![Event::Receipt { receipt }],
             Line::Close {
                 reason: Some(reason),
+                code,
                 ..
-            } => vec![Event::Aborted { reason }],
+            } => vec![Event::Aborted {
+                reason,
+                code: code.unwrap_or_default(),
+            }],
             _ => Vec::new(),
         }
     }

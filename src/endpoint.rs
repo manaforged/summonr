@@ -365,6 +365,7 @@ mod keys;
 mod preset;
 mod reasoning;
 mod resolve;
+mod server;
 
 #[cfg(test)]
 pub(crate) use auth::catalog;
@@ -373,11 +374,13 @@ pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
 pub(crate) use keys::peer_token;
 use keys::*;
-pub(crate) use preset::{catalog_providers, provider_ids};
+pub use preset::label;
+pub(crate) use preset::{catalog_providers, provider_ids, start_command};
 use preset::{preset, presets};
 pub(crate) use resolve::default_seat;
-pub use resolve::{chosen_by, closest, fallbacks, resolve, vision};
+pub use resolve::{chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 use resolve::{hosted, seat};
+pub use server::{add_server, remove_server};
 
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]

@@ -69,7 +69,11 @@ pub(super) fn header(app: &App, title: String, note: String) -> NodeBuilder {
                 )
                 .font_size(14.0)
                 .font_weight(500)
-                .text_color(sigil::prelude::Token::Gray12),
+                .text_color(if app.pane_focus.peek() {
+                    sigil::prelude::Token::Accent
+                } else {
+                    sigil::prelude::Token::Gray12
+                }),
         )
         .child(
             sigil::kernel::text(note)

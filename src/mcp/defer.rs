@@ -52,6 +52,20 @@ pub(crate) fn effective(name: &str, text: &str) -> Option<(String, Value)> {
     routed(arguments(name, text).ok()?).ok()?.ok()
 }
 
+#[must_use]
+pub fn call_label(name: &str, arguments: &str) -> String {
+    effective(name, arguments).map_or_else(
+        || name.to_string(),
+        |(alias, _)| {
+            let target = alias.split_once("__").map_or_else(
+                || alias.clone(),
+                |(server, tool)| format!("{server}:{tool}"),
+            );
+            format!("{name} {target}")
+        },
+    )
+}
+
 fn allowed<'a>(link: &'a Arc<Link>, policy: &'a Policy) -> impl Iterator<Item = &'a Tool> {
     link.tools
         .iter()

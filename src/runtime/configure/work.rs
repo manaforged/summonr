@@ -106,16 +106,24 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(crate) fn abort_note(&mut self, reason: &str) -> Result<()> {
-        self.abort_with(reason, |_| {})
+        let abort = crate::tools::Abort {
+            code: crate::tools::AbortCode::Interrupted,
+            reason: reason.to_string(),
+        };
+        self.abort_with(&abort, |_| {})
     }
 
-    pub(crate) fn abort_with(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<()> {
+    pub(crate) fn abort_with(
+        &mut self,
+        abort: &crate::tools::Abort,
+        mut emit: impl FnMut(&Event),
+    ) -> Result<()> {
         self.forget_children();
         self.session
-            .interrupt_children(reason)
+            .interrupt_children(&abort.reason)
             .map_err(super::session_err)?;
         self.session
-            .abort(reason, None)
+            .abort(abort, None)
             .map_err(super::session_err)?;
         self.tools.stop_jobs()?;
         self.emit_records(&mut Vec::new(), &mut emit)?;
@@ -144,7 +152,6 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
-        self.refuse_in_plan("a goal")?;
         self.session
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)?;
@@ -155,7 +162,7 @@ impl<P: Provider> Loop<P> {
     fn refuse_in_plan(&self, work: &str) -> Result<()> {
         if self.is_plan() {
             return Err(Error::Config(format!(
-                "plan mode is read-only; leave plan mode before you start {work}"
+                "plan mode is read-only; run /plan accept, /plan reject, or /auto before you start {work}"
             )));
         }
         Ok(())
@@ -163,6 +170,14 @@ impl<P: Provider> Loop<P> {
 
     pub(crate) fn accept_plan(&mut self) -> Result<()> {
         self.session.accept_plan().map_err(super::session_err)
+    }
+
+    pub(crate) fn leave_plan(&mut self) -> Result<Option<String>> {
+        let plan = self.session.leave_plan().map_err(super::session_err)?;
+        if self.is_plan() {
+            self.set_mode(crate::RunMode::Auto)?;
+        }
+        Ok(plan)
     }
 
     pub(crate) fn pending_plan(&self) -> bool {

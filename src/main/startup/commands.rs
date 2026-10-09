@@ -11,7 +11,7 @@ pub(super) async fn probe_endpoints() -> Result<()> {
     if let Err(error) = summonr::catalog::refresh_registry().await {
         eprintln!("summonr: models.dev catalog not refreshed: {error}");
     }
-    let names = summonr::endpoint_names()?;
+    let names = summonr::endpoint_names_ordered()?;
     let probes = names.iter().map(|name| async move {
         let (model, host, status) = probe_endpoint(name).await;
         format!("{name:<14} {model:<22} {host:<34} {status}")
@@ -84,6 +84,9 @@ pub(super) fn print_sessions() -> Result<()> {
     if sessions.is_empty() {
         println!("no sessions");
         return Ok(());
+    }
+    if std::io::IsTerminal::is_terminal(&std::io::stdout()) {
+        println!("ID\tNAME\tDIRECTORY\tFIRST PROMPT");
     }
     for info in sessions.iter().rev() {
         println!(
@@ -168,46 +171,35 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn turn_paths(cwd: &Path, turn: &str) -> Result<Vec<String>> {
-    let journal = summonr::last_for(cwd)?
-        .map(|info| info.path)
-        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))?;
-    let turns = summonr::diff::turns(&journal)?;
-    let index = if turn == "last" {
-        turns.len().checked_sub(1)
-    } else {
-        turn.parse::<usize>().ok().and_then(|n| n.checked_sub(1))
-    };
-    index
-        .and_then(|index| turns.get(index).cloned())
-        .ok_or_else(|| {
-            summonr::Error::Config(format!(
-                "no turn `{turn}`; the session has {} turn{}",
-                turns.len(),
-                if turns.len() == 1 { "" } else { "s" }
-            ))
-        })
+fn last_session(cwd: &Path) -> Result<String> {
+    summonr::last_for(cwd)?
+        .map(|info| info.id)
+        .ok_or_else(|| summonr::Error::Config(format!("no session for {}", cwd.display())))
 }
 
 pub(super) fn print_diff(args: &Args) -> Result<()> {
     let cwd = workspace()?;
     let path = args.prompt.first().map(String::as_str);
-    let only = match args.turn.as_deref() {
-        Some(turn) => Some(turn_paths(&cwd, turn)?),
-        None => None,
+    let Some(turn) = args.turn.as_deref() else {
+        if args.json || args.stat {
+            let mut diff = summonr::diff::stats(&cwd)?;
+            diff.files
+                .retain(|stat| path.is_none_or(|path| stat.path == path));
+            return print_stats(&diff, args.json);
+        }
+        print!("{}", summonr::diff::patch(&cwd, path)?);
+        return Ok(());
     };
-    let keep = |candidate: &str| {
-        path.is_none_or(|path| candidate == path)
-            && only
-                .as_ref()
-                .is_none_or(|only| only.iter().any(|file| file == candidate))
-    };
+    let turn: summonr::diff::TurnId = turn.parse()?;
+    let session = last_session(&cwd)?;
     if args.json || args.stat {
-        let mut diff = summonr::diff::stats(&cwd)?;
-        diff.files.retain(|stat| keep(&stat.path));
+        let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
+        diff.files
+            .retain(|stat| path.is_none_or(|path| stat.path == path));
         return print_stats(&diff, args.json);
     }
-    print_patches(&cwd, path, only)
+    print!("{}", summonr::diff::turn_patch(&cwd, &session, turn, path)?);
+    Ok(())
 }
 
 fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
@@ -223,21 +215,6 @@ fn print_stats(diff: &summonr::diff::Diff, json: bool) -> Result<()> {
     Ok(())
 }
 
-fn print_patches(cwd: &Path, path: Option<&str>, only: Option<Vec<String>>) -> Result<()> {
-    match only {
-        None => print!("{}", summonr::diff::patch(cwd, path)?),
-        Some(only) => {
-            for file in only
-                .iter()
-                .filter(|file| path.is_none_or(|path| path == *file))
-            {
-                print!("{}", summonr::diff::patch(cwd, Some(file))?);
-            }
-        }
-    }
-    Ok(())
-}
-
 pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     let moved = summonr::adopt_keys()?;
     if !moved.is_empty() && !args.json {
@@ -249,13 +226,18 @@ pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-pub(super) fn mcp(command: &McpCommand) -> Result<()> {
+pub(super) async fn mcp(command: &McpCommand) -> Result<()> {
     match command {
         McpCommand::List { json } => mcp_list(*json),
         McpCommand::Get { name, json } => mcp_get(name, *json),
         McpCommand::Add { name, launch } => {
             summonr::mcp_add(name, launch)?;
-            println!("added mcp {name}; restart summonr to use it");
+            match summonr::mcp_probe(&workspace()?, name).await {
+                Ok(count) => println!("{name}: {count} tools"),
+                Err(error) => println!(
+                    "{name}: not reachable: {error}\nkept in ~/.summonr/config.toml; fix the command or run `summonr mcp remove {name}`"
+                ),
+            }
             Ok(())
         }
         McpCommand::Remove { name } => {
@@ -304,7 +286,11 @@ fn server_line(row: &summonr::ServerStatus) -> String {
     format!(
         "{:<20} {:<22} {transport:<6} {} tools  {}",
         row.name,
-        row.state.label(),
+        match row.state {
+            summonr::McpState::Failed =>
+                format!("failed: {}", row.detail.as_deref().unwrap_or_default()),
+            state => state.label().to_string(),
+        },
         row.tools.len(),
         row.schema_size()
     )

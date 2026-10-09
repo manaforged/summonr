@@ -32,20 +32,22 @@ impl Budget {
         Self::default()
     }
 
-    fn breach(&self, spent_tokens: u64, elapsed_secs: u64) -> Option<String> {
+    fn breach(&self, spent_tokens: u64, elapsed_secs: u64) -> Option<crate::tools::Abort> {
         if let Some(max) = self.max_secs
             && elapsed_secs >= max
         {
-            return Some(format!(
-                "budget: {elapsed_secs}s reached the {max}s work-time limit"
-            ));
+            return Some(crate::tools::Abort {
+                code: crate::tools::AbortCode::TimeBudget,
+                reason: format!("budget: {elapsed_secs}s reached the {max}s work-time limit"),
+            });
         }
         if let Some(max) = self.max_tokens
             && spent_tokens >= max
         {
-            return Some(format!(
-                "budget: {spent_tokens} tokens reached the {max} token limit"
-            ));
+            return Some(crate::tools::Abort {
+                code: crate::tools::AbortCode::TokenBudget,
+                reason: format!("budget: {spent_tokens} tokens reached the {max} token limit"),
+            });
         }
         None
     }

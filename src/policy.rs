@@ -6,6 +6,7 @@ use crate::error::{Error, Result};
 
 mod ask;
 mod danger;
+mod protected;
 mod walk;
 
 pub(crate) use walk::shell_words;
@@ -311,7 +312,7 @@ pub(crate) fn first_verb(command: &str) -> Option<String> {
 pub(crate) fn protected_write(path: &Path) -> bool {
     let unix = path.to_string_lossy().replace('\\', "/");
     let parts: Vec<&str> = unix.split('/').filter(|part| !part.is_empty()).collect();
-    if git::guarded_git_part(&parts) {
+    if git::guarded_git_part(&parts) || protected::workspace_control(path) {
         return true;
     }
     if let Some(name) = path.file_name().and_then(|name| name.to_str()) {

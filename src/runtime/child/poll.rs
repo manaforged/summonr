@@ -275,7 +275,7 @@ impl<P: Provider> Loop<P> {
                 ..
             } => format!("failed: {}", ellipsize(output, LAST_CHARS)),
             Event::Assistant { text } | Event::Note { text } => ellipsize(text, LAST_CHARS),
-            Event::Aborted { reason } => format!("aborted: {}", ellipsize(reason, LAST_CHARS)),
+            Event::Aborted { reason, .. } => format!("aborted: {}", ellipsize(reason, LAST_CHARS)),
             _ => return,
         };
         spawned.last = last;

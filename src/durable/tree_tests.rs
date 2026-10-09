@@ -1,6 +1,6 @@
 use std::time::{Duration, SystemTime};
 
-use super::{changed, snapshot, walk};
+use super::{changed, identity, mark, snapshot, walk};
 
 fn backdate(path: &std::path::Path, by: Duration) {
     std::fs::OpenOptions::new()
@@ -70,4 +70,16 @@ fn the_walk_stays_on_the_workspace_filesystem() {
     )
     .unwrap();
     assert_eq!(other, ["top.txt"].map(std::path::PathBuf::from));
+}
+
+#[test]
+fn a_file_summonr_writes_its_own_output_to_is_not_a_change() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = dir.path().join("events.jsonl");
+    let code = dir.path().join("a.txt");
+    std::fs::write(&events, "{}").unwrap();
+    std::fs::write(&code, "a").unwrap();
+    let own = [identity(&std::fs::metadata(&events).unwrap()).unwrap()];
+    assert!(mark(&events, "events.jsonl", None, &own).unwrap().is_none());
+    assert!(mark(&code, "a.txt", None, &own).unwrap().is_some());
 }

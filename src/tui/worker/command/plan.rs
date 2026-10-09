@@ -137,19 +137,76 @@ impl Worker {
     }
 
     pub(in crate::tui::worker) async fn goal(&mut self, objective: &str) -> bool {
-        let gates = self.loop_.verify_commands().to_vec();
         if objective.is_empty() {
             return self.goal_status();
         }
         if clears(objective) {
             self.clear_goal();
+            self.leave_goal(crate::RunMode::Auto);
             return true;
         }
-        if let Err(error) = self.loop_.select_goal(objective, &gates) {
+        let plan = match self.loop_.leave_plan() {
+            Ok(plan) => plan,
+            Err(error) => {
+                self.fail(&error.to_string());
+                return true;
+            }
+        };
+        let before = match self.loop_.mode() {
+            crate::RunMode::Goal | crate::RunMode::Plan => crate::RunMode::Auto,
+            mode => mode,
+        };
+        let objective = self.goal_objective(objective, plan.as_deref());
+        let Some(gates) = self.goal_gates() else {
+            return true;
+        };
+        if let Err(error) = self.loop_.select_goal(&objective, &gates) {
             self.fail(&error.to_string());
             return true;
         }
         announce_run_mode(&self.loop_, &self.ui, crate::RunMode::Goal);
+        let keep_running = self.run_goal(&objective, &gates).await;
+        self.leave_goal(before);
+        keep_running
+    }
+
+    fn goal_objective(&self, objective: &str, plan: Option<&str>) -> String {
+        if let Some(plan) = plan {
+            return format!("{objective}\n\n{}", crate::plan::note(plan));
+        }
+        let carried = format!("{objective}\n\n");
+        match self.loop_.active_goal().ok().flatten() {
+            Some((active, _)) if active.starts_with(&carried) => active,
+            Some(_) | None => objective.to_string(),
+        }
+    }
+
+    fn goal_gates(&mut self) -> Option<Vec<String>> {
+        let gates = self.loop_.verify_commands().to_vec();
+        if !gates.is_empty() {
+            return Some(gates);
+        }
+        match crate::verify::check_commands(self.loop_.workspace()) {
+            Ok(Some(commands)) => return Some(commands),
+            Ok(None) => {}
+            Err(error) => {
+                self.fail(&error.to_string());
+                return None;
+            }
+        }
+        if let Some(check) = crate::language::check(self.loop_.workspace()) {
+            self.system(&format!(
+                "check: {check} (detected; set check in .summonr/check.toml to change it)"
+            ));
+            return Some(vec![check.to_string()]);
+        }
+        self.system(
+            "check: none; the judge decides when the goal is met. Set check = \"CMD\" in .summonr/check.toml to gate it",
+        );
+        Some(Vec::new())
+    }
+
+    async fn run_goal(&mut self, objective: &str, gates: &[String]) -> bool {
         let code = loop {
             let progress = match self.loop_.work_progress() {
                 Ok(progress) => progress,
@@ -161,11 +218,12 @@ impl Worker {
             if let Some(code) = progress.exit_code() {
                 break code;
             }
-            let notice = format!("goal cleared: {objective}");
+            let title = objective.lines().next().unwrap_or_default();
+            let notice = format!("goal cleared: {title}");
             if self.cleared("/goal", "goal cleared by user", &notice) {
                 return true;
             }
-            let prompt = crate::goal::prompt(objective, &gates, progress.rounds);
+            let prompt = crate::goal::prompt(objective, gates, progress.rounds);
             if let Some(keep_running) = self
                 .work_turn(
                     prompt,
@@ -187,6 +245,14 @@ impl Worker {
             self.system(&format!("goal stopped (exit {code}): {reason}"));
         }
         true
+    }
+
+    fn leave_goal(&mut self, mode: crate::RunMode) {
+        if self.loop_.mode() == crate::RunMode::Goal
+            && self.loop_.active_goal().ok().flatten().is_none()
+        {
+            set_run_mode(&mut self.loop_, &self.ui, mode);
+        }
     }
 
     fn clear_goal(&mut self) {

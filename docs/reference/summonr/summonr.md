@@ -20,6 +20,7 @@
 | [`Usage`](#usage) | struct |  |
 | [`UserInput`](#userinput) | struct |  |
 | [`WorkProgress`](#workprogress) | struct |  |
+| [`AbortCode`](#abortcode) | enum |  |
 | [`Effort`](#effort) | enum |  |
 | [`EndpointState`](#endpointstate) | enum |  |
 | [`Error`](#error) | enum |  |
@@ -40,6 +41,7 @@
 | [`SlashCommand`](#slashcommand) | enum |  |
 | [`StepRun`](#steprun) | enum |  |
 | [`WorkKind`](#workkind) | enum |  |
+| [`add_endpoint`](#add_endpoint) | fn |  |
 | [`add_worktree`](#add_worktree) | fn |  |
 | [`adopt_keys`](#adopt_keys) | fn |  |
 | [`attach`](#attach) | fn |  |
@@ -53,7 +55,10 @@
 | [`default_effort`](#default_effort) | fn |  |
 | [`endpoint_chosen_by`](#endpoint_chosen_by) | fn |  |
 | [`endpoint_fallbacks`](#endpoint_fallbacks) | fn |  |
+| [`endpoint_label`](#endpoint_label) | fn |  |
 | [`endpoint_names`](#endpoint_names) | fn |  |
+| [`endpoint_names_ordered`](#endpoint_names_ordered) | fn |  |
+| [`endpoint_set_up`](#endpoint_set_up) | fn |  |
 | [`export_session`](#export_session) | fn |  |
 | [`finish_worktree`](#finish_worktree) | fn |  |
 | [`goal_prompt`](#goal_prompt) | fn |  |
@@ -69,11 +74,14 @@
 | [`login_seat`](#login_seat) | fn |  |
 | [`logout`](#logout) | fn |  |
 | [`mcp_add`](#mcp_add) | fn |  |
+| [`mcp_call_label`](#mcp_call_label) | fn |  |
+| [`mcp_probe`](#mcp_probe) | fn |  |
 | [`mcp_remove`](#mcp_remove) | fn |  |
 | [`mcp_status`](#mcp_status) | fn |  |
 | [`parse_command`](#parse_command) | fn |  |
 | [`profile`](#profile) | fn |  |
 | [`prune_sessions`](#prune_sessions) | fn |  |
+| [`remove_endpoint`](#remove_endpoint) | fn |  |
 | [`resolve_endpoint`](#resolve_endpoint) | fn |  |
 | [`resolve_session`](#resolve_session) | fn |  |
 | [`revision`](#revision) | fn |  |
@@ -255,6 +263,7 @@
 | <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::compact(&amp;mut self) -&gt; <a href="#result">Result</a>&lt;bool&gt;</code> |  |
 | <code>pub fn <a href="#loop">Loop</a>&lt;P&gt;::mcp_board(&amp;self) -&gt; <a href="#mcpboard">McpBoard</a></code> |  |
 | <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::shell(&amp;self, command: &amp;str) -&gt; <a href="#result">Result</a>&lt;(String, bool)&gt;</code> |  |
+| <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::stop_work(&amp;mut self, reason: &amp;str, emit: impl FnMut(&amp;<a href="#event">Event</a>)) -&gt; <a href="#result">Result</a>&lt;i32&gt;</code> |  |
 | <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::turn(&amp;mut self, prompt: &amp;str) -&gt; <a href="#result">Result</a>&lt;<a href="#turn">Turn</a>&gt;</code> |  |
 | <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::turn_mail_with(&amp;mut self, emit: impl FnMut(&amp;<a href="#event">Event</a>)) -&gt; <a href="#result">Result</a>&lt;<a href="#turn">Turn</a>&gt;</code> |  |
 | <code>pub async fn <a href="#loop">Loop</a>&lt;P&gt;::turn_with(&amp;mut self, input: impl Into&lt;<a href="#userinput">UserInput</a>&gt;, emit: impl FnMut(&amp;<a href="#event">Event</a>)) -&gt; <a href="#result">Result</a>&lt;<a href="#turn">Turn</a>&gt;</code> |  |
@@ -367,8 +376,10 @@
 | Field | Description |
 | --- | --- |
 | <code>detail: Option&lt;String&gt;</code> |  |
+| <code>kind: <a href="summonr-supervise.html#serverkind">ServerKind</a></code> |  |
 | <code>launch: Option&lt;String&gt;</code> |  |
 | <code>name: String</code> |  |
+| <code>rss_kb: Option&lt;u64&gt;</code> |  |
 | <code>schema_bytes: usize</code> |  |
 | <code>state: <a href="#mcpstate">McpState</a></code> |  |
 | <code>tools: Vec&lt;String&gt;</code> |  |
@@ -495,6 +506,21 @@
 
 ## Enums
 
+### `AbortCode`
+
+**Variants**
+
+| Variant | Description |
+| --- | --- |
+| <code>Cancelled</code> |  |
+| <code>Error</code> |  |
+| <code>Interrupted</code> |  |
+| <code>TimeBudget</code> |  |
+| <code>TokenBudget</code> |  |
+
+**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>, <code>Deserialize&lt;'de&gt;</code>
+
+
 ### `Effort`
 
 **Methods**
@@ -587,6 +613,7 @@
 
 | Field | Description |
 | --- | --- |
+| <code>Aborted::code: <a href="#abortcode">AbortCode</a></code> |  |
 | <code>Aborted::reason: String</code> |  |
 | <code>Approval::detail: Option&lt;String&gt;</code> |  |
 | <code>Approval::persist: bool</code> |  |
@@ -607,10 +634,12 @@
 | <code>Progress::total: Option&lt;f64&gt;</code> |  |
 | <code>Reasoning::text: String</code> |  |
 | <code>Receipt::receipt: <a href="#receipt">Receipt</a></code> |  |
+| <code>Session::id: String</code> |  |
 | <code>Spawned::access: <a href="summonr-child.html#access">Access</a></code> |  |
 | <code>Spawned::assignment: String</code> |  |
 | <code>Spawned::background: bool</code> |  |
 | <code>Spawned::call: String</code> |  |
+| <code>Spawned::workspace: String</code> |  |
 | <code>ToolCall::arguments: String</code> |  |
 | <code>ToolCall::id: String</code> |  |
 | <code>ToolCall::name: String</code> |  |
@@ -648,6 +677,7 @@
 | <code>Progress</code> |  |
 | <code>Reasoning</code> |  |
 | <code>Receipt</code> |  |
+| <code>Session</code> |  |
 | <code>Spawned</code> |  |
 | <code>ToolCall</code> |  |
 | <code>ToolResult</code> |  |
@@ -980,6 +1010,11 @@
 
 ## Functions
 
+### `add_endpoint`
+
+<pre>pub async fn <a href="#add_endpoint">add_endpoint</a>(name: &amp;str, url: &amp;str, model: Option&lt;&amp;str&gt;) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
+
+
 ### `add_worktree`
 
 <pre>pub fn <a href="#add_worktree">add_worktree</a>(cwd: &amp;Path) -&gt; <a href="#result">Result</a>&lt;<a href="#tree">Tree</a>&gt;</pre>
@@ -1045,9 +1080,24 @@
 <pre>pub fn <a href="#endpoint_fallbacks">endpoint_fallbacks</a>&lt;P&gt;(endpoint: &amp;<a href="#endpoint">Endpoint</a>, connect: impl FnMut(&amp;<a href="#endpoint">Endpoint</a>) -&gt; <a href="#result">Result</a>&lt;P&gt;) -&gt; (Vec&lt;(P, String)&gt;, Vec&lt;String&gt;)</pre>
 
 
+### `endpoint_label`
+
+<pre>pub fn <a href="#endpoint_label">endpoint_label</a>(name: &amp;str) -&gt; Option&lt;&amp;'static str&gt;</pre>
+
+
 ### `endpoint_names`
 
 <pre>pub fn <a href="#endpoint_names">endpoint_names</a>() -&gt; <a href="#result">Result</a>&lt;Vec&lt;String&gt;&gt;</pre>
+
+
+### `endpoint_names_ordered`
+
+<pre>pub fn <a href="#endpoint_names_ordered">endpoint_names_ordered</a>() -&gt; <a href="#result">Result</a>&lt;Vec&lt;String&gt;&gt;</pre>
+
+
+### `endpoint_set_up`
+
+<pre>pub fn <a href="#endpoint_set_up">endpoint_set_up</a>() -&gt; Vec&lt;String&gt;</pre>
 
 
 ### `export_session`
@@ -1125,6 +1175,16 @@
 <pre>pub fn <a href="#mcp_add">mcp_add</a>(name: &amp;str, launch: &amp;<a href="#mcplaunch">McpLaunch</a>) -&gt; <a href="#result">Result</a>&lt;()&gt;</pre>
 
 
+### `mcp_call_label`
+
+<pre>pub fn <a href="#mcp_call_label">mcp_call_label</a>(name: &amp;str, arguments: &amp;str) -&gt; String</pre>
+
+
+### `mcp_probe`
+
+<pre>pub async fn <a href="#mcp_probe">mcp_probe</a>(workspace: &amp;Path, name: &amp;str) -&gt; <a href="#result">Result</a>&lt;usize&gt;</pre>
+
+
 ### `mcp_remove`
 
 <pre>pub fn <a href="#mcp_remove">mcp_remove</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
@@ -1148,6 +1208,11 @@
 ### `prune_sessions`
 
 <pre>pub fn <a href="#prune_sessions">prune_sessions</a>(keep: Option&lt;&amp;str&gt;)</pre>
+
+
+### `remove_endpoint`
+
+<pre>pub fn <a href="#remove_endpoint">remove_endpoint</a>(name: &amp;str) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
 
 
 ### `resolve_endpoint`

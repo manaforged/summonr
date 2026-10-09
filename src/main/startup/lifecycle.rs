@@ -10,6 +10,10 @@ use super::session::{apply_workflow, build, isolate, route_checks, workflow_name
 use crate::cli::Args;
 use crate::{diagnostics, modes};
 
+#[path = "lifecycle/seat.rs"]
+mod seat;
+use seat::{ask_login, seat};
+
 type Ui = (Option<summonr::tui::Ui>, Option<summonr::tui::Inbox>);
 
 pub(super) async fn launch(
@@ -19,7 +23,7 @@ pub(super) async fn launch(
 ) -> Result<i32> {
     let cwd = workspace()?;
     let (workspace, tree, action) = isolate(args, &cwd)?;
-    let endpoint = seat(args, adopted)?;
+    let endpoint = seat(args, adopted).await?;
     let ui = channels(use_tui(args));
     ask_login(&ui, &endpoint, args.endpoint.is_some());
     let (loop_, goal_checks, workflow) = assemble(args, &endpoint, &workspace, action, &ui)?;
@@ -99,59 +103,6 @@ fn assemble(
         .map(|name| apply_workflow(&mut loop_, &name, ui.0.as_ref(), args.json))
         .transpose()?;
     Ok((loop_, goal_checks, workflow))
-}
-
-fn seat(args: &Args, adopted: &[String]) -> Result<Endpoint> {
-    let need = if use_tui(args) {
-        summonr::Need::Model
-    } else {
-        summonr::Need::Seat
-    };
-    let endpoint =
-        summonr::resolve_endpoint(args.endpoint.as_deref(), args.model.as_deref(), need)?;
-    if let Some(name) = args.endpoint.as_deref() {
-        summonr::prefs::set_last_endpoint(name);
-    }
-    if endpoint.source == Some(summonr::secret::Source::Config)
-        && !args.json
-        && !adopted.contains(&endpoint.name)
-    {
-        eprintln!(
-            "the key for {} is plaintext in config.toml; `summonr login {} --key` moves it into the credential store",
-            endpoint.name, endpoint.name
-        );
-    }
-    Ok(endpoint)
-}
-
-fn ask_login(ui: &Ui, endpoint: &Endpoint, named: bool) {
-    if let Some(ui) = &ui.0
-        && endpoint.api_key.is_none()
-        && endpoint.oauth.is_none()
-    {
-        let (ui, seat) = (ui.clone(), endpoint.clone());
-        drop(tokio::spawn(async move {
-            let note = if !seat.keyless() && named {
-                format!(
-                    "{} has no key yet. Paste its key, or pick another provider.",
-                    seat.name
-                )
-            } else if !seat.keyless() {
-                "No provider is set up yet. Pick one and paste its key.".to_string()
-            } else {
-                match Client::discover(&seat).await {
-                    Err(error) if Client::state(&error) == summonr::EndpointState::KeyRejected => {
-                        format!(
-                            "{} rejected the request. Paste its key, or pick another provider.",
-                            seat.name
-                        )
-                    }
-                    Ok(_) | Err(_) => return,
-                }
-            };
-            ui.open_login(note);
-        }));
-    }
 }
 
 fn land(
@@ -352,7 +303,7 @@ pub(super) fn provider(
     Ok(provider)
 }
 
-fn use_tui(args: &Args) -> bool {
+pub(super) fn use_tui(args: &Args) -> bool {
     !args.print
         && args.steps.is_none()
         && args.goal.is_none()

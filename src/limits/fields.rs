@@ -70,6 +70,8 @@ table! {
     lsp_start_secs: u64,
     lsp_idle_secs: u64,
     servers_max: usize,
+    closest_percent: usize,
+    diff_split_min_cols: u16,
     lsp_request_secs: u64,
     lsp_check_secs: u64,
     log_retain_days: u64,

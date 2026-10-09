@@ -6,6 +6,9 @@ use super::app::App;
 use super::canvas;
 use super::ui::{Dialog, Hints, Key, Size, pick};
 
+const ROW_MARKER: usize = 2;
+const DIALOG_PADDING: f32 = 16.0;
+
 #[derive(Clone, Copy)]
 pub(super) struct View {
     pub(super) open: Signal<bool>,
@@ -45,10 +48,21 @@ fn visible(app: &App) -> usize {
 }
 
 fn lines(app: &App, query: &str) -> Vec<String> {
+    let width = row_cells(app.viewport.peek().0);
     matching(
         &crate::tui::help_text(&app.model.get().prefs.hotkeys),
         query,
     )
+    .into_iter()
+    .map(|line| crate::text::ellipsize(&line, width))
+    .collect()
+}
+
+fn row_cells(cols: u16) -> usize {
+    let cell = canvas::cell().w;
+    let dialog = canvas::dialog_width(cols, canvas::DIALOG_CELLS) / cell;
+    let padding = (DIALOG_PADDING / cell).ceil();
+    ((dialog - padding).max(0.0) as usize).saturating_sub(ROW_MARKER)
 }
 
 pub(super) fn layer(app: App) -> NodeBuilder {
@@ -71,6 +85,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
             text_field(query)
                 .placeholder("find")
                 .focus_when(focus)
+                .autofocus()
                 .change(move |_| scroll.set(0.0))
                 .height(canvas::overlay_field()),
         )

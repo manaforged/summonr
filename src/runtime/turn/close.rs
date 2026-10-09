@@ -77,11 +77,11 @@ impl<P: Provider> Loop<P> {
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
         usage: &mut Usage,
-    ) -> Result<Option<String>> {
+    ) -> Result<Option<Abort>> {
         let before_children = self.spent_tokens;
         running.extend(self.await_children(events, emit, usage).await?);
         if self.spent_tokens > before_children {
-            return Ok(self.round_abort());
+            return Ok(self.budget_abort());
         }
         Ok(None)
     }

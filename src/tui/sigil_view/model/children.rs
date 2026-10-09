@@ -133,9 +133,9 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
             success: false,
             output,
             ..
-        } => (compact.text(output).to_string(), false, true),
+        } => (compact.text(output).to_string(), false, false),
         Event::Assistant { text } => (compact.text(text).to_string(), true, false),
-        Event::Aborted { reason } => (reason.clone(), true, true),
+        Event::Aborted { reason, .. } => (reason.clone(), true, true),
         Event::Note { text } => (text.clone(), false, false),
         Event::Verify { command, passed } => (
             format!(
@@ -147,7 +147,7 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
                 }
             ),
             false,
-            !passed,
+            false,
         ),
         _ => return None,
     };

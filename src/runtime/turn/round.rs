@@ -10,7 +10,7 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         reached: &mut usize,
     ) -> Result<Turn> {
-        let abort_reason;
+        let abort;
         let tools = self
             .open_turn(&mut messages, usage, events, &mut emit)
             .await?;
@@ -25,14 +25,14 @@ impl<P: Provider> Loop<P> {
                 .open_round(&mut messages, tools.json.len(), usage, events, &mut emit)
                 .await?
             {
-                abort_reason = Some(reason);
+                abort = reason;
                 break;
             }
             let Some((assistant, prefix_hash, request_chars, durable_attempt, live_millis)) = self
                 .complete_retry(&mut messages, &tools, events, &mut emit)
                 .await?
             else {
-                abort_reason = self.round_abort();
+                abort = self.budget_abort().unwrap_or_else(Abort::time_limit);
                 break;
             };
             let (message, stop_reason, meter, reasoning, meta) =
@@ -80,7 +80,7 @@ impl<P: Provider> Loop<P> {
             )
             .await?;
         }
-        self.abort_turn(abort_reason, events, emit, usage, *reached, pre)
+        self.abort_turn(abort, events, emit, usage, *reached, pre)
             .await
     }
 
@@ -152,17 +152,17 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<Option<String>> {
-        if let Some(reason) = self.round_abort() {
-            return Ok(Some(reason));
+    ) -> Result<Option<Abort>> {
+        if let Some(abort) = self.budget_abort() {
+            return Ok(Some(abort));
         }
         if let Err(error) = self
             .prepare_round(messages, tool_bytes, usage, events, emit)
             .await
         {
-            return self.round_abort().map(Some).ok_or(error);
+            return self.budget_abort().map(Some).ok_or(error);
         }
-        Ok(self.round_abort())
+        Ok(self.budget_abort())
     }
 
     fn take_reply(
@@ -341,6 +341,10 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(in crate::runtime) fn round_abort(&self) -> Option<String> {
+        self.budget_abort().map(|abort| abort.reason)
+    }
+
+    pub(in crate::runtime) fn budget_abort(&self) -> Option<Abort> {
         self.budget.breach(self.spent_tokens, self.elapsed_secs())
     }
 

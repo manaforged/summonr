@@ -28,6 +28,8 @@ pub(super) struct Preset {
     pub(super) plan: bool,
     pub(super) off: bool,
     pub(super) opencode_ids: &'static [&'static str],
+    pub(super) label: Option<String>,
+    pub(super) start: Option<String>,
 }
 
 pub(super) struct CliToken {
@@ -201,4 +203,17 @@ pub(crate) fn provider_ids(name: &str) -> &'static [&'static str] {
         .iter()
         .find(|preset| preset.name == name && !preset.off)
         .map_or(&[], |preset| preset.opencode_ids)
+}
+
+#[must_use]
+pub fn label(name: &str) -> Option<&'static str> {
+    preset(name).and_then(|preset| preset.label.as_deref())
+}
+
+#[must_use]
+pub(crate) fn start_command(base: &str) -> Option<&'static str> {
+    let base = trim_slash(base);
+    presets()
+        .find(|preset| trim_slash(&preset.base_url) == base)
+        .and_then(|preset| preset.start.as_deref())
 }

@@ -220,7 +220,7 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
             "status": "in_progress",
             "content": [{"type": "content", "content": {"type": "text", "text": crate::tools::progress_text(*progress, *total, message.as_deref())}}],
         }),
-        Event::Note { text } | Event::Aborted { reason: text } => json!({
+        Event::Note { text } | Event::Aborted { reason: text, .. } => json!({
             "sessionUpdate": "agent_thought_chunk",
             "content": {"type": "text", "text": text},
         }),
@@ -237,6 +237,7 @@ fn emit(out: &UnboundedSender<String>, session: &str, event: &Event) {
         | Event::Receipt { .. }
         | Event::Work { .. }
         | Event::Spawned { .. }
+        | Event::Session { .. }
         | Event::Child { .. } => return,
     };
     drop(out.send(frame_line(&update(session, content))));

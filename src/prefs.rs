@@ -146,7 +146,6 @@ pub struct Prefs {
     pub(crate) plan_mode: bool,
     pub(crate) layout: String,
     pub(crate) hotkeys: Hotkeys,
-    pub(crate) last_endpoint: Option<String>,
 }
 
 impl Default for Prefs {
@@ -165,9 +164,8 @@ impl Default for Prefs {
             mail: true,
             ban_comments: false,
             ban_tests: false,
-            plan_mode: false,
+            plan_mode: true,
             hotkeys: Hotkeys::default(),
-            last_endpoint: None,
             layout: "chat".to_string(),
         }
     }
@@ -199,7 +197,6 @@ fn from_file(file: &config::File) -> Result<Prefs> {
         ban_comments: file.ban_comments.unwrap_or(base.ban_comments),
         ban_tests: file.ban_tests.unwrap_or(base.ban_tests),
         plan_mode: file.plan_mode.unwrap_or(base.plan_mode),
-        last_endpoint: file.last_endpoint.clone().or(base.last_endpoint),
     })
 }
 
@@ -213,12 +210,6 @@ fn reasoning(setting: &config::ReasoningSetting) -> Visibility {
 
 pub(crate) fn save_in(path: &Path, prefs: &Prefs) -> Result<()> {
     config::save_prefs(path, prefs)
-}
-
-pub fn set_last_endpoint(name: &str) {
-    if let Some(path) = path() {
-        drop(config::save_last_endpoint(&path, name));
-    }
 }
 
 #[must_use]

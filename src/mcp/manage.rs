@@ -44,7 +44,12 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<()> {
             }
         }
     }
-    if config::save_mcp_server(&config::path()?, name, Item::Table(table))? {
+    if config::save_named(
+        &config::path()?,
+        config::Section::Mcp,
+        name,
+        Item::Table(table),
+    )? {
         return Ok(());
     }
     Err(Error::Config(format!(
@@ -53,7 +58,7 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<()> {
 }
 
 pub fn remove(name: &str) -> Result<bool> {
-    config::remove_mcp_server(&config::path()?, name)
+    config::remove_named(&config::path()?, config::Section::Mcp, name)
 }
 
 fn pairs(pairs: &[(String, String)]) -> InlineTable {

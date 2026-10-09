@@ -60,9 +60,14 @@ impl App {
                 ..layout
             });
         } else {
+            let share = if pane == Pane::Diff {
+                layout.share.max(Layout::REVIEW_SHARE)
+            } else {
+                layout.share
+            };
             self.set_layout(Layout {
                 secondary: Some(pane),
-                ..layout
+                share,
             });
             self.pane_focus.set(true);
         }
@@ -187,6 +192,9 @@ impl App {
     pub(in crate::tui::sigil_view) fn focus_pane(&self, on: bool) {
         let has_pane = self.layout.peek().secondary.is_some();
         self.pane_focus.set(on && has_pane);
+        if !self.pane_focus.peek() {
+            self.focus_composer();
+        }
         self.refresh();
     }
 

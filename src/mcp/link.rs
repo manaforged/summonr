@@ -67,7 +67,7 @@ impl Link {
         }))
     }
 
-    async fn list(
+    pub(super) async fn list(
         server: &Server,
         workspace: &std::path::Path,
         sandbox: Option<&Sandbox>,

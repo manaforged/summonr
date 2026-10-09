@@ -72,13 +72,15 @@ echo $?
 
 | Code | Meaning | Source |
 | --- | --- | --- |
-| 0 | Done. In goal and step modes, the work completed. | `WorkProgress::exit_code` in `src/durable/work.rs` |
+| 0 | Done. In goal and step modes, the work completed. | `WorkProgress::exit_code` in `src/durable/work/progress.rs` |
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
-| 2 | A check failed. | `exit` in `src/main/modes.rs` |
-| 3 | Stopped short: budget, stall, or aborted turn. | `src/main/modes.rs`, `src/durable/work.rs` |
+| 2 | A check failed. In goal and step modes this includes a run that stopped short on a budget or an abort and then failed the check at exit. | `exit` in `src/main/modes.rs`, `Loop::stop_work` in `src/runtime/turn/checks.rs` |
+| 3 | Stopped short: budget, stall, or aborted turn, with no check configured, or with a check that passed while the goal was not met. | `src/main/modes.rs`, `src/durable/work/progress.rs` |
 | 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `interrupted` in `src/main.rs` |
 | 143 | Terminated by `SIGTERM` (Unix). | `interrupted` in `src/main.rs` |
 | 129 | Hung up by `SIGHUP` (Unix). | `interrupted` in `src/main.rs` |
+
+In `--goal` and `--steps`, the check decides the exit code. When a run stops short, summonr runs the configured check once at exit. A failed check gives 2. A completed run gives 0. `-p` runs no check at exit.
 
 A signal exit skips the `--worktree` finish: the worktree and its branch stay in place, with the run's files uncommitted.
 
@@ -88,10 +90,11 @@ An unknown option is exit code 1 with `unknown option`.
 
 ### `--json` on a session (`-p`, `--goal`, `--steps`)
 
-summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The shapes come from `Event` in `src/tools.rs`.
+summonr prints one JSON object per line on stdout. Each object has a `type` field in snake case. The first line is `{"type":"session","id":"<session id>"}`. The shapes come from `Event` in `src/tools.rs`.
 
 | `type` | Fields |
 | --- | --- |
+| `session` | `id` |
 | `tool_call` | `id`, `name`, `arguments` (string) |
 | `tool_result` | `id`, `success`, `mutated`, `output`, optional `millis` |
 | `assistant` | `text` |
@@ -101,14 +104,14 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `usage` | `prompt_tokens`, `completion_tokens`, `reasoning_tokens`, `cached_tokens`, optional `millis`, `prefix_hash`, `cost` |
 | `unreported` | `tokens` |
 | `mail` | `from`, `text` |
-| `aborted` | `reason` |
+| `aborted` | `code` (`time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`), `reason` (free text) |
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
 | `approval` | `detail`, optional `persist` |
 | `elicit` | `form` (an MCP server's `server`, `message`, and `fields`), or null when the question ends |
 | `verify` | `command`, `passed` |
 | `receipt` | `receipt` |
-| `work` | `progress` |
+| `work` | `progress`; its `checks_failed` agrees with the `verify` events |
 | `child` | `id`, `event` (a nested event) |
 
 Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`.
@@ -142,11 +145,12 @@ JSON-RPC over stdio. `initialize` answers `"protocolVersion": 1`. The methods ar
   - `~/.summonr/sessions/<id>/session.jsonl`: the session log.
   - `~/.summonr/skills/<name>/SKILL.md`, `~/.summonr/bin/<name>/`.
 - Key lookup order: the endpoint's environment variable, then `credentials.toml`, then peer stores (`~/.local/share/opencode/auth.json`, `~/.kimi-code/credentials/kimi-code.json`), then `api_key` in `config.toml`, then the built-in default. An endpoint with no key fails with the missing-key message unless it is local or keyless. `SUMMONR_API_KEY` applies only with `SUMMONR_BASE_URL`.
-- `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2.
+- `.summonr/check.toml` holds `check = "CMD"` or `checks = ["CMD", ...]`. Use one key, not both. The checks decide exit code 2. The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`. When the check file changes during a run, a `note` event says so and the run keeps the check it loaded at start.
+- A file that summonr's own stdout or stderr is redirected to, for example `--json > ci/events.jsonl` inside the repository, never counts as a change.
 - A workspace `.summonr/policy.toml` can narrow the user policy. It can't widen it.
 - A workspace `.summonr/config.toml` can turn a module off. It can't turn a module on. `mail` and `search` are off by default.
 - The advertised tool list freezes after the first model round. A module row in `/settings` writes config for the next process.
-- Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, or a list run in order, that reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. Plugin hooks follow the Claude Code rules instead (see the extending guide).
+- Each `[hooks]` value (`pre_tool`, `post_tool`, `compact`, `stop`) is a shell command, a table `{ command = "...", dialect = "claude" }`, or a list of either, run in order. Each hook reads JSON on stdin. A `pre_tool` hook that exits nonzero blocks the call. A hook with `dialect = "claude"`, and every plugin hook, follows the Claude Code rules instead (see the reference).
 - A project `.mcp.json` loads only after approval. `import_mcp = true` also loads `~/.claude.json` and `~/.codex/config.toml`.
 - The sandbox is off by default. `--plan` denies writes and cannot be combined with `--goal` or `--steps`. In a noninteractive run, sandbox escape, network grants, and writes outside the workspace are denied; `--no-net` stays in force after a command failure. Auto mode asks before it grants an extra write root.
 - `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root are read only when the workspace is trusted. A home `SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it.

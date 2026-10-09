@@ -16,8 +16,6 @@ pub(crate) struct File {
     pub default: Option<String>,
     pub default_model: Option<String>,
     #[serde(default)]
-    pub last_endpoint: Option<String>,
-    #[serde(default)]
     pub endpoint: BTreeMap<String, Endpoint>,
     #[serde(default)]
     pub search: Search,
@@ -304,23 +302,9 @@ pub(crate) fn expand_tilde(word: &str) -> Option<PathBuf> {
     Some(home_dir()?.join(rest))
 }
 
-pub(crate) fn save_last_endpoint(path: &Path, name: &str) -> Result<bool> {
-    update(path, |document| {
-        if document
-            .get("last_endpoint")
-            .and_then(toml_edit::Item::as_str)
-            == Some(name)
-        {
-            return Ok(false);
-        }
-        document["last_endpoint"] = value(name);
-        Ok(true)
-    })
-}
-
 pub(crate) use edit::{
-    remove_key, remove_mcp_server, sandbox_entry, save_default_seat, save_default_workflow,
-    save_mcp_server, save_module, save_prefs, save_sandbox_write, save_workflow,
+    Section, remove_key, remove_named, sandbox_entry, save_default_seat, save_default_workflow,
+    save_module, save_named, save_prefs, save_sandbox_write, save_workflow,
 };
 
 #[cfg(test)]

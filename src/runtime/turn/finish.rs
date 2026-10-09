@@ -47,12 +47,12 @@ impl<P: Provider> Loop<P> {
             );
         }
         let (checks, mut running, unsettled) = self.await_jobs(events, &mut emit).await?;
-        if let Some(reason) = self
+        if let Some(abort) = self
             .children_abort(&mut running, events, &mut emit, usage)
             .await?
         {
             return self
-                .abort_turn(Some(reason), events, emit, usage, round, pre)
+                .abort_turn(abort, events, emit, usage, round, pre)
                 .await;
         }
         if let Some(running) = self.defer_running(&running, unsettled)? {
@@ -217,13 +217,7 @@ impl<P: Provider> Loop<P> {
         let progress = self.work_progress()?;
         self.push_event(events, &mut emit, Event::Work { progress })?;
         let (note, checks) = match ending {
-            Ending::Plan => (
-                Some(format!(
-                    "plan saved to {}",
-                    crate::plan::file(&self.workspace).display()
-                )),
-                Vec::new(),
-            ),
+            Ending::Plan => (Some(crate::plan::ready(self.session_path())), Vec::new()),
             Ending::Deferred(running) => (
                 Some(format!(
                     "turn deferred; background work still running: {running}"

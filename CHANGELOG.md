@@ -45,7 +45,7 @@ First stable release.
 
 ### Changed
 
-- Plan mode is gone: `/plan`, `/plan accept`, `/plan reject`, the `plan_mode` setting, the `plan` workflow role, and `--plan` are removed. `/goal`, `--goal`, and `--steps` work as before, and after a goal ends the session returns to its earlier mode.
+- Plan mode is gone: `/plan`, `/plan accept`, `/plan reject`, the `plan_mode` setting, the `plan` workflow role, and `--plan` are removed. `/goal`, `--goal`, and `--steps` work as before, and after a goal ends the session returns to its earlier mode. A `plan_mode` key left in `config.toml` is ignored without a warning and dropped on the next save.
 - Search is its own `search` tool. `pattern` searches contents and `glob` alone finds files by name, under any readable path, ignoring case unless `case_sensitive` is set. A call returns what it found within `search_secs`. `read` no longer searches, and `read` and `search` reach paths outside the workspace except protected ones.
 - `summonr login NAME --model M` changes the model of a server you added, with no `--url`. `summonr login NAME --default [--model M]` makes any endpoint that is set up the default. `summonr login NAME --help`, and `--help` after `logout`, `diff`, `profile`, `install`, `export`, `doctor`, `classify`, `worktrees`, and `mcp`, prints that command's help.
 - `summonr login` and `summonr endpoints` size their columns to the longest value, show only the URL on a row with no model, and say `1 model`. Each built-in label names its default model and the row whose key it shares; `glm` names `GLM_CODING_API_KEY` and `glm-intl` names `ZAI_CODING_API_KEY` when the key is missing.

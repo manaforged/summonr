@@ -108,7 +108,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
 | `approval` | `detail`, optional `persist` |
-| `elicit` | `form` (an MCP server's `server`, `message`, and `fields`), or null when the question ends |
+| `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
 | `work` | `progress`; its `checks_failed` agrees with the `verify` events |

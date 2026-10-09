@@ -182,6 +182,9 @@ impl<P: Provider> Loop<P> {
                 Err(error) => (Err(error), None),
             });
         }
+        if name == super::ask::ASK && self.ask_available() {
+            return Ok((self.ask(call, events, emit).await?, None));
+        }
         if let Some(refusal) = self.child_refusal(name) {
             return Ok((Err(crate::Error::Denied(refusal)), None));
         }

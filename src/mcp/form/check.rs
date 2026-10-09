@@ -28,19 +28,15 @@ impl Field {
                 .is_boolean()
                 .then_some(())
                 .ok_or_else(|| format!("{title} takes yes or no")),
-            FieldKind::Choice { options } => {
-                let text = value.as_str().unwrap_or_default();
-                options
-                    .iter()
-                    .any(|option| option.value == text)
-                    .then_some(())
-                    .ok_or_else(|| format!("{title} is not one of the choices"))
-            }
+            FieldKind::Choice { options, custom } => offered(options, value, *custom)
+                .then_some(())
+                .ok_or_else(|| format!("{title} is not one of the choices")),
             FieldKind::Choices {
                 options,
                 min_items,
                 max_items,
-            } => check_choices(title, value, options, *min_items, *max_items),
+                custom,
+            } => check_choices(title, value, options, (*min_items, *max_items), *custom),
         }
     }
 }
@@ -98,12 +94,18 @@ fn check_number(
     Ok(())
 }
 
+fn offered(options: &[Choice], value: &Value, custom: bool) -> bool {
+    value.as_str().is_some_and(|text| {
+        (custom && !text.trim().is_empty()) || options.iter().any(|option| option.value == text)
+    })
+}
+
 fn check_choices(
     title: &str,
     value: &Value,
     options: &[Choice],
-    min_items: Option<usize>,
-    max_items: Option<usize>,
+    (min_items, max_items): (Option<usize>, Option<usize>),
+    custom: bool,
 ) -> Result<(), String> {
     let items = value
         .as_array()
@@ -115,11 +117,7 @@ fn check_choices(
     }
     items
         .iter()
-        .all(|item| {
-            options
-                .iter()
-                .any(|option| item.as_str() == Some(option.value.as_str()))
-        })
+        .all(|item| offered(options, item, custom))
         .then_some(())
         .ok_or_else(|| format!("{title} has a choice that is not offered"))
 }

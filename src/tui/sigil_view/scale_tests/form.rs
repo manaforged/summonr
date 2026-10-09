@@ -8,7 +8,7 @@ use crate::tui::sigil_view::app::Reply;
 
 fn form() -> Form {
     Form {
-        server: "fixture".to_owned(),
+        server: Some("fixture".to_owned()),
         message: "Who is asking?".to_owned(),
         fields: vec![
             Field {
@@ -41,12 +41,8 @@ fn form() -> Form {
                 title: "Color".to_owned(),
                 description: None,
                 kind: FieldKind::Choice {
-                    options: ["Red", "Green"]
-                        .map(|value| Choice {
-                            value: value.to_owned(),
-                            title: value.to_owned(),
-                        })
-                        .to_vec(),
+                    options: choices(&["Red", "Green"]),
+                    custom: false,
                 },
                 required: false,
                 default: Some(json!("Red")),
@@ -55,13 +51,39 @@ fn form() -> Form {
     }
 }
 
+fn choices(values: &[&str]) -> Vec<Choice> {
+    values
+        .iter()
+        .map(|value| Choice {
+            value: (*value).to_owned(),
+            title: (*value).to_owned(),
+            description: None,
+        })
+        .collect()
+}
+
+fn question(title: &str, kind: FieldKind) -> Field {
+    Field {
+        name: title.to_owned(),
+        title: title.to_owned(),
+        description: None,
+        kind,
+        required: false,
+        default: None,
+    }
+}
+
 fn open(workspace: &std::path::Path) -> (App, UnboundedReceiver<Cmd>) {
+    opened(workspace, form())
+}
+
+fn opened(workspace: &std::path::Path, form: Form) -> (App, UnboundedReceiver<Cmd>) {
     std::fs::create_dir(workspace.join(".git")).unwrap();
     std::fs::write(workspace.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     let (commands, receiver) = unbounded_channel();
     let app = App::new(busy_info(), workspace.to_owned(), commands);
     app.resize(100, 30);
-    app.update(Msg::Event(Event::Elicit { form: Some(form()) }));
+    app.update(Msg::Event(Event::Elicit { form: Some(form) }));
     (app, receiver)
 }
 
@@ -105,7 +127,9 @@ fn a_filled_form_is_checked_per_field_and_sent_after_review() {
                 .any(|line| line.contains("out of range"))
         );
         typed(&app, "7");
-        assert_eq!(app.draft.peek(), "Red");
+        assert_eq!(app.draft.peek(), "");
+        let lines = app.form.peek().unwrap().lines();
+        assert!(lines.iter().any(|line| line == "❯ 1. Red"), "{lines:?}");
         typed(&app, "2");
         let form = app.form.peek().unwrap();
         let review = form.lines().join("\n");
@@ -129,5 +153,94 @@ fn cancelling_the_form_sends_cancel() {
         let (app, mut receiver) = open(workspace.path());
         app.form_reply(Reply::Cancel);
         assert_eq!(sent(&mut receiver).action, FormAction::Cancel);
+    });
+}
+
+#[test]
+fn model_question_picks_with_arrows_and_sends_without_review() {
+    Runtime::scope("form-model-pick", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let form = Form {
+            server: None,
+            message: "Which database?".to_owned(),
+            fields: vec![question(
+                "Which database?",
+                FieldKind::Choice {
+                    options: choices(&["Postgres", "SQLite", "MySQL"]),
+                    custom: true,
+                },
+            )],
+        };
+        let (app, mut receiver) = opened(workspace.path(), form);
+        let lines = app.form.peek().unwrap().lines();
+        assert_eq!(lines[0], "The model asks");
+        assert!(app.form_move(1));
+        assert!(app.form_move(1));
+        assert!(app.form_move(-1));
+        typed(&app, "");
+        let answer = sent(&mut receiver);
+        assert_eq!(answer.action, FormAction::Accept);
+        assert_eq!(
+            serde_json::Value::Object(answer.content.unwrap()),
+            json!({"Which database?": "SQLite"})
+        );
+        assert!(app.form.peek().is_none());
+    });
+}
+
+#[test]
+fn model_question_toggles_several_and_takes_a_typed_answer() {
+    Runtime::scope("form-model-many", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let form = Form {
+            server: None,
+            message: "Targets".to_owned(),
+            fields: vec![
+                question(
+                    "Targets",
+                    FieldKind::Choices {
+                        options: choices(&["macOS", "Linux", "Windows"]),
+                        min_items: None,
+                        max_items: None,
+                        custom: true,
+                    },
+                ),
+                question(
+                    "Shell",
+                    FieldKind::Choice {
+                        options: choices(&["zsh", "bash"]),
+                        custom: true,
+                    },
+                ),
+            ],
+        };
+        let (app, mut receiver) = opened(workspace.path(), form.clone());
+        typed(&app, "");
+        app.form_reply(Reply::Edit);
+        assert!(app.form_toggle());
+        assert!(app.form_move(2));
+        assert!(app.form_toggle());
+        let lines = app.form.peek().unwrap().lines();
+        assert!(
+            lines.iter().any(|line| line == "❯ [x] Windows"),
+            "{lines:?}"
+        );
+        typed(&app, "");
+        typed(&app, "fish, with starship");
+        app.form_reply(Reply::Send);
+        let answer = sent(&mut receiver);
+        assert_eq!(
+            serde_json::Value::Object(answer.content.unwrap()),
+            json!({"Targets": ["macOS", "Windows"], "Shell": "fish, with starship"})
+        );
+        let fresh = tempfile::tempdir().unwrap();
+        let (app, mut receiver) = opened(fresh.path(), form);
+        typed(&app, "");
+        typed(&app, "");
+        app.form_reply(Reply::Send);
+        assert_eq!(
+            serde_json::Value::Object(sent(&mut receiver).content.unwrap()),
+            json!({"Shell": "zsh"})
+        );
     });
 }

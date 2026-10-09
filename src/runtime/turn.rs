@@ -71,6 +71,8 @@ impl WaitError {
     }
 }
 
+mod ask;
+pub(super) use ask::definition as ask_definition;
 mod calls;
 mod checks;
 mod close;

@@ -30,7 +30,7 @@ plugin host or a second name for `skill`, `mcp`, or `run_command`.
 
 ## Model-facing jobs
 
-The tool schemas. Six core, six behind a module or a workspace file.
+The tool schemas. Six core, seven behind a module, a workspace file, or a person at the session.
 
 | Job | Where | Gating |
 | --- | --- | --- |
@@ -44,6 +44,7 @@ The tool schemas. Six core, six behind a module or a workspace file.
 | `lsp` | `tools/catalog.rs::lsp` | `lsp` module on |
 | `web` | `tools/catalog.rs::web` | `search` module on (off by default) |
 | `task` | `runtime/child.rs::definition` | interactive sessions (TUI, ACP) at depth 0 with the `task` module on; `/modules task off` disables; an optional `agent` names a plugin agent from `<agents>`, whose instructions open the child's first message and whose `tools` deny other tools at call time (`ToolRegistry::restrict_to`, names through `hooks::builtin`) |
+| `ask` | `runtime/turn/ask.rs::definition`, `Loop::ask` | TUI sessions at depth 0, the only ones with a steering channel; one to four questions, each a field of an `mcp::Form` with no `server`: options become `Choice` or `Choices` with `custom` set, no options a text field; the call runs through `Loop::elicit`, so MCP servers and the model share one dialog, one `grant_wait_secs` wait, and one dismissal; the dialog picks with `↑`/`↓`, toggles with `space`, and Enter takes the highlighted single choice, while Enter on a multi-choice with nothing toggled gives no answer; a message typed while the dialog is open dismisses it and goes to the model as a steer |
 | `<server>__<tool>`, `mcp` | `mcp/defer.rs` `Hub::definitions` | `mcp` module on; project servers need approval; a read-only research child does not treat `readOnlyHint` as read-only; a server over `MCP_DEFER_BYTES` of schemas is listed under `mcp` |
 | `agents`, `send`, `inbox`, `board` | `mail/tools.rs::definitions` | `mail` module on, or `SUMMONR_MAIL` set to anything but `off`; the session must be on the roster; `board` set and `send` are off in a read-only research child |
 

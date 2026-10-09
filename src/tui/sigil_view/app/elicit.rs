@@ -1,4 +1,6 @@
-use serde_json::{Map, Value};
+use std::collections::BTreeSet;
+
+use serde_json::{Map, Value, json};
 
 use crate::mcp::{Choice, Field, FieldKind, Form, FormAction, FormAnswer};
 
@@ -16,6 +18,8 @@ pub(in crate::tui::sigil_view) struct FormState {
     index: usize,
     values: Map<String, Value>,
     error: Option<String>,
+    cursor: usize,
+    picked: BTreeSet<usize>,
     pub(in crate::tui::sigil_view) stage: Stage,
 }
 
@@ -29,31 +33,89 @@ pub(in crate::tui::sigil_view) enum Reply {
 
 impl FormState {
     fn new(form: Form) -> Self {
-        Self {
+        let mut state = Self {
             form,
             index: 0,
             values: Map::new(),
             error: None,
+            cursor: 0,
+            picked: BTreeSet::new(),
             stage: Stage::Filling,
-        }
+        };
+        state.focus();
+        state
     }
 
     fn field(&self) -> Option<&Field> {
         self.form.fields.get(self.index)
     }
 
-    fn prefill(&self) -> String {
+    fn current(&self) -> Option<&Value> {
         self.field()
             .and_then(|field| self.values.get(&field.name).or(field.default.as_ref()))
-            .map(shown)
-            .unwrap_or_default()
+    }
+
+    fn options(&self) -> Option<(&[Choice], bool)> {
+        match &self.field()?.kind {
+            FieldKind::Choice { options, .. } => Some((options, false)),
+            FieldKind::Choices { options, .. } => Some((options, true)),
+            FieldKind::Text { .. } | FieldKind::Number { .. } | FieldKind::Boolean => None,
+        }
+    }
+
+    fn focus(&mut self) {
+        let chosen: BTreeSet<String> = match self.current() {
+            Some(Value::String(text)) => BTreeSet::from([text.clone()]),
+            Some(Value::Array(items)) => items.iter().map(Field::shown).collect(),
+            _other => BTreeSet::new(),
+        };
+        let found: BTreeSet<usize> = self.options().map_or_else(BTreeSet::new, |(options, _)| {
+            (0..options.len())
+                .filter(|index| chosen.contains(&options[*index].value))
+                .collect()
+        });
+        self.cursor = found.first().copied().unwrap_or(0);
+        self.picked = if self.options().is_some_and(|(_, many)| many) {
+            found
+        } else {
+            BTreeSet::new()
+        };
+    }
+
+    fn prefill(&self) -> String {
+        match self.options() {
+            Some((options, _)) => match self.current() {
+                Some(Value::String(text)) if !options.iter().any(|o| &o.value == text) => {
+                    text.clone()
+                }
+                _other => String::new(),
+            },
+            None => self.current().map(Field::shown).unwrap_or_default(),
+        }
+    }
+
+    fn highlighted(&self) -> Option<Value> {
+        let (options, many) = self.options()?;
+        if !many {
+            return options.get(self.cursor).map(|option| json!(option.value));
+        }
+        if self.picked.is_empty() {
+            return None;
+        }
+        Some(json!(
+            self.picked
+                .iter()
+                .filter_map(|index| options.get(*index).map(|option| option.value.clone()))
+                .collect::<Vec<_>>()
+        ))
     }
 
     pub(in crate::tui::sigil_view) fn lines(&self) -> Vec<String> {
-        let mut lines = vec![format!(
-            "mcp {} asks: {}",
-            self.form.server, self.form.message
-        )];
+        let head = match &self.form.server {
+            Some(server) => format!("mcp {server} asks: {}", self.form.message),
+            None => "The model asks".to_string(),
+        };
+        let mut lines = vec![head];
         match self.stage {
             Stage::Filling => self.filling_lines(&mut lines),
             Stage::Review => self.review_lines(&mut lines),
@@ -72,6 +134,21 @@ impl FormState {
             if let Some(description) = &field.description {
                 lines.push(description.clone());
             }
+            if let Some((options, many)) = self.options() {
+                lines.extend(options.iter().enumerate().map(|(index, option)| {
+                    let mark = match (many, self.picked.contains(&index)) {
+                        (false, _) => format!("{}.", index + 1),
+                        (true, true) => "[x]".to_string(),
+                        (true, false) => "[ ]".to_string(),
+                    };
+                    let cursor = if index == self.cursor { "❯" } else { " " };
+                    let about = option
+                        .description
+                        .as_ref()
+                        .map_or_else(String::new, |about| format!("  {about}"));
+                    format!("{cursor} {mark} {}{about}", option.title)
+                }));
+            }
             lines.push(facts(field));
         }
         if let Some(error) = &self.error {
@@ -81,7 +158,10 @@ impl FormState {
 
     fn review_lines(&self, lines: &mut Vec<String>) {
         for field in &self.form.fields {
-            let value = self.values.get(&field.name).map_or_else(String::new, shown);
+            let value = self
+                .values
+                .get(&field.name)
+                .map_or_else(String::new, Field::shown);
             lines.push(format!("{}: {value}", field.title));
         }
     }
@@ -93,7 +173,7 @@ fn facts(field: &Field) -> String {
         parts.push("required".to_string());
     }
     if let Some(default) = &field.default {
-        parts.push(format!("default {}", shown(default)));
+        parts.push(format!("default {}", Field::shown(default)));
     }
     parts.retain(|part| !part.is_empty());
     parts.join(" · ")
@@ -110,8 +190,18 @@ fn hint(kind: &FieldKind) -> String {
             maximum,
         } => number_hint(*integer, *minimum, *maximum),
         FieldKind::Boolean => "yes or no".to_string(),
-        FieldKind::Choice { options } => numbered(options),
-        FieldKind::Choices { options, .. } => format!("{} · comma-separated", numbered(options)),
+        FieldKind::Choice { custom, .. } => picking("↑↓ move · enter picks", *custom),
+        FieldKind::Choices { custom, .. } => {
+            picking("↑↓ move · space toggles · enter confirms", *custom)
+        }
+    }
+}
+
+fn picking(keys: &str, custom: bool) -> String {
+    if custom {
+        format!("{keys} · or type your own answer")
+    } else {
+        keys.to_string()
     }
 }
 
@@ -122,25 +212,6 @@ fn number_hint(integer: bool, minimum: Option<f64>, maximum: Option<f64>) -> Str
         (Some(low), None) => format!("{noun} from {low}"),
         (None, Some(high)) => format!("{noun} up to {high}"),
         (None, None) => noun.to_string(),
-    }
-}
-
-fn numbered(options: &[Choice]) -> String {
-    options
-        .iter()
-        .enumerate()
-        .map(|(index, option)| format!("{} {}", index + 1, option.title))
-        .collect::<Vec<_>>()
-        .join(" · ")
-}
-
-fn shown(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        Value::Bool(true) => "yes".to_string(),
-        Value::Bool(false) => "no".to_string(),
-        Value::Array(items) => items.iter().map(shown).collect::<Vec<_>>().join(", "),
-        other @ (Value::Null | Value::Number(_) | Value::Object(_)) => other.to_string(),
     }
 }
 
@@ -168,7 +239,12 @@ impl App {
         let Some(field) = state.field().cloned() else {
             return true;
         };
-        match field.read(&self.draft.peek()) {
+        let typed = self.draft.peek();
+        let read = match state.highlighted().filter(|_| typed.trim().is_empty()) {
+            Some(value) => field.check(&value).map(|()| Some(value)),
+            None => field.read(&typed),
+        };
+        match read {
             Err(error) => state.error = Some(error),
             Ok(value) => {
                 match value {
@@ -180,8 +256,52 @@ impl App {
                 if state.index >= state.form.fields.len() {
                     state.stage = Stage::Review;
                 }
+                state.focus();
                 self.replace(state.prefill());
             }
+        }
+        let direct = state.stage == Stage::Review
+            && state.form.server.is_none()
+            && state.form.fields.len() == 1;
+        self.form.set(Some(state));
+        if direct {
+            self.form_reply(Reply::Send);
+        }
+        true
+    }
+
+    pub(in crate::tui::sigil_view) fn form_move(&self, dir: isize) -> bool {
+        let Some(mut state) = self
+            .form
+            .peek()
+            .filter(|state| state.stage == Stage::Filling)
+        else {
+            return false;
+        };
+        let Some(count) = state.options().map(|(options, _)| options.len()) else {
+            return false;
+        };
+        let count = isize::try_from(count).unwrap_or(isize::MAX).max(1);
+        let at = isize::try_from(state.cursor).unwrap_or(0);
+        state.cursor = usize::try_from((at + dir).rem_euclid(count)).unwrap_or(0);
+        self.form.set(Some(state));
+        true
+    }
+
+    pub(in crate::tui::sigil_view) fn form_toggle(&self) -> bool {
+        let Some(mut state) = self
+            .form
+            .peek()
+            .filter(|state| state.stage == Stage::Filling)
+        else {
+            return false;
+        };
+        if !self.draft.peek().is_empty() || !state.options().is_some_and(|(_, many)| many) {
+            return false;
+        }
+        let cursor = state.cursor;
+        if !state.picked.remove(&cursor) {
+            state.picked.insert(cursor);
         }
         self.form.set(Some(state));
         true
@@ -202,6 +322,7 @@ impl App {
                 state.index = 0;
                 state.error = None;
                 state.stage = Stage::Filling;
+                state.focus();
                 let draft = state.prefill();
                 self.form.set(Some(state));
                 self.replace(draft);

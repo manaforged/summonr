@@ -5,7 +5,8 @@ mod check;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Form {
-    pub server: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub server: Option<String>,
     pub message: String,
     pub fields: Vec<Field>,
 }
@@ -45,6 +46,8 @@ pub enum FieldKind {
     Boolean,
     Choice {
         options: Vec<Choice>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        custom: bool,
     },
     Choices {
         options: Vec<Choice>,
@@ -52,6 +55,8 @@ pub enum FieldKind {
         min_items: Option<usize>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         max_items: Option<usize>,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        custom: bool,
     },
 }
 
@@ -68,6 +73,8 @@ pub enum TextFormat {
 pub struct Choice {
     pub value: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,7 +139,7 @@ impl Form {
             .map(|(name, property)| Field::parse(name, property, required.contains(&name.as_str())))
             .collect::<Option<Vec<_>>>()?;
         Some(Self {
-            server: server.to_string(),
+            server: Some(server.to_string()),
             message: params
                 .get("message")
                 .and_then(Value::as_str)
@@ -176,7 +183,10 @@ impl Field {
         };
         let kind = match property.get("type").and_then(Value::as_str)? {
             "string" => match choices(property) {
-                Some(options) => FieldKind::Choice { options },
+                Some(options) => FieldKind::Choice {
+                    options,
+                    custom: false,
+                },
                 None => FieldKind::Text {
                     format: property.get("format").and_then(|format| {
                         serde_json::from_value::<TextFormat>(format.clone()).ok()
@@ -196,6 +206,7 @@ impl Field {
                 options: choices(property.get("items")?)?,
                 min_items: count("minItems"),
                 max_items: count("maxItems"),
+                custom: false,
             },
             _other => return None,
         };
@@ -207,6 +218,17 @@ impl Field {
             required,
             default: property.get("default").cloned(),
         })
+    }
+
+    #[must_use]
+    pub fn shown(value: &Value) -> String {
+        match value {
+            Value::String(text) => text.clone(),
+            Value::Bool(true) => "yes".to_string(),
+            Value::Bool(false) => "no".to_string(),
+            Value::Array(items) => items.iter().map(Self::shown).collect::<Vec<_>>().join(", "),
+            other @ (Value::Null | Value::Number(_) | Value::Object(_)) => other.to_string(),
+        }
     }
 
     pub fn read(&self, typed: &str) -> Result<Option<Value>, String> {
@@ -239,11 +261,13 @@ impl Field {
                 "n" | "no" | "false" => json!(false),
                 _other => return Err(format!("{} takes yes or no", self.title)),
             },
-            FieldKind::Choice { options } => json!(pick(options, typed)?),
-            FieldKind::Choices { options, .. } => json!(
+            FieldKind::Choice { options, custom } => json!(pick(options, typed, *custom)?),
+            FieldKind::Choices {
+                options, custom, ..
+            } => json!(
                 typed
                     .split(',')
-                    .map(|part| pick(options, part.trim()))
+                    .map(|part| pick(options, part.trim(), *custom))
                     .collect::<Result<Vec<_>, _>>()?
             ),
         })
@@ -258,6 +282,7 @@ fn choices(property: &Value) -> Option<Vec<Choice>> {
                 value.as_str().map(|value| Choice {
                     value: value.to_string(),
                     title: value.to_string(),
+                    description: None,
                 })
             })
             .collect();
@@ -274,12 +299,16 @@ fn choices(property: &Value) -> Option<Vec<Choice>> {
                 .get("title")
                 .and_then(Value::as_str)
                 .map_or_else(|| value.clone(), str::to_string);
-            Some(Choice { value, title })
+            Some(Choice {
+                value,
+                title,
+                description: None,
+            })
         })
         .collect()
 }
 
-fn pick(options: &[Choice], typed: &str) -> Result<String, String> {
+fn pick(options: &[Choice], typed: &str, custom: bool) -> Result<String, String> {
     let lower = typed.to_lowercase();
     options
         .iter()
@@ -292,6 +321,7 @@ fn pick(options: &[Choice], typed: &str) -> Result<String, String> {
                 .and_then(|index| options.get(index))
         })
         .map(|option| option.value.clone())
+        .or_else(|| custom.then(|| typed.to_string()))
         .ok_or_else(|| format!("`{typed}` is not one of the choices"))
 }
 

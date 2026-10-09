@@ -122,6 +122,40 @@ fn shift_enter_keeps_a_multiline_draft_until_plain_enter_submits_it() {
 }
 
 #[test]
+fn alt_enter_line_break_keeps_the_draft_unsent() {
+    use crossterm::event::{KeyCode, KeyEvent as TerminalKey, KeyModifiers};
+
+    Runtime::scope("composer-alt-line-break", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        drop(sent.try_recv());
+        app.resize(160, 40);
+        app.replace("first".to_owned());
+        let mut host = Host::cells();
+        let tree = app.clone();
+        host.mount(move || root(tree));
+        let mut screen = Screen::new(160, 40);
+        let mut router = EventRouter::new();
+        for _ in 0..2 {
+            screen
+                .frame(&mut host, &mut router, [], (160, 40))
+                .expect("focus the composer");
+        }
+        let events =
+            [
+                sigil::terminal::map_key(&TerminalKey::new(KeyCode::Enter, KeyModifiers::ALT))
+                    .expect("map Alt+Enter"),
+            ];
+        screen
+            .frame(&mut host, &mut router, events, (160, 40))
+            .expect("insert the line break");
+        assert_eq!(app.draft.peek(), "first\n");
+        assert!(sent.try_recv().is_err(), "Alt+Enter submitted the draft");
+    });
+}
+
+#[test]
 fn typing_after_slash_model_searches_the_models() {
     assert_eq!(typed("/model", |app| app.picker.draft.peek()), "ki");
 }

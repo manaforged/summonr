@@ -412,6 +412,7 @@ When a command asks for a password through `SSH_ASKPASS` or `SUDO_ASKPASS`, such
 | `alt+o` | in `/model`, shows or hides models that are older than six months or have a newer model in the same family | |
 | `F5` | retry a failed turn; in `/model`, refresh the providers | |
 | `←` `→` | in `/model`, `/login`, and `/usage`, switch between the Models, Providers, and Usage tabs; `ctrl+←` `ctrl+→` also work, and `↑` `↓` change the range in Usage | |
+| `shift+enter` `alt+enter` | newline; macOS Terminal sends `alt+enter` for Shift+Return | same |
 | `ctrl+j` | newline (default; editable in options) | |
 | `ctrl+g` | edit the draft in `$EDITOR` (default) | |
 | `shift+tab` | cycle reasoning effort: none, minimal, low, medium, high, xhigh, max | takes effect when the turn ends |

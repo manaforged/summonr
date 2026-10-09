@@ -1,11 +1,13 @@
 use super::*;
 
 pub(super) fn composer_keys(mut node: NodeBuilder, app: &App) -> NodeBuilder {
-    node = node.key_capture(Shortcut::new(Key::Enter, ModifiersState::SHIFT), |event| {
-        event.key = Key::Enter.into();
-        event.modifiers = ModifiersState::empty();
-        event.text = None;
-    });
+    for modifier in [ModifiersState::SHIFT, ModifiersState::ALT] {
+        node = node.key_capture(Shortcut::new(Key::Enter, modifier), |event| {
+            event.key = Key::Enter.into();
+            event.modifiers = ModifiersState::empty();
+            event.text = None;
+        });
+    }
     for (key, end) in [(Key::Home, false), (Key::End, true)] {
         for extend in [false, true] {
             let app = app.clone();

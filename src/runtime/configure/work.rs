@@ -135,6 +135,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn select_steps(&mut self, markdown: &str, commands: &[String]) -> Result<()> {
+        self.refuse_in_plan("steps")?;
         self.session
             .prepare_external_work(markdown, WorkPolicy::Steps, commands)
             .map_err(super::session_err)?;
@@ -143,11 +144,21 @@ impl<P: Provider> Loop<P> {
     }
 
     pub fn select_goal(&mut self, objective: &str, commands: &[String]) -> Result<()> {
+        self.refuse_in_plan("a goal")?;
         self.session
             .prepare_external_work(objective, WorkPolicy::Goal {}, commands)
             .map_err(super::session_err)?;
         self.schema = None;
         self.set_mode(crate::RunMode::Goal)
+    }
+
+    fn refuse_in_plan(&self, work: &str) -> Result<()> {
+        if self.is_plan() {
+            return Err(Error::Config(format!(
+                "plan mode is read-only; leave plan mode before you start {work}"
+            )));
+        }
+        Ok(())
     }
 
     pub(crate) fn accept_plan(&mut self) -> Result<()> {

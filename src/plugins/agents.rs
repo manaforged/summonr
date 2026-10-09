@@ -17,23 +17,64 @@ pub(crate) struct Agent {
     pub(crate) instructions: String,
 }
 
+impl Agent {
+    fn qualified(&self) -> String {
+        format!("{}:{}", self.plugin, self.name)
+    }
+}
+
 #[must_use]
 pub(crate) fn agents(workspace: &Path) -> Vec<Agent> {
     let mut found: Vec<Agent> = enabled()
         .iter()
         .flat_map(|plugin| of_plugin(plugin, workspace))
         .collect();
-    found.sort_by(|left, right| left.name.cmp(&right.name));
-    found.dedup_by(|left, right| left.name == right.name);
+    found.sort_by(|left, right| (&left.name, &left.plugin).cmp(&(&right.name, &right.plugin)));
+    found.dedup_by(|left, right| left.name == right.name && left.plugin == right.plugin);
     found
 }
 
-#[must_use]
-pub(crate) fn find(name: &str, workspace: &Path) -> Option<Agent> {
+pub(crate) fn find(name: &str, workspace: &Path) -> Result<Agent, String> {
     let name = name.trim();
-    agents(workspace)
-        .into_iter()
-        .find(|agent| agent.name == name)
+    let all = agents(workspace);
+    let mut matched: Vec<&Agent> = all
+        .iter()
+        .filter(|agent| agent.name == name || agent.qualified() == name)
+        .collect();
+    match matched.len() {
+        1 => Ok(matched.remove(0).clone()),
+        0 => {
+            let names = labels(&all);
+            let available = if names.is_empty() {
+                "none".to_string()
+            } else {
+                names.join(", ")
+            };
+            Err(format!(
+                "unknown agent `{name}`; available agents: {available}"
+            ))
+        }
+        2.. => Err(format!(
+            "agent `{name}` is in more than one plugin; use one of: {}",
+            matched
+                .iter()
+                .map(|agent| agent.qualified())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+fn labels(all: &[Agent]) -> Vec<String> {
+    all.iter()
+        .map(|agent| {
+            if all.iter().filter(|other| other.name == agent.name).count() > 1 {
+                agent.qualified()
+            } else {
+                agent.name.clone()
+            }
+        })
+        .collect()
 }
 
 #[must_use]
@@ -43,9 +84,9 @@ pub(crate) fn catalog(workspace: &Path) -> Option<String> {
         return None;
     }
     let mut out = String::from(HEADER);
-    for agent in found {
+    for (agent, label) in found.iter().zip(labels(&found)) {
         out.push_str("\n- ");
-        out.push_str(&agent.name);
+        out.push_str(&label);
         if !agent.description.is_empty() {
             out.push_str(": ");
             out.push_str(&agent.description);
@@ -71,15 +112,15 @@ fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
                 plugin: plugin.name.clone(),
                 name,
                 description: front.get("description").unwrap_or_default().to_string(),
-                tools: front.get("tools").map(|list| {
-                    list.split(',')
-                        .map(str::trim)
-                        .filter(|tool| !tool.is_empty())
-                        .map(str::to_string)
-                        .collect()
-                }),
+                tools: front
+                    .list("tools")
+                    .map(|list| list.into_iter().map(str::to_string).collect()),
                 instructions: plugin.expand(front.body.trim(), workspace),
             })
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "agents_tests.rs"]
+mod tests;

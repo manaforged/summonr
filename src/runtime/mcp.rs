@@ -50,14 +50,11 @@ impl<P: Provider> Loop<P> {
         let Some(hub) = self.mcp.clone() else {
             return Ok(self.expand_command(input));
         };
-        let server = input
-            .text
-            .split_whitespace()
-            .next()
-            .and_then(|head| head.strip_prefix('/'))
-            .and_then(|head| head.split_once(':'))
-            .map(|(server, _)| server);
-        let input = if server.is_some_and(|server| hub.state(server).is_some()) {
+        let head = input.text.split_whitespace().next().unwrap_or_default();
+        let offered = crate::mcp::offers(&self.workspace)
+            .iter()
+            .any(|offer| offer.kind == crate::mcp::OfferKind::Prompt && offer.insert == head);
+        let input = if offered {
             input
         } else {
             self.expand_command(input)

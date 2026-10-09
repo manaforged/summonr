@@ -1,5 +1,4 @@
 use super::*;
-use crate::WorkKind;
 
 impl<P: Provider> Loop<P> {
     pub(super) fn join_mail(&mut self) {
@@ -15,10 +14,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(super) fn tool_definitions(&self) -> Vec<crate::provider::ToolDefinition> {
-        let work = self
-            .work_progress()
-            .map_or(WorkKind::Single, |progress| progress.kind);
-        let mut definitions = self.tools.definitions(work);
+        let mut definitions = self.tools.definitions();
         if self.mailbox.is_some() && crate::mail::tools(self.mail_module) {
             definitions.extend(crate::mail::definitions());
         }

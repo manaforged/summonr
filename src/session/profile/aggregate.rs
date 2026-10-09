@@ -173,9 +173,9 @@ impl Totals {
             line(
                 &mut out,
                 format!(
-                    "mem      median {:.0} MB · max {:.0} MB",
-                    median as f64 / 1024.0,
-                    max as f64 / 1024.0
+                    "mem      median {} · max {}",
+                    crate::text::megabytes(median),
+                    crate::text::megabytes(max)
                 ),
             );
         }

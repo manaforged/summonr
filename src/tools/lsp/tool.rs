@@ -259,12 +259,13 @@ impl ToolRegistry {
                 .clone()
         };
         let mut state = slot.lock().await;
+        let sandboxed = self.sandbox.is_some();
         let mut conn = match state.take() {
-            Some(conn) => conn,
-            None => {
+            Some(conn) if launch.fits(&conn, sandboxed) => conn,
+            Some(_) | None => {
                 let conn = tokio::time::timeout(
                     crate::limits::limits().lsp_start(),
-                    Conn::spawn(&self.workspace, &launch),
+                    Conn::spawn(&self.workspace, &launch, self.sandbox.as_ref()),
                 )
                 .await
                 .map_err(|_elapsed| {

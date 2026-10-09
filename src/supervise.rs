@@ -51,7 +51,6 @@ struct Entry {
     kind: ServerKind,
     name: String,
     pid: Option<u32>,
-    idle: Option<Duration>,
     used: Instant,
     held: Weak<dyn Held>,
 }
@@ -76,16 +75,15 @@ pub(crate) fn register<T: Send + 'static>(
         kind,
         name: name.to_string(),
         pid,
-        idle,
         used: Instant::now(),
         held: Arc::downgrade(&held),
     };
-    let (fresh, excess, crowd) = {
+    let fresh = {
         let Ok(mut board) = BOARD.lock() else {
             return;
         };
         board.retain(|entry| entry.held.strong_count() > 0);
-        let fresh = match board.iter_mut().find(|entry| entry.id == id) {
+        match board.iter_mut().find(|entry| entry.id == id) {
             Some(found) => {
                 *found = entry;
                 false
@@ -94,22 +92,9 @@ pub(crate) fn register<T: Send + 'static>(
                 board.push(entry);
                 true
             }
-        };
-        let excess = board
-            .len()
-            .saturating_sub(crate::limits::limits().servers_max);
-        let mut crowd: Vec<&Entry> = board
-            .iter()
-            .filter(|entry| entry.id != id && entry.idle.is_some())
-            .collect();
-        crowd.sort_by_key(|entry| entry.used);
-        let crowd: Vec<(usize, Weak<dyn Held>)> = crowd
-            .into_iter()
-            .map(|entry| (entry.id, entry.held.clone()))
-            .collect();
-        (fresh, excess, crowd)
+        }
     };
-    evict(excess, crowd);
+    enforce(id);
     if fresh
         && let Some(idle) = idle
         && let Ok(runtime) = tokio::runtime::Handle::try_current()
@@ -207,6 +192,28 @@ fn touch_id(id: usize) {
     {
         entry.used = Instant::now();
     }
+    enforce(id);
+}
+
+fn enforce(keep: usize) {
+    let (excess, crowd) = {
+        let Ok(board) = BOARD.lock() else {
+            return;
+        };
+        let excess = board
+            .iter()
+            .filter(|entry| entry.held.strong_count() > 0)
+            .count()
+            .saturating_sub(crate::limits::limits().servers_max);
+        let mut crowd: Vec<&Entry> = board.iter().filter(|entry| entry.id != keep).collect();
+        crowd.sort_by_key(|entry| entry.used);
+        let crowd: Vec<(usize, Weak<dyn Held>)> = crowd
+            .into_iter()
+            .map(|entry| (entry.id, entry.held.clone()))
+            .collect();
+        (excess, crowd)
+    };
+    evict(excess, crowd);
 }
 
 #[cfg(target_os = "macos")]

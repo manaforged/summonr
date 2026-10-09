@@ -61,7 +61,7 @@ impl App {
             self.replace(String::new());
             return true;
         }
-        if text.trim_start().starts_with('/') && !crate::command::server_prompt(text) {
+        if crate::parse_command(text).is_some() {
             self.replace(String::new());
             self.scroll_y.set(self.max_scroll.peek());
             drop(self.cmd.send(Cmd::Command(text.to_owned())));

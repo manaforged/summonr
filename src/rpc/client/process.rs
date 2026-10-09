@@ -84,3 +84,7 @@ pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
         group,
     })
 }
+
+#[cfg(all(test, unix))]
+#[path = "process_tests.rs"]
+mod tests;

@@ -294,25 +294,18 @@ fn agent_brief(name: Option<&str>, workspace: &Path) -> Result<(String, Option<V
     let Some(name) = name else {
         return Ok((String::new(), None));
     };
-    let agent = known_agent(name, workspace)?;
+    let agent = crate::plugins::agents::find(name, workspace).map_err(Error::Tool)?;
+    if let Some(tools) = &agent.tools
+        && !tools
+            .iter()
+            .any(|tool| crate::hooks::builtin(tool).is_some())
+    {
+        return Err(Error::Tool(format!(
+            "agent `{name}` declares tools [{}] but none is a known tool",
+            tools.join(", ")
+        )));
+    }
     Ok((format!("{}\n\n", agent.instructions), agent.tools))
-}
-
-fn known_agent(name: &str, workspace: &Path) -> Result<crate::plugins::agents::Agent> {
-    crate::plugins::agents::find(name, workspace).ok_or_else(|| {
-        let names = crate::plugins::agents::agents(workspace)
-            .into_iter()
-            .map(|agent| agent.name)
-            .collect::<Vec<_>>();
-        let available = if names.is_empty() {
-            "none".to_string()
-        } else {
-            names.join(", ")
-        };
-        Error::Tool(format!(
-            "unknown agent `{name}`; available agents: {available}"
-        ))
-    })
 }
 
 fn release_unfinished(done: &mut Done) {

@@ -29,6 +29,7 @@ pub(super) struct Conn {
     next_id: i64,
     root: String,
     clean: bool,
+    contained: bool,
     docs: std::collections::HashMap<String, (String, i64, (u64, u64))>,
     options: Value,
     server: String,
@@ -37,8 +38,21 @@ pub(super) struct Conn {
     group: Option<ProcessGroup>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Origin {
+    Host,
+    Plugin,
+}
+
+impl Launch {
+    pub(super) fn fits(&self, conn: &Conn, sandboxed: bool) -> bool {
+        self.origin == Origin::Host || conn.contained == sandboxed
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct Launch {
+    origin: Origin,
     key: String,
     argv: Vec<String>,
     env: Vec<(String, String)>,
@@ -47,12 +61,20 @@ pub(super) struct Launch {
 }
 
 impl Conn {
-    pub(super) async fn spawn(workspace: &Path, launch: &Launch) -> Result<Self> {
+    pub(super) async fn spawn(
+        workspace: &Path,
+        launch: &Launch,
+        sandbox: Option<&super::sandbox::Sandbox>,
+    ) -> Result<Self> {
         let (program, args) = launch
             .argv
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        let (sandbox, base) = match launch.origin {
+            Origin::Host => (None, rpc::Env::Inherit),
+            Origin::Plugin => (sandbox, rpc::Env::Clean),
+        };
         let rpc::Process {
             child,
             stdin,
@@ -64,8 +86,8 @@ impl Conn {
             args: &args,
             env: &launch.env,
             cwd: workspace,
-            sandbox: None,
-            base: rpc::Env::Inherit,
+            sandbox,
+            base,
             stderr: rpc::Stderr::Discard,
         })?;
         let (sender, inbox) = mpsc::channel(INBOX);
@@ -94,6 +116,7 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace)?,
             clean: true,
+            contained: launch.origin == Origin::Plugin && sandbox.is_some(),
             docs: std::collections::HashMap::new(),
             languages: launch.languages.clone(),
             options: launch.options.clone(),

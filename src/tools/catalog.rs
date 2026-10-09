@@ -1,10 +1,9 @@
-use crate::WorkKind;
 use crate::provider::ToolDefinition;
 
 use super::{ToolRegistry, tool};
 
 impl ToolRegistry {
-    pub(crate) fn definitions(&self, work: WorkKind) -> Vec<ToolDefinition> {
+    pub(crate) fn definitions(&self) -> Vec<ToolDefinition> {
         let (lsp_on, skill_on) = *self.probed.get_or_init(|| {
             (
                 self.language && super::lsp::available(&self.workspace),
@@ -22,9 +21,7 @@ impl ToolRegistry {
         if self.search.is_some() {
             all.push(web());
         }
-        if matches!(work, WorkKind::Steps | WorkKind::Goal) {
-            all.push(todo());
-        }
+        all.push(todo());
         all
     }
 

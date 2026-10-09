@@ -78,6 +78,7 @@ No tool schema. Driven by a flag, a config row, or a file in the workspace.
 | sandbox | `tools/sandbox.rs`, `--sandbox`, `[sandbox] on`, `policy::git::{GIT_GUARDS, guarded_git_paths}` | containment is opt-in; when on, writes stay under the roots; `GIT_GUARDS` is the one list of git internals (hooks, config, commondir, also under `.git/modules`) that the Seatbelt profile, the bwrap binds, and `protected_write` all refuse |
 | skills | `skills.rs`, `.summonr/skills` | the catalog `skill` loads from; front matter is read by `text::Frontmatter` |
 | output budget | `tools/budget.rs::{plain, lines, fit}`, `ToolRegistry::bounded` | one 50 KB budget for `run_command` and MCP results; `bounded` keeps the full text in a file that lives until the session ends |
+| size | `text::megabytes` | a kB figure as whole megabytes (`24 MB`) for memory anywhere in the UI |
 | duration | `text::duration` | `45s`, `12m34s`, `1h02m03s` for elapsed time anywhere in the UI |
 | count noun | `text::plural` | `"1 hunk"` / `"3 hunks"`; irregular forms such as child/children live in its table |
 | content hash | `text::fnv64`, `text::Fnv64` | the one non-cryptographic hash: `prefix_hash`, MCP catalog keys, line tags, hunk ids, tree fingerprints, and prompt dedup; `Fnv64` is the stable `Hasher` for multi-field input and for any value stored or compared across runs |

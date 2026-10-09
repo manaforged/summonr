@@ -43,7 +43,7 @@ pub(super) fn render(view: &View) -> String {
             calls.len(),
             secs(total),
             footprint_kb
-                .map(|kb| format!(" · mem {:.0} MB", kb as f64 / 1024.0))
+                .map(|kb| format!(" · mem {}", crate::text::megabytes(kb)))
                 .unwrap_or_default()
         ),
     );

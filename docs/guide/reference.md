@@ -322,7 +322,7 @@ The `body` table of an endpoint is merged last, so it can still set any field by
 
 Work is plan after accept. Without a selected plan, a request for work stays in plan mode. `/plan reject` discards the plan and returns to auto.
 
-Plan mode is off by default. Turn it on with the `plan mode` row in `/settings` or `plan_mode = true` in `~/.summonr/config.toml`. While it is off, `/plan` is refused. `--plan` still works. The tool list stays the same in plan and auto mode, so the prompt cache survives a switch; plan mode refuses `edit` and `write` when they run. Leaving plan mode removes the sandbox that plan mode turned on; a sandbox from `--sandbox` or `[sandbox] on` stays.
+Plan mode is off by default. Turn it on with the `plan mode` row in `/settings` or `plan_mode = true` in `~/.summonr/config.toml`. While it is off, `/plan` is refused. `--plan` still works; it cannot be combined with `--goal` or `--steps`. The tool list stays the same in plan and auto mode, so the prompt cache survives a switch; plan mode refuses `edit` and `write` when they run. Leaving plan mode removes the sandbox that plan mode turned on; a sandbox from `--sandbox` or `[sandbox] on` stays.
 
 ### Confirmation
 

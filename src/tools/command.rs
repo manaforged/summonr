@@ -237,7 +237,7 @@ impl ToolRegistry {
         else {
             return Ok(self.workspace.clone());
         };
-        let path = self.resolve_read(dir)?;
+        let path = self.resolve_read(dir, crate::tools::paths::Shield::Contained)?;
         if !path.is_dir() {
             return Err(Error::Tool(format!("`{dir}` is not a directory")));
         }

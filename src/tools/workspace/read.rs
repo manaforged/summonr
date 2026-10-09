@@ -157,7 +157,7 @@ impl ToolRegistry {
     }
 
     fn open_text(&self, path: &str) -> Result<Opened> {
-        let canonical = self.resolve_read(path)?;
+        let canonical = self.resolve_read(path, crate::tools::paths::Shield::Contained)?;
         let file = std::fs::File::open(&canonical)
             .map_err(|error| Error::Tool(format!("cannot read `{path}`: {error}")))?;
         let mut reader = BufReader::new(file);

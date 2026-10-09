@@ -250,3 +250,23 @@ fn search_ignores_case_lists_linked_files_and_says_what_it_skipped() {
         "{none}"
     );
 }
+
+#[test]
+fn search_never_reads_a_protected_file_even_without_containment() {
+    let (_dir, mut tools) = workspace(&[
+        (".env", "TOKEN=CANARY\n"),
+        ("credentials.json", "{\"token\": \"CANARY\"}\n"),
+        ("a.txt", "CANARY\n"),
+    ]);
+    tools.set_unrestricted();
+    let hits = run(&tools, "search", serde_json::json!({"pattern": "CANARY"}));
+    assert!(hits.contains("a.txt"), "{hits}");
+    assert!(!hits.contains(".env"), "{hits}");
+    assert!(!hits.contains("credentials.json"), "{hits}");
+    let refused = outcome_of(
+        &tools,
+        "search",
+        serde_json::json!({"pattern": "CANARY", "path": ".env"}),
+    );
+    assert!(refused.contains("protected path"), "{refused}");
+}

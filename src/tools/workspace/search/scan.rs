@@ -206,8 +206,8 @@ fn header(query: &Query, report: &Report, tally: &Tally) -> String {
     let pattern = &query.pattern;
     if tally.hits.is_empty() {
         let mut out = format!(
-            "no matches for `{pattern}` ({} files searched",
-            report.searched
+            "no matches for `{pattern}` ({} searched",
+            crate::text::plural(report.searched, "file")
         );
         if report.skipped > 0 {
             out.push_str(&format!(

@@ -16,13 +16,29 @@ pub(crate) fn workspace_control(path: &Path) -> bool {
     WORKSPACE_CONTROL.iter().any(|tail| parts.ends_with(tail))
 }
 
+const SECRET_FILES: &[&str] = &[
+    ".env",
+    "credentials",
+    ".netrc",
+    ".git-credentials",
+    ".pypirc",
+];
+const SECRET_DIRS: &[&str] = &[
+    ".ssh",
+    ".gnupg",
+    ".aws",
+    ".summonr",
+    ".docker",
+    ".kube",
+    ".config/gh",
+    ".config/gcloud",
+];
+
 pub(crate) fn protected_read(path: &Path) -> bool {
     if let Some(name) = path.file_name().and_then(|name| name.to_str())
-        && (name == ".env"
-            || name.starts_with(".env.")
-            || name == "credentials"
-            || name == ".netrc"
-            || (name.starts_with("credentials.") && crate::secret::is_store(path)))
+        && (name.starts_with(".env.")
+            || name.starts_with("credentials.")
+            || SECRET_FILES.contains(&name))
     {
         return true;
     }
@@ -35,8 +51,8 @@ pub(crate) fn holds_protected(path: &Path) -> bool {
 
 fn protected_dirs() -> impl Iterator<Item = PathBuf> {
     let home = crate::config::home_dir();
-    [".ssh", ".gnupg", ".aws", ".summonr"]
-        .into_iter()
+    SECRET_DIRS
+        .iter()
         .filter_map(move |dir| home.as_ref().map(|home| home.join(dir)))
         .chain(crate::prompt::summonr_home())
         .flat_map(|dir| {

@@ -86,6 +86,7 @@ First stable release.
 
 ### Fixed
 
+- Secret values no longer reach the model in any session. A tool result shows `[secret]` in place of each secret value from the workspace's `.env` files, `.npmrc`, `.pypirc`, `~/.aws/credentials`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh/hosts.yml`, and `~/.docker/config.json`, and in place of any PEM private key, whether it came from `grep -r`, `cat`, `read`, or any other command. Commands still read the real files, so test suites that load `.env` keep working. `search` never reads a protected file, even uncontained, and `credentials.*`, `.git-credentials`, `.pypirc`, `~/.docker`, `~/.kube`, `~/.config/gh`, and `~/.config/gcloud` are protected.
 - In the terminal, only the `✻ thinking` header folds expanded reasoning, so a drag over the reasoning text selects and copies it.
 - A read-only command such as `grep` that times out no longer reports that it may have changed workspace files, and a command that redirects into a file still does. `mdfind` and `locate` count as read-only.
 - A command run with `workdir`, or after `cd`, can no longer read a protected path such as `~/.ssh` by a relative name, and `cp`, `mv`, `ln`, `install`, and `rsync` can no longer copy one out. A numbered redirect such as `3> FILE` counts as a write.

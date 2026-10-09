@@ -133,7 +133,7 @@ fn walk_all(query: &Query, shared: &Shared) {
 }
 
 fn visit_path(query: &Query, shared: &Shared, root: &Root, path: PathBuf, searcher: &mut Searcher) {
-    if !keep(&path, root.overrides.as_ref(), query.glob, query.protect) {
+    if !keep(&path, root.overrides.as_ref(), query.glob) {
         return;
     }
     let (modified, size) = path
@@ -176,7 +176,8 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
                 || !(SKIP_DIRS.contains(&entry.file_name().to_string_lossy().as_ref())
                     || MIRRORS
                         .iter()
-                        .any(|mirror| entry.path() == Path::new(mirror)))
+                        .any(|mirror| entry.path() == Path::new(mirror))
+                    || crate::policy::protected_read(entry.path()))
         });
     if no_ignore {
         walker
@@ -191,8 +192,8 @@ fn walker(root: &Path, types: Option<ignore::types::Types>, no_ignore: bool) -> 
     walker
 }
 
-fn keep(path: &Path, overrides: Option<&Override>, require_match: bool, protect: bool) -> bool {
-    if protect && crate::policy::protected_read(path) {
+fn keep(path: &Path, overrides: Option<&Override>, require_match: bool) -> bool {
+    if crate::policy::protected_read(path) {
         return false;
     }
     let Some(overrides) = overrides else {

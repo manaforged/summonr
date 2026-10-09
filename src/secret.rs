@@ -250,16 +250,6 @@ impl Store {
     }
 }
 
-pub(crate) fn is_store(path: &Path) -> bool {
-    let Ok(home) = crate::prompt::summonr_home() else {
-        return false;
-    };
-    let file = home.join(FILE);
-    [wrap_path(&file), file]
-        .iter()
-        .any(|store| path == store || store.canonicalize().is_ok_and(|real| real == path))
-}
-
 #[cfg_attr(
     test,
     expect(
@@ -311,6 +301,7 @@ fn platform() -> Backend {
 mod backends;
 mod cache;
 mod seal;
+pub(crate) mod shield;
 
 #[cfg(not(target_os = "macos"))]
 use backends::native_forget;

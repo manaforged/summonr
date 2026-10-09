@@ -70,7 +70,6 @@ impl ToolRegistry {
             multiline,
             tags: object_bool(args, "tags"),
             no_ignore: object_bool(args, "no_ignore"),
-            protect: !self.policy.is_unrestricted(),
         })
     }
 
@@ -108,7 +107,7 @@ impl ToolRegistry {
         let path = if path.trim().is_empty() || path == "." {
             base.clone()
         } else {
-            self.resolve_read(path)?
+            self.resolve_read(path, crate::tools::paths::Shield::Always)?
         };
         let base = if path.starts_with(&base) {
             base
@@ -183,7 +182,6 @@ struct Query {
     multiline: bool,
     tags: bool,
     no_ignore: bool,
-    protect: bool,
 }
 
 fn build_types(args: &Value) -> Result<Option<ignore::types::Types>> {

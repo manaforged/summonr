@@ -75,7 +75,7 @@ impl ToolRegistry {
         let opened = if path == "." {
             self.workspace.clone()
         } else {
-            self.resolve_read(path)?
+            self.resolve_read(path, crate::tools::paths::Shield::Contained)?
         };
         if opened.is_dir() {
             return self.list_dir(arguments).map(ToolOutput::ok);
@@ -260,7 +260,7 @@ impl ToolRegistry {
         let dir = if path == "." {
             self.workspace.clone()
         } else {
-            self.resolve_read(path)?
+            self.resolve_read(path, crate::tools::paths::Shield::Contained)?
         };
         if !dir.is_dir() {
             return Err(Error::Tool(format!("`{path}` is not a directory")));

@@ -175,7 +175,7 @@ fn workspace_name(app: &App) -> String {
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .filter(|name| !name.is_empty())
-        .unwrap_or_else(|| "Summonr".to_string())
+        .unwrap_or_else(|| env!("CARGO_PKG_NAME").to_string())
 }
 
 fn session_title(app: &App) -> String {

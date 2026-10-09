@@ -43,6 +43,7 @@ First stable release.
 
 ### Changed
 
+- Search is its own `search` tool. `pattern` searches contents and `glob` alone finds files by name, under any readable path, with smart case. A call returns what it found within `search_secs`. `read` no longer searches, and `read` and `search` reach paths outside the workspace except protected ones.
 - `summonr login NAME --model M` changes the model of a server you added, with no `--url`. `summonr login NAME --default [--model M]` makes any endpoint that is set up the default. `summonr login NAME --help`, and `--help` after `logout`, `diff`, `profile`, `install`, `export`, `doctor`, `classify`, `worktrees`, and `mcp`, prints that command's help.
 - `summonr login` and `summonr endpoints` size their columns to the longest value, show only the URL on a row with no model, and say `1 model`. Each built-in label names its default model and the row whose key it shares; `glm` names `GLM_CODING_API_KEY` and `glm-intl` names `ZAI_CODING_API_KEY` when the key is missing.
 - Every session id on screen is the short id, and `--session` accepts it.
@@ -85,6 +86,7 @@ First stable release.
 
 ### Fixed
 
+- A read-only command such as `grep` that times out no longer reports that it may have changed workspace files. `mdfind` and `locate` count as read-only.
 - A budget counts from the run that loads the session, so a resumed or forked session gets its full `--max-secs` and `--max-tokens` again.
 - Reverting a hunk in the diff pane tells the next turn, so the model does not report the reverted code as still in place.
 - `-p` labels an MCP tool lookup as `mcp search QUERY`, so lookups no longer read as duplicate calls. The banner and the resume line show the short session id.

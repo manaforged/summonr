@@ -246,10 +246,13 @@ impl ToolRegistry {
         let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
+        let mutated = !read_only && !readonly_verb(command);
         let warning = if read_only {
-            "workspace writes were restricted by the command sandbox"
+            "\nworkspace writes were restricted by the command sandbox"
+        } else if mutated {
+            "\nthe command may have changed workspace files before timeout"
         } else {
-            "the command may have changed workspace files before timeout"
+            ""
         };
         let note = full_output_note(
             &log_path,
@@ -258,11 +261,11 @@ impl ToolRegistry {
         );
         keep_log(&log_path, shown.cut);
         Ok(ToolOutput {
-            text: format!("{headline}\n{warning}{note}\n{}", shown.text)
+            text: format!("{headline}{warning}{note}\n{}", shown.text)
                 .trim_end()
                 .to_string(),
             success: false,
-            mutated: !read_only,
+            mutated,
             grant: None,
             images: Vec::new(),
             patch: None,

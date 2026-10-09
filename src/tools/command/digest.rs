@@ -74,7 +74,7 @@ fn search_lines<'a>(lines: &[Cow<'a, str>]) -> Vec<Cow<'a, str>> {
     }
     if capped > 0 {
         kept.push(Cow::Owned(format!(
-            "[{capped} lines omitted: over the {PER_FILE}-per-file cap; narrow the pattern or use read op=search]"
+            "[{capped} lines omitted: over the {PER_FILE}-per-file cap; narrow the pattern or use search]"
         )));
     }
     kept

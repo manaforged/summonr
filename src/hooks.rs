@@ -20,8 +20,8 @@ const CLAUDE_NAMES: [(&str, &str); 8] = [
     ("skill", "Skill"),
 ];
 const CLAUDE_ALIASES: [(&str, &str); 6] = [
-    ("read", "Grep"),
-    ("read", "Glob"),
+    ("search", "Grep"),
+    ("search", "Glob"),
     ("edit", "MultiEdit"),
     ("edit", "NotebookEdit"),
     ("web", "WebSearch"),

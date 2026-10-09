@@ -10,7 +10,7 @@ impl ToolRegistry {
                 self.skills && crate::skills::catalog(&self.workspace).is_some(),
             )
         });
-        let mut all = vec![read(), edit(), write()];
+        let mut all = vec![read(), search(), edit(), write()];
         if skill_on {
             all.push(skill());
         }
@@ -27,7 +27,9 @@ impl ToolRegistry {
 
     pub(super) fn enabled(&self, kind: Builtin) -> bool {
         match kind {
-            Builtin::Read | Builtin::Todo | Builtin::Edit | Builtin::Write => true,
+            Builtin::Read | Builtin::Search | Builtin::Todo | Builtin::Edit | Builtin::Write => {
+                true
+            }
             Builtin::Skill => self.skills,
             Builtin::Lsp => self.language,
             Builtin::RunCommand => !self.policy.is_read_only() || self.sandbox.is_some(),
@@ -40,6 +42,7 @@ impl ToolRegistry {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Builtin {
     Read,
+    Search,
     Edit,
     Write,
     Lsp,
@@ -52,6 +55,7 @@ pub(crate) enum Builtin {
 
 const LIVE: &[(&str, Builtin)] = &[
     ("read", Builtin::Read),
+    ("search", Builtin::Search),
     ("edit", Builtin::Edit),
     ("write", Builtin::Write),
     ("lsp", Builtin::Lsp),
@@ -84,7 +88,7 @@ impl Builtin {
     pub(crate) fn readonly(self) -> bool {
         matches!(
             self,
-            Self::Read | Self::Lsp | Self::Skill | Self::Todo | Self::Web
+            Self::Read | Self::Search | Self::Lsp | Self::Skill | Self::Todo | Self::Web
         )
     }
 
@@ -97,6 +101,7 @@ impl Builtin {
     pub(crate) fn verb(self) -> &'static str {
         match self {
             Self::Read => "Read",
+            Self::Search => "Search",
             Self::Edit => "Edit",
             Self::Write => "Write",
             Self::Lsp => "Lsp",
@@ -112,7 +117,8 @@ impl Builtin {
 pub(crate) const RETIRED: &[(&str, &str, Option<&str>)] = &[
     ("read_file", "read", Some("file")),
     ("list_dir", "read", Some("list")),
-    ("grep", "read", Some("search")),
+    ("grep", "search", None),
+    ("glob", "search", None),
     ("show_image", "read", Some("image")),
     ("edit_file", "edit", None),
     ("replace_text", "edit", None),
@@ -149,15 +155,13 @@ pub(crate) fn readonly(name: &str) -> bool {
 fn read() -> ToolDefinition {
     tool(
         "read",
-        "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, view an image file, or search contents (pattern, glob, context; hits path:N:col:line). op=help returns the full reference.",
+        "Read files (N:text; offset/limit, widened by before/after/context; paths[] for several; tags true adds hash tags for tag-edits), list directories as a tree, or view an image file. op=help returns the full reference.",
         serde_json::json!({
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
                 "offset": {"type": "integer", "minimum": 1},
                 "limit": {"type": "integer", "minimum": 1, "maximum": crate::limits::limits().read_line_limit},
-                "pattern": {"type": "string"},
-                "glob": {"type": "string"},
                 "paths": {"type": "array", "items": {"type": "string"}},
                 "before": {"type": "integer", "minimum": 0, "maximum": 10},
                 "after": {"type": "integer", "minimum": 0, "maximum": 10},
@@ -165,7 +169,38 @@ fn read() -> ToolDefinition {
                 "tags": {"type": "boolean"},
                 "recursive": {"type": "boolean"},
                 "depth": {"type": "integer", "minimum": 1},
-                "op": {"type": "string", "enum": ["file", "list", "search", "image", "help"]}
+                "op": {"type": "string", "enum": ["file", "list", "image", "help"]}
+            },
+            "additionalProperties": false
+        }),
+    )
+}
+
+fn search() -> ToolDefinition {
+    tool(
+        "search",
+        "Search file contents or find files by name, anywhere on disk. pattern is a regex over contents; glob alone finds files by name (*refract*). path or paths[] picks where (default the workspace; ~ works). A lowercase pattern or glob ignores case. Skips ignored and build dirs, binaries, and files over 1 MiB. files true lists matching files, count counts, context adds lines, depth limits how deep. Hits are path:N:col:line; tags true prints path:N:hash|line for edit.",
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string"},
+                "glob": {"type": "string"},
+                "path": {"type": "string"},
+                "paths": {"type": "array", "items": {"type": "string"}},
+                "exclude": {"type": "string"},
+                "type": {"type": "string"},
+                "files": {"type": "boolean"},
+                "count": {"type": "boolean"},
+                "context": {"type": "integer", "minimum": 0, "maximum": 10},
+                "before": {"type": "integer", "minimum": 0, "maximum": 10},
+                "after": {"type": "integer", "minimum": 0, "maximum": 10},
+                "depth": {"type": "integer", "minimum": 1},
+                "literal": {"type": "boolean"},
+                "case_sensitive": {"type": "boolean"},
+                "multiline": {"type": "boolean"},
+                "no_ignore": {"type": "boolean"},
+                "tags": {"type": "boolean"},
+                "limit": {"type": "integer", "minimum": 1}
             },
             "additionalProperties": false
         }),
@@ -284,7 +319,7 @@ fn skill() -> ToolDefinition {
 fn lsp() -> ToolDefinition {
     tool(
         "lsp",
-        "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a read search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics.",
+        "Language server. Prefer over scanning files for definitions and uses. path+line+character jumps to the definition (character is the 1-based column a search hit prints as path:N:col), references true lists uses, new_name renames, path alone returns diagnostics.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -305,7 +340,7 @@ fn run_command() -> ToolDefinition {
     tool(
         "run_command",
         &format!(
-            "Run a shell command in the workspace sandbox. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
+            "Run a shell command in the workspace sandbox. Use search, not grep or find, to search files. workdir picks the directory; after {wait}s a command continues as a job unless timeout_secs sets a hard stop; background returns a job to wait on, kill stops it. op=help returns output and policy details.",
             wait = crate::limits::limits().command_wait_secs
         ),
         serde_json::json!({

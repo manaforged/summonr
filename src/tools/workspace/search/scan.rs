@@ -8,7 +8,7 @@ use grep_searcher::{BinaryDetection, Searcher, SearcherBuilder, Sink, SinkContex
 use crate::error::Result;
 use crate::hashline::line_hash;
 
-use super::{GREP_FILE_HITS, GREP_FILE_MAX, GREP_LINE_MAX, Mode, Spec, relative};
+use super::{GREP_FILE_HITS, GREP_FILE_MAX, GREP_LINE_MAX, Mode, Spec, relative, stopped_note};
 enum Row {
     Hit(String),
     Ctx(String),
@@ -96,6 +96,7 @@ struct Tally {
     skipped: usize,
     capped: usize,
     truncated: bool,
+    stopped: bool,
 }
 
 pub(super) fn search(
@@ -103,6 +104,7 @@ pub(super) fn search(
     files: &[(PathBuf, u64, u64)],
     matcher: &RegexMatcher,
     spec: &Spec<'_>,
+    stopped: bool,
 ) -> Result<String> {
     let Spec {
         limit,
@@ -117,10 +119,17 @@ pub(super) fn search(
         .after_context(after)
         .multi_line(multiline)
         .build();
-    let mut tally = Tally::default();
+    let mut tally = Tally {
+        stopped,
+        ..Tally::default()
+    };
     for (path, _, size) in files {
         if tally.matches >= limit {
             tally.truncated = true;
+            break;
+        }
+        if std::time::Instant::now() >= spec.deadline {
+            tally.stopped = true;
             break;
         }
         file(base, path, *size, &mut searcher, matcher, spec, &mut tally);
@@ -225,6 +234,7 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
             ));
         }
         out.push(')');
+        out.push_str(&stopped_note(tally.stopped));
         return out;
     }
     let mut out = match spec.mode {
@@ -265,6 +275,7 @@ fn render(spec: &Spec<'_>, tally: &Tally) -> String {
             tally.skipped
         ));
     }
+    out.push_str(&stopped_note(tally.stopped));
     for hit in &tally.hits {
         out.push('\n');
         out.push_str(hit);

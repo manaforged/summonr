@@ -98,3 +98,17 @@ fn a_batch_read_keeps_line_tags_for_every_file() {
     };
     assert!(tagged("one") && tagged("two"), "{text}");
 }
+
+#[test]
+fn a_read_reaches_a_file_outside_the_workspace() {
+    let (_dir, tools) = workspace(&[]);
+    let other = tempfile::tempdir().unwrap();
+    let file = other.path().join("notes.md");
+    std::fs::write(&file, "kept outside\n").unwrap();
+    let text = run(
+        &tools,
+        "read",
+        serde_json::json!({"path": file.display().to_string()}),
+    );
+    assert!(text.contains("kept outside"), "{text}");
+}

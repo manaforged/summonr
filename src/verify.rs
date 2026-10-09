@@ -224,7 +224,11 @@ fn tally_call(name: &str, arguments: &str, receipt: &mut Receipt) -> Option<Stri
     let kind = crate::tools::Builtin::of(name);
     let read = kind == Some(crate::tools::Builtin::Read);
     let op = crate::tools::retired_op(name);
-    if kind == Some(crate::tools::Builtin::Web) || (read && matches!(op, Some("search" | "list"))) {
+    if matches!(
+        kind,
+        Some(crate::tools::Builtin::Web | crate::tools::Builtin::Search)
+    ) || (read && matches!(op, Some("search" | "list")))
+    {
         receipt.searches += 1;
     } else if kind == Some(crate::tools::Builtin::RunCommand) {
         receipt.commands += 1;

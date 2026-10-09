@@ -294,6 +294,7 @@ impl ToolRegistry {
             Builtin::Read => {
                 blocking(|| self.read(arguments)).map(|out| self.dedup_read(arguments, out))
             }
+            Builtin::Search => blocking(|| self.search_files(arguments)).map(ToolOutput::ok),
             Builtin::Edit => self.edit_file(arguments).await,
             Builtin::Write => self.write_file(arguments).await,
             Builtin::Skill => self.skill(arguments).map(ToolOutput::ok),

@@ -36,6 +36,7 @@ impl Health {
                     self.pipes += 1;
                 }
             }
+            Some(Builtin::Search) => self.native += 1,
             Some(Builtin::Read) => {
                 let op = crate::tools::retired_op(name).unwrap_or_else(|| text("op"));
                 if op == "search" || (op.is_empty() && !text("pattern").is_empty()) {

@@ -33,7 +33,7 @@ impl ToolRegistry {
             return match op {
                 None if args.get("pattern").is_none() => self.read_files(&args, paths),
                 Some("file") => self.read_files(&args, paths),
-                None | Some("search") => self.search_paths(&args, paths),
+                None | Some("search") => Ok(ToolOutput::ok(self.search_paths(&args, paths))),
                 Some(operation) => Err(Error::Tool(format!(
                     "paths does not apply to read op={operation}"
                 ))),
@@ -43,22 +43,6 @@ impl ToolRegistry {
             Some(operation) => self.read_op(operation, arguments),
             None => self.read_default(&args, arguments),
         }
-    }
-
-    fn search_paths(&self, args: &Value, paths: &[Value]) -> Result<ToolOutput> {
-        let mut found = Vec::new();
-        for path in paths.iter().filter_map(Value::as_str) {
-            let mut one = args.clone();
-            if let Some(fields) = one.as_object_mut() {
-                fields.remove("paths");
-                fields.insert("path".to_string(), Value::from(path));
-            }
-            found.push(match self.grep(&one.to_string()) {
-                Ok(hits) => hits,
-                Err(error) => format!("{path}: {error}"),
-            });
-        }
-        Ok(ToolOutput::ok(found.join("\n")))
     }
 
     fn read_op(&self, operation: &str, arguments: &str) -> Result<ToolOutput> {

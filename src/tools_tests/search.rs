@@ -5,13 +5,13 @@ fn a_literal_search_matches_regex_characters_and_reports_their_column() {
     let (_dir, tools) = workspace(&[("a.txt", "let x = foo(bar);\naxb then a.b here\n")]);
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "foo(", "literal": true}),
     );
     assert!(hits.contains("a.txt:1:9:let x = foo(bar);"), "{hits}");
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "a.b", "literal": true}),
     );
     assert!(hits.contains("a.txt:2:10:axb then a.b here"), "{hits}");
@@ -20,7 +20,7 @@ fn a_literal_search_matches_regex_characters_and_reports_their_column() {
 #[test]
 fn an_end_anchored_search_reports_the_utf16_column_of_the_match() {
     let (_dir, tools) = workspace(&[("a.txt", "😀 call(x)\n")]);
-    let hits = run(&tools, "read", serde_json::json!({"pattern": "\\)$"}));
+    let hits = run(&tools, "search", serde_json::json!({"pattern": "\\)$"}));
     assert!(hits.contains("a.txt:1:10:😀 call(x)"), "{hits}");
 }
 
@@ -29,7 +29,7 @@ fn the_tag_in_a_tagged_search_hit_edits_that_line() {
     let (dir, tools) = workspace(&[("a.txt", "one\ntwo\n")]);
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "two", "tags": true}),
     );
     let hit = hits
@@ -59,7 +59,7 @@ fn a_content_search_lists_the_most_recently_modified_file_first() {
         .unwrap();
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "hit", "limit": 1}),
     );
     assert!(hits.contains("b.txt:1:1:hit"), "{hits}");
@@ -74,8 +74,8 @@ fn a_search_runs_across_several_paths() {
     std::fs::create_dir_all(dir.path().join("c")).unwrap();
     let text = run(
         &tools,
-        "read",
-        serde_json::json!({"op": "search", "pattern": "retry", "paths": ["a.rs", "b.rs"]}),
+        "search",
+        serde_json::json!({"pattern": "retry", "paths": ["a.rs", "b.rs"]}),
     );
     assert!(text.contains("a.rs") && text.contains("b.rs"), "{text}");
 }
@@ -85,7 +85,7 @@ fn a_search_over_several_paths_reports_a_missing_one_inline() {
     let (_dir, tools) = workspace(&[("a.txt", "needle here\n")]);
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "needle", "paths": ["a.txt", "missing.txt"]}),
     );
     assert!(hits.contains("a.txt:1:"), "{hits}");
@@ -107,7 +107,7 @@ fn a_filtered_search_keeps_matching_files_and_skips_build_dirs_and_secrets() {
     }
     let hits = run(
         &tools,
-        "read",
+        "search",
         serde_json::json!({"pattern": "needle", "glob": "*.rs", "exclude": "docs/**"}),
     );
     let files: Vec<&str> = hits
@@ -116,4 +116,40 @@ fn a_filtered_search_keeps_matching_files_and_skips_build_dirs_and_secrets() {
         .filter(|path| path.contains('.'))
         .collect();
     assert_eq!(files, ["src/a.rs"], "{hits}");
+}
+
+#[test]
+fn search_is_advertised_and_finds_contents_and_names_outside_the_workspace_in_any_case() {
+    let (_dir, tools) = workspace(&[]);
+    let names: Vec<String> = tools
+        .definitions()
+        .into_iter()
+        .map(|tool| tool.function.name)
+        .collect();
+    assert!(names.iter().any(|name| name == "search"), "{names:?}");
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(
+        other.path().join("Refract-1.50.txt"),
+        "Refract checkout notes\n",
+    )
+    .unwrap();
+    std::fs::write(other.path().join(".env"), "refract secret\n").unwrap();
+    let root = other.path().display().to_string();
+    let hits = run(
+        &tools,
+        "search",
+        serde_json::json!({"pattern": "refract", "path": root}),
+    );
+    let hit = hits
+        .lines()
+        .find(|line| line.ends_with("/Refract-1.50.txt:1:1:Refract checkout notes"))
+        .unwrap_or_else(|| panic!("no hit in {hits}"));
+    assert!(hit.starts_with('/'), "{hits}");
+    assert!(!hits.contains("secret"), "{hits}");
+    let named = run(
+        &tools,
+        "search",
+        serde_json::json!({"glob": "*refract*", "path": root}),
+    );
+    assert!(named.contains("/Refract-1.50.txt"), "{named}");
 }

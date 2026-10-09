@@ -193,3 +193,29 @@ fn a_command_in_another_workdir_is_judged_from_that_directory() {
     };
     assert!(root.path().join("keep").exists(), "{text}");
 }
+
+#[test]
+fn a_read_only_command_that_times_out_does_not_claim_it_changed_files() {
+    let (_dir, tools) = workspace(&[]);
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "run_command".to_string(),
+            arguments: serde_json::json!({"command": "tail -f /dev/null", "timeout_secs": 1})
+                .to_string(),
+        },
+        continuation: None,
+    };
+    let output = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .unwrap();
+    assert!(output.text.contains("timed out"), "{}", output.text);
+    assert!(!output.mutated, "{}", output.text);
+    assert!(!output.text.contains("may have changed"), "{}", output.text);
+}

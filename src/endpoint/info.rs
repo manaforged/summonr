@@ -57,8 +57,23 @@ impl AuthInfo {
     }
 
     #[must_use]
+    pub fn display_name(&self) -> String {
+        match self.plan.as_str() {
+            "" => self.name.clone(),
+            plan => format!("{} · {plan}", self.name),
+        }
+    }
+
+    #[must_use]
     pub fn catalog_heading(&self) -> &'static str {
-        self.group.heading()
+        self.listed().heading()
+    }
+
+    fn listed(&self) -> LoginGroup {
+        match self.group {
+            LoginGroup::Key if !self.plan.is_empty() => LoginGroup::Plan,
+            group => group,
+        }
     }
 
     #[must_use]
@@ -73,12 +88,12 @@ impl AuthInfo {
 
     #[must_use]
     pub fn catalog_rank(&self) -> u8 {
-        self.group as u8
+        self.listed() as u8
     }
 
     #[must_use]
     pub fn catalog_title(&self) -> &'static str {
-        self.group.title()
+        self.listed().title()
     }
 
     #[must_use]
@@ -92,6 +107,7 @@ impl AuthInfo {
             str::to_string,
         );
         let hint = match (self.unmodeled(), self.configured, self.env_hint) {
+            _ if self.dual() => format!(" · sign in with {} or paste a key", self.plan),
             (true, ..) => format!(" · summonr {} --model NAME", self.name),
             (false, false, Some(env)) if !self.flow.signs_in() => format!(" · or set {env}"),
             _ => String::new(),

@@ -98,7 +98,8 @@ impl App {
             Some(Overlay::Workflow) => self.move_workflow(delta),
             Some(Overlay::Hotkeys) => self.move_hotkey(delta),
             Some(Overlay::Settings) => self.move_setting(delta),
-            Some(Overlay::Secret | Overlay::Context | Overlay::Cache | Overlay::Usage) => {}
+            Some(Overlay::Usage) => self.usage.shift(delta),
+            Some(Overlay::Secret | Overlay::Context | Overlay::Cache) => {}
             None => return false,
         }
         true
@@ -205,7 +206,7 @@ impl App {
                 self.cycle_seat(delta >= 0);
             }
             Some(Overlay::Settings) => self.adjust_setting(),
-            Some(Overlay::Usage) => self.usage.shift(delta),
+            Some(Overlay::Model | Overlay::Auth | Overlay::Usage) => return self.step_tab(delta),
             Some(Overlay::Effort) => self.effort.shift(&self.model.get().snapshot.levels, delta),
             _ => return false,
         }

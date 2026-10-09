@@ -6,7 +6,7 @@ pub(in crate::tui::sigil_view) fn matching(
     choices
         .into_iter()
         .filter(|choice| {
-            let name = choice.name.to_lowercase();
+            let name = choice.display_name().to_lowercase();
             query.split_whitespace().all(|word| name.contains(word))
         })
         .collect()

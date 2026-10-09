@@ -56,5 +56,5 @@ pub(in crate::tui::sigil_view) fn strip(app: &App, active: Tab) -> NodeBuilder {
                     }),
             )
         })
-        .child(Look::xs(Token::Gray9).on(sigil::kernel::text("ctrl+←/→").nowrap()))
+        .child(Look::xs(Token::Gray9).on(sigil::kernel::text("←/→").nowrap()))
 }

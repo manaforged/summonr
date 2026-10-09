@@ -83,7 +83,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         .layout(LayoutStyle::flex_column().fill_width().gap(16.0))
         .children_reactive(move || page(&paint, width - INSET * 2.0));
     let hints = Hints::new()
-        .key(Key::LeftRight, "range")
+        .key(Key::UpDown, "range")
         .key(Key::Tab, "tokens/cost")
         .key(Key::Enter, "this workspace/all")
         .key(Key::Esc, "close");

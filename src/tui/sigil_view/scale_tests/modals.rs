@@ -338,3 +338,24 @@ fn a_rejected_key_from_the_model_picker_opens_in_its_pane() {
     assert!(screen.contains("Search models"), "{screen}");
     assert!(screen.contains("sign in with"), "{screen}");
 }
+
+#[test]
+fn a_probe_result_changes_a_provider_chip_without_moving_its_row() {
+    let screen = screen(160, 40, |app| {
+        app.replace("/login".to_owned());
+        app.submit();
+        let names = || -> Vec<String> {
+            app.filtered_auth()
+                .into_iter()
+                .map(|choice| choice.name)
+                .collect()
+        };
+        let before = names();
+        let last = before.last().expect("providers").clone();
+        listed(app, vec![], &[(last.as_str(), Reach::KeyRejected)]);
+        assert_eq!(names(), before);
+        let at = before.len() - 1;
+        app.auth.sel.set(at);
+    });
+    assert!(screen.contains("key rejected"), "{screen}");
+}

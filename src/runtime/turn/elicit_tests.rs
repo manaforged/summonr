@@ -12,7 +12,7 @@ fn session(workspace: &Path, home: &Path) -> Loop<Client> {
 
 fn form() -> Form {
     Form {
-        server: "fixture".to_string(),
+        server: Some("fixture".to_string()),
         message: "Who?".to_string(),
         fields: vec![Field {
             name: "name".to_string(),
@@ -53,7 +53,7 @@ async fn a_user_answer_reaches_the_server_after_a_check() {
     assert_eq!(answer.action, FormAction::Accept);
     assert_eq!(answer.content.unwrap()["name"], json!("Ada"));
     assert!(events.iter().any(
-        |event| matches!(event, Event::Elicit { form: Some(form) } if form.server == "fixture")
+        |event| matches!(event, Event::Elicit { form: Some(form) } if form.server.as_deref() == Some("fixture"))
     ));
     assert!(matches!(events.last(), Some(Event::Elicit { form: None })));
 }

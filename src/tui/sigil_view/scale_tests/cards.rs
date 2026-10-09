@@ -17,6 +17,29 @@ fn tool(app: &App, name: &str, arguments: &str, success: bool, output: &str) {
     }));
 }
 
+#[test]
+fn a_narrow_edit_diff_keeps_old_and_new_lines_readable() {
+    let shown = card(60, |app| {
+        tool(
+            app,
+            "edit",
+            r#"{"path":"calc.py"}"#,
+            true,
+            "@@ -1 +1 @@\n-old_value_is_not_clipped\n+new_value_is_not_clipped",
+        );
+    });
+    let old = shown
+        .lines()
+        .find(|line| line.contains("old_value_is_not_clipped"))
+        .expect("readable old line");
+    let new = shown
+        .lines()
+        .find(|line| line.contains("new_value_is_not_clipped"))
+        .expect("readable new line");
+    assert!(!old.contains("new_value"), "{shown}");
+    assert!(!new.contains("old_value"), "{shown}");
+}
+
 fn card(cols: u16, setup: impl FnOnce(&App)) -> String {
     frame_with(busy_info(), cols, 40, State::Idle, setup).join("\n")
 }

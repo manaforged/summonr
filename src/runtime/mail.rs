@@ -24,6 +24,9 @@ impl<P: Provider> Loop<P> {
         if self.task_available() {
             definitions.push(super::child::definition());
         }
+        if self.ask_available() {
+            definitions.push(super::turn::ask_definition());
+        }
         definitions
     }
 

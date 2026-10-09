@@ -11,7 +11,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | Command | Job |
 | --- | --- |
 | `summonr [ENDPOINT]` | Start an interactive session |
-| `summonr [ENDPOINT] -p PROMPT` | Run one prompt and exit |
+| `summonr [ENDPOINT] -p PROMPT`, `summonr [ENDPOINT] PROMPT` | Run one prompt and exit |
 | `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
 | `summonr -c`, `summonr --session ID` | Resume the last session here, or a session by short id, id prefix, or name |
@@ -19,7 +19,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr export [ID\|NAME]` | Print a session as Markdown |
 | `summonr profile [ID\|NAME]` | Print a time and token report from a session journal |
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
-| `summonr worktrees [--json]`, `summonr worktrees prune` | List session worktrees, or drop records of missing directories |
+| `summonr worktrees [--json]`, `summonr worktrees prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
 | `summonr endpoints` | Probe every endpoint and show its key status |
 | `summonr login [NAME] [--key]`, `summonr logout NAME` | List, store, or forget keys and subscription sign-ins |
 | `summonr login NAME --url URL [--model M]`, `summonr logout NAME --remove` | Add or update your own OpenAI-compatible server, or remove it |
@@ -65,7 +65,7 @@ echo $?
 | Run workflow roles on their own models | `-w NAME`, from `[workflows.NAME]` |
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |
-| Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--diff`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
+| Classify text | `summonr classify --set NAME [STATE]`, `--questions JSON\|@FILE`, `--noul QUESTION`, `--patch`, `--review --session ID`, `--eval FILE`, `--gate NUMBER` |
 | Save a transcript | `summonr export [ID\|NAME]`; add `--digest` for the condensed form |
 
 ## Exit codes
@@ -108,7 +108,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `merged` | `branch`, `base`, `files` |
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
 | `approval` | `detail`, optional `persist` |
-| `elicit` | `form` (an MCP server's `server`, `message`, and `fields`), or null when the question ends |
+| `elicit` | `form` (`message`, `fields`, and the MCP `server`, absent when the model asks), or null when the question ends |
 | `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
 | `work` | `progress`; its `checks_failed` agrees with the `verify` events |
@@ -137,7 +137,7 @@ One array. Each row has `branch`, `base`, `path`, `ahead`, `dirty`, and `session
 
 ### `summonr classify --json`
 
-One pretty-printed object: `model`, `answers`, and `usage` with `input_tokens`, `output_tokens`, and `cost`. With `--diff`, the output is an array of `{"path", "answers"}` rows.
+One pretty-printed object: `model`, `answers`, and `usage` with `input_tokens`, `output_tokens`, and `cost`. With `--patch`, the output is an array of `{"path", "answers"}` rows.
 
 ### `summonr export`
 

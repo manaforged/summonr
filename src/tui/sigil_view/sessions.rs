@@ -24,6 +24,7 @@ pub(super) struct Picker {
     loading: Signal<bool>,
     choices: Signal<Vec<(SessionInfo, bool)>>,
     error: Signal<String>,
+    armed: Signal<Option<(String, std::time::Instant)>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -45,6 +46,7 @@ impl Picker {
             loading: signal(false),
             choices: signal(Vec::new()),
             error: signal(String::new()),
+            armed: signal(None),
         }
     }
 
@@ -62,6 +64,7 @@ impl Picker {
         self.loading.set(true);
         self.choices.set(Vec::new());
         self.error.set(String::new());
+        self.armed.set(None);
     }
 
     pub(super) fn update(self, result: Result<Vec<(SessionInfo, bool)>, String>) {
@@ -69,17 +72,36 @@ impl Picker {
         match result {
             Ok(rows) => {
                 self.choices.set(rows);
-                if self.scope.peek() == Scope::Related {
-                    self.selected.set(
-                        self.rows()
-                            .iter()
-                            .position(|info| info.id == self.current.peek())
-                            .unwrap_or(0),
-                    );
-                }
+                self.focus();
             }
             Err(error) => self.error.set(error),
         }
+    }
+
+    fn focus(self) {
+        if self.scope.peek() == Scope::Related {
+            self.selected.set(
+                self.rows()
+                    .iter()
+                    .position(|info| info.id == self.current.peek())
+                    .unwrap_or(0),
+            );
+        }
+    }
+
+    pub(super) fn arm(self, id: &str) -> bool {
+        let now = std::time::Instant::now();
+        let window = crate::limits::limits().repeat_window();
+        let repeat = self
+            .armed
+            .peek()
+            .is_some_and(|(armed, at)| armed == id && now.duration_since(at) <= window);
+        self.armed.set(if repeat {
+            None
+        } else {
+            Some((id.to_string(), now))
+        });
+        repeat
     }
 
     pub(super) fn note(self, text: &str) {
@@ -233,6 +255,10 @@ impl Picker {
     }
 
     pub(super) fn shift(self, delta: isize) {
+        if self.armed.peek().is_some() {
+            self.armed.set(None);
+            self.error.set(String::new());
+        }
         let last = self.rows().len().saturating_sub(1);
         self.selected.set(
             self.selected
@@ -244,12 +270,15 @@ impl Picker {
     }
 
     pub(super) fn scope(self) {
+        self.armed.set(None);
+        self.error.set(String::new());
         self.scope.set(match self.scope.peek() {
             Scope::Project => Scope::All,
             Scope::All => Scope::Related,
             Scope::Related => Scope::Project,
         });
         self.selected.set(0);
+        self.focus();
     }
 }
 
@@ -285,6 +314,20 @@ pub(super) fn layer(app: App) -> NodeBuilder {
                 .caret_position(picker.caret)
                 .height(canvas::overlay_field()),
         )
+        .child(container().children_reactive(move || {
+            let note = picker.error.get();
+            if note.is_empty() || picker.rows().is_empty() {
+                Vec::new()
+            } else {
+                vec![
+                    container().child(
+                        sigil::kernel::text(note)
+                            .wrap()
+                            .text_color(sigil::prelude::Token::Warn11),
+                    ),
+                ]
+            }
+        }))
         .child(list(app, picker))
         .build(picker.open, cols, &keys)
 }

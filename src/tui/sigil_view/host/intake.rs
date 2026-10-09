@@ -6,6 +6,23 @@ impl App {
     pub(super) fn intake(&self, events: &mut Vec<ShellEvent>) {
         let mut staged = false;
         for event in std::mem::take(events) {
+            if let Some(text) = pasted(&event) {
+                let text = text.replace("\r\n", "\n").replace('\r', "\n");
+                if self.secret_active() {
+                    self.secret_push(text.lines().next().unwrap_or_default());
+                } else {
+                    match if staged {
+                        Some(true)
+                    } else {
+                        self.stage(&text)
+                    } {
+                        Some(true) => staged = true,
+                        Some(false) => {}
+                        None => events.push(sigil::terminal::paste(&text)),
+                    }
+                }
+                continue;
+            }
             let ShellEvent::Key(key) = &event else {
                 events.push(event);
                 continue;
@@ -16,17 +33,6 @@ impl App {
                 }
             } else if self.secret_active() {
                 self.secret(key);
-            } else if let Some(text) = pasted(key) {
-                let text = text.replace("\r\n", "\n").replace('\r', "\n");
-                match if staged {
-                    Some(true)
-                } else {
-                    self.stage(&text)
-                } {
-                    Some(true) => staged = true,
-                    Some(false) => {}
-                    None => events.push(sigil::terminal::paste(&text)),
-                }
             } else if staged && is_enter(key) {
             } else if paste_chord(key) && (staged || self.clipboard()) {
                 staged = true;
@@ -71,7 +77,16 @@ impl App {
     }
 }
 
-fn pasted(key: &sigil::prelude::KeyEvent) -> Option<&str> {
+fn pasted(event: &ShellEvent) -> Option<&str> {
+    if let ShellEvent::Paste(text) = event {
+        return Some(text);
+    }
+    let ShellEvent::Key(key) = event else {
+        return None;
+    };
+    if key.phase != KeyPhase::Down {
+        return None;
+    }
     let text = key.text.as_deref()?;
     (text.chars().count() > 1 || text.contains(['\n', '\r'])).then_some(text)
 }
@@ -84,11 +99,14 @@ fn paste_chord(key: &sigil::prelude::KeyEvent) -> bool {
     key.key == LogicalKey::character("v")
         && key
             .modifiers
-            .intersects(ModifiersState::CONTROL | ModifiersState::META)
-        && !key.modifiers.contains(ModifiersState::ALT)
+            .intersects(ModifiersState::CONTROL | ModifiersState::ALT | ModifiersState::META)
 }
 
 fn graphics_junk(text: &str) -> bool {
     text.chars()
         .any(|ch| ch == '\u{1b}' || (ch.is_control() && !matches!(ch, '\n' | '\t' | '\r')))
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "intake_tests.rs"]
+mod tests;

@@ -34,7 +34,7 @@ The advertised schema is `src/tools/catalog.rs`. Dispatch still accepts the old 
 | `run_command` | Sandboxed shell |
 | `todo` | The itemized step list summonr tracks, in steps and goal runs |
 
-On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by default), `task` (interactive sessions only), and the mail tools `agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is off by default; `/settings` switches either.
+On when the module is on: `skill`, `lsp`, `web` (the `search` module, off by default), `task` (interactive sessions only), `ask` (interactive sessions only, not in children), and the mail tools `agents`, `send`, `inbox`, and `board`. `task` is on by default and `mail` is off by default; `/settings` switches either.
 
 ## What summonr holds between turns
 

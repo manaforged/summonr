@@ -143,8 +143,7 @@ impl<P: Provider> Loop<P> {
         let failure = error.provider_failure();
         let retryable = !state.retried && failure.is_some_and(retryable_failure);
         let kind = failure.map(|failure| failure.kind);
-        let cause = failure.map_or("stream failed", retry_cause);
-        self.record_failure(attempt, &error, started, retryable, messages, events, emit)?;
+        self.record_failure(attempt, &error, started, messages, events, emit)?;
         if self.round_abort().is_some() {
             return Ok(false);
         }
@@ -162,30 +161,29 @@ impl<P: Provider> Loop<P> {
                 return Err(error);
             }
             state.overflows += 1;
-            self.recover_overflow(
-                &text,
-                messages,
-                tools.json.len(),
-                &mut state.usage,
-                events,
-                emit,
-            )
-            .await?;
+            if !self
+                .recover_overflow(
+                    &text,
+                    messages,
+                    tools.json.len(),
+                    &mut state.usage,
+                    events,
+                    emit,
+                )
+                .await?
+            {
+                return Err(error);
+            }
             return Ok(true);
         }
-        self.retry_or_fall_back(error, retryable, cause, role, state, events, emit)?;
+        self.retry_or_fall_back(error, retryable, role, state, events, emit)?;
         Ok(true)
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one decision path for a failed provider attempt"
-    )]
     fn retry_or_fall_back(
         &mut self,
         error: Error,
         retryable: bool,
-        cause: &str,
         role: workflow::Role,
         state: &mut RetryState,
         events: &mut Vec<Event>,
@@ -205,30 +203,22 @@ impl<P: Provider> Loop<P> {
             emit,
             Event::Note {
                 text: format!(
-                    "{cause}; retrying once: {}",
+                    "stream cut; retrying once: {}",
                     text.lines().next().unwrap_or("unknown")
                 ),
             },
         )
     }
 
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one record path for a failed provider attempt"
-    )]
     fn record_failure(
         &mut self,
         attempt: Attempt,
         error: &Error,
         started: Instant,
-        retryable: bool,
         messages: &mut Vec<Message>,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
     ) -> Result<()> {
-        if retryable {
-            self.session.partial = crate::provider::Partial::default();
-        }
         let interrupted = (!self.session.partial.text.is_empty()).then(|| Message {
             role: Role::Assistant,
             ..Message::system(self.session.partial.text.clone())
@@ -278,7 +268,7 @@ impl<P: Provider> Loop<P> {
         usage: &mut Usage,
         events: &mut Vec<Event>,
         emit: &mut impl FnMut(&Event),
-    ) -> Result<()> {
+    ) -> Result<bool> {
         if let Some(cap) = crate::provider::input_cap(text) {
             self.set_context_window(Some(cap));
         }
@@ -287,6 +277,9 @@ impl<P: Provider> Loop<P> {
             .await?
         {
             let edits = force_compact(&messages[1..]);
+            if edits.is_empty() {
+                return Ok(false);
+            }
             self.rewrite(messages, edits)?;
             self.tools.forget_reads();
         }
@@ -296,7 +289,8 @@ impl<P: Provider> Loop<P> {
             Event::Note {
                 text: "context overflow; compacted the context, retrying".to_string(),
             },
-        )
+        )?;
+        Ok(true)
     }
 
     fn fall_back(
@@ -331,25 +325,10 @@ impl<P: Provider> Loop<P> {
 mod tests;
 
 fn retryable_failure(failure: &crate::error::ProviderFailure) -> bool {
-    match failure.kind {
-        ProviderFailureKind::RateLimited => failure
-            .retry_after
-            .is_none_or(|seconds| seconds <= crate::limits::limits().retry_after_max_secs),
-        ProviderFailureKind::Transport | ProviderFailureKind::Server => failure.status.is_none(),
-        _ => false,
-    }
-}
-
-fn retry_cause(failure: &crate::error::ProviderFailure) -> &'static str {
-    match failure.kind {
-        ProviderFailureKind::RateLimited => "rate limited",
-        ProviderFailureKind::Transport if !failure.partial_output => "connection failed",
-        ProviderFailureKind::Transport
-        | ProviderFailureKind::Authentication
-        | ProviderFailureKind::Server
-        | ProviderFailureKind::ContextOverflow
-        | ProviderFailureKind::MalformedToolCall
-        | ProviderFailureKind::Malformed
-        | ProviderFailureKind::Http => "stream failed",
-    }
+    failure.partial_output
+        && failure.status.is_none()
+        && matches!(
+            failure.kind,
+            ProviderFailureKind::Transport | ProviderFailureKind::Server
+        )
 }

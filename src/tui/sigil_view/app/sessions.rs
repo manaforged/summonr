@@ -48,7 +48,7 @@ impl App {
             self.sessions.note("the open session cannot be deleted");
             return;
         }
-        if armed(&self.delete_armed, crate::limits::limits().repeat_window()) {
+        if self.sessions.arm(&info.id) {
             drop(self.cmd.send(Cmd::DeleteSession(info.id.clone())));
             self.sessions.note("");
         } else {

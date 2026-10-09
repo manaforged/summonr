@@ -290,12 +290,16 @@ pub(in crate::tui::sigil_view) fn patch_view(
     app: &App,
     patch: impl Into<String>,
     layout: DiffLayout,
+    cols: u16,
 ) -> DiffBuilder {
     let pick = app.clone();
+    let narrow = !super::canvas::is_window()
+        && super::canvas::inner_cols(usize::from(cols))
+            < usize::from(crate::limits::limits().diff_split_min_cols);
     diff(patch.into())
         .view(match layout {
-            DiffLayout::Split => DiffView::Split,
-            DiffLayout::Unified => DiffView::Unified,
+            DiffLayout::Split if !narrow => DiffView::Split,
+            DiffLayout::Split | DiffLayout::Unified => DiffView::Unified,
         })
         .change(move |choice| {
             pick.set_diff_layout(match choice {

@@ -37,9 +37,23 @@ summonr | summonr-*)
   if [ -n "${BENCH_KEEP_REASONING:-}" ]; then
     export SUMMONR_KEEP_REASONING=1
   fi
+  pick=""
+  if [ "$provider" = openai ]; then
+    printf '[endpoint.openai]\nbase_url = "%s"\nmodel = "%s"\n' "$BENCH_BASE" "$BENCH_MODEL" > "$logs/$name/config.toml"
+    printf '%s\n' "$key" | HOME=$home SUMMONR_HOME=$logs/$name "$tools/$name/bin/summonr" login openai --key >/dev/null
+    pick=openai
+  fi
   HOME=$home SUMMONR_HOME=$logs/$name SUMMONR_BASE_URL=$BENCH_BASE SUMMONR_MODEL=$BENCH_MODEL SUMMONR_API_KEY=$key \
     SUMMONR_MAX_TOKENS=$max_tokens \
-    "$tools/$name/bin/summonr" --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -p -- "$prompt"
+    "$tools/$name/bin/summonr" ${pick:+-e "$pick"} --json ${BENCH_EFFORT:+--effort "$BENCH_EFFORT"} -p -- "$prompt"
+  ;;
+codex)
+  mkdir -p "$logs/codex"
+  HOME=$home CODEX_HOME=$logs/codex BENCH_API_KEY=$key \
+    "$tools/codex/bin/codex" exec --json --skip-git-repo-check --dangerously-bypass-approvals-and-sandbox -m "$BENCH_MODEL" \
+    ${BENCH_EFFORT:+-c "model_reasoning_effort=$BENCH_EFFORT"} -c model_provider=bench \
+    -c "model_providers.bench={name=\"bench\",base_url=\"$BENCH_BASE\",env_key=\"BENCH_API_KEY\",wire_api=\"responses\",supports_websockets=false,supports_standalone_web_search=true}" \
+    -- "$prompt" </dev/null
   ;;
 pi)
   mkdir -p "$home/pi"

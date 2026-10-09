@@ -85,6 +85,7 @@ pub(super) fn layer(app: App) -> NodeBuilder {
     let hints = Hints::new()
         .key(Key::UpDown, "range")
         .key(Key::Tab, "tokens/cost")
+        .key(Key::Fixed("←→"), "tabs")
         .key(Key::Enter, "this workspace/all")
         .key(Key::Esc, "close");
     Dialog::new(Size::Page, "Usage", hints)
@@ -108,10 +109,12 @@ fn page(app: &App, width: f32) -> Vec<NodeBuilder> {
     let rows: Vec<&Spend> = all.iter().filter(|row| !local || row.local).collect();
     let mut nodes = vec![controls(usage, local, metric)];
     if !status.is_empty() || rows.is_empty() {
-        let note = if status.is_empty() {
-            "no usage yet"
-        } else {
+        let note = if !status.is_empty() {
             status.as_str()
+        } else if local && !all.is_empty() {
+            "no usage in this workspace yet; enter shows all workspaces"
+        } else {
+            "no usage yet"
         };
         nodes.push(colored(note, palette().dim));
         return nodes;

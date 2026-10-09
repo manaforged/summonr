@@ -167,7 +167,7 @@ pub(in crate::tui::sigil_view) fn call_output(
         return (!shown.is_empty()).then(|| tree(&shown));
     };
     let rows = if full { usize::MAX } else { COMPACT_ROWS };
-    let view = patch_view(app, patch, layout)
+    let view = patch_view(app, patch, layout, app.chat_cols())
         .bg(Token::Field)
         .border_w(0)
         .max_rows(rows);

@@ -7,6 +7,87 @@ use crate::catalog::Model;
 use crate::recent::Seat;
 use crate::tui::Msg;
 
+fn session(id: &str, parent: Option<&str>) -> crate::session::SessionInfo {
+    crate::session::SessionInfo {
+        id: id.to_string(),
+        path: std::path::PathBuf::new(),
+        cwd: Some("/work".to_string()),
+        model: Some("m".to_string()),
+        preview: format!("Session {id}"),
+        name: None,
+        parent: parent.map(str::to_string),
+        depth: 0,
+    }
+}
+
+#[test]
+fn a_session_delete_confirmation_is_visible_with_existing_rows() {
+    let screen = picker(80, |app| {
+        app.open_sessions(false);
+        app.update(Msg::Sessions(Ok(vec![
+            (session("first", None), true),
+            (session("second", None), true),
+        ])));
+        app.delete_session();
+    });
+    assert!(screen.contains("alt+d again deletes first"), "{screen}");
+}
+
+#[test]
+fn a_changed_target_and_a_reopened_picker_need_a_new_delete_confirmation() {
+    use crate::tui::Cmd;
+    use sigil::reactive::Runtime;
+    use tokio::sync::mpsc::unbounded_channel;
+    Runtime::scope("session-delete", || {
+        let workspace = tempfile::tempdir().expect("workspace");
+        let (commands, mut sent) = unbounded_channel();
+        let app = App::new(busy_info(), workspace.path().to_owned(), commands);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::Offers)));
+        let rows = vec![
+            (session("first", None), true),
+            (session("second", None), true),
+        ];
+        app.open_sessions(false);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
+        app.update(Msg::Sessions(Ok(rows.clone())));
+        app.delete_session();
+        app.overlay_move(1);
+        app.delete_session();
+        assert!(
+            sent.try_recv().is_err(),
+            "changing the target deleted without confirmation"
+        );
+        app.overlay_close();
+        app.open_sessions(false);
+        assert!(matches!(sent.try_recv(), Ok(Cmd::ListSessions)));
+        app.update(Msg::Sessions(Ok(rows)));
+        app.overlay_move(1);
+        app.delete_session();
+        assert!(
+            sent.try_recv().is_err(),
+            "reopening reused the old confirmation"
+        );
+        app.delete_session();
+        assert!(matches!(sent.try_recv(), Ok(Cmd::DeleteSession(id)) if id == "second"));
+    });
+}
+
+#[test]
+fn cycling_to_related_sessions_selects_the_current_branch() {
+    let _screen = picker(100, |app| {
+        app.open_sessions(false);
+        let current = app.model.peek().session.clone();
+        app.update(Msg::Sessions(Ok(vec![
+            (session("parent", None), true),
+            (session(&current, Some("parent")), true),
+        ])));
+        app.sessions.scope();
+        app.sessions.scope();
+        assert_eq!(app.sessions.selected.peek(), 1);
+        assert_eq!(app.sessions.rows()[1].id, current);
+    });
+}
+
 fn days_ago(days: u64) -> Option<u64> {
     let today = SystemTime::now()
         .duration_since(UNIX_EPOCH)

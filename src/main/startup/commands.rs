@@ -140,6 +140,10 @@ pub(super) fn manage_worktrees(args: &Args) -> Result<()> {
     let cwd = workspace()?;
     if args.prune_worktrees {
         let removed = sweep_worktrees(&cwd)?;
+        if args.json {
+            println!("{}", serde_json::to_string(&removed)?);
+            return Ok(());
+        }
         if removed.is_empty() {
             println!("no missing worktrees");
         }
@@ -242,10 +246,10 @@ pub(super) fn adopt(args: &Args) -> Result<Vec<String>> {
     Ok(moved)
 }
 
-pub(super) async fn mcp(command: &McpCommand) -> Result<()> {
+pub(super) async fn mcp(command: &McpCommand, json_flag: bool) -> Result<()> {
     match command {
-        McpCommand::List { json } => mcp_list(*json),
-        McpCommand::Get { name, json } => mcp_get(name, *json),
+        McpCommand::List { json } => mcp_list(*json || json_flag),
+        McpCommand::Get { name, json } => mcp_get(name, *json || json_flag),
         McpCommand::Add { name, launch } => {
             let kept = summonr::mcp_add(name, launch)?;
             let count = summonr::mcp_probe(&workspace()?, name)

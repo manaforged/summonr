@@ -21,12 +21,13 @@ ACTIVE_SECONDS = 1800
 
 def role_sizes(body, messages):
     roles = {}
-    if body.get("system"):
-        roles["system"] = {"count": 1, "bytes": len(json.dumps(body["system"], ensure_ascii=False))}
+    system = body.get("system") or body.get("instructions")
+    if system:
+        roles["system"] = {"count": 1, "bytes": len(json.dumps(system, ensure_ascii=False))}
     for message in messages:
-        size = len(json.dumps(message.get("content"), ensure_ascii=False))
+        size = len(json.dumps(message.get("content") if "content" in message else message, ensure_ascii=False))
         size += len(json.dumps(message.get("tool_calls") or [], ensure_ascii=False))
-        entry = roles.setdefault(message.get("role", "unknown"), {"count": 0, "bytes": 0})
+        entry = roles.setdefault(message.get("role") or message.get("type", "unknown"), {"count": 0, "bytes": 0})
         entry["count"] += 1
         entry["bytes"] += size
     return roles
@@ -47,10 +48,22 @@ def last_round(messages):
     return calls, results
 
 
+def item_round(items):
+    start = len(items)
+    while start and items[start - 1].get("type", "").endswith(("_call", "_call_output", "reasoning")):
+        start -= 1
+    tail = items[start:]
+    calls = [{"name": item.get("name"), "args": (item.get("arguments") or item.get("input") or "")[:240]} for item in tail if item.get("type", "").endswith("_call")]
+    results = [{"role": item.get("type"), "bytes": len(json.dumps(item.get("output"), ensure_ascii=False))} for item in tail if item.get("type", "").endswith("_output")]
+    return calls, results
+
+
 def shape(body):
-    messages = body.get("messages") or []
-    calls, results = last_round(messages)
-    tools = body.get("tools") or []
+    items = body.get("input") or []
+    items = items if isinstance(items, list) else [{"role": "user", "content": items}]
+    messages = body.get("messages") or items
+    calls, results = last_round(messages) if "messages" in body else item_round(items)
+    tools = body.get("tools") or [tool for item in items if item.get("type") == "additional_tools" for tool in item.get("tools") or []]
     return {
         "round_calls": calls,
         "round_results": results,
@@ -58,8 +71,8 @@ def shape(body):
         "stream": bool(body.get("stream")),
         "temperature": body.get("temperature"),
         "top_p": body.get("top_p"),
-        "max_tokens": body.get("max_tokens") or body.get("max_completion_tokens"),
-        "reasoning_effort": body.get("reasoning_effort"),
+        "max_tokens": body.get("max_tokens") or body.get("max_completion_tokens") or body.get("max_output_tokens"),
+        "reasoning_effort": body.get("reasoning_effort") or (body.get("reasoning") or {}).get("effort"),
         "thinking": body.get("thinking"),
         "tool_stream": body.get("tool_stream"),
         "messages": len(messages),
@@ -73,6 +86,14 @@ def shape(body):
 def normalize(usage):
     if not usage or "input_tokens" not in usage and "output_tokens" not in usage:
         return usage
+    if "input_tokens_details" in usage or "output_tokens_details" in usage:
+        return {
+            **usage,
+            "prompt_tokens": usage.get("input_tokens") or 0,
+            "completion_tokens": usage.get("output_tokens") or 0,
+            "prompt_tokens_details": usage.get("input_tokens_details") or {},
+            "completion_tokens_details": usage.get("output_tokens_details") or {},
+        }
     read = usage.get("cache_read_input_tokens") or 0
     prompt = (usage.get("input_tokens") or 0) + read + (usage.get("cache_creation_input_tokens") or 0)
     return {
@@ -94,8 +115,13 @@ def stream_chunks(raw):
             continue
 
 
+def frame_body(chunk):
+    body = chunk.get("message") or chunk.get("response")
+    return body if isinstance(body, dict) else {}
+
+
 def merge_usage(usage, chunk):
-    message = chunk.get("message") or {}
+    message = frame_body(chunk)
     if message.get("usage"):
         usage = {**(usage or {}), **message["usage"]}
     if chunk.get("usage"):
@@ -104,7 +130,8 @@ def merge_usage(usage, chunk):
 
 
 def finish_of(chunk, finish):
-    finish = (chunk.get("delta") or {}).get("stop_reason") or finish
+    delta = chunk.get("delta") if isinstance(chunk.get("delta"), dict) else {}
+    finish = delta.get("stop_reason") or frame_body(chunk).get("status") or finish
     for choice in chunk.get("choices") or []:
         finish = choice.get("finish_reason") or finish
     return finish
@@ -113,7 +140,7 @@ def finish_of(chunk, finish):
 def usage_from_stream(raw):
     usage, model, finish = None, None, None
     for chunk in stream_chunks(raw):
-        model = chunk.get("model") or (chunk.get("message") or {}).get("model") or model
+        model = chunk.get("model") or frame_body(chunk).get("model") or model
         usage = merge_usage(usage, chunk)
         finish = finish_of(chunk, finish)
     return normalize(usage), model, finish
@@ -131,7 +158,7 @@ def usage_from_body(raw):
     except json.JSONDecodeError:
         return None, None, None
     choices = body.get("choices") or [{}]
-    finish = choices[0].get("finish_reason") or body.get("stop_reason")
+    finish = choices[0].get("finish_reason") or body.get("stop_reason") or body.get("status")
     return normalize(body.get("usage")), body.get("model"), finish
 
 
@@ -181,7 +208,7 @@ class Proxy(BaseHTTPRequestHandler):
         return index
 
     def prepare(self, raw, label, path, index):
-        if not raw or not (path.endswith("/chat/completions") or path.endswith("/messages")):
+        if not raw or not path.endswith(("/chat/completions", "/messages", "/responses")):
             return raw, None
         body = json.loads(raw)
         host = urllib.parse.urlsplit(self.upstreams[index]).hostname

@@ -58,8 +58,14 @@ impl Scan {
                 usage,
                 text,
                 reasoning,
+                model,
                 ..
-            } => self.assistant(tool_calls, usage, text, reasoning),
+            } => {
+                if !model.is_empty() {
+                    self.model = model;
+                }
+                self.assistant(tool_calls, usage, text, reasoning);
+            }
             Line::Tool {
                 call,
                 text,

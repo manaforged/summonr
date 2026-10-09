@@ -25,7 +25,6 @@
 | <code>inline: bool</code> |  |
 | <code>model: String</code> |  |
 | <code>pick: Option&lt;<a href="summonr.html#pick">Pick</a>&gt;</code> |  |
-| <code>plan: bool</code> |  |
 | <code>prefs: <a href="summonr-prefs.html#prefs">Prefs</a></code> |  |
 | <code>relay: Option&lt;String&gt;</code> |  |
 | <code>session: String</code> |  |

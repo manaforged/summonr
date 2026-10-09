@@ -22,7 +22,6 @@
 | --- | --- |
 | <code>history: usize</code> |  |
 | <code>model: &amp;'a str</code> |  |
-| <code>plan: bool</code> |  |
 | <code>relay: Option&lt;&amp;'a str&gt;</code> |  |
 | <code>resumed: bool</code> |  |
 | <code>session: &amp;'a str</code> |  |

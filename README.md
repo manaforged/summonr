@@ -175,11 +175,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-759 public items (76 types, 105 functions, 122 methods, 267 fields, 188 variants, 1 constant) at 759 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
+755 public items (76 types, 106 functions, 122 methods, 265 fields, 184 variants, 2 constants) at 755 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 512 | 42 | 56 | 99 | 0 |
+| `summonr` | 510 | 42 | 57 | 99 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -197,10 +197,10 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
 | `summonr::prefs` | 19 | 2 | 2 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
-| `summonr::splash` | 14 | 1 | 1 | 2 | 0 |
+| `summonr::splash` | 13 | 1 | 1 | 2 | 0 |
 | `summonr::steps` | 16 | 3 | 3 | 1 | 0 |
 | `summonr::supervise` | 3 | 1 | 0 | 0 | 0 |
-| `summonr::tui` | 23 | 3 | 3 | 3 | 0 |
+| `summonr::tui` | 22 | 3 | 3 | 3 | 0 |
 | `summonr::tui::hub` | 4 | 2 | 0 | 0 | 0 |
 | `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |
 

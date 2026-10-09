@@ -69,11 +69,16 @@ impl Splash<'_> {
         match self.relay {
             Some(relay) => eprintln!(
                 "summonr {} · {} @ {} · session {}",
-                self.version, self.model, relay, self.session
+                self.version,
+                self.model,
+                relay,
+                crate::session::short(self.session)
             ),
             None => eprintln!(
                 "summonr {} · {} · session {}",
-                self.version, self.model, self.session
+                self.version,
+                self.model,
+                crate::session::short(self.session)
             ),
         }
     }

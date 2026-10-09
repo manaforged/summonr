@@ -171,3 +171,22 @@ fn review_notes_live_in_the_git_dir_not_the_working_tree() {
     assert!(dir.path().join(".git/summonr/review.json").is_file());
     assert!(drain(dir.path()).is_some_and(|notes| notes.contains("check the edge")));
 }
+
+#[test]
+fn a_reverted_hunk_reaches_the_next_turn_once() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
+    apply(
+        dir.path(),
+        "a.txt",
+        "h1",
+        Op::Verdict(Some(Verdict::Rejected)),
+    )
+    .unwrap();
+    let first = drain(dir.path()).unwrap_or_default();
+    assert!(
+        first.contains("a.txt") && first.contains("reverted"),
+        "{first}"
+    );
+    assert!(drain(dir.path()).is_none());
+}

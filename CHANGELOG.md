@@ -85,6 +85,10 @@ First stable release.
 
 ### Fixed
 
+- A budget counts from the run that loads the session, so a resumed or forked session gets its full `--max-secs` and `--max-tokens` again.
+- Reverting a hunk in the diff pane tells the next turn, so the model does not report the reverted code as still in place.
+- `-p` labels an MCP tool lookup as `mcp search QUERY`, so lookups no longer read as duplicate calls. The banner and the resume line show the short session id.
+- The control files `.summonr/check.toml` and `.summonr/policy.toml` are not part of a Work snapshot, so a check file summonr restored never reads as a workspace change.
 - The turn receipt's dirty count ignores caches and `.summonr` state. A file a `summonr diff` wrote stays out of later sessions' turn diffs, and a change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
 - The deferred `mcp` tool accepts arguments as an object, a JSON string, or fields beside `tool`.
 - The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`; a check file that changes during a run gets a note, and the check loaded at start stays in force. A file that summonr's own output is redirected to never counts as a change.

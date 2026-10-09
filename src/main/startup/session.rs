@@ -134,7 +134,7 @@ pub(super) fn build(
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
-            loop_.session_id(),
+            summonr::short(&loop_.session_id()),
             loop_.workspace().display()
         );
     }

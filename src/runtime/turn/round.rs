@@ -345,7 +345,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub(in crate::runtime) fn budget_abort(&self) -> Option<Abort> {
-        self.budget.breach(self.spent_tokens, self.elapsed_secs())
+        self.budget.breach(self.run_tokens(), self.elapsed_secs())
     }
 
     pub(super) async fn prepare_round(

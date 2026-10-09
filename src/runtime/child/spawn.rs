@@ -252,7 +252,7 @@ impl<P: Provider> Loop<P> {
         }
         let tokens = self.budget.max_tokens.map(|limit| {
             limit
-                .saturating_sub(self.spent_tokens)
+                .saturating_sub(self.run_tokens())
                 .saturating_sub(self.child_budget_reserved())
                 / children
         });

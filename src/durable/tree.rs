@@ -70,6 +70,9 @@ pub(crate) fn snapshot(
             continue;
         }
         let name = relative.to_string_lossy().replace('\\', "/");
+        if crate::policy::workspace_control(&relative) {
+            continue;
+        }
         if let Some((entry, stamp)) = mark(&path, &name, previous, &own)? {
             stamps.insert(name.clone(), stamp);
             files.insert(name, entry);

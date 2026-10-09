@@ -112,6 +112,7 @@ pub struct Loop<P> {
     check_file: Option<Vec<u8>>,
     budget: Budget,
     spent_tokens: u64,
+    run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
     probe: Option<tokio::task::JoinHandle<Option<u32>>>,

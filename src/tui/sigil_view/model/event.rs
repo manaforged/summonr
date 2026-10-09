@@ -84,7 +84,10 @@ impl Model {
                 prefix_hash,
                 cost,
             ),
-            Event::Approval { .. } | Event::Elicit { .. } | Event::Spawned { .. } => {}
+            Event::Approval { .. }
+            | Event::Elicit { .. }
+            | Event::Spawned { .. }
+            | Event::Session { .. } => {}
             Event::Unreported { tokens } => self.unreported_tokens = tokens,
             Event::Child { id, event } => self.apply_child(&id, *event),
         }
@@ -161,10 +164,13 @@ impl Model {
     fn apply_entry(&mut self, event: Event) {
         match event {
             Event::Assistant { text } => self.finish_assistant(text),
-            Event::Aborted { reason } if reason == "cancelled by user" => self.entries.push(
-                Entry::Aborted("cancelled · F5 or /retry continues · Up edits the prompt".into()),
-            ),
-            Event::Aborted { reason } => self.entries.push(Entry::Aborted(reason)),
+            Event::Aborted {
+                code: crate::tools::AbortCode::Cancelled,
+                ..
+            } => self.entries.push(Entry::Aborted(
+                "cancelled · F5 or /retry continues · Up edits the prompt".into(),
+            )),
+            Event::Aborted { reason, .. } => self.entries.push(Entry::Aborted(reason)),
             Event::Merged {
                 branch,
                 base,

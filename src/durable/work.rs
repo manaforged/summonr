@@ -68,6 +68,13 @@ pub(crate) enum StepState {
     Blocked,
 }
 
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CheckVerdict {
+    Passed,
+    Failed,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Observation {
@@ -151,6 +158,8 @@ pub(crate) struct Work {
     pub(crate) touched: BTreeSet<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub(crate) jobs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) check: Option<CheckVerdict>,
 }
 
 impl Work {
@@ -174,6 +183,7 @@ impl Work {
             deferred: 0,
             touched: BTreeSet::new(),
             jobs: Vec::new(),
+            check: None,
         }
     }
 
@@ -201,6 +211,14 @@ impl Work {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    pub(crate) fn record_check(&mut self, passed: bool) {
+        self.check = Some(if passed {
+            CheckVerdict::Passed
+        } else {
+            CheckVerdict::Failed
+        });
     }
 
     pub(crate) fn apply_todos(&mut self, items: &[(String, StepState)]) {
@@ -259,7 +277,7 @@ impl Work {
             kind,
             objective: self.objective.clone(),
             phase,
-            checks_failed: matches!(self.status, Status::Failed(_)),
+            checks_failed: self.check == Some(CheckVerdict::Failed),
             current: (kind == WorkKind::Steps)
                 .then(|| current.map(|index| index + 1))
                 .flatten(),

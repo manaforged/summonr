@@ -12,6 +12,19 @@ pub(crate) struct Module {
     pub(crate) servers: &'static [Server],
     pub(crate) commands: &'static [&'static str],
     pub(crate) options: &'static str,
+    pub(crate) check: Option<Check>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Check {
+    pub(crate) command: &'static str,
+    pub(crate) requires: Option<Requirement>,
+}
+
+#[derive(Debug)]
+pub(crate) struct Requirement {
+    pub(crate) file: &'static str,
+    pub(crate) pointer: &'static str,
 }
 
 #[derive(Debug)]
@@ -46,6 +59,10 @@ const MODULES: &[Module] = &[
         }],
         commands: &["cargo", "rustc"],
         options: r#"{"checkOnSave": false, "cargo": {"allTargets": false, "buildScripts": {"enable": false}}, "procMacro": {"enable": false}}"#,
+        check: Some(Check {
+            command: "cargo test",
+            requires: None,
+        }),
     },
     Module {
         id: "typescript",
@@ -63,6 +80,13 @@ const MODULES: &[Module] = &[
         ],
         commands: &["npm", "pnpm", "yarn", "bun", "node --test", "tsc"],
         options: "{}",
+        check: Some(Check {
+            command: "npm test",
+            requires: Some(Requirement {
+                file: "package.json",
+                pointer: "/scripts/test",
+            }),
+        }),
     },
     Module {
         id: "python",
@@ -80,6 +104,7 @@ const MODULES: &[Module] = &[
         ],
         commands: &["pytest", "python -m pytest", "ruff", "mypy", "pyright"],
         options: "{}",
+        check: None,
     },
     Module {
         id: "go",
@@ -91,6 +116,10 @@ const MODULES: &[Module] = &[
         }],
         commands: &["go test", "go build", "go vet"],
         options: "{}",
+        check: Some(Check {
+            command: "go test ./...",
+            requires: None,
+        }),
     },
 ];
 
@@ -147,6 +176,31 @@ pub(crate) fn present(workspace: &Path) -> Vec<&'static Module> {
             })
         })
         .collect()
+}
+
+#[must_use]
+pub(crate) fn check(workspace: &Path) -> Option<&'static str> {
+    MODULES
+        .iter()
+        .filter(|module| {
+            module
+                .markers
+                .iter()
+                .any(|marker| workspace.join(marker).is_file())
+        })
+        .filter_map(|module| module.check.as_ref())
+        .find(|check| {
+            check.requires.as_ref().is_none_or(|requirement| {
+                std::fs::read_to_string(workspace.join(requirement.file))
+                    .ok()
+                    .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+                    .and_then(|value| value.pointer(requirement.pointer).cloned())
+                    .is_some_and(|script| {
+                        script.as_str().is_some_and(|text| !text.trim().is_empty())
+                    })
+            })
+        })
+        .map(|check| check.command)
 }
 
 pub(crate) fn options(module: &Module) -> Value {

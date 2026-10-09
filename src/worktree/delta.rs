@@ -9,13 +9,6 @@ use crate::error::{Error, Result};
 
 const SHARED: &[&str] = &["target", "node_modules"];
 const LINK_LISTS: &[&str] = &[".summonr/linked", ".agents/linked"];
-const GENERATED: &[&str] = &[
-    "__pycache__/",
-    "*.pyc",
-    ".pytest_cache/",
-    ".mypy_cache/",
-    ".ruff_cache/",
-];
 
 pub(super) fn open(primary: &Path) -> Result<Tree> {
     let primary = primary
@@ -124,12 +117,8 @@ fn exclude(dest: &Path, names: &[String]) -> Result<()> {
     if !text.ends_with('\n') && !text.is_empty() {
         text.push('\n');
     }
-    for name in names
-        .iter()
-        .map(String::as_str)
-        .chain(GENERATED.iter().copied())
-    {
-        text.push_str(name);
+    for name in names.iter().cloned().chain(diff::ignored::patterns()) {
+        text.push_str(&name);
         text.push('\n');
     }
     fs::write(path, text)?;

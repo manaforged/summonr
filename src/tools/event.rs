@@ -19,6 +19,9 @@ pub enum Event {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         patch: Option<String>,
     },
+    Session {
+        id: String,
+    },
     Assistant {
         text: String,
     },
@@ -44,6 +47,8 @@ pub enum Event {
         background: bool,
         #[serde(default, skip_serializing_if = "String::is_empty")]
         workspace: String,
+        #[serde(default, skip_serializing_if = "String::is_empty")]
+        agent: String,
     },
     Unreported {
         tokens: u64,
@@ -54,6 +59,8 @@ pub enum Event {
     },
     Aborted {
         reason: String,
+        #[serde(default)]
+        code: AbortCode,
     },
     Merged {
         branch: String,
@@ -99,6 +106,60 @@ pub enum Event {
         id: String,
         event: Box<Event>,
     },
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum Hold {
+    Conflict,
+    OffBase,
+    Unreadable,
+    Unremoved,
+}
+
+impl Hold {
+    #[must_use]
+    pub(crate) const fn reason(self) -> &'static str {
+        match self {
+            Self::Conflict => "conflicts with the parent",
+            Self::OffBase => "moved off the parent base",
+            Self::Unreadable => "could not be read",
+            Self::Unremoved => "landed, but could not be removed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub(crate) struct Kept {
+    pub(crate) checkout: std::path::PathBuf,
+    pub(crate) hold: Hold,
+}
+
+#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AbortCode {
+    TimeBudget,
+    TokenBudget,
+    Interrupted,
+    Cancelled,
+    #[default]
+    Error,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Abort {
+    pub code: AbortCode,
+    pub reason: String,
+}
+
+impl Abort {
+    #[must_use]
+    pub(crate) fn time_limit() -> Self {
+        Self {
+            code: AbortCode::TimeBudget,
+            reason: "work-time limit reached".to_string(),
+        }
+    }
 }
 
 #[must_use]

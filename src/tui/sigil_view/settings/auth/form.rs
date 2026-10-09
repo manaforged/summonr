@@ -63,22 +63,6 @@ pub(super) fn line(text: impl Into<String>) -> NodeBuilder {
     )
 }
 
-fn wrapped(text: &str, width: usize) -> Vec<String> {
-    let mut parts: Vec<String> = Vec::new();
-    for word in text.split_whitespace() {
-        match parts.last_mut() {
-            Some(last)
-                if sigil::app::cell_width(last) + 1 + sigil::app::cell_width(word) <= width =>
-            {
-                last.push(' ');
-                last.push_str(word);
-            }
-            Some(_) | None => parts.push(crate::text::ellipsize(word, width)),
-        }
-    }
-    parts
-}
-
 fn form_cells(app: &App) -> usize {
     let (cols, _) = app.viewport.get();
     ((canvas::dialog_width(cols, canvas::DIALOG_CELLS) / canvas::cell().w) as usize)
@@ -91,7 +75,7 @@ pub(super) fn notes(note: &Note, width: usize) -> Vec<NodeBuilder> {
     } else {
         Tone::Neutral
     };
-    wrapped(&note.text, width)
+    crate::text::lines_within(&note.text, width)
         .into_iter()
         .map(|part| notice(part, tone))
         .collect()
@@ -138,7 +122,7 @@ fn entering(app: &App, note: &str, width: usize) -> Vec<NodeBuilder> {
         field(app, Input::Key, true),
     ];
     nodes.extend(
-        wrapped(note, width)
+        crate::text::lines_within(note, width)
             .into_iter()
             .map(|part| notice(part, Tone::Error)),
     );
@@ -164,13 +148,13 @@ fn signing(
     if !code.is_empty() {
         nodes.push(line(format!("2. Enter code   {code}")));
     }
-    nodes.extend(wrapped(&text, wide).into_iter().map(line));
+    nodes.extend(crate::text::lines_within(&text, wide).into_iter().map(line));
     if asking {
         nodes.push(field(app, Input::Code, true));
     }
     if !note.is_empty() {
         nodes.extend(
-            wrapped(&note, wide)
+            crate::text::lines_within(&note, wide)
                 .into_iter()
                 .map(|part| notice(part, Tone::Error)),
         );

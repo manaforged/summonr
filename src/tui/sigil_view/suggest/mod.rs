@@ -86,8 +86,11 @@ impl Picker {
             return None;
         }
         let rows = self.rows(draft, caret, model);
-        let row = rows.get(self.cursor.peek().min(rows.len().saturating_sub(1)))?;
-        let command = command && !prompt_row(model, &row.0);
+        let picked = self.cursor.peek().min(rows.len().saturating_sub(1));
+        let row = rows.get(picked)?;
+        if command && picked == 0 && !row.0.starts_with(draft.trim_end()) {
+            return None;
+        }
         (row.0 != draft).then(|| (row.0.clone(), command))
     }
 
@@ -197,7 +200,8 @@ impl Picker {
         } else {
             matching_commands(draft)
         };
-        rows.into_iter()
+        let rows = rows
+            .into_iter()
             .filter(|(name, _)| match parse_command(name) {
                 Some(SlashCommand::PlanAccept | SlashCommand::PlanReject) => {
                     model.snapshot.pending_plan
@@ -208,12 +212,28 @@ impl Picker {
             })
             .map(|(name, help)| (name.to_string(), help.to_string()))
             .chain(prompts(model, draft))
-            .collect()
+            .collect::<Rows>();
+        ranked(rows, draft)
     }
 }
 
+fn ranked(mut rows: Rows, draft: &str) -> Rows {
+    let typed = draft.trim_end().to_lowercase();
+    rows.sort_by_key(|(name, _)| {
+        let name = name.trim_end().to_lowercase();
+        if name == typed {
+            0
+        } else if name.starts_with(&typed) {
+            1
+        } else {
+            2
+        }
+    });
+    rows
+}
+
 fn prompts(model: &Model, draft: &str) -> Rows {
-    if draft.contains(char::is_whitespace) {
+    if !draft.starts_with('/') || draft.contains(char::is_whitespace) {
         return Vec::new();
     }
     model
@@ -222,12 +242,6 @@ fn prompts(model: &Model, draft: &str) -> Rows {
         .filter(|offer| offer.kind == OfferKind::Prompt && offer.insert.starts_with(draft))
         .map(|offer| (format!("{} ", offer.insert), offer.about.clone()))
         .collect()
-}
-
-fn prompt_row(model: &Model, value: &str) -> bool {
-    model.offers.iter().any(|offer| {
-        offer.kind == OfferKind::Prompt && value.strip_suffix(' ') == Some(offer.insert.as_str())
-    })
 }
 
 fn resources(model: &Model, query: &str) -> Rows {

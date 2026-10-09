@@ -87,7 +87,13 @@ impl SessionDriver {
                 round: None,
                 calls: Vec::new(),
             });
-            self.abort("process stopped before the turn finished", None)?;
+            self.abort(
+                &crate::tools::Abort {
+                    code: crate::tools::AbortCode::Interrupted,
+                    reason: "process stopped before the turn finished".to_string(),
+                },
+                None,
+            )?;
             if let Some(work) = &mut self.work
                 && !work.terminal()
             {

@@ -33,7 +33,7 @@ impl Drop for Guard {
 impl<P: Provider> Run<P> {
     pub(super) async fn execute(mut self, sender: UnboundedSender<Event>) -> Done {
         let id = self.record.id.to_string();
-        let emit = move |event: &Event| {
+        let emit = |event: &Event| {
             drop(sender.send(Event::Child {
                 id: id.clone(),
                 event: Box::new(event.clone()),
@@ -43,6 +43,16 @@ impl<P: Provider> Run<P> {
         let access = self.record.access;
         let (state, usage) = self.outcome_state(outcome, access);
         self.record.state = state;
+        if let Some(reason) = unfinished_reason(&self.record.state) {
+            let code = match self.record.state {
+                ChildState::Interrupted(_) => crate::tools::AbortCode::Interrupted,
+                ChildState::Running
+                | ChildState::Completed(_)
+                | ChildState::Aborted(_)
+                | ChildState::Failed(_) => crate::tools::AbortCode::Error,
+            };
+            emit(&Event::Aborted { reason, code });
+        }
         let usage = self.reported_usage(usage);
         let paths = match access {
             Access::Implement => Loop::<P>::touched_at(self.child.session.path()),
@@ -152,4 +162,19 @@ impl<P: Provider> Run<P> {
         }
         usage
     }
+}
+
+fn unfinished_reason(state: &ChildState) -> Option<String> {
+    let (label, result) = match state {
+        ChildState::Running | ChildState::Completed(_) => return None,
+        ChildState::Aborted(result) => ("aborted", result),
+        ChildState::Failed(result) => ("failed", result),
+        ChildState::Interrupted(result) => ("interrupted", result),
+    };
+    Some(
+        result
+            .diagnostic
+            .clone()
+            .unwrap_or_else(|| label.to_string()),
+    )
 }

@@ -19,7 +19,7 @@ export ANTHROPIC_API_KEY=...
 summonr anthropic -p "say hi"
 ```
 
-`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists every endpoint with its key status. Any OpenAI-compatible server is one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
+`summonr login NAME` stores a key or signs in to a coding plan. `summonr endpoints` lists every endpoint with its key status. Add any OpenAI-compatible server with `summonr login NAME --url URL [--model M]`, and remove it with `summonr logout NAME --remove`. The same server can be one `[endpoint.NAME]` table in `~/.summonr/config.toml` with `base_url`, `model`, and `api_key`.
 
 ## Drive it from a script
 
@@ -43,8 +43,8 @@ summonr anthropic --goal "make cargo test pass" --max-secs 1800 --json
 | --- | --- |
 | 0 | Done. In goal and step modes, the work completed. |
 | 1 | Harness error: bad arguments, config, or an internal failure. |
-| 2 | The check failed. |
-| 3 | Stopped short: budget, stall, or aborted turn. |
+| 2 | The check failed, including when the budget ran out. |
+| 3 | Stopped short with no check configured, or the check passed but the goal was not met. |
 
 Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell commands, `--worktree` to work on a separate git branch, and `--steps PLAN.md` to run a numbered plan with a check per step. `summonr diff --turn last --json` shows what the last turn changed. `summonr acp` serves the Agent Client Protocol for editors.
 
@@ -52,7 +52,7 @@ Useful flags: `--plan` for a read-only run, `--sandbox` to contain shell command
 
 When the workspace is trusted, summonr reads `AGENTS.md`, `CLAUDE.md`, and `SYSTEM.md` at the workspace root. A home `~/.summonr/SYSTEM.md` replaces the built-in preamble. A workspace `SYSTEM.md` is appended after it. `--no-trust` ignores the workspace files.
 
-An implement child works in `<repo>-deltas/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
+An implement child works in `<repo>-deltas/<id>`. That checkout shares the parent's `target/` and `node_modules`. The parent applies each finished child's edits on its own. When two children change the same lines, that checkout stays on disk, and summonr never deletes it. A research child stays on the parent workspace. `--worktree` still isolates the whole session in a git worktree.
 
 ## Extend it
 
@@ -62,7 +62,7 @@ summonr loads no third-party code into its process. Add capability from outside:
 | --- | --- |
 | A skill | `~/.summonr/skills/NAME/SKILL.md` |
 | An MCP server | `summonr mcp add NAME -- CMD`, or a `[mcp.NAME]` table in `~/.summonr/config.toml` |
-| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command that reads JSON on stdin |
+| A hook | `[hooks]` in `~/.summonr/config.toml`: `pre_tool`, `post_tool`, `compact`, or `stop`, each a shell command (or a Claude Code hook with `dialect = "claude"`) that reads JSON on stdin |
 | A CLI | Any program on `PATH`; the model calls it through `run_command` |
 | A plugin | `summonr install PATH` for a plugin in the Claude Code layout |
 

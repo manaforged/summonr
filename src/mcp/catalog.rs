@@ -24,13 +24,20 @@ impl Listing {
     }
 }
 
-fn path(key: &str) -> Option<PathBuf> {
+const LISTING: &str = "json";
+const FAILURE: &str = "failed";
+
+fn file(key: &str, extension: &str) -> Option<PathBuf> {
     Some(
         crate::prompt::summonr_home()
             .ok()?
             .join("mcp")
-            .join(format!("{key}.json")),
+            .join(format!("{key}.{extension}")),
     )
+}
+
+fn path(key: &str) -> Option<PathBuf> {
+    file(key, LISTING)
 }
 
 pub(super) fn load(key: &str) -> Option<Listing> {
@@ -41,10 +48,28 @@ pub(super) fn load(key: &str) -> Option<Listing> {
 }
 
 pub(super) fn save(key: &str, listing: &Listing) {
+    if let Some(failed) = file(key, FAILURE) {
+        drop(std::fs::remove_file(failed));
+    }
     if load(key).is_some_and(|cached| cached == *listing) {
         return;
     }
     if let (Some(path), Ok(text)) = (path(key), serde_json::to_string(listing)) {
         drop(crate::durable::store::write(&path, text));
     }
+}
+
+pub(super) fn fail(key: &str, error: &str) {
+    if let Some(path) = file(key, FAILURE) {
+        drop(crate::durable::store::write(
+            &path,
+            error.lines().next().unwrap_or_default(),
+        ));
+    }
+}
+
+pub(super) fn failure(key: &str) -> Option<String> {
+    let text = crate::durable::store::read_or_empty(&file(key, FAILURE)?).ok()?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }

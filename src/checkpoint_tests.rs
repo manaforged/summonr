@@ -48,3 +48,39 @@ fn restoring_a_turn_removes_unicode_additions_and_preserves_the_user_index() -> 
     assert_eq!(std::fs::read(workspace.join(".git/index"))?, index);
     Ok(())
 }
+
+#[test]
+fn a_recorded_output_file_stays_out_of_every_checkpoint() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("a.txt"), "a\n")?;
+    std::fs::write(workspace.join("events.jsonl"), "{}\n")?;
+    let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
+    std::fs::write(&checkpoints.skip, "events.jsonl\n")?;
+    checkpoints.capture()?;
+    let tree = checkpoints.trees().pop().unwrap();
+    let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
+    assert!(listed.contains("a.txt"), "{listed}");
+    assert!(!listed.contains("events.jsonl"), "{listed}");
+    Ok(())
+}
+
+#[test]
+fn a_file_staged_before_it_was_skipped_leaves_the_next_checkpoint() -> Result<()> {
+    let dir = tempfile::tempdir()?;
+    let workspace = dir.path();
+    git_env(workspace, &[], &["init", "-q"])?;
+    std::fs::write(workspace.join("diff.json"), "{}\n")?;
+    let checkpoints = Checkpoints::open(workspace, "s1").unwrap();
+    checkpoints.capture()?;
+    std::fs::write(workspace.join("diff.json"), "")?;
+    std::fs::write(&checkpoints.skip, "diff.json\n")?;
+    let later = Checkpoints::open(workspace, "s2").unwrap();
+    later.capture()?;
+    checkpoints.capture()?;
+    let tree = checkpoints.trees().pop().unwrap();
+    let listed = git_env(workspace, &[], &["ls-tree", "--name-only", &tree])?;
+    assert!(!listed.contains("diff.json"), "{listed}");
+    Ok(())
+}

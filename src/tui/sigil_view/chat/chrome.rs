@@ -11,13 +11,14 @@ impl Model {
         let percent = if window == 0 {
             0
         } else {
-            u64::from(used.min(window)) * 100 / u64::from(window)
+            (u64::from(used.min(window)) * 100).div_ceil(u64::from(window))
         };
         (used, window, percent)
     }
 
-    pub(in crate::tui::sigil_view) fn context_percent(&self) -> u64 {
-        self.fill().2
+    pub(in crate::tui::sigil_view) fn context_percent(&self) -> Option<u64> {
+        let (_, window, percent) = self.fill();
+        (window > 0).then_some(percent)
     }
 
     pub(in crate::tui::sigil_view) fn cache_percent(&self) -> u64 {

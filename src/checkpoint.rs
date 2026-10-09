@@ -10,6 +10,7 @@ pub(crate) struct Checkpoints {
     root: PathBuf,
     index: PathBuf,
     log: PathBuf,
+    skip: PathBuf,
 }
 
 impl Checkpoints {
@@ -25,6 +26,7 @@ impl Checkpoints {
             root: workspace.to_path_buf(),
             index,
             log: dir.join(format!("{session}.checkpoints")),
+            skip: dir.join("skip"),
         })
     }
 
@@ -82,15 +84,49 @@ impl Checkpoints {
         Ok(paths)
     }
 
-    fn tree(&self) -> Result<String> {
+    fn skipped(&self) -> Result<Vec<String>> {
+        let mut paths: Vec<String> = std::fs::read_to_string(&self.skip)
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        let known = paths.len();
+        for path in crate::durable::tree::own_files(&self.root) {
+            if !paths.contains(&path) {
+                paths.push(path);
+            }
+        }
+        if paths.len() > known {
+            store::write(&self.skip, format!("{}\n", paths.join("\n")))?;
+        }
+        Ok(paths)
+    }
+
+    pub(crate) fn tree(&self) -> Result<String> {
         let env = self.env();
-        git_env(&self.root, &env, &["add", "-A", "--", "."])?;
+        let skipped = self.skipped()?;
+        let excluded: Vec<String> = skipped
+            .iter()
+            .map(|path| format!(":(exclude,literal){path}"))
+            .collect();
+        let mut add = vec!["add", "-A", "--", "."];
+        add.extend(excluded.iter().map(String::as_str));
+        git_env(&self.root, &env, &add)?;
+        if !skipped.is_empty() {
+            let literal: Vec<String> = skipped
+                .iter()
+                .map(|path| format!(":(literal){path}"))
+                .collect();
+            let mut drop = vec!["rm", "--cached", "-f", "-q", "--ignore-unmatch", "--"];
+            drop.extend(literal.iter().map(String::as_str));
+            git_env(&self.root, &env, &drop)?;
+        }
         Ok(git_env(&self.root, &env, &["write-tree"])?
             .trim()
             .to_string())
     }
 
-    fn trees(&self) -> Vec<String> {
+    pub(crate) fn trees(&self) -> Vec<String> {
         std::fs::read_to_string(&self.log)
             .unwrap_or_default()
             .lines()

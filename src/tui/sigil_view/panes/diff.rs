@@ -44,11 +44,19 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             }
         };
         let hunks = app.hunks();
+        if text.trim().is_empty() {
+            return column.child(
+                sigil::kernel::text("no changes left in this file")
+                    .nowrap()
+                    .font_size(12.0)
+                    .text_color(sigil::prelude::Token::Gray11),
+            );
+        }
         if hunks.is_empty() {
             return column.child(crate::tui::sigil_view::chat::entry::patch_view(
                 &app,
                 text.clone(),
-                model.prefs.diff_layout,
+                layout(&app),
             ));
         }
         let cursor = app.hunk_cursor.peek();
@@ -56,7 +64,7 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
             "{} · {}",
             crate::text::plural(hunks.len(), "hunk"),
             Hints::new()
-                .key(Key::Enter, "accept")
+                .key(Key::Fixed("a"), "accept")
                 .key(Key::Fixed("r"), "revert")
                 .key(Key::Fixed("n"), "note")
                 .text(&model.prefs.hotkeys)
@@ -110,6 +118,16 @@ pub(super) fn diff(app: App, mut column: NodeBuilder) -> NodeBuilder {
     column
 }
 
+fn layout(app: &App) -> crate::prefs::DiffLayout {
+    let chosen = app.model.peek().prefs.diff_layout;
+    let cols = app.layout.peek().split(app.viewport.peek().0).1;
+    if cols < crate::limits::limits().diff_split_min_cols {
+        crate::prefs::DiffLayout::Unified
+    } else {
+        chosen
+    }
+}
+
 fn hunk_view(
     app: &App,
     path: &str,
@@ -117,7 +135,6 @@ fn hunk_view(
     hunk: &crate::hunks::Hunk,
     focused: bool,
 ) -> NodeBuilder {
-    let model = app.model.get();
     let note = app.hunk_note(path, &hunk.id);
     let (verdict, tone) = match note.as_ref().and_then(|note| note.verdict) {
         Some(crate::hunks::Verdict::Accepted) => ("accepted", Tone::Success),
@@ -148,16 +165,11 @@ fn hunk_view(
                         menu.hunk_context(index);
                     } else {
                         menu.hunk_cursor.set(index);
+                        menu.focus_pane(true);
                     }
                     event.stop_propagation();
                 }),
-        )
-        .child(crate::tui::sigil_view::chat::entry::patch_view(
-            app,
-            hunk.body().to_string(),
-            model.prefs.diff_layout,
-        ));
-    drop(model);
+        );
     if editing {
         let commit = app.clone();
         let edit = app.clone();
@@ -181,7 +193,7 @@ fn hunk_view(
             sigil::kernel::text(format!(
                 "{} · sent with your next prompt",
                 Hints::new()
-                    .key(Key::Fixed("ctrl+enter"), "save")
+                    .key(Key::Enter, "save")
                     .key(Key::Esc, "cancel")
                     .text(&app.model.peek().prefs.hotkeys)
             ))
@@ -204,5 +216,9 @@ fn hunk_view(
                 ),
         );
     }
-    card
+    card.child(crate::tui::sigil_view::chat::entry::patch_view(
+        app,
+        hunk.body().to_string(),
+        layout(app),
+    ))
 }

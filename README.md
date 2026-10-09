@@ -95,25 +95,34 @@ echo 'check = "cargo test"' > .summonr/check.toml
 summonr anthropic --goal "make cargo test pass"
 ```
 
-`--goal` continues until the check exits 0 and a second model call agrees that the goal is met. Exit codes: 0 done, 1 harness error, 2 check still red, 3 stopped short on a budget, a stall, or an abort. CI can branch on them.
+`--goal` continues until the check exits 0 and a second model call agrees that the goal is met. Exit codes: 0 done, 1 harness error, 2 check still red (summonr runs the check once more when a budget or an abort stops the run), 3 stopped short with no check configured, or with a passing check and an unmet goal. CI can branch on them.
 
 Next commands:
 
 - `/undo` drops the last turn and restores the files. Every turn is a git checkpoint.
 - Child sessions are on by default in interactive sessions (`task` module): batch, background, poll, and kill. Children run on the same seat as the parent unless the workflow assigns the role elsewhere; `/modules task off` disables.
-- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk and the other children still land. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
+- An implement child works in `<repo>-deltas/<id>`, a checkout beside the repo. It shares `target/`, `node_modules`, the paths listed in `.summonr/linked` and `.agents/linked`, and the parent's git objects. It does not add a branch. Sharing those directories skips a second copy of the build cache. It does not limit how many checks run at once. The parent applies the child's edits. When two children change the same lines, that checkout stays on disk, shows as a conflict, and the other children still land. summonr never deletes a kept checkout. A research child stays in the directory you launched. `--worktree` still isolates the whole session on branch `summonr/<id>` under `<repo>-worktrees/<id>`.
 - A `[mcp.NAME]` table in `~/.summonr/config.toml` connects an MCP server. The server starts on its first tool call and stops when idle.
 - `summonr acp` lets an editor that speaks the Agent Client Protocol drive a session.
 - `summonr export` writes a session as Markdown.
 - `summonr endpoints` lists every endpoint with its key status.
 
-Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `qwen-plan`, `dashscope`, `kimi`, `minimax-plan`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more: every coding plan and inference host is one row in the provider table (`src/endpoint/presets.toml`). Any OpenAI-compatible server is one table in `~/.summonr/config.toml`:
+Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, `qwen-plan`, `dashscope`, `kimi`, `minimax-plan`, `tencent-plan`, `volcengine-plan`, `nvidia`, `huggingface`, `cohere`, `perplexity`, `ollama`, `lmstudio`, `openrouter`, `copilot`, `together`, `fireworks`, `deepinfra`, and more: every coding plan and inference host is one row in the provider table (`src/endpoint/presets.toml`). Add any OpenAI-compatible server with one command:
+
+```sh
+summonr login local --url http://127.0.0.1:8080/v1   # picks the model when the server lists one
+summonr login local --model qwen3-coder              # change its model
+summonr login local --default                        # start on it when no endpoint is named
+summonr local
+summonr logout local --remove                        # remove it again
+```
+
+Pass `--model NAME` when the server lists several models. Or write the table in `~/.summonr/config.toml`:
 
 ```toml
 [endpoint.local]
 base_url = "http://127.0.0.1:8080/v1"
 model = "qwen3"
-api_key = "local"
 ```
 
 Optional capabilities are compiled modules; `summonr modules` lists them. You extend summonr outside the process with a skill file, an MCP server, a hook, or a CLI on `PATH`. `summonr install PATH` installs a plugin in the Claude Code layout: its skills, MCP servers, hooks, and `bin/`. See [Extending summonr](docs/guide/extending.md).
@@ -166,11 +175,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-719 public items (72 types, 96 functions, 117 methods, 257 fields, 176 variants, 1 constant) at 719 paths; 0 are re-export aliases. 364 trait impl lines, 33 inherent impl lines. 23 modules, 0 re-export only.
+759 public items (76 types, 105 functions, 122 methods, 267 fields, 188 variants, 1 constant) at 759 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 480 | 40 | 48 | 94 | 0 |
+| `summonr` | 512 | 42 | 56 | 99 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |
@@ -181,15 +190,16 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 | `summonr::classify::patch` | 6 | 1 | 3 | 0 | 0 |
 | `summonr::classify::sets` | 5 | 0 | 4 | 0 | 0 |
 | `summonr::classify::sweep` | 2 | 0 | 2 | 0 | 0 |
-| `summonr::diff` | 14 | 2 | 3 | 3 | 0 |
+| `summonr::diff` | 20 | 3 | 5 | 3 | 0 |
 | `summonr::limits` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::mail` | 0 | 0 | 0 | 0 | 0 |
 | `summonr::mail::cli` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::modules` | 20 | 3 | 2 | 5 | 0 |
-| `summonr::prefs` | 20 | 2 | 3 | 1 | 0 |
+| `summonr::prefs` | 19 | 2 | 2 | 1 | 0 |
 | `summonr::secret` | 10 | 1 | 2 | 1 | 0 |
 | `summonr::splash` | 14 | 1 | 1 | 2 | 0 |
 | `summonr::steps` | 16 | 3 | 3 | 1 | 0 |
+| `summonr::supervise` | 3 | 1 | 0 | 0 | 0 |
 | `summonr::tui` | 23 | 3 | 3 | 3 | 0 |
 | `summonr::tui::hub` | 4 | 2 | 0 | 0 | 0 |
 | `summonr::workflow` | 9 | 2 | 3 | 1 | 0 |

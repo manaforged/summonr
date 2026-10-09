@@ -48,6 +48,8 @@ pub(crate) fn a_large_server_is_found_and_called_through_the_mcp_tool() {
     assert_eq!(sent.len(), 1, "{received:?}");
     assert_eq!(sent[0]["params"]["name"], json!("echo"));
     assert_eq!(sent[0]["params"]["arguments"], json!({"text": "deep"}));
+    let printed = crate::support::read(&session.file("stderr"));
+    assert!(printed.contains("→ mcp fixture1:echo"), "{printed}");
 }
 
 #[cfg(unix)]
@@ -75,4 +77,22 @@ pub(crate) fn a_hook_sees_the_tool_behind_the_mcp_tool() {
     let input: Value = serde_json::from_str(&std::fs::read_to_string(&seen).unwrap()).unwrap();
     assert_eq!(input["tool"], json!("fixture1__echo"), "{input}");
     assert_eq!(input["arguments"], json!({"text": "hooked"}), "{input}");
+}
+
+pub(crate) fn arguments_given_beside_the_tool_name_reach_the_server() {
+    let session = Session::new();
+    let model = Model::start(vec![
+        Step::Call("mcp", json!({"tool": "fixture1__echo", "text": "flat"})),
+        Step::Call(
+            "mcp",
+            json!({"tool": "fixture1__echo", "arguments": "{\"text\":\"encoded\"}"}),
+        ),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, &large(&session), &[]);
+    let received = session.received("fixture1");
+    let sent = calls(&received, "tools/call");
+    assert_eq!(sent.len(), 2, "{received:?}");
+    assert_eq!(sent[0]["params"]["arguments"], json!({"text": "flat"}));
+    assert_eq!(sent[1]["params"]["arguments"], json!({"text": "encoded"}));
 }

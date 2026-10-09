@@ -308,7 +308,6 @@ impl Worker {
         self.loop_.set_effort(effort);
         self.loop_.set_price(endpoint.price);
         self.loop_.set_provider(provider, endpoint.model);
-        self.remember_seat();
     }
 
     pub(super) fn remember_seat(&self) {
@@ -319,21 +318,29 @@ impl Worker {
     }
 
     pub(super) fn send_settings(&self) {
-        drop(self.ui.send(Msg::Settings(Snapshot {
-            model: self.loop_.model().to_string(),
-            relay: self.relay.clone(),
-            plan: self.loop_.is_plan(),
-            work: self.loop_.is_work(),
-            goal: self.loop_.is_goal(),
-            effort: self.loop_.effort(),
-            levels: self.levels.clone(),
-            pending_plan: self.loop_.pending_plan(),
-            verify: verify_display(self.loop_.verify_commands()),
-            strict: self.loop_.is_strict(),
-            endpoint: self.endpoint.clone(),
-            context_window: self.loop_.context_window(),
-            workflow: self.loop_.workflow(),
-        })));
+        drop(
+            self.ui.send(Msg::Settings(Snapshot {
+                model: self.loop_.model().to_string(),
+                relay: self.relay.clone(),
+                plan: self.loop_.is_plan(),
+                work: self.loop_.is_work(),
+                goal: self.loop_.is_goal(),
+                effort: self.loop_.effort(),
+                levels: self.levels.clone(),
+                pending_plan: self.loop_.pending_plan(),
+                verify: verify_display(self.loop_.verify_commands()),
+                strict: self.loop_.is_strict(),
+                endpoint: self.endpoint.clone(),
+                context_window: self.loop_.context_window(),
+                workflow: self.loop_.workflow(),
+                unseated: crate::endpoint::resolve(
+                    Some(&self.endpoint),
+                    None,
+                    crate::endpoint::Need::Seat,
+                )
+                .is_err(),
+            })),
+        );
     }
 }
 
@@ -344,6 +351,12 @@ pub(super) fn set_run_mode(
 ) {
     if loop_.mode() == mode {
         return;
+    }
+    if loop_.is_plan()
+        && mode == crate::RunMode::Auto
+        && let Err(error) = loop_.leave_plan()
+    {
+        drop(ui.send(Msg::System(error.to_string())));
     }
     if let Err(error) = loop_.set_mode(mode) {
         drop(ui.send(Msg::System(format!("sandbox unavailable: {error}"))));
@@ -362,7 +375,9 @@ pub(super) fn announce_run_mode(
         "Work needs a plan. Plan mode: write one, then /plan accept."
     } else {
         match mode {
-            crate::RunMode::Plan => "plan mode: read-only; the reply is saved to .summonr/plan.md",
+            crate::RunMode::Plan => {
+                "plan mode: read-only; /plan accept runs the plan, /goal TEXT starts a goal"
+            }
             crate::RunMode::Work => {
                 "work mode: execute the accepted plan; verify at the end of the turn"
             }

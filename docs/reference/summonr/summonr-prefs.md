@@ -6,7 +6,6 @@
 | [`Hotkey`](#hotkey) | enum |  |
 | [`load`](#load) | fn |  |
 | [`path`](#path) | fn |  |
-| [`set_last_endpoint`](#set_last_endpoint) | fn |  |
 
 ## Structs
 
@@ -62,11 +61,6 @@
 ### `path`
 
 <pre>pub fn <a href="#path">path</a>() -&gt; Option&lt;PathBuf&gt;</pre>
-
-
-### `set_last_endpoint`
-
-<pre>pub fn <a href="#set_last_endpoint">set_last_endpoint</a>(name: &amp;str)</pre>
 
 
 ---

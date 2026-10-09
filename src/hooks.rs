@@ -6,6 +6,8 @@ use serde_json::{Value, json};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+mod config;
+
 const OUTPUT_MAX: u64 = 64 * 1024;
 const CLAUDE_NAMES: [(&str, &str); 8] = [
     ("run_command", "Bash"),
@@ -69,7 +71,8 @@ impl HookEvent {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub(crate) enum Dialect {
     #[default]
     Summonr,
@@ -120,10 +123,10 @@ pub(crate) struct Hook {
 }
 
 impl Hook {
-    fn plain(command: String) -> Self {
+    fn plain(command: String, dialect: Dialect) -> Self {
         Self {
             command,
-            dialect: Dialect::Summonr,
+            dialect,
             matcher: None,
             root: None,
         }
@@ -173,6 +176,7 @@ impl Hook {
             .args(crate::shell::arguments(&self.command, workspace))
             .current_dir(workspace)
             .env("CLAUDE_PROJECT_DIR", workspace)
+            .envs(crate::prompt::summonr_home().map(|home| ("SUMMONR_HOME", home)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -284,43 +288,6 @@ const fn index(event: HookEvent) -> usize {
         HookEvent::PostTool => 1,
         HookEvent::Compact => 2,
         HookEvent::Stop => 3,
-    }
-}
-
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum Commands {
-    One(String),
-    Many(Vec<String>),
-}
-
-impl<'de> Deserialize<'de> for Hooks {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        struct Raw {
-            pre_tool: Option<Commands>,
-            post_tool: Option<Commands>,
-            compact: Option<Commands>,
-            stop: Option<Commands>,
-        }
-        let raw = Raw::deserialize(deserializer)?;
-        let mut hooks = Self::default();
-        for (event, commands) in [
-            (HookEvent::PreTool, raw.pre_tool),
-            (HookEvent::PostTool, raw.post_tool),
-            (HookEvent::Compact, raw.compact),
-            (HookEvent::Stop, raw.stop),
-        ] {
-            let list = match commands {
-                Some(Commands::One(command)) => vec![command],
-                Some(Commands::Many(commands)) => commands,
-                None => Vec::new(),
-            };
-            for command in list {
-                hooks.push(event, Hook::plain(command));
-            }
-        }
-        Ok(hooks)
     }
 }
 

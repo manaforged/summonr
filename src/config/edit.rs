@@ -23,12 +23,7 @@ pub(crate) fn save_prefs(path: &Path, prefs: &Prefs) -> Result<()> {
             hotkeys.insert(action.name(), binding.into());
         }
         document["hotkeys"] = toml_edit::Item::Value(toml_edit::Value::InlineTable(hotkeys));
-        match &prefs.last_endpoint {
-            Some(name) => document["last_endpoint"] = value(name),
-            None => {
-                document.as_table_mut().remove("last_endpoint");
-            }
-        }
+        document.as_table_mut().remove("last_endpoint");
         Ok(true)
     })
     .map(drop)
@@ -65,30 +60,51 @@ pub(crate) fn save_workflow(path: &Path, workflow: &Workflow) -> Result<()> {
     .map(drop)
 }
 
-pub(crate) fn save_mcp_server(path: &Path, name: &str, table: toml_edit::Item) -> Result<bool> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Section {
+    Mcp,
+    Endpoint,
+}
+
+impl Section {
+    const fn key(self) -> &'static str {
+        match self {
+            Self::Mcp => "mcp",
+            Self::Endpoint => "endpoint",
+        }
+    }
+}
+
+pub(crate) fn save_named(
+    path: &Path,
+    section: Section,
+    name: &str,
+    table: toml_edit::Item,
+) -> Result<bool> {
+    let key = section.key();
     update(path, |document| {
         if document
-            .get("mcp")
-            .and_then(|mcp| mcp.get(name))
+            .get(key)
+            .and_then(|tables| tables.get(name))
             .is_some_and(|existing| !existing.is_none())
         {
             return Ok(false);
         }
-        if !document.get("mcp").is_some_and(toml_edit::Item::is_table) {
-            let mut mcp = toml_edit::Table::new();
-            mcp.set_implicit(true);
-            document["mcp"] = toml_edit::Item::Table(mcp);
+        if !document.get(key).is_some_and(toml_edit::Item::is_table) {
+            let mut tables = toml_edit::Table::new();
+            tables.set_implicit(true);
+            document[key] = toml_edit::Item::Table(tables);
         }
-        document["mcp"][name] = table;
+        document[key][name] = table;
         Ok(true)
     })
 }
 
-pub(crate) fn remove_mcp_server(path: &Path, name: &str) -> Result<bool> {
+pub(crate) fn remove_named(path: &Path, section: Section, name: &str) -> Result<bool> {
     update(path, |document| {
-        Ok(document["mcp"]
+        Ok(document[section.key()]
             .as_table_mut()
-            .is_some_and(|mcp| mcp.remove(name).is_some()))
+            .is_some_and(|tables| tables.remove(name).is_some()))
     })
 }
 

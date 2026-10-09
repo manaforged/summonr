@@ -10,6 +10,16 @@ impl<P: Provider> Loop<P> {
             .session
             .completion_checks()
             .map_err(super::session_err)?;
+        if self.check_file_drifted() {
+            self.restore_check_file();
+            self.push_event(
+                events,
+                emit,
+                Event::Note {
+                    text: "the check file changed during this run; summonr put it back and verified with the check it loaded at start".to_string(),
+                },
+            )?;
+        }
         let mut checks = Vec::new();
         for check in declared {
             let command = check.command.clone();
@@ -65,9 +75,39 @@ impl<P: Provider> Loop<P> {
         Ok(checks)
     }
 
+    pub async fn stop_work(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<i32> {
+        if !self.work_progress()?.terminal() {
+            let checks = self.run_verify(&mut Vec::new(), &mut emit).await?;
+            if !checks.is_empty() {
+                self.session
+                    .record_check(checks.iter().all(|check| check.passed))
+                    .map_err(super::session_err)?;
+            }
+        }
+        self.abandon_work(reason)?;
+        let progress = self.work_progress()?;
+        emit(&Event::Work {
+            progress: progress.clone(),
+        });
+        Ok(progress.exit_code().unwrap_or(3))
+    }
+
+    fn restore_check_file(&self) {
+        let path = crate::verify::check_path(&self.workspace);
+        drop(match &self.check_file {
+            Some(bytes) => std::fs::write(path, bytes),
+            None => std::fs::remove_file(path),
+        });
+    }
+
+    fn check_file_drifted(&self) -> bool {
+        self.verify.is_some()
+            && std::fs::read(crate::verify::check_path(&self.workspace)).ok() != self.check_file
+    }
+
     pub(super) async fn abort_turn(
         &mut self,
-        abort_reason: Option<String>,
+        abort: Abort,
         events: &mut Vec<Event>,
         mut emit: impl FnMut(&Event),
         usage: &mut Usage,
@@ -75,17 +115,16 @@ impl<P: Provider> Loop<P> {
         pre: &mut Pretask,
     ) -> Result<Turn> {
         let snapshot = self.settle(pre, events, &mut emit).await?;
-        let reason = abort_reason.unwrap_or_else(|| "turn aborted".to_string());
         let receipt = Receipt::aborted(snapshot, events);
-        drop(self.kill_spawned(&reason, usage).await?);
+        drop(self.kill_spawned(&abort.reason, usage).await?);
         self.tools.stop_jobs()?;
         self.session
-            .abort(&reason, Some(&receipt))
+            .abort(&abort, Some(&receipt))
             .map_err(super::session_err)?;
         self.emit_records(events, &mut emit)?;
         self.sync_usage(&mut emit);
         Ok(Turn {
-            text: reason,
+            text: abort.reason,
             events: std::mem::take(events),
             rounds: reached,
             usage: std::mem::take(usage),

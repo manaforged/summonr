@@ -13,7 +13,7 @@ impl<P: Provider> Loop<P> {
             .prepare_verdict(checks.iter().all(|check| check.passed))
             .map_err(super::session_err)?;
         if let Some(output) = &verdict.diagnostic {
-            let command = "workspace candidate unchanged".to_string();
+            let command = "workspace changed after the check ran".to_string();
             self.push_event(
                 events,
                 emit,
@@ -41,8 +41,8 @@ impl<P: Provider> Loop<P> {
         let Some(shared) = self.steer_shared.clone() else {
             return Ok(GrantAnswer::Deny);
         };
-        let detail: String = detail.chars().take(160).collect();
-        let _blocked = self.herdr.blocked(&detail);
+        let status: String = detail.chars().take(160).collect();
+        let _blocked = self.herdr.blocked(&status);
         self.push_event(
             events,
             emit,
@@ -135,7 +135,7 @@ impl<P: Provider> Loop<P> {
     ) -> Result<()> {
         let text = match grant {
             Grant::Write(path) | Grant::Guarded(path) => self.grant_write(path, standing)?,
-            Grant::Danger(_) => {
+            Grant::Danger { .. } => {
                 self.tools.approve_once(Approval::Policy)?;
                 return Ok(());
             }

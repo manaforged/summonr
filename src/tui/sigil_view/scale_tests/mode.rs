@@ -60,7 +60,9 @@ fn tab_cycles_back_to_the_lowest_supported_level() {
 
 #[test]
 fn slash_plan_is_refused_while_plan_mode_is_off() {
-    let lines = frame_with(busy_info(), 100, 24, State::Idle, |app| {
+    let mut info = busy_info();
+    info.prefs.plan_mode = false;
+    let lines = frame_with(info, 100, 24, State::Idle, |app| {
         app.replace("/plan".to_owned());
         app.submit();
     });

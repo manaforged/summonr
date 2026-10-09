@@ -15,10 +15,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             .unwrap_or_default(),
         configured: endpoint.api_key.is_some(),
         source: endpoint.source,
-        setup: preset(name)
-            .map(|preset| preset.missing.replace("NAME", name))
-            .filter(|text| !text.is_empty())
-            .unwrap_or_else(|| format!("run `summonr login {name}` to store a key")),
+        setup: missing_setup(name, &endpoint),
         env: (endpoint.source == Some(Source::Env))
             .then(|| preset(name).or_else(|| endpoint.base_url.as_deref().and_then(hosted)))
             .flatten()
@@ -28,6 +25,10 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
                     .copied()
                     .find(|key| env_key(&[key]).is_some())
             }),
+        model: endpoint.model.clone(),
+        base_url: endpoint.base_url.clone(),
+        own: preset(name).is_none(),
+        env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
         group: login_group(name, &endpoint),
     };
     if let Some(spec) = endpoint.oauth.as_ref().filter(|spec| flow(spec).signs_in()) {
@@ -52,6 +53,20 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
         };
     }
     Ok(info)
+}
+
+fn missing_setup(name: &str, endpoint: &Endpoint) -> String {
+    let written = preset(name)
+        .map(|row| row.missing.replace("NAME", name))
+        .filter(|text| !text.is_empty());
+    match written {
+        Some(text) => text,
+        None if endpoint.keyless() && !endpoint.model.is_empty() => State::NoKey.word().to_string(),
+        None if endpoint.keyless() => {
+            format!("run `summonr {name} --model NAME` or set model in config.toml")
+        }
+        None => format!("run `summonr login {name}` to store a key"),
+    }
 }
 
 fn offered_login(name: &str, endpoint: &Endpoint) -> Option<crate::config::OAuth> {
@@ -109,18 +124,34 @@ pub async fn check_key(name: &str, key: &str) -> Result<Source> {
     save_key(name, key)
 }
 
-pub(crate) fn forget_key(name: &str) -> Result<bool> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Forgot {
+    Nothing,
+    Key,
+    Token,
+}
+
+pub(crate) fn forget_key(name: &str) -> Result<Forgot> {
     let stored = secret::forget(name)?;
     let token = secret::forget(&crate::credentials::login_slot(name))?;
     let config = config::remove_key(&config::path()?, name)?;
-    Ok(stored || token || config)
+    Ok(if token {
+        Forgot::Token
+    } else if stored || config {
+        Forgot::Key
+    } else {
+        Forgot::Nothing
+    })
 }
 
 pub fn logout(name: &str) -> Result<String> {
-    let head = if forget_key(name)? {
-        format!("✓ Signed out of {name}.")
-    } else {
-        format!("Nothing is stored for {name}.")
+    let head = match forget_key(name)? {
+        Forgot::Token => format!("✓ Signed out of {name}."),
+        Forgot::Key => format!("✓ Removed the stored key for {name}."),
+        Forgot::Nothing if resolve(Some(name), None, Need::Config)?.keyless() => format!(
+            "{name} needs no key, so nothing was stored. `summonr logout {name} --remove` deletes the endpoint."
+        ),
+        Forgot::Nothing => format!("Nothing is stored for {name}."),
     };
     Ok(match auth_info(name)?.source {
         Some(source) => format!("{head} It now uses the {} key.", source.label()),

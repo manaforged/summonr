@@ -20,10 +20,12 @@ mod link;
 mod manage;
 mod offer;
 mod output;
+mod probe;
 mod status;
 mod tool;
 
 pub(crate) use config::Entry;
+pub use defer::call_label;
 pub(crate) use defer::{Resolved, SEARCH_TOOL, effective};
 pub(crate) use expand::wanted;
 pub use form::{Choice, Field, FieldKind, Form, FormAction, FormAnswer, TextFormat};
@@ -31,6 +33,7 @@ use link::{Gate, Link};
 pub use manage::{McpLaunch, add, remove};
 pub(crate) use offer::{Offer, OfferKind, offers};
 use output::output;
+pub use probe::probe;
 pub use status::{Board, McpState, McpTransport, ServerStatus, status};
 use tool::Tool;
 
@@ -98,8 +101,12 @@ impl Hub {
         }
         hub.notes.extend(failed);
         if !found.waiting.is_empty() {
+            let file = crate::config::path().map_or_else(
+                |_| "config.toml".to_string(),
+                |path| crate::config::tilde(&path),
+            );
             hub.notes.push(format!(
-                "project MCP servers wait for approval: {}. Set `enabled = true` under [mcp.NAME] in ~/.summonr/config.toml to run one",
+                "project MCP servers wait for approval: {}. Set `enabled = true` under [mcp.NAME] in {file} to run one",
                 found.waiting.join(", ")
             ));
         }

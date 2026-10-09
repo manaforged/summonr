@@ -59,7 +59,10 @@ pub(super) struct Args {
     pub(super) prune_worktrees: bool,
     pub(super) login: bool,
     pub(super) key: bool,
+    pub(super) url: Option<String>,
+    pub(super) default: bool,
     pub(super) logout: bool,
+    pub(super) remove: bool,
     pub(super) classify: bool,
     pub(super) questions: Option<String>,
     pub(super) noul: Vec<String>,
@@ -138,16 +141,27 @@ impl Args {
     fn rest(&mut self, arg: &str, command: bool) -> Result<Step> {
         match arg {
             "-p" | "--print" => self.print().map(|()| Step::Next),
-            "-h" | "--help" => exit_help(None),
+            "-h" | "--help" => exit_help(self.verb()),
             "-V" | "--version" => exit_version(),
             "--" => Ok(Step::Rest),
             option if option.starts_with('-') => Err(misplaced(option)),
-            name if self.endpoint_slot(command) && is_endpoint(name) => Ok(Step::Endpoint),
-            word => {
-                self.prompt.push(word.to_string());
-                Ok(Step::Next)
-            }
+            name => self.positional(name, command),
         }
+    }
+
+    fn positional(&mut self, name: &str, command: bool) -> Result<Step> {
+        if self.endpoint_slot(command) && is_endpoint(name) {
+            return Ok(Step::Endpoint);
+        }
+        if self.login && self.endpoint.is_none() {
+            self.endpoint = Some(name.to_string());
+            return Ok(Step::Next);
+        }
+        if self.logout && self.endpoint.is_none() {
+            return Err(unknown(name, unlisted(self.login)));
+        }
+        self.prompt.push(name.to_string());
+        Ok(Step::Next)
     }
 
     fn print(&mut self) -> Result<()> {
@@ -155,17 +169,31 @@ impl Args {
             && self.endpoint.is_none()
             && named(name)
         {
-            return Err(unknown(name, "; a prompt goes after -p"));
+            return Err(unknown(name, unlisted(true)));
         }
         self.print = true;
         Ok(())
+    }
+
+    fn verb(&self) -> Option<&'static str> {
+        SCOPED
+            .iter()
+            .find(|(_, _, active, _)| active(self))
+            .map(|(_, verb, ..)| *verb)
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {
         self.endpoint.is_none() && (command || self.login || self.logout)
     }
 
-    fn check(&self) -> Result<()> {
+    fn check_names(&self) -> Result<()> {
+        if self.login
+            && self.url.is_none()
+            && let Some(name) = self.endpoint.as_deref()
+            && !is_endpoint(name)
+        {
+            return Err(unknown(name, unlisted(true)));
+        }
         if let [name] = self.prompt.as_slice()
             && self.endpoint.is_none()
             && (self.goal.is_some() || self.steps.is_some())
@@ -173,6 +201,11 @@ impl Args {
         {
             return Err(unknown(name, ""));
         }
+        Ok(())
+    }
+
+    fn check(&self) -> Result<()> {
+        self.check_names()?;
         if self.plan && (self.goal.is_some() || self.steps.is_some()) {
             return Err(Error::Config(
                 "--plan denies writes; use it without --goal or --steps".to_string(),
@@ -204,9 +237,17 @@ fn misplaced(option: &str) -> Error {
     )
 }
 
+fn unlisted(login: bool) -> &'static str {
+    if login {
+        "; add a server with `summonr login NAME --url URL [--model NAME]`"
+    } else {
+        ""
+    }
+}
+
 fn unknown(name: &str, tail: &str) -> Error {
     let names = summonr::endpoint_names().unwrap_or_default();
-    let hint = summonr::closest_endpoint(name, &names)
+    let hint = summonr::closest_endpoint(name, &names, summonr::EndpointNear::Typo)
         .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
     Error::Config(format!(
         "unknown endpoint `{name}`: {hint}`summonr endpoints` lists them{tail}"

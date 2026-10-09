@@ -1,5 +1,7 @@
 [[preset]]
 name = "zai"
+label = "Z.ai coding plan (international), GLM-5.3 Flash; same key as glm-intl"
+key_from = "glm-intl"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = ["ZAI_API_KEY", "ZAI_CODING_API_KEY", "ZHIPU_API_KEY"]
@@ -13,6 +15,8 @@ off = "disabled"
 
 [[preset]]
 name = "zai-cn"
+label = "BigModel coding plan (China), GLM-5.3 Flash; same key as glm"
+key_from = "glm"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
 env_keys = ["ZAI_CODING_CN_API_KEY", "GLM_CODING_API_KEY", "GLM_API_KEY"]
@@ -26,20 +30,24 @@ off = "disabled"
 
 [[preset]]
 name = "glm"
+label = "BigModel coding plan (China), GLM-5.3; same key as zai-cn"
+key_from = "zai-cn"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3"
 env_keys = [
-    "ZAI_CODING_API_KEY",
     "GLM_CODING_API_KEY",
-    "ZAI_API_KEY",
+    "ZAI_CODING_API_KEY",
     "GLM_API_KEY",
+    "ZAI_API_KEY",
 ]
-missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+missing = "run `summonr login NAME` or set GLM_CODING_API_KEY"
 opencode_ids = ["zhipuai-coding-plan", "zhipuai", "zai-coding-plan", "zai"]
 plan = true
 
 [[preset]]
 name = "glm-intl"
+label = "Z.ai coding plan (international), GLM-5.3; same key as zai"
+key_from = "zai"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
 env_keys = [
@@ -48,7 +56,7 @@ env_keys = [
     "ZAI_API_KEY",
     "GLM_API_KEY",
 ]
-missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY"
 opencode_ids = ["zai-coding-plan", "zai"]
 env_default = true
 plan = true
@@ -59,6 +67,7 @@ off = "disabled"
 
 [[preset]]
 name = "qwen-plan"
+label = "Alibaba coding plan (international)"
 base_url = "https://coding-intl.dashscope.aliyuncs.com/v1"
 model = "qwen3-coder-next"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
@@ -67,6 +76,7 @@ plan = true
 
 [[preset]]
 name = "qwen-plan-cn"
+label = "Alibaba coding plan (China)"
 base_url = "https://coding.dashscope.aliyuncs.com/v1"
 model = "qwen3-coder-next"
 env_keys = ["ALIBABA_CODING_PLAN_API_KEY"]
@@ -75,6 +85,7 @@ plan = true
 
 [[preset]]
 name = "dashscope"
+label = "Alibaba DashScope API (international)"
 base_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
 model = "qwen3-coder-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
@@ -82,6 +93,7 @@ opencode_ids = ["alibaba"]
 
 [[preset]]
 name = "dashscope-cn"
+label = "Alibaba DashScope API (China)"
 base_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 model = "qwen3-coder-plus"
 env_keys = ["DASHSCOPE_API_KEY"]
@@ -208,6 +220,7 @@ wire = "gemini"
 
 [[preset]]
 name = "minimax"
+label = "MiniMax API (international)"
 base_url = "https://api.minimax.io/v1"
 model = "MiniMax-M3"
 env_keys = ["MINIMAX_API_KEY", "MINIMAX_CODE_API_KEY"]
@@ -219,6 +232,7 @@ off = "disabled"
 
 [[preset]]
 name = "minimax-cn"
+label = "MiniMax API (China)"
 base_url = "https://api.minimax.cn/v1"
 model = "MiniMax-M3"
 env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_CODE_CN_API_KEY"]
@@ -230,6 +244,7 @@ off = "disabled"
 
 [[preset]]
 name = "minimax-plan"
+label = "MiniMax coding plan (international)"
 base_url = "https://api.minimax.io/anthropic/v1"
 model = "MiniMax-M3"
 env_keys = ["MINIMAX_API_KEY"]
@@ -240,6 +255,7 @@ cache_ttl = "5m"
 
 [[preset]]
 name = "minimax-cn-plan"
+label = "MiniMax coding plan (China)"
 base_url = "https://api.minimax.cn/anthropic/v1"
 model = "MiniMax-M3"
 env_keys = ["MINIMAX_CN_API_KEY", "MINIMAX_API_KEY"]
@@ -250,6 +266,7 @@ cache_ttl = "5m"
 
 [[preset]]
 name = "tencent-plan"
+label = "Tencent coding plan (China)"
 base_url = "https://api.lkeap.cloud.tencent.com/coding/v3"
 model = "hunyuan-2.0-thinking"
 env_keys = ["TENCENT_CODING_PLAN_API_KEY"]
@@ -262,6 +279,7 @@ host_only = true
 
 [[preset]]
 name = "volcengine-plan"
+label = "Volcengine coding plan (China)"
 base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
 model = "doubao-seed-2.1-turbo"
 env_keys = ["ARK_CODING_PLAN_API_KEY"]
@@ -274,6 +292,8 @@ host_only = true
 
 [[preset]]
 name = "ollama"
+label = "Ollama on this machine"
+start = "ollama serve"
 base_url = "http://127.0.0.1:11434/v1"
 model = ""
 default_key = "ollama"
@@ -285,6 +305,8 @@ host_only = true
 
 [[preset]]
 name = "lmstudio"
+label = "LM Studio on this machine"
+start = "lms server start"
 base_url = "http://127.0.0.1:1234/v1"
 model = ""
 default_key = "lm-studio"
@@ -297,6 +319,7 @@ host_only = true
 
 [[preset]]
 name = "ollama-cloud"
+label = "Ollama Cloud"
 base_url = "https://ollama.com/v1"
 model = ""
 env_keys = ["OLLAMA_API_KEY"]
@@ -356,6 +379,7 @@ off = "none"
 
 [[preset]]
 name = "siliconflow"
+label = "SiliconFlow API (international)"
 base_url = "https://api.siliconflow.com/v1"
 model = ""
 env_keys = ["SILICONFLOW_API_KEY"]
@@ -363,6 +387,7 @@ opencode_ids = ["siliconflow"]
 
 [[preset]]
 name = "siliconflow-cn"
+label = "SiliconFlow API (China)"
 base_url = "https://api.siliconflow.cn/v1"
 model = ""
 env_keys = ["SILICONFLOW_CN_API_KEY"]

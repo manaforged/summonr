@@ -60,9 +60,14 @@ impl App {
                 ..layout
             });
         } else {
+            let share = if pane == Pane::Diff {
+                layout.share.max(Layout::REVIEW_SHARE)
+            } else {
+                layout.share
+            };
             self.set_layout(Layout {
                 secondary: Some(pane),
-                ..layout
+                share,
             });
             self.pane_focus.set(true);
         }
@@ -187,6 +192,9 @@ impl App {
     pub(in crate::tui::sigil_view) fn focus_pane(&self, on: bool) {
         let has_pane = self.layout.peek().secondary.is_some();
         self.pane_focus.set(on && has_pane);
+        if !self.pane_focus.peek() {
+            self.focus_composer();
+        }
         self.refresh();
     }
 
@@ -312,6 +320,26 @@ impl App {
             return true;
         }
         false
+    }
+
+    pub(in crate::tui::sigil_view) fn pane_dismiss(&self) -> bool {
+        let layout = self.layout.peek();
+        let Some(pane) = layout.secondary else {
+            return false;
+        };
+        if !self.draft.peek().is_empty()
+            || self.overlay().is_some()
+            || self.model.peek().busy_since.is_some()
+        {
+            return false;
+        }
+        self.last_pane.set(Some(pane));
+        self.set_layout(Layout {
+            secondary: None,
+            ..layout
+        });
+        self.refresh();
+        true
     }
 
     pub(in crate::tui::sigil_view) fn nudge_split(&self, delta: i16) {

@@ -146,3 +146,16 @@ pub(crate) fn a_server_error_line_is_shown_without_secrets() {
 fn head(text: &str) -> String {
     text.chars().take(300).collect()
 }
+
+pub(crate) fn a_json_run_starts_with_its_session_id() {
+    let session = Session::new();
+    let outcome = session.run(&Model::start(vec![Step::Text("ok")]), "", &["--json"]);
+    let first: serde_json::Value =
+        serde_json::from_str(outcome.stdout.lines().next().unwrap_or_default())
+            .unwrap_or_else(|_| panic!("{}", outcome.stdout));
+    assert_eq!(first["type"], "session", "{}", outcome.stdout);
+    assert!(
+        first["id"].as_str().is_some_and(|id| id.len() >= 12),
+        "{first}"
+    );
+}

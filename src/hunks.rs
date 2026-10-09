@@ -29,6 +29,8 @@ pub(crate) struct Note {
     pub verdict: Option<Verdict>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub comment: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reported: bool,
 }
 
 pub(crate) type Marks = BTreeMap<String, BTreeMap<String, Note>>;
@@ -39,8 +41,13 @@ pub(crate) enum Op {
     Reject,
 }
 
+const FILE: &str = "review.json";
+
 fn file(root: &Path) -> PathBuf {
-    root.join(".summonr").join("review.json")
+    crate::diff::git_env(root, &[], &["rev-parse", "--absolute-git-dir"]).map_or_else(
+        |_| root.join(".summonr").join(FILE),
+        |dir| PathBuf::from(dir.trim()).join("summonr").join(FILE),
+    )
 }
 
 pub(crate) fn load(root: &Path) -> Marks {
@@ -146,11 +153,15 @@ pub(crate) fn drain(root: &Path) -> Option<String> {
     let mut lines = Vec::new();
     for (path, hunks) in marks.iter_mut() {
         for (id, note) in hunks.iter_mut() {
-            if let Some(comment) = note.comment.take() {
+            let hunk = id.get(..8).unwrap_or(id);
+            if note.verdict == Some(Verdict::Rejected) && !note.reported {
+                note.reported = true;
                 lines.push(format!(
-                    "{path} hunk {}: {comment}",
-                    id.get(..8).unwrap_or(id)
+                    "{path} hunk {hunk}: the user reverted this hunk; do not reapply it unless asked"
                 ));
+            }
+            if let Some(comment) = note.comment.take() {
+                lines.push(format!("{path} hunk {hunk}: {comment}"));
             }
         }
     }

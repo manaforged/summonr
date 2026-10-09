@@ -97,7 +97,10 @@ fn approval_screen(persist: bool) -> String {
 #[test]
 fn the_approval_band_lists_its_answer_keys() {
     let screen = approval_screen(true);
-    assert!(screen.contains("Needs approval: rm -rf build"), "{screen}");
+    assert!(
+        screen.contains("Needs approval") && screen.contains("rm -rf build"),
+        "{screen}"
+    );
     assert!(screen.contains("y allow · Y always · n deny"), "{screen}");
     assert!(
         screen.contains("Allow") && screen.contains("Always") && screen.contains("Deny"),

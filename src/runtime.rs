@@ -32,20 +32,22 @@ impl Budget {
         Self::default()
     }
 
-    fn breach(&self, spent_tokens: u64, elapsed_secs: u64) -> Option<String> {
+    fn breach(&self, spent_tokens: u64, elapsed_secs: u64) -> Option<crate::tools::Abort> {
         if let Some(max) = self.max_secs
             && elapsed_secs >= max
         {
-            return Some(format!(
-                "budget: {elapsed_secs}s reached the {max}s work-time limit"
-            ));
+            return Some(crate::tools::Abort {
+                code: crate::tools::AbortCode::TimeBudget,
+                reason: format!("budget: {elapsed_secs}s reached the {max}s work-time limit"),
+            });
         }
         if let Some(max) = self.max_tokens
             && spent_tokens >= max
         {
-            return Some(format!(
-                "budget: {spent_tokens} tokens reached the {max} token limit"
-            ));
+            return Some(crate::tools::Abort {
+                code: crate::tools::AbortCode::TokenBudget,
+                reason: format!("budget: {spent_tokens} tokens reached the {max} token limit"),
+            });
         }
         None
     }
@@ -107,8 +109,10 @@ pub struct Loop<P> {
     herdr: Reporter,
     session: SessionDriver,
     verify: Option<Vec<String>>,
+    check_file: Option<Vec<u8>>,
     budget: Budget,
     spent_tokens: u64,
+    run_base: (u64, u64),
     context_sample: Option<(usize, u32)>,
     context_window: Option<u32>,
     probe: Option<tokio::task::JoinHandle<Option<u32>>>,

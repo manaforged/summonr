@@ -134,7 +134,7 @@ pub(super) fn build(
     if resumed && args.goal.is_none() && args.steps.is_none() {
         eprintln!(
             "resuming session {} in {}",
-            loop_.session_id(),
+            summonr::short(&loop_.session_id()),
             loop_.workspace().display()
         );
     }
@@ -251,7 +251,12 @@ fn load_session(args: &Args, workspace: &Path) -> Result<Found> {
     }
     if let Some(id) = args.session.as_deref() {
         let path = resolve_session(id)?;
-        return Ok((SessionAction::Resume(path), None));
+        let action = if args.fork {
+            SessionAction::Fork(path)
+        } else {
+            SessionAction::Resume(path)
+        };
+        return Ok((action, None));
     }
     if (args.steps.is_some() || args.goal.is_some())
         && let Some(found) = load_job(args, workspace)?

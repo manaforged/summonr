@@ -131,9 +131,16 @@ pub(in crate::tui::sigil_view) fn approval_band(
         let app = app.clone();
         move || app.approval_answer(kind)
     };
-    let mut prompt = Prompt::new(Tone::Warn, format!("Needs approval: {detail}"), hints).action(
-        Action::new("Allow", ActionKind::Primary, answer(GrantAnswer::Allow)),
-    );
+    let mut prompt = approval_lines(
+        Prompt::new(Tone::Warn, "Needs approval", hints),
+        &detail,
+        width,
+    )
+    .action(Action::new(
+        "Allow",
+        ActionKind::Primary,
+        answer(GrantAnswer::Allow),
+    ));
     if persist {
         prompt = prompt.action(Action::new(
             "Always",
@@ -148,4 +155,17 @@ pub(in crate::tui::sigil_view) fn approval_band(
             answer(GrantAnswer::Deny),
         ))
         .build(width, &keys)
+}
+
+const APPROVAL_LINES: usize = 12;
+
+fn approval_lines(prompt: Prompt, detail: &str, width: usize) -> Prompt {
+    let mut lines = crate::text::lines_within(detail, width.saturating_sub(4));
+    if lines.len() > APPROVAL_LINES {
+        lines.truncate(APPROVAL_LINES);
+        if let Some(last) = lines.last_mut() {
+            last.push_str(" …");
+        }
+    }
+    lines.into_iter().fold(prompt, Prompt::line)
 }

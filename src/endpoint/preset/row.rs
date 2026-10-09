@@ -58,6 +58,12 @@ pub(super) struct Row {
     off: bool,
     #[serde(default)]
     opencode_ids: Vec<String>,
+    #[serde(default)]
+    label: Option<String>,
+    #[serde(default)]
+    start: Option<String>,
+    #[serde(default)]
+    key_from: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
@@ -180,6 +186,9 @@ impl Row {
         self.check_env_keys(&name)?;
         let missing = self.missing(&name);
         let reasoning = self.reasoning.spec(&name)?;
+        if self.key_from.as_deref() == Some(name.as_str()) {
+            return Err(format!("`{name}` reads its key from itself"));
+        }
         Ok(Preset {
             models_url: leak_str(self.models_url.as_deref()),
             model: self.model,
@@ -202,6 +211,9 @@ impl Row {
             plan: self.plan,
             off: self.off,
             opencode_ids: leak_list(&self.opencode_ids),
+            label: self.label,
+            start: self.start,
+            key_from: self.key_from,
             name,
             base_url,
         })

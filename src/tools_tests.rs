@@ -166,3 +166,36 @@ async fn an_agent_tool_list_denies_tools_outside_it_by_claude_or_summonr_name() 
         denied.err()
     );
 }
+
+#[tokio::test]
+async fn the_model_cannot_write_the_check_file_in_any_mode() {
+    let (dir, mut tools) = workspace(&[]);
+    tools.set_unrestricted();
+    std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
+    std::fs::write(
+        dir.path().join(".summonr/check.toml"),
+        "check = \"false\"\n",
+    )
+    .unwrap();
+    assert!(tools.policy().is_unrestricted());
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "write".to_string(),
+            arguments: serde_json::json!({ "path": ".summonr/check.toml", "content": "check = \"true\"\n" })
+                .to_string(),
+        },
+        continuation: None,
+    };
+    let text = match tools.execute_outcome(&call).await {
+        Ok(output) => output.text,
+        Err(error) => error.to_string(),
+    };
+    assert!(text.contains("holds the run's check"), "{text}");
+    assert_eq!(
+        std::fs::read_to_string(dir.path().join(".summonr/check.toml")).unwrap(),
+        "check = \"false\"\n"
+    );
+}

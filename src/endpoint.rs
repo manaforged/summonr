@@ -219,93 +219,6 @@ impl LoginFlow {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct AuthInfo {
-    pub name: String,
-    pub flow: LoginFlow,
-    pub login: LoginFlow,
-    pub key: bool,
-    pub plan: String,
-    pub configured: bool,
-    pub source: Option<Source>,
-    pub setup: String,
-    pub env: Option<&'static str>,
-    group: LoginGroup,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum LoginGroup {
-    Key,
-    Plan,
-    Decide,
-    Local,
-}
-
-impl LoginGroup {
-    const fn heading(self) -> &'static str {
-        match self {
-            Self::Key => "API keys",
-            Self::Plan => "Coding plans",
-            Self::Decide => "Decisions",
-            Self::Local => "Local",
-        }
-    }
-}
-
-impl AuthInfo {
-    #[must_use]
-    pub fn dual(&self) -> bool {
-        self.key && self.login.signs_in()
-    }
-
-    #[must_use]
-    pub fn status(&self) -> String {
-        format!("{}: {}; {}", self.name, self.state(), self.setup)
-    }
-
-    #[must_use]
-    pub fn catalog_heading(&self) -> &'static str {
-        self.group.heading()
-    }
-
-    #[must_use]
-    pub fn keyless(&self) -> bool {
-        self.group == LoginGroup::Local
-    }
-
-    #[must_use]
-    pub fn catalog_rank(&self) -> u8 {
-        self.group as u8
-    }
-
-    #[must_use]
-    pub fn catalog_line(&self) -> String {
-        format!("{:<14} {}: {}", self.name, self.state(), self.setup)
-    }
-
-    #[must_use]
-    pub fn state(&self) -> String {
-        match (self.flow.signs_in(), self.configured, self.source) {
-            (true, true, _) | (false, true, None) => State::Ready.to_string(),
-            (true, false, _) => State::SignIn.to_string(),
-            (false, true, Some(Source::Builtin)) => State::NoKey.to_string(),
-            (false, true, Some(source)) => format!("{} · {}", State::Ready, source.label()),
-            (false, false, _) if self.keyless() => State::NoKey.to_string(),
-            (false, false, _) => State::NeedsKey.to_string(),
-        }
-    }
-
-    #[must_use]
-    pub fn stored(&self) -> bool {
-        self.configured
-            && (self.flow.signs_in()
-                || matches!(
-                    self.source,
-                    Some(Source::Keychain | Source::File | Source::Config)
-                ))
-    }
-}
-
 impl Wire {
     pub(crate) fn parse(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
@@ -361,23 +274,29 @@ fn login_group(name: &str, endpoint: &Endpoint) -> LoginGroup {
 
 mod auth;
 mod choice;
+mod info;
 mod keys;
 mod preset;
 mod reasoning;
 mod resolve;
+mod server;
 
 #[cfg(test)]
 pub(crate) use auth::catalog;
 pub use auth::{adopt_keys, auth_info, check_key, first_classify, login_seat, logout};
 pub(crate) use auth::{ready, step};
 pub use choice::{Need, Pick};
+pub use info::AuthInfo;
+use info::LoginGroup;
 pub(crate) use keys::peer_token;
 use keys::*;
-pub(crate) use preset::{catalog_providers, provider_ids};
+pub use preset::label;
+pub(crate) use preset::{catalog_providers, provider_ids, start_command};
 use preset::{preset, presets};
 pub(crate) use resolve::default_seat;
-pub use resolve::{chosen_by, closest, fallbacks, resolve, vision};
+pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 use resolve::{hosted, seat};
+pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]

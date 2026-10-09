@@ -8,6 +8,7 @@ mod modes;
 mod startup;
 
 fn main() {
+    restore_sigpipe();
     #[cfg(all(windows, feature = "windows-sandbox"))]
     if std::env::args_os()
         .nth(1)
@@ -47,6 +48,21 @@ fn main() {
         Err(error) => fail(&error),
     }
 }
+
+#[cfg(unix)]
+#[expect(
+    unsafe_code,
+    reason = "std has no wrapper to restore the default SIGPIPE action"
+)]
+fn restore_sigpipe() {
+    // SAFETY: called first in main before any thread starts; SIG_DFL is a valid disposition for SIGPIPE.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+}
+
+#[cfg(not(unix))]
+fn restore_sigpipe() {}
 
 #[cfg(unix)]
 async fn interrupted() -> i32 {

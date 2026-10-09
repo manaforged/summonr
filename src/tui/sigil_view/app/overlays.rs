@@ -160,19 +160,11 @@ impl App {
     }
 
     fn close_auth(&self) {
-        if matches!(self.auth.step.peek(), Login::List(_)) && !self.auth.filter.peek().is_empty() {
-            self.replace_auth_filter(String::new());
-        } else {
-            self.cancel_auth();
-        }
+        self.cancel_auth();
     }
 
     fn close_model(&self) {
-        if !self.picker.draft.peek().is_empty() {
-            self.replace_model_draft(String::new());
-        } else {
-            self.cancel_model_edit();
-        }
+        self.cancel_model_edit();
     }
 
     fn close_hotkey(&self) {

@@ -34,8 +34,8 @@ mod mcp;
 pub use mcp::{
     Board as McpBoard, Choice as McpChoice, Field as McpField, FieldKind as McpFieldKind,
     Form as McpForm, FormAction as McpFormAction, FormAnswer as McpFormAnswer, McpLaunch, McpState,
-    McpTransport, ServerStatus, TextFormat as McpTextFormat, add as mcp_add, remove as mcp_remove,
-    status as mcp_status,
+    McpTransport, ServerStatus, TextFormat as McpTextFormat, add as mcp_add,
+    call_label as mcp_call_label, probe as mcp_probe, remove as mcp_remove, status as mcp_status,
 };
 pub mod modules;
 mod plan;
@@ -76,11 +76,13 @@ pub use config::{check as check_config, sandbox_on};
 pub use durable::store::lock as lock_file;
 pub use durable::work::{WorkKind, WorkProgress};
 pub use endpoint::{
-    AuthInfo, Endpoint, LoginFlow, Need, Pick, State as EndpointState, adopt_keys, auth_info,
-    check_key, chosen_by as endpoint_chosen_by, closest as closest_endpoint,
-    fallbacks as endpoint_fallbacks, first_classify as classify_endpoint, is_named as is_endpoint,
-    login_seat, logout, names as endpoint_names, resolve as resolve_endpoint,
-    vision as vision_endpoint,
+    AuthInfo, Endpoint, LoginFlow, Near as EndpointNear, Need, Pick, State as EndpointState,
+    add_server as add_endpoint, adopt_keys, auth_info, check_key, chosen_by as endpoint_chosen_by,
+    closest as closest_endpoint, fallbacks as endpoint_fallbacks,
+    first_classify as classify_endpoint, is_named as is_endpoint, label as endpoint_label,
+    login_seat, logout, names as endpoint_names, ordered_names as endpoint_names_ordered,
+    remove_server as remove_endpoint, resolve as resolve_endpoint,
+    set_default as set_default_endpoint, set_up as endpoint_set_up, vision as vision_endpoint,
 };
 pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;
@@ -98,7 +100,7 @@ pub use session::{
 pub use tools::sandbox::Network;
 #[cfg(all(windows, feature = "windows-sandbox"))]
 pub use tools::sandbox::windows::entry as sandbox_entry;
-pub use tools::{Event, ToolResult, attach, run_tool};
+pub use tools::{AbortCode, Event, ToolResult, attach, run_tool};
 pub use verify::{Receipt, check_commands};
 pub use worktree::{
     Tree, add as add_worktree, finish as finish_worktree, in_git, list as list_worktrees,

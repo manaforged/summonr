@@ -239,9 +239,19 @@ pub(crate) struct Snapshot {
     pub endpoint: String,
     pub context_window: Option<u32>,
     pub workflow: Option<String>,
+    pub unseated: bool,
 }
 
 impl Snapshot {
+    #[must_use]
+    pub(crate) fn seat_label(&self, suffix: &str) -> String {
+        if self.endpoint.is_empty() {
+            format!("{}{suffix}", self.model)
+        } else {
+            format!("{}{suffix} · {}", self.model, self.endpoint)
+        }
+    }
+
     #[must_use]
     pub(crate) fn mode_name(&self) -> &'static str {
         if self.plan {

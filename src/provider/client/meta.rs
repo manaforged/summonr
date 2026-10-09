@@ -150,10 +150,18 @@ pub(super) fn reason(text: &str) -> String {
 impl Client {
     pub(super) fn unreachable(&self, error: &dyn std::fmt::Display) -> Error {
         let host = crate::splash::host_of(Some(&self.base)).unwrap_or(&self.base);
-        Error::provider(
-            ProviderFailureKind::Transport,
-            format!("cannot reach {host}: check the network or the base_url ({error})"),
-        )
+        let message = match crate::endpoint::start_command(&self.base) {
+            Some(start) => {
+                let name = if self.name.is_empty() {
+                    host
+                } else {
+                    &self.name
+                };
+                format!("{name} is not running at {host}; start it with `{start}` ({error})")
+            }
+            None => format!("cannot reach {host}: check the network or the base_url ({error})"),
+        };
+        Error::provider(ProviderFailureKind::Transport, message)
     }
 
     pub(super) async fn rejected(&self, response: leyline::Response, model: Option<&str>) -> Error {
@@ -205,7 +213,7 @@ impl Client {
                     .remove(&self.name)
                     .map(|listing| listing.models.into_iter().map(|row| row.id).collect())
                     .unwrap_or_default();
-                let hint = crate::endpoint::closest(model, &known)
+                let hint = crate::endpoint::closest(model, &known, crate::endpoint::Near::Relative)
                     .map_or_else(String::new, |near| format!("did you mean `{near}`? "));
                 format!("{name} has no model `{model}`: {hint}`summonr endpoints` lists its models")
             }
@@ -227,7 +235,7 @@ impl Client {
         let client = Self::connect(endpoint)?;
         let covered = match crate::endpoint::auth_info(&endpoint.name) {
             _ if endpoint.oauth.is_some() => Cost::Plan,
-            Ok(info) if info.catalog_heading() == "Coding plans" => Cost::Plan,
+            Ok(info) if info.plan() => Cost::Plan,
             Ok(info) if info.keyless() => Cost::Free,
             Ok(_) | Err(_) => Cost::Unknown,
         };

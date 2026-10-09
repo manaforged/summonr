@@ -15,7 +15,7 @@ Work is one coding job summonr holds so the model does not have to (`src/durable
 - a stage: Plan, Execute, Verify, or Review
 - steps, their checks, and (when verifying) a candidate capture of the workspace
 
-Plan and Work are one pipeline. Plan writes `.summonr/plan.md`. `/plan accept` selects that file, sets `RunMode::Work`, and starts Execute in the same turn (`src/tui/worker/command.rs`). A work request with no selected plan stays in Plan (`Loop::set_mode`). When Work is terminal, the interface returns to Auto. Goal (`/goal`, `--goal`) is the loop without a written plan. `shift+tab` switches Auto and Plan only (`RunMode::next`).
+Plan and Work are one pipeline. Plan writes `plan.md` in the session directory, next to `session.jsonl`. `/plan accept` selects that file, sets `RunMode::Work`, and starts Execute in the same turn (`src/tui/worker/command.rs`). A work request with no selected plan stays in Plan (`Loop::set_mode`). When Work is terminal, the interface returns to Auto. When a goal ends, the session returns to the mode it had before. Goal (`/goal`, `--goal`) is the loop without a written plan. `shift+tab` switches Auto and Plan only (`RunMode::next`).
 
 `summonr --steps` and `summonr --goal` start Work from the CLI. A plain `summonr` turn still opens an internal Work record if the session has none (`src/runtime/turn.rs`). That is Auto, not the Work UI mode.
 
@@ -53,7 +53,7 @@ Crash the process. Run the same command. Resume reads the session log back into 
 | Changed files (Git listing or directory walk, content fingerprints) | `src/durable/tree.rs` |
 | Conversation that writes the log | `src/runtime/turn.rs` |
 | Numbered plan | `src/steps.rs` |
-| Plan file `.summonr/plan.md` | `src/plan.rs` |
+| Plan file `plan.md` in the session directory | `src/plan.rs` |
 | RunMode Plan → Work | `src/runtime.rs` `next`, `Loop::set_mode` |
 | Standing goal + judge | `src/goal.rs` |
 | Check commands | `src/verify.rs` |

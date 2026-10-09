@@ -233,6 +233,12 @@ impl ToolRegistry {
     }
 
     pub(in crate::tools) fn check_write(&self, path: &Path) -> Result<()> {
+        if crate::policy::workspace_control(path) {
+            return Err(Error::Denied(format!(
+                "`{}` holds the run's check and policy; the user edits it, not the model",
+                path.display()
+            )));
+        }
         if self.policy.is_unrestricted() {
             return Ok(());
         }

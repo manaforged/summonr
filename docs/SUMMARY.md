@@ -49,6 +49,7 @@
     - [summonr::secret](reference/summonr/summonr-secret.md)
     - [summonr::splash](reference/summonr/summonr-splash.md)
     - [summonr::steps](reference/summonr/summonr-steps.md)
+    - [summonr::supervise](reference/summonr/summonr-supervise.md)
     - [summonr::tui](reference/summonr/summonr-tui.md)
     - [summonr::tui::hub](reference/summonr/summonr-tui-hub.md)
     - [summonr::workflow](reference/summonr/summonr-workflow.md)

@@ -2,6 +2,8 @@
 mod content;
 #[path = "mcp/defer.rs"]
 mod defer;
+#[path = "mcp/diff.rs"]
+mod diff;
 #[path = "mcp/lifecycle.rs"]
 mod lifecycle;
 #[path = "mcp/manage.rs"]
@@ -14,6 +16,8 @@ mod plugins;
 mod policy;
 #[path = "mcp/protocol.rs"]
 mod protocol;
+#[path = "mcp/session.rs"]
+mod session;
 mod support;
 #[path = "mcp/transport.rs"]
 mod transport;
@@ -37,6 +41,7 @@ fn main() {
         content::a_form_is_declined_without_a_user,
         defer::a_large_server_is_found_and_called_through_the_mcp_tool,
         defer::a_hook_sees_the_tool_behind_the_mcp_tool,
+        defer::arguments_given_beside_the_tool_name_reach_the_server,
         lifecycle::a_configured_server_is_on_by_default_and_starts_only_when_called,
         lifecycle::an_idle_server_stops_and_starts_again_on_the_next_call,
         lifecycle::the_least_recently_used_idle_server_stops_at_the_server_cap,
@@ -67,6 +72,10 @@ fn main() {
         #[cfg(unix)]
         plugins::plugin_settings_and_data_are_handled,
         plugins::a_legacy_bundle_installs_as_a_plugin,
+        #[cfg(unix)]
+        plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
+        #[cfg(unix)]
+        plugins::a_hook_matcher_limits_the_tools_it_runs_for,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -75,6 +84,12 @@ fn main() {
         output::an_image_is_withheld_from_a_model_without_images,
         output::an_image_whose_data_does_not_match_its_type_is_withheld,
         output::a_server_error_line_is_shown_without_secrets,
+        output::a_json_run_starts_with_its_session_id,
+        diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
+        diff::a_turn_diff_names_its_session,
+        session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
+        session::forking_a_named_session_keeps_the_original_transcript,
+        session::a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code,
         policy::strict_mode_denies_a_listed_tool_and_runs_an_allowed_one,
         policy::strict_mode_without_an_allow_entry_refuses_a_tool_that_changes_state,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

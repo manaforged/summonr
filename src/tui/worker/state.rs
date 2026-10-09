@@ -52,7 +52,6 @@ impl Worker {
             self.system(&format!("workflow {name} · {}", self.workflow.summary()));
         }
         self.send_workflow();
-        self.remember_seat();
         self.send_settings();
         self.reader.watch();
         while let Some(command) = self.next().await {

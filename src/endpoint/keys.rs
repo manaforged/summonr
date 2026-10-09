@@ -36,12 +36,18 @@ impl Endpoint {
         {
             return Ok(Some((key, Source::Env)));
         }
-        let stored = if custom {
-            own
-        } else {
-            secret::get(&self.name)?
-        };
+        let stored = if custom { own } else { self.stored_key()? };
         Ok(stored.or_else(|| self.peer_key(row)))
+    }
+
+    fn stored_key(&self) -> Result<Option<(String, Source)>> {
+        if let Some(found) = secret::get(&self.name)? {
+            return Ok(Some(found));
+        }
+        match preset(&self.name).and_then(|row| row.key_from.as_deref()) {
+            Some(peer) => secret::get(peer),
+            None => Ok(None),
+        }
     }
 
     pub(super) fn takes_key(&self) -> bool {

@@ -12,7 +12,7 @@ Write a `SKILL.md` under `~/.summonr/skills/<name>/` or `.summonr/skills/<name>/
 
 ## Add an MCP server
 
-1. Run `summonr mcp add NAME -- COMMAND [ARGS...]` for a local server, or `summonr mcp add NAME --url URL` for a remote one. This writes a `[mcp.NAME]` table to `~/.summonr/config.toml`; you can also write it yourself.
+1. Run `summonr mcp add NAME -- COMMAND [ARGS...]` for a local server, or `summonr mcp add NAME --url URL` for a remote one. This writes a `[mcp.NAME]` table to `~/.summonr/config.toml`; you can also write it yourself. `mcp add` connects once, caches the tool list, and prints `NAME: N tools`. When the server does not start or answer, `mcp add` exits 1 and names the config file; the table stays, and `summonr mcp list` shows `failed: <error>`.
 2. Restart summonr so the new tool aliases join the next prefix.
 
 `summonr mcp list` shows each server's state, tool count, and how many bytes of tool schemas it adds to every request. `/mcp` shows the same in the terminal UI, with the live state of the current session. `summonr mcp remove NAME` deletes the table.
@@ -28,7 +28,7 @@ The `mcp` module is on by default. summonr lists each server's tools once and ke
 
 summonr speaks MCP 2025-11-25 and accepts servers on 2025-06-18, 2025-03-26, and 2024-11-05. A local server can ask for the workspace root. Progress from a tool shows in the terminal UI and in `--json`, and it keeps a slow call alive for up to four times `timeout_secs`. A server that changes its tool list gets it fetched again; the new list applies from the next session. Server log messages go to `~/.summonr/logs/mcp.log`. Stopping a turn cancels the MCP call it was waiting on.
 
-A project `.mcp.json` server runs only after you set `enabled = true` under its `[mcp.NAME]` table. summonr names the servers that wait. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. The model sees each tool as a `server__tool` alias. A server with more than 8 KB of tool schemas is listed by tool name under one `mcp` tool instead: the model looks up schemas with `query` and calls a tool with `tool` and `arguments`. Policy and hooks see the tool behind `mcp`.
+A project `.mcp.json` server runs only after you set `enabled = true` under its `[mcp.NAME]` table. summonr names the servers that wait. Claude Code and Codex MCP configs load only when `import_mcp = true` is set in `~/.summonr/config.toml`. The model sees each tool as a `server__tool` alias. A server with more than 8 KB of tool schemas is listed by tool name under one `mcp` tool instead: the model looks up schemas with `query` and calls a tool with `tool` and its arguments: an `arguments` object, an `arguments` JSON string, or fields beside `tool`. Policy and hooks see the tool behind `mcp`.
 
 Type `/server:prompt` followed by its arguments to run a server prompt; the arguments fill the prompt's declared arguments in order, and the last one takes the rest of the line. `@server:uri` attaches a server resource to your prompt the way `@path` attaches a file. The composer suggests both from the cached lists. Both work with `-p`.
 
@@ -36,7 +36,7 @@ A server can ask you to fill a form during a tool call. summonr shows which serv
 
 ## Add a hook
 
-Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr/config.toml`. Each value is a shell command or a list of commands; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run.
+Set `pre_tool`, `post_tool`, `compact`, or `stop` under `[hooks]` in `~/.summonr/config.toml`. Each value is a shell command, a table `{ command = "...", dialect = "claude", matcher = "Edit|Write" }`, or a list of either; the list runs in order. summonr writes JSON to each command's stdin. A `pre_tool` hook that exits nonzero blocks the call, and the rest of the list does not run. With `dialect = "claude"`, a hook gets Claude Code's stdin JSON and verdict rules. `matcher` takes tool names separated by `|`, or a regex, as in a Claude Code `hooks.json`, and is checked against the tool name in the hook's dialect. The [reference](reference.md#hooks) lists the stdin fields, verdicts, and environment variables.
 
 ## Add a CLI
 

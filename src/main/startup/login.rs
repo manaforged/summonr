@@ -112,27 +112,51 @@ pub(super) fn print_login_catalog() -> Result<()> {
         .collect();
     errors.dedup();
     errors.iter().for_each(|error| eprintln!("{error}"));
+    let ready = summonr::endpoint_set_up();
     let mut rows: Vec<summonr::AuthInfo> = rows.into_iter().flatten().collect();
-    rows.sort_by_key(|row| (row.catalog_rank(), row.name.clone()));
+    rows.sort_by_key(|row| {
+        (
+            row.catalog_rank(),
+            !ready.contains(&row.name),
+            row.name.clone(),
+        )
+    });
+    let name = rows.iter().map(|row| row.name.len()).max().unwrap_or(0);
+    let state = rows
+        .iter()
+        .map(|row| row.state().chars().count())
+        .max()
+        .unwrap_or(0);
     let mut heading = "";
     for row in &rows {
-        if row.catalog_heading() != heading {
-            heading = row.catalog_heading();
-            if heading == "Coding plans" {
-                println!("\n{heading}");
-            } else if heading == "Decisions" {
-                println!("\n{heading}  (summonr classify / Jev)");
-            } else if heading == "Local" {
-                println!("\n{heading}  (no key)");
-            } else {
-                println!("\n{heading}");
-            }
+        if row.catalog_title() != heading {
+            heading = row.catalog_title();
+            println!("\n{heading}");
         }
-        println!("  {}", row.catalog_line());
+        println!("  {}", row.catalog_line(name, state));
     }
-    println!("\nsummonr login NAME     sign in or store a key");
-    println!("summonr login NAME --key   skip the question and store a key");
+    println!("\nsummonr login NAME                         sign in or store a key");
+    println!("summonr login NAME --key                   skip the question and store a key");
+    println!("summonr login NAME --default [--model M]   start on NAME when no endpoint is named");
+    println!(
+        "summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server"
+    );
+    println!("summonr login NAME --model M               change the model of a server you added");
+    println!("summonr logout NAME --remove               remove a server you added");
     Ok(())
+}
+
+fn keyless(name: &str) -> Result<Option<String>> {
+    let info = summonr::auth_info(name)?;
+    if !info.keyless() || info.login.signs_in() {
+        return Ok(None);
+    }
+    let url = info.base_url.unwrap_or_default();
+    Ok(Some(if info.model.is_empty() {
+        format!("{name} needs no key. Pick a model: `summonr {name} --model NAME` ({url})")
+    } else {
+        format!("{name} needs no key and is ready: {} at {url}", info.model)
+    }))
 }
 
 pub(super) async fn run_login(args: &Args) -> Result<()> {
@@ -146,14 +170,16 @@ pub(super) async fn run_login(args: &Args) -> Result<()> {
                 .to_string(),
         ));
     }
+    if !args.key
+        && let Some(text) = keyless(name)?
+    {
+        println!("{text}");
+        return Ok(());
+    }
     if key_login(name, args.key)? {
         let key = read_secret(&format!("key for {name}: "))?;
         let source = summonr::check_key(name, key.trim()).await?;
-        println!(
-            "key for {name} stored in {} ({} chars)",
-            source.label(),
-            key.trim().chars().count()
-        );
+        println!("key for {name} stored in {}", source.label());
         return Ok(());
     }
     let endpoint = summonr::login_seat(name)?;

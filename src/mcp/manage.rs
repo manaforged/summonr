@@ -16,7 +16,7 @@ pub enum McpLaunch {
     },
 }
 
-pub fn add(name: &str, launch: &McpLaunch) -> Result<()> {
+pub fn add(name: &str, launch: &McpLaunch) -> Result<String> {
     if name.is_empty()
         || !name
             .chars()
@@ -44,16 +44,18 @@ pub fn add(name: &str, launch: &McpLaunch) -> Result<()> {
             }
         }
     }
-    if config::save_mcp_server(&config::path()?, name, Item::Table(table))? {
-        return Ok(());
+    let path = config::path()?;
+    let shown = config::tilde(&path);
+    if config::save_named(&path, config::Section::Mcp, name, Item::Table(table))? {
+        return Ok(shown);
     }
     Err(Error::Config(format!(
-        "mcp `{name}` already in config.toml; remove it first"
+        "mcp `{name}` already in {shown}; remove it first"
     )))
 }
 
 pub fn remove(name: &str) -> Result<bool> {
-    config::remove_mcp_server(&config::path()?, name)
+    config::remove_named(&config::path()?, config::Section::Mcp, name)
 }
 
 fn pairs(pairs: &[(String, String)]) -> InlineTable {

@@ -23,14 +23,33 @@ First stable release.
 - Slash-command and `@` mention type-ahead work on the start screen.
 - `shift+tab` cycles reasoning effort from none to max. Each vendor and model sends the nearest level it accepts; `reasoning_levels` and `thinking_off` on an endpoint override this.
 - The provider table is data. Every built-in endpoint is one `[[preset]]` row in `src/endpoint/presets.toml` (base URL, env keys, wire, reasoning quirks, peer ids), and a row summonr cannot honor fails startup by name. New built-ins: the Qwen coding plans `qwen-plan` and `qwen-plan-cn` and the DashScope hosts `dashscope` and `dashscope-cn`; the MiniMax coding plans `minimax-plan` and `minimax-cn-plan` on the Anthropic wire; `tencent-plan` and `volcengine-plan`; `nvidia`, `huggingface`, `cohere`, `perplexity`, `siliconflow`, `siliconflow-cn`, `ollama-cloud`, and the local `lmstudio`. Coding-plan keys adopt from OpenCode's `auth.json` through their models.dev ids.
-- `plan_mode = true` turns on plan mode. It is off by default.
+- Plan mode is on by default; `plan_mode = false` turns it off. `/goal TEXT` in plan mode starts the goal with the saved plan, `/auto` drops a pending plan, and a short reply such as `go` or `yes` accepts a ready plan like `/plan accept`. After a goal ends, the session returns to its earlier mode.
+- `/goal` with no check configured uses a check detected from the project (`cargo test`, `go test ./...`, or `npm test` when `package.json` has a `test` script) and says how to set another in `.summonr/check.toml`.
+- `--json` runs open with `{"type":"session","id":...}`, and the `aborted` event carries a `code`: `time_budget`, `token_budget`, `interrupted`, `cancelled`, or `error`.
+- `summonr diff --turn N|last` shows what one turn changed, from the checkpoint at its start to the next turn's checkpoint; resumed sessions keep numbering turns.
+- `summonr mcp add` connects once, caches the tool list, and prints the tool count; a server that fails stays configured, `mcp add` exits 1 and names the config file, and `summonr mcp list` shows a clipped `failed: <error>`. In `-p` output each tool line carries a short argument summary (`→ read src/a.rs`), and a call through the `mcp` tool prints `→ mcp server:tool`.
+- Hooks take `{ command, dialect = "claude" }` to run a Claude Code hook with its stdin JSON and verdict rules. Every hook gets `SUMMONR_HOME` and `CLAUDE_PROJECT_DIR`.
+- `summonr install --list` names each plugin, whether it is on, and what it adds. `summonr login` shows each preset's label, `summonr endpoints` lists set-up endpoints first, and `summonr sessions` prints a header row on a terminal.
 - `AGENTS.md` and `CLAUDE.md` expand `@path` lines: the named file, relative to the one holding the line, joins the prompt in place. Files load once across user and project context, and a missing include stays as the literal line.
 - `/pane jobs` lists background commands with status, log, and kill. `/pane peers` lists live sessions you can mention with `@name`.
-- The diff pane reviews one hunk at a time: accept, revert, or add a note for the model. Marks persist in `.summonr/review.json`.
+- The diff pane reviews one hunk at a time: `a` accepts, `r` reverts, and `n` adds a note for the model (Enter saves). Typed letters stay in the pane, and `esc` returns to the composer. A pane narrower than `diff_split_min_cols` shows the unified diff. Marks persist in `.git/summonr/review.json`.
 - Inline terminal mode, grouped repeated tool calls, a transcript scrollbar, and images attached during a turn.
+- `summonr login NAME --url URL [--model M]` adds your own OpenAI-compatible server, or updates it in place; when the server lists one model, summonr picks it. `summonr logout NAME --remove` deletes it, forgets its key, and clears `default` and `default_model` when they named it. An unknown endpoint name suggests this command.
+- `summonr login` prints one compact line per endpoint with its state and label, set-up endpoints first. A preset `label` names the region and default model, `start` names the command that starts a local server, and `key_from` lets rows on the same plan share a stored key (`zai` and `glm-intl`, `zai-cn` and `glm`). A keyless endpoint with no model reads `needs model`.
+- A misspelled endpoint name of `typo_min_chars` characters or more gets a hint for one changed character or two swapped ones.
+- A `--steps` item that says ``Run `CMD` `` gets `CMD` as its own check.
+- A hook table takes `matcher`, with the syntax of a Claude Code `hooks.json` matcher, checked against the tool name in the hook's dialect.
+- The composer header shows `model (effort) · endpoint`.
 
 ### Changed
 
+- `summonr login NAME --model M` changes the model of a server you added, with no `--url`. `summonr login NAME --default [--model M]` makes any endpoint that is set up the default. `summonr login NAME --help`, and `--help` after `logout`, `diff`, `profile`, `install`, `export`, `doctor`, `classify`, `worktrees`, and `mcp`, prints that command's help.
+- `summonr login` and `summonr endpoints` size their columns to the longest value, show only the URL on a row with no model, and say `1 model`. Each built-in label names its default model and the row whose key it shares; `glm` names `GLM_CODING_API_KEY` and `glm-intl` names `ZAI_CODING_API_KEY` when the key is missing.
+- Every session id on screen is the short id, and `--session` accepts it.
+- `summonr diff --turn N` writes the `--stat` summary line to stderr before the patch.
+- An approval prompt reads `<command> — <reason>`.
+- In `--steps --json`, a step's `start` event carries `check`: the step's `Run` commands joined with ` && `, or null.
+- Enter on a suggestion runs it, prompt rows too; Tab completes. With an empty composer and no running turn, `esc` closes the open side pane. Accepting a plan prints the check the work uses. A review note opens under its hunk header. Task cards use workspace-relative paths, a kept child checkout shows how to remove it, and with no usable endpoint the composer header reads `no provider · /login`.
 - Sign-in tokens are stored apart from API keys, so signing in no longer overwrites a key. A sign-in made with an earlier build is not read; sign in again once.
 - Every dialog, inline prompt, and key hint is built from one UI kit: dialogs share one frame and always end in their key hints, approval and form prompts look the same in the terminal and the desktop window, and hints show your own key bindings with one separator style.
 - Commands run without a prompt, sandboxed or not. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped tables, including inside a heredoc fed to a shell. `sudo`, force pushes, pipes into a shell, git discards, and protected-path writes no longer ask; `confirm = "risky"` in `policy.toml` brings those prompts back. `--strict` refuses the whole list, and your own `[policy] deny` rules stay hard refusals under `--sandbox` or `--strict`.
@@ -53,12 +72,30 @@ First stable release.
 - Fewer wasted rounds: command output keeps about 16 KB, `write` over a file returns one line, `read` pages by 50 KB, and batch edits to the same line apply in order.
 - A foreground command that reaches the wait limit continues as a background job unless `timeout_secs` was set.
 - `todo` is advertised only in steps and goal runs, `task` only in interactive sessions, and the `search` module is off by default.
-- The last seat you used wins over `default` in `config.toml`. Effort is remembered per seat; a reasoning model with no effort set uses `high`.
+- Seat order: the endpoint argument, `SUMMONR_ENDPOINT`, `default` in `config.toml`, the last seat used, then the first endpoint that is set up. A seat is remembered in `recent.json` only after a turn succeeds, and the old `last_endpoint` key is removed on the next save. A `default` or last-used endpoint that is gone or has no key prints one note and falls back. Effort is remembered per seat; a reasoning model with no effort set uses `high`.
 - DeepSeek and z.ai GLM receive earlier reasoning on every turn, as both vendors require.
+- In `--goal` and `--steps`, the check decides the exit code: a run that stops short runs the check once at exit and exits 2 when it fails, even after a budget ran out. The `work` event's `checks_failed` and the `verify` events now agree.
+- The plan is saved as `plan.md` in the session directory instead of `.summonr/plan.md` in the workspace.
 - Lower startup time, memory, and per-turn overhead: model facts come from the local catalog, requests are encoded once per turn, and waits no longer poll.
+- The approval prompt shows the whole command, wrapped, and says why it needs approval, for example `a destructive command because …`.
+- `summonr diff --turn N` reads `turn N of session <short id>`, and its JSON adds `session`.
+- A child whose edits conflict with the parent shows as a conflict with its kept checkout (`kept <repo>-deltas/<id>: conflicts with the parent`), not as failed. summonr never deletes a kept checkout. A child row names the plugin agent it runs as.
+- Hunk review marks live in the repository's git directory, `.git/summonr/review.json`.
+- In plan mode the model ends with the plan and does not ask for permission; `/plan accept` or a short reply accepts it.
 
 ### Fixed
 
+- A budget counts from the run that loads the session, so a resumed or forked session gets its full `--max-secs` and `--max-tokens` again.
+- Reverting a hunk in the diff pane tells the next turn, so the model does not report the reverted code as still in place.
+- `-p` labels an MCP tool lookup as `mcp search QUERY`, so lookups no longer read as duplicate calls. The banner and the resume line show the short session id.
+- The control files `.summonr/check.toml` and `.summonr/policy.toml` are not part of a Work snapshot, so a check file summonr restored never reads as a workspace change.
+- The turn receipt's dirty count ignores caches and `.summonr` state. A file a `summonr diff` wrote stays out of later sessions' turn diffs, and a change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
+- The deferred `mcp` tool accepts arguments as an object, a JSON string, or fields beside `tool`.
+- The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`; a check file that changes during a run gets a note, and the check loaded at start stays in force. A file that summonr's own output is redirected to never counts as a change.
+- `summonr diff` and child landings never include generated caches (`__pycache__`, `*.pyc`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`) or summonr state under `.summonr/`, even without a `.gitignore`.
+- A child never inherits goal or steps mode, a child of a plan-mode parent is read-only, and a child's first message names only its own checkout.
+- A local server needs no `api_key`. When `ollama` or `lmstudio` is not running, the error gives the start command and, with no model set, lists the server's models. `summonr logout NAME` says what it removed. A closest-name hint appears only within `closest_percent` of the name length.
+- An unknown slash command names the closest command and never runs another one. One `esc` closes `/login` and `/model`, and the `ctx` meter hides when the context window is unknown.
 - `--goal` and `--steps` from the command line run the completion check and the goal judge. Before, a goal that was already met could repeat turns until its budget ran out.
 - Dragging across the transcript in a terminal copies exactly the text crossed, in either direction, and the footer says "copied N lines". Before, the first character was dropped, a drag toward the start copied nothing, and nothing confirmed the copy.
 - Links in replies open on click, a dropped file lands only in the pane under the pointer, and loading older messages keeps the message you were reading in place.
@@ -76,6 +113,9 @@ First stable release.
 - Leaving plan mode removes the sandbox plan mode turned on.
 - A failed compaction summary retries after 8 rounds.
 - A file whose change time moved is hashed again for undo snapshots.
+- A closed stdout or stderr pipe ends summonr quietly and leaves no crash report for the next run.
+- The `edit` and `write` tools refuse `.summonr/check.toml` and `.summonr/policy.toml` in every mode. When the check file changes during a run anyway, summonr restores it and adds a note.
+- A file that summonr's own output is redirected to stays out of every checkpoint, so `summonr diff --turn` never lists it.
 
 ### Security
 
@@ -109,7 +149,7 @@ First stable release.
 - `↑` on an empty draft pulls queued input back; `ctrl+q` no longer does.
 - A key stored with `summonr login` wins over peer keys. An endpoint with no key fails with the missing-key message.
 - The model sees five core tools: `read`, `edit`, `write`, `run_command`, and `todo`. Modules add `skill`, `lsp`, `web`, `task`, and `bus`. `read` search takes `literal`, `caseSensitive`, and `include`; `edit` and `write` take a `files` batch.
-- Chat runs at once. `shift+tab` and `/plan` enter plan mode, which is read-only and saves the plan to `.summonr/plan.md`. `/plan accept` runs the plan in the same turn.
+- Chat runs at once. `shift+tab` and `/plan` enter plan mode, which is read-only and saves the plan to `plan.md` in the session directory. `/plan accept` runs the plan in the same turn.
 - The `task` module is off by default.
 - `--goal`, `--steps`, and `implement` children edit the launch directory. `--worktree` isolates the session.
 - Sandboxed network is on by default; `--no-net` denies it.

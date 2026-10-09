@@ -104,7 +104,10 @@ impl ToolRegistry {
                 ),
                 success: false,
                 mutated: false,
-                grant: Some(Grant::Danger(command.to_string())),
+                grant: Some(Grant::Danger {
+                    command: command.to_string(),
+                    reason: reason.to_string(),
+                }),
                 images: Vec::new(),
                 patch: None,
             }));

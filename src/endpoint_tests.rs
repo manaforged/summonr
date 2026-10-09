@@ -55,24 +55,32 @@ fn a_misspelled_endpoint_suggests_the_closest_name() {
         "openai".to_string(),
         "gemini".to_string(),
     ];
-    assert_eq!(closest("antropic", &names), Some("anthropic"));
-    assert_eq!(closest("zzzzzzzz", &names), None);
+    assert_eq!(
+        closest("antropic", &names, super::Near::Typo),
+        Some("anthropic")
+    );
+    assert_eq!(closest("zzzzzzzz", &names, super::Near::Typo), None);
 }
 
 #[test]
-fn the_last_seat_wins_over_the_config_default() {
-    let file: crate::config::File =
-        toml::from_str("default = \"qwen\"\ndefault_model = \"q\"\n").unwrap();
-    let last = Some(("zai".to_string(), "glm".to_string()));
-    let (name, model, reason) = choose(&file, last, None, None);
-    assert_eq!(
-        (name.as_deref(), model.as_deref(), reason),
-        (Some("zai"), Some("glm"), Some(super::Pick::LastUsed))
-    );
-    let (name, _, reason) = choose(&file, None, None, None);
+fn the_config_default_wins_over_the_last_seat_and_a_stale_one_falls_back() {
+    let servers = "[endpoint.lab]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"m\"\n\n[endpoint.other]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"o\"\n";
+    let last = Some(("other".to_string(), "o".to_string()));
+    let file: crate::config::File = toml::from_str(&format!(
+        "default = \"lab\"\ndefault_model = \"m\"\n{servers}"
+    ))
+    .unwrap();
+    let (name, _, reason) = choose(&file, last.clone(), None, None);
     assert_eq!(
         (name.as_deref(), reason),
-        (Some("qwen"), Some(super::Pick::Default))
+        (Some("lab"), Some(super::Pick::Default))
+    );
+    let stale: crate::config::File =
+        toml::from_str(&format!("default = \"gone\"\n{servers}")).unwrap();
+    let (name, _, reason) = choose(&stale, last, None, None);
+    assert_eq!(
+        (name.as_deref(), reason),
+        (Some("other"), Some(super::Pick::LastUsed))
     );
 }
 
@@ -199,4 +207,14 @@ fn hosts_that_route_caches_per_conversation_opt_into_the_cache_key() {
             .prompt_cache_key,
         "xai stores cache entries per server and routes on the cache key"
     );
+}
+
+#[test]
+fn a_short_name_gets_a_hint_only_for_a_near_miss() {
+    let names = vec!["zai".to_string(), "ollama".to_string(), "qwen".to_string()];
+    assert_eq!(closest("lab", &names, super::Near::Typo), None);
+    assert_eq!(closest("ollma", &names, super::Near::Typo), Some("ollama"));
+    assert_eq!(closest("qwn", &names, super::Near::Typo), Some("qwen"));
+    let lab = vec!["lab".to_string()];
+    assert_eq!(closest("lba", &lab, super::Near::Typo), Some("lab"));
 }

@@ -97,6 +97,7 @@ impl<P: Provider> Loop<P> {
         }
         let system_prompt = system_prompt.into();
         let (max_tokens, max_live_millis) = session.budget_limits();
+        let run_base = (session.spent_tokens(), session.elapsed_millis());
         let depth = session.depth();
         let tools = ToolRegistry::with_policy_and_search(workspace, policy, search)?;
         tools.set_session(&session.id().to_string());
@@ -118,12 +119,14 @@ impl<P: Provider> Loop<P> {
             herdr,
             session,
             verify: None,
+            check_file: None,
             budget: Budget {
                 max_tokens,
                 max_secs: max_live_millis
                     .map(|millis| millis.saturating_add(999).saturating_div(1_000)),
             },
             spent_tokens: 0,
+            run_base,
             context_sample: None,
             context_window: None,
             probe: None,
@@ -351,7 +354,15 @@ impl<P: Provider> Loop<P> {
 
     #[must_use]
     pub(crate) fn elapsed_secs(&self) -> u64 {
-        self.session.elapsed_millis() / 1000
+        self.session
+            .elapsed_millis()
+            .saturating_sub(self.run_base.1)
+            / 1000
+    }
+
+    #[must_use]
+    pub(crate) fn run_tokens(&self) -> u64 {
+        self.spent_tokens.saturating_sub(self.run_base.0)
     }
 
     #[must_use]

@@ -5,6 +5,9 @@ impl Worker {
     pub(in crate::tui::worker) async fn submit(&mut self, input: UserInput) -> bool {
         if input.images.is_empty() {
             let line = input.text.trim();
+            if self.loop_.is_plan() && self.loop_.pending_plan() && crate::plan::approves(line) {
+                return self.accept_plan().await;
+            }
             if let Some((send, command)) = shell_prefix(line) {
                 return self.shell(command, send).await;
             }
@@ -55,6 +58,7 @@ impl Worker {
         }
         let argument = match argument(line) {
             Ok(argument) => argument,
+            Err(_) if crate::parse_command(line).is_none() => return self.unknown(line),
             Err(error) => {
                 self.fail(&error);
                 return Some(true);
@@ -245,8 +249,12 @@ impl Worker {
 
     pub(in crate::tui::worker) fn unknown(&self, line: &str) -> Option<bool> {
         let head = line.split_whitespace().next().unwrap_or(line);
+        let closest = crate::tui::matching_commands(head)
+            .first()
+            .map(|(name, _)| format!("; closest: {name}"))
+            .unwrap_or_default();
         self.fail(&format!(
-            "unknown command `{head}`; /help lists them, tab completes"
+            "unknown command {head}{closest}; /help lists them"
         ));
         Some(true)
     }

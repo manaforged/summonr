@@ -119,6 +119,7 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
                 call: String::new(),
                 background: false,
                 workspace: String::new(),
+                agent: String::new(),
             },
         );
         model.apply_child(

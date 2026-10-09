@@ -247,7 +247,7 @@ impl Worker {
             (cancelled, result, quit)
         };
         if quit {
-            if let Err(error) = self.abort("shutdown") {
+            if let Err(error) = self.abort(crate::tools::AbortCode::Interrupted, "shutdown") {
                 self.fail(&error.to_string());
             }
             return false;
@@ -256,6 +256,9 @@ impl Worker {
             Some(Ok(turn)) => Some(turn.clone()),
             _ => None,
         };
+        if matches!(&result, Some(Ok(turn)) if !turn.aborted) {
+            self.remember_seat();
+        }
         self.finish_turn(cancelled, result);
         self.send_settings();
         true
@@ -266,12 +269,13 @@ impl Worker {
             self.recover();
         }
         if cancelled {
-            if let Err(error) = self.abort("cancelled by user") {
+            if let Err(error) = self.abort(crate::tools::AbortCode::Cancelled, "cancelled by user")
+            {
                 self.fail(&format!("cancellation not recorded: {error}"));
             }
             drop(self.ui.send(Msg::Busy(None)));
         } else if let Some(Err(error)) = result {
-            if let Err(abort) = self.abort("turn failed") {
+            if let Err(abort) = self.abort(crate::tools::AbortCode::Error, "turn failed") {
                 self.fail(&format!(
                     "{error}; and the turn could not be closed: {abort}"
                 ));
@@ -294,10 +298,14 @@ impl Worker {
         }
     }
 
-    fn abort(&mut self, reason: &str) -> crate::Result<()> {
+    fn abort(&mut self, code: crate::tools::AbortCode, reason: &str) -> crate::Result<()> {
         let ui = &self.ui;
+        let abort = crate::tools::Abort {
+            code,
+            reason: reason.to_string(),
+        };
         self.loop_
-            .abort_with(reason, |event| drop(ui.send(Msg::Event(event.clone()))))
+            .abort_with(&abort, |event| drop(ui.send(Msg::Event(event.clone()))))
     }
 
     fn carry_steering(&mut self) {
@@ -339,45 +347,6 @@ impl Worker {
             drop(self.ui.send(Msg::Restored(pending)));
         }
         super::announce(&self.ui, &self.steering, &self.followups);
-    }
-
-    pub(super) fn send_diff(&mut self, announce: bool) {
-        let diff = match crate::diff::stats(self.loop_.workspace()) {
-            Ok(diff) => diff,
-            Err(error) => {
-                self.last_diff = None;
-                drop(self.ui.send(Msg::DiffFailed(error.to_string())));
-                return;
-            }
-        };
-        if announce {
-            let calls = self.last_turn.iter().flat_map(|turn| {
-                turn.events.iter().filter_map(|event| match event {
-                    Event::ToolCall {
-                        name, arguments, ..
-                    } => Some((name.as_str(), arguments.as_str())),
-                    _ => None,
-                })
-            });
-            drop(self.ui.send(Msg::Edited(crate::diff::edited(calls))));
-            if self.last_diff.as_ref() == Some(&diff) {
-                return;
-            }
-        }
-        self.last_diff = Some(diff.clone());
-        drop(self.ui.send(Msg::Diff(diff)));
-    }
-
-    pub(super) fn tree_at(
-        &self,
-        path: &std::path::Path,
-    ) -> crate::error::Result<crate::worktree::Tree> {
-        crate::worktree::list(self.loop_.workspace())?
-            .into_iter()
-            .find(|tree| tree.path == path)
-            .ok_or_else(|| {
-                crate::error::Error::Config(format!("no worktree at {}", path.display()))
-            })
     }
 }
 

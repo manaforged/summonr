@@ -29,15 +29,19 @@ pub(in crate::tui::sigil_view) fn searched(arg: &str) -> Option<&str> {
 pub(in crate::tui::sigil_view) fn workspace_relative(arg: &str, roots: &[String]) -> String {
     arg.split(' ')
         .map(|word| {
-            let (lead, path) =
-                word.split_at(word.find(|ch| !matches!(ch, '"' | '\'' | '=')).unwrap_or(0));
+            let (lead, path) = word.split_at(
+                word.find(|ch| !matches!(ch, '"' | '\'' | '=' | '(' | '['))
+                    .unwrap_or(0),
+            );
             roots
                 .iter()
                 .find_map(|root| {
                     let rest = path.strip_prefix(root.as_str())?;
                     match rest.strip_prefix(['/', std::path::MAIN_SEPARATOR]) {
                         Some(inner) => Some(format!("{lead}{inner}")),
-                        None if rest.is_empty() || rest.starts_with(['"', '\'']) => {
+                        None if rest.is_empty()
+                            || rest.starts_with(['"', '\'', ')', ']', ',', '.', ':', ';']) =>
+                        {
                             Some(format!("{lead}.{rest}"))
                         }
                         None => None,

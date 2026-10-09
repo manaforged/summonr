@@ -18,10 +18,12 @@ impl Model {
                 call,
                 background,
                 workspace,
+                agent,
             } => self.child_spawn(Agent {
                 call: call.clone(),
                 background: *background,
                 title: Agent::title_of(assignment),
+                agent: agent.clone(),
                 assignment: assignment.clone(),
                 workspace: workspace.clone(),
                 access: *access,
@@ -48,6 +50,21 @@ impl Model {
             }
         }
         self.entries.invalidate();
+    }
+
+    pub(in crate::tui::sigil_view) fn child_receipt(
+        &self,
+        call: &str,
+    ) -> Option<crate::child::ChildRecord> {
+        let output = self.entries.iter().rev().find_map(|entry| match entry {
+            Entry::Tool { id, output, .. } if id == call => Some(output),
+            Entry::ToolGroup { calls, .. } => calls
+                .iter()
+                .find(|item| item.id == call)
+                .map(|item| &item.output),
+            _ => None,
+        })?;
+        serde_json::from_str(output).ok()
     }
 
     fn child_spawn(&mut self, agent: Agent) {
@@ -133,9 +150,9 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
             success: false,
             output,
             ..
-        } => (compact.text(output).to_string(), false, true),
+        } => (compact.text(output).to_string(), false, false),
         Event::Assistant { text } => (compact.text(text).to_string(), true, false),
-        Event::Aborted { reason } => (reason.clone(), true, true),
+        Event::Aborted { reason, .. } => (reason.clone(), true, true),
         Event::Note { text } => (text.clone(), false, false),
         Event::Verify { command, passed } => (
             format!(
@@ -147,7 +164,7 @@ fn child_line(event: &Event) -> Option<(String, bool, bool)> {
                 }
             ),
             false,
-            !passed,
+            false,
         ),
         _ => return None,
     };

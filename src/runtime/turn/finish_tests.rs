@@ -252,3 +252,64 @@ async fn steps_selected_from_the_command_line_run_the_completion_check() {
         closing(&turn)
     );
 }
+
+#[tokio::test]
+async fn a_goal_that_stops_short_exits_on_its_check() {
+    for (check, code) in [("false", 2), ("true", 3)] {
+        let mut run = session([
+            Reply::Text("tried"),
+            Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
+        ]);
+        run.loop_
+            .select_goal("make the tests pass", &[check.to_string()])
+            .unwrap();
+        run.loop_.turn("make the tests pass").await.unwrap();
+        let exit = run
+            .loop_
+            .stop_work("goal execution aborted", |_| {})
+            .await
+            .unwrap();
+        assert_eq!(exit, code, "check `{check}`");
+    }
+}
+
+#[tokio::test]
+async fn a_failed_check_reads_the_same_in_progress_and_verify() {
+    let mut run = session([
+        Reply::Text("tried"),
+        Reply::Text(r#"{"verdict": "continue", "reason": "the check failed"}"#),
+    ]);
+    run.loop_
+        .select_goal("make the tests pass", &["false".to_string()])
+        .unwrap();
+    let turn = run.loop_.turn("make the tests pass").await.unwrap();
+    assert!(
+        turn.events
+            .iter()
+            .any(|event| matches!(event, Event::Verify { passed: false, .. })),
+        "{:?}",
+        closing(&turn)
+    );
+    assert!(run.loop_.work_progress().unwrap().checks_failed);
+}
+
+#[tokio::test]
+async fn a_check_file_changed_during_a_run_is_put_back() {
+    let mut run = session([
+        Reply::Text("tried"),
+        Reply::Text(r#"{"verdict": "continue", "reason": "not yet"}"#),
+    ]);
+    let path = run.loop_.workspace().join(".summonr/check.toml");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "check = \"false\"\n").unwrap();
+    run.loop_.set_verify(Some(vec!["false".to_string()]));
+    run.loop_
+        .select_goal("make the tests pass", &["false".to_string()])
+        .unwrap();
+    std::fs::write(&path, "check = \"true\"\n").unwrap();
+    run.loop_.turn("make the tests pass").await.unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&path).unwrap(),
+        "check = \"false\"\n"
+    );
+}

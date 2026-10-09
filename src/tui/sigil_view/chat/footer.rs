@@ -22,7 +22,7 @@ type FooterView = (
     Option<super::super::app::Notice>,
     Option<String>,
     Option<(String, bool)>,
-    u64,
+    Option<u64>,
     u64,
     Option<(bool, Vec<(String, String)>)>,
 );
@@ -173,13 +173,15 @@ fn footer_row(app: App, view: FooterView, width: usize) -> NodeBuilder {
     let cache_card = open
         .as_ref()
         .and_then(|(cache, rows)| (*cache).then_some(rows.clone()));
-    row = row.child(meter_button(
-        app.clone(),
-        Target::Context,
-        meter("ctx", context_pct, sigil::prelude::Token::Accent),
-        context_card,
-        width,
-    ));
+    if let Some(percent) = context_pct {
+        row = row.child(meter_button(
+            app.clone(),
+            Target::Context,
+            meter("ctx", percent, sigil::prelude::Token::Accent),
+            context_card,
+            width,
+        ));
+    }
     row.child(meter_button(
         app,
         Target::Cache,

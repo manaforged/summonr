@@ -1,3 +1,4 @@
+use super::brief::{agent_brief, instruction, rebase_paths};
 use super::record::*;
 use super::*;
 
@@ -76,13 +77,7 @@ impl<P: Provider> Loop<P> {
             Some(self.session.id()),
         )
         .map_err(super::session_err)?;
-        let instruction = instruction(args.access, tree.is_some());
-        let (brief, tools) = agent_brief(args.agent.as_deref(), &self.workspace)?;
-        let opener = format!(
-            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{brief}{}",
-            workspace.display(),
-            args.assignment
-        );
+        let (opener, tools) = self.child_opener(&args, tree.as_ref(), &workspace)?;
         let mut child = Self::with_parts(
             provider,
             model.clone(),
@@ -92,16 +87,9 @@ impl<P: Provider> Loop<P> {
             Policy::builtin(),
             None,
         )?;
-        child.tools = self.tools.child_at(&workspace, &child.session_id())?;
-        if args.access == Access::Research {
-            child.tools.contain_read_only();
-        }
-        if let Some(tools) = tools {
-            child.tools.restrict_to(&tools);
-        }
+        child.tools = self.child_tools(args.access, tools.as_deref(), &workspace, &child)?;
         child.schema = Some(self.advertised_tools());
         child.depth = 1;
-        child.mode = self.mode;
         child.context_window = self.context_window;
         child.context_sample = self.context_sample;
         child.effort = self.effort_for(role);
@@ -131,6 +119,7 @@ impl<P: Provider> Loop<P> {
                 call: args.call.clone(),
                 background: args.background,
                 workspace: record.workspace.to_string_lossy().into_owned(),
+                agent: args.agent.clone().unwrap_or_default(),
             }),
         }));
         Ok(Run {
@@ -141,6 +130,42 @@ impl<P: Provider> Loop<P> {
             deadline: budget.max_secs.map(crate::limits::seconds),
             started: Instant::now(),
         })
+    }
+
+    fn child_opener(
+        &self,
+        args: &Args,
+        tree: Option<&Tree>,
+        workspace: &Path,
+    ) -> Result<(String, Option<Vec<String>>)> {
+        let instruction = instruction(args.access, tree.is_some());
+        let (brief, tools) = agent_brief(args.agent.as_deref(), &self.workspace)?;
+        let assignment = tree.map_or_else(
+            || args.assignment.clone(),
+            |tree| rebase_paths(&args.assignment, &self.workspace, &tree.path),
+        );
+        let opener = format!(
+            "Harness: child. Finish only the assigned task. {instruction} Your working directory is {}.\n\n{brief}{assignment}",
+            workspace.display()
+        );
+        Ok((opener, tools))
+    }
+
+    fn child_tools(
+        &self,
+        access: Access,
+        tools: Option<&[String]>,
+        workspace: &Path,
+        child: &Self,
+    ) -> Result<crate::tools::ToolRegistry> {
+        let mut registry = self.tools.child_at(workspace, &child.session_id())?;
+        if access == Access::Research || self.tools.is_read_only() {
+            registry.contain_read_only();
+        }
+        if let Some(tools) = tools {
+            registry.restrict_to(tools);
+        }
+        Ok(registry)
     }
 
     pub(super) fn task_reconcile(&self, done: &mut [(Access, Result<Done>)]) {
@@ -227,7 +252,7 @@ impl<P: Provider> Loop<P> {
         }
         let tokens = self.budget.max_tokens.map(|limit| {
             limit
-                .saturating_sub(self.spent_tokens)
+                .saturating_sub(self.run_tokens())
                 .saturating_sub(self.child_budget_reserved())
                 / children
         });
@@ -268,6 +293,7 @@ impl<P: Provider> Loop<P> {
             billed_tokens: self.session.spent_tokens(),
             elapsed_millis: self.session.elapsed_millis(),
             diagnostic: diagnostic.map(str::to_string),
+            kept: None,
         }
     }
 }
@@ -277,36 +303,6 @@ pub(super) fn child_tree(workspace: &Path, access: Access) -> Result<Option<Tree
         return Ok(None);
     }
     worktree::open_delta(workspace).map(Some)
-}
-
-fn instruction(access: Access, isolated: bool) -> &'static str {
-    match (access, isolated) {
-        (Access::Implement, true) => {
-            "You are in an isolated checkout of the parent workspace. It shares the parent build cache. Do not commit. Do not delete target or node_modules. The parent applies your edits when you finish, even if another child fails. Background commands stay with the parent."
-        }
-        (Access::Implement, false) => {
-            "Edit this workspace. You may build, test, and lint here. Background commands stay with the parent."
-        }
-        (Access::Research, _) => "This assignment is read-only. Do not change the workspace.",
-    }
-}
-
-fn agent_brief(name: Option<&str>, workspace: &Path) -> Result<(String, Option<Vec<String>>)> {
-    let Some(name) = name else {
-        return Ok((String::new(), None));
-    };
-    let agent = crate::plugins::agents::find(name, workspace).map_err(Error::Tool)?;
-    if let Some(tools) = &agent.tools
-        && !tools
-            .iter()
-            .any(|tool| crate::hooks::builtin(tool).is_some())
-    {
-        return Err(Error::Tool(format!(
-            "agent `{name}` declares tools [{}] but none is a known tool",
-            tools.join(", ")
-        )));
-    }
-    Ok((format!("{}\n\n", agent.instructions), agent.tools))
 }
 
 fn release_unfinished(done: &mut Done) {
@@ -337,7 +333,7 @@ fn release_unfinished(done: &mut Done) {
 impl ChildRecord {
     fn record_landing(&mut self, landing: worktree::Landing) {
         if let Some(kept) = landing.kept {
-            if landing.paths.is_empty() {
+            if landing.paths.is_empty() && landing.held.is_none() {
                 self.fail_record(&kept);
                 return;
             }
@@ -346,6 +342,7 @@ impl ChildRecord {
         let Some(result) = result_mut(&mut self.state) else {
             return;
         };
+        result.kept = landing.held;
         result.changed_paths_total = landing.paths.len();
         result.changed_paths = landing.paths;
     }

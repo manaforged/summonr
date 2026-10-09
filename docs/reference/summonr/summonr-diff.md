@@ -4,8 +4,11 @@
 | --- | --- | --- |
 | [`Diff`](#diff) | struct |  |
 | [`Stat`](#stat) | struct |  |
+| [`TurnId`](#turnid) | enum |  |
 | [`patch`](#patch) | fn |  |
 | [`stats`](#stats) | fn |  |
+| [`turn_patch`](#turn_patch) | fn |  |
+| [`turn_stats`](#turn_stats) | fn |  |
 | [`turns`](#turns) | fn |  |
 
 ## Structs
@@ -26,6 +29,7 @@
 | --- | --- |
 | <code>base: String</code> |  |
 | <code>files: Vec&lt;<a href="#stat">Stat</a>&gt;</code> |  |
+| <code>session: Option&lt;String&gt;</code> |  |
 
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>
 
@@ -44,6 +48,20 @@
 **Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Default</code>, <code>Debug</code>, <code>StructuralPartialEq</code>, <code>Serialize</code>
 
 
+## Enums
+
+### `TurnId`
+
+**Variants**
+
+| Variant | Description |
+| --- | --- |
+| <code>Last</code> |  |
+| <code>Number(usize)</code> |  |
+
+**Trait implementations:** <code>Clone</code>, <code>Eq</code>, <code>PartialEq</code>, <code>Debug</code>, <code>Copy</code>, <code>StructuralPartialEq</code>, <code>FromStr</code>
+
+
 ## Functions
 
 ### `patch`
@@ -54,6 +72,16 @@
 ### `stats`
 
 <pre>pub fn <a href="#stats">stats</a>(root: &amp;Path) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#diff">Diff</a>&gt;</pre>
+
+
+### `turn_patch`
+
+<pre>pub fn <a href="#turn_patch">turn_patch</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>, path: Option&lt;&amp;str&gt;) -&gt; <a href="summonr.html#result">Result</a>&lt;String&gt;</pre>
+
+
+### `turn_stats`
+
+<pre>pub fn <a href="#turn_stats">turn_stats</a>(root: &amp;Path, session: &amp;str, id: <a href="#turnid">TurnId</a>) -&gt; <a href="summonr.html#result">Result</a>&lt;<a href="#diff">Diff</a>&gt;</pre>
 
 
 ### `turns`

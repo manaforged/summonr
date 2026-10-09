@@ -261,3 +261,45 @@ pub(crate) fn a_plugin_command_expands_into_the_prompt_and_its_agents_are_listed
         );
     }
 }
+
+#[cfg(unix)]
+pub(crate) fn a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home() {
+    let session = Session::new();
+    let trail = session.file("home.txt");
+    let script = format!(
+        "input=$(cat); printf %s \"$SUMMONR_HOME\" > '{}'; echo \"$input\" | grep -q '\"tool_name\":\"Bash\"' && echo \"$input\" | grep -q 'rm -rf' && {{ echo blocked by claude hook >&2; exit 2; }}; exit 0",
+        trail.display()
+    );
+    let config = format!(
+        "[hooks]\npre_tool = {{ command = {}, dialect = \"claude\" }}\n",
+        serde_json::to_string(&script).unwrap()
+    );
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "rm -rf scratch"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, &config, &[]);
+    let results = model.tool_results();
+    assert!(results[0].contains("blocked by claude hook"), "{results:?}");
+    let seen = std::fs::read_to_string(&trail).unwrap_or_default();
+    assert_eq!(
+        std::fs::canonicalize(&seen).ok(),
+        std::fs::canonicalize(session.home.path()).ok(),
+        "{seen}"
+    );
+}
+
+#[cfg(unix)]
+pub(crate) fn a_hook_matcher_limits_the_tools_it_runs_for() {
+    let session = Session::new();
+    let config = "[hooks]\npre_tool = { command = \"echo blocked by matcher >&2; exit 2\", dialect = \"claude\", matcher = \"Edit|Write\" }\n";
+    let model = Model::start(vec![
+        Step::Call("run_command", json!({"command": "echo ran"})),
+        Step::Call("write", json!({"path": "a.txt", "content": "x\n"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, config, &[]);
+    let results = model.tool_results();
+    assert!(results[0].contains("ran"), "{results:?}");
+    assert!(results[1].contains("blocked by matcher"), "{results:?}");
+}

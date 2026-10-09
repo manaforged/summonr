@@ -12,14 +12,25 @@ pub(super) fn layer(app: App) -> NodeBuilder {
         layout.split(cols)
     };
     let surface = chat_surface(app.clone(), chat_cols);
+    let row = container()
+        .layout(LayoutStyle::flex_row().fill_width().fill_height().gap(0.0))
+        .bg(canvas::palette().base)
+        .child(surface);
     match layout.secondary {
-        Some(pane) if side_cols > 0 => container()
-            .layout(LayoutStyle::flex_row().fill_width().fill_height().gap(0.0))
-            .bg(canvas::palette().base)
-            .child(surface)
-            .child(panes::body(&app, pane, side_cols)),
-        _ => surface,
+        Some(pane) if side_cols > 0 => row.child(side(app, pane, side_cols)),
+        Some(_) | None => row,
     }
+}
+
+fn side(app: App, pane: Pane, cols: u16) -> NodeBuilder {
+    container()
+        .layout(
+            LayoutStyle::block()
+                .fill_height()
+                .shrink(0.0)
+                .min_size(0.0, 0.0),
+        )
+        .children_reactive(move || vec![panes::body(&app, pane, cols)])
 }
 
 fn chat_surface(app: App, cols: u16) -> NodeBuilder {
@@ -40,7 +51,7 @@ fn chat_surface(app: App, cols: u16) -> NodeBuilder {
         .focus_when(app.editor_focus);
     let focus = app.clone();
     let editor = move || {
-        if untrack(|| focus.overlay().is_none()) {
+        if untrack(|| focus.overlay().is_none() && focus.note_target.peek().is_none()) {
             editor.autofocus()
         } else {
             editor

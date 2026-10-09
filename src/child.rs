@@ -66,6 +66,7 @@ impl ChildRecord {
             billed_tokens: 0,
             elapsed_millis: 0,
             diagnostic: Some(reason.to_string()),
+            kept: None,
         });
         record
     }
@@ -93,6 +94,8 @@ pub(crate) struct ChildResult {
     pub(crate) elapsed_millis: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) diagnostic: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) kept: Option<crate::tools::Kept>,
 }
 
 #[must_use]

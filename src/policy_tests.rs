@@ -375,3 +375,15 @@ fn a_write_to_git_head_is_refused() {
     let error = refusal("echo x > .git/HEAD");
     assert!(error.contains("`.git/HEAD` is a protected path"), "{error}");
 }
+
+#[test]
+fn the_workspace_check_and_policy_files_are_not_the_models_to_write() {
+    for path in [
+        ".summonr/check.toml",
+        ".summonr/policy.toml",
+        "/w/app/.summonr/check.toml",
+    ] {
+        assert!(protected_write(Path::new(path)), "{path}");
+    }
+    assert!(!protected_write(Path::new(".summonr/notes.md")));
+}

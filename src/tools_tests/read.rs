@@ -100,15 +100,43 @@ fn a_batch_read_keeps_line_tags_for_every_file() {
 }
 
 #[test]
-fn a_read_reaches_a_file_outside_the_workspace() {
-    let (_dir, tools) = workspace(&[]);
-    let other = tempfile::tempdir().unwrap();
+fn a_read_reaches_a_file_outside_the_workspace_by_absolute_or_relative_path() {
+    let (dir, tools) = workspace(&[]);
+    let other = tempfile::tempdir_in(dir.path().parent().unwrap()).unwrap();
     let file = other.path().join("notes.md");
     std::fs::write(&file, "kept outside\n").unwrap();
-    let text = run(
-        &tools,
-        "read",
-        serde_json::json!({"path": file.display().to_string()}),
-    );
-    assert!(text.contains("kept outside"), "{text}");
+    let name = other.path().file_name().unwrap().to_string_lossy();
+    for path in [file.display().to_string(), format!("../{name}/notes.md")] {
+        let text = run(&tools, "read", serde_json::json!({ "path": path }));
+        assert!(text.contains("kept outside"), "{path}: {text}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn a_protected_name_outside_the_workspace_stays_protected_through_a_symlink() {
+    let (_dir, tools) = workspace(&[]);
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(other.path().join("plain.txt"), "API_KEY=1\n").unwrap();
+    let link = other.path().join(".env");
+    std::os::unix::fs::symlink(other.path().join("plain.txt"), &link).unwrap();
+    let call = ToolCall {
+        id: "t1".to_string(),
+        kind: ToolKind::Function,
+        function: ToolFunction {
+            checked: Default::default(),
+            name: "read".to_string(),
+            arguments: serde_json::json!({"path": link.display().to_string()}).to_string(),
+        },
+        continuation: None,
+    };
+    let error = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .build()
+        .unwrap()
+        .block_on(tools.execute_outcome(&call))
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(error.contains("protected path"), "{error}");
 }

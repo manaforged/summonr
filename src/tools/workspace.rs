@@ -33,7 +33,7 @@ impl ToolRegistry {
             return match op {
                 None if args.get("pattern").is_none() => self.read_files(&args, paths),
                 Some("file") => self.read_files(&args, paths),
-                None | Some("search") => Ok(ToolOutput::ok(self.search_paths(&args, paths))),
+                None | Some("search") => self.search_files(arguments).map(ToolOutput::ok),
                 Some(operation) => Err(Error::Tool(format!(
                     "paths does not apply to read op={operation}"
                 ))),
@@ -49,7 +49,7 @@ impl ToolRegistry {
         match operation {
             "file" => self.read_file(arguments),
             "list" => self.list_dir(arguments).map(ToolOutput::ok),
-            "search" => self.grep(arguments).map(ToolOutput::ok),
+            "search" => self.search_files(arguments).map(ToolOutput::ok),
             "image" => self.show_image(arguments),
             "help" => Ok(ToolOutput::ok(super::help::read())),
             unknown => Err(Error::Tool(format!("unknown read operation `{unknown}`"))),
@@ -65,7 +65,7 @@ impl ToolRegistry {
             .map(str::trim)
             .filter(|glob| !glob.is_empty());
         if !pattern.is_empty() || glob.is_some() {
-            return self.grep(arguments).map(ToolOutput::ok);
+            return self.search_files(arguments).map(ToolOutput::ok);
         }
         let path = args
             .get("path")

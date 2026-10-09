@@ -355,7 +355,11 @@ pub(crate) fn protected_read(path: &Path) -> bool {
     };
     [".ssh", ".gnupg", ".aws", ".summonr"]
         .into_iter()
-        .any(|dir| path.starts_with(home.join(dir)))
+        .map(|dir| home.join(dir))
+        .chain(crate::prompt::summonr_home())
+        .any(|dir| {
+            path.starts_with(&dir) || dir.canonicalize().is_ok_and(|real| path.starts_with(real))
+        })
 }
 
 mod blocks;
@@ -366,7 +370,7 @@ mod verbs;
 
 use blocks::*;
 pub(crate) use blocks::{
-    grant_from_error, implicit_write, outside_hint, outside_write, write_denied,
+    grant_from_error, implicit_write, outside_hint, outside_write, reads_only, write_denied,
 };
 use paths::*;
 use shell::*;

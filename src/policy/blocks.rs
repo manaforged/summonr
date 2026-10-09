@@ -55,10 +55,24 @@ pub(super) fn read_block(steps: &[Step], workspace: &Path) -> Option<String> {
         if !matches!(row.read, Read::Always) {
             return None;
         }
+        let cwd = step.cwd.as_deref().unwrap_or(workspace);
         step.operands().into_iter().find_map(|word| {
             let target = path_word(word);
-            protected_read(&locate(target, workspace)).then(|| target.to_string())
+            protected_read(&locate(target, cwd)).then(|| target.to_string())
         })
+    })
+}
+
+pub(crate) fn reads_only(command: &str) -> bool {
+    let root = Path::new("/");
+    walk::walk(command, root, root, &[]).iter().all(|step| {
+        step.redirects()
+            .iter()
+            .all(|target| *target == "/dev/null" || target.bytes().all(|b| b.is_ascii_digit()))
+            && step.verb().is_none_or(|verb| {
+                verb_row(&verb)
+                    .is_some_and(|row| row.read.allows(step.argv().get(1..).unwrap_or_default()))
+            })
     })
 }
 

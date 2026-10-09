@@ -303,3 +303,19 @@ pub(crate) fn a_hook_matcher_limits_the_tools_it_runs_for() {
     assert!(results[0].contains("ran"), "{results:?}");
     assert!(results[1].contains("blocked by matcher"), "{results:?}");
 }
+
+#[cfg(unix)]
+pub(crate) fn a_claude_glob_matcher_runs_for_search() {
+    let session = Session::new();
+    let config = "[hooks]\npre_tool = { command = \"echo blocked by glob matcher >&2; exit 2\", dialect = \"claude\", matcher = \"Glob\" }\n";
+    let model = Model::start(vec![
+        Step::Call("search", json!({"glob": "*.txt"})),
+        Step::Text("ok"),
+    ]);
+    session.run(&model, config, &[]);
+    let results = model.tool_results();
+    assert!(
+        results[0].contains("blocked by glob matcher"),
+        "{results:?}"
+    );
+}

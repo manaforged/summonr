@@ -86,7 +86,8 @@ First stable release.
 
 ### Fixed
 
-- A read-only command such as `grep` that times out no longer reports that it may have changed workspace files. `mdfind` and `locate` count as read-only.
+- A read-only command such as `grep` that times out no longer reports that it may have changed workspace files, and a command that redirects into a file still does. `mdfind` and `locate` count as read-only.
+- A command run with `workdir`, or after `cd`, can no longer read a protected path such as `~/.ssh` by a relative name.
 - A budget counts from the run that loads the session, so a resumed or forked session gets its full `--max-secs` and `--max-tokens` again.
 - Reverting a hunk in the diff pane tells the next turn, so the model does not report the reverted code as still in place.
 - `-p` labels an MCP tool lookup as `mcp search QUERY`, so lookups no longer read as duplicate calls. The banner and the resume line show the short session id.

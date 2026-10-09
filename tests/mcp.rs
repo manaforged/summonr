@@ -76,6 +76,8 @@ fn main() {
         plugins::a_claude_dialect_hook_from_config_blocks_and_sees_summonr_home,
         #[cfg(unix)]
         plugins::a_hook_matcher_limits_the_tools_it_runs_for,
+        #[cfg(unix)]
+        plugins::a_claude_glob_matcher_runs_for_search,
         output::large_output_is_cut_for_the_model_and_kept_whole_in_a_file,
         output::a_reply_over_the_frame_cap_is_dropped_and_the_session_goes_on,
         output::an_error_reply_is_cut_to_the_budget,
@@ -106,6 +108,8 @@ fn main() {
         policy::a_sandboxed_command_cannot_write_outside_roots_without_approval,
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         policy::a_no_network_session_does_not_enable_shell_networking,
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        policy::a_relocated_summonr_home_stays_protected_from_read_and_search,
         protocol::the_client_offers_the_current_spec_with_roots,
         protocol::a_server_on_an_unknown_version_is_refused,
         protocol::the_server_can_ask_for_the_workspace_roots,

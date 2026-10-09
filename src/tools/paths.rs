@@ -113,15 +113,13 @@ impl ToolRegistry {
 
     pub(in crate::tools) fn resolve_read(&self, path: &str) -> Result<PathBuf> {
         let cleaned = clean_path(path);
-        let candidate = Path::new(cleaned.as_ref());
-        let opened = if candidate.is_absolute() {
-            existing(candidate)
-                .canonicalize()
-                .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?
-        } else {
-            self.resolve_existing(path)?
-        };
-        if !self.policy.is_unrestricted() && crate::policy::protected_read(&opened) {
+        let requested = self.workspace.join(cleaned.as_ref());
+        let opened = existing(&requested)
+            .canonicalize()
+            .map_err(|error| Error::Tool(format!("cannot open `{path}`: {error}")))?;
+        if !self.policy.is_unrestricted()
+            && (crate::policy::protected_read(&requested) || crate::policy::protected_read(&opened))
+        {
             return Err(Error::Denied(format!("`{path}` is a protected path")));
         }
         Ok(opened)

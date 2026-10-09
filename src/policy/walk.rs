@@ -84,7 +84,7 @@ pub(crate) fn walk(command: &str, workspace: &Path, start: &Path, roots: &[PathB
         if let Some(target) = changed_dir(&step) {
             match target {
                 Some(target) => {
-                    cwd = cwd.as_deref().and_then(|cwd| resolve(target, cwd));
+                    cwd = cwd.as_deref().and_then(|cwd| moved_to(target, cwd));
                     outside |= is_outside(target, workspace, outside, roots);
                 }
                 None => {
@@ -193,6 +193,13 @@ fn expand_vars(segment: &str, vars: &HashMap<String, String>) -> String {
     }
     out.push_str(rest);
     out
+}
+
+fn moved_to(target: &str, cwd: &Path) -> Option<PathBuf> {
+    if target == "~" {
+        return crate::config::home_dir();
+    }
+    crate::config::expand_tilde(target).or_else(|| resolve(target, cwd))
 }
 
 pub(crate) fn resolve(target: &str, cwd: &Path) -> Option<PathBuf> {

@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 
 use grep_regex::{RegexMatcher, RegexMatcherBuilder};
@@ -19,72 +20,41 @@ const CONTEXT_MAX: usize = 10;
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, arguments: &str) -> Result<String> {
         let args: Value = parse_args("search", arguments)?;
-        match args
-            .get("paths")
-            .and_then(Value::as_array)
-            .filter(|paths| !paths.is_empty())
-        {
-            Some(paths) => Ok(self.search_paths(&args, paths)),
-            None => self.grep(arguments),
+        let (roots, missing) = self.search_roots(&args)?;
+        let query = Arc::new(self.query(&args, roots)?);
+        let report = walk::run(&query);
+        let mut out = scan::render(&query, report);
+        for line in missing {
+            out.push('\n');
+            out.push_str(&line);
         }
+        Ok(out)
     }
 
-    pub(super) fn search_paths(&self, args: &Value, paths: &[Value]) -> String {
-        let mut found = Vec::new();
-        for path in paths.iter().filter_map(Value::as_str) {
-            let mut one = args.clone();
-            if let Some(fields) = one.as_object_mut() {
-                fields.remove("paths");
-                fields.insert("path".to_string(), Value::from(path));
-            }
-            found.push(match self.grep(&one.to_string()) {
-                Ok(hits) => hits,
-                Err(error) => format!("{path}: {error}"),
-            });
-        }
-        found.join("\n")
-    }
-
-    pub(super) fn grep(&self, arguments: &str) -> Result<String> {
-        let args: Value = parse_args("grep", arguments)?;
-        let query = self.query(&args)?;
-        let (mut files, stopped) = collect(&query);
-        files.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
-        let Some(matcher) = &query.matcher else {
-            return Ok(file_list(&query.shown, &files, query.limit, stopped));
-        };
-        let spec = Spec {
-            pattern: &query.pattern,
-            limit: query.limit,
-            before: query.before,
-            after: query.after,
-            mode: query.mode,
-            multiline: query.multiline,
-            tags: query.tags,
-            deadline: query.deadline,
-        };
-        scan::search(&query.shown, &files, matcher, &spec, stopped)
-    }
-
-    fn query(&self, args: &Value) -> Result<Query> {
+    fn query(&self, args: &Value, roots: Vec<Root>) -> Result<Query> {
         let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
         let glob = text_arg(args, "glob", "include");
         if pattern.is_empty() && glob.is_none() {
-            return Err(Error::Tool("grep requires pattern or glob".to_string()));
+            return Err(Error::Tool("search requires pattern or glob".to_string()));
         }
         let multiline = object_bool(args, "multiline") || object_bool(args, "multi_line");
-        let (root, base, inside) = self.search_roots(args)?;
         let context = object_usize(args, "context").unwrap_or(0).min(CONTEXT_MAX);
         let exclude = text_arg(args, "exclude", "exclude_pattern");
         let fold = !sensitive(args, glob.unwrap_or_default());
+        let roots = roots
+            .into_iter()
+            .map(|root| {
+                let overrides = build_overrides(&root.base, glob, exclude, fold)?;
+                Ok(Root { overrides, ..root })
+            })
+            .collect::<Result<Vec<_>>>()?;
         Ok(Query {
             pattern: pattern.to_string(),
-            glob: glob.map(str::to_string),
-            overrides: build_overrides(&base, glob, exclude, fold)?,
+            glob: glob.is_some(),
             types: build_types(args)?,
             matcher: build_matcher(args, pattern, multiline)?,
-            shown: if inside { base } else { PathBuf::new() },
-            root,
+            shown: self.base(),
+            roots,
             depth: object_usize(args, "depth"),
             deadline: Instant::now() + crate::limits::limits().search(),
             limit: object_usize(args, "limit")
@@ -104,27 +74,53 @@ impl ToolRegistry {
         })
     }
 
-    fn search_roots(&self, args: &Value) -> Result<(PathBuf, PathBuf, bool)> {
-        let root = match args.get("path").and_then(Value::as_str) {
-            Some(path) if !path.trim().is_empty() && path != "." => self.resolve_read(path)?,
-            Some(_) | None => self.workspace.clone(),
-        };
-        let base = self
-            .workspace
+    fn base(&self) -> PathBuf {
+        self.workspace
             .canonicalize()
-            .unwrap_or_else(|_| self.workspace.clone());
-        let root = root.canonicalize().unwrap_or(root);
-        if root.starts_with(&base) {
-            Ok((root, base, true))
-        } else {
-            let base = if root.is_file() {
-                root.parent()
-                    .map_or_else(|| root.clone(), Path::to_path_buf)
-            } else {
-                root.clone()
-            };
-            Ok((root, base, false))
+            .unwrap_or_else(|_| self.workspace.clone())
+    }
+
+    fn search_roots(&self, args: &Value) -> Result<(Vec<Root>, Vec<String>)> {
+        let listed: Vec<&str> = args
+            .get("paths")
+            .and_then(Value::as_array)
+            .map(|paths| paths.iter().filter_map(Value::as_str).collect())
+            .unwrap_or_default();
+        if listed.is_empty() {
+            let path = args.get("path").and_then(Value::as_str).unwrap_or(".");
+            return Ok((vec![self.root(path)?], Vec::new()));
         }
+        let mut roots = Vec::new();
+        let mut missing = Vec::new();
+        for path in listed {
+            match self.root(path) {
+                Ok(root) => roots.push(root),
+                Err(error) => missing.push(format!("{path}: {error}")),
+            }
+        }
+        Ok((roots, missing))
+    }
+
+    fn root(&self, path: &str) -> Result<Root> {
+        let base = self.base();
+        let path = if path.trim().is_empty() || path == "." {
+            base.clone()
+        } else {
+            self.resolve_read(path)?
+        };
+        let base = if path.starts_with(&base) {
+            base
+        } else if path.is_file() {
+            path.parent()
+                .map_or_else(|| path.clone(), Path::to_path_buf)
+        } else {
+            path.clone()
+        };
+        Ok(Root {
+            path,
+            base,
+            overrides: None,
+        })
     }
 }
 
@@ -153,7 +149,7 @@ fn build_matcher(args: &Value, pattern: &str, multiline: bool) -> Result<Option<
         .dot_matches_new_line(multiline)
         .build(&pattern)
         .map(Some)
-        .map_err(|error| Error::Tool(format!("grep pattern is invalid: {error}")))
+        .map_err(|error| Error::Tool(format!("search pattern is invalid: {error}")))
 }
 
 fn sensitive(args: &Value, text: &str) -> bool {
@@ -163,12 +159,17 @@ fn sensitive(args: &Value, text: &str) -> bool {
         .unwrap_or_else(|| text.chars().any(char::is_uppercase))
 }
 
+struct Root {
+    path: PathBuf,
+    base: PathBuf,
+    overrides: Option<Override>,
+}
+
 struct Query {
     pattern: String,
-    glob: Option<String>,
-    overrides: Option<Override>,
+    glob: bool,
     types: Option<ignore::types::Types>,
-    root: PathBuf,
+    roots: Vec<Root>,
     shown: PathBuf,
     depth: Option<usize>,
     deadline: Instant,
@@ -195,7 +196,7 @@ fn build_types(args: &Value) -> Result<Option<ignore::types::Types>> {
             builder.select(kind);
             builder
                 .build()
-                .map_err(|error| Error::Tool(format!("grep type is invalid: {error}")))
+                .map_err(|error| Error::Tool(format!("search type is invalid: {error}")))
         })
         .transpose()
 }
@@ -219,17 +220,6 @@ impl Mode {
     }
 }
 
-struct Spec<'a> {
-    pattern: &'a str,
-    limit: usize,
-    before: usize,
-    after: usize,
-    mode: Mode,
-    multiline: bool,
-    tags: bool,
-    deadline: Instant,
-}
-
 fn build_overrides(
     base: &Path,
     glob: Option<&str>,
@@ -242,56 +232,25 @@ fn build_overrides(
     let mut builder = OverrideBuilder::new(base);
     builder
         .case_insensitive(fold)
-        .map_err(|error| Error::Tool(format!("grep glob is invalid: {error}")))?;
+        .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))?;
     if let Some(glob) = glob {
         builder
             .add(glob)
-            .map_err(|error| Error::Tool(format!("grep glob is invalid: {error}")))?;
+            .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))?;
     }
     if let Some(exclude) = exclude {
         builder
             .add(&format!("!{exclude}"))
-            .map_err(|error| Error::Tool(format!("grep exclude is invalid: {error}")))?;
+            .map_err(|error| Error::Tool(format!("search exclude is invalid: {error}")))?;
     }
     builder
         .build()
         .map(Some)
-        .map_err(|error| Error::Tool(format!("grep glob is invalid: {error}")))
-}
-
-fn file_list(base: &Path, files: &[(PathBuf, u64, u64)], limit: usize, stopped: bool) -> String {
-    if files.is_empty() {
-        let mut out = "no files match".to_string();
-        out.push_str(&stopped_note(stopped));
-        return out;
-    }
-    let shown = files.len().min(limit);
-    let mut out = format!("{} files", files.len());
-    if files.len() > shown {
-        out.push_str(&format!("; showing {shown} most recently modified"));
-    }
-    out.push_str(&stopped_note(stopped));
-    for (path, ..) in files.iter().take(shown) {
-        out.push('\n');
-        out.push_str(&relative(base, path));
-    }
-    out
+        .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))
 }
 
 mod scan;
 mod walk;
-
-use walk::collect;
-
-fn stopped_note(stopped: bool) -> String {
-    if !stopped {
-        return String::new();
-    }
-    format!(
-        "; stopped after {}s: narrow path, glob, or depth for the rest",
-        crate::limits::limits().search_secs
-    )
-}
 
 fn relative(base: &Path, path: &Path) -> String {
     path.strip_prefix(base)

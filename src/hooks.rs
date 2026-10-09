@@ -9,9 +9,10 @@ use tokio::process::Command;
 mod config;
 
 const OUTPUT_MAX: u64 = 64 * 1024;
-const CLAUDE_NAMES: [(&str, &str); 8] = [
+const CLAUDE_NAMES: [(&str, &str); 9] = [
     ("run_command", "Bash"),
     ("read", "Read"),
+    ("search", "Grep"),
     ("edit", "Edit"),
     ("write", "Write"),
     ("todo", "TodoWrite"),
@@ -19,8 +20,7 @@ const CLAUDE_NAMES: [(&str, &str); 8] = [
     ("web", "WebFetch"),
     ("skill", "Skill"),
 ];
-const CLAUDE_ALIASES: [(&str, &str); 6] = [
-    ("search", "Grep"),
+const CLAUDE_ALIASES: [(&str, &str); 5] = [
     ("search", "Glob"),
     ("edit", "MultiEdit"),
     ("edit", "NotebookEdit"),
@@ -137,6 +137,10 @@ impl Hook {
             return true;
         };
         matcher.matches(&self.tool_name(tool))
+            || (self.dialect != Dialect::Summonr
+                && CLAUDE_ALIASES
+                    .iter()
+                    .any(|(ours, theirs)| *ours == tool && matcher.matches(theirs)))
     }
 
     pub(crate) fn tool_name(&self, tool: &str) -> String {

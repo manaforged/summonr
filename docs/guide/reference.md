@@ -574,7 +574,7 @@ Each flag alone gives these modes:
 | `--sandbox` | Reads any path the sandbox can read; writes under the workspace and extra writable roots | Contained; workspace, extra writable roots, and temporary storage writable | Allowed, or denied with `--no-net` |
 | `--plan` | Reads; edit and write denied | Contained; shell writes and background jobs denied | Denied |
 
-`read` and `search` reach any path except the protected ones. `edit` and `write` stay inside the writable roots: the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and `--add-dir`. For work that spans sibling repositories, put the parent on that list, launch summonr in the parent directory, or pass `--add-dir`.
+`read` and `search` reach any path except the protected ones, and the summonr home is protected wherever `SUMMONR_HOME` puts it. A command that reads a protected path is refused from any `workdir` or after `cd`. `edit` and `write` stay inside the writable roots: the launch directory, `[sandbox] write` in `~/.summonr/config.toml`, and `--add-dir`. For work that spans sibling repositories, put the parent on that list, launch summonr in the parent directory, or pass `--add-dir`.
 
 Commands use Seatbelt on macOS and bubblewrap on Linux. Windows AppContainer is unfinished and needs a build with `--features windows-sandbox`; Git for Windows and user-installed toolchains stay blocked. A missing backend is a hard stop. Sandboxed sockets are allowed by default. `--no-net` or `/permissions net off` denies them. That flag does not change file permissions. Model requests and language servers use host networking separately from shell commands.
 
@@ -640,7 +640,7 @@ When the workspace is trusted, summonr injects `~/.agents/AGENTS.md`, `~/.claude
 
 ### Hooks
 
-Each of `pre_tool`, `post_tool`, `compact`, and `stop` under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: tool names separated by `|`, or a regex. The hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`).
+Each of `pre_tool`, `post_tool`, `compact`, and `stop` under `[hooks]` takes a command string, a table `{ command = "...", dialect = "claude" }` or `{ command = "...", dialect = "summonr" }`, or a list of either. A list runs in order. `dialect` defaults to `summonr`. A table can add `matcher`, with the syntax of a Claude Code `hooks.json` matcher: tool names separated by `|`, or a regex. The hook then runs only for a tool whose name matches, in the hook's dialect (`run_command` in `summonr`, `Bash` in `claude`). In `claude`, `search` is `Grep`, and a `Glob` matcher also matches it.
 
 ```toml
 [hooks]

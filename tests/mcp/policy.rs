@@ -235,3 +235,21 @@ fn project(session: &Session) {
     )
     .unwrap();
 }
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub(crate) fn a_relocated_summonr_home_stays_protected_from_read_and_search() {
+    let session = Session::new();
+    let config = session.home.path().join("config.toml");
+    let model = Model::start(vec![
+        Step::Call("read", json!({"path": config.display().to_string()})),
+        Step::Call(
+            "search",
+            json!({"pattern": "base_url", "path": session.home.path().display().to_string()}),
+        ),
+        Step::Text("done"),
+    ]);
+    session.run(&model, "", &["--plan", "--no-verify"]);
+    let results = model.tool_results();
+    assert!(results[0].contains("protected path"), "{results:?}");
+    assert!(!results[1].contains("config.toml"), "{results:?}");
+}

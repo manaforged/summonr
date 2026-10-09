@@ -153,3 +153,31 @@ fn search_is_advertised_and_finds_contents_and_names_outside_the_workspace_in_an
     );
     assert!(named.contains("/Refract-1.50.txt"), "{named}");
 }
+
+#[test]
+fn a_search_over_several_paths_shares_one_limit_and_lists_the_newest_hit_first() {
+    let (dir, tools) = workspace(&[("old.txt", "hit\n")]);
+    std::fs::File::options()
+        .write(true)
+        .open(dir.path().join("old.txt"))
+        .unwrap()
+        .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(3600))
+        .unwrap();
+    let other = tempfile::tempdir().unwrap();
+    std::fs::write(other.path().join("new.txt"), "hit\n").unwrap();
+    let hits = run(
+        &tools,
+        "search",
+        serde_json::json!({
+            "pattern": "hit",
+            "limit": 1,
+            "paths": ["old.txt", other.path().display().to_string()],
+        }),
+    );
+    let lines: Vec<&str> = hits
+        .lines()
+        .filter(|line| line.contains(":1:1:hit"))
+        .collect();
+    assert_eq!(lines.len(), 1, "{hits}");
+    assert!(lines[0].ends_with("new.txt:1:1:hit"), "{hits}");
+}

@@ -387,11 +387,3 @@ fn the_workspace_check_and_policy_files_are_not_the_models_to_write() {
     }
     assert!(!protected_write(Path::new(".summonr/notes.md")));
 }
-
-#[test]
-fn spotlight_and_locate_lookups_are_read_only_searches() {
-    for name in ["mdfind", "locate"] {
-        let row = super::verb_row(name).unwrap();
-        assert!(row.read.allows(&[]) && row.search, "{name}");
-    }
-}

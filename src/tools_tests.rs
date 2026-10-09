@@ -77,13 +77,17 @@ fn run(tools: &ToolRegistry, name: &str, arguments: serde_json::Value) -> String
 }
 
 fn outcome(tools: &ToolRegistry, command: &str) -> String {
+    outcome_with(tools, serde_json::json!({ "command": command }))
+}
+
+fn outcome_with(tools: &ToolRegistry, arguments: serde_json::Value) -> String {
     let call = ToolCall {
         id: "t1".to_string(),
         kind: ToolKind::Function,
         function: ToolFunction {
             checked: Default::default(),
             name: "run_command".to_string(),
-            arguments: serde_json::json!({ "command": command }).to_string(),
+            arguments: arguments.to_string(),
         },
         continuation: None,
     };

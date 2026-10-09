@@ -259,13 +259,17 @@ impl ToolRegistry {
                 .clone()
         };
         let mut state = slot.lock().await;
-        let sandboxed = self.sandbox.is_some();
+        let read_only = self.policy.is_read_only();
+        let access = self
+            .sandbox
+            .as_ref()
+            .map(|_| rpc::Access::from_read_only(read_only));
         let mut conn = match state.take() {
-            Some(conn) if launch.fits(&conn, sandboxed) => conn,
+            Some(conn) if launch.fits(&conn, access) => conn,
             Some(_) | None => {
                 let conn = tokio::time::timeout(
                     crate::limits::limits().lsp_start(),
-                    Conn::spawn(&self.workspace, &launch, self.sandbox.as_ref()),
+                    Conn::spawn(&self.workspace, &launch, self.sandbox.as_ref(), read_only),
                 )
                 .await
                 .map_err(|_elapsed| {

@@ -72,4 +72,8 @@ fn a_frontmatter_list_reads_every_form_yaml_allows() {
         Frontmatter::parse("---\nname: x\n---\n").list("tools"),
         None
     );
+    assert_eq!(
+        Frontmatter::parse("---\n\"tools\": [Read]\n---\n").list("tools"),
+        Some(vec!["Read".to_string()])
+    );
 }

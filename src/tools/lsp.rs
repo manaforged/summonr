@@ -29,7 +29,7 @@ pub(super) struct Conn {
     next_id: i64,
     root: String,
     clean: bool,
-    contained: bool,
+    access: Option<rpc::Access>,
     docs: std::collections::HashMap<String, (String, i64, (u64, u64))>,
     options: Value,
     server: String,
@@ -45,8 +45,15 @@ pub(super) enum Origin {
 }
 
 impl Launch {
-    pub(super) fn fits(&self, conn: &Conn, sandboxed: bool) -> bool {
-        self.origin == Origin::Host || conn.contained == sandboxed
+    pub(super) fn fits(&self, conn: &Conn, sandbox: Option<rpc::Access>) -> bool {
+        self.origin == Origin::Host || conn.access == self.access(sandbox)
+    }
+
+    pub(super) fn access(&self, sandbox: Option<rpc::Access>) -> Option<rpc::Access> {
+        match self.origin {
+            Origin::Host => None,
+            Origin::Plugin => sandbox,
+        }
     }
 }
 
@@ -65,15 +72,17 @@ impl Conn {
         workspace: &Path,
         launch: &Launch,
         sandbox: Option<&super::sandbox::Sandbox>,
+        read_only: bool,
     ) -> Result<Self> {
         let (program, args) = launch
             .argv
             .split_first()
             .ok_or_else(|| Error::Tool("language server has no command".to_string()))?;
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let (sandbox, base) = match launch.origin {
-            Origin::Host => (None, rpc::Env::Inherit),
-            Origin::Plugin => (sandbox, rpc::Env::Clean),
+        let access = launch.access(sandbox.map(|_| rpc::Access::from_read_only(read_only)));
+        let base = match launch.origin {
+            Origin::Host => rpc::Env::Inherit,
+            Origin::Plugin => rpc::Env::Clean,
         };
         let rpc::Process {
             child,
@@ -86,7 +95,7 @@ impl Conn {
             args: &args,
             env: &launch.env,
             cwd: workspace,
-            sandbox,
+            sandbox: sandbox.zip(access),
             base,
             stderr: rpc::Stderr::Discard,
         })?;
@@ -116,7 +125,7 @@ impl Conn {
             next_id: 1,
             root: file_uri(workspace)?,
             clean: true,
-            contained: launch.origin == Origin::Plugin && sandbox.is_some(),
+            access,
             docs: std::collections::HashMap::new(),
             languages: launch.languages.clone(),
             options: launch.options.clone(),

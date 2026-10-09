@@ -191,7 +191,7 @@ impl<'a> Frontmatter<'a> {
                 }
             } else if let Some((key, value)) = line.split_once(':') {
                 fields.push(Field {
-                    key: key.trim(),
+                    key: key.trim().trim_matches(QUOTES),
                     value: value.trim().trim_matches(QUOTES),
                     items: Vec::new(),
                 });

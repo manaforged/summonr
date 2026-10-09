@@ -112,9 +112,7 @@ fn of_plugin(plugin: &Plugin, workspace: &Path) -> Vec<Agent> {
                 plugin: plugin.name.clone(),
                 name,
                 description: front.get("description").unwrap_or_default().to_string(),
-                tools: front
-                    .list("tools")
-                    .map(|list| list.into_iter().map(str::to_string).collect()),
+                tools: front.list("tools"),
                 instructions: plugin.expand(front.body.trim(), workspace),
             })
         })

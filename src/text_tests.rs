@@ -55,8 +55,15 @@ fn a_frontmatter_list_reads_every_form_yaml_allows() {
     let inline = Frontmatter::parse("---\ntools: [Read, Grep]\n---\n");
     let block = Frontmatter::parse("---\ntools:\n  - Read\n  - Grep\n---\n");
     for front in [&comma, &inline, &block] {
-        assert_eq!(front.list("tools"), Some(vec!["Read", "Grep"]));
+        assert_eq!(
+            front.list("tools"),
+            Some(vec!["Read".to_string(), "Grep".to_string()])
+        );
     }
+    assert_eq!(
+        Frontmatter::parse("---\ntools: [\"Grep, Glob\", Read]\n---\n").list("tools"),
+        Some(vec!["Grep, Glob".to_string(), "Read".to_string()])
+    );
     assert_eq!(
         Frontmatter::parse("---\ntools:\n---\n").list("tools"),
         Some(Vec::new())

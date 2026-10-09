@@ -30,7 +30,7 @@ impl Command {
 
     pub(crate) fn render(&self, arguments: &str, workspace: &Path) -> String {
         let template = self.plugin.expand(&self.template, workspace);
-        let words: Vec<&str> = arguments.split_whitespace().collect();
+        let words = crate::policy::shell_words(arguments);
         let mut out = String::with_capacity(template.len() + arguments.len());
         let mut rest = template.as_str();
         while let Some(at) = rest.find(SIGIL) {
@@ -44,7 +44,7 @@ impl Command {
             match tail.as_bytes().first() {
                 Some(&digit @ FIRST..=LAST) => {
                     let index = usize::from(digit - FIRST);
-                    out.push_str(words.get(index).copied().unwrap_or_default());
+                    out.push_str(words.get(index).map_or("", String::as_str));
                     rest = &tail[1..];
                 }
                 Some(_) | None => {

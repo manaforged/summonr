@@ -55,7 +55,7 @@ pub(super) fn inline_script(segment: &str) -> Option<String> {
     )
 }
 
-pub(super) fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
+pub(crate) fn unquoted(command: &str, delimiters: &[&str]) -> Vec<String> {
     let mut segments = Vec::new();
     let mut current = String::new();
     let mut open: Vec<char> = Vec::new();

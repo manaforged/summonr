@@ -207,17 +207,18 @@ impl<'a> Frontmatter<'a> {
             .map(|field| field.value)
     }
 
-    pub(crate) fn list(&self, key: &str) -> Option<Vec<&'a str>> {
+    pub(crate) fn list(&self, key: &str) -> Option<Vec<String>> {
         let field = self.fields.iter().find(|field| field.key == key)?;
         if field.value.is_empty() {
-            return Some(field.items.clone());
+            return Some(field.items.iter().map(|item| (*item).to_string()).collect());
         }
         let inline = field.value.trim_start_matches('[').trim_end_matches(']');
         Some(
-            inline
-                .split(',')
+            crate::policy::unquoted(inline, &[","])
+                .iter()
                 .map(|item| item.trim().trim_matches(QUOTES))
                 .filter(|item| !item.is_empty())
+                .map(str::to_string)
                 .collect(),
         )
     }

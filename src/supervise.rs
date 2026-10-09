@@ -94,7 +94,7 @@ pub(crate) fn register<T: Send + 'static>(
             }
         }
     };
-    enforce(id);
+    settle(slot);
     if fresh
         && let Some(idle) = idle
         && let Ok(runtime) = tokio::runtime::Handle::try_current()
@@ -103,8 +103,23 @@ pub(crate) fn register<T: Send + 'static>(
     }
 }
 
-pub(crate) fn touch<T>(slot: &Slot<T>) {
-    touch_id(id(slot));
+pub(crate) fn touch<T: Send + 'static>(slot: &Slot<T>) {
+    stamp(id(slot));
+    settle(slot);
+}
+
+fn settle<T: Send + 'static>(slot: &Slot<T>) {
+    let id = id(slot);
+    let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        enforce(id);
+        return;
+    };
+    let slot = slot.clone();
+    drop(runtime.spawn(async move {
+        drop(slot.lock().await);
+        drop(slot);
+        enforce(id);
+    }));
 }
 
 pub(crate) fn live() -> Vec<Live> {
@@ -186,12 +201,16 @@ async fn reap(id: usize, idle: Duration) {
     }
 }
 
-fn touch_id(id: usize) {
+fn stamp(id: usize) {
     if let Ok(mut board) = BOARD.lock()
         && let Some(entry) = board.iter_mut().find(|entry| entry.id == id)
     {
         entry.used = Instant::now();
     }
+}
+
+fn touch_id(id: usize) {
+    stamp(id);
     enforce(id);
 }
 
@@ -263,3 +282,7 @@ pub(crate) fn footprint_kb(pid: Option<u32>) -> Option<u64> {
 pub(crate) fn footprint_kb(_pid: Option<u32>) -> Option<u64> {
     None
 }
+
+#[cfg(test)]
+#[path = "supervise_tests.rs"]
+mod tests;

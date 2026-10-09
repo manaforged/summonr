@@ -10,12 +10,12 @@ use serde_json::Value;
 use crate::error::{Error, Result};
 use crate::tools::{ToolRegistry, object_bool, object_usize, parse_args};
 
-const GREP_DEFAULT: usize = 50;
-const GREP_MAX: usize = 200;
+pub(in crate::tools) const GREP_DEFAULT: usize = 50;
+pub(in crate::tools) const GREP_MAX: usize = 200;
 const GREP_FILE_HITS: usize = 20;
 const GREP_FILE_MAX: u64 = 1024 * 1024;
 const GREP_LINE_MAX: usize = 500;
-const CONTEXT_MAX: usize = 10;
+pub(in crate::tools) const CONTEXT_MAX: usize = 10;
 
 impl ToolRegistry {
     pub(in crate::tools) fn search_files(&self, arguments: &str) -> Result<String> {
@@ -23,19 +23,23 @@ impl ToolRegistry {
         let (roots, missing) = self.search_roots(&args)?;
         let query = Arc::new(self.query(&args, roots)?);
         let report = walk::run(&query)?;
-        let mut out = scan::render(&query, report);
-        for line in missing {
-            out.push('\n');
-            out.push_str(&line);
-        }
-        Ok(out)
+        let out = render::render(&query, report);
+        Ok(if missing.is_empty() {
+            out
+        } else {
+            format!("not searched: {}\n{out}", missing.join("; "))
+        })
     }
 
     fn query(&self, args: &Value, roots: Vec<Root>) -> Result<Query> {
-        let pattern = args.get("pattern").and_then(Value::as_str).unwrap_or("");
-        let glob = text_arg(args, "glob", "include");
-        if pattern.is_empty() && glob.is_none() {
-            return Err(Error::Tool("search requires pattern or glob".to_string()));
+        let literal = object_bool(args, "literal") || object_bool(args, "fixed_strings");
+        let pattern = patterns(args, literal);
+        let glob = text_arg(args, "glob", "include").map(widened);
+        let name = filter::name_words(args);
+        if pattern.is_empty() && glob.is_none() && name.is_empty() {
+            return Err(Error::Tool(
+                "search requires pattern, name, or glob".to_string(),
+            ));
         }
         let multiline = object_bool(args, "multiline") || object_bool(args, "multi_line");
         let context = object_usize(args, "context").unwrap_or(0).min(CONTEXT_MAX);
@@ -44,15 +48,19 @@ impl ToolRegistry {
         let roots = roots
             .into_iter()
             .map(|root| {
-                let overrides = build_overrides(&root.base, glob, exclude, fold)?;
+                let overrides = build_overrides(&root.base, glob.as_deref(), exclude, fold)?;
                 Ok(Root { overrides, ..root })
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(Query {
-            pattern: pattern.to_string(),
+            matcher: build_matcher(args, &pattern, multiline)?,
+            pattern,
             glob: glob.is_some(),
+            name,
+            newer: filter::newer(args)?,
+            group: filter::grouped(args)?,
+            offset: object_usize(args, "offset").unwrap_or(0),
             types: build_types(args)?,
-            matcher: build_matcher(args, pattern, multiline)?,
             shown: self.base(),
             roots,
             depth: object_usize(args, "depth"),
@@ -98,7 +106,7 @@ impl ToolRegistry {
             }
         }
         roots.sort_by(|left, right| left.path.cmp(&right.path));
-        roots.dedup_by(|later, kept| later.path.starts_with(&kept.path));
+        roots.dedup_by(|later, kept| later.path == kept.path);
         Ok((roots, missing))
     }
 
@@ -133,22 +141,47 @@ fn text_arg<'a>(args: &'a Value, name: &str, alias: &str) -> Option<&'a str> {
         .filter(|value| !value.is_empty())
 }
 
+fn patterns(args: &Value, literal: bool) -> String {
+    let quote = |text: &str| {
+        if literal {
+            regex::escape(text)
+        } else {
+            text.to_string()
+        }
+    };
+    match args.get("pattern") {
+        Some(Value::String(text)) => quote(text),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|text| !text.is_empty())
+            .map(|text| format!("(?:{})", quote(text)))
+            .collect::<Vec<_>>()
+            .join("|"),
+        Some(Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_)) | None => {
+            String::new()
+        }
+    }
+}
+
+fn widened(glob: &str) -> String {
+    if glob.contains(['*', '?', '[', '{', '/']) {
+        glob.to_string()
+    } else {
+        format!("*{glob}*")
+    }
+}
+
 fn build_matcher(args: &Value, pattern: &str, multiline: bool) -> Result<Option<RegexMatcher>> {
     if pattern.is_empty() {
         return Ok(None);
     }
-    let literal = object_bool(args, "literal") || object_bool(args, "fixed_strings");
-    let sensitive = sensitive(args);
-    let pattern = if literal {
-        regex::escape(pattern)
-    } else {
-        pattern.to_string()
-    };
     RegexMatcherBuilder::new()
-        .case_insensitive(!sensitive)
+        .case_insensitive(!sensitive(args))
+        .word(object_bool(args, "word"))
         .multi_line(multiline)
         .dot_matches_new_line(multiline)
-        .build(&pattern)
+        .build(pattern)
         .map(Some)
         .map_err(|error| Error::Tool(format!("search pattern is invalid: {error}")))
 }
@@ -169,6 +202,10 @@ struct Root {
 struct Query {
     pattern: String,
     glob: bool,
+    name: Vec<String>,
+    newer: Option<u64>,
+    group: bool,
+    offset: usize,
     types: Option<ignore::types::Types>,
     roots: Vec<Root>,
     shown: PathBuf,
@@ -249,6 +286,8 @@ fn build_overrides(
         .map_err(|error| Error::Tool(format!("search glob is invalid: {error}")))
 }
 
+mod filter;
+mod render;
 mod scan;
 mod walk;
 

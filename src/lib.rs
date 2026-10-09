@@ -11,6 +11,7 @@ mod credentials;
 pub mod diff;
 pub(crate) mod durable;
 
+pub(crate) const STATE_DIRS: &[&str] = &[".git", ".summonr"];
 pub(crate) const SKIP_DIRS: &[&str] = &[
     ".git",
     ".summonr",

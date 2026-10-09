@@ -14,7 +14,7 @@ mod image;
 mod list;
 mod ops;
 mod read;
-mod search;
+pub(in crate::tools) mod search;
 mod spans;
 mod write;
 

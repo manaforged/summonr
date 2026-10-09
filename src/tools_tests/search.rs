@@ -241,12 +241,13 @@ fn search_ignores_case_lists_linked_files_and_says_what_it_skipped() {
             linked.lines().any(|line| line == "libgone.dylib"),
             "{linked}"
         );
+        assert!(linked.contains("includes 2 symbolic links"), "{linked}");
     }
     let none = run(&tools, "search", serde_json::json!({"pattern": "absent"}));
     assert!(
         none.contains("node_modules")
             && none.contains("no_ignore true")
-            && none.contains("pass glob alone"),
+            && none.contains("pass name"),
         "{none}"
     );
 }

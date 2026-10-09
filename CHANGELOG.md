@@ -6,6 +6,7 @@ First stable release.
 
 ### Added
 
+- `search` finds files by words in their names (`name: "q3 report"`), matches whole words (`word`), takes a list of patterns, keeps files changed within a span (`newer: "2d"`), counts matches per folder (`group: "folder"`), and pages with `offset`. A glob without wildcards matches names that contain it, `no_ignore` also reaches build folders, and results name unreadable folders and paths that could not be opened. Every argument carries its own description for the model.
 - Several sessions stay live in one window or terminal. `/new` starts a session beside the current one, and `/resume` or a click in the window's sidebar switches without restarting. The sidebar groups open sessions by project and marks each as working, needs you, ready, or failed. A session open in one summonr cannot be opened in another.
 - The window draws its own conversation view: tool calls fold into a steps card, code blocks carry a copy button, and the composer holds the attach, model, and mode controls.
 - `summonr login openai` offers Sign in with ChatGPT (Plus or Pro) next to the API key, and `summonr login grok` offers a SuperGrok or X Premium+ sign-in next to its key. A stored sign-in wins over a key; `summonr logout NAME` returns the endpoint to its key. `openai` now speaks the Responses API. A browser login keeps the client id a provider issues on the redirect and accepts a `redirect_uri` with port `0`.
@@ -86,6 +87,7 @@ First stable release.
 
 ### Fixed
 
+- A `tags` search hit on a line over 500 bytes, or inside a multiline match, now carries the tag `edit` accepts, and searching overlapping paths with `depth` no longer drops the deeper path.
 - Secret values no longer reach the model in any session. A tool result shows `[secret]` in place of each secret value from the workspace's `.env` files, `.npmrc`, `.pypirc`, `~/.aws/credentials`, `~/.netrc`, `~/.git-credentials`, `~/.config/gh/hosts.yml`, and `~/.docker/config.json`, and in place of any PEM private key, whether it came from `grep -r`, `cat`, `read`, or any other command. Commands still read the real files, so test suites that load `.env` keep working. `search` never reads a protected file, even uncontained, and `credentials.*`, `.git-credentials`, `.pypirc`, `~/.docker`, `~/.kube`, `~/.config/gh`, and `~/.config/gcloud` are protected.
 - In the terminal, only the `✻ thinking` header folds expanded reasoning, so a drag over the reasoning text selects and copies it.
 - A read-only command such as `grep` that times out no longer reports that it may have changed workspace files, and a command that redirects into a file still does. `mdfind` and `locate` count as read-only.

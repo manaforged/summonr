@@ -35,7 +35,7 @@ The tool schemas. Six core, six behind a module or a workspace file.
 | Job | Where | Gating |
 | --- | --- | --- |
 | `read` | `tools/catalog.rs::read` | always |
-| `search` | `tools/catalog.rs::search` | always; walks with `workspace/search.rs::collect` under `search_secs` |
+| `search` | `tools/catalog/search.rs::search` | always; `workspace/search.rs` builds the query, `search/walk.rs::run` walks under `search_secs`, `search/filter.rs` owns `name`, `newer`, and `group`, `search/render.rs` owns the result text |
 | `edit` | `tools/catalog.rs::edit` | always |
 | `write` | `tools/catalog.rs::write` | always |
 | `run_command` | `tools/catalog.rs::run_command` | always outside a read-only research child; there only with a sandbox; the schema is frozen per session |

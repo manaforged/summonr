@@ -11,6 +11,8 @@ mod edit;
 mod read;
 #[path = "tools_tests/search.rs"]
 mod search;
+#[path = "tools_tests/search_power.rs"]
+mod search_power;
 
 #[test]
 fn empty_run_command_arguments_are_a_tool_error() {

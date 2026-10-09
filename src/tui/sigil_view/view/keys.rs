@@ -14,7 +14,7 @@ impl App {
             self.context_close();
         } else if self.pane_focus.peek() {
             self.focus_pane(false);
-        } else if self.pane_back() {
+        } else if self.pane_back() || self.pane_dismiss() {
         } else {
             super::input::escape(self);
         }

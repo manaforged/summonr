@@ -95,3 +95,22 @@ fn a_goal_stops_after_three_failed_checks() {
     }
     assert_eq!(work.progress().exit_code(), Some(2));
 }
+
+#[test]
+fn a_changed_check_file_is_never_a_touched_path() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
+    std::fs::create_dir_all(dir.path().join(".summonr")).unwrap();
+    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"a\"\n").unwrap();
+    std::fs::write(dir.path().join("a.txt"), "a").unwrap();
+    let mut work = Work::new("ship", Policy::Single);
+    work.plan = Some("plan".to_string());
+    work.execute(snapshot(dir.path(), None, None).unwrap())
+        .unwrap();
+    std::fs::write(dir.path().join(".summonr/check.toml"), "check = \"bb\"\n").unwrap();
+    std::fs::write(dir.path().join("a.txt"), "bb").unwrap();
+    let paths = work
+        .verify(snapshot(dir.path(), None, None).unwrap())
+        .unwrap();
+    assert_eq!(paths, vec!["a.txt".to_string()]);
+}

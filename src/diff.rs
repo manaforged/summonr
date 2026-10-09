@@ -154,6 +154,7 @@ fn dirty(root: &Path) -> Result<(String, String, usize)> {
         match record.strip_prefix("# branch.oid ") {
             Some(oid) => head = Some(oid.to_string()),
             None if record.starts_with('#') => {}
+            None if status_path(record).is_some_and(ignored::hidden) => {}
             None => count += 1,
         }
     }
@@ -161,6 +162,16 @@ fn dirty(root: &Path) -> Result<(String, String, usize)> {
         Some(oid) => (short(&oid).to_string(), named, count),
         None => ("no commits".to_string(), "empty tree".to_string(), count),
     })
+}
+
+fn status_path(record: &str) -> Option<&str> {
+    let fields = match record.as_bytes().first() {
+        Some(b'1') => 9,
+        Some(b'u') => 11,
+        Some(b'?' | b'!') => 2,
+        Some(_) | None => return None,
+    };
+    record.splitn(fields, ' ').nth(fields - 1)
 }
 
 fn short(value: &str) -> &str {

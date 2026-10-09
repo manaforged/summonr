@@ -41,6 +41,7 @@ fn main() {
         content::a_form_is_declined_without_a_user,
         defer::a_large_server_is_found_and_called_through_the_mcp_tool,
         defer::a_hook_sees_the_tool_behind_the_mcp_tool,
+        defer::arguments_given_beside_the_tool_name_reach_the_server,
         lifecycle::a_configured_server_is_on_by_default_and_starts_only_when_called,
         lifecycle::an_idle_server_stops_and_starts_again_on_the_next_call,
         lifecycle::the_least_recently_used_idle_server_stops_at_the_server_cap,

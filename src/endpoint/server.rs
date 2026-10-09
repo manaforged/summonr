@@ -3,7 +3,12 @@ use toml_edit::{Item, Table, value};
 use super::resolve::*;
 use super::*;
 
-pub async fn add_server(name: &str, url: &str, model: Option<&str>) -> Result<String> {
+pub async fn add_server(
+    name: &str,
+    url: Option<&str>,
+    model: Option<&str>,
+    default: bool,
+) -> Result<String> {
     if !crate::skills::valid(name) {
         return Err(Error::Config(format!(
             "endpoint name `{name}`: letters, digits, `-`, and `_` only"
@@ -14,14 +19,42 @@ pub async fn add_server(name: &str, url: &str, model: Option<&str>) -> Result<St
             "`{name}` is a built-in endpoint; pick another name for your server"
         )));
     }
+    let url = match url {
+        Some(url) => url.to_string(),
+        None => saved_url(name)?,
+    };
     let model = match model {
         Some(model) => model.to_string(),
-        None => only_model(name, url).await?,
+        None => only_model(name, &url).await?,
     };
     let path = config::path()?;
     let replaced = config::remove_named(&path, config::Section::Endpoint, name)?;
-    save(&path, name, url, Some(&model))?;
-    Ok(added(name, url, &model, replaced))
+    save(&path, name, &url, Some(&model))?;
+    if default {
+        config::save_default_seat(&path, Some((name, &model)))?;
+    }
+    Ok(added(name, &url, &model, replaced))
+}
+
+fn saved_url(name: &str) -> Result<String> {
+    config::file()?
+        .endpoint
+        .get(name)
+        .and_then(|endpoint| endpoint.base_url.clone())
+        .ok_or_else(|| {
+            Error::Config(format!(
+                "no endpoint named {name}; add it with `summonr login {name} --url URL [--model NAME]`"
+            ))
+        })
+}
+
+pub fn set_default(name: &str, model: Option<&str>) -> Result<String> {
+    let endpoint = resolve(Some(name), model, Need::Seat)?;
+    config::save_default_seat(&config::path()?, Some((name, &endpoint.model)))?;
+    Ok(format!(
+        "✓ {name} is the default endpoint: {}. Run `summonr` to start on it.",
+        endpoint.model
+    ))
 }
 
 async fn only_model(name: &str, url: &str) -> Result<String> {
@@ -90,14 +123,12 @@ fn save(path: &std::path::Path, name: &str, url: &str, model: Option<&str>) -> R
 
 fn added(name: &str, url: &str, model: &str, replaced: bool) -> String {
     let verb = if replaced { "Updated" } else { "Added" };
-    let config =
-        config::path().map_or_else(|_| "config.toml".to_string(), |path| config::tilde(&path));
     let default = config::file().ok().and_then(|file| file.default.clone());
     if default.as_deref() == Some(name) {
-        return format!("✓ {verb} {name}: {model} at {url}. Run `summonr {name}`.");
+        return format!("✓ {verb} {name}: {model} at {url}. It is the default; run `summonr`.");
     }
     format!(
-        "✓ {verb} {name}: {model} at {url}. Run `summonr {name}`, or set `default = \"{name}\"` in {config}."
+        "✓ {verb} {name}: {model} at {url}. Run `summonr {name}`, or `summonr login {name} --default` to start on it by default."
     )
 }
 

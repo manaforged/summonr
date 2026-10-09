@@ -121,20 +121,28 @@ pub(super) fn print_login_catalog() -> Result<()> {
             row.name.clone(),
         )
     });
+    let name = rows.iter().map(|row| row.name.len()).max().unwrap_or(0);
+    let state = rows
+        .iter()
+        .map(|row| row.state().chars().count())
+        .max()
+        .unwrap_or(0);
     let mut heading = "";
     for row in &rows {
         if row.catalog_title() != heading {
             heading = row.catalog_title();
             println!("\n{heading}");
         }
-        println!("  {}", row.catalog_line());
+        println!("  {}", row.catalog_line(name, state));
     }
-    println!("\nsummonr login NAME     sign in or store a key");
-    println!("summonr login NAME --key   skip the question and store a key");
+    println!("\nsummonr login NAME                         sign in or store a key");
+    println!("summonr login NAME --key                   skip the question and store a key");
+    println!("summonr login NAME --default [--model M]   start on NAME when no endpoint is named");
     println!(
         "summonr login NAME --url URL [--model M]   add or update your own OpenAI-compatible server"
     );
-    println!("summonr logout NAME --remove   remove a server you added");
+    println!("summonr login NAME --model M               change the model of a server you added");
+    println!("summonr logout NAME --remove               remove a server you added");
     Ok(())
 }
 

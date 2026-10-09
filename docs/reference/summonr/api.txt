@@ -854,12 +854,13 @@ pub summonr::AuthInfo::key: bool
 pub summonr::AuthInfo::login: summonr::LoginFlow
 pub summonr::AuthInfo::model: alloc::string::String
 pub summonr::AuthInfo::name: alloc::string::String
+pub summonr::AuthInfo::own: bool
 pub summonr::AuthInfo::plan: alloc::string::String
 pub summonr::AuthInfo::setup: alloc::string::String
 pub summonr::AuthInfo::source: core::option::Option<summonr::secret::Source>
 impl summonr::AuthInfo
 pub fn summonr::AuthInfo::catalog_heading(&self) -> &'static str
-pub fn summonr::AuthInfo::catalog_line(&self) -> alloc::string::String
+pub fn summonr::AuthInfo::catalog_line(&self, name: usize, state: usize) -> alloc::string::String
 pub fn summonr::AuthInfo::catalog_rank(&self) -> u8
 pub fn summonr::AuthInfo::catalog_title(&self) -> &'static str
 pub fn summonr::AuthInfo::dual(&self) -> bool
@@ -1149,7 +1150,7 @@ impl core::fmt::Display for summonr::WorkProgress
 impl core::marker::StructuralPartialEq for summonr::WorkProgress
 impl serde_core::ser::Serialize for summonr::WorkProgress
 impl<'de> serde_core::de::Deserialize<'de> for summonr::WorkProgress
-pub async fn summonr::add_endpoint(name: &str, url: &str, model: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
+pub async fn summonr::add_endpoint(name: &str, url: core::option::Option<&str>, model: core::option::Option<&str>, default: bool) -> summonr::Result<alloc::string::String>
 pub fn summonr::add_worktree(cwd: &std::path::Path) -> summonr::Result<summonr::Tree>
 pub fn summonr::adopt_keys() -> summonr::Result<alloc::vec::Vec<alloc::string::String>>
 pub fn summonr::attach(workspace: &std::path::Path, line: &str) -> summonr::Result<summonr::UserInput>
@@ -1195,6 +1196,7 @@ pub fn summonr::resolve_session(id: &str) -> summonr::Result<std::path::PathBuf>
 pub fn summonr::revision() -> &'static str
 pub async fn summonr::run_tool(workspace: impl core::convert::AsRef<std::path::Path>, name: &str, arguments: &str, sandbox: core::option::Option<summonr::Network>) -> summonr::Result<summonr::ToolResult>
 pub fn summonr::sandbox_on() -> summonr::Result<bool>
+pub fn summonr::set_default_endpoint(name: &str, model: core::option::Option<&str>) -> summonr::Result<alloc::string::String>
 pub fn summonr::short(id: &str) -> &str
 pub fn summonr::stop_children()
 pub fn summonr::summonr_home() -> summonr::Result<std::path::PathBuf>

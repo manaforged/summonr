@@ -154,7 +154,7 @@ pub(super) const COMMANDS: [(&str, Run); 24] = [
     ("help", |_, input| exit_help(input.next().as_deref())),
 ];
 
-pub(super) const SCOPED: [Scope; 19] = [
+pub(super) const SCOPED: [Scope; 20] = [
     (
         "--stat",
         "diff",
@@ -190,6 +190,12 @@ pub(super) const SCOPED: [Scope; 19] = [
         "login",
         |args| args.login,
         |args, _| on(&mut args.key),
+    ),
+    (
+        "--default",
+        "login",
+        |args| args.login,
+        |args, _| on(&mut args.default),
     ),
     (
         "--url",

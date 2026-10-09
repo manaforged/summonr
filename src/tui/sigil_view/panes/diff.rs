@@ -169,12 +169,7 @@ fn hunk_view(
                     }
                     event.stop_propagation();
                 }),
-        )
-        .child(crate::tui::sigil_view::chat::entry::patch_view(
-            app,
-            hunk.body().to_string(),
-            layout(app),
-        ));
+        );
     if editing {
         let commit = app.clone();
         let edit = app.clone();
@@ -221,5 +216,9 @@ fn hunk_view(
                 ),
         );
     }
-    card
+    card.child(crate::tui::sigil_view::chat::entry::patch_view(
+        app,
+        hunk.body().to_string(),
+        layout(app),
+    ))
 }

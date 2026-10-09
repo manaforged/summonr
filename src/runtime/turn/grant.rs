@@ -13,7 +13,7 @@ impl<P: Provider> Loop<P> {
             .prepare_verdict(checks.iter().all(|check| check.passed))
             .map_err(super::session_err)?;
         if let Some(output) = &verdict.diagnostic {
-            let command = "workspace candidate unchanged".to_string();
+            let command = "workspace changed after the check ran".to_string();
             self.push_event(
                 events,
                 emit,

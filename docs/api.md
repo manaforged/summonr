@@ -14,7 +14,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr [ENDPOINT] -p PROMPT` | Run one prompt and exit |
 | `summonr [ENDPOINT] --goal TEXT` | Work until `.summonr/check.toml` passes and a judge call agrees |
 | `summonr [ENDPOINT] --steps PLAN.md` | Run each numbered step under `## Steps`, and gate each step on its check |
-| `summonr -c`, `summonr --session ID` | Resume the last session here, or a session by id prefix or name |
+| `summonr -c`, `summonr --session ID` | Resume the last session here, or a session by short id, id prefix, or name |
 | `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
 | `summonr export [ID\|NAME]` | Print a session as Markdown |
 | `summonr profile [ID\|NAME]` | Print a time and token report from a session journal |
@@ -110,7 +110,7 @@ summonr prints one JSON object per line on stdout. Each object has a `type` fiel
 | `progress` | `id` (the tool call), `progress`, optional `total`, `message` |
 | `approval` | `detail`, optional `persist` |
 | `elicit` | `form` (an MCP server's `server`, `message`, and `fields`), or null when the question ends |
-| `verify` | `command`, `passed` |
+| `verify` | `command`, `passed`. `{"command":"workspace changed after the check ran","passed":false}` means files changed after summonr captured the candidate it checked, so the verdict fails; it counts toward `checks_failed` |
 | `receipt` | `receipt` |
 | `work` | `progress`; its `checks_failed` agrees with the `verify` events |
 | `child` | `id`, `event` (a nested event) |
@@ -124,7 +124,9 @@ A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.tom
 2. Document the flag in README.md.
 ```
 
-Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`.
+Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`. On a `start` event, `check` holds the step's `Run` commands joined with ` && `, or null when the step has none.
+
+When a goal or steps run stops short, the `aborted` event is not the last line: summonr runs the exit check when the work is not already finished, then prints its `verify` events and a final `work` event. Read the exit code to learn the result.
 
 ### `summonr diff --json`
 

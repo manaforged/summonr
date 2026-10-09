@@ -99,7 +99,7 @@ pub(crate) fn run(
     ran.map_err(|error| Error::Tool(format!("the terminal failed: {error}")))?;
     let mut pump = pump.borrow_mut();
     let exit = pump.exit.take().unwrap_or(0);
-    let session = &pump.session;
+    let session = crate::session::short(&pump.session);
     eprintln!(
         "\n  summonr {version} · session {session}\n  resume: summonr -c · by id: summonr --session {session} · branch: summonr --fork\n"
     );

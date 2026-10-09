@@ -60,6 +60,7 @@ pub(super) struct Args {
     pub(super) login: bool,
     pub(super) key: bool,
     pub(super) url: Option<String>,
+    pub(super) default: bool,
     pub(super) logout: bool,
     pub(super) remove: bool,
     pub(super) classify: bool,
@@ -140,7 +141,7 @@ impl Args {
     fn rest(&mut self, arg: &str, command: bool) -> Result<Step> {
         match arg {
             "-p" | "--print" => self.print().map(|()| Step::Next),
-            "-h" | "--help" => exit_help(None),
+            "-h" | "--help" => exit_help(self.verb()),
             "-V" | "--version" => exit_version(),
             "--" => Ok(Step::Rest),
             option if option.starts_with('-') => Err(misplaced(option)),
@@ -172,6 +173,13 @@ impl Args {
         }
         self.print = true;
         Ok(())
+    }
+
+    fn verb(&self) -> Option<&'static str> {
+        SCOPED
+            .iter()
+            .find(|(_, _, active, _)| active(self))
+            .map(|(_, verb, ..)| *verb)
     }
 
     fn endpoint_slot(&self, command: bool) -> bool {

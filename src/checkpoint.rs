@@ -26,7 +26,7 @@ impl Checkpoints {
             root: workspace.to_path_buf(),
             index,
             log: dir.join(format!("{session}.checkpoints")),
-            skip: dir.join(format!("{session}.skip")),
+            skip: dir.join("skip"),
         })
     }
 
@@ -117,7 +117,7 @@ impl Checkpoints {
                 .iter()
                 .map(|path| format!(":(literal){path}"))
                 .collect();
-            let mut drop = vec!["rm", "--cached", "-q", "--ignore-unmatch", "--"];
+            let mut drop = vec!["rm", "--cached", "-f", "-q", "--ignore-unmatch", "--"];
             drop.extend(literal.iter().map(String::as_str));
             git_env(&self.root, &env, &drop)?;
         }

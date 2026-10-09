@@ -12,12 +12,19 @@ pub(super) async fn probe_endpoints() -> Result<()> {
         eprintln!("summonr: models.dev catalog not refreshed: {error}");
     }
     let names = summonr::endpoint_names_ordered()?;
-    let probes = names.iter().map(|name| async move {
+    let rows = futures::future::join_all(names.iter().map(|name| async move {
         let (model, host, status) = probe_endpoint(name).await;
-        format!("{name:<14} {model:<22} {host:<34} {status}")
-    });
-    for line in futures::future::join_all(probes).await {
-        println!("{line}");
+        (name, model, host, status)
+    }))
+    .await;
+    let width = |column: fn(&(&String, String, String, String)) -> usize| {
+        rows.iter().map(column).max().unwrap_or(0)
+    };
+    let name_w = width(|row| row.0.chars().count());
+    let model_w = width(|row| row.1.chars().count());
+    let host_w = width(|row| row.2.chars().count());
+    for (name, model, host, status) in &rows {
+        println!("{name:<name_w$}  {model:<model_w$}  {host:<host_w$}  {status}");
     }
     Ok(())
 }
@@ -50,7 +57,12 @@ async fn probe_endpoint(name: &str) -> (String, String, String) {
                 .source
                 .map_or_else(String::new, |source| format!(" · key: {}", source.label()));
             match Client::discover(&endpoint).await {
-                Ok(models) => format!("{} · {} models{key}", State::Ready, models.len()),
+                Ok(models) => format!(
+                    "{} · {} model{}{key}",
+                    State::Ready,
+                    models.len(),
+                    if models.len() == 1 { "" } else { "s" }
+                ),
                 Err(error) => format!("{} · {error}{key}", Client::state(&error)),
             }
         }
@@ -198,6 +210,10 @@ pub(super) fn print_diff(args: &Args) -> Result<()> {
             .retain(|stat| path.is_none_or(|path| stat.path == path));
         return print_stats(&diff, args.json);
     }
+    let mut diff = summonr::diff::turn_stats(&cwd, &session, turn)?;
+    diff.files
+        .retain(|stat| path.is_none_or(|path| stat.path == path));
+    eprintln!("{}", diff.summary());
     print!("{}", summonr::diff::turn_patch(&cwd, &session, turn, path)?);
     Ok(())
 }

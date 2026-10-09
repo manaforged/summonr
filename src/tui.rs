@@ -239,6 +239,7 @@ pub(crate) struct Snapshot {
     pub endpoint: String,
     pub context_window: Option<u32>,
     pub workflow: Option<String>,
+    pub unseated: bool,
 }
 
 impl Snapshot {

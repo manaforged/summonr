@@ -131,7 +131,12 @@ fn header_row(app: App) -> NodeBuilder {
     let update = app.clone();
     let labels = sigil::reactive::derived(move || {
         let model = update.model.get();
-        (mode_text(&model), model_text(&model))
+        let seat = if !model.snapshot.unseated {
+            model_text(&model)
+        } else {
+            "no provider · /login".to_string()
+        };
+        (mode_text(&model), seat)
     });
     container()
         .layout(

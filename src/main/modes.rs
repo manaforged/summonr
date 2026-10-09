@@ -47,7 +47,11 @@ pub(super) async fn steps(mut loop_: Loop<Client>, args: &Args, plan_path: &str)
                 prompt,
             } => (index, total, prompt),
         };
-        step_event(args.json, index, total, "start", None);
+        let check = steps
+            .get(index.saturating_sub(1))
+            .map(|step| step.checks.join(" && "))
+            .filter(|check| !check.is_empty());
+        step_event(args.json, index, total, "start", check.as_deref());
         let turn = complete(&mut loop_, prompt.into(), args.json).await?;
         if turn.aborted {
             return stop(&mut loop_, "step execution aborted", args.json).await;

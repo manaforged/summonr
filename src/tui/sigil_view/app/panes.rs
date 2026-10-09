@@ -322,6 +322,26 @@ impl App {
         false
     }
 
+    pub(in crate::tui::sigil_view) fn pane_dismiss(&self) -> bool {
+        let layout = self.layout.peek();
+        let Some(pane) = layout.secondary else {
+            return false;
+        };
+        if !self.draft.peek().is_empty()
+            || self.overlay().is_some()
+            || self.model.peek().busy_since.is_some()
+        {
+            return false;
+        }
+        self.last_pane.set(Some(pane));
+        self.set_layout(Layout {
+            secondary: None,
+            ..layout
+        });
+        self.refresh();
+        true
+    }
+
     pub(in crate::tui::sigil_view) fn nudge_split(&self, delta: i16) {
         let layout = self.layout.peek();
         if layout.secondary.is_some() {

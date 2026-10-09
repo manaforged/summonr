@@ -9,6 +9,13 @@ use crate::tools::{Hold, Kept};
 use crate::tui::ToolState;
 use crate::tui::sigil_view::look::Look;
 
+fn task_title(kid: &Agent, roots: &[String]) -> String {
+    if kid.assignment.is_empty() {
+        return workspace_relative(&kid.title, roots);
+    }
+    Agent::title_of(&workspace_relative(&kid.assignment, roots))
+}
+
 fn state_of(kids: &[&Agent]) -> ToolState {
     if kids.iter().any(|kid| !kid.done) {
         ToolState::Running
@@ -60,7 +67,7 @@ fn child_row(kid: &Agent, first: bool, parents: &[String], kept: Option<&Kept>) 
         )
         .child(label(mark, tone))
         .child(
-            label(kid.title.clone(), title)
+            label(task_title(kid, roots), title)
                 .ellipsize()
                 .layout(LayoutStyle::block().shrink(1.0).min_size(0.0, 0.0)),
         );
@@ -111,7 +118,12 @@ fn kept_line(kept: &Kept, roots: &[String]) -> String {
         .filter_map(|root| std::path::Path::new(root).parent())
         .find_map(|parent| kept.checkout.strip_prefix(parent).ok())
         .unwrap_or(&kept.checkout);
-    format!("kept {}: {}", checkout.display(), kept.hold.reason())
+    format!(
+        "kept {}: {} · remove with `rm -rf {}` when done",
+        checkout.display(),
+        kept.hold.reason(),
+        checkout.display()
+    )
 }
 
 fn kept_of(record: &ChildRecord) -> Option<&Kept> {
@@ -136,7 +148,7 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
     }
     if kids.iter().all(|kid| kid.background) {
         let what = if kids.len() == 1 {
-            kids[0].title.clone()
+            task_title(kids[0], &kids[0].roots(&app.roots))
         } else {
             crate::text::plural(kids.len(), "child")
         };
@@ -151,7 +163,10 @@ pub(super) fn task_card(app: &App, call: &str) -> Option<NodeBuilder> {
         let tag = crate::child::tag(&record.id.to_string());
         kept_of(record).map(|kept| (tag, kept))
     });
-    let head = crate::text::plural(kids.len(), "child");
+    let head = match kids.as_slice() {
+        [kid] => task_title(kid, &kid.roots(&app.roots)),
+        [] | [_, _, ..] => crate::text::plural(kids.len(), "child"),
+    };
     let mut card = container()
         .layout(LayoutStyle::flex_column().fill_width().gap(0.0))
         .child(header(
@@ -204,7 +219,7 @@ pub(super) fn receipt_card(
             &state,
             call_line(
                 "Task",
-                &Agent::title_of(&record.assignment),
+                &Agent::title_of(&workspace_relative(&record.assignment, &roots)),
                 Some((note, Look::xs(Token::Gray10))),
                 true,
             ),

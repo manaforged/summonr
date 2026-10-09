@@ -25,13 +25,10 @@ pub(crate) fn arguments(name: &str, text: &str) -> Result<Value> {
         .map_err(|error| Error::Tool(format!("{name} arguments are invalid: {error}")))
 }
 
-fn routed(mut value: Value) -> Result<std::result::Result<(String, Value), String>> {
+fn routed(value: Value) -> Result<std::result::Result<(String, Value), String>> {
     if let Some(alias) = value.get("tool").and_then(Value::as_str) {
         let alias = alias.to_string();
-        let arguments = value
-            .get_mut("arguments")
-            .map_or_else(|| json!({}), Value::take);
-        return Ok(Ok((alias, arguments)));
+        return Ok(Ok((alias, call_arguments(value))));
     }
     value
         .get("query")
@@ -43,6 +40,20 @@ fn routed(mut value: Value) -> Result<std::result::Result<(String, Value), Strin
                     .to_string(),
             )
         })
+}
+
+fn call_arguments(mut value: Value) -> Value {
+    match value.get_mut("arguments").map(Value::take) {
+        Some(Value::String(text)) => serde_json::from_str(&text).unwrap_or_else(|_| json!({})),
+        Some(Value::Null) | None => {
+            if let Some(fields) = value.as_object_mut() {
+                fields.remove("tool");
+                fields.remove("arguments");
+            }
+            value
+        }
+        Some(arguments) => arguments,
+    }
 }
 
 pub(crate) fn effective(name: &str, text: &str) -> Option<(String, Value)> {

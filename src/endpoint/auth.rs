@@ -27,6 +27,7 @@ pub fn auth_info(name: &str) -> Result<AuthInfo> {
             }),
         model: endpoint.model.clone(),
         base_url: endpoint.base_url.clone(),
+        own: preset(name).is_none(),
         env_hint: preset(name).and_then(|row| row.env_keys.first().copied()),
         group: login_group(name, &endpoint),
     };

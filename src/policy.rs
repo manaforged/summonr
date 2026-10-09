@@ -47,7 +47,10 @@ impl Grant {
             Self::Guarded(path) => format!("protected path {}", path.display()),
             Self::Command(command) => format!("a shell command without the sandbox: {command}"),
             Self::Danger { command, reason } => {
-                format!("a destructive command because {reason}: {command}")
+                format!(
+                    "{command} — {}",
+                    reason.strip_prefix("it ").unwrap_or(reason)
+                )
             }
             Self::Edit(setting) => format!("allow {setting} for this task (saved setting is off)"),
             Self::Network => "network".to_string(),

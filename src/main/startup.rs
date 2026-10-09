@@ -90,17 +90,23 @@ async fn early(args: &Args, log: Option<&diagnostics::Log>) -> Option<Result<i32
 
 async fn account(args: &Args) -> Option<Result<i32>> {
     if args.login
-        && let (Some(name), Some(url)) = (args.endpoint.as_deref(), args.url.as_deref())
+        && let Some(name) = args.endpoint.as_deref()
+        && (args.url.is_some() || (args.model.is_some() && own(name)))
     {
         return Some(
-            summonr::add_endpoint(name, url, args.model.as_deref())
-                .await
-                .map(|text| println!("{text}"))
-                .map(|()| 0),
+            summonr::add_endpoint(
+                name,
+                args.url.as_deref(),
+                args.model.as_deref(),
+                args.default,
+            )
+            .await
+            .map(|text| println!("{text}"))
+            .map(|()| 0),
         );
     }
     if args.login {
-        return Some(run_login(args).await.map(|()| 0));
+        return Some(login(args).await.map(|()| 0));
     }
     if args.logout {
         return Some(logout(args));
@@ -115,6 +121,24 @@ async fn account(args: &Args) -> Option<Result<i32>> {
         return Some(mcp(command).await.map(|()| 0));
     }
     None
+}
+
+async fn login(args: &Args) -> Result<()> {
+    let Some(name) = args.endpoint.as_deref().filter(|_| args.default) else {
+        return run_login(args).await;
+    };
+    if !summonr::endpoint_set_up().iter().any(|ready| ready == name) {
+        run_login(args).await?;
+    }
+    println!(
+        "{}",
+        summonr::set_default_endpoint(name, args.model.as_deref())?
+    );
+    Ok(())
+}
+
+fn own(name: &str) -> bool {
+    summonr::auth_info(name).is_ok_and(|info| info.own)
 }
 
 fn logout(args: &Args) -> Result<i32> {

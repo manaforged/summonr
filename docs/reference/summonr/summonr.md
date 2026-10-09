@@ -88,6 +88,7 @@
 | [`revision`](#revision) | fn |  |
 | [`run_tool`](#run_tool) | fn |  |
 | [`sandbox_on`](#sandbox_on) | fn |  |
+| [`set_default_endpoint`](#set_default_endpoint) | fn |  |
 | [`short`](#short) | fn |  |
 | [`stop_children`](#stop_children) | fn |  |
 | [`summonr_home`](#summonr_home) | fn |  |
@@ -109,7 +110,7 @@
 | Method | Description |
 | --- | --- |
 | <code>catalog_heading(&amp;self) -&gt; &amp;'static str</code> |  |
-| <code>catalog_line(&amp;self) -&gt; String</code> |  |
+| <code>catalog_line(&amp;self, name: usize, state: usize) -&gt; String</code> |  |
 | <code>catalog_rank(&amp;self) -&gt; u8</code> |  |
 | <code>catalog_title(&amp;self) -&gt; &amp;'static str</code> |  |
 | <code>dual(&amp;self) -&gt; bool</code> |  |
@@ -132,6 +133,7 @@
 | <code>login: <a href="#loginflow">LoginFlow</a></code> |  |
 | <code>model: String</code> |  |
 | <code>name: String</code> |  |
+| <code>own: bool</code> |  |
 | <code>plan: String</code> |  |
 | <code>setup: String</code> |  |
 | <code>source: Option&lt;<a href="summonr-secret.html#source">Source</a>&gt;</code> |  |
@@ -1032,7 +1034,7 @@
 
 ### `add_endpoint`
 
-<pre>pub async fn <a href="#add_endpoint">add_endpoint</a>(name: &amp;str, url: &amp;str, model: Option&lt;&amp;str&gt;) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
+<pre>pub async fn <a href="#add_endpoint">add_endpoint</a>(name: &amp;str, url: Option&lt;&amp;str&gt;, model: Option&lt;&amp;str&gt;, default: bool) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
 
 
 ### `add_worktree`
@@ -1258,6 +1260,11 @@
 ### `sandbox_on`
 
 <pre>pub fn <a href="#sandbox_on">sandbox_on</a>() -&gt; <a href="#result">Result</a>&lt;bool&gt;</pre>
+
+
+### `set_default_endpoint`
+
+<pre>pub fn <a href="#set_default_endpoint">set_default_endpoint</a>(name: &amp;str, model: Option&lt;&amp;str&gt;) -&gt; <a href="#result">Result</a>&lt;String&gt;</pre>
 
 
 ### `short`

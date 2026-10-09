@@ -81,8 +81,8 @@ pub use endpoint::{
     closest as closest_endpoint, fallbacks as endpoint_fallbacks,
     first_classify as classify_endpoint, is_named as is_endpoint, label as endpoint_label,
     login_seat, logout, names as endpoint_names, ordered_names as endpoint_names_ordered,
-    remove_server as remove_endpoint, resolve as resolve_endpoint, set_up as endpoint_set_up,
-    vision as vision_endpoint,
+    remove_server as remove_endpoint, resolve as resolve_endpoint,
+    set_default as set_default_endpoint, set_up as endpoint_set_up, vision as vision_endpoint,
 };
 pub use error::{Error, ProviderFailureKind, Result};
 pub use goal::prompt as goal_prompt;

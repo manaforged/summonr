@@ -13,6 +13,7 @@ pub struct AuthInfo {
     pub env: Option<&'static str>,
     pub model: String,
     pub base_url: Option<String>,
+    pub own: bool,
     pub(super) env_hint: Option<&'static str>,
     pub(super) group: LoginGroup,
 }
@@ -81,14 +82,12 @@ impl AuthInfo {
     }
 
     #[must_use]
-    pub fn catalog_line(&self) -> String {
+    pub fn catalog_line(&self, name: usize, state: usize) -> String {
+        let url = self.base_url.as_deref().unwrap_or_default();
         let about = label(&self.name).map_or_else(
-            || {
-                format!(
-                    "{} at {}",
-                    self.model,
-                    self.base_url.as_deref().unwrap_or_default()
-                )
+            || match self.model.as_str() {
+                "" => url.to_string(),
+                model => format!("{model} at {url}"),
             },
             str::to_string,
         );
@@ -97,7 +96,11 @@ impl AuthInfo {
             (false, false, Some(env)) if !self.flow.signs_in() => format!(" · or set {env}"),
             _ => String::new(),
         };
-        format!("{:<14} {:<16} {about}{hint}", self.name, self.state())
+        format!(
+            "{:<name$}  {:<state$}  {about}{hint}",
+            self.name,
+            self.state()
+        )
     }
 
     #[must_use]

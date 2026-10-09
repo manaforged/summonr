@@ -91,7 +91,6 @@ impl Picker {
         if command && picked == 0 && !row.0.starts_with(draft.trim_end()) {
             return None;
         }
-        let command = command && !prompt_row(model, &row.0);
         (row.0 != draft).then(|| (row.0.clone(), command))
     }
 
@@ -243,12 +242,6 @@ fn prompts(model: &Model, draft: &str) -> Rows {
         .filter(|offer| offer.kind == OfferKind::Prompt && offer.insert.starts_with(draft))
         .map(|offer| (format!("{} ", offer.insert), offer.about.clone()))
         .collect()
-}
-
-fn prompt_row(model: &Model, value: &str) -> bool {
-    model.offers.iter().any(|offer| {
-        offer.kind == OfferKind::Prompt && value.strip_suffix(' ') == Some(offer.insert.as_str())
-    })
 }
 
 fn resources(model: &Model, query: &str) -> Rows {

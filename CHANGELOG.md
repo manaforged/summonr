@@ -43,6 +43,13 @@ First stable release.
 
 ### Changed
 
+- `summonr login NAME --model M` changes the model of a server you added, with no `--url`. `summonr login NAME --default [--model M]` makes any endpoint that is set up the default. `summonr login NAME --help`, and `--help` after `logout`, `diff`, `profile`, `install`, `export`, `doctor`, `classify`, `worktrees`, and `mcp`, prints that command's help.
+- `summonr login` and `summonr endpoints` size their columns to the longest value, show only the URL on a row with no model, and say `1 model`. Each built-in label names its default model and the row whose key it shares; `glm` names `GLM_CODING_API_KEY` and `glm-intl` names `ZAI_CODING_API_KEY` when the key is missing.
+- Every session id on screen is the short id, and `--session` accepts it.
+- `summonr diff --turn N` writes the `--stat` summary line to stderr before the patch.
+- An approval prompt reads `<command> — <reason>`.
+- In `--steps --json`, a step's `start` event carries `check`: the step's `Run` commands joined with ` && `, or null.
+- Enter on a suggestion runs it, prompt rows too; Tab completes. With an empty composer and no running turn, `esc` closes the open side pane. Accepting a plan prints the check the work uses. A review note opens under its hunk header. Task cards use workspace-relative paths, a kept child checkout shows how to remove it, and with no usable endpoint the composer header reads `no provider · /login`.
 - Sign-in tokens are stored apart from API keys, so signing in no longer overwrites a key. A sign-in made with an earlier build is not read; sign in again once.
 - Every dialog, inline prompt, and key hint is built from one UI kit: dialogs share one frame and always end in their key hints, approval and form prompts look the same in the terminal and the desktop window, and hints show your own key bindings with one separator style.
 - Commands run without a prompt, sandboxed or not. Only irreversible destruction asks first: wiping the system, home, or project root, `mkfs`, `dd` to a device, `terraform destroy`, cluster deletes, and dropped tables, including inside a heredoc fed to a shell. `sudo`, force pushes, pipes into a shell, git discards, and protected-path writes no longer ask; `confirm = "risky"` in `policy.toml` brings those prompts back. `--strict` refuses the whole list, and your own `[policy] deny` rules stay hard refusals under `--sandbox` or `--strict`.
@@ -78,6 +85,8 @@ First stable release.
 
 ### Fixed
 
+- The turn receipt's dirty count ignores caches and `.summonr` state. A file a `summonr diff` wrote stays out of later sessions' turn diffs, and a change to `.summonr/check.toml` or `.summonr/policy.toml` is never a touched path.
+- The deferred `mcp` tool accepts arguments as an object, a JSON string, or fields beside `tool`.
 - The model cannot write `.summonr/check.toml` or `.summonr/policy.toml`; a check file that changes during a run gets a note, and the check loaded at start stays in force. A file that summonr's own output is redirected to never counts as a change.
 - `summonr diff` and child landings never include generated caches (`__pycache__`, `*.pyc`, `.pytest_cache`, `.mypy_cache`, `.ruff_cache`) or summonr state under `.summonr/`, even without a `.gitignore`.
 - A child never inherits goal or steps mode, a child of a plan-mode parent is read-only, and a child's first message names only its own checkout.

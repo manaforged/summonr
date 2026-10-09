@@ -318,21 +318,29 @@ impl Worker {
     }
 
     pub(super) fn send_settings(&self) {
-        drop(self.ui.send(Msg::Settings(Snapshot {
-            model: self.loop_.model().to_string(),
-            relay: self.relay.clone(),
-            plan: self.loop_.is_plan(),
-            work: self.loop_.is_work(),
-            goal: self.loop_.is_goal(),
-            effort: self.loop_.effort(),
-            levels: self.levels.clone(),
-            pending_plan: self.loop_.pending_plan(),
-            verify: verify_display(self.loop_.verify_commands()),
-            strict: self.loop_.is_strict(),
-            endpoint: self.endpoint.clone(),
-            context_window: self.loop_.context_window(),
-            workflow: self.loop_.workflow(),
-        })));
+        drop(
+            self.ui.send(Msg::Settings(Snapshot {
+                model: self.loop_.model().to_string(),
+                relay: self.relay.clone(),
+                plan: self.loop_.is_plan(),
+                work: self.loop_.is_work(),
+                goal: self.loop_.is_goal(),
+                effort: self.loop_.effort(),
+                levels: self.levels.clone(),
+                pending_plan: self.loop_.pending_plan(),
+                verify: verify_display(self.loop_.verify_commands()),
+                strict: self.loop_.is_strict(),
+                endpoint: self.endpoint.clone(),
+                context_window: self.loop_.context_window(),
+                workflow: self.loop_.workflow(),
+                unseated: crate::endpoint::resolve(
+                    Some(&self.endpoint),
+                    None,
+                    crate::endpoint::Need::Seat,
+                )
+                .is_err(),
+            })),
+        );
     }
 }
 

@@ -10,6 +10,9 @@ impl Worker {
         if self.loop_.mode() != crate::RunMode::Work {
             return true;
         }
+        if self.goal_gates().is_none() {
+            return true;
+        }
         self.turn("Execute the accepted plan.".into()).await
     }
 

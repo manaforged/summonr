@@ -111,6 +111,8 @@ Built-in endpoints include `anthropic`, `openai`, `gemini`, `grok`, `deepseek`, 
 
 ```sh
 summonr login local --url http://127.0.0.1:8080/v1   # picks the model when the server lists one
+summonr login local --model qwen3-coder              # change its model
+summonr login local --default                        # start on it when no endpoint is named
 summonr local
 summonr logout local --remove                        # remove it again
 ```
@@ -173,11 +175,11 @@ The [changelog](CHANGELOG.md) lists the changes in each release. Example configs
 
 <!-- truesight:surface summonr -->
 
-757 public items (76 types, 104 functions, 122 methods, 266 fields, 188 variants, 1 constant) at 757 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
+759 public items (76 types, 105 functions, 122 methods, 267 fields, 188 variants, 1 constant) at 759 paths; 0 are re-export aliases. 394 trait impl lines, 33 inherent impl lines. 24 modules, 0 re-export only.
 
 | Module | Items | Types | Functions | Methods | Aliases |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| `summonr` | 510 | 42 | 55 | 99 | 0 |
+| `summonr` | 512 | 42 | 56 | 99 | 0 |
 | `summonr::acp` | 1 | 0 | 1 | 0 | 0 |
 | `summonr::askpass` | 5 | 1 | 3 | 0 | 0 |
 | `summonr::catalog` | 24 | 2 | 5 | 1 | 0 |

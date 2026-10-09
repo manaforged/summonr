@@ -58,7 +58,10 @@ impl Work {
             .base
             .as_ref()
             .ok_or_else(|| WorkError("Execute has no workspace base".to_string()))?;
-        let paths = changed(base, &capture);
+        let paths: Vec<String> = changed(base, &capture)
+            .into_iter()
+            .filter(|path| !crate::policy::workspace_control(std::path::Path::new(path)))
+            .collect();
         self.touched.extend(paths.iter().cloned());
         self.deferred = 0;
         self.jobs.clear();

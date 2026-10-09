@@ -30,6 +30,7 @@ const ADD_USAGE: &str = "summonr mcp add NAME [--env KEY=VALUE]... -- COMMAND [A
 pub(super) fn parse(input: &mut Input) -> Result<McpCommand> {
     let verb = input.next().ok_or_else(|| usage(USAGE))?;
     match verb.as_str() {
+        "-h" | "--help" => super::exit_help(Some("mcp")),
         "list" => Ok(McpCommand::List { json: json(input)? }),
         "get" => {
             let name = name(input)?;
@@ -49,6 +50,12 @@ pub(super) fn parse(input: &mut Input) -> Result<McpCommand> {
 }
 
 fn name(input: &mut Input) -> Result<String> {
+    if input
+        .peek()
+        .is_some_and(|next| next == "-h" || next == "--help")
+    {
+        super::exit_help(Some("mcp"));
+    }
     input
         .next_if(|next| !next.starts_with('-'))
         .ok_or_else(|| usage(USAGE))
@@ -61,15 +68,15 @@ fn json(input: &mut Input) -> Result<bool> {
 }
 
 fn finished(input: &mut Input) -> Result<()> {
-    input.next().map_or(Ok(()), |extra| {
-        Err(usage(&format!("unexpected `{extra}`; {USAGE}")))
-    })
+    match input.next().as_deref() {
+        None => Ok(()),
+        Some("-h" | "--help") => super::exit_help(Some("mcp")),
+        Some(extra) => Err(usage(&format!("unexpected `{extra}`; {USAGE}"))),
+    }
 }
 
 fn add(input: &mut Input) -> Result<McpCommand> {
-    let name = input
-        .next_if(|next| !next.starts_with('-'))
-        .ok_or_else(|| usage(ADD_USAGE))?;
+    let name = name(input).map_err(|_unnamed| usage(ADD_USAGE))?;
     let launch = AddFlags::read(input)?.launch()?;
     Ok(McpCommand::Add { name, launch })
 }
@@ -95,6 +102,7 @@ impl AddFlags {
                     flags.url = Some(value(input, "--url", "a URL")?);
                 }
                 "--" => flags.command.extend(input.by_ref()),
+                "-h" | "--help" => super::exit_help(Some("mcp")),
                 unknown => return Err(usage(&format!("unexpected `{unknown}`; {ADD_USAGE}"))),
             }
         }

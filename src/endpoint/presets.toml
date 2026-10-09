@@ -1,6 +1,6 @@
 [[preset]]
 name = "zai"
-label = "Z.ai coding plan (international), default GLM-5.3 Flash"
+label = "Z.ai coding plan (international), GLM-5.3 Flash; same key as glm-intl"
 key_from = "glm-intl"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3-flash"
@@ -15,7 +15,7 @@ off = "disabled"
 
 [[preset]]
 name = "zai-cn"
-label = "BigModel coding plan (China), default GLM-5.3 Flash"
+label = "BigModel coding plan (China), GLM-5.3 Flash; same key as glm"
 key_from = "glm"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3-flash"
@@ -30,23 +30,23 @@ off = "disabled"
 
 [[preset]]
 name = "glm"
-label = "BigModel coding plan (China), default GLM-5.3"
+label = "BigModel coding plan (China), GLM-5.3; same key as zai-cn"
 key_from = "zai-cn"
 base_url = "https://open.bigmodel.cn/api/coding/paas/v4"
 model = "glm-5.3"
 env_keys = [
-    "ZAI_CODING_API_KEY",
     "GLM_CODING_API_KEY",
-    "ZAI_API_KEY",
+    "ZAI_CODING_API_KEY",
     "GLM_API_KEY",
+    "ZAI_API_KEY",
 ]
-missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+missing = "run `summonr login NAME` or set GLM_CODING_API_KEY"
 opencode_ids = ["zhipuai-coding-plan", "zhipuai", "zai-coding-plan", "zai"]
 plan = true
 
 [[preset]]
 name = "glm-intl"
-label = "Z.ai coding plan (international), default GLM-5.3"
+label = "Z.ai coding plan (international), GLM-5.3; same key as zai"
 key_from = "zai"
 base_url = "https://api.z.ai/api/coding/paas/v4"
 model = "glm-5.3"
@@ -56,7 +56,7 @@ env_keys = [
     "ZAI_API_KEY",
     "GLM_API_KEY",
 ]
-missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY or ZAI_API_KEY"
+missing = "run `summonr login NAME` or set ZAI_CODING_API_KEY"
 opencode_ids = ["zai-coding-plan", "zai"]
 env_default = true
 plan = true

@@ -16,6 +16,8 @@ Providers:
   endpoints                   list endpoints, their models, and each key state
   login [NAME] [--key]        list keys and plans, or sign in to NAME
   login NAME --url URL        add your own OpenAI-compatible server (--model NAME to pick one)
+  login NAME --model NAME     change the model of a server you added
+  login NAME --default        start on NAME when no endpoint is named (--model NAME sets its model)
   logout NAME [--remove]      forget the stored key or token; --remove deletes your own endpoint
 
 Setup:

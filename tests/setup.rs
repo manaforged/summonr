@@ -144,3 +144,26 @@ fn a_closed_pipe_ends_a_command_quietly() {
     let (_, next) = summonr(home, &["endpoints"]);
     assert!(!next.contains("without an exit record"), "{next}");
 }
+
+#[test]
+fn a_local_server_takes_a_new_model_and_becomes_the_default_from_the_shell() {
+    let home = tempfile::tempdir().unwrap();
+    let home = home.path();
+    let url = "http://127.0.0.1:9/v1";
+    let (ok, text) = summonr(home, &["login", "lab", "--url", url, "--model", "m"]);
+    assert!(ok, "{text}");
+    let (ok, text) = summonr(home, &["login", "lab", "--model", "m2"]);
+    assert!(ok && text.contains("m2"), "{text}");
+    let (ok, text) = summonr(home, &["login", "lab", "--default"]);
+    assert!(ok, "{text}");
+    let config = std::fs::read_to_string(home.join(".summonr/config.toml")).unwrap();
+    assert!(
+        config.contains("default = \"lab\"") && config.contains("model = \"m2\""),
+        "{config}"
+    );
+    let (_, help) = summonr(home, &["login", "--help"]);
+    assert!(
+        help.contains("--url") && help.contains("--default"),
+        "{help}"
+    );
+}

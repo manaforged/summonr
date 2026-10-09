@@ -115,3 +115,18 @@ fn the_context_meter_shows_only_when_the_window_is_known() {
     let ctx = small.split("cache").next().unwrap_or_default();
     assert!(ctx.contains("ctx") && ctx.contains("1%"), "{small}");
 }
+
+#[test]
+fn an_unseated_session_shows_no_provider_instead_of_a_model() {
+    let lines = frame_with(busy_info(), 110, 30, State::Idle, |app| {
+        app.update(Msg::Settings(crate::tui::Snapshot {
+            model: "glm-5.3-flash".to_owned(),
+            endpoint: "zai".to_owned(),
+            unseated: true,
+            ..crate::tui::Snapshot::default()
+        }));
+    });
+    let screen = lines.join("\n");
+    assert!(screen.contains("no provider"), "{screen}");
+    assert!(!screen.contains("glm-5.3-flash"), "{screen}");
+}

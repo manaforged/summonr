@@ -296,7 +296,7 @@ use preset::{preset, presets};
 pub(crate) use resolve::default_seat;
 pub use resolve::{Near, chosen_by, closest, fallbacks, ordered_names, resolve, set_up, vision};
 use resolve::{hosted, seat};
-pub use server::{add_server, remove_server};
+pub use server::{add_server, remove_server, set_default};
 
 #[cfg(test)]
 #[path = "endpoint_tests.rs"]

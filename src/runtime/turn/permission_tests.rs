@@ -19,7 +19,11 @@ fn command(text: &str) -> ToolCall {
         function: ToolFunction {
             checked: Default::default(),
             name: "run_command".to_string(),
-            arguments: serde_json::json!({ "command": text }).to_string(),
+            arguments: serde_json::json!({
+                "command": text,
+                "timeout_secs": crate::limits::limits().command_kill_secs,
+            })
+            .to_string(),
         },
         continuation: None,
     }
@@ -100,7 +104,11 @@ async fn approving_a_destructive_command_keeps_the_sandbox() -> Result<()> {
         "the command never requested approval: {events:?}"
     );
     assert_eq!(std::fs::read_to_string(target.join("sentinel"))?, "keep\n");
-    assert!(!output.success, "the outside deletion escaped containment");
+    assert!(
+        !output.success,
+        "the outside deletion escaped containment: {}",
+        output.text
+    );
     Ok(())
 }
 

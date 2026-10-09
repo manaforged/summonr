@@ -75,7 +75,7 @@ impl<P: Provider> Loop<P> {
     }
 
     pub async fn stop_work(&mut self, reason: &str, mut emit: impl FnMut(&Event)) -> Result<i32> {
-        if self.session.stage().is_some() {
+        if !self.work_progress()?.terminal() {
             let checks = self.run_verify(&mut Vec::new(), &mut emit).await?;
             if !checks.is_empty() {
                 self.session

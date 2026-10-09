@@ -61,7 +61,7 @@ echo $?
 | Ignore workspace `AGENTS.md` | `--no-trust` |
 | Skip the check gate for one run | `--no-verify` |
 | Isolate a session in a git worktree | `--worktree` (branch `summonr/<id>`); `--here` is the default |
-| Name or fork a session | `--name TEXT`; `--fork` |
+| Name or fork a session | `--name TEXT`; `--fork` forks the last session here, or `--session ID --fork` forks that session |
 | Run workflow roles on their own models | `-w NAME`, from `[workflows.NAME]` |
 | Review what a turn changed | `summonr diff --turn last --json` |
 | Drive a session from an editor | `summonr acp` |

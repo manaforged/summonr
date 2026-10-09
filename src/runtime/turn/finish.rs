@@ -2,6 +2,25 @@ use super::close::Answer;
 use super::*;
 
 impl<P: Provider> Loop<P> {
+    fn close_plain(&mut self, snapshot: String, events: &[Event]) -> Result<()> {
+        if self.session.stage() == Some(Stage::Execute)
+            && self.work_progress()?.kind == crate::WorkKind::Single
+        {
+            let paths = self.session.enter_verify().map_err(super::session_err)?;
+            let receipt = Receipt::new(paths, Vec::new(), snapshot, events);
+            let verdict = self
+                .session
+                .prepare_verdict(true)
+                .map_err(super::session_err)?;
+            self.session
+                .commit_verdict(verdict, Decision::Automatic, Some(&receipt))
+                .map_err(super::session_err)?;
+        } else {
+            self.session.close().map_err(super::session_err)?;
+        }
+        Ok(())
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "one close path for a finished provider round"
@@ -36,7 +55,7 @@ impl<P: Provider> Loop<P> {
         }
         self.record_answer(answer, events, &mut emit)?;
         if !self.executes_work() {
-            self.session.close().map_err(super::session_err)?;
+            self.close_plain(snapshot, events)?;
             return self.close_turn(
                 Ending::Done(Vec::new()),
                 message.content,

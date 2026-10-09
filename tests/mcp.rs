@@ -16,6 +16,8 @@ mod plugins;
 mod policy;
 #[path = "mcp/protocol.rs"]
 mod protocol;
+#[path = "mcp/session.rs"]
+mod session;
 mod support;
 #[path = "mcp/transport.rs"]
 mod transport;
@@ -81,6 +83,9 @@ fn main() {
         output::a_server_error_line_is_shown_without_secrets,
         output::a_json_run_starts_with_its_session_id,
         diff::turn_last_shows_the_latest_turn_of_a_resumed_session_without_generated_files,
+        session::a_plain_worktree_turn_lands_its_changes_without_running_a_check,
+        session::forking_a_named_session_keeps_the_original_transcript,
+        session::a_budget_abort_runs_the_failed_check_before_choosing_its_exit_code,
         policy::strict_mode_denies_a_listed_tool_and_runs_an_allowed_one,
         policy::strict_mode_without_an_allow_entry_refuses_a_tool_that_changes_state,
         #[cfg(any(target_os = "macos", target_os = "linux"))]

@@ -115,6 +115,7 @@ pub struct Loop<P> {
     probe: Option<tokio::task::JoinHandle<Option<u32>>>,
     effort: Option<Effort>,
     turn_started: u64,
+    shield_epoch: u64,
     summary_wait: usize,
     workspace: PathBuf,
     mailbox: Option<Mailbox>,

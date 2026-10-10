@@ -239,6 +239,7 @@ impl<P: Provider> Loop<P> {
             ),
             Err(error) => (false, false, error.to_string(), Vec::new(), None),
         };
+        self.shield_epoch += u64::from(mutated);
         let text = self.tool_text(&call, success, text).await;
         self.session
             .finish_tool(planned, text.as_str(), success, mutated, millis, patch)

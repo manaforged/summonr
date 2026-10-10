@@ -220,6 +220,7 @@ impl<P: Provider> Loop<P> {
         }
         self.summary_wait = 0;
         self.turn_started = crate::mail::now();
+        self.shield_epoch += 1;
         let commands = self.verify.clone().unwrap_or_default();
         self.prepare_work(&input.text, &commands)?;
         let harness = self.harness_note(&self.work_progress()?);

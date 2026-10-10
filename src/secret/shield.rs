@@ -1,4 +1,6 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, PoisonError};
 
 const DEPTH: usize = 3;
 const MIN_LEN: usize = 6;
@@ -37,11 +39,28 @@ const KEY_END: &str = "-----END ";
 const KEY_TAIL: &str = "PRIVATE KEY-----";
 const HIDDEN: &str = "[secret]";
 
-pub(crate) fn scrub(text: &str, workspace: &Path) -> String {
+type Seen = HashMap<PathBuf, (u64, Arc<Vec<String>>)>;
+
+static SEEN: Mutex<Option<Seen>> = Mutex::new(None);
+
+pub(crate) fn scrub(text: &str, workspace: &Path, epoch: u64) -> String {
     let text = crate::askpass::scrub(text);
-    let values = values(workspace);
+    let values = known(workspace, epoch);
     let text = crate::text::redact(&text, values.iter().map(String::as_str));
     private_keys(&text)
+}
+
+fn known(workspace: &Path, epoch: u64) -> Arc<Vec<String>> {
+    let mut seen = SEEN.lock().unwrap_or_else(PoisonError::into_inner);
+    let seen = seen.get_or_insert_with(HashMap::new);
+    if let Some((at, values)) = seen.get(workspace)
+        && *at == epoch
+    {
+        return Arc::clone(values);
+    }
+    let values = Arc::new(values(workspace));
+    seen.insert(workspace.to_path_buf(), (epoch, Arc::clone(&values)));
+    values
 }
 
 fn values(workspace: &Path) -> Vec<String> {
@@ -170,3 +189,7 @@ fn private_keys(text: &str) -> String {
     out.push_str(rest);
     out
 }
+
+#[cfg(test)]
+#[path = "shield_tests.rs"]
+mod tests;

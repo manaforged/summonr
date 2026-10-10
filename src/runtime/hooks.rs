@@ -65,7 +65,7 @@ impl<P: Provider> Loop<P> {
         success: bool,
         text: String,
     ) -> String {
-        let mut text = crate::secret::shield::scrub(&text, &self.workspace);
+        let mut text = crate::secret::shield::scrub(&text, &self.workspace, self.shield_epoch);
         if self.hooks.of(HookEvent::PostTool).is_empty() {
             return text;
         }

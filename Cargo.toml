@@ -33,7 +33,7 @@ harness = false
 
 [workspace.dependencies]
 base64 = "0.22"
-leyline = { package = "leyline-http", git = "https://github.com/manaforged/leyline-http", rev = "278865437eb2aebddcde185370992a1101527907", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
+leyline = { package = "leyline-http", version = "0.1.4", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
 rand = { version = "0.9", default-features = false, features = ["os_rng"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -57,7 +57,7 @@ toml_edit = "0.22"
 unicode-segmentation = "1.13.3"
 uuid = { version = "1.24", features = ["v7"] }
 tokio = { version = "1", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "signal", "sync", "time"] }
-leyline-http = { git = "https://github.com/manaforged/leyline-http", rev = "278865437eb2aebddcde185370992a1101527907", default-features = false, features = ["charset", "compression-brotli", "compression-deflate", "compression-gzip", "compression-zstd"] }
+leyline = { workspace = true }
 url = { workspace = true }
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 crossterm = "0.29"

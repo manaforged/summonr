@@ -51,7 +51,7 @@ jobs:
       - name: clippy
         run: cargo clippy -p summonr --all-targets --locked -- -D warnings
       - name: tests
-        run: cargo test -p summonr --locked
+        run: cargo test --workspace --locked
 
   build:
     name: build ${{ matrix.target }}

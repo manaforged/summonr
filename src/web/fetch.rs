@@ -6,9 +6,10 @@ use leyline::{Response, Session};
 use url::Url;
 
 use super::{Format, Search};
+use crate::browser::wall::WALL;
 use crate::error::{Error, Result};
 
-const OUT_MAX: usize = 32 * 1024;
+pub(crate) const OUT_MAX: usize = 32 * 1024;
 const PAGE_PREFIX: &str = "page-";
 const PAGE_SUFFIX: &str = ".md";
 
@@ -26,6 +27,12 @@ impl Search {
             lookup.map_err(|()| Error::Tool("web_fetch: that host is not allowed".to_string()))?;
         let session = super::pinned_session(&host, &addrs)?;
         let response = Self::request(&session, &url).await?;
+        if let Some(browser) = self
+            .browser()
+            .filter(|_| WALL.status(response.status().as_u16()))
+        {
+            return Ok(self.output(&url, &browser.render(&url).await?));
+        }
         let ctype = response
             .header("content-type")
             .unwrap_or("")
@@ -41,6 +48,9 @@ impl Search {
         let text = std::str::from_utf8(&bytes)
             .map_err(|error| Error::Tool(format!("web_fetch: binary body: {error}")))?;
         let body = page_body(text, &ctype, format);
+        if let Some(browser) = self.browser().filter(|_| WALL.body(&body, text)) {
+            return Ok(self.output(&url, &browser.render(&url).await?));
+        }
         Ok(self.output(&url, &body))
     }
 
@@ -119,7 +129,7 @@ pub(super) fn page_body(text: &str, ctype: &str, format: Format) -> String {
     }
 }
 
-pub(super) fn check_url(raw: &str) -> Result<Url> {
+pub(crate) fn check_url(raw: &str) -> Result<Url> {
     let trimmed = raw.trim();
     let candidate = if let Some(rest) = trimmed.strip_prefix("http://") {
         format!("https://{rest}")

@@ -66,15 +66,16 @@ fn known(workspace: &Path) -> Arc<Vec<String>> {
         return Arc::clone(&scan.values);
     }
     let (files, folders) = files(workspace);
+    let watched: Vec<(PathBuf, Stamp)> = files
+        .iter()
+        .chain(&folders)
+        .map(|path| (path.clone(), stamp(path)))
+        .collect();
     let values = Arc::new(values(&files));
-    let watched = files.into_iter().chain(folders).map(|path| {
-        let now = stamp(&path);
-        (path, now)
-    });
     seen.insert(
         workspace.to_path_buf(),
         Scan {
-            watched: watched.collect(),
+            watched,
             values: Arc::clone(&values),
         },
     );

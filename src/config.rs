@@ -19,6 +19,8 @@ pub(crate) struct File {
     pub endpoint: BTreeMap<String, Endpoint>,
     #[serde(default)]
     pub search: Search,
+    #[serde(default)]
+    pub browser: Browser,
     pub theme: Option<String>,
     pub background: Option<crate::prefs::Background>,
     pub notify: Option<crate::prefs::Notify>,
@@ -201,6 +203,26 @@ pub(crate) struct Search {
     pub count: Option<usize>,
     pub allowed_domains: Option<Vec<String>>,
     pub excluded_domains: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub(crate) struct Browser {
+    pub profile: Option<String>,
+    pub headed: Option<bool>,
+    pub chrome: Option<PathBuf>,
+    pub events: Option<BrowserEvents>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+pub(crate) struct BrowserEvents {
+    #[serde(default = "events_on")]
+    pub page: bool,
+    #[serde(default = "events_on")]
+    pub runtime: bool,
+}
+
+const fn events_on() -> bool {
+    true
 }
 
 pub(crate) fn path() -> Result<PathBuf> {

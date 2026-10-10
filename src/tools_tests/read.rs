@@ -140,3 +140,10 @@ fn a_protected_name_outside_the_workspace_stays_protected_through_a_symlink() {
         .unwrap_or_default();
     assert!(error.contains("protected path"), "{error}");
 }
+
+#[test]
+fn a_directory_listing_gives_file_sizes_in_bytes() {
+    let (_dir, tools) = workspace(&[("calc.py", "print('ninety-eight bytes of code')\n")]);
+    let listing = run(&tools, "read", serde_json::json!({"path": "."}));
+    assert!(listing.contains("calc.py\tfile\t36 bytes"), "{listing}");
+}

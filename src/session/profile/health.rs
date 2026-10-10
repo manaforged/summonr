@@ -50,6 +50,7 @@ impl Health {
                 | Builtin::Skill
                 | Builtin::Todo
                 | Builtin::Web
+                | Builtin::Browser
                 | Builtin::Task,
             )
             | None => {}

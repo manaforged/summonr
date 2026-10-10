@@ -217,3 +217,61 @@ fn a_local_server_takes_a_new_model_and_becomes_the_default_from_the_shell() {
         "{help}"
     );
 }
+
+#[test]
+fn acp_answers_initialize_before_a_provider_is_set_up() {
+    use std::io::Write;
+    let home = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_summonr"))
+        .arg("acp")
+        .current_dir(home.path())
+        .env_clear()
+        .env("HOME", home.path())
+        .env("USERPROFILE", home.path())
+        .env("SUMMONR_HOME", home.path().join(".summonr"))
+        .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+        .envs(std::env::var_os("SYSTEMROOT").map(|root| ("SYSTEMROOT", root)))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let cwd = home.path().display().to_string().replace('\\', "\\\\");
+    let requests = format!(
+        "{{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{{\"protocolVersion\":1}}}}\n{{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{{\"cwd\":\"{cwd}\",\"mcpServers\":[]}}}}\n"
+    );
+    let mut stdin = child.stdin.take().unwrap();
+    stdin.write_all(requests.as_bytes()).unwrap();
+    drop(stdin);
+    let output = child.wait_with_output().unwrap();
+    let replies: Vec<serde_json::Value> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str(line).ok())
+        .collect();
+    let reply = |id: i64| replies.iter().find(|reply| reply["id"] == id);
+    assert!(
+        reply(1).is_some_and(|reply| reply["result"]["protocolVersion"] == 1),
+        "{replies:?}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        reply(2).is_some_and(|reply| reply["error"]["message"]
+            .as_str()
+            .is_some_and(|text| text.contains("no provider"))),
+        "{replies:?}"
+    );
+}
+
+#[test]
+fn the_tool_command_runs_a_module_tool_that_is_switched_on() {
+    let home = tempfile::tempdir().unwrap();
+    let summonr_home = home.path().join(".summonr");
+    std::fs::create_dir_all(&summonr_home).unwrap();
+    std::fs::write(
+        summonr_home.join("config.toml"),
+        "[modules]\nbrowser = true\n",
+    )
+    .unwrap();
+    let (_, text) = summonr(home.path(), &["tool", "browser", "{}"]);
+    assert!(!text.contains("unavailable in the current mode"), "{text}");
+}

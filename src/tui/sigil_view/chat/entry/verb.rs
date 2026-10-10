@@ -31,6 +31,7 @@ impl StepVerb {
         match Builtin::of(name) {
             Some(Builtin::Read) => Self::Explored,
             Some(Builtin::Search) => Self::Searched,
+            Some(Builtin::Browser) => Self::Fetched,
             Some(Builtin::Edit | Builtin::Write) => Self::Edited,
             Some(Builtin::RunCommand) => Self::Ran,
             Some(Builtin::Web) => Self::Fetched,

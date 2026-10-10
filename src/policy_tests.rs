@@ -357,11 +357,13 @@ fn a_case_arm_does_not_hide_the_real_command() {
 
 #[test]
 fn a_pushd_makes_a_relative_redirect_leave_the_workspace() {
-    let error = refusal("pushd /tmp; echo hi > secret");
+    let error = refusal("cd /tmp; echo hi > secret");
     assert!(
-        error.contains("`secret` is outside the workspace"),
+        error.contains("`/tmp/secret` is outside the workspace") && error.contains("write /tmp"),
         "{error}"
     );
+    let unknown = refusal("pushd /tmp; echo hi > secret");
+    assert!(!unknown.contains("/permissions write secret"), "{unknown}");
 }
 
 #[test]

@@ -130,3 +130,58 @@ fn an_unseated_session_shows_no_provider_instead_of_a_model() {
     assert!(screen.contains("no provider"), "{screen}");
     assert!(!screen.contains("glm-5.3-flash"), "{screen}");
 }
+
+#[test]
+fn a_meter_card_opens_on_a_click_and_closes_on_a_click_outside() {
+    use sigil::events::{EventRouter, PointerPhase};
+    use sigil::terminal::{Screen, pointer};
+    let shown = sigil::reactive::Runtime::scope("meter-card", || {
+        let workspace = tempfile::tempdir().unwrap();
+        let (commands, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        let app = super::super::app::App::new(busy_info(), workspace.path().to_owned(), commands);
+        app.resize(110, 30);
+        app.refresh();
+        let mut host = sigil::Host::cells();
+        let tree = app.clone();
+        host.mount(move || super::super::view::root(tree));
+        let mut screen = Screen::new(110, 30);
+        let mut router = EventRouter::new();
+        let mut text = String::new();
+        for _ in 0..2 {
+            text = screen
+                .frame(&mut host, &mut router, [], (110, 30))
+                .unwrap()
+                .text();
+        }
+        let lines: Vec<String> = text.lines().map(str::to_owned).collect();
+        let row = lines
+            .iter()
+            .rposition(|line| line.contains("cache"))
+            .unwrap();
+        let col = lines[row][..lines[row].rfind("cache").unwrap()]
+            .chars()
+            .count();
+        let mut send = |phases: &[PointerPhase], col: usize, row: usize| {
+            let (col, row) = (col as u16, row as u16);
+            for phase in phases {
+                let event = pointer(*phase, col, row);
+                screen
+                    .frame(&mut host, &mut router, [event], (110, 30))
+                    .unwrap();
+            }
+            let grid = screen.frame(&mut host, &mut router, [], (110, 30)).unwrap();
+            grid.text().contains("╭ cache")
+        };
+        let click = [PointerPhase::Move, PointerPhase::Down, PointerPhase::Up];
+        let opened = send(&click, col + 2, row);
+        send(&click, col + 2, row - 2);
+        let inside = send(&[PointerPhase::Move], 2, 2);
+        let outside = send(&click, 2, 2);
+        (opened, inside, outside)
+    });
+    assert_eq!(
+        shown,
+        (true, true, false),
+        "open, after a click inside and moving away, after a click outside"
+    );
+}

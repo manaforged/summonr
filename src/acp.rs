@@ -18,7 +18,7 @@ type Input = Lines<BufReader<Stdin>>;
 type Reply = std::result::Result<Value, (i64, String)>;
 
 struct Server<F> {
-    endpoint: Endpoint,
+    endpoint: std::result::Result<Endpoint, String>,
     build: F,
     out: UnboundedSender<String>,
     sessions: BTreeMap<String, Loop<Client>>,
@@ -38,7 +38,8 @@ where
         }
     });
     let mut server = Server {
-        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)?,
+        endpoint: endpoint::resolve(name, model, crate::endpoint::Need::Seat)
+            .map_err(|error| error.to_string()),
         build,
         out,
         sessions: BTreeMap::new(),
@@ -86,11 +87,12 @@ where
             .and_then(Value::as_str)
             .map(PathBuf::from)
             .ok_or_else(|| (-32602, "session/new needs cwd".to_string()))?;
+        let endpoint = self.endpoint.clone().map_err(|error| (-32603, error))?;
         let tag = Arc::new(OnceLock::new());
-        let client = self.connect(&self.endpoint, &tag).map_err(failure)?;
-        let mut session = (self.build)(&self.endpoint, client, &cwd).map_err(failure)?;
+        let client = self.connect(&endpoint, &tag).map_err(failure)?;
+        let mut session = (self.build)(&endpoint, client, &cwd).map_err(failure)?;
         let (fallbacks, skipped) =
-            endpoint::fallbacks(&self.endpoint, |fallback| self.connect(fallback, &tag));
+            endpoint::fallbacks(&endpoint, |fallback| self.connect(fallback, &tag));
         for note in skipped {
             eprintln!("summonr: {note}");
         }
@@ -306,6 +308,7 @@ fn kind(name: &str) -> &'static str {
         Some(Builtin::RunCommand) => "execute",
         Some(Builtin::Web) => "fetch",
         Some(Builtin::Lsp | Builtin::Search) => "search",
+        Some(Builtin::Browser) => "fetch",
         Some(Builtin::Skill | Builtin::Todo | Builtin::Task) | None => "other",
     }
 }

@@ -128,10 +128,7 @@ impl App {
             Some(Overlay::Hotkeys) => self.edit_hotkey(),
             Some(Overlay::Settings) => self.adjust_setting(),
             Some(Overlay::Usage) => self.usage.scope(),
-            Some(Overlay::Context | Overlay::Cache) => {
-                self.context_open.set(false);
-                self.cache_open.set(false);
-            }
+            Some(Overlay::Context | Overlay::Cache) => self.close_meters(),
             None => return false,
         }
         true
@@ -151,10 +148,7 @@ impl App {
             Some(Overlay::Hotkeys) => self.close_hotkey(),
             Some(Overlay::Settings) => self.settings_open.set(false),
             Some(Overlay::Usage) => self.usage.open.set(false),
-            Some(Overlay::Context | Overlay::Cache) => {
-                self.context_open.set(false);
-                self.cache_open.set(false);
-            }
+            Some(Overlay::Context | Overlay::Cache) => self.close_meters(),
             None => return false,
         }
         true
@@ -195,6 +189,13 @@ impl App {
             }
         }
         self.refresh();
+    }
+
+    pub(in crate::tui::sigil_view) fn close_meters(&self) {
+        if self.context_open.peek() || self.cache_open.peek() {
+            self.context_open.set(false);
+            self.cache_open.set(false);
+        }
     }
 
     pub(in crate::tui::sigil_view) fn overlay_adjust(&self, delta: isize) -> bool {

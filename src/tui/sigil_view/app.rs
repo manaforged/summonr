@@ -131,7 +131,6 @@ pub(super) struct App {
     pub(super) settings_open: Signal<bool>,
     pub(super) context_open: Signal<bool>,
     pub(super) cache_open: Signal<bool>,
-    pub(super) meter_hover: Signal<Option<super::chat::Target>>,
     pub(super) scroll: Signal<usize>,
     pub(super) settings_sel: Signal<usize>,
     pub(super) modules: Signal<std::collections::BTreeMap<crate::modules::ModuleId, bool>>,
@@ -251,7 +250,6 @@ impl App {
             settings_open: signal(false),
             context_open: signal(false),
             cache_open: signal(false),
-            meter_hover: signal(None),
             scroll: signal(0),
             settings_sel: signal(0),
             modules: signal({

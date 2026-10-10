@@ -51,6 +51,7 @@
 
 | Variant | Description |
 | --- | --- |
+| <code>Browser</code> |  |
 | <code>Jobs</code> |  |
 | <code>Lsp</code> |  |
 | <code>Mail</code> |  |

@@ -68,7 +68,7 @@ pub(super) fn format_directory(path: &str, dir: &Path) -> Result<String> {
         };
         let size = meta
             .filter(|meta| meta.is_file())
-            .map(|meta| meta.len().to_string())
+            .map(|meta| format!("{} bytes", meta.len()))
             .unwrap_or_default();
         entries.push((name, kind, size));
     }

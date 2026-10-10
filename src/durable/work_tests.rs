@@ -114,3 +114,22 @@ fn a_changed_check_file_is_never_a_touched_path() {
         .unwrap();
     assert_eq!(paths, vec!["a.txt".to_string()]);
 }
+
+#[test]
+fn a_cache_file_is_never_a_touched_path() {
+    let dir = tempfile::tempdir().unwrap();
+    crate::diff::git_env(dir.path(), &[], &["init", "-q"]).unwrap();
+    std::fs::write(dir.path().join("calc.py"), "a").unwrap();
+    let mut work = Work::new("ship", Policy::Single);
+    work.plan = Some("plan".to_string());
+    work.execute(snapshot(dir.path(), None, None).unwrap())
+        .unwrap();
+    std::fs::write(dir.path().join("calc.py"), "bb").unwrap();
+    std::fs::create_dir(dir.path().join("__pycache__")).unwrap();
+    std::fs::write(dir.path().join("__pycache__/calc.cpython-312.pyc"), "x").unwrap();
+    let paths = work
+        .verify(snapshot(dir.path(), None, None).unwrap())
+        .unwrap();
+    assert_eq!(paths, vec!["calc.py".to_string()]);
+    assert_eq!(work.touched.iter().collect::<Vec<_>>(), vec!["calc.py"]);
+}

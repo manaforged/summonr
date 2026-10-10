@@ -1,6 +1,24 @@
 use super::*;
 
 #[test]
+fn a_background_deadline_is_rejected_before_the_command_runs() {
+    let (dir, tools) = workspace(&[]);
+    let refused = outcome_with(
+        &tools,
+        serde_json::json!({
+            "command": "echo launched > deadline.txt",
+            "background": true,
+            "timeout_secs": 1,
+        }),
+    );
+    assert!(
+        refused.contains("timeout_secs applies to foreground"),
+        "{refused}"
+    );
+    assert!(!dir.path().join("deadline.txt").exists(), "{refused}");
+}
+
+#[test]
 fn output_under_the_budget_comes_back_whole_with_no_log_note() {
     let (_dir, tools) = workspace(&[]);
     let text = run(

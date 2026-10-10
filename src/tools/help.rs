@@ -24,6 +24,6 @@ New or empty files: use write.";
 pub(crate) const RUN_COMMAND: &str = "run_command reference.
 
 - command runs via the shell in the workspace; workdir changes the directory; cwd does not persist between calls; stdin is closed; the environment is a safe allowlist
-- at the wait limit a command keeps running as a background job and returns its id; an explicit timeout_secs stops it instead; background true returns a job id at once; pass job to wait for it (a poll waits until the job exits or the wait limit), kill true to stop
+- at the wait limit a command keeps running as a background job and returns its id; an explicit timeout_secs stops it instead; when the shell exits, leftover processes it started with & are stopped; background true returns a job id at once and rejects timeout_secs; jobs keep their log and exit status after summonr exits; pass job to wait for it (a poll waits until the job exits or the wait limit), kill true to stop
 - output is the exit code plus about 16 KB of head and tail; only when that cuts something is the full log path named; read it with the read tool; search command output gets clipped per file with an omission note
 - for a password use `sudo -A` or plain ssh (masked prompt); `summonr askpass \"<label>\"` prints a user-typed secret to pipe into a command; never echo or store it";

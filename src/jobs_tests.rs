@@ -5,7 +5,7 @@ fn finished(workspace: &Path, started: u64) -> PathBuf {
     let mut record = stamp(&id, 999_999, "true", workspace, true, None).unwrap();
     record.started = started;
     write(&record_path, &record).unwrap();
-    write_exit(&exit, 0).unwrap();
+    store::write(&exit, "0\n").expect("write job exit fixture");
     record_path
 }
 

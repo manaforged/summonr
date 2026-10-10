@@ -28,9 +28,24 @@ impl Worker {
             arguments: serde_json::json!({ "command": command }).to_string(),
         })));
         let started = std::time::Instant::now();
-        let (output, success) = match self.loop_.shell(command).await {
-            Ok(result) => result,
-            Err(error) => (error.to_string(), false),
+        let outcome = attend(
+            Inbox {
+                cmd: &mut self.cmd,
+                reader: &self.reader,
+                followups: &mut self.followups,
+                deferred: &mut self.deferred,
+                ui: &self.ui,
+                answers: None,
+            },
+            self.loop_.shell(command),
+        )
+        .await;
+        let completed = matches!(outcome, Attended::Done(_));
+        let running = !matches!(outcome, Attended::Quit);
+        let (output, success) = match outcome {
+            Attended::Done(Ok(result)) => result,
+            Attended::Done(Err(error)) => (error.to_string(), false),
+            Attended::Cancelled | Attended::Quit => ("command cancelled".to_string(), false),
         };
         drop(self.ui.send(Msg::Event(crate::tools::Event::ToolResult {
             id,
@@ -41,11 +56,11 @@ impl Worker {
             patch: None,
         })));
         drop(self.ui.send(Msg::Busy(None)));
-        if send {
+        if send && completed {
             self.turn(UserInput::from(shell_prompt(command, &output)))
                 .await
         } else {
-            true
+            running
         }
     }
 

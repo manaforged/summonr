@@ -52,6 +52,13 @@ pub enum Network {
     Denied,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CommandMode {
+    ReadOnly,
+    Session,
+    Background,
+}
+
 impl Network {
     #[must_use]
     pub const fn allowed(allow: bool) -> Self {
@@ -100,33 +107,14 @@ impl Sandbox {
     }
 
     #[cfg(sandboxed)]
-    pub(crate) fn command_line(
+    fn command_line(
         &self,
         program: &str,
         args: &[&str],
         cwd: &Path,
+        mode: CommandMode,
     ) -> (PathBuf, Vec<OsString>) {
-        self.command_line_with(program, args, cwd, false)
-    }
-
-    #[cfg(sandboxed)]
-    pub(crate) fn read_command_line(
-        &self,
-        program: &str,
-        args: &[&str],
-        cwd: &Path,
-    ) -> (PathBuf, Vec<OsString>) {
-        self.command_line_with(program, args, cwd, true)
-    }
-
-    #[cfg(sandboxed)]
-    fn command_line_with(
-        &self,
-        program: &str,
-        args: &[&str],
-        cwd: &Path,
-        read_only: bool,
-    ) -> (PathBuf, Vec<OsString>) {
+        let read_only = mode == CommandMode::ReadOnly;
         #[cfg(target_os = "macos")]
         let _ = cwd;
         let (executable, args) = match &self.backend {
@@ -205,11 +193,13 @@ impl Sandbox {
                 }
                 command.extend([
                     "--new-session".into(),
-                    "--die-with-parent".into(),
                     "--unshare-pid".into(),
                     "--proc".into(),
                     "/proc".into(),
                 ]);
+                if mode != CommandMode::Background {
+                    command.push("--die-with-parent".into());
+                }
                 if self.deny_network {
                     command.push("--unshare-net".into());
                 }
@@ -224,24 +214,15 @@ impl Sandbox {
     }
 
     #[cfg(not(sandboxed))]
-    pub(crate) fn command_line(
+    fn command_line(
         &self,
         program: &str,
         args: &[&str],
         cwd: &Path,
+        mode: CommandMode,
     ) -> (PathBuf, Vec<OsString>) {
-        let _ = (self, program, args, cwd);
+        let _ = (self, program, args, cwd, mode);
         unreachable!("sandbox backend is unavailable")
-    }
-
-    #[cfg(not(sandboxed))]
-    pub(crate) fn read_command_line(
-        &self,
-        program: &str,
-        args: &[&str],
-        cwd: &Path,
-    ) -> (PathBuf, Vec<OsString>) {
-        self.command_line(program, args, cwd)
     }
 
     #[cfg(sandboxed)]
@@ -249,7 +230,8 @@ impl Sandbox {
         let shell = crate::shell::program()?;
         let args = crate::shell::arguments("exit 0", &self.workspace);
         let args: Vec<&str> = args.iter().map(String::as_str).collect();
-        let (executable, args) = self.command_line(&shell, &args, &self.workspace);
+        let (executable, args) =
+            self.command_line(&shell, &args, &self.workspace, CommandMode::Session);
         let status = std::process::Command::new(executable)
             .args(args)
             .current_dir(&self.workspace)
@@ -268,16 +250,14 @@ impl Sandbox {
         )))
     }
 
-    pub(crate) fn command(&self, program: &str, args: &[&str], cwd: &Path) -> Command {
-        let (executable, args) = self.command_line(program, args, cwd);
-        let mut command = Command::new(executable);
-        command.args(args);
-        command.current_dir(cwd);
-        command
-    }
-
-    pub(crate) fn read_command(&self, program: &str, args: &[&str], cwd: &Path) -> Command {
-        let (executable, args) = self.read_command_line(program, args, cwd);
+    pub(crate) fn command(
+        &self,
+        program: &str,
+        args: &[&str],
+        cwd: &Path,
+        mode: CommandMode,
+    ) -> Command {
+        let (executable, args) = self.command_line(program, args, cwd, mode);
         let mut command = Command::new(executable);
         command.args(args);
         command.current_dir(cwd);

@@ -11,13 +11,14 @@ use tokio::process::Command;
 use crate::error::{Error, Result};
 
 use super::ToolOutput;
-use crate::tools::sandbox::Sandbox;
+use crate::tools::sandbox::{CommandMode, Sandbox};
 
 pub(super) struct StartedCommand {
     pub(super) id: String,
     pub(super) pid: u32,
     pub(super) log_path: PathBuf,
     pub(super) child: CommandChild,
+    pub(super) group: ProcessGroup,
 }
 
 #[cfg(unix)]
@@ -139,11 +140,14 @@ pub(super) fn spawn_command(
     let args = crate::shell::arguments(script, cwd);
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     let mut cmd = if let Some(sandbox) = sandbox {
-        if read_only {
-            sandbox.read_command(&shell, &args, cwd)
+        let mode = if read_only {
+            CommandMode::ReadOnly
+        } else if background {
+            CommandMode::Background
         } else {
-            sandbox.command(&shell, &args, cwd)
-        }
+            CommandMode::Session
+        };
+        sandbox.command(&shell, &args, cwd, mode)
     } else {
         let mut cmd = Command::new(&shell);
         cmd.args(&args).current_dir(cwd);
@@ -164,7 +168,7 @@ pub(super) fn spawn_command(
     #[cfg(unix)]
     let child = cmd.spawn();
     #[cfg(windows)]
-    let child = if background || sandbox.is_some() {
+    let child = if sandbox.is_some() {
         cmd.kill_on_drop(false);
         if background && sandbox.is_some() {
             cmd.env("SUMMONR_SANDBOX_DETACHED", "1");
@@ -179,7 +183,7 @@ pub(super) fn spawn_command(
         command.wrap(JobObject);
         command.spawn().map(|child| CommandChild {
             child,
-            kill_on_drop: true,
+            kill_on_drop: !background,
             sandbox: false,
         })
     };
@@ -192,8 +196,10 @@ pub(super) fn background_result(started: StartedCommand) -> ToolOutput {
         pid,
         log_path,
         child,
+        mut group,
         ..
     } = started;
+    group.disarm();
     drop(child);
     ToolOutput {
         text: job_text(&id, pid, &log_path),
@@ -273,19 +279,7 @@ pub(in crate::tools) fn kill_group(pid: u32, sandbox: bool) {
     #[cfg(not(all(windows, sandboxed)))]
     let _ = sandbox;
     #[cfg(unix)]
-    if signal(pid, libc::SIGTERM) {
-        let escalate = async move {
-            tokio::time::sleep(crate::limits::limits().job_wait() / 60).await;
-            let _ = signal(pid, 0) && signal(pid, libc::SIGKILL);
-        };
-        match tokio::runtime::Handle::try_current() {
-            Ok(runtime) => drop(runtime.spawn(escalate)),
-            Err(error) => {
-                eprintln!("command cleanup escalates now: {error}");
-                signal(pid, libc::SIGKILL);
-            }
-        }
-    }
+    signal(pid, libc::SIGKILL);
     #[cfg(windows)]
     drop(
         std::process::Command::new("taskkill")

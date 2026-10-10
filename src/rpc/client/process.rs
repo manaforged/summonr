@@ -5,7 +5,7 @@ use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
 
 use crate::error::{Error, Result};
 use crate::tools::command::ProcessGroup;
-use crate::tools::sandbox::Sandbox;
+use crate::tools::sandbox::{CommandMode, Sandbox};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Env {
@@ -51,10 +51,15 @@ pub(crate) struct Process {
 
 pub(crate) fn start(launch: &Launch<'_>) -> Result<Process> {
     let mut command = match launch.sandbox {
-        Some((sandbox, Access::Write)) => sandbox.command(launch.program, launch.args, launch.cwd),
-        Some((sandbox, Access::Read)) => {
-            sandbox.read_command(launch.program, launch.args, launch.cwd)
-        }
+        Some((sandbox, access)) => sandbox.command(
+            launch.program,
+            launch.args,
+            launch.cwd,
+            match access {
+                Access::Read => CommandMode::ReadOnly,
+                Access::Write => CommandMode::Session,
+            },
+        ),
         None => {
             let mut command = Command::new(launch.program);
             command.args(launch.args).current_dir(launch.cwd);

@@ -17,7 +17,7 @@ The first argument can be an endpoint name: `summonr grok` is `summonr -e grok`.
 | `summonr -c`, `summonr --session ID` | Resume the last session here, or a session by short id, id prefix, or name |
 | `summonr sessions` | List sessions, tab-separated: id, name, directory, preview |
 | `summonr export [ID\|NAME]` | Print a session as Markdown |
-| `summonr profile [ID\|NAME]` | Print a time and token report from a session journal |
+| `summonr profile [ID\|NAME]` | Print a time and token report from a session journal. `peak mem` is the peak physical footprint on macOS and the peak resident set on Linux; the footprint leaves out shared pages, so it reads lower than RSS |
 | `summonr diff [PATH] [--turn N\|last] [--stat\|--json]` | Print the patch against the worktree base |
 | `summonr worktrees [--json]`, `summonr worktrees prune [--json]` | List session worktrees, or drop records of missing directories and print the removed paths |
 | `summonr endpoints` | Probe every endpoint and show its key status |

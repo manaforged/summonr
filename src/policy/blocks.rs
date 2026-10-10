@@ -36,15 +36,23 @@ pub(super) fn path_word(word: &str) -> &str {
 pub(super) fn block_target(
     word: &str,
     workspace: &Path,
-    outside_cwd: bool,
+    step: &Step,
     roots: &[PathBuf],
 ) -> Option<Block> {
     let word = path_word(word);
     if protected_write(&locate(word, workspace)) {
         return Some(Block::Protected(word.to_string()));
     }
-    if outside_cwd || is_outside(word, workspace, outside_cwd, roots) {
-        return Some(Block::Outside(word.to_string()));
+    if step.outside || is_outside(word, workspace, step.outside, roots) {
+        let shown = step
+            .cwd
+            .as_deref()
+            .filter(|_| step.outside && !rooted(Path::new(word)))
+            .map_or_else(
+                || word.to_string(),
+                |cwd| cwd.join(word).display().to_string(),
+            );
+        return Some(Block::Outside(shown));
     }
     None
 }
@@ -98,7 +106,7 @@ pub(super) fn write_block(steps: &[Step], workspace: &Path, roots: &[PathBuf]) -
 }
 
 fn step_block(step: &Step, workspace: &Path, roots: &[PathBuf]) -> Option<Block> {
-    let check = |target: &str| block_target(target, workspace, step.outside, roots);
+    let check = |target: &str| block_target(target, workspace, step, roots);
     if let Some(block) = step.redirects().into_iter().find_map(check) {
         return Some(block);
     }
@@ -139,6 +147,11 @@ fn write_directory(path: &str) -> PathBuf {
 #[must_use]
 pub(crate) fn write_denied(path: &str) -> String {
     let dir = write_directory(path);
+    if !rooted(&dir) {
+        return format!(
+            "write to `{path}` is outside the writable roots, in a directory summonr cannot resolve"
+        );
+    }
     format!(
         "write to `{path}` is outside the writable roots; add {} to [sandbox] write in ~/.summonr/config.toml, or /permissions write {}",
         dir.display(),
@@ -181,8 +194,12 @@ pub(crate) fn outside_write(command: &str, workspace: &Path, roots: &[PathBuf]) 
     }
 }
 
+fn rooted(path: &Path) -> bool {
+    path.is_absolute() || path.has_root()
+}
+
 fn write_grant(path: PathBuf) -> Option<Grant> {
-    if !(path.is_absolute() || path.has_root()) {
+    if !rooted(&path) {
         return None;
     }
     Some(if protected_write(&path) {

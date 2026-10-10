@@ -41,17 +41,7 @@ fn main() {
         .enable_all()
         .build()
         .unwrap_or_else(|error| fail(&error));
-    let session = async {
-        use futures::FutureExt;
-
-        let mut interrupt = std::pin::pin!(interrupted());
-        tokio::select! {
-            biased;
-            code = &mut interrupt => Ok(code),
-            result = run(args) => interrupt.now_or_never().map_or(result, Ok),
-        }
-    };
-    match runtime.block_on(session) {
+    match runtime.block_on(run(args)) {
         Ok(code) => {
             summonr::stop_children();
             std::process::exit(code);
@@ -74,6 +64,17 @@ fn restore_sigpipe() {
 
 #[cfg(not(unix))]
 fn restore_sigpipe() {}
+
+async fn until_signal<T>(work: impl std::future::Future<Output = T>) -> Result<T, i32> {
+    use futures::FutureExt;
+
+    let mut interrupt = std::pin::pin!(interrupted());
+    tokio::select! {
+        biased;
+        code = &mut interrupt => Err(code),
+        done = work => interrupt.now_or_never().map_or(Ok(done), Err),
+    }
+}
 
 #[cfg(unix)]
 async fn interrupted() -> i32 {
@@ -106,7 +107,9 @@ async fn run(args: Option<cli::Args>) -> summonr::Result<i32> {
             summonr::check_config()?;
             startup::run(args).await
         }
-        None => summonr::tui::profile(std::env::args().skip(2)).map(|()| 0),
+        None => until_signal(async { summonr::tui::profile(std::env::args().skip(2)) })
+            .await
+            .map_or_else(Ok, |done| done.map(|()| 0)),
     }
 }
 

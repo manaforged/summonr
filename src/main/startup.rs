@@ -30,7 +30,25 @@ pub(super) async fn run(args: Args) -> Result<i32> {
     } else {
         diagnostics::Log::start()
     };
-    let result = route(args, log.as_ref()).await;
+    let events = args.json
+        && (args.print || args.goal.is_some() || args.steps.is_some() || !args.prompt.is_empty());
+    let (result, abort) = match super::until_signal(route(args, log.as_ref())).await {
+        Ok(Ok(code)) => (Ok(code), None),
+        Ok(Err(error)) => {
+            let reason = error.to_string();
+            (Err(error), Some((reason, summonr::AbortCode::Error)))
+        }
+        Err(code) => (
+            Ok(code),
+            Some((signal(code), summonr::AbortCode::Interrupted)),
+        ),
+    };
+    if events && let Some((reason, code)) = &abort {
+        super::modes::print_json(&summonr::Event::Aborted {
+            reason: reason.clone(),
+            code: *code,
+        });
+    }
     let (code, error) = match &result {
         Ok(code) => (*code, None),
         Err(error) => (1, Some(error.to_string())),
@@ -39,6 +57,15 @@ pub(super) async fn run(args: Args) -> Result<i32> {
         log.finish(code, error.as_deref());
     }
     result
+}
+
+fn signal(code: i32) -> String {
+    match code {
+        143 => "terminated by SIGTERM",
+        129 => "the terminal hung up",
+        _ => "interrupted by Ctrl-C",
+    }
+    .to_string()
 }
 
 async fn route(args: Args, log: Option<&diagnostics::Log>) -> Result<i32> {

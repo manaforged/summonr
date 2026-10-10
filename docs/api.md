@@ -76,9 +76,9 @@ echo $?
 | 1 | Harness error: bad arguments, config error, or internal failure. The message goes to stderr as `summonr: <error>`. | `src/main.rs` |
 | 2 | A check failed. In goal and step modes this includes a run that stopped short on a budget or an abort and then failed the check at exit. | `exit` in `src/main/modes.rs`, `Loop::stop_work` in `src/runtime/turn/checks.rs` |
 | 3 | Stopped short: budget, stall, or aborted turn, with no check configured, or with a check that passed while the goal was not met. | `src/main/modes.rs`, `src/durable/work/progress.rs` |
-| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `interrupted` in `src/main.rs` |
-| 143 | Terminated by `SIGTERM` (Unix). | `interrupted` in `src/main.rs` |
-| 129 | Hung up by `SIGHUP` (Unix). | `interrupted` in `src/main.rs` |
+| 130 | Interrupted by `SIGINT`, or Ctrl+C on Windows. | `until_signal` in `src/main.rs` |
+| 143 | Terminated by `SIGTERM` (Unix). | `until_signal` in `src/main.rs` |
+| 129 | Hung up by `SIGHUP` (Unix). | `until_signal` in `src/main.rs` |
 
 In `--goal` and `--steps`, the check decides the exit code. When a run stops short, summonr runs the configured check once at exit. A failed check gives 2. A completed run gives 0. `-p` runs no check at exit.
 
@@ -124,6 +124,8 @@ A step that contains ``Run `CMD` `` is gated on `CMD` and on `.summonr/check.tom
 ```
 
 Step mode also prints `{"type":"step","index":N,"total":N,"state":"...","check":...}`. On a `start` event, `check` holds the step's `Run` commands joined with ` && `, or null when the step has none.
+
+With `--json`, a run that fails with exit code 1 or ends on a signal prints a last `aborted` event: code `error` with the message, or code `interrupted`.
 
 When a goal or steps run stops short, the `aborted` event is not the last line: summonr runs the exit check when the work is not already finished, then prints its `verify` events and a final `work` event. Read the exit code to learn the result.
 

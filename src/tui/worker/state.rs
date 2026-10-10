@@ -165,6 +165,10 @@ impl Worker {
         drop(self.ui.send(Msg::System(text.to_string())));
     }
 
+    pub(super) fn outcome(&self, text: &str) {
+        drop(self.ui.send(Msg::Outcome(text.to_string())));
+    }
+
     pub(super) fn export(&self, target: Option<String>) {
         export_session(
             self.loop_.session_path(),

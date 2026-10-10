@@ -42,6 +42,7 @@ pub(super) fn collapsible(
                 .text_color(sigil::prelude::Token::Gray11),
         )
         .pointer_down(press),
+        Visibility::Off if !reasoning => container(),
         Visibility::Off => wrap(
             sigil::kernel::text(format!("▸ {kind} · hidden"))
                 .nowrap()

@@ -36,6 +36,7 @@ pub(crate) enum Msg {
         queued: usize,
     },
     System(String),
+    Outcome(String),
     Session(String),
     Cleared,
     Reset,

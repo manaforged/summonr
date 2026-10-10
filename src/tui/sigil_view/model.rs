@@ -115,7 +115,7 @@ impl Model {
             let stable = self.busy_since.is_none()
                 || match &self.entries[index] {
                     Entry::Thinking(_) => index < last,
-                    Entry::Assistant { done, .. } => *done,
+                    Entry::Assistant { done, .. } => *done && index < last,
                     Entry::Tool { state, .. } => {
                         index < last && !matches!(state, ToolState::Running)
                     }
@@ -204,6 +204,7 @@ impl Model {
             | Msg::Image(_)
             | Msg::Receipt(_)
             | Msg::System(_)
+            | Msg::Outcome(_)
             | Msg::Mail { .. }
             | Msg::Failed(_)) => self.entry(msg),
             msg @ (Msg::Session(_)
@@ -262,6 +263,7 @@ impl Model {
             Msg::Image(image) => self.entries.push(image_entry(image)),
             Msg::Receipt(text) => self.receipt(&text),
             Msg::System(text) => self.entries.push(Entry::System(text)),
+            Msg::Outcome(text) => self.trail(Entry::System(text)),
             Msg::Mail { from, text } => self.entries.push(Entry::Mail { from, text }),
             Msg::Failed(text) => {
                 self.set_busy(None);

@@ -24,7 +24,18 @@ impl Model {
             _ => text,
         };
         if !receipt.is_empty() {
-            self.entries.push(Entry::Receipt(receipt.to_string()));
+            self.trail(Entry::Receipt(receipt.to_string()));
+        }
+    }
+
+    pub(in crate::tui::sigil_view) fn trail(&mut self, entry: Entry) {
+        let at = self.entries.len().saturating_sub(1);
+        let answer = matches!(self.entries.last(), Some(Entry::Assistant { .. }));
+        if answer && at >= self.committed {
+            self.entries.invalidate();
+            self.entries.inner.insert(at, entry);
+        } else {
+            self.entries.push(entry);
         }
     }
 
@@ -193,10 +204,8 @@ impl Model {
                 }
                 self.entries.push(Entry::System(text));
             }
-            Event::Verify { command, passed } => {
-                self.entries.push(Entry::Verify { command, passed });
-            }
-            Event::Receipt { receipt } => self.entries.push(Entry::Receipt(receipt.text)),
+            Event::Verify { command, passed } => self.trail(Entry::Verify { command, passed }),
+            Event::Receipt { receipt } => self.trail(Entry::Receipt(receipt.text)),
             _other => {}
         }
     }

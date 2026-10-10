@@ -138,3 +138,37 @@ fn children_spawned_in_the_same_minute_keep_their_own_tokens() {
     let tokens: Vec<u64> = model.agents.iter().map(|agent| agent.tokens).collect();
     assert_eq!(tokens, [100, 7]);
 }
+
+#[test]
+fn answer_stays_last_after_the_check_receipt_and_goal_verdict() {
+    let mut model = model();
+    model.apply(Msg::User("make the tests pass".to_string()));
+    model.apply(Msg::Busy(Some(Activity::Turn)));
+    model.apply(Msg::Event(Event::Delta {
+        text: "Result: 4 passed.".to_string(),
+    }));
+    model.apply(Msg::Event(Event::Verify {
+        command: "python3 -m pytest -q".to_string(),
+        passed: true,
+    }));
+    model.apply(Msg::Event(Event::Assistant {
+        text: "Result: 4 passed.".to_string(),
+    }));
+    model.apply(Msg::Receipt("Turn receipt · 3 files read".to_string()));
+    model.apply(Msg::Outcome("goal achieved".to_string()));
+    assert!(
+        matches!(model.entries.iter().last(), Some(Entry::Assistant { text, .. }) if text == "Result: 4 passed."),
+        "the answer must be the last row of the turn"
+    );
+    let held = model.commit_lines();
+    assert!(!held.contains("4 passed."), "{held}");
+    model.apply(Msg::Busy(None));
+    let lines = held + &model.commit_lines();
+    let verdict = lines
+        .find("goal achieved")
+        .expect("verdict reaches the scrollback");
+    let answer = lines
+        .find("4 passed.")
+        .expect("answer reaches the scrollback");
+    assert!(verdict < answer, "{lines}");
+}

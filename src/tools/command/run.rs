@@ -9,7 +9,7 @@ use crate::tools::{ToolOutput, ToolRegistry};
 use super::Approval;
 use super::digest::digest;
 use super::proc::{
-    CommandChild, ProcessGroup, StartedCommand, job_text, spawn_command, stop_command, wait_shell,
+    ProcessGroup, StartedCommand, background_result, spawn_command, stop_command, wait_shell,
 };
 use super::rewrite::{read_only_note, sandbox_grant, sandbox_note};
 
@@ -18,6 +18,7 @@ const COMMAND_LOG_PREFIX: &str = "command-";
 
 #[derive(Clone, Copy)]
 pub(super) enum Wait {
+    Background,
     Kill(u64),
     Detach(u64),
 }
@@ -33,14 +34,10 @@ impl Wait {
 
     fn seconds(self) -> u64 {
         match self {
+            Self::Background => 0,
             Self::Kill(seconds) | Self::Detach(seconds) => seconds,
         }
     }
-}
-
-struct Parked {
-    id: String,
-    exit_path: PathBuf,
 }
 
 struct JobFiles {
@@ -58,12 +55,13 @@ impl ToolRegistry {
     pub(super) fn start_command(
         &self,
         command: &str,
-        background: bool,
+        wait: Wait,
         read_only: bool,
         approval: Option<Approval>,
         cwd: PathBuf,
     ) -> Result<StartedCommand> {
-        let files = self.command_files(background)?;
+        let persist = matches!(wait, Wait::Background | Wait::Detach(_));
+        let files = self.command_files(persist)?;
         let script = match &files.job {
             Some(job) => crate::shell::wrap(command, &job.exit_path, &cwd),
             None => command.to_string(),
@@ -74,14 +72,19 @@ impl ToolRegistry {
             sandbox.as_ref(),
             &script,
             &files.log_path,
-            background,
+            persist,
             read_only,
             &cwd,
         )?;
         let pid = child
             .id()
             .ok_or_else(|| Error::Tool("command started without a pid".to_string()))?;
-        if let Some(job) = &files.job {
+        let group = ProcessGroup::new(pid, sandbox.is_some());
+        if let Some(job) = files
+            .job
+            .as_ref()
+            .filter(|_| matches!(wait, Wait::Background))
+        {
             jobs::write(&job.rec_path, &self.job_record(&files.id, pid, command)?)?;
         }
         Ok(StartedCommand {
@@ -89,11 +92,12 @@ impl ToolRegistry {
             pid,
             log_path: files.log_path,
             child,
+            group,
         })
     }
 
-    fn command_files(&self, background: bool) -> Result<CommandFiles> {
-        if background {
+    fn command_files(&self, persist: bool) -> Result<CommandFiles> {
+        if persist {
             let (id, rec_path, log_path, exit_path) = jobs::prepare(&self.workspace)?;
             return Ok(CommandFiles {
                 id,
@@ -135,9 +139,7 @@ impl ToolRegistry {
         command: &str,
         wait: Wait,
         read_only: bool,
-        contained: bool,
     ) -> Result<ToolOutput> {
-        let mut group = ProcessGroup::new(started.pid, contained);
         let waited = tokio::time::timeout(
             crate::limits::seconds(wait.seconds()),
             wait_shell(&mut started.child),
@@ -145,15 +147,15 @@ impl ToolRegistry {
         .await;
         match waited {
             Ok(Ok(status)) => {
-                group.disarm();
+                stop_command(&mut started.child, started.pid)
+                    .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
+                started.group.disarm();
+                self.discard_job(&started.id);
                 let code = status.code().unwrap_or(-1);
-                self.finished(started, command, code, read_only)
+                self.finished(started.log_path, command, code, read_only)
             }
             Ok(Err(error)) => Err(Error::Tool(format!("command failed: {error}"))),
-            Err(_) => {
-                self.timed_out(started, command, wait, group, read_only)
-                    .await
-            }
+            Err(_) => self.timed_out(started, command, wait, read_only).await,
         }
     }
 
@@ -173,12 +175,11 @@ impl ToolRegistry {
 
     fn finished(
         &self,
-        started: StartedCommand,
+        log_path: PathBuf,
         command: &str,
         code: i32,
         read_only: bool,
     ) -> Result<ToolOutput> {
-        let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let grant = (code != 0)
             .then(|| sandbox_grant(self, command, &raw))
@@ -211,20 +212,18 @@ impl ToolRegistry {
         started: StartedCommand,
         command: &str,
         wait: Wait,
-        group: ProcessGroup,
         read_only: bool,
     ) -> Result<ToolOutput> {
         let seconds = wait.seconds();
         let mut detail = String::new();
         if matches!(wait, Wait::Detach(_)) {
             match self.register(command, &started) {
-                Ok(job) => return self.detach(started, command, seconds, (job, group)),
+                Ok(()) => return self.detach(started, command, seconds),
                 Err(error) => detail = format!(" ({error}; could not continue it as a job)"),
             }
         }
         let headline = format!("command timed out after {seconds}s{detail}");
-        self.killed(started, command, headline, group, read_only)
-            .await
+        self.killed(started, command, headline, read_only).await
     }
 
     async fn killed(
@@ -232,7 +231,6 @@ impl ToolRegistry {
         mut started: StartedCommand,
         command: &str,
         headline: String,
-        mut group: ProcessGroup,
         read_only: bool,
     ) -> Result<ToolOutput> {
         stop_command(&mut started.child, started.pid)
@@ -242,7 +240,8 @@ impl ToolRegistry {
             .wait()
             .await
             .map_err(|error| Error::Tool(format!("command cleanup failed: {error}")))?;
-        group.disarm();
+        started.group.disarm();
+        self.discard_job(&started.id);
         let StartedCommand { log_path, .. } = started;
         let raw = scrubbed_preview(&log_path)?;
         let shown = digest(command, &raw);
@@ -272,45 +271,32 @@ impl ToolRegistry {
         })
     }
 
-    fn register(&self, command: &str, started: &StartedCommand) -> Result<Parked> {
-        let (id, rec_path, _log, exit_path) = jobs::prepare(&self.workspace)?;
-        let mut record = self.job_record(&id, started.pid, command)?;
-        record.log = Some(started.log_path.display().to_string());
-        jobs::write(&rec_path, &record)?;
-        Ok(Parked { id, exit_path })
+    fn register(&self, command: &str, started: &StartedCommand) -> Result<()> {
+        let record = self.job_record(&started.id, started.pid, command)?;
+        jobs::write(
+            &jobs::dir(&self.workspace).join(format!("{}.json", started.id)),
+            &record,
+        )
     }
 
-    fn detach(
-        &self,
-        started: StartedCommand,
-        command: &str,
-        seconds: u64,
-        parked: (Parked, ProcessGroup),
-    ) -> Result<ToolOutput> {
-        let (job, group) = parked;
-        let StartedCommand {
-            pid,
-            log_path,
-            child,
-            ..
-        } = started;
-        let raw =
-            crate::askpass::scrub(&jobs::preview(&log_path, LOG_READ_BYTES).unwrap_or_default());
+    fn discard_job(&self, id: &str) {
+        if !id.is_empty() {
+            drop(std::fs::remove_file(jobs::exit_path(&self.workspace, id)));
+        }
+    }
+
+    fn detach(&self, started: StartedCommand, command: &str, seconds: u64) -> Result<ToolOutput> {
+        let raw = crate::askpass::scrub(&jobs::preview(&started.log_path, LOG_READ_BYTES)?);
         let shown = digest(command, &raw);
-        let text = format!(
+        let mut output = background_result(started);
+        output.text = format!(
             "command still running after {seconds}s; it continues as a background job\n{}\n{}",
-            job_text(&job.id, pid, &log_path),
-            shown.text
-        );
-        adopt(child, group, job.exit_path, log_path);
-        Ok(ToolOutput {
-            text: text.trim_end().to_string(),
-            success: true,
-            mutated: !crate::policy::reads_only(command),
-            grant: None,
-            images: Vec::new(),
-            patch: None,
-        })
+            output.text, shown.text
+        )
+        .trim_end()
+        .to_string();
+        output.mutated = !crate::policy::reads_only(command);
+        Ok(output)
     }
 }
 
@@ -328,20 +314,4 @@ fn scrubbed_preview(log_path: &std::path::Path) -> Result<String> {
     } else {
         preview
     })
-}
-
-fn adopt(mut child: CommandChild, mut group: ProcessGroup, exit_path: PathBuf, log_path: PathBuf) {
-    drop(tokio::spawn(async move {
-        let code = wait_shell(&mut child)
-            .await
-            .map_or(Some(-1), |status| status.code());
-        group.disarm();
-        if !exit_path.is_file() {
-            drop(match code {
-                Some(code) => jobs::write_exit(&exit_path, code),
-                None => jobs::write_killed(&exit_path),
-            });
-        }
-        crate::askpass::scrub_file(&log_path);
-    }));
 }

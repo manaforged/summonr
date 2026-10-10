@@ -42,9 +42,13 @@ fn main() {
         .build()
         .unwrap_or_else(|error| fail(&error));
     let session = async {
+        use futures::FutureExt;
+
+        let mut interrupt = std::pin::pin!(interrupted());
         tokio::select! {
-            result = run(args) => result,
-            code = interrupted() => Ok(code),
+            biased;
+            code = &mut interrupt => Ok(code),
+            result = run(args) => interrupt.now_or_never().map_or(result, Ok),
         }
     };
     match runtime.block_on(session) {

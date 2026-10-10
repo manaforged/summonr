@@ -59,38 +59,46 @@ impl ToolRegistry {
         let restricted = self.policy.restricts_writes();
         let read_only = locked || restricted;
         let command = object_string(args, "command")?;
+        let (background, explicit) = launch_mode(args)?;
+        let approval = self.take_approval()?;
+        let cwd = self.command_dir(args)?;
+        if let Some(output) = self.shortcut(args, command, &cwd, approval.is_some())? {
+            return Ok(output);
+        }
+        self.check_launch(locked, restricted, background)?;
+        let wait = if background {
+            Wait::Background
+        } else {
+            Wait::chosen(explicit, self.can_detach(read_only))
+        };
+        let started = self.start_command(command, wait, read_only, approval, cwd)?;
+        if background {
+            return Ok(background_result(started));
+        }
+        self.wait_command(started, command, wait, read_only).await
+    }
+
+    fn shortcut(
+        &self,
+        args: &serde_json::Value,
+        command: &str,
+        cwd: &Path,
+        approved: bool,
+    ) -> Result<Option<ToolOutput>> {
+        if let Some(output) = self.gate_command(command, cwd, approved)? {
+            return Ok(Some(output));
+        }
         let workdir = args
             .get("workdir")
             .and_then(serde_json::Value::as_str)
             .is_some_and(|dir| !dir.trim().is_empty());
-        let approval = self.take_approval()?;
-        let approved = approval.is_some();
-        let cwd = self.command_dir(args)?;
-        if let Some(output) = self.gate_command(command, &cwd, approved)? {
-            return Ok(output);
+        if workdir {
+            return Ok(None);
         }
-        if !workdir && let Some(output) = self.read_natively(command)? {
-            return Ok(output);
+        match self.read_natively(command)? {
+            Some(output) => Ok(Some(output)),
+            None => self.search_natively(command),
         }
-        if !workdir && let Some(output) = self.search_natively(command)? {
-            return Ok(output);
-        }
-        let background = object_bool(args, "background");
-        self.check_launch(locked, restricted, background)?;
-        let started = self.start_command(command, background, read_only, approval, cwd)?;
-        if background {
-            return Ok(background_result(started));
-        }
-        let explicit = object_usize(args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
-        let wait = Wait::chosen(explicit, self.can_detach(read_only));
-        self.wait_command(
-            started,
-            command,
-            wait,
-            read_only,
-            !matches!(approval, Some(Approval::Uncontained)),
-        )
-        .await
     }
 
     fn gate_command(
@@ -269,4 +277,15 @@ impl ToolRegistry {
         }
         Ok(path)
     }
+}
+
+fn launch_mode(args: &serde_json::Value) -> Result<(bool, Option<u64>)> {
+    let background = object_bool(args, "background");
+    let explicit = object_usize(args, "timeout_secs").and_then(|secs| u64::try_from(secs).ok());
+    if background && explicit.is_some() {
+        return Err(Error::Tool(
+            "timeout_secs applies to foreground commands; drop it or background, then stop a job with run_command {\"job\":ID,\"kill\":true}".to_string(),
+        ));
+    }
+    Ok((background, explicit))
 }

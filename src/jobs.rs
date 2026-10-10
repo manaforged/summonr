@@ -288,11 +288,6 @@ pub(crate) fn alive_since(pid: u32, started: u64) -> bool {
     }
 }
 
-pub(crate) fn write_exit(path: &Path, code: i32) -> Result<()> {
-    store::write(path, format!("{code}\n"))?;
-    Ok(())
-}
-
 #[cfg(unix)]
 #[expect(unsafe_code, reason = "std has no signal-zero liveness probe")]
 pub(crate) fn alive(pid: u32) -> bool {

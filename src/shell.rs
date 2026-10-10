@@ -59,7 +59,7 @@ pub(crate) fn arguments(script: &str, cwd: &Path) -> Vec<String> {
 pub(crate) fn wrap(command: &str, exit: &Path, _: &Path) -> String {
     let exit = exit.to_string_lossy().replace('\'', "'\\''");
     format!(
-        "trap '' HUP\n(\n{command}\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{exit}'\nexit \"$code\""
+        "trap '' HUP\n(\n{command}\nsummonr_status=$?\nwait\nexit \"$summonr_status\"\n)\ncode=$?\nprintf '%s\\n' \"$code\" > '{exit}'\nexit \"$code\""
     )
 }
 

@@ -5,9 +5,10 @@ use crate::durable::store;
 use crate::error::{Error, Result};
 
 mod delta;
+mod finish;
 mod land;
 
-pub use land::finish;
+pub use finish::finish;
 pub(crate) use land::{Landing, reconcile_children};
 
 const COMMIT_MAX: u64 = 5 * 1024 * 1024;

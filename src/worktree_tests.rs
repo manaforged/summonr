@@ -206,3 +206,46 @@ fn a_child_edit_to_a_non_ascii_name_lands() {
     );
     assert!(landed[0].kept.is_none(), "{:?}", landed[0].kept);
 }
+
+#[test]
+fn a_worktree_run_commits_its_edits_without_caches_under_a_whole_word_subject() {
+    let (_root, primary) = repo();
+    let tree = super::add(&primary).unwrap();
+    std::fs::write(
+        tree.path.join("calc.py"),
+        "def add(a, b):\n    return a + b\n",
+    )
+    .unwrap();
+    std::fs::create_dir(tree.path.join("__pycache__")).unwrap();
+    std::fs::write(
+        tree.path.join("__pycache__/calc.cpython-312.pyc"),
+        "bytecode",
+    )
+    .unwrap();
+    let objective =
+        "fix calc.py so python3 run_tests.py passes on every supported interpreter version";
+    let committed = super::finish(
+        &tree,
+        objective,
+        &[
+            "calc.py".to_string(),
+            "__pycache__/calc.cpython-312.pyc".to_string(),
+        ],
+    )
+    .unwrap();
+    assert_eq!(committed, vec!["calc.py".to_string()]);
+    let files = Command::new("git")
+        .args(["show", "--name-only", "--format=%s", "HEAD"])
+        .current_dir(&primary)
+        .output()
+        .unwrap();
+    let shown = String::from_utf8_lossy(&files.stdout);
+    let subject = shown.lines().next().unwrap_or_default();
+    assert!(!shown.contains("__pycache__"), "{shown}");
+    assert!(subject.len() <= 72, "{subject}");
+    let body = subject.trim_start_matches("summonr: ");
+    assert!(
+        objective.starts_with(body) && objective[body.len()..].starts_with(' '),
+        "{subject}"
+    );
+}

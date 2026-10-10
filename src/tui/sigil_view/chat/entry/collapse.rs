@@ -65,8 +65,16 @@ pub(super) fn collapsible(
         }
         Visibility::Collapsed => {
             let count = body.lines().filter(|line| !line.trim().is_empty()).count();
+            let gist = body
+                .lines()
+                .next()
+                .and_then(|line| line.split_once(" · "))
+                .map_or_else(
+                    || crate::text::plural(count, "line"),
+                    |(_, gist)| gist.to_string(),
+                );
             wrap(
-                sigil::kernel::text(format!("▸ {kind} · {}", crate::text::plural(count, "line")))
+                sigil::kernel::text(format!("▸ {kind} · {gist}"))
                     .nowrap()
                     .text_color(sigil::prelude::Token::OnSurface)
                     .font_size(12.0)

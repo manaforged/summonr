@@ -73,6 +73,7 @@ table! {
     lsp_start_secs: u64,
     lsp_idle_secs: u64,
     servers_max: usize,
+    receipt_items_max: usize,
     closest_percent: usize,
     typo_min_chars: usize,
     diff_split_min_cols: u16,

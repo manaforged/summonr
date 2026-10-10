@@ -470,7 +470,7 @@ A paste of eight or more lines, or a thousand or more bytes, folds into `[pasted
 
 While a turn runs, the composer status also counts waiting input (`2 queued, ↑ edits`). The terminal title reads `summonr · <workspace> · working` or `· ready`, and the terminal bell rings once when a turn ends while the terminal is not focused.
 
-`/settings` switches tool output between compact and full, sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`, and sets turn receipts to `off` (the default), `collapsed`, or `expanded`.
+`/settings` switches tool output between compact and full, sets chain of thought to `collapsed` (the default: one dim line with a line count), `expanded`, or `off`, and sets turn receipts to `off` (the default), `collapsed` (one line: files read, searches, commands, failures, changed files, and the check result), or `expanded` (that line, the start commit, the first five failures and changed files, and each check). A click on a receipt switches between `collapsed` and `expanded`.
 
 `/export` writes the session as markdown to `~/.summonr/exports/<id>.md`; `/export PATH` writes it where you say. It works while a turn runs. `ctrl+b` (the default copy hotkey) copies the latest assistant reply. `/copy all` copies the full transcript. Both use OSC 52 in the terminal and the system clipboard in the window. `ctrl+t` releases the mouse to the terminal so you can select and copy any transcript span; press it again to restore mouse interaction.
 
